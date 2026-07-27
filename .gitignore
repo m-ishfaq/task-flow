@@ -32,6 +32,9 @@ secrets.enc.yaml.dec
 !.terraform.lock.hcl
 docker/data/
 
+# scanner caches (CI restores these from actions/cache)
+.trivycache/
+
 # editors / OS
 .vscode/*
 !.vscode/extensions.json

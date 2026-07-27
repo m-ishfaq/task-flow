@@ -1,0 +1,50 @@
+# Line-ending normalization.
+#
+# Development happens on Windows; CI and production run Linux. Without this file,
+# behaviour depends on each machine's `core.autocrlf` setting — which is `true`
+# on this dev machine, meaning git rewrites line endings on checkout and commit.
+# That is invisible until something downstream cares:
+#
+#   * a `run: |` block in a GitHub workflow with CRLF fails in bash with
+#     `$'\r': command not found`
+#   * shell scripts become unexecutable
+#   * diffs show whole files as changed after a checkout on another platform
+#
+# `text=auto eol=lf` stores everything as LF in the repository and checks it out
+# as LF everywhere, so the repo contents are identical on every machine
+# regardless of local git config.
+
+* text=auto eol=lf
+
+# Explicitly LF — these are read by Linux tooling and break subtly otherwise.
+*.sh        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.sql       text eol=lf
+*.mjs       text eol=lf
+*.js        text eol=lf
+*.ts        text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf
+.node-version   text eol=lf
+.npmrc          text eol=lf
+Dockerfile*     text eol=lf
+
+# Binary — never touch these.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.node  binary
+*.wasm  binary
+
+# Generated — collapse in diffs and exclude from language stats.
+pnpm-lock.yaml  linguist-generated=true -diff

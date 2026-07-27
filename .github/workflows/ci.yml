@@ -1,19 +1,57 @@
 ## CI gate suite (PLAN.md §11)
 ##
-## Every job here must pass to merge. The security jobs are not advisory — a high
-## or critical finding fails the build, and there is no bypass flag.
+## A high or critical security finding fails the build. There is no bypass flag.
 ##
-## Budget note: this repository is private, so Actions minutes are metered
-## (§16). Linux runners only — Windows bills 2x and macOS 10x. Turborepo caching
-## keeps unchanged packages from rebuilding.
+## ---------------------------------------------------------------------------
+## MINUTE BUDGET
+##
+## This repository is private, so Actions minutes are metered: 2,000/month (§16).
+## Billing is the SUM of every job's duration, each rounded UP to a whole minute
+## — five jobs finishing in 20s each still costs 5 minutes, not 20 seconds. Job
+## COUNT matters as much as job duration.
+##
+## During Phase 0-4 development the primary gate is local: `pnpm preflight`
+## reproduces every check here in one command. CI is the backstop, so the
+## expensive scanners do not need to run on every push.
+##
+## Tiering:
+##   push to main       verify only                    ~3 min
+##   pull request       everything                     ~12 min
+##   weekly schedule    everything                     ~12 min
+##   manual dispatch    your choice
+##
+## Controls (Settings -> Secrets and variables -> Actions -> Variables):
+##   CI_DISABLED=true         kill switch — skips ALL jobs, no minutes spent
+##   CI_SECURITY_ALWAYS=true  run scanners on every push (restores old behaviour)
+##
+## Both are repository VARIABLES, not secrets, so they can be flipped in the UI
+## without touching code. Turn scanners back on permanently before launch.
+## ---------------------------------------------------------------------------
 
 name: CI
 
 on:
   push:
     branches: [main]
+    # Documentation-only commits cannot break the build; skip them entirely.
+    paths-ignore:
+      - '**.md'
+      - 'ai/**'
+      - 'docs/**'
+      - '.vscode/**'
+      - 'LICENSE'
   pull_request:
     branches: [main]
+  # Weekly security sweep. Catches newly-published advisories against code that
+  # has not changed — the case per-push scanning would never find anyway.
+  schedule:
+    - cron: '0 3 * * 1' # Mondays 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      run_security:
+        description: 'Run the security scan jobs (secrets, SAST, deps, Trivy)'
+        type: boolean
+        default: true
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -42,6 +80,9 @@ jobs:
   # ---------------------------------------------------------------------------
   verify:
     name: Lint, typecheck, test
+    # Runs on every trigger except when the kill switch is set. This is the job
+    # that actually catches broken code, so it is never tiered away.
+    if: vars.CI_DISABLED != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -96,6 +137,12 @@ jobs:
           key: turbo-${{ runner.os }}-${{ github.sha }}
           restore-keys: turbo-${{ runner.os }}-
 
+      # A BOM in package.json broke pnpm/action-setup with a JSON syntax error
+      # that pointed nowhere near the actual cause. CRLF in a `run: |` block
+      # fails in bash the same way. Both are trivially introduced from Windows.
+      - name: Encoding check (no BOM, no CRLF)
+        run: node scripts/check-encoding.mjs
+
       - name: Format check
         run: pnpm format:check
 
@@ -123,6 +170,13 @@ jobs:
   # ---------------------------------------------------------------------------
   secrets:
     name: Secret scan
+    # Tiered — see the minute-budget note at the top of this file.
+    if: >-
+      vars.CI_DISABLED != 'true' &&
+      ( github.event_name == 'pull_request'
+        || github.event_name == 'schedule'
+        || vars.CI_SECURITY_ALWAYS == 'true'
+        || (github.event_name == 'workflow_dispatch' && inputs.run_security) )
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -148,6 +202,12 @@ jobs:
   # ---------------------------------------------------------------------------
   sast:
     name: Static analysis
+    if: >-
+      vars.CI_DISABLED != 'true' &&
+      ( github.event_name == 'pull_request'
+        || github.event_name == 'schedule'
+        || vars.CI_SECURITY_ALWAYS == 'true'
+        || (github.event_name == 'workflow_dispatch' && inputs.run_security) )
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Deliberately NOT `container: semgrep/semgrep` — that image has no Node, so
@@ -202,6 +262,12 @@ jobs:
   # ---------------------------------------------------------------------------
   dependencies:
     name: Dependency audit
+    if: >-
+      vars.CI_DISABLED != 'true' &&
+      ( github.event_name == 'pull_request'
+        || github.event_name == 'schedule'
+        || vars.CI_SECURITY_ALWAYS == 'true'
+        || (github.event_name == 'workflow_dispatch' && inputs.run_security) )
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -237,10 +303,26 @@ jobs:
   # ---------------------------------------------------------------------------
   trivy:
     name: Trivy
+    if: >-
+      vars.CI_DISABLED != 'true' &&
+      ( github.event_name == 'pull_request'
+        || github.event_name == 'schedule'
+        || vars.CI_SECURITY_ALWAYS == 'true'
+        || (github.event_name == 'workflow_dispatch' && inputs.run_security) )
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+
+      # Trivy downloads a ~50MB vulnerability database on every cold run, which
+      # was the bulk of this job's billed time. Caching it cuts the job roughly
+      # in half.
+      - name: Cache Trivy database
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.trivycache
+          key: trivy-db-${{ github.run_id }}
+          restore-keys: trivy-db-
 
       # Pinned image, same reasoning as the gitleaks job above.
       #
@@ -253,11 +335,15 @@ jobs:
       # emits rego parse noise. Add it back with the IaC.
       - name: Trivy filesystem scan
         run: |
-          docker run --rm -v "${{ github.workspace }}:/repo" \
+          mkdir -p "${{ github.workspace }}/.trivycache"
+          docker run --rm \
+            -v "${{ github.workspace }}:/repo" \
+            -v "${{ github.workspace }}/.trivycache:/root/.cache/trivy" \
             aquasec/trivy:0.58.1 \
             fs /repo \
               --scanners vuln,secret \
               --severity HIGH,CRITICAL \
               --exit-code 1 \
               --ignore-unfixed \
+              --skip-dirs /repo/.trivycache \
               --no-progress

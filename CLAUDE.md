@@ -104,6 +104,14 @@ database behaviour; a mocked version would only prove the test agrees with itsel
 - **Tests ship with the slice.** A slice with untested authorization is not done.
 - **Comments explain why, not what.** Prefer a sentence about the failure mode being prevented
   over a restatement of the code.
+- **Never write repository files from PowerShell.** Windows PowerShell 5.1 corrupts them three
+  different ways: `Set-Content -Encoding utf8` adds a BOM (which broke CI — a BOM in
+  `package.json` makes `JSON.parse` throw), the default adds CRLF (which breaks `run: |` blocks
+  in bash), and `-Encoding ascii` silently replaces every non-ASCII character with a question
+  mark, so section references and em dashes in comments turn to punctuation soup. Use an editor,
+  or Node: `node -e "require('fs').writeFileSync('path', content, 'utf8')"`.
+  `pnpm check:encoding` catches all three, but not writing the corruption is cheaper than
+  repairing it.
 
 ---
 
