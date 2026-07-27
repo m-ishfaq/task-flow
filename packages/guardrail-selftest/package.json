@@ -1,0 +1,16 @@
+{
+  "name": "@taskflow/guardrail-selftest",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Proves the architectural guardrails in @taskflow/config actually fire. Not shipped.",
+  "scripts": {
+    "lint": "node verify.js",
+    "test": "node verify.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "eslint": "^9.17.0",
+    "typescript": "^5.7.2"
+  }
+}

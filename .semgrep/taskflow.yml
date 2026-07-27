@@ -1,0 +1,121 @@
+## Architecture-specific Semgrep rules.
+##
+## Deliberately narrow. Generic taint rules come from `--config auto`; these
+## encode invariants that only mean something in THIS codebase, which is where
+## the real risk lives, and the reason losing CodeQL on a private repo (see
+## PLAN.md 8.8) costs less than it sounds.
+##
+## Overlap with the ESLint guardrails is intentional. ESLint sees TypeScript;
+## Semgrep also sees SQL migrations, YAML, and Dockerfiles, where several of the
+## highest-impact mistakes actually happen.
+##
+## Path patterns are leading-slash anchored to the repo root on purpose. The
+## unanchored form is being reinterpreted in Semgrep's Gitignore-compatible path
+## handling, and a rule whose paths silently stop matching is a rule you believe
+## is protecting you while it scans nothing.
+##
+## Verified by scripts/verify-semgrep-rules.sh, which runs these rules against
+## deliberately-bad fixtures and asserts each one fires.
+
+rules:
+  # ---------------------------------------------------------------------------
+  # The single highest-impact mistake in the system: a tenant table without RLS.
+  # ESLint cannot see this, because it lives in .sql files.
+  # ---------------------------------------------------------------------------
+  - id: tenant-table-without-force-rls
+    languages: [generic]
+    severity: ERROR
+    paths:
+      include:
+        - '/packages/db/migrations/*.up.sql'
+        - '/.semgrep/fixtures/*.up.sql'
+    patterns:
+      - pattern: CREATE TABLE $SCHEMA.$TABLE ... org_id ...
+      - pattern-not-inside: |
+          ... FORCE ROW LEVEL SECURITY ...
+    message: >-
+      This migration creates a table with org_id but never applies
+      FORCE ROW LEVEL SECURITY. ENABLE alone does NOT protect against the table
+      owner, which is taskflow_migrator. Use tenantRlsPolicy() from
+      @taskflow/db and paste its output. See PLAN.md 8.3.
+
+  # ---------------------------------------------------------------------------
+  # The RLS predicate must use NULLIF. Without it an empty org context throws
+  # 22P02 (surfacing as a 500) instead of returning zero rows, and behaviour
+  # diverges depending on how the context was cleared.
+  # ---------------------------------------------------------------------------
+  - id: rls-policy-without-nullif
+    languages: [generic]
+    severity: ERROR
+    paths:
+      include:
+        - '/packages/db/migrations/*.sql'
+        - '/.semgrep/fixtures/*.sql'
+    patterns:
+      - pattern: current_setting('app.org_id', true)::uuid
+      - pattern-not-inside: NULLIF(current_setting('app.org_id', true), '')::uuid
+    message: >-
+      RLS predicate is missing NULLIF. An empty app.org_id raises 22P02 instead
+      of filtering to zero rows. Use
+      NULLIF(current_setting('app.org_id', true), '')::uuid. See PLAN.md 8.3.
+
+  # ---------------------------------------------------------------------------
+  # USING controls what a query can SEE; WITH CHECK controls what it may WRITE.
+  # A policy with only USING lets a caller insert rows stamped with another
+  # org's id: invisible to them afterwards, but present in the victim's data.
+  # ---------------------------------------------------------------------------
+  - id: rls-policy-without-with-check
+    languages: [generic]
+    severity: ERROR
+    paths:
+      include:
+        - '/packages/db/migrations/*.up.sql'
+        - '/.semgrep/fixtures/*.up.sql'
+    patterns:
+      # Metavariables are avoided here: in generic mode they match a single
+      # token, so $TABLE cannot span a dotted `work.cards`. Ellipsis matching is
+      # the reliable form. Verified by scripts/verify-semgrep-rules.mjs.
+      - pattern: CREATE POLICY ... USING ...
+      - pattern-not: CREATE POLICY ... WITH CHECK ...
+    message: >-
+      RLS policy defines USING but not WITH CHECK, so cross-tenant WRITES are
+      still possible. See PLAN.md 8.3.
+
+  # ---------------------------------------------------------------------------
+  # withGlobalScope bypasses tenant scoping by design. Legitimate only for
+  # genuinely pre-tenant operations, all of which live in identity.
+  # ---------------------------------------------------------------------------
+  - id: global-scope-outside-identity
+    languages: [typescript]
+    severity: ERROR
+    paths:
+      include:
+        - '/apps/**'
+        - '/packages/**'
+        - '/.semgrep/fixtures/**'
+      exclude:
+        - '/apps/api/src/auth/**'
+        - '/apps/api/src/modules/identity/**'
+        - '/packages/db/**'
+        - '**/*.test.ts'
+    pattern: withGlobalScope(...)
+    message: >-
+      withGlobalScope has no tenant scoping and is restricted to pre-tenant
+      operations (login by email, invitation tokens, public share links). If a
+      scoped query returned nothing, that is usually RLS working correctly and
+      the org context being wrong. Do not reach for this. See PLAN.md 8.3.
+
+## ---------------------------------------------------------------------------
+## Deferred to Phase 7 (Voice & Messaging):
+##
+##   twilio-webhook-without-signature-check - flag an inbound webhook handler in
+##   apps/api/src/modules/comms that parses the body without first calling
+##   validateTwilioSignature. Forged webhooks are the entry point to the most
+##   expensive failure mode in the system (PLAN.md 8.5).
+##
+## Deliberately NOT written speculatively. A rule authored against code that
+## does not exist cannot be tested, and a security rule believed to be running
+## while silently matching nothing is worse than no rule at all: the same
+## failure the guardrail self-test exists to prevent (PLAN.md 2.3). Write it in
+## Phase 7 against real handlers, with a fixture proving it fires.
+## ---------------------------------------------------------------------------

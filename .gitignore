@@ -1,0 +1,46 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+out/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# test + coverage
+coverage/
+playwright-report/
+test-results/
+.vitest/
+
+# env + secrets  (never commit — see PLAN.md §8.8)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!*.pub.key
+secrets.enc.yaml.dec
+
+# local infra state
+*.tfstate
+*.tfstate.*
+.terraform/
+!.terraform.lock.hcl
+docker/data/
+
+# editors / OS
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*

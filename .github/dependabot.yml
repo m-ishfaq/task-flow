@@ -1,0 +1,57 @@
+## Dependency updates.
+##
+## Dependabot rather than Renovate: free on private repos, and the grouping here
+## is simple enough not to need Renovate's expressiveness.
+##
+## Patch and minor updates for dev tooling are grouped into one weekly PR so
+## that reviewing them is a single task rather than twenty. Anything touching
+## security-critical surfaces (§2.2) is deliberately left ungrouped and
+## unmerged automatically — crypto, database driver, and auth libraries get read
+## individually.
+
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      dev-tooling:
+        patterns:
+          - 'eslint*'
+          - '@eslint/*'
+          - 'typescript-eslint'
+          - 'prettier*'
+          - 'vitest'
+          - '@vitest/*'
+          - 'turbo'
+          - 'tsx'
+        update-types:
+          - minor
+          - patch
+      types:
+        patterns:
+          - '@types/*'
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # Security-critical dependencies are reviewed one at a time, never in a
+      # grouped bulk PR. Dependabot still opens individual PRs for these.
+      - dependency-name: pg
+        update-types: ['version-update:semver-major']
+      - dependency-name: drizzle-orm
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns:
+          - '*'

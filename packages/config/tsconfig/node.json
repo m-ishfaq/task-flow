@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "TaskFlow Node (server apps + packages)",
+  "extends": "./base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node"],
+
+    /* ${configDir} resolves to the directory of the EXTENDING tsconfig (TS 5.5+).
+       Without it, these paths would resolve relative to this file's own location
+       inside packages/config, which is never what a consuming package wants. */
+    "outDir": "${configDir}/dist",
+    "rootDir": "${configDir}/src"
+  },
+  "include": ["${configDir}/src/**/*"]
+}

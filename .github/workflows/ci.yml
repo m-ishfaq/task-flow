@@ -1,0 +1,214 @@
+## CI gate suite (PLAN.md §11)
+##
+## Every job here must pass to merge. The security jobs are not advisory — a high
+## or critical finding fails the build, and there is no bypass flag.
+##
+## Budget note: this repository is private, so Actions minutes are metered
+## (§16). Linux runners only — Windows bills 2x and macOS 10x. Turborepo caching
+## keeps unchanged packages from rebuilding.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22.11.0'
+  PNPM_VERSION: '9.15.9'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Correctness — lint, types, unit + integration tests against real Postgres.
+  # ---------------------------------------------------------------------------
+  verify:
+    name: Lint, typecheck, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: taskflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d taskflow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://taskflow_app:app-dev-secret@localhost:5432/taskflow
+      DATABASE_MIGRATION_URL: postgresql://taskflow_migrator:migrator-dev-secret@localhost:5432/taskflow
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # The service container cannot mount our init scripts, so the roles and
+      # extensions are applied explicitly. Same files as local dev, so the two
+      # environments cannot drift.
+      - name: Initialize database roles and extensions
+        run: |
+          for f in docker/postgres/init/*.sql; do
+            echo "applying $f"
+            PGPASSWORD=postgres psql -h localhost -U postgres -d taskflow -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Cache Turborepo
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Lint, typecheck, test
+        run: pnpm verify
+
+      # Explicit, separate from `pnpm verify`, because a silently-dead guardrail
+      # is the failure this whole architecture is built to prevent (§2.3).
+      - name: Guardrail self-test
+        run: node packages/guardrail-selftest/verify.js
+
+      - name: Migrations are reversible (up -> down -> up)
+        run: pnpm --filter @taskflow/db migrate:verify
+
+      # Proves RLS isolates and fails closed against the real engine.
+      - name: RLS isolation probe
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d taskflow \
+            -v ON_ERROR_STOP=1 -f docker/postgres/rls-probe.sql
+
+  # ---------------------------------------------------------------------------
+  # Secrets. Runs first-class rather than as part of another job: a leaked
+  # credential needs to be visible even when the build is broken for other
+  # reasons.
+  # ---------------------------------------------------------------------------
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gitleaks needs history, not just the tip
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # Static analysis. Semgrep OSS stands in for CodeQL, which needs GitHub
+  # Advanced Security on private repos (§8.8). Custom rules matching this
+  # architecture matter more here than generic taint rules.
+  # ---------------------------------------------------------------------------
+  sast:
+    name: Static analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: semgrep/semgrep
+    env:
+      SEMGREP_IN_CONTAINER: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      # Runs BEFORE the real scan. The custom rules encode this project's
+      # highest-impact invariants (tenant tables without FORCE RLS, policies
+      # missing NULLIF or WITH CHECK), and a rule that silently matches nothing
+      # would leave the scan passing while protecting nothing.
+      - name: Verify custom rules actually fire
+        run: node scripts/verify-semgrep-rules.mjs
+
+      # .semgrep/fixtures is deliberately-wrong SQL used by the check above, so
+      # it must not count as a finding here.
+      - name: Semgrep
+        run: |
+          semgrep scan \
+            --config auto \
+            --config .semgrep/taskflow.yml \
+            --exclude '.semgrep/fixtures' \
+            --error \
+            --skip-unknown-extensions \
+            --metrics=off
+
+  # ---------------------------------------------------------------------------
+  # Dependencies. Fails on high or critical only — moderate findings in
+  # transitive dev dependencies would otherwise block every PR without
+  # improving anything.
+  # ---------------------------------------------------------------------------
+  dependencies:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: pnpm audit
+        run: pnpm audit --audit-level high
+
+      - name: OSV Scanner
+        uses: google/osv-scanner-action/osv-scanner-action@v1
+        with:
+          scan-args: |-
+            --lockfile=pnpm-lock.yaml
+
+  # ---------------------------------------------------------------------------
+  # Filesystem/config scan. Container and IaC scanning join this job once there
+  # are Dockerfiles and Terraform to scan (Phase 0B).
+  # ---------------------------------------------------------------------------
+  trivy:
+    name: Trivy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
