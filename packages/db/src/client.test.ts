@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import {
   closeDatabase,
@@ -8,6 +10,7 @@ import {
   type OrgId,
 } from './client.js';
 import { tenantRlsPolicy } from './rls.js';
+import { up } from './migrate/runner.js';
 import { sql } from 'drizzle-orm';
 
 /**
@@ -33,7 +36,41 @@ const ORG_B = '22222222-2222-2222-2222-222222222222' as OrgId;
 
 const TABLE = 'work.rls_client_probe';
 
+const MIGRATIONS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'migrations');
+
+/** SQLSTATE for "new row violates row-level security policy". */
+const RLS_VIOLATION = '42501';
+
+/**
+ * Walks the `cause` chain for a Postgres SQLSTATE.
+ *
+ * ORMs wrap driver errors, and how deeply they wrap changes between versions —
+ * drizzle 0.45 added a "Failed query: ..." wrapper that hid the original. Tests
+ * asserting on database behaviour should key off the code, which is stable.
+ */
+function pgErrorCode(error: unknown): string | undefined {
+  let current = error;
+  for (let depth = 0; depth < 5 && current !== null && current !== undefined; depth += 1) {
+    if (typeof current === 'object' && 'code' in current) {
+      const { code } = current;
+      if (typeof code === 'string') return code;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
 beforeAll(async () => {
+  // The probe table lives in the `work` schema, which migration 0001 creates.
+  // Applying migrations here rather than assuming a prepared database keeps this
+  // test hermetic: it passes against a fresh container with no manual setup, and
+  // does not depend on the order of steps in CI.
+  //
+  // This was a real failure — the test passed locally only because migrate:up
+  // had been run by hand earlier in the session, and failed on the first CI run
+  // with 'schema "work" does not exist'.
+  await up({ migrationUrl: MIGRATION_URL, migrationsDir: MIGRATIONS_DIR });
+
   const admin = new pg.Client({ connectionString: MIGRATION_URL });
   await admin.connect();
 
@@ -98,13 +135,17 @@ describe('withOrgScope', () => {
   it('refuses to write a row stamped with another org (WITH CHECK)', async () => {
     // USING filters what a query can SEE; WITH CHECK constrains what it may
     // WRITE. Without the latter, org A could insert rows into org B's data.
-    await expect(
-      withOrgScope(ORG_A, async (tx) =>
-        tx.execute(
-          sql`INSERT INTO work.rls_client_probe (org_id, data) VALUES (${ORG_B}, 'smuggled')`,
-        ),
+    const thrown: unknown = await withOrgScope(ORG_A, async (tx) =>
+      tx.execute(
+        sql`INSERT INTO work.rls_client_probe (org_id, data) VALUES (${ORG_B}, 'smuggled')`,
       ),
-    ).rejects.toThrow(/row-level security/i);
+    ).catch((error: unknown) => error);
+
+    // Asserted on SQLSTATE rather than the message. Drizzle 0.45 wraps driver
+    // errors as "Failed query: ..." and moves the Postgres text into `cause`,
+    // which silently broke a message-based assertion on upgrade. Codes are
+    // stable across ORM versions and locales; messages are not.
+    expect(pgErrorCode(thrown)).toBe(RLS_VIOLATION);
   });
 
   it('cannot update another org’s row', async () => {

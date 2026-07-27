@@ -118,12 +118,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # gitleaks needs history, not just the tip
+          fetch-depth: 0 # gitleaks scans history, not just the tip
 
+      # Run via a pinned image rather than the marketplace action.
+      # Marketplace action versions cannot be verified locally before pushing,
+      # and two of them (osv-scanner-action@v1, trivy-action@0.28.0) failed this
+      # workflow on first run with "unable to find version". A pinned image is
+      # testable with the exact same command on a laptop.
       - name: gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/repo" \
+            zricethezav/gitleaks:v8.21.2 \
+            detect --source=/repo --redact --verbose
 
   # ---------------------------------------------------------------------------
   # Static analysis. Semgrep OSS stands in for CodeQL, which needs GitHub
@@ -134,26 +140,45 @@ jobs:
     name: Static analysis
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    container:
-      image: semgrep/semgrep
+    # Deliberately NOT `container: semgrep/semgrep` — that image has no Node, so
+    # the rule verifier below cannot run inside it. Installing semgrep onto a
+    # standard runner gives both tools on one PATH.
     env:
-      SEMGREP_IN_CONTAINER: '1'
+      SEMGREP_ON_PATH: '1'
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install semgrep
+        run: pip install --quiet semgrep
 
       # Runs BEFORE the real scan. The custom rules encode this project's
       # highest-impact invariants (tenant tables without FORCE RLS, policies
       # missing NULLIF or WITH CHECK), and a rule that silently matches nothing
-      # would leave the scan passing while protecting nothing.
+      # would leave the scan green while protecting nothing.
       - name: Verify custom rules actually fire
         run: node scripts/verify-semgrep-rules.mjs
 
+      # Explicit rulesets rather than `--config auto`: auto resolves rules from
+      # the registry and REQUIRES metrics to be enabled, so it cannot be combined
+      # with --metrics=off. Naming the packs also keeps scans reproducible
+      # instead of silently changing when the registry does.
+      #
       # .semgrep/fixtures is deliberately-wrong SQL used by the check above, so
       # it must not count as a finding here.
       - name: Semgrep
         run: |
           semgrep scan \
-            --config auto \
+            --config p/typescript \
+            --config p/security-audit \
+            --config p/secrets \
             --config .semgrep/taskflow.yml \
             --exclude '.semgrep/fixtures' \
             --error \
@@ -184,14 +209,17 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # Covers dev dependencies, which Trivy deliberately skips. Suppressions
+      # live in package.json > pnpm.auditConfig.ignoreGhsas and must each be
+      # justified in ai/dependency-exceptions.md.
       - name: pnpm audit
         run: pnpm audit --audit-level high
 
-      - name: OSV Scanner
-        uses: google/osv-scanner-action/osv-scanner-action@v1
-        with:
-          scan-args: |-
-            --lockfile=pnpm-lock.yaml
+      # OSV-Scanner was dropped here rather than fixed. It scans the same
+      # pnpm-lock.yaml that `pnpm audit` already covers, so it added a third
+      # overlapping npm advisory source while Trivy (next job) covers runtime
+      # dependencies, secrets, and — once there is IaC — misconfiguration.
+      # Reconsider if we ever add a non-npm ecosystem.
 
   # ---------------------------------------------------------------------------
   # Filesystem/config scan. Container and IaC scanning join this job once there
@@ -204,11 +232,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Pinned image, same reasoning as the gitleaks job above.
+      #
+      # Trivy suppresses dev dependencies by design, so this complements rather
+      # than duplicates `pnpm audit`: Trivy covers what ships, pnpm audit covers
+      # the toolchain.
+      #
+      # `misconfig` is intentionally omitted until there are Dockerfiles and
+      # Terraform to scan (Phase 0B) — today it finds zero config files and only
+      # emits rego parse noise. Add it back with the IaC.
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: fs
-          scan-ref: .
-          severity: HIGH,CRITICAL
-          exit-code: '1'
-          ignore-unfixed: true
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/repo" \
+            aquasec/trivy:0.58.1 \
+            fs /repo \
+              --scanners vuln,secret \
+              --severity HIGH,CRITICAL \
+              --exit-code 1 \
+              --ignore-unfixed \
+              --no-progress

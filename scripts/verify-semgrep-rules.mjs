@@ -12,7 +12,9 @@
  * produce no findings, so the rules are not merely matching everything.
  *
  * Usage: node scripts/verify-semgrep-rules.mjs
- * Requires Docker (CI runs semgrep directly in a container instead).
+ *
+ * Runs semgrep via Docker locally. Set SEMGREP_ON_PATH=1 when semgrep is already
+ * installed (as CI does) to invoke it directly instead.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -24,7 +26,7 @@ const EXPECTED_ON_FIXTURE = [
   'rls-policy-without-with-check',
 ];
 
-const useDocker = process.env.SEMGREP_IN_CONTAINER !== '1';
+const useDocker = process.env.SEMGREP_ON_PATH !== '1';
 
 const command = useDocker ? 'docker' : 'semgrep';
 const args = useDocker
