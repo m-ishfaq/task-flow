@@ -1,0 +1,33 @@
+# Gitleaks configuration (PLAN.md §8.8).
+#
+# The default ruleset, plus the narrowest possible allowlist. Read the next
+# paragraph before adding anything here.
+#
+# An allowlist entry is a permanent hole in secret scanning, and the usual way
+# this file rots is a path exclusion added under deadline pressure — `paths = [
+# "packages/security" ]` silences one false positive and every real credential
+# that ever lands in that directory afterwards. So entries here allowlist a
+# specific VALUE, never a file or a directory, and each one says why the value
+# is not a secret.
+#
+# The first question for any new finding is whether the code can stop producing
+# it. `packages/security/src/breach.test.ts` now derives the hash below at
+# runtime instead of pasting it; this entry exists only because the pasted
+# version is already in a commit, and gitleaks scans history.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "SHA-1 of the literal string 'password' — public test data, not a credential"
+
+# The full digest and the 35-character k-anonymity suffix of it.
+#
+# This is SHA-1("password"), the example used in every HIBP integration guide
+# and the first entry in every breach corpus. It appears in the breach-check
+# test as the stub server's response. It is high-entropy hex, which is why
+# `generic-api-key` flags it, and it grants access to precisely nothing.
+regexes = [
+  '''5BAA61E4C9B93F3F0682250B6CF8331B7EE68FD8''',
+  '''1E4C9B93F3F0682250B6CF8331B7EE68FD8''',
+]

@@ -193,7 +193,7 @@ jobs:
         run: |
           docker run --rm -v "${{ github.workspace }}:/repo" \
             zricethezav/gitleaks:v8.21.2 \
-            detect --source=/repo --redact --verbose
+            detect --source=/repo --config=/repo/.gitleaks.toml --redact --verbose
 
   # ---------------------------------------------------------------------------
   # Static analysis. Semgrep OSS stands in for CodeQL, which needs GitHub
@@ -250,7 +250,8 @@ jobs:
             --config p/security-audit \
             --config p/secrets \
             --config .semgrep/taskflow.yml \
-            --exclude '.semgrep/fixtures' \n            --exclude 'packages/guardrail-selftest' \
+            --exclude '.semgrep/fixtures' \
+            --exclude 'packages/guardrail-selftest' \
             --error \
             --skip-unknown-extensions \
             --metrics=off

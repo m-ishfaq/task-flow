@@ -275,6 +275,41 @@ if (process.argv.includes('--full')) {
     'zricethezav/gitleaks:v8.21.2',
     'detect',
     '--source=/repo',
+    // Explicit rather than relying on gitleaks finding .gitleaks.toml itself,
+    // so a reader debugging a finding can see that an allowlist exists.
+    '--config=/repo/.gitleaks.toml',
+    '--redact',
+  ]);
+
+  /**
+   * Staged changes, which the history scan above cannot see.
+   *
+   * `detect` walks COMMITS. Everything still in the working tree is invisible
+   * to it, so this whole section can report a clean secret scan for code that
+   * is about to introduce a credential — which is exactly what happened: a
+   * high-entropy test constant passed preflight while uncommitted, and failed
+   * CI on the very next push, because by then it was history.
+   *
+   * `protect --staged` scans what `git add` has picked up. It runs in about
+   * 200ms and inherits git's view of the repository, so node_modules and a
+   * developer's real `.env` are excluded for free — a plain `--no-git`
+   * directory walk takes nearly two minutes and reports that `.env` every time,
+   * which is the kind of check people learn to ignore.
+   *
+   * It proves nothing when nothing is staged. That is honest rather than
+   * useless: `git add -A && node scripts/preflight.mjs --full` is the sequence
+   * that actually checks a commit before it exists.
+   */
+  check('gitleaks (staged changes)', 'docker', [
+    'run',
+    '--rm',
+    '-v',
+    `${workspace}:/repo`,
+    'zricethezav/gitleaks:v8.21.2',
+    'protect',
+    '--staged',
+    '--source=/repo',
+    '--config=/repo/.gitleaks.toml',
     '--redact',
   ]);
 

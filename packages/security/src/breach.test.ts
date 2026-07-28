@@ -1,9 +1,23 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { checkPasswordBreached } from './breach.js';
 
-/** SHA-1('password') = 5BAA61E4C9B93F3F0682250B6CF8331B7EE68FD8 */
-const PASSWORD_PREFIX = '5BAA6';
-const PASSWORD_SUFFIX = '1E4C9B93F3F0682250B6CF8331B7EE68FD8';
+/**
+ * The k-anonymity split of SHA-1('password'), computed rather than pasted.
+ *
+ * Two reasons it is derived here. It documents the split HIBP actually uses —
+ * five characters go over the wire, thirty-five stay local — instead of leaving
+ * a reader to trust that someone typed a forty-character constant correctly.
+ * And a hardcoded hash is a high-entropy hex literal, which every secret scanner
+ * reports as a leaked credential: the pasted version failed CI on
+ * `generic-api-key`, and the fix for a false positive should be to stop
+ * producing it rather than to teach the scanner to look away.
+ *
+ * `node:crypto` is legal here; this IS packages/security.
+ */
+const PASSWORD_SHA1 = createHash('sha1').update('password').digest('hex').toUpperCase();
+const PASSWORD_PREFIX = PASSWORD_SHA1.slice(0, 5);
+const PASSWORD_SUFFIX = PASSWORD_SHA1.slice(5);
 
 interface Recorded {
   readonly url: string;
