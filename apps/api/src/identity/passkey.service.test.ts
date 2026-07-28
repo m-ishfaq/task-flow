@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { closeDatabase, initializeDatabase } from '@taskflow/db';
+import { connectAsMigrator } from '@taskflow/db/testing';
 import { newId, relyingPartyFrom } from '@taskflow/security';
 import { VirtualAuthenticator } from '@taskflow/security/testing';
 import { buildServer } from '../server.js';
@@ -25,6 +26,24 @@ let app: FastifyInstance;
 const deliveries: DeliverableLink[] = [];
 
 beforeAll(async () => {
+  /* Remove what previous runs left behind.
+   *
+   * This suite reuses fixed addresses, and nothing deleted them, so `register`
+   * failed as a duplicate on the second run while `login` happily signed in as
+   * the EXISTING account — which already had a passkey enrolled. Each run added
+   * one more, and "lists it back" counted 1, then 2, then 3. It failed about two
+   * runs in three, looked like flakiness, and was really a fixture that had been
+   * accumulating state since the first time it ran.
+   *
+   * Credentials and challenges cascade from the user row (migration 0003), so
+   * deleting the users is enough.
+   */
+  const admin = await connectAsMigrator();
+  await admin.query(
+    `DELETE FROM identity.users WHERE email_normalized LIKE 'passkey-%@example.test'`,
+  );
+  await admin.end();
+
   initializeDatabase({ url: TEST_ENV.DATABASE_URL, applicationName: 'passkey-test' });
   app = await buildServer({
     env: TEST_ENV,

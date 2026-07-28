@@ -30,6 +30,13 @@ export {
 } from './roles.js';
 
 export {
+  isIndispensableRole,
+  isDirectlyAssignable,
+  sameRole,
+  DIRECTLY_ASSIGNABLE_ROLES,
+} from './assignment.js';
+
+export {
   RELATIONS,
   relationGrants,
   isRestrictive,

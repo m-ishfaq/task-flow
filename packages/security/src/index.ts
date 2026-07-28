@@ -93,3 +93,12 @@ export {
   type RelyingParty,
   type StoredCredential,
 } from './webauthn.js';
+
+export {
+  auditEntryHash,
+  verifyAuditChain,
+  type AuditChainEntry,
+  type ChainBreak,
+  type ChainVerification,
+  type StoredAuditEntry,
+} from './audit-chain.js';

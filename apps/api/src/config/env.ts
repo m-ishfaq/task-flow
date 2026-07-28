@@ -77,6 +77,18 @@ export const EnvSchema = z
     DATABASE_URL: NonEmpty,
     DATABASE_POOL_MAX: z.coerce.number().int().positive().max(100).default(10),
 
+    /* A THIRD role, for the audit projection (§8.6). taskflow_audit holds
+       INSERT and SELECT on audit.audit_log and no UPDATE or DELETE anywhere, so
+       the compliance record cannot be rewritten even by the process that writes
+       it.
+
+       Optional, and the consequence of omitting it is deliberately loud rather
+       than silent: `withAuditScope` throws instead of falling back to the
+       application role, which could not write an audit entry anyway. An API
+       instance that only serves requests does not need it; the one running the
+       outbox relay does. */
+    DATABASE_AUDIT_URL: NonEmpty.optional(),
+
     MASTER_KEY_ID: NonEmpty,
     MASTER_KEY_BASE64: Base64Key,
     JWT_SECRET: Base64Key,

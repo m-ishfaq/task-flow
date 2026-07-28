@@ -22,9 +22,25 @@
  *           setting instead of raising.
  */
 
+/** The tenant predicate for a given column. */
+export function tenantPredicate(column = 'org_id'): string {
+  return `${column} = NULLIF(current_setting('app.org_id', true), '')::uuid`;
+}
+
 /** The canonical predicate. Identical on every tenant table. */
-export const TENANT_RLS_PREDICATE =
-  "org_id = NULLIF(current_setting('app.org_id', true), '')::uuid";
+export const TENANT_RLS_PREDICATE = tenantPredicate();
+
+export interface TenantRlsOptions {
+  /**
+   * The column holding the tenant id, when it is not `org_id`.
+   *
+   * Exactly one table needs this: `identity.orgs`, where the tenant IS the row
+   * and the column is therefore `id`. Adding an `org_id` column duplicating the
+   * primary key would satisfy the convention and introduce a way for the two to
+   * disagree, which is worse than a named exception in one place.
+   */
+  readonly column?: string;
+}
 
 /**
  * Full RLS setup for one tenant table.
@@ -32,18 +48,42 @@ export const TENANT_RLS_PREDICATE =
  * @param schema  schema name, e.g. 'work'
  * @param table   table name, e.g. 'cards'
  */
-export function tenantRlsPolicy(schema: string, table: string): string {
+export function tenantRlsPolicy(schema: string, table: string, options?: TenantRlsOptions): string {
   const qualified = `${schema}.${table}`;
   const policy = `${table}_tenant_isolation`;
+  const predicate = tenantPredicate(options?.column);
 
   return [
     `ALTER TABLE ${qualified} ENABLE ROW LEVEL SECURITY;`,
     `ALTER TABLE ${qualified} FORCE  ROW LEVEL SECURITY;`,
     `DROP POLICY IF EXISTS ${policy} ON ${qualified};`,
     `CREATE POLICY ${policy} ON ${qualified}`,
-    `  USING (${TENANT_RLS_PREDICATE})`,
-    `  WITH CHECK (${TENANT_RLS_PREDICATE});`,
+    `  USING (${predicate})`,
+    `  WITH CHECK (${predicate});`,
   ].join('\n');
+}
+
+/**
+ * The predicate for a row belonging to the CURRENT USER, across every org.
+ *
+ * A second session variable, `app.user_id`, set by `withUserScope`. It exists
+ * for exactly one question that cannot be asked inside an org scope: "which
+ * organizations am I a member of?" — the org switcher. Answering it requires
+ * reading rows in orgs the caller has not selected, so no value of `app.org_id`
+ * is correct.
+ *
+ * Two properties keep this from being a hole in guardrail 3:
+ *
+ *   - Policies built on it are `FOR SELECT` ONLY. A WITH CHECK on `user_id`
+ *     would let a caller INSERT their own membership into any organization —
+ *     self-service admission to every tenant, written as a read convenience.
+ *   - `withOrgScope` and `withUserScope` each set BOTH variables, one to a value
+ *     and the other to the empty string. Postgres ORs permissive policies
+ *     together, so an inherited `app.user_id` surviving into an org-scoped
+ *     transaction would widen that transaction beyond its org.
+ */
+export function selfPredicate(column = 'user_id'): string {
+  return `${column} = NULLIF(current_setting('app.user_id', true), '')::uuid`;
 }
 
 /**
