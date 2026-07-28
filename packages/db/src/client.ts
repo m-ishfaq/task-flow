@@ -1,6 +1,7 @@
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
+import type { OrgId } from '@taskflow/contracts';
 
 /**
  * The tenant-scoped data layer — guardrail 2 (PLAN.md §2.1, §8.3).
@@ -26,8 +27,14 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-/** Branded so an arbitrary string cannot be passed as an org identifier. */
-export type OrgId = string & { readonly __brand: 'OrgId' };
+/**
+ * Re-exported from @taskflow/contracts rather than defined here.
+ *
+ * A locally-declared `OrgId` would be structurally distinct from the shared one,
+ * so an id parsed at the API boundary would not be assignable here — and the
+ * usual fix for that is a cast, which defeats guardrail 1 entirely.
+ */
+export type { OrgId } from '@taskflow/contracts';
 
 export interface DbConfig {
   /** Connection string for the RLS-enforced application role. */

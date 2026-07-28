@@ -11,6 +11,11 @@
  * fails CI instead of merely producing fewer errors.
  */
 
+/* 10 — reaching for node:crypto outside packages/security (guardrail 5 / §8.4).
+   Placed here because import declarations must lead the module; the assertion
+   for it lives with the others in verify.js. */
+import { randomBytes } from 'node:crypto';
+
 interface Membership {
   role: string;
   orgId: string;
@@ -55,3 +60,14 @@ export function loose(input: any): unknown {
 /* 9 — ts-ignore (guardrail 7) */
 // @ts-ignore
 export const bad: number = 'not a number';
+
+/* 10 — hand-rolled crypto: an 8-byte session token is 64 bits, and the ban is
+   what stops this being written at all (see the import above). */
+export const weakSessionId = randomBytes(8).toString('hex');
+
+/* 11 — withGlobalScope outside the identity module (§8.3).
+   Runs with no tenant context, so a query against a tenant table inside it
+   returns zero rows — which reads as "no data", not "wrong scope". */
+declare const withGlobalScope: (fn: (tx: unknown) => Promise<unknown>) => Promise<unknown>;
+
+export const unscoped = withGlobalScope(async () => Promise.resolve([]));

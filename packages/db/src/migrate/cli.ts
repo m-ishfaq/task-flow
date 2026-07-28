@@ -12,12 +12,26 @@
  * ability to drop its own RLS policies (§8.3).
  */
 
+import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { down, status, up, verify, type RunnerOptions } from './runner.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const migrationsDir = resolve(here, '..', '..', 'migrations');
+
+/**
+ * Load the repo-root .env, which is what CLAUDE.md and .env.example tell a
+ * developer to create.
+ *
+ * `loadEnvFile` follows `--env-file` semantics and does NOT overwrite variables
+ * already present, so a deployed environment's injected secrets always win over
+ * a stray file. That ordering is the whole reason this is safe to do here.
+ */
+const envFile = resolve(here, '..', '..', '..', '..', '.env');
+if (existsSync(envFile)) {
+  process.loadEnvFile(envFile);
+}
 
 const migrationUrl = process.env['DATABASE_MIGRATION_URL'];
 if (!migrationUrl) {

@@ -24,6 +24,8 @@
  * eslint-disable for these rules.
  */
 
+import { requireDomainEvent } from './rules/require-domain-event.js';
+
 const ref = (section) => `See PLAN.md ${section}.`;
 
 /* ------------------------------------------------------------------------- *
@@ -79,7 +81,24 @@ const BANS = {
     message: `Authorization must go through can() from @taskflow/policy. ${ref('§8.2')}`,
   },
 
-  /* --- Exempt: packages/db ---------------------------------------------- */
+  /* --- Exempt: packages/db, apps/api/src/identity ----------------------- */
+
+  /**
+   * `withGlobalScope` runs with NO tenant context, so every RLS policy filters
+   * to zero rows. That makes it safe for the genuinely pre-tenant operations —
+   * looking a user up by email at login, resolving an invitation — and a trap
+   * everywhere else: a query written against a tenant table inside it silently
+   * returns nothing, which reads as "no data" rather than "wrong scope".
+   *
+   * The comment on `withGlobalScope` has claimed this was lint-restricted since
+   * it was written. It was not, until the identity slice needed it and the claim
+   * was checked. Documented intent is not a guardrail.
+   */
+  globalScope: {
+    selector: "CallExpression[callee.name='withGlobalScope']",
+    message: `withGlobalScope has NO tenant context — every RLS policy filters to zero rows. It exists for pre-tenant operations only (login by email, invitation resolution) and is restricted to the identity module. Use withOrgScope. ${ref('§8.3')}`,
+  },
+
   rawSqlTag: {
     selector: "TaggedTemplateExpression[tag.name='sql']",
     message: `Raw SQL belongs in packages/db. Elsewhere it bypasses tenant scoping and is an injection surface. ${ref('§8.3, §8.7')}`,
@@ -100,6 +119,7 @@ const restrictedSyntax = (...exempt) => [
 
 const ROLE_BANS = ['roleMember', 'roleIdentifier', 'roleMembership'];
 const SQL_BANS = ['rawSqlTag', 'rawSqlMember'];
+const TEST_BANS = ['mathRandom', 'bareEnv'];
 
 /* ------------------------------------------------------------------------- *
  * Guardrail 2 — no raw database access outside packages/db
@@ -115,6 +135,39 @@ const dbImportBans = [
   },
 ];
 
+/* ------------------------------------------------------------------------- *
+ * Guardrail 7 — cryptography lives in packages/security
+ *
+ * The `Math.random()` ban above is only half of this one. The other half
+ * is the code that reaches for `node:crypto` directly and gets it subtly wrong:
+ * an IV that is a counter, a `===` on a token, `createHash('md5')`, a
+ * `randomBytes(8)` session id. Every one of those produces working software, so
+ * none of them fails a test or looks wrong in a diff.
+ *
+ * Concentrating the primitives means there is exactly one file to audit per
+ * concern, and that file is on the human-review list (§2.2).
+ * ------------------------------------------------------------------------- */
+const cryptoImportBan = {
+  group: ['crypto', 'node:crypto'],
+  message: `Cryptographic primitives belong in @taskflow/security, which is reviewed as a security surface. Import what you need from there; if it is missing, add it there. ${ref('§2.1 guardrail 7, §8.4')}`,
+};
+
+/* ------------------------------------------------------------------------- *
+ * Guardrail 11 — mandatory domain events.
+ *
+ * Scoped to service files. Repositories, migrations, and seeds mutate without
+ * emitting by design, and a rule that fired there would be noise people learn to
+ * ignore. See the rule module for what it deliberately cannot check.
+ * ------------------------------------------------------------------------- */
+const domainEvents = {
+  name: 'taskflow/guardrails/domain-events',
+  files: ['**/services/**/*.ts', '**/*.service.ts'],
+  // A service test constructs mutations to assert on them and emits nothing.
+  ignores: ['**/*.test.ts', '**/*.spec.ts'],
+  plugins: { taskflow: { rules: { 'require-domain-event': requireDomainEvent } } },
+  rules: { 'taskflow/require-domain-event': 'error' },
+};
+
 export const security = [
   /* ---------------------------------------------------------------------- *
    * 1. Baseline — all guardrails, all files.
@@ -123,7 +176,7 @@ export const security = [
     name: 'taskflow/guardrails/all',
     rules: {
       'no-restricted-syntax': restrictedSyntax(),
-      'no-restricted-imports': ['error', { patterns: dbImportBans }],
+      'no-restricted-imports': ['error', { patterns: [...dbImportBans, cryptoImportBan] }],
     },
   },
 
@@ -141,6 +194,7 @@ export const security = [
         {
           patterns: [
             ...dbImportBans,
+            cryptoImportBan,
             {
               group: ['@taskflow/db', '@taskflow/db/**'],
               message: 'The browser never talks to the database. Use the tRPC client.',
@@ -154,6 +208,12 @@ export const security = [
       ],
     },
   },
+
+  /* ---------------------------------------------------------------------- *
+   * 3. Guardrail 11. Its own rule id, so the exemption blocks below — which
+   *    only replace `no-restricted-syntax` — cannot switch it off by accident.
+   * ---------------------------------------------------------------------- */
+  domainEvents,
 
   /* ---------------------------------------------------------------------- *
    * EXEMPTIONS — must come last (later config wins).
@@ -170,13 +230,30 @@ export const security = [
   /* packages/db owns raw SQL (RLS policies, migrations, hand-tuned aggregates)
      AND the driver itself. The import ban exists to stop everyone ELSE from
      reaching past the tenant-scoped client; the data layer is the thing being
-     protected, not a violator of it. Role comparisons remain banned here. */
+     protected, not a violator of it. Role comparisons remain banned here.
+
+     Turning the import rule off also permits node:crypto, which the migration
+     runner uses to checksum migration files — an integrity check on our own
+     source tree, not a security primitive, and nothing @taskflow/security should
+     grow an API for. */
   {
     name: 'taskflow/guardrails/exempt-db',
     files: ['packages/db/**'],
     rules: {
-      'no-restricted-syntax': restrictedSyntax(...SQL_BANS),
+      'no-restricted-syntax': restrictedSyntax(...SQL_BANS, 'globalScope'),
       'no-restricted-imports': 'off',
+    },
+  },
+
+  /* packages/security IS the crypto boundary. Banning node:crypto here would ban
+     the module from doing the one job it exists for. Every other guardrail still
+     applies — in particular Math.random() stays banned, because "we are the
+     crypto package" is not a reason to use a non-cryptographic PRNG. */
+  {
+    name: 'taskflow/guardrails/exempt-security',
+    files: ['packages/security/**'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: dbImportBans }],
     },
   },
 
@@ -204,7 +281,7 @@ export const security = [
     name: 'taskflow/guardrails/exempt-tests',
     files: ['**/*.test.ts', '**/*.spec.ts', '**/test/**', '**/__fixtures__/**'],
     rules: {
-      'no-restricted-syntax': restrictedSyntax('mathRandom', 'bareEnv'),
+      'no-restricted-syntax': restrictedSyntax(...TEST_BANS),
       '@typescript-eslint/no-non-null-assertion': 'off',
     },
   },
@@ -225,8 +302,27 @@ export const security = [
     name: 'taskflow/guardrails/exempt-db-tests',
     files: ['packages/db/**/*.test.ts', 'packages/db/**/*.spec.ts'],
     rules: {
-      'no-restricted-syntax': restrictedSyntax(...SQL_BANS, 'mathRandom', 'bareEnv'),
+      'no-restricted-syntax': restrictedSyntax(...SQL_BANS, 'globalScope', ...TEST_BANS),
       'no-restricted-imports': 'off',
+      '@typescript-eslint/no-non-null-assertion': 'off',
+    },
+  },
+  /* The identity module is the one consumer of withGlobalScope outside the data
+     layer, and the reason it exists: registration, login, verification links and
+     refresh exchange all happen before any organization is known. Everything
+     else here — raw SQL, role comparisons, Math.random — stays banned. */
+  {
+    name: 'taskflow/guardrails/exempt-identity',
+    files: ['apps/api/src/identity/**'],
+    rules: { 'no-restricted-syntax': restrictedSyntax('globalScope') },
+  },
+  {
+    name: 'taskflow/guardrails/exempt-identity-tests',
+    files: ['apps/api/src/identity/**/*.test.ts', 'apps/api/src/identity/**/*.spec.ts'],
+    rules: {
+      // Integration tests here read the database directly to assert on stored
+      // state — that a token column holds a hash and not the token.
+      'no-restricted-syntax': restrictedSyntax('globalScope', ...SQL_BANS, ...TEST_BANS),
       '@typescript-eslint/no-non-null-assertion': 'off',
     },
   },
@@ -234,22 +330,10 @@ export const security = [
     name: 'taskflow/guardrails/exempt-policy-tests',
     files: ['packages/policy/**/*.test.ts', 'packages/policy/**/*.spec.ts'],
     rules: {
-      'no-restricted-syntax': restrictedSyntax(...ROLE_BANS, 'mathRandom', 'bareEnv'),
+      'no-restricted-syntax': restrictedSyntax(...ROLE_BANS, ...TEST_BANS),
       '@typescript-eslint/no-non-null-assertion': 'off',
     },
   },
 ];
-
-/* ------------------------------------------------------------------------- *
- * TODO(0B) — Guardrail 11: mandatory domain events.
- *
- * "A service method that mutates state without emitting a typed event from
- * @taskflow/events fails lint." This needs a custom rule with type information
- * (detect a write through db.forOrg(...) in a function whose body never calls
- * events.emit). Stock selectors cannot express it.
- *
- * Lands in Phase 0B alongside packages/events, as a local plugin at
- * packages/config/eslint/rules/require-domain-event.js.
- * ------------------------------------------------------------------------- */
 
 export default security;

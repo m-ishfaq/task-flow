@@ -59,18 +59,72 @@ check('encoding (no BOM, no CRLF)', 'node', ['scripts/check-encoding.mjs']);
 
 // Every JSON file must parse. A BOM in package.json already broke CI once, and
 // the resulting error pointed at JSON syntax rather than at the byte prefix.
-const jsonFiles = [
-  'package.json',
-  'tsconfig.json',
-  'turbo.json',
-  '.github/dependabot.yml',
-  'packages/config/package.json',
-  'packages/db/package.json',
-  'packages/db/tsconfig.json',
-  'packages/observability/package.json',
-  'packages/feature-flags/package.json',
-  'packages/guardrail-selftest/package.json',
-].filter((f) => f.endsWith('.json'));
+//
+// DISCOVERED, never listed. This was a hardcoded array of ten paths, and it
+// stayed at ten while five new packages were added — so the check reported
+// success over files it had never opened. A hand-maintained list of things to
+// verify decays silently, and always toward less coverage; the same reasoning
+// drives the router manifest behind guardrail 8.
+function findJsonFiles(dir, found = []) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name === 'coverage') {
+      continue;
+    }
+    if (entry.name.startsWith('.') && entry.name !== '.github') continue;
+
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      findJsonFiles(path, found);
+    } else if (entry.name.endsWith('.json')) {
+      found.push(path);
+    }
+  }
+  return found;
+}
+
+const jsonFiles = findJsonFiles('.');
+
+/**
+ * Strips comments and trailing commas so tsconfig files can be checked too.
+ *
+ * They are JSONC by specification, and `JSON.parse` rejects them — which the
+ * previous hardcoded list hid by simply never including them. Character-by-
+ * character rather than a regex, because `"https://example.com"` contains `//`
+ * and a naive strip would corrupt the very files it claims to validate.
+ */
+function stripJsonc(text) {
+  let out = '';
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+
+    if (inString) {
+      out += char;
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      out += char;
+    } else if (char === '/' && text[i + 1] === '/') {
+      while (i < text.length && text[i] !== '\n') i += 1;
+      out += '\n';
+    } else if (char === '/' && text[i + 1] === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i += 1;
+      i += 1;
+    } else {
+      out += char;
+    }
+  }
+
+  return out.replace(/,(\s*[}\]])/g, '$1');
+}
 
 let jsonOk = true;
 const jsonErrors = [];
@@ -81,7 +135,7 @@ for (const file of jsonFiles) {
     continue;
   }
   try {
-    JSON.parse(readFileSync(file, 'utf8'));
+    JSON.parse(stripJsonc(readFileSync(file, 'utf8')));
   } catch (error) {
     jsonOk = false;
     jsonErrors.push(`${file}: ${error instanceof Error ? error.message : String(error)}`);
@@ -221,6 +275,41 @@ if (process.argv.includes('--full')) {
     'zricethezav/gitleaks:v8.21.2',
     'detect',
     '--source=/repo',
+    // Explicit rather than relying on gitleaks finding .gitleaks.toml itself,
+    // so a reader debugging a finding can see that an allowlist exists.
+    '--config=/repo/.gitleaks.toml',
+    '--redact',
+  ]);
+
+  /**
+   * Staged changes, which the history scan above cannot see.
+   *
+   * `detect` walks COMMITS. Everything still in the working tree is invisible
+   * to it, so this whole section can report a clean secret scan for code that
+   * is about to introduce a credential — which is exactly what happened: a
+   * high-entropy test constant passed preflight while uncommitted, and failed
+   * CI on the very next push, because by then it was history.
+   *
+   * `protect --staged` scans what `git add` has picked up. It runs in about
+   * 200ms and inherits git's view of the repository, so node_modules and a
+   * developer's real `.env` are excluded for free — a plain `--no-git`
+   * directory walk takes nearly two minutes and reports that `.env` every time,
+   * which is the kind of check people learn to ignore.
+   *
+   * It proves nothing when nothing is staged. That is honest rather than
+   * useless: `git add -A && node scripts/preflight.mjs --full` is the sequence
+   * that actually checks a commit before it exists.
+   */
+  check('gitleaks (staged changes)', 'docker', [
+    'run',
+    '--rm',
+    '-v',
+    `${workspace}:/repo`,
+    'zricethezav/gitleaks:v8.21.2',
+    'protect',
+    '--staged',
+    '--source=/repo',
+    '--config=/repo/.gitleaks.toml',
     '--redact',
   ]);
 
@@ -263,6 +352,10 @@ if (process.argv.includes('--full')) {
     '.semgrep/taskflow.yml',
     '--exclude',
     '.semgrep/fixtures',
+    // Every file here is a deliberate violation; that is the point of the
+    // package. Asserted by packages/guardrail-selftest, not by this scan.
+    '--exclude',
+    'packages/guardrail-selftest',
     '--error',
     '--skip-unknown-extensions',
     '--metrics=off',

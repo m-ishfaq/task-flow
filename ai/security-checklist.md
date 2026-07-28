@@ -56,7 +56,7 @@ Derived from PLAN.md §8. Ordered by how often each item is actually the thing t
 
 ## Before merging to a human-review surface
 
-`packages/policy` · `packages/db` · `packages/security` · `apps/api/src/auth` · webhook
+`packages/policy` · `packages/db` · `packages/security` · `apps/api/src/identity` · webhook
 verification · file handling · telephony spend:
 
 - [ ] Read every line yourself — not a skim.

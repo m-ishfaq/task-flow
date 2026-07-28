@@ -1,0 +1,158 @@
+import { describe, expect, it } from 'vitest';
+import { MailQueue } from './queue.js';
+import { MemoryMailer, type OutboundMessage } from './transport.js';
+
+/**
+ * The mail worker (PLAN.md §8.1).
+ *
+ * The property under test is mostly about TIMING, not delivery: enqueueing must
+ * cost the same whether or not there is anything to send, because the caller —
+ * `requestPasswordReset` — answers identically for a known and an unknown
+ * address and would otherwise leak the difference in its response time.
+ */
+
+const MESSAGE: OutboundMessage = {
+  to: 'user@example.test',
+  subject: 'Confirm your TaskFlow email address',
+  text: 'link',
+  html: '<p>link</p>',
+};
+
+/** No real delay, so backoff can be exercised without waiting for it. */
+const instant = (): Promise<void> => Promise.resolve();
+
+describe('delivery', () => {
+  it('sends what is queued', async () => {
+    const mailer = new MemoryMailer();
+    const queue = new MailQueue({ mailer, sleep: instant });
+
+    queue.enqueue(MESSAGE);
+    await queue.drain();
+
+    expect(mailer.sent).toHaveLength(1);
+    expect(mailer.sent[0]?.to).toBe('user@example.test');
+  });
+
+  it('preserves order', async () => {
+    const mailer = new MemoryMailer();
+    const queue = new MailQueue({ mailer, sleep: instant });
+
+    for (const n of [1, 2, 3]) queue.enqueue({ ...MESSAGE, subject: `m${String(n)}` });
+    await queue.drain();
+
+    expect(mailer.sent.map((message) => message.subject)).toEqual(['m1', 'm2', 'm3']);
+  });
+
+  it('returns from enqueue before anything is sent', () => {
+    /* The timing property. If enqueue awaited delivery, requestPasswordReset
+       would take measurably longer for an address that exists than for one that
+       does not — a free account-existence oracle behind an endpoint whose entire
+       design is to answer identically either way. */
+    const mailer = new MemoryMailer();
+    const queue = new MailQueue({ mailer, sleep: instant });
+
+    queue.enqueue(MESSAGE);
+
+    expect(mailer.sent).toHaveLength(0);
+    expect(queue.depth).toBe(1);
+  });
+});
+
+describe('retries', () => {
+  it('retries a failed send', async () => {
+    const mailer = new MemoryMailer();
+    mailer.failNext(2);
+    const queue = new MailQueue({ mailer, sleep: instant });
+
+    queue.enqueue(MESSAGE);
+    await queue.drain();
+
+    expect(mailer.sent).toHaveLength(1);
+    expect(queue.abandoned).toBe(0);
+  });
+
+  it('gives up after the attempt budget', async () => {
+    const mailer = new MemoryMailer();
+    mailer.failNext(100);
+    const queue = new MailQueue({ mailer, maxAttempts: 3, sleep: instant });
+
+    queue.enqueue(MESSAGE);
+    await queue.drain();
+
+    expect(mailer.sent).toHaveLength(0);
+    expect(queue.abandoned).toBe(1);
+  });
+
+  it('reports an abandoned message without its body', async () => {
+    /* The only record that a user never got their link — and it must not BE the
+       link. A body in a log file is a credential in a log file, readable by
+       anyone with log access and retained long past the token's lifetime. */
+    const mailer = new MemoryMailer();
+    mailer.failNext(100);
+
+    const failures: { to: string; subject: string; attempts: number }[] = [];
+    const queue = new MailQueue({
+      mailer,
+      maxAttempts: 2,
+      sleep: instant,
+      onFailure: (failure) => failures.push(failure),
+    });
+
+    queue.enqueue({ ...MESSAGE, text: 'https://app/verify?token=SECRET' });
+    await queue.drain();
+
+    expect(failures).toHaveLength(1);
+    expect(JSON.stringify(failures)).not.toContain('SECRET');
+    expect(failures[0]?.to).toBe('user@example.test');
+  });
+
+  it('keeps going after abandoning one message', async () => {
+    const mailer = new MemoryMailer();
+    mailer.failNext(2);
+    const queue = new MailQueue({ mailer, maxAttempts: 2, sleep: instant });
+
+    queue.enqueue({ ...MESSAGE, subject: 'doomed' });
+    queue.enqueue({ ...MESSAGE, subject: 'fine' });
+    await queue.drain();
+
+    expect(mailer.sent.map((message) => message.subject)).toEqual(['fine']);
+    expect(queue.abandoned).toBe(1);
+  });
+
+  it('does not crash the process when the transport is down', async () => {
+    // An unhandled rejection from a background task terminates the process in
+    // Node 22, which would turn "the mail server is down" into "the API is down".
+    const mailer = new MemoryMailer();
+    mailer.failNext(100);
+    const queue = new MailQueue({ mailer, maxAttempts: 2, sleep: instant });
+
+    expect(() => {
+      queue.enqueue(MESSAGE);
+    }).not.toThrow();
+    await expect(queue.drain()).resolves.toBeUndefined();
+  });
+});
+
+describe('shutdown', () => {
+  it('flushes what is queued before closing', async () => {
+    // Otherwise a deploy during a signup silently discards the verification
+    // link, and the user is left with an account they cannot reach.
+    const mailer = new MemoryMailer();
+    const queue = new MailQueue({ mailer, sleep: instant });
+
+    queue.enqueue(MESSAGE);
+    await queue.close();
+
+    expect(mailer.sent).toHaveLength(1);
+  });
+
+  it('ignores anything enqueued after closing', async () => {
+    const mailer = new MemoryMailer();
+    const queue = new MailQueue({ mailer, sleep: instant });
+
+    await queue.close();
+    queue.enqueue(MESSAGE);
+
+    expect(mailer.sent).toHaveLength(0);
+  });
+});

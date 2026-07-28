@@ -94,10 +94,15 @@ rules:
         - '/packages/**'
         - '/.semgrep/fixtures/**'
       exclude:
-        - '/apps/api/src/auth/**'
-        - '/apps/api/src/modules/identity/**'
+        # The real location of the identity module. This list previously named
+        # two speculative paths that never existed - the rule was written before
+        # the code, and neither guess matched where it landed. A path-scoped rule
+        # whose scope is wrong reports every legitimate call and nothing else.
+        - '/apps/api/src/identity/**'
         - '/packages/db/**'
         - '**/*.test.ts'
+        # Deliberate violations, asserted by packages/guardrail-selftest.
+        - '/packages/guardrail-selftest/**'
     pattern: withGlobalScope(...)
     message: >-
       withGlobalScope has no tenant scoping and is restricted to pre-tenant

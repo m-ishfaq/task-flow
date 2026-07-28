@@ -1,0 +1,3 @@
+{
+  "extends": "@taskflow/config/tsconfig/node.json"
+}
