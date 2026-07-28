@@ -1,11 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { unsafeAsId } from '@taskflow/contracts';
+import { closeDatabase, initializeDatabase } from '@taskflow/db';
 import { enforce, type ResourceRef } from '@taskflow/policy';
 import { createCallerFactory, route, router } from '../trpc/builder.js';
 import { subjectOf, type RequestContext } from '../trpc/context.js';
 import { assertNoTenancyLeaks, runTenancyFuzz, type FuzzOrg } from './tenancy-fuzz.js';
-import { testAppRouter } from './fixtures.js';
+import { seedFuzzTenants, type SeededTenants } from './tenancy-seed.js';
+import { testAppRouter, TEST_ENV } from './fixtures.js';
 
 /**
  * GUARDRAIL 8 — cross-tenant isolation at the HTTP boundary (PLAN.md §2.1).
@@ -183,9 +185,12 @@ describe('runTenancyFuzz', () => {
     expect(results[0]?.detail).toMatch(/dedicated test/);
   });
 
-  it('skips public routes, which have no tenant to cross', async () => {
-    // health.live takes no ids and belongs to nobody. Enrolling it would produce
-    // a permanent false positive that people learn to ignore.
+  it('enrols no public or self-scoped route, which have no tenant to cross', async () => {
+    /* `health.live` takes no ids and belongs to nobody; `auth.login` is how a
+       session is obtained; `tenancy.orgs.create` deliberately runs without a
+       membership. Enrolling any of them would produce a permanent false
+       positive, and a guardrail that always reports something is one people
+       learn to scroll past. */
     const results = await runTenancyFuzz({
       router: appRouter,
       attacker,
@@ -193,22 +198,81 @@ describe('runTenancyFuzz', () => {
       callerFor: (context) => callerFor(context, appRouter),
     });
 
-    expect(results).toEqual([]);
+    const enrolled = new Set(results.map((result) => result.path));
+    for (const path of ['health.live', 'auth.login', 'auth.register', 'tenancy.orgs.create']) {
+      expect(enrolled.has(path)).toBe(false);
+    }
   });
 });
 
+/**
+ * The real thing, against real Postgres (`docker compose up -d`).
+ *
+ * The tests above prove the HARNESS can tell a leak from a refusal, using
+ * hand-written routers and no database. This one runs every permission-bearing
+ * route in the application as org A's owner, holding org B's ids, through the
+ * same RLS the production path uses.
+ *
+ * It needs a database for a reason worth stating: before Phase 2 no registered
+ * route touched storage, so this suite passed with no database at all. Every
+ * tenancy route opens `withOrgScope`, and against an uninitialized pool they
+ * all throw — reported as ERRORED, which is a failure and not a pass, but which
+ * would have proved nothing about isolation either way.
+ */
 describe('the application router', () => {
+  let seeded: SeededTenants;
+
+  beforeAll(async () => {
+    seeded = await seedFuzzTenants();
+    initializeDatabase({ url: TEST_ENV.DATABASE_URL, applicationName: 'taskflow-fuzz' });
+  });
+
+  afterAll(async () => {
+    await closeDatabase();
+    await seeded.cleanup();
+  });
+
   it('has no cross-tenant leaks', async () => {
-    // Phase 0B ships no product routes, so this passes trivially today. It is
-    // here so that the first route added is covered by it automatically — which
-    // is the entire design.
     const results = await runTenancyFuzz({
       router: appRouter,
-      attacker,
-      victim,
+      attacker: seeded.attacker,
+      victim: seeded.victim,
       callerFor: (context) => callerFor(context, appRouter),
     });
 
+    /* A run that reached nothing would pass `assertNoTenancyLeaks` trivially.
+       Asserting coverage first is what stops this becoming a green test over an
+       empty list — the failure mode that killed three ESLint guardrails in this
+       repo earlier. */
+    const attempted = results.filter((result) => result.outcome !== 'not-applicable');
+    expect(attempted.length).toBeGreaterThan(10);
+    expect(attempted.every((result) => result.outcome === 'denied')).toBe(true);
+
     assertNoTenancyLeaks(results);
+  });
+
+  it('marks input-less routes not-applicable rather than silently passing them', async () => {
+    /* These four read their org from the principal and accept no identifier, so
+       there is nothing for this technique to substitute. Naming them here keeps
+       the exemption visible: if one gains an input it is enrolled automatically
+       and drops out of this list, which fails this test and says so. */
+    const results = await runTenancyFuzz({
+      router: appRouter,
+      attacker: seeded.attacker,
+      victim: seeded.victim,
+      callerFor: (context) => callerFor(context, appRouter),
+    });
+
+    const exempt = results
+      .filter((result) => result.outcome === 'not-applicable')
+      .map((result) => result.path)
+      .sort();
+
+    expect(exempt).toEqual([
+      'tenancy.audit.verify',
+      'tenancy.members.list',
+      'tenancy.orgs.get',
+      'tenancy.teams.list',
+    ]);
   });
 });

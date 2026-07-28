@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./migrate": "./src/migrate/runner.ts"
+    "./migrate": "./src/migrate/runner.ts",
+    "./testing": "./src/testing/index.ts"
   },
   "scripts": {
     "lint": "eslint src",
@@ -18,12 +19,14 @@
   },
   "dependencies": {
     "@taskflow/contracts": "workspace:*",
+    "@taskflow/events": "workspace:*",
     "@taskflow/observability": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "pg": "^8.13.1"
   },
   "devDependencies": {
     "@taskflow/config": "workspace:*",
+    "@taskflow/policy": "workspace:*",
     "@types/node": "^22.10.2",
     "@types/pg": "^8.11.10",
     "drizzle-kit": "^0.30.1",

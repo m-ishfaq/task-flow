@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { publicRoute, router } from './trpc/builder.js';
 import { createIdentityRouter, type IdentityRouterDeps } from './identity/router.js';
+import { createTenancyRouter } from './tenancy/router.js';
 
 /**
  * The root router.
@@ -29,6 +30,16 @@ export function createAppRouter(deps: IdentityRouterDeps) {
     }),
 
     auth: createIdentityRouter(deps),
+
+    /**
+     * Tenancy, authorization and audit (Phase 2).
+     *
+     * Takes no dependencies: everything it needs is the tenant-scoped database
+     * and the policy engine, both of which are module-level and stateless.
+     * There is no clock or mailer to inject here, so a `deps` parameter would
+     * be an empty object threaded through for symmetry.
+     */
+    tenancy: createTenancyRouter(),
   });
 }
 

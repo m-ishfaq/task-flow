@@ -1,0 +1,321 @@
+import { z } from 'zod';
+import { OrgIdSchema, TeamIdSchema, UserIdSchema } from '@taskflow/contracts';
+import { route, router, selfRoute } from '../trpc/builder.js';
+import type { Actor } from './org.service.js';
+import * as orgs from './org.service.js';
+import * as members from './member.service.js';
+import * as teams from './team.service.js';
+import * as grants from './grant.service.js';
+import * as authz from './authz.service.js';
+import * as audit from './audit.service.js';
+
+/**
+ * Tenancy, authorization and audit routes (PLAN.md §13 phase 2).
+ *
+ * Every route here is permission-bearing except `orgs.create` and `orgs.list`.
+ * Those two are `selfRoute`, and the reason is worth stating plainly because it
+ * looks like a gap in guardrail 4: a caller who is not yet in ANY organization
+ * has no role, so no org permission can describe what they are allowed to do.
+ * Requiring one would make it impossible to create a first organization, and
+ * inventing an `org:create` permission would be a permission that every role
+ * holds — which is a permission that means nothing.
+ *
+ * What bounds them instead: `orgs.list` returns only the caller's own
+ * memberships, enforced by RLS rather than by a WHERE clause, and `orgs.create`
+ * makes the caller the owner of a brand-new tenant containing nothing. Neither
+ * can reach another tenant's data.
+ */
+
+const Slug = z
+  .string()
+  .trim()
+  .min(3)
+  .max(40)
+  .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])$/, 'Use lowercase letters, numbers and hyphens.');
+
+const Name = z.string().trim().min(1).max(120);
+const Role = z.enum(['owner', 'admin', 'member', 'guest']);
+
+export function createTenancyRouter() {
+  const actorOf = (ctx: {
+    principal: { userId: Actor['userId'] };
+    requestId: Actor['requestId'];
+  }): Actor => ({ userId: ctx.principal.userId, requestId: ctx.requestId });
+
+  return router({
+    orgs: router({
+      create: selfRoute({
+        selfReason:
+          'Creating a first organization cannot require membership of one. The caller becomes its owner and it contains nothing else.',
+      })
+        .input(z.object({ name: Name, slug: Slug }).strict())
+        .output(z.object({ orgId: z.string(), slug: z.string() }))
+        .mutation(({ input, ctx }) => orgs.createOrg(input, actorOf(ctx))),
+
+      list: selfRoute({
+        selfReason:
+          'The organization switcher. Spans orgs by definition, so no org permission applies; RLS limits it to the caller’s own memberships.',
+      })
+        .output(
+          z
+            .array(
+              z.object({
+                orgId: z.string(),
+                name: z.string(),
+                slug: z.string(),
+                role: z.string(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ ctx }) => orgs.listMyOrgs(ctx.principal.userId)),
+
+      get: route({ permission: 'org:read' })
+        .output(
+          z.object({
+            orgId: z.string(),
+            name: z.string(),
+            slug: z.string(),
+            createdAt: z.date(),
+          }),
+        )
+        .query(({ ctx }) => orgs.getOrg(ctx.principal.org.orgId)),
+
+      update: route({ permission: 'org:update' })
+        .input(z.object({ name: Name }).strict())
+        .output(z.object({ name: z.string() }))
+        .mutation(({ input, ctx }) => orgs.updateOrg(ctx.principal.org.orgId, input, actorOf(ctx))),
+    }),
+
+    members: router({
+      list: route({ permission: 'member:read' })
+        .output(
+          z
+            .array(
+              z.object({
+                userId: z.string(),
+                email: z.string(),
+                role: z.string(),
+                status: z.string(),
+                joinedAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ ctx }) => members.listMembers(ctx.principal.org.orgId)),
+
+      add: route({ permission: 'member:invite' })
+        .input(z.object({ email: z.string().trim().email().max(254), role: Role }).strict())
+        .output(z.object({ userId: z.string(), role: z.string() }))
+        .mutation(({ input, ctx }) =>
+          members.addMember(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
+
+      /**
+       * Step-up authenticated (§8.1).
+       *
+       * Changing roles is on the step-up list precisely because it is what an
+       * attacker holding a stolen session reaches for first — and the window
+       * that matters is the ten minutes an access token stays valid.
+       */
+      changeRole: route({ permission: 'member:manage', stepUp: true })
+        .input(z.object({ userId: UserIdSchema, role: Role }).strict())
+        .output(z.object({ from: z.string(), to: z.string() }))
+        .mutation(({ input, ctx }) =>
+          members.changeRole(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
+
+      remove: route({ permission: 'member:remove', stepUp: true })
+        .input(z.object({ userId: UserIdSchema }).strict())
+        .output(z.object({ removed: z.literal(true) }))
+        .mutation(({ input, ctx }) =>
+          members.removeMember(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
+    }),
+
+    teams: router({
+      list: route({ permission: 'team:read' })
+        .output(
+          z
+            .array(
+              z.object({
+                teamId: z.string(),
+                name: z.string(),
+                slug: z.string(),
+                memberCount: z.number().int().nonnegative(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ ctx }) => teams.listTeams(ctx.principal.org.orgId)),
+
+      create: route({ permission: 'team:manage' })
+        .input(z.object({ name: Name, slug: Slug }).strict())
+        .output(z.object({ teamId: z.string() }))
+        .mutation(({ input, ctx }) =>
+          teams.createTeam(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
+
+      /**
+       * Adding someone to a team grants them everything that team has been
+       * granted, immediately — so this is an authorization change, and it is
+       * permissioned and audited as one.
+       */
+      addMember: route({ permission: 'team:manage' })
+        .input(z.object({ teamId: TeamIdSchema, userId: UserIdSchema }).strict())
+        .output(z.object({ added: z.literal(true) }))
+        .mutation(({ input, ctx }) =>
+          teams.addTeamMember(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
+
+      removeMember: route({ permission: 'team:manage' })
+        .input(z.object({ teamId: TeamIdSchema, userId: UserIdSchema }).strict())
+        .output(z.object({ removed: z.literal(true) }))
+        .mutation(({ input, ctx }) =>
+          teams.removeTeamMember(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
+    }),
+
+    grants: router({
+      list: route({ permission: 'member:read' })
+        .input(z.object({ objectType: z.string().max(40), objectId: z.string().uuid() }).strict())
+        .output(
+          z
+            .array(
+              z.object({
+                tupleId: z.string(),
+                subjectType: z.string(),
+                subjectId: z.string(),
+                relation: z.string(),
+                expiresAt: z.date().nullable(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => grants.listGrantsOn(ctx.principal.org.orgId, input)),
+
+      /**
+       * Writing a tuple is granting access to a specific thing, so it sits
+       * behind `member:manage` — Owner-only in the matrix (§8.2). Per-resource
+       * sharing by a resource's own owner arrives with the resources
+       * themselves, in Phase 3, where a board's owner can share their board
+       * without being able to touch anyone's org role.
+       */
+      grant: route({ permission: 'member:manage', stepUp: true })
+        .input(
+          z
+            .object({
+              subjectType: z.enum(['user', 'team']),
+              subjectId: z.string().uuid(),
+              relation: z.string().max(40),
+              objectType: z.string().max(40),
+              objectId: z.string().uuid(),
+              expiresAt: z.string().datetime().nullable().default(null),
+            })
+            .strict(),
+        )
+        .output(z.object({ tupleId: z.string() }))
+        .mutation(({ input, ctx }) => grants.grant(ctx.principal.org.orgId, input, actorOf(ctx))),
+
+      revoke: route({ permission: 'member:manage', stepUp: true })
+        .input(z.object({ tupleId: z.string().uuid() }).strict())
+        .output(z.object({ revoked: z.literal(true) }))
+        .mutation(({ input, ctx }) => grants.revoke(ctx.principal.org.orgId, input, actorOf(ctx))),
+    }),
+
+    authz: router({
+      /**
+       * The permission debug surface (§10.7).
+       *
+       * Behind `audit:read` — Owner and Admin — because it reports another
+       * user's access, which is exactly the information an attacker would want
+       * before choosing a target. The UI for this lands with `apps/web`; the
+       * trace it renders is produced here so the two cannot disagree.
+       */
+      explain: route({ permission: 'audit:read' })
+        .input(
+          z
+            .object({
+              userId: UserIdSchema,
+              permission: z.string().max(60),
+              resourceType: z.string().max(40).nullable().default(null),
+              resourceId: z.string().uuid().nullable().default(null),
+            })
+            .strict(),
+        )
+        .output(
+          z.object({
+            allowed: z.boolean(),
+            reason: z.string(),
+            role: z.string(),
+            trace: z
+              .array(
+                z.object({
+                  layer: z.number(),
+                  outcome: z.string(),
+                  rule: z.string(),
+                  detail: z.string().optional(),
+                }),
+              )
+              .readonly(),
+            formatted: z.string(),
+          }),
+        )
+        .query(({ input, ctx }) => authz.explain(ctx.principal.org.orgId, input)),
+    }),
+
+    audit: router({
+      list: route({ permission: 'audit:read' })
+        .input(
+          z
+            .object({
+              limit: z.number().int().min(1).max(200).default(50),
+              before: z.string().regex(/^\d+$/).nullable().default(null),
+            })
+            .strict(),
+        )
+        .output(
+          z
+            .array(
+              z.object({
+                id: z.string(),
+                seq: z.string(),
+                occurredAt: z.date(),
+                actorId: z.string().nullable(),
+                action: z.string(),
+                resourceType: z.string().nullable(),
+                resourceId: z.string().nullable(),
+                changes: z.unknown(),
+                requestId: z.string().nullable(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => audit.listAuditEntries(ctx.principal.org.orgId, input)),
+
+      /**
+       * Recomputes the hash chain and reports every break (§8.6).
+       *
+       * `audit:export` rather than `audit:read`: a verification result is a
+       * statement about the integrity of the compliance record, and the
+       * capability to make that statement belongs with the Owner-only right to
+       * take the record out of the system.
+       */
+      verify: route({ permission: 'audit:export' })
+        .output(
+          z.object({
+            verified: z.number().int().nonnegative(),
+            intact: z.boolean(),
+            breaks: z
+              .array(z.object({ seq: z.string(), id: z.string(), reason: z.string() }))
+              .readonly(),
+          }),
+        )
+        .query(({ ctx }) => audit.verifyAuditLog(ctx.principal.org.orgId)),
+    }),
+  });
+}
+
+/** Re-exported so the org resolution header has one definition. */
+export { ORG_HEADER } from './resolve.js';
+export { OrgIdSchema };

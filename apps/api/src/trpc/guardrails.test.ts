@@ -307,6 +307,18 @@ describe('the real application router', () => {
       'auth.passkeys.remove',
       'auth.passkeys.rename',
       'auth.passkeys.startRegistration',
+      /* The two tenancy routes a caller with NO membership must still reach.
+         Neither can be permission-bearing without a contradiction: a user who
+         belongs to no organization has no role, so requiring an org permission
+         would make a first organization impossible to create, and an
+         `org:create` permission every role held would mean nothing.
+
+         What bounds them instead is data, not policy. `orgs.create` makes the
+         caller owner of a brand-new tenant containing only themselves;
+         `orgs.list` returns their own memberships, limited by the SELECT-only
+         RLS policies on app.user_id rather than by a WHERE clause. */
+      'tenancy.orgs.create',
+      'tenancy.orgs.list',
     ]);
   });
 

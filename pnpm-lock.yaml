@@ -140,6 +140,9 @@ importers:
       '@taskflow/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@taskflow/events':
+        specifier: workspace:*
+        version: link:../events
       '@taskflow/observability':
         specifier: workspace:*
         version: link:../observability
@@ -153,6 +156,9 @@ importers:
       '@taskflow/config':
         specifier: workspace:*
         version: link:../config
+      '@taskflow/policy':
+        specifier: workspace:*
+        version: link:../policy
       '@types/node':
         specifier: ^22.10.2
         version: 22.20.1

@@ -39,6 +39,21 @@ export interface RouteEntry {
   readonly publicReason?: string;
   readonly selfReason?: string;
   readonly stepUp: boolean;
+  /**
+   * Whether the route accepts caller-supplied input at all.
+   *
+   * Read by the tenancy fuzz test (guardrail 8), which substitutes another
+   * tenant's ids into a route's input. A route with no input takes no
+   * identifier from the caller — its scope comes entirely from the principal —
+   * so there is nothing to substitute and no cross-tenant call to make. The
+   * fuzz harness reports those as `not-applicable` rather than pretending to
+   * have tested them.
+   *
+   * Derived rather than declared, so a route that LATER gains an input is
+   * enrolled automatically. That is the property that keeps the exemption from
+   * going stale in the direction of less coverage.
+   */
+  readonly acceptsInput: boolean;
 }
 
 /**
@@ -58,7 +73,7 @@ export function accessOf(entry: RouteEntry): RouteAccess {
 }
 
 interface ProcedureLike {
-  _def?: { procedure?: boolean; type?: string; meta?: unknown };
+  _def?: { procedure?: boolean; type?: string; meta?: unknown; inputs?: readonly unknown[] };
 }
 
 function isProcedure(value: unknown): value is ProcedureLike {
@@ -112,6 +127,7 @@ export function routeManifest(appRouter: AnyRouter): readonly RouteEntry[] {
           ...(meta?.publicReason === undefined ? {} : { publicReason: meta.publicReason }),
           ...(meta?.selfReason === undefined ? {} : { selfReason: meta.selfReason }),
           stepUp: meta?.stepUp === true,
+          acceptsInput: (value._def?.inputs?.length ?? 0) > 0,
         });
         continue;
       }

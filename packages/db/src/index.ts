@@ -22,14 +22,46 @@ export {
   closeDatabase,
   isDatabaseHealthy,
   withOrgScope,
+  withUserScope,
   withGlobalScope,
+  initializeAuditDatabase,
+  withAuditScope,
+  hasAuditDatabase,
   type OrgId,
+  type UserId,
   type DbConfig,
   type TenantDb,
   type GlobalDb,
 } from './client.js';
 
-export { TENANT_RLS_POLICY_SQL, tenantRlsPolicy } from './rls.js';
+export {
+  appendToOutbox,
+  outboxWriter,
+  claimPending,
+  markPublished,
+  recordFailure,
+  type OutboxRow,
+} from './outbox.js';
+
+export {
+  readAuditEntries,
+  readAuditChain,
+  insertAuditEntry,
+  appendAuditEntry,
+  type AuditEntryRow,
+  type AuditChainRow,
+  type NewAuditEntry,
+  type ReadAuditInput,
+} from './audit-log.js';
+
+export {
+  TENANT_RLS_POLICY_SQL,
+  TENANT_RLS_PREDICATE,
+  tenantPredicate,
+  selfPredicate,
+  tenantRlsPolicy,
+  type TenantRlsOptions,
+} from './rls.js';
 
 /**
  * Table definitions, as `schema.users`.

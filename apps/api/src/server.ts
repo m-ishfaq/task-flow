@@ -4,7 +4,8 @@ import { isDatabaseHealthy } from '@taskflow/db';
 import { newId } from '@taskflow/security';
 import { createAppRouter, type AppRouter } from './router.js';
 import { assertRoutesDeclarePermissions } from './trpc/manifest.js';
-import type { RequestContext } from './trpc/context.js';
+import type { AuthenticatedPrincipal, RequestContext } from './trpc/context.js';
+import { ORG_HEADER, resolveOrgMembership } from './tenancy/resolve.js';
 import {
   clearRefreshCookieOptions,
   readRefreshCookie,
@@ -27,15 +28,15 @@ import type { DeliverableLink } from './identity/identity.service.js';
  *
  * Access tokens are verified here, on every request, by `authenticate`. What
  * that produces is a PRINCIPAL — a user, a session, and when they last proved a
- * credential — and not yet an org membership, because there is no membership
- * table until Phase 2. So `principal.org` is null, self-scoped routes work, and
- * permission-bearing routes deny with NOT_A_MEMBER.
+ * credential. It is deliberately NOT a role: the token is signed by this API
+ * and could carry one, and carrying one would mean a demotion took effect only
+ * when the token expired, leaving a revoked admin with admin rights for the ten
+ * minutes that matter most.
  *
- * That split is the honest shape of the slice rather than a placeholder: a token
- * genuinely cannot tell you what someone's role is without a membership read,
- * and the earlier version of this file, which left `auth` null unconditionally,
- * meant `verifyAccessToken` had never once run against a token this server
- * issued.
+ * The role therefore comes from a membership read, on every request, keyed by
+ * the org named in a header. `withOrgContext` below is where that happens and
+ * carries the reasoning for why an attacker-controlled header is safe input to
+ * it.
  */
 
 /**
@@ -154,9 +155,12 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
       },
       createContext: async ({ req, res }): Promise<RequestContext> => ({
         requestId: req.id as RequestContext['requestId'],
-        principal: await authenticate(req.headers.authorization, {
-          jwtSecret: identityDeps.config.jwtSecret,
-        }),
+        principal: await withOrgContext(
+          await authenticate(req.headers.authorization, {
+            jwtSecret: identityDeps.config.jwtSecret,
+          }),
+          req.headers[ORG_HEADER],
+        ),
         refreshToken: readRefreshCookie(req.headers.cookie),
         ip: req.ip.length > 0 ? req.ip : null,
         userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
@@ -174,6 +178,42 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
   });
 
   return app;
+}
+
+/**
+ * Attaches the caller's organization membership to a principal, or leaves it null.
+ *
+ * The header naming the org is attacker-controlled, and it stays that way: it
+ * selects a membership row and never becomes one. `resolveOrgMembership` reads
+ * in `withUserScope(verifiedUserId)`, so the requested org id is a WHERE filter
+ * and never reaches `app.org_id`; the ROLE comes from the row that lookup
+ * returns. A caller naming an org they are not in matches nothing, `org` stays
+ * null, and every permission-bearing route answers NOT_A_MEMBER.
+ *
+ * Absent or malformed header is the same as no membership rather than an error.
+ * A request to `auth.login` or `auth.refresh` carries no org and must still
+ * work, and self-scoped routes are defined by not needing one.
+ *
+ * A failure here is also treated as "no membership", not as a 500. If the
+ * database is unreachable the caller cannot be authorized for anything anyway,
+ * and the fail-closed answer is the one that does not hand an unauthenticated
+ * caller a distinguishable error from a permission-bearing route.
+ */
+async function withOrgContext(
+  principal: AuthenticatedPrincipal | null,
+  header: string | string[] | undefined,
+): Promise<AuthenticatedPrincipal | null> {
+  if (principal === null) return null;
+
+  const requested = Array.isArray(header) ? header[0] : header;
+  if (typeof requested !== 'string' || requested.length === 0) return principal;
+
+  try {
+    const org = await resolveOrgMembership(principal.userId, requested);
+    return org === null ? principal : { ...principal, org };
+  } catch {
+    return principal;
+  }
 }
 
 /**

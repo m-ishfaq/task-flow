@@ -70,6 +70,8 @@ For these, a second adversarial AI pass in a fresh context is expected, not opti
 
 ```
 apps/       api                              (arriving: web, realtime, collab, worker)
+              src/identity   ⚠ auth, tokens, sessions, passkeys
+              src/tenancy      orgs, memberships, teams, grants, audit projection
 packages/   config, contracts, db, security, policy, events, mail, observability,
             feature-flags, guardrail-selftest        (arriving: ui)
 docker/     compose config + Postgres init (roles, RLS)
@@ -121,7 +123,60 @@ database behaviour; a mocked version would only prove the test agrees with itsel
 
 ## Current state
 
-**Phase 0B and Phase 1 (identity) complete.** Next: Phase 2 — tenancy, authz & audit.
+**Phase 0B, Phase 1 (identity) and Phase 2 (tenancy, authz & audit) complete.**
+Next: Phase 3 — Work.
+
+### Phase 2 — what changed, and the parts that are easy to break
+
+**A token still proves _who_; a header now selects _which tenant_.** `principal.org` is populated
+by `resolveOrgMembership` from an `x-taskflow-org` header. That header is attacker-controlled and
+is treated as such: it is a WHERE filter, never a value written to `app.org_id`. The lookup runs
+in `withUserScope(verifiedUserId)`, and the ROLE comes from the membership row it returns. Naming
+an org you are not in resolves to null, and every `route({ permission })` answers NOT_A_MEMBER.
+The role is read per request rather than carried in the token so a demotion takes effect
+immediately instead of when the token expires.
+
+**A third session variable, `app.user_id`, and `withUserScope`.** It exists for one question the
+org switcher must answer before an org is selected: "which orgs am I in?" Only two policies
+consult it — `memberships_self_read` and `orgs_self_read` — and **both are `FOR SELECT` with no
+`WITH CHECK`**. That is the whole safety argument: a permissive `WITH CHECK` on `user_id` would
+let any authenticated caller insert a membership naming themselves in any org, as owner. Because
+permissive policies are OR'ed, `withOrgScope` and `withUserScope` each set _both_ variables, so
+neither can be inherited across a pooled connection.
+
+**`identity.orgs` filters on `id`, not `org_id`** — the tenant is the row. Creating one needs no
+privileged path: ids are app-generated UUIDv7, so the service mints the id, opens
+`withOrgScope(newOrgId)`, and writes the org plus its owner membership in that one transaction.
+
+**The audit log is append-only by GRANT, not by convention.** `taskflow_audit` holds INSERT and
+SELECT and no UPDATE or DELETE anywhere; the app role holds SELECT only. `seq`, `prev_hash` and
+`hash` are assigned by a Postgres trigger under a per-org chain-head lock, so a writer cannot
+choose its own position or digest. The hash covers a **length-prefixed** concatenation — not
+`jsonb_build_object(...)::text` — because the verifier in `@taskflow/security/audit-chain.ts`
+would otherwise have to reproduce Postgres's jsonb rendering, and drift there reports tampering
+on untouched rows. `packages/db/src/audit.test.ts` asserts the two agree against real Postgres.
+**The verification SELECT list in `packages/db/src/audit-log.ts` is part of that contract.**
+
+**Guardrail 8 now needs Docker.** The fuzz harness previously ran with no database because no
+registered route touched storage. Every tenancy route opens `withOrgScope`, so it now seeds two
+real tenants and calls each route as org A's owner holding org B's ids. Routes that accept **no
+input** are reported `not-applicable` rather than passing — there is no id to substitute — and
+that is derived from the manifest, so a route gaining an input is re-enrolled automatically.
+
+**Role comparisons in membership code live in `packages/policy/src/assignment.ts`**
+(`isIndispensableRole`, `isDirectlyAssignable`, `sameRole`). Guardrail 7 is deliberately blunt
+about `role ===`; the answer is to move the decision where the matrix test can see it, never to
+disable the rule.
+
+**The outbox relay runs on a timer inside the API** (`tenancy/relay.ts`) and belongs in
+`apps/worker` on pg-boss from Phase 4. It is safe in every instance — `FOR UPDATE SKIP LOCKED`,
+and claim/write/mark are one transaction, which makes the audit projection exactly-once. Later
+consumers get at-least-once and must be idempotent.
+
+Deferred deliberately: email invitations (`members.add` requires an existing account), and the
+permission debug **page** — the `tenancy.authz.explain` endpoint ships now, its UI with `apps/web`.
+
+### Phase 1 — identity
 
 Password auth end to end (Argon2id + HIBP, email verification, lockout, refresh rotation with
 reuse detection, session revocation, password reset), **passkeys** as the primary factor,
@@ -130,11 +185,11 @@ real SMTP delivery, and per-IP rate limiting at the gateway.
 Two things about the shape of this slice are worth knowing before changing it:
 
 **A token proves _who_, not _which tenant_.** `authenticate()` produces an
-`AuthenticatedPrincipal` — user, session, credential-proof time — and `principal.org` is
-`null`, because there is no membership table until Phase 2. `selfRoute` needs only the
-principal and works today; `route({ permission })` additionally needs an org and therefore
-denies with NOT_A_MEMBER. Deriving a role from a token claim would mean the caller's own
-credential asserted their role, and a demotion would not take effect until the token expired.
+`AuthenticatedPrincipal` — user, session, credential-proof time — and it carries no role. Phase 2
+fills `principal.org` from a membership read keyed by the `x-taskflow-org` header (see above);
+`authenticate()` itself still returns `org: null` and consults no database, which is what keeps
+it off the hot path. Deriving a role from a token claim would mean the caller's own credential
+asserted their role, and a demotion would not take effect until the token expired.
 
 **Passkey sign-in takes no identifier.** Credentials are discoverable
 (`residentKey: 'required'`), so the ceremony never asks who you are — which is the one flow
@@ -143,19 +198,19 @@ answering. Do not add `allowCredentials`.
 
 What is enforced, and by what:
 
-| Guardrail            | Mechanism                                | Proven by                          |
-| -------------------- | ---------------------------------------- | ---------------------------------- |
-| 1 branded ids        | `packages/contracts`                     | type-level tests                   |
-| 2 no raw DB access   | ESLint import ban                        | guardrail-selftest                 |
-| 3 RLS                | Postgres policies                        | `packages/db` tests, real Postgres |
-| 4 fail-closed routes | `route({ permission })` + boot assertion | `apps/api` guardrail tests         |
-| 5 generated client   | tRPC                                     | compile                            |
-| 6 Zod at boundaries  | `.strict()` schemas                      | per-package tests                  |
-| 7 banned constructs  | ESLint                                   | guardrail-selftest                 |
-| 8 tenancy fuzz       | manifest-driven harness                  | `apps/api/src/testing`             |
-| 9 authz matrix       | 235 role × permission assertions         | `packages/policy`                  |
-| 10 human review      | this file, PLAN.md §2.2                  | people                             |
-| 11 domain events     | custom ESLint rule                       | guardrail-selftest                 |
+| Guardrail            | Mechanism                                | Proven by                             |
+| -------------------- | ---------------------------------------- | ------------------------------------- |
+| 1 branded ids        | `packages/contracts`                     | type-level tests                      |
+| 2 no raw DB access   | ESLint import ban                        | guardrail-selftest                    |
+| 3 RLS                | Postgres policies                        | `packages/db` tests, real Postgres    |
+| 4 fail-closed routes | `route({ permission })` + boot assertion | `apps/api` guardrail tests            |
+| 5 generated client   | tRPC                                     | compile                               |
+| 6 Zod at boundaries  | `.strict()` schemas                      | per-package tests                     |
+| 7 banned constructs  | ESLint                                   | guardrail-selftest                    |
+| 8 tenancy fuzz       | manifest-driven harness, two real orgs   | `apps/api/src/testing`, real Postgres |
+| 9 authz matrix       | 235 role × permission assertions         | `packages/policy`                     |
+| 10 human review      | this file, PLAN.md §2.2                  | people                                |
+| 11 domain events     | custom ESLint rule                       | guardrail-selftest                    |
 
 `node packages/guardrail-selftest/verify.js` proves the lint-enforced ones still fire — including
 the negative cases, since a rule that reports correct code is one that gets switched off.

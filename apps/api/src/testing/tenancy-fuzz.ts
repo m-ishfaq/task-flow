@@ -45,7 +45,11 @@ export interface FuzzOrg {
 export interface FuzzResult {
   readonly path: string;
   readonly kind: RouteEntry['kind'];
-  readonly outcome: 'denied' | 'leaked' | 'errored' | 'skipped';
+  /**
+   * `not-applicable` is not a pass — it is an honest "this route cannot be
+   * tested by this technique". See `runTenancyFuzz`.
+   */
+  readonly outcome: 'denied' | 'leaked' | 'errored' | 'skipped' | 'not-applicable';
   readonly detail?: string;
 }
 
@@ -117,6 +121,27 @@ export async function runTenancyFuzz(options: FuzzOptions): Promise<readonly Fuz
     const excuse = options.exclude?.[entry.path];
     if (excuse !== undefined) {
       results.push({ path: entry.path, kind: entry.kind, outcome: 'skipped', detail: excuse });
+      continue;
+    }
+
+    /* A route that accepts no input takes no identifier from the caller: its
+       scope comes entirely from the principal's org. There is no id to
+       substitute, so calling it with the victim's bag proves nothing — it
+       returns the ATTACKER's own rows and succeeds, which this harness would
+       otherwise report as a leak. A permanent false positive is worse than a
+       gap, because it trains whoever reads the output to skim past it.
+
+       What covers these instead: the RLS tests in packages/db, which prove
+       `withOrgScope` returns only the scoped org's rows, and the per-slice
+       integration tests. Derived from the manifest rather than listed here, so
+       a route that later gains an input is enrolled again automatically. */
+    if (!entry.acceptsInput) {
+      results.push({
+        path: entry.path,
+        kind: entry.kind,
+        outcome: 'not-applicable',
+        detail: 'takes no caller-supplied input; scope comes from the principal',
+      });
       continue;
     }
 
