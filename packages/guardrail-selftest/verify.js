@@ -25,9 +25,26 @@ import { dirname, resolve } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..', '..');
-const target = resolve(here, 'src', 'violations.ts');
 
-/** Every guardrail that must fire, and how many times. */
+/**
+ * Fixtures. Guardrail 11 needs its own because the rule is scoped to service
+ * files, and a fixture in the wrong path would report nothing while looking
+ * exactly like a passing test.
+ */
+const FIXTURES = {
+  general: resolve(here, 'src', 'violations.ts'),
+  service: resolve(here, 'src', 'violations.service.ts'),
+};
+
+/**
+ * Every guardrail that must fire, and how many times.
+ *
+ * `fixture` defaults to `general`. Counts are exact, not minimums: guardrail 11's
+ * fixture contains three CLEAN cases alongside its one violation, so a rule that
+ * became over-eager would push the count above 1 and fail here — which matters
+ * as much as it firing at all, because a guardrail that reports correct code is
+ * one that gets switched off.
+ */
 const EXPECTED = [
   {
     label: 'bare process.env',
@@ -66,6 +83,18 @@ const EXPECTED = [
     count: 1,
   },
   {
+    label: 'node:crypto imported outside packages/security',
+    rule: 'no-restricted-imports',
+    match: 'Cryptographic primitives belong in @taskflow/security',
+    count: 1,
+  },
+  {
+    label: 'withGlobalScope outside the identity module',
+    rule: 'no-restricted-syntax',
+    match: 'withGlobalScope has NO tenant context',
+    count: 1,
+  },
+  {
     label: 'explicit any',
     rule: '@typescript-eslint/no-explicit-any',
     count: 1,
@@ -75,22 +104,34 @@ const EXPECTED = [
     rule: '@typescript-eslint/ban-ts-comment',
     count: 1,
   },
+  {
+    label: 'state mutation with no domain event (guardrail 11)',
+    rule: 'taskflow/require-domain-event',
+    match: 'emits no domain event',
+    count: 1,
+    fixture: 'service',
+  },
 ];
 
 const eslint = new ESLint({ cwd: repoRoot });
-const [result] = await eslint.lintFiles([target]);
 
-if (!result) {
-  console.error(
-    'FAIL: ESLint returned no result — is violations.ts being ignored by the root config?',
-  );
-  process.exit(1);
+/** Messages per fixture, so one fixture's reports cannot satisfy another's. */
+const reported = {};
+
+for (const [name, file] of Object.entries(FIXTURES)) {
+  const [result] = await eslint.lintFiles([file]);
+
+  if (!result) {
+    console.error(`FAIL: ESLint returned no result for ${name} — is the fixture being ignored?`);
+    process.exit(1);
+  }
+  reported[name] = result.messages;
 }
 
-const messages = result.messages;
 const failures = [];
 
 for (const expected of EXPECTED) {
+  const messages = reported[expected.fixture ?? 'general'] ?? [];
   const hits = messages.filter(
     (m) =>
       m.ruleId === expected.rule && (!expected.match || (m.message ?? '').includes(expected.match)),
@@ -117,8 +158,11 @@ if (failures.length > 0) {
       `re-emitting the full ban list via restrictedSyntax().\n`,
   );
   console.error('Everything ESLint actually reported:');
-  for (const m of messages) {
-    console.error(`  line ${String(m.line).padEnd(3)} ${m.ruleId}: ${m.message}`);
+  for (const [name, messages] of Object.entries(reported)) {
+    console.error(`  ${name}:`);
+    for (const m of messages) {
+      console.error(`    line ${String(m.line).padEnd(3)} ${m.ruleId}: ${m.message}`);
+    }
   }
   process.exit(1);
 }

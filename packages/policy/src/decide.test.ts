@@ -1,0 +1,227 @@
+import { describe, expect, it } from 'vitest';
+import { isAppError, unsafeAsId, type OrgId, type UserId } from '@taskflow/contracts';
+import { can, formatTrace, allowed, type Subject, type Target } from './decide.js';
+import { enforce } from './enforce.js';
+import type { RelationshipTuple } from './tuples.js';
+import type { Role } from './roles.js';
+
+const ORG_A = unsafeAsId<'OrgId'>('018f4d1e-7c3a-7b2e-8f1a-00000000000a');
+const ORG_B = unsafeAsId<'OrgId'>('018f4d1e-7c3a-7b2e-8f1a-00000000000b');
+const USER = unsafeAsId<'UserId'>('018f4d1e-7c3a-7b2e-8f1a-000000000001');
+
+const BOARD = { type: 'board', id: 'board_71c' } as const;
+const PROJECT = { type: 'project', id: 'proj_01' } as const;
+const CARD = { type: 'card', id: 'card_9f3a' } as const;
+
+function subject(
+  role: Role,
+  tuples: readonly RelationshipTuple[] = [],
+  orgId: OrgId = ORG_A,
+  userId: UserId = USER,
+): Subject {
+  return { orgId, userId, role, tuples };
+}
+
+function cardTarget(orgId: OrgId = ORG_A): Target {
+  return { orgId, resource: CARD, ancestors: [BOARD, PROJECT] };
+}
+
+const tuple = (relation: RelationshipTuple['relation'], object: RelationshipTuple['object']) => ({
+  subject: USER,
+  relation,
+  object,
+});
+
+describe('org-level capabilities', () => {
+  it('grants what the role grants', () => {
+    expect(can(subject('owner'), 'org:delete').allowed).toBe(true);
+    expect(can(subject('admin'), 'org:delete').allowed).toBe(false);
+  });
+
+  it('does not consult tuples when there is no resource', () => {
+    // A tuple grants a relation on an OBJECT. Letting one leak into an
+    // org-level check would mean owning a board could delete the organization.
+    const withOwnership = subject('member', [tuple('owner', BOARD)]);
+    expect(can(withOwnership, 'org:delete').allowed).toBe(false);
+  });
+});
+
+describe('tenancy', () => {
+  it('denies a resource belonging to another organization', () => {
+    // RLS makes this unreachable in practice; reaching it means something
+    // upstream loaded a row it should not have. Denying turns that into an
+    // audited refusal rather than trusting the database to be the only guard.
+    const decision = can(subject('owner'), 'card:read', cardTarget(ORG_B));
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toMatch(/another organization/);
+  });
+
+  it('denies cross-tenant access even to an owner with a matching tuple', () => {
+    // The worst version of this bug: a tuple row that survived a tenant move.
+    const withTuple = subject('owner', [tuple('owner', CARD)]);
+    expect(can(withTuple, 'card:update', cardTarget(ORG_B)).allowed).toBe(false);
+  });
+});
+
+describe('relationship tuples', () => {
+  it('grants a guest access to the one channel they were invited to', () => {
+    const channel = { type: 'channel', id: 'chan_1' } as const;
+    const guest = subject('guest', [tuple('member', channel)]);
+
+    expect(allowed(guest, 'message:create', { orgId: ORG_A, resource: channel })).toBe(true);
+  });
+
+  it('does not leak that grant to a different channel', () => {
+    const invited = { type: 'channel', id: 'chan_1' } as const;
+    const other = { type: 'channel', id: 'chan_2' } as const;
+    const guest = subject('guest', [tuple('member', invited)]);
+
+    expect(allowed(guest, 'message:create', { orgId: ORG_A, resource: other })).toBe(false);
+    expect(allowed(guest, 'message:read', { orgId: ORG_A, resource: other })).toBe(false);
+  });
+
+  it('inherits a grant from an ancestor', () => {
+    // An editor on the board may edit the cards in it, without the engine
+    // knowing that cards live in boards.
+    const editor = subject('guest', [tuple('editor', BOARD)]);
+    expect(allowed(editor, 'card:update', cardTarget())).toBe(true);
+  });
+
+  it('lets the nearest grant narrow an inherited one', () => {
+    // viewer on the card must beat editor on the board, or narrowing an
+    // inherited grant would be impossible to express.
+    const mixed = subject('member', [tuple('editor', PROJECT), tuple('viewer', CARD)]);
+    expect(allowed(mixed, 'card:update', cardTarget())).toBe(false);
+    expect(allowed(mixed, 'card:read', cardTarget())).toBe(true);
+  });
+
+  it('takes the most permissive of equally near grants', () => {
+    // Being both viewer and editor on the same board means editor: the narrower
+    // grant was not intended to revoke the wider one.
+    const both = subject('guest', [tuple('viewer', BOARD), tuple('editor', BOARD)]);
+    expect(allowed(both, 'card:update', cardTarget())).toBe(true);
+  });
+});
+
+describe('restrictive grants', () => {
+  it('caps a member to read-only on a board shared as viewer', () => {
+    // The scenario from §8.2. Without capping, sharing a board read-only would
+    // silently grant write access — the opposite of what the sharer believes
+    // they did.
+    const member = subject('member', [tuple('viewer', BOARD)]);
+    const decision = can(member, 'card:update', cardTarget());
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toMatch(/read-only/);
+  });
+
+  it('still allows reading', () => {
+    const member = subject('member', [tuple('viewer', BOARD)]);
+    expect(allowed(member, 'card:read', cardTarget())).toBe(true);
+  });
+
+  it('lets a commenter comment but not edit', () => {
+    const commenter = subject('member', [tuple('commenter', BOARD)]);
+    expect(allowed(commenter, 'comment:create', cardTarget())).toBe(true);
+    expect(allowed(commenter, 'card:update', cardTarget())).toBe(false);
+  });
+
+  it('does not cap an org admin, and records why', () => {
+    // An admin can delete the tuple anyway, so enforcing the cap would make the
+    // system confusing rather than safer. The bypass has to be visible.
+    const admin = subject('admin', [tuple('viewer', BOARD)]);
+    const decision = can(admin, 'card:update', cardTarget());
+
+    expect(decision.allowed).toBe(true);
+    expect(decision.trace.some((step) => step.rule.includes('bypasses restrictive'))).toBe(true);
+  });
+
+  it('does not turn a bypass into a grant the role never had', () => {
+    // The bypass lifts the cap; it does not add permissions. An admin still
+    // cannot export a recording.
+    const admin = subject('admin', [tuple('viewer', { type: 'recording', id: 'rec_1' })]);
+    const target = { orgId: ORG_A, resource: { type: 'recording', id: 'rec_1' } } as const;
+
+    expect(allowed(admin, 'recording:export', target)).toBe(false);
+  });
+});
+
+describe('decision trace', () => {
+  it('records every step that led to the outcome', () => {
+    const member = subject('member', [tuple('viewer', BOARD)]);
+    const decision = can(member, 'card:update', cardTarget());
+
+    expect(decision.trace.length).toBeGreaterThanOrEqual(3);
+    expect(decision.trace[0]?.rule).toContain('card:update');
+    expect(decision.trace.some((step) => step.outcome === 'grant')).toBe(true);
+    expect(decision.trace.some((step) => step.outcome === 'deny')).toBe(true);
+  });
+
+  it('renders in the documented shape', () => {
+    const member = subject('member', [tuple('viewer', BOARD)]);
+    const rendered = formatTrace(can(member, 'card:update', cardTarget()));
+
+    expect(rendered.startsWith('deny  card:update  card:card_9f3a')).toBe(true);
+    expect(rendered).toContain('layer 2');
+    expect(rendered).toContain('read-only');
+  });
+
+  it('explains an allow as well as a denial', () => {
+    // The audit log carries the trace on denials, but the debug page needs to
+    // answer "why CAN this user do that?" too, which is the harder question.
+    const rendered = formatTrace(can(subject('owner'), 'org:delete'));
+    expect(rendered.startsWith('allow  org:delete  (no resource)')).toBe(true);
+  });
+});
+
+describe('fail-closed behaviour', () => {
+  it('denies a permission that is not in the catalog', () => {
+    // Unreachable from TypeScript, but the engine also sees strings that crossed
+    // a trust boundary: an API token's scope, a stored automation's action.
+    const decision = can(subject('owner'), 'card:teleport' as never);
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.trace[0]?.outcome).toBe('deny');
+  });
+
+  it('denies an unknown role rather than treating it as a member', () => {
+    const decision = can(subject('superuser' as never), 'card:read', cardTarget());
+    expect(decision.allowed).toBe(false);
+  });
+});
+
+/** The error code `fn` throws, or a description of why it did not. */
+function thrownCode(fn: () => unknown): string {
+  try {
+    fn();
+    return 'no error thrown';
+  } catch (error) {
+    return isAppError(error) ? error.code : `not an AppError: ${String(error)}`;
+  }
+}
+
+describe('enforce', () => {
+  it('returns the decision when allowed', () => {
+    expect(enforce(subject('owner'), 'card:read', cardTarget()).allowed).toBe(true);
+  });
+
+  it('throws 404 when the subject cannot even see the resource', () => {
+    // Answering 403 would confirm the resource exists, which across tenants
+    // leaks the existence of another organization's data (§8.7).
+    expect(thrownCode(() => enforce(subject('guest'), 'card:update', cardTarget()))).toBe(
+      'NOT_FOUND',
+    );
+  });
+
+  it('throws 403 when the subject can see it but not act', () => {
+    const member = subject('member', [tuple('viewer', BOARD)]);
+    expect(thrownCode(() => enforce(member, 'card:update', cardTarget()))).toBe('FORBIDDEN');
+  });
+
+  it('hides another tenant behind a 404', () => {
+    expect(thrownCode(() => enforce(subject('owner'), 'card:read', cardTarget(ORG_B)))).toBe(
+      'NOT_FOUND',
+    );
+  });
+});

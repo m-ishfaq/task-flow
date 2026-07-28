@@ -31,10 +31,43 @@ export {
 
 export { TENANT_RLS_POLICY_SQL, tenantRlsPolicy } from './rls.js';
 
-/*
- * Table definitions land here as each phase adds them:
- *   Phase 1  identity  — users, sessions, credentials
- *   Phase 2  identity  — orgs, memberships, teams;  authz — relationship tuples
- *   Phase 3  work      — projects, boards, lists, cards
- * Re-exported as `schema` so call sites read `schema.cards`.
+/**
+ * Table definitions, as `schema.users`.
+ *
+ * Re-exported through a namespace rather than flat so a call site reads
+ * `schema.refreshTokens` — at a glance that says "this is a table", which flat
+ * exports stop conveying the moment there are eighty of them.
  */
+export * as schema from './schema/index.js';
+
+/**
+ * Drizzle's query helpers, re-exported.
+ *
+ * Feature code needs `eq`, `and`, `isNull` and friends to build a WHERE clause,
+ * and importing them from `drizzle-orm` directly would be a second door into the
+ * data layer that the guardrails do not watch. Routing them through here keeps
+ * the rule simple: everything about the database comes from @taskflow/db.
+ *
+ * `sql` itself is exported for this package's own tests and for migrations. Its
+ * use outside packages/db is a lint error — see `./expressions.js` for the named
+ * alternatives, and add one there rather than widening the rule.
+ */
+export {
+  eq,
+  ne,
+  and,
+  or,
+  not,
+  isNull,
+  isNotNull,
+  inArray,
+  lt,
+  lte,
+  gt,
+  gte,
+  desc,
+  asc,
+  sql,
+} from 'drizzle-orm';
+
+export { increment, decrement, coalesce } from './expressions.js';

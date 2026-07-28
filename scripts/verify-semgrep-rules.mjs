@@ -19,11 +19,23 @@
 
 import { spawnSync } from 'node:child_process';
 
-/** Rules that must fire on the bad fixture. */
+/**
+ * Rules that must fire on the bad fixtures.
+ *
+ * `global-scope-outside-identity` was added here after it was found to have been
+ * mis-scoped since the day it was written: its exclusion list named two paths
+ * that never existed, so it reported every legitimate call in the identity
+ * module and caught nothing. The three SQL rules were verified; it was not, and
+ * that is precisely why nobody noticed for a whole phase.
+ *
+ * The lesson generalizes: every custom rule belongs in this list, including the
+ * ones that look too simple to break.
+ */
 const EXPECTED_ON_FIXTURE = [
   'tenant-table-without-force-rls',
   'rls-policy-without-nullif',
   'rls-policy-without-with-check',
+  'global-scope-outside-identity',
 ];
 
 const useDocker = process.env.SEMGREP_ON_PATH !== '1';
@@ -72,7 +84,20 @@ const onFixture = new Set(
   report.results.filter((r) => r.path.includes('fixtures')).map((r) => ruleId(r.check_id)),
 );
 
-const onRealMigrations = report.results.filter((r) => r.path.includes('packages/db/migrations'));
+/**
+ * Real code that must produce NO findings.
+ *
+ * The identity module is here because it is the legitimate home of
+ * withGlobalScope, and a scope rule pointed at the wrong directory reports every
+ * call in it. That is not a harmless false positive: a rule that flags correct
+ * code is one that gets muted, and a muted rule protects nothing.
+ */
+const CLEAN_PATHS = ['packages/db/migrations', 'apps/api/src/identity'];
+
+const falsePositives = report.results.filter((r) => {
+  const normalized = r.path.split('\\').join('/');
+  return CLEAN_PATHS.some((clean) => normalized.includes(clean));
+});
 
 let failed = false;
 
@@ -87,19 +112,18 @@ for (const rule of EXPECTED_ON_FIXTURE) {
 
 // A rule that flags correct code is just as broken as one that flags nothing:
 // it trains people to ignore the scanner.
-if (onRealMigrations.length > 0) {
-  console.error(`\n  FALSE POSITIVE — ${onRealMigrations.length} finding(s) on real migrations:`);
-  for (const r of onRealMigrations) {
+if (falsePositives.length > 0) {
+  console.error(`\n  FALSE POSITIVE — ${falsePositives.length} finding(s) on correct code:`);
+  for (const r of falsePositives) {
     console.error(`    ${r.path}: ${ruleId(r.check_id)}`);
   }
   failed = true;
 } else {
-  console.log('  ok    no false positives on real migrations');
+  console.log('  ok    no false positives on real migrations or the identity module');
 }
 
-console.log(
-  `\n${EXPECTED_ON_FIXTURE.length - (failed ? 1 : 0)}/${EXPECTED_ON_FIXTURE.length} rules verified.`,
-);
+const verified = EXPECTED_ON_FIXTURE.filter((rule) => onFixture.has(rule)).length;
+console.log(`\n${verified}/${EXPECTED_ON_FIXTURE.length} rules verified.`);
 
 if (failed) {
   console.error('\nFAIL: custom Semgrep rules are not behaving as specified.');

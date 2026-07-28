@@ -1,0 +1,95 @@
+/**
+ * @taskflow/security — every cryptographic primitive the system uses.
+ *
+ * Guardrail 7 (PLAN.md §2.1): `Math.random()` and direct `node:crypto` imports
+ * are both banned workspace-wide, so anything security-relevant has to come
+ * through here. That is the whole design goal — not that these implementations
+ * are clever, but that there is exactly one place to audit and one place a
+ * mistake can live.
+ *
+ * ⚠ HUMAN REVIEW SURFACE (§2.2). Changes here need the author to read every
+ * line, plus a second adversarial AI pass in a fresh context. Cryptographic code
+ * fails silently: a broken nonce, a skipped tag check, or a comparison that
+ * short-circuits all produce output that looks completely correct.
+ */
+
+export {
+  secureBytes,
+  secureInt,
+  secureToken,
+  secureHex,
+  secureCode,
+  secureEqual,
+  wipe,
+  HUMAN_ALPHABET,
+} from './random.js';
+
+export { uuidv7, newId, timestampOf } from './uuid.js';
+
+export {
+  hashPassword,
+  verifyPassword,
+  fakeVerifyPassword,
+  needsRehash,
+  ARGON2_PARAMS,
+  MAX_PASSWORD_LENGTH,
+} from './password.js';
+
+export {
+  issueToken,
+  issueNumericCode,
+  issueHumanCode,
+  hashToken,
+  verifyToken,
+  isTokenKind,
+  TOKEN_PREFIX,
+  type TokenKind,
+  type IssuedToken,
+} from './tokens.js';
+
+export {
+  encrypt,
+  decrypt,
+  encryptString,
+  decryptString,
+  fieldAad,
+  DecryptionError,
+  AES_KEY_BYTES,
+} from './encryption.js';
+
+export {
+  SoftwareKeyProvider,
+  masterKeysFromBase64,
+  generateMasterKeyBase64,
+  type MasterKey,
+  type SoftwareKeyProviderConfig,
+} from './software-key-provider.js';
+
+export { checkPasswordBreached, type BreachResult, type BreachCheckOptions } from './breach.js';
+
+export {
+  signAccessToken,
+  verifyAccessToken,
+  InvalidTokenError,
+  ACCESS_TOKEN_TTL_SECONDS,
+  type AccessTokenClaims,
+  type JwtConfig,
+} from './jwt.js';
+
+export {
+  beginPasskeyAuthentication,
+  beginPasskeyRegistration,
+  completePasskeyAuthentication,
+  completePasskeyRegistration,
+  relyingPartyFrom,
+  PasskeyVerificationError,
+  type AuthenticationResponseJSON,
+  type PasskeyAssertion,
+  type PasskeyUser,
+  type PublicKeyCredentialCreationOptionsJSON,
+  type PublicKeyCredentialRequestOptionsJSON,
+  type RegisteredCredential,
+  type RegistrationResponseJSON,
+  type RelyingParty,
+  type StoredCredential,
+} from './webauthn.js';

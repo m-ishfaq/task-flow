@@ -250,7 +250,7 @@ jobs:
             --config p/security-audit \
             --config p/secrets \
             --config .semgrep/taskflow.yml \
-            --exclude '.semgrep/fixtures' \
+            --exclude '.semgrep/fixtures' \n            --exclude 'packages/guardrail-selftest' \
             --error \
             --skip-unknown-extensions \
             --metrics=off

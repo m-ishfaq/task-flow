@@ -17,6 +17,7 @@
     "migrate:verify": "tsx src/migrate/cli.ts verify"
   },
   "dependencies": {
+    "@taskflow/contracts": "workspace:*",
     "@taskflow/observability": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "pg": "^8.13.1"
