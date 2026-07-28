@@ -179,13 +179,14 @@ assert(`YAML parses (${String(yamlFiles.length)} files)`, yamlOk, yamlErrors.joi
 
 // Structural sanity on the workflow: jobs exist, each declares a runner, and
 // every `if:` gate references a variable name that actually exists in the
-// documented set (a typo'd `vars.CI_DISABLE` would silently never match, which
-// reads as "the toggle does not work" long after it was added).
+// documented set (a typo'd `vars.CI_ENABLE` would silently never match, which
+// reads as "the toggle does not work" long after it was added — or worse, with
+// the wrong polarity, as a job that quietly stops running).
 const jobs = /** @type {Record<string, { 'runs-on'?: string, if?: string }>} */ (
   ciWorkflow.jobs ?? {}
 );
 const jobNames = Object.keys(jobs);
-const KNOWN_VARS = new Set(['CI_DISABLED', 'CI_SECURITY_ALWAYS']);
+const KNOWN_VARS = new Set(['CI_ENABLED', 'CI_SECURITY_ALWAYS']);
 const varRefs = [...JSON.stringify(jobs).matchAll(/vars\.([A-Z_]+)/g)].map((m) => m[1]);
 const unknownVars = [...new Set(varRefs)].filter((v) => !KNOWN_VARS.has(v));
 const missingRunner = jobNames.filter((n) => !jobs[n]?.['runs-on']);
