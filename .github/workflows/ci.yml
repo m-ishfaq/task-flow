@@ -14,18 +14,38 @@
 ## reproduces every check here in one command. CI is the backstop, so the
 ## expensive scanners do not need to run on every push.
 ##
-## Tiering:
-##   push to main       verify only                    ~3 min
-##   pull request       everything                     ~12 min
-##   weekly schedule    everything                     ~12 min
-##   manual dispatch    your choice
+## Tiering. A push straight to main and a PR into main behave IDENTICALLY —
+## both are decided by the two variables below, and nothing keys off which one
+## it was:
+##
+##   main (push or PR), CI_SECURITY_ALWAYS unset   verify only     ~3 min
+##   main (push or PR), CI_SECURITY_ALWAYS=true    everything     ~12 min
+##   weekly schedule                               everything     ~12 min
+##   manual dispatch                               your choice
+##   anything, CI_ENABLED=false                    nothing         0 min
+##
+## The scanners used to run on every PR regardless. That was dropped in favour
+## of one rule that holds everywhere, because the previous split meant the
+## answer to "did anything scan this commit?" depended on how it reached main —
+## and the merge path is not a security property. The weekly sweep is what still
+## catches a commit nobody scanned, so do not remove it while the default is off.
 ##
 ## Controls (Settings -> Secrets and variables -> Actions -> Variables):
-##   CI_DISABLED=true         kill switch — skips ALL jobs, no minutes spent
-##   CI_SECURITY_ALWAYS=true  run scanners on every push (restores old behaviour)
+##   CI_ENABLED=false         kill switch — skips ALL jobs, no minutes spent
+##   CI_SECURITY_ALWAYS=true  run the scanners, on a push to main and on a PR alike
 ##
 ## Both are repository VARIABLES, not secrets, so they can be flipped in the UI
 ## without touching code. Turn scanners back on permanently before launch.
+##
+## Both DEFAULT TO THE SAFE ANSWER when unset, and the polarity is chosen for
+## that rather than for readability: CI_ENABLED is tested with `!= 'false'`, so
+## an unset variable runs CI. The alternative — `== 'true'`, meaning nobody has
+## set it yet and nothing runs — is the failure this repo keeps finding
+## elsewhere: a protection that is present, looks fine, and matches nothing.
+## A CI that silently does not run is indistinguishable from a CI that passes.
+##
+## Only the literal strings 'false' and 'true' mean anything. Any other value,
+## including an empty one, leaves the default in place.
 ## ---------------------------------------------------------------------------
 
 name: CI
@@ -82,7 +102,7 @@ jobs:
     name: Lint, typecheck, test
     # Runs on every trigger except when the kill switch is set. This is the job
     # that actually catches broken code, so it is never tiered away.
-    if: vars.CI_DISABLED != 'true'
+    if: vars.CI_ENABLED != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -172,10 +192,9 @@ jobs:
     name: Secret scan
     # Tiered — see the minute-budget note at the top of this file.
     if: >-
-      vars.CI_DISABLED != 'true' &&
-      ( github.event_name == 'pull_request'
+      vars.CI_ENABLED != 'false' &&
+      ( vars.CI_SECURITY_ALWAYS == 'true'
         || github.event_name == 'schedule'
-        || vars.CI_SECURITY_ALWAYS == 'true'
         || (github.event_name == 'workflow_dispatch' && inputs.run_security) )
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -203,10 +222,9 @@ jobs:
   sast:
     name: Static analysis
     if: >-
-      vars.CI_DISABLED != 'true' &&
-      ( github.event_name == 'pull_request'
+      vars.CI_ENABLED != 'false' &&
+      ( vars.CI_SECURITY_ALWAYS == 'true'
         || github.event_name == 'schedule'
-        || vars.CI_SECURITY_ALWAYS == 'true'
         || (github.event_name == 'workflow_dispatch' && inputs.run_security) )
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -264,10 +282,9 @@ jobs:
   dependencies:
     name: Dependency audit
     if: >-
-      vars.CI_DISABLED != 'true' &&
-      ( github.event_name == 'pull_request'
+      vars.CI_ENABLED != 'false' &&
+      ( vars.CI_SECURITY_ALWAYS == 'true'
         || github.event_name == 'schedule'
-        || vars.CI_SECURITY_ALWAYS == 'true'
         || (github.event_name == 'workflow_dispatch' && inputs.run_security) )
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -305,10 +322,9 @@ jobs:
   trivy:
     name: Trivy
     if: >-
-      vars.CI_DISABLED != 'true' &&
-      ( github.event_name == 'pull_request'
+      vars.CI_ENABLED != 'false' &&
+      ( vars.CI_SECURITY_ALWAYS == 'true'
         || github.event_name == 'schedule'
-        || vars.CI_SECURITY_ALWAYS == 'true'
         || (github.event_name == 'workflow_dispatch' && inputs.run_security) )
     runs-on: ubuntu-latest
     timeout-minutes: 10
