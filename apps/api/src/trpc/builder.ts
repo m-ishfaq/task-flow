@@ -1,4 +1,5 @@
 import { TRPCError, initTRPC } from '@trpc/server';
+import { ZodError } from 'zod';
 import { AppError, isAppError, type ApiError } from '@taskflow/contracts';
 import { can, type Permission } from '@taskflow/policy';
 import {
@@ -84,7 +85,7 @@ const t = initTRPC
 
       const envelope: ApiError = isAppError(error.cause)
         ? error.cause.toResponse(requestId)
-        : fromTrpcError(error.code).toResponse(requestId);
+        : fromTrpcError(error.code, error.cause).toResponse(requestId);
 
       /* tRPC has its own transport envelope — it wraps whatever this returns as
          `{ error: <shape> }` — so returning our `{ error: ... }` verbatim would
@@ -121,10 +122,23 @@ const t = initTRPC
  * message, because that is the branch where the details are ours, not the
  * caller's (§8.7).
  */
-function fromTrpcError(code: string): AppError {
+function fromTrpcError(code: string, cause: unknown): AppError {
   switch (code) {
-    case 'BAD_REQUEST':
-      return new AppError('VALIDATION_FAILED', 'The request was not valid.');
+    case 'BAD_REQUEST': {
+      /* Field-level detail, when the failure was a Zod input rejection.
+         `ApiError` has always had a `details` slot documented as "field-level
+         detail for VALIDATION_FAILED" and nothing ever filled it, so every
+         input rejection reached the browser as the bare sentence below. A
+         registration form would answer "The request was not valid." to a
+         password one character short — the server knew exactly which field and
+         why, and threw it away at the last step. */
+      const details = fieldErrorsOf(cause);
+      return new AppError(
+        'VALIDATION_FAILED',
+        'The request was not valid.',
+        details === undefined ? {} : { details },
+      );
+    }
     case 'UNAUTHORIZED':
       return new AppError('UNAUTHENTICATED', 'Authentication required.');
     case 'FORBIDDEN':
@@ -144,6 +158,39 @@ function fromTrpcError(code: string): AppError {
     default:
       return new AppError('INTERNAL_ERROR', 'Something went wrong.');
   }
+}
+
+/**
+ * Turns a Zod rejection into `{ field: reason }`.
+ *
+ * ## Why this is safe to return, when §8.7 says to reveal nothing
+ *
+ * Because it describes the CALLER'S OWN REQUEST, which they already have. A
+ * message like `password: String must contain at least 12 character(s)` states
+ * a published constraint about data the caller just sent. That is categorically
+ * different from a stack trace or a database error, which describe US.
+ *
+ * The gate is that this is reached only from the `BAD_REQUEST` branch above,
+ * and BAD_REQUEST is tRPC's code for INPUT validation. An OUTPUT schema failure
+ * — where the paths would describe our own response shape, and the values would
+ * be another user's data — arrives as INTERNAL_SERVER_ERROR and falls through
+ * to the generic message. Do not widen this to other codes.
+ *
+ * Only the FIRST issue per path is kept: Zod reports a union failure once per
+ * member, and a form field with five contradictory explanations is worse than
+ * one.
+ */
+function fieldErrorsOf(cause: unknown): Record<string, string> | undefined {
+  if (!(cause instanceof ZodError)) return undefined;
+
+  const fields: Record<string, string> = {};
+  for (const issue of cause.issues) {
+    // A top-level failure — the body was not an object at all — has no path.
+    const key = issue.path.length === 0 ? '_' : issue.path.join('.');
+    fields[key] ??= issue.message;
+  }
+
+  return Object.keys(fields).length === 0 ? undefined : fields;
 }
 
 /**

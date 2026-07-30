@@ -526,6 +526,34 @@ describe('the audit projection', () => {
     expect(result.breaks).toEqual([]);
   });
 
+  it('verifies an untouched chain of more than nine entries', async () => {
+    /* The same assertion as above, past the boundary where the reader's ORDER BY
+       used to matter. `readAuditChain` selects `seq::text AS seq`, and a bare
+       `ORDER BY seq` binds to that OUTPUT ALIAS rather than the bigint column —
+       so the verifier received 1, 10, 11, 12, 2, 3 … and reported sequence gaps
+       and broken links on a chain nobody had touched.
+
+       Below ten entries text and numeric order are identical, which is why the
+       existing tests here — three entries, four entries — could not see it, and
+       why this one seeds twelve. An integrity check that cries wolf on healthy
+       data is worse than none: the response to a real detection becomes "the
+       verifier is wrong again". */
+    const orgId = await newOrg('audit-many');
+    for (let i = 0; i < 11; i += 1) {
+      await teams.createTeam(
+        orgId,
+        { name: `Team ${String(i)}`, slug: `team-${String(i)}` },
+        actorOf(OWNER),
+      );
+    }
+    await drainOutboxFully();
+
+    const result = await audit.verifyAuditLog(orgId);
+    expect(result.verified).toBe(12);
+    expect(result.intact).toBe(true);
+    expect(result.breaks).toEqual([]);
+  });
+
   it('detects an entry edited behind the chain’s back', async () => {
     /* The point of the chain. No role in the system can do this — taskflow_audit
        holds no UPDATE and the app role holds no INSERT — so the tamper is

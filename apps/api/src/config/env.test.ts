@@ -12,6 +12,16 @@ const valid = {
   MAIL_HOST: 'localhost',
   MAIL_FROM: 'TaskFlow <no-reply@taskflow.test>',
   WEB_ORIGIN: 'http://localhost:5173',
+
+  /* Object storage (§8.4). Required rather than optional for the same reason
+     as MAIL_HOST: an attachment upload that fails at presign because a bucket
+     name was never set is a broken feature found by a user, where an unset
+     variable is a boot failure found by whoever deployed it. */
+  STORAGE_ENDPOINT: 'http://localhost:9000',
+  STORAGE_ACCESS_KEY_ID: 'taskflow',
+  STORAGE_SECRET_ACCESS_KEY: 'storage-secret',
+  STORAGE_BUCKET_ATTACHMENTS: 'taskflow-attachments',
+  STORAGE_BUCKET_EXPORTS: 'taskflow-exports',
 };
 
 describe('parseEnv', () => {

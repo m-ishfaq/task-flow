@@ -1,0 +1,179 @@
+import { useState } from 'react';
+import { Link } from '@tanstack/react-router';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { api } from '../../lib/trpc.js';
+import { keys } from '../../lib/query.js';
+import { useSession } from '../../lib/session.js';
+import { wire } from '../../lib/wire.js';
+import { formatDateTime } from '../../lib/format.js';
+import { cn } from '../../lib/cn.js';
+import { Button, Empty, Spinner } from '../../components/primitives.js';
+import { ErrorView } from '../../components/error-view.js';
+
+/**
+ * The audit log, and the integrity check over it (§8.6).
+ *
+ * ## Two different permissions, deliberately
+ *
+ * READING is `audit:read` — Owner and Admin. VERIFYING is `audit:export`, which
+ * is Owner-only, because a verification result is a statement about the
+ * integrity of the compliance record and the capability to make that statement
+ * belongs with the right to take the record out of the system.
+ *
+ * ## What "intact" actually means here
+ *
+ * The log is append-only by GRANT, not by convention: `taskflow_audit` holds
+ * INSERT and SELECT and no UPDATE or DELETE anywhere, and `seq`, `prev_hash` and
+ * `hash` are assigned by a Postgres trigger under a per-org chain-head lock, so
+ * a writer cannot choose its own position or digest.
+ *
+ * Verification recomputes the chain and reports every break. A green result is
+ * meaningful; a red one names the exact sequence numbers, which is the only
+ * thing an incident responder can act on.
+ */
+export function AuditPage() {
+  const orgId = useSession((state) => state.orgId) ?? '';
+  const [before, setBefore] = useState<string | null>(null);
+
+  const entries = useQuery({
+    queryKey: [...keys.org(orgId), 'audit', before ?? 'latest'],
+    queryFn: async () => wire(await api.tenancy.audit.list.query({ limit: 50, before })),
+  });
+
+  const verify = useMutation({
+    mutationFn: () => api.tenancy.audit.verify.query(undefined),
+  });
+
+  return (
+    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold text-ink">Audit log</h1>
+          <p className="mt-1 text-sm text-ink-muted">
+            Append-only and hash-chained. Every state-changing action lands here.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link to="/settings" className="text-sm text-accent underline">
+            Settings
+          </Link>
+          <Button
+            variant="secondary"
+            disabled={verify.isPending}
+            onClick={() => {
+              verify.mutate();
+            }}
+          >
+            {verify.isPending ? 'Verifying…' : 'Verify chain'}
+          </Button>
+        </div>
+      </div>
+
+      {verify.isError && (
+        <ErrorView error={verify.error} title="Could not verify the chain" className="shrink-0" />
+      )}
+
+      {verify.data !== undefined && (
+        <div
+          className={cn(
+            'rounded border px-3 py-2 text-sm',
+            verify.data.intact
+              ? 'border-success/40 bg-success/10 text-ink'
+              : 'border-danger/40 bg-danger/10 text-ink',
+          )}
+        >
+          {verify.data.intact ? (
+            <p>
+              Chain intact — {verify.data.verified}{' '}
+              {verify.data.verified === 1 ? 'entry' : 'entries'} recomputed and every digest
+              matched.
+            </p>
+          ) : (
+            <>
+              <p className="font-medium">
+                Chain BROKEN across {verify.data.breaks.length}{' '}
+                {verify.data.breaks.length === 1 ? 'entry' : 'entries'}.
+              </p>
+              <ul className="mt-1 space-y-0.5 font-mono text-[11px]">
+                {verify.data.breaks.map((entry) => (
+                  <li key={entry.id}>
+                    seq {entry.seq}: {entry.reason}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+
+      {entries.isPending && <Spinner />}
+      {entries.isError && <ErrorView error={entries.error} title="Could not load the audit log" />}
+
+      {entries.data !== undefined &&
+        (entries.data.length === 0 ? (
+          <Empty title="Nothing recorded yet" />
+        ) : (
+          <>
+            <div className="overflow-x-auto rounded border border-line">
+              <table className="w-full text-left text-xs">
+                <thead className="border-b border-line text-ink-faint">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Seq</th>
+                    <th className="px-3 py-2 font-medium">When</th>
+                    <th className="px-3 py-2 font-medium">Action</th>
+                    <th className="px-3 py-2 font-medium">Resource</th>
+                    <th className="px-3 py-2 font-medium">Actor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {entries.data.map((entry) => (
+                    <tr key={entry.id} className="border-b border-line/50 last:border-0">
+                      <td className="px-3 py-1.5 font-mono text-ink-faint">{entry.seq}</td>
+                      <td className="px-3 py-1.5 whitespace-nowrap text-ink-muted">
+                        {formatDateTime(entry.occurredAt)}
+                      </td>
+                      <td className="px-3 py-1.5 font-medium text-ink">{entry.action}</td>
+                      <td className="px-3 py-1.5 text-ink-muted">
+                        {entry.resourceType ?? '—'}
+                        {entry.resourceId !== null && (
+                          <span className="ml-1 font-mono text-[10px] text-ink-faint">
+                            {entry.resourceId.slice(0, 8)}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-1.5 font-mono text-[10px] text-ink-faint">
+                        {entry.actorId?.slice(0, 8) ?? 'system'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Keyset pagination on `seq`, not an offset. The log only ever
+                grows, and an OFFSET page would shift under the reader as new
+                entries land — skipping rows silently, which is the one thing a
+                compliance record must not do. */}
+            <div className="flex gap-2">
+              <Button
+                disabled={before === null}
+                onClick={() => {
+                  setBefore(null);
+                }}
+              >
+                Newest
+              </Button>
+              <Button
+                disabled={entries.data.length < 50}
+                onClick={() => {
+                  setBefore(entries.data[entries.data.length - 1]?.seq ?? null);
+                }}
+              >
+                Older
+              </Button>
+            </div>
+          </>
+        ))}
+    </div>
+  );
+}

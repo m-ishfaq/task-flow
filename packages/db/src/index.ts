@@ -102,4 +102,14 @@ export {
   sql,
 } from 'drizzle-orm';
 
-export { increment, decrement, coalesce } from './expressions.js';
+/**
+ * The type of a composed SQL expression.
+ *
+ * Exported as a TYPE only. Feature code needs it to name the return of a helper
+ * that builds a predicate — `compiledPredicate` is the one that matters — and
+ * importing it from 'drizzle-orm' directly would be a second door into the data
+ * layer that the guardrails do not watch.
+ */
+export type { SQL } from 'drizzle-orm';
+
+export { increment, decrement, coalesce, compiledPredicate } from './expressions.js';

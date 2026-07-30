@@ -112,6 +112,53 @@ try {
       process.exit(1);
   }
 } catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error(describe(error, migrationUrl));
   process.exit(1);
+}
+
+/**
+ * Turns a thrown value into something a developer can act on.
+ *
+ * `error.message` alone is not enough, and the gap is not cosmetic. Node reports
+ * a refused TCP connection as an `AggregateError` — one sub-error per address it
+ * tried, ::1 and 127.0.0.1 — and an AggregateError's own `message` is the EMPTY
+ * STRING. So the most common way to run this command wrongly, with Docker not
+ * started, printed a blank line and exited 1: no reason, nothing to search for,
+ * and no hint that the database was simply not there.
+ *
+ * That is the first command a new developer runs, so it is the worst possible
+ * place to say nothing at all.
+ */
+function describe(error: unknown, url: string): string {
+  if (!(error instanceof Error)) return String(error);
+
+  const code = (error as { code?: unknown }).code;
+
+  if (code === 'ECONNREFUSED') {
+    return (
+      `Could not reach Postgres at ${redactHost(url)} — connection refused.\n` +
+      'Start the local stack first:  docker compose up -d'
+    );
+  }
+
+  // Any other AggregateError: surface the causes, since the wrapper is empty.
+  if (error instanceof AggregateError) {
+    const causes = error.errors.map((inner: unknown) =>
+      inner instanceof Error ? inner.message : String(inner),
+    );
+    const detail = causes.length > 0 ? causes.join('; ') : 'no further detail';
+    return error.message === '' ? detail : `${error.message}: ${detail}`;
+  }
+
+  return error.message === '' ? `${error.name} (no message)` : error.message;
+}
+
+/** Host and port only — a connection string carries a password. */
+function redactHost(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.hostname}:${parsed.port === '' ? '5432' : parsed.port}`;
+  } catch {
+    return 'the configured host';
+  }
 }

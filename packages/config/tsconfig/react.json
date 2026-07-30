@@ -9,7 +9,21 @@
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
     "noEmit": true,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+
+    /* Declarations are off for the app, and only for the app.
+       base.json turns them on because every PACKAGE is consumed by something
+       else and its public types are a contract. apps/web is a leaf: it is
+       bundled by Vite and nothing imports from it.
+       Leaving them on is not merely wasteful, it fails the build. Declaration
+       emit requires every exported symbol to be NAMEABLE from outside — so the
+       tRPC client, whose type refers to internal modules of @taskflow/api, is
+       TS2742 ("cannot be named without a reference to..."), and any function
+       returning a branded id from @taskflow/contracts is TS4058. Both would be
+       fixed by hand-writing type annotations that restate types the compiler
+       already knows, to satisfy an emit that never happens. */
+    "declaration": false,
+    "declarationMap": false
   },
   "include": ["${configDir}/src/**/*"]
 }

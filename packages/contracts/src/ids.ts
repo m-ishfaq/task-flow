@@ -49,6 +49,9 @@ export type ListId = Brand<string, 'ListId'>;
 export type CardId = Brand<string, 'CardId'>;
 export type LabelId = Brand<string, 'LabelId'>;
 export type SprintId = Brand<string, 'SprintId'>;
+export type ChecklistId = Brand<string, 'ChecklistId'>;
+export type ChecklistItemId = Brand<string, 'ChecklistItemId'>;
+export type CustomFieldId = Brand<string, 'CustomFieldId'>;
 
 export type ChannelId = Brand<string, 'ChannelId'>;
 export type MessageId = Brand<string, 'MessageId'>;
@@ -101,6 +104,9 @@ export const ListIdSchema = idSchema('ListId');
 export const CardIdSchema = idSchema('CardId');
 export const LabelIdSchema = idSchema('LabelId');
 export const SprintIdSchema = idSchema('SprintId');
+export const ChecklistIdSchema = idSchema('ChecklistId');
+export const ChecklistItemIdSchema = idSchema('ChecklistItemId');
+export const CustomFieldIdSchema = idSchema('CustomFieldId');
 
 export const ChannelIdSchema = idSchema('ChannelId');
 export const MessageIdSchema = idSchema('MessageId');

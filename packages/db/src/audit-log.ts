@@ -19,6 +19,41 @@ import { withAuditScope, withOrgScope, type GlobalDb } from './client.js';
  * was taken over.
  */
 
+/**
+ * Converts a timestamp column into a `Date`.
+ *
+ * Drizzle's raw `tx.execute(sql\`…\`)` does NOT apply the driver's type parsers —
+ * every column arrives as the text Postgres rendered, which is deliberate and is
+ * exactly what `readChainEntries` below depends on. It means a `timestamptz`
+ * comes back as `'2026-07-29 15:57:08.350265+00'`, not as a Date.
+ *
+ * This existed as `record['occurred_at'] as Date` — a cast, not a conversion.
+ * TypeScript believed it, the service believed it, and the route's `z.date()`
+ * output schema did not: every non-empty page of `tenancy.audit.list` failed
+ * output validation and answered INTERNAL_ERROR. The endpoint had never
+ * returned a row. Nothing caught it because the service tests call the service
+ * directly, where the cast is simply believed.
+ *
+ * Postgres renders `timestamptz` with a space rather than the `T` of ISO-8601,
+ * which `new Date()` accepts, but the offset form `+00` is not universally
+ * parsed — so it is normalized before parsing rather than trusted.
+ */
+function instant(value: unknown): Date {
+  if (value instanceof Date) return value;
+
+  if (typeof value !== 'string') {
+    throw new TypeError(`Expected a timestamp from audit.audit_log, received ${typeof value}.`);
+  }
+
+  const normalized = value.replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00');
+  const parsed = new Date(normalized);
+
+  if (Number.isNaN(parsed.getTime())) {
+    throw new TypeError(`Could not parse the audit timestamp ${JSON.stringify(value)}.`);
+  }
+  return parsed;
+}
+
 export interface AuditEntryRow {
   readonly id: string;
   readonly seq: string;
@@ -98,7 +133,7 @@ export async function readAuditEntries(
              request_id        AS request_id
         FROM audit.audit_log
        WHERE (${input.before}::bigint IS NULL OR seq < ${input.before}::bigint)
-       ORDER BY seq DESC
+       ORDER BY audit_log.seq DESC
        LIMIT ${input.limit}
     `);
 
@@ -107,7 +142,7 @@ export async function readAuditEntries(
       return {
         id: required(record['id']),
         seq: required(record['seq']),
-        occurredAt: record['occurred_at'] as Date,
+        occurredAt: instant(record['occurred_at']),
         actorId: text(record['actor_id']),
         action: required(record['action']),
         resourceType: text(record['resource_type']),
@@ -133,6 +168,24 @@ export async function readAuditEntries(
  *     timestamptz depends on the session's TimeZone and DateStyle, so a
  *     verifier connecting with different settings would report tampering on
  *     rows nobody touched.
+ *
+ * ## `ORDER BY audit_log.seq` is qualified, and must stay that way
+ *
+ * `seq::text AS seq` introduces an OUTPUT COLUMN called `seq`, and Postgres
+ * resolves a bare `ORDER BY seq` to that alias in preference to the underlying
+ * bigint column. The rows then come back in TEXT order — 1, 10, 11 … 16, 2, 3 —
+ * and the verifier, which checks that each entry's sequence follows the last,
+ * reports `sequence_gap`, `broken_link` and `hash_mismatch` on entries nobody
+ * touched.
+ *
+ * The effect is worse than a wrong sort: EVERY organization with ten or more
+ * audit entries reported its chain as broken. An integrity check that cries
+ * wolf on healthy data is not a weaker control, it is a negative one — the first
+ * response to a real detection would be to assume the verifier is wrong again.
+ *
+ * Qualifying the column binds to the table. `audit-log.test.ts` seeds more than
+ * nine entries specifically so text and numeric order diverge; with fewer, both
+ * orderings agree and the bug is invisible.
  */
 export async function readAuditChain(orgId: OrgId): Promise<readonly AuditChainRow[]> {
   return withOrgScope(orgId, async (tx) => {
@@ -154,7 +207,7 @@ export async function readAuditChain(orgId: OrgId): Promise<readonly AuditChainR
              prev_hash           AS prev_hash,
              hash                AS hash
         FROM audit.audit_log
-       ORDER BY seq
+       ORDER BY audit_log.seq
     `);
 
     return result.rows.map((row): AuditChainRow => {

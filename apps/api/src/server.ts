@@ -3,6 +3,7 @@ import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { isDatabaseHealthy } from '@taskflow/db';
 import { newId } from '@taskflow/security';
 import { createAppRouter, type AppRouter } from './router.js';
+import { buildWorkDeps } from './work/deps.js';
 import { assertRoutesDeclarePermissions } from './trpc/manifest.js';
 import type { AuthenticatedPrincipal, RequestContext } from './trpc/context.js';
 import { ORG_HEADER, resolveOrgMembership } from './tenancy/resolve.js';
@@ -76,6 +77,7 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
   const appRouter = createAppRouter({
     identity: identityDeps,
     passkeys: buildPasskeyDeps(identityDeps, options.env),
+    work: buildWorkDeps(options.env),
   });
 
   /* Guardrail 4, second half. Before a single connection is accepted: if any

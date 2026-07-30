@@ -251,6 +251,70 @@ describe('the application router', () => {
     assertNoTenancyLeaks(results);
   });
 
+  /**
+   * Coverage of the WRITE paths specifically.
+   *
+   * The test above would stay green if every Work route had quietly become
+   * `not-applicable` — a route whose input schema stopped matching the seeded
+   * id bag drops out of `attempted` and takes its own coverage with it, in
+   * silence. These are the routes where a cross-tenant call would WRITE rather
+   * than read, so naming them is worth the maintenance: `cards.move` is the one
+   * that could relocate another tenant's card onto this tenant's board.
+   */
+  it('enrols the Work mutations and denies every one of them', async () => {
+    const results = await runTenancyFuzz({
+      router: appRouter,
+      attacker: seeded.attacker,
+      victim: seeded.victim,
+      callerFor: (context) => callerFor(context, appRouter),
+    });
+
+    const byPath = new Map(results.map((result) => [result.path, result.outcome]));
+
+    for (const path of [
+      'work.projects.update',
+      'work.projects.archive',
+      'work.boards.create',
+      'work.boards.update',
+      'work.boards.archive',
+      'work.lists.create',
+      'work.lists.update',
+      'work.lists.reorder',
+      'work.lists.archive',
+      'work.cards.create',
+      'work.cards.update',
+      'work.cards.move',
+      'work.cards.assign',
+      'work.cards.archive',
+      'work.labels.create',
+      'work.labels.update',
+      'work.labels.delete',
+      'work.labels.setOnCard',
+      'work.checklists.create',
+      'work.checklists.delete',
+      'work.checklists.addItem',
+      'work.checklists.updateItem',
+      'work.checklists.deleteItem',
+      'work.fields.create',
+      'work.fields.update',
+      'work.fields.archive',
+      'work.fields.setOnCard',
+      'work.comments.create',
+      'work.comments.update',
+      'work.comments.delete',
+      /* Attachments (§8.4). `download` is the one that matters most here: a
+         leak would hand org A a signed URL to org B's file, and the fetch that
+         follows never touches this server, so nothing downstream could catch
+         it. */
+      'work.attachments.presign',
+      'work.attachments.confirm',
+      'work.attachments.download',
+      'work.attachments.delete',
+    ]) {
+      expect(byPath.get(path), `${path} was not enrolled by the fuzz harness`).toBe('denied');
+    }
+  });
+
   it('marks input-less routes not-applicable rather than silently passing them', async () => {
     /* These four read their org from the principal and accept no identifier, so
        there is nothing for this technique to substitute. Naming them here keeps

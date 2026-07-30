@@ -99,6 +99,34 @@ services:
       "
     restart: 'no'
 
+  # Virus scanning for the upload pipeline (§8.4). An attachment is not
+  # downloadable until this has looked at it.
+  #
+  # Speaks the ClamAV INSTREAM protocol on 3310. The image takes a couple of
+  # minutes on first start to load its signature database, which is why the
+  # healthcheck has a long start_period — a scan attempted before clamd is
+  # ready fails closed, so a short one would make uploads flaky rather than
+  # fast.
+  clamav:
+    image: clamav/clamav:stable
+    container_name: taskflow-clamav
+    restart: unless-stopped
+    environment:
+      # Signature updates are a background download; local development does not
+      # need them and they make the container slow and noisy to start.
+      CLAMAV_NO_FRESHCLAMD: 'true'
+    ports:
+      - '3310:3310'
+    volumes:
+      - clamav-data:/var/lib/clamav
+    healthcheck:
+      test: ['CMD-SHELL', 'clamdcheck.sh || exit 1']
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+
 volumes:
   postgres-data:
   minio-data:
+  clamav-data:

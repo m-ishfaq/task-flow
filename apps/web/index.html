@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Referrer leakage: a card URL contains ids that name a tenant's data, and
+         the default policy sends the full URL to any third-party origin an
+         embedded image or link reaches. -->
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <title>TaskFlow</title>
+  </head>
+  <body class="h-full bg-surface text-ink antialiased">
+    <div id="root" class="h-full"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -3,6 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./router": "./src/router.ts",
+    "./richtext": "./src/work/richtext.ts"
+  },
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
@@ -16,10 +20,12 @@
     "@taskflow/db": "workspace:*",
     "@taskflow/events": "workspace:*",
     "@taskflow/feature-flags": "workspace:*",
+    "@taskflow/filter": "workspace:*",
     "@taskflow/mail": "workspace:*",
     "@taskflow/observability": "workspace:*",
     "@taskflow/policy": "workspace:*",
     "@taskflow/security": "workspace:*",
+    "@taskflow/storage": "workspace:*",
     "@trpc/server": "^11.18.0",
     "fastify": "^5.10.0",
     "zod": "^3.24.1"

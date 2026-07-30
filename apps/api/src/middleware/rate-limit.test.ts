@@ -127,7 +127,22 @@ describe('enforcement', () => {
     expect(await login('someone-else@example.test')).toBe(401);
   });
 
-  it('answers with the shared error envelope and a Retry-After', async () => {
+  it('answers a /trpc route in the envelope a tRPC client can read', async () => {
+    /**
+     * This hook runs before tRPC, so it has to emit the shape belonging to the
+     * route it refuses — and for `/trpc/*` that is tRPC's transport envelope,
+     * NOT the REST `ApiError` one.
+     *
+     * It sent the REST shape everywhere until a real 429 reached a browser. The
+     * tRPC client cannot parse it at all: it fails with "Unable to transform
+     * response from server" and leaves `error.data` undefined, so the app showed
+     * its generic "the server did not say what" for the one failure that says
+     * precisely what, and ships a `retry-after` saying for how long.
+     *
+     * The earlier version of THIS TEST asserted the REST shape on a `/trpc`
+     * route — it agreed with the bug, which is why nothing caught it. The fields
+     * below are exactly what `TRPCClientError` reads.
+     */
     const email = 'envelope@example.test';
     for (let i = 0; i < 5; i += 1) await login(email);
 
@@ -140,9 +155,20 @@ describe('enforcement', () => {
     expect(response.statusCode).toBe(429);
     expect(response.headers['retry-after']).toBeDefined();
 
-    const body: { error?: { code?: string; retryAfterSeconds?: unknown } } = response.json();
-    expect(body.error?.code).toBe('RATE_LIMITED');
-    expect(typeof body.error?.retryAfterSeconds).toBe('number');
+    const body: {
+      error?: { message?: unknown; code?: unknown; data?: Record<string, unknown> };
+    } = response.json();
+
+    // A NUMBER at the top level — the JSON-RPC code. A string here is what made
+    // the client refuse to transform the response.
+    expect(typeof body.error?.code).toBe('number');
+    expect(typeof body.error?.message).toBe('string');
+
+    // And the domain fields where every other error in this API puts them.
+    expect(body.error?.data?.['code']).toBe('RATE_LIMITED');
+    expect(body.error?.data?.['httpStatus']).toBe(429);
+    expect(typeof body.error?.data?.['requestId']).toBe('string');
+    expect(typeof body.error?.data?.['retryAfterSeconds']).toBe('number');
   });
 
   it('actually stops the handler rather than decorating the response', async () => {
