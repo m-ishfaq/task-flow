@@ -359,6 +359,51 @@ describe('ordering', () => {
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
+  it('refuses a move into another project rather than letting the database reject it', async () => {
+    const fixture = await scaffold('work-cross-project');
+
+    /* A second project in the SAME org, so RLS has nothing to say about it —
+       this is the ordinary-authorization shape the composite foreign keys
+       exist for, not a tenant boundary. */
+    const other = await projects.createProject(fixture.owner, {
+      name: 'Mobile',
+      key: 'MOB',
+      description: null,
+    });
+    const otherBoard = await boards.createBoard(fixture.owner, {
+      projectId: other.projectId,
+      name: 'Delivery',
+    });
+    const otherList = await lists.createList(fixture.owner, {
+      boardId: otherBoard.boardId,
+      name: 'Todo',
+      wipLimit: null,
+    });
+
+    const card = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Stays in its project',
+      description: null,
+    });
+
+    /* Without the guard this reaches the UPDATE, which rewrites `project_id`
+       and violates the card's own `(org_id, project_id, status_id)` FK — a
+       driver error surfacing as a 500. The card would also keep a number
+       minted from the old project's counter. */
+    await expect(
+      cards.moveCard(fixture.owner, {
+        cardId: card.cardId,
+        targetListId: otherList.listId,
+        beforeCardId: null,
+        afterCardId: null,
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    // And the refusal left it exactly where it was.
+    const still = await cards.listCards(fixture.owner, { boardId: fixture.boardId });
+    expect(still.map((entry) => entry.cardId)).toContain(card.cardId);
+  });
+
   it('repairs a degenerate list and reports it, rather than failing the move', async () => {
     const fixture = await scaffold('work-rebalance');
 
@@ -963,7 +1008,11 @@ describe('archiving', () => {
     /* `includeArchived` REPLACES the hardcoded exclusion rather than composing
        with it — this pins that a plain `listCards` call still cannot see the
        archived row, and that the flag is what it takes to reach it. */
-    const fixture = await scaffold('work-archive-includeArchived');
+    /* Lowercase, and not merely by convention: `orgs_slug_format` is
+       `^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$` (migration 0004), so a camelCase
+       slug fails the CHECK before the test reaches anything it means to
+       assert. */
+    const fixture = await scaffold('work-archive-explicit');
 
     const live = await cards.createCard(fixture.owner, {
       listId: fixture.listId,
@@ -1003,13 +1052,53 @@ describe('archiving', () => {
     /* Cascading would be an unbounded write behind one click, and restoring
        could not know which cards were already archived beforehand. */
     await expect(
-      lists.archiveList(fixture.owner, { listId: fixture.listId }),
+      lists.archiveList(fixture.owner, { listId: fixture.listId, archived: true }),
     ).rejects.toMatchObject({ code: 'CONFLICT' });
 
     await cards.archiveCard(fixture.owner, { cardId: card.cardId, archived: true });
     await expect(
-      lists.archiveList(fixture.owner, { listId: fixture.listId }),
+      lists.archiveList(fixture.owner, { listId: fixture.listId, archived: true }),
     ).resolves.toMatchObject({ archived: true });
+  });
+
+  it('restores an archived list, and does not re-run the occupancy check on the way back', async () => {
+    const fixture = await scaffold('work-restore-list');
+
+    await lists.archiveList(fixture.owner, { listId: fixture.listId, archived: true });
+    expect(await lists.listLists(fixture.owner, { boardId: fixture.boardId })).toEqual([]);
+
+    // Only reachable through the archived view, which is the point of having one.
+    const archived = await lists.listLists(fixture.owner, {
+      boardId: fixture.boardId,
+      archivedOnly: true,
+    });
+    expect(archived.map((list) => list.listId)).toEqual([fixture.listId]);
+
+    await expect(
+      lists.archiveList(fixture.owner, { listId: fixture.listId, archived: false }),
+    ).resolves.toMatchObject({ archived: false });
+
+    const live = await lists.listLists(fixture.owner, { boardId: fixture.boardId });
+    expect(live.map((list) => list.listId)).toEqual([fixture.listId]);
+  });
+
+  it('restores a list that still holds archived cards, rather than refusing it', async () => {
+    const fixture = await scaffold('work-restore-occupied');
+
+    const card = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Went with it',
+      description: null,
+    });
+    await cards.archiveCard(fixture.owner, { cardId: card.cardId, archived: true });
+    await lists.archiveList(fixture.owner, { listId: fixture.listId, archived: true });
+
+    /* The occupancy check exists to stop cards being stranded by an archive.
+       Running it on restore would refuse exactly the columns worth restoring —
+       the ones that had contents when they were archived. */
+    await expect(
+      lists.archiveList(fixture.owner, { listId: fixture.listId, archived: false }),
+    ).resolves.toMatchObject({ archived: false });
   });
 });
 

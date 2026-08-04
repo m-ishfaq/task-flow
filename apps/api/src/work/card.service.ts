@@ -540,6 +540,32 @@ export async function moveCard(
       { type: 'project', id: target.projectId },
     ]);
 
+    /* Cross-PROJECT moves are refused here rather than attempted and left to
+       fail in the database.
+
+       The UPDATE below writes the destination's `project_id` onto the card, and
+       three composite foreign keys are defined against it: `(org_id,
+       project_id, status_id)` on cards itself (migration 0011), and
+       `(org_id, project_id, card_id)` from both `card_labels` and
+       `custom_field_values` (0009). A card carrying a status — which every card
+       does since the 0012 backfill — therefore violates its own FK the moment
+       its project changes, and the caller sees an unhandled driver error as a
+       500 rather than a refusal.
+
+       Refusing is also the honest answer, not merely the safe one: a card
+       moved between projects would keep a number minted from the old project's
+       counter, and its labels and custom field values are vocabulary the
+       destination does not have. Making that work is a migration and a
+       remapping decision (what becomes of a label the target project lacks?),
+       not a relaxed check. Boards WITHIN a project stay legitimate and are the
+       case the destination-authorization above exists for. */
+    if (target.projectId !== card.projectId) {
+      throw errors.validation(
+        { targetListId: 'That list belongs to a different project.' },
+        'A card cannot be moved to another project.',
+      );
+    }
+
     let rebalancedCount: number | null = null;
     let rank: string;
 

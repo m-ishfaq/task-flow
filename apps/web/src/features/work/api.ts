@@ -90,6 +90,22 @@ export function listsQuery(orgId: string, boardId: BoardId) {
   });
 }
 
+/**
+ * Archived columns — the ones `listsQuery` above will never return.
+ *
+ * `archivedOnly` REPLACES the live-only WHERE rather than widening it (see
+ * list.service.ts), so unlike `archivedCardsQuery` there is nothing to filter
+ * client-side. The key nests UNDER `keys.lists` so archiving or restoring a
+ * column, which already invalidates that family, refreshes this list too with
+ * no second invalidation to remember.
+ */
+export function archivedListsQuery(orgId: string, boardId: BoardId) {
+  return queryOptions({
+    queryKey: [...keys.lists(orgId, boardId), 'archived'] as const,
+    queryFn: async () => wire(await api.work.lists.list.query({ boardId, archivedOnly: true })),
+  });
+}
+
 export function cardsQuery(orgId: string, boardId: BoardId, filter: FilterNode | null) {
   return queryOptions({
     queryKey: keys.cards(orgId, boardId, filterKey(filter)),

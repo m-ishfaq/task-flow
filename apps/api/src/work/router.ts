@@ -187,7 +187,18 @@ export function createWorkRouter(deps: WorkRouterDeps) {
 
     lists: router({
       list: route({ permission: 'board:read' })
-        .input(z.object({ boardId: BoardIdSchema }).strict())
+        .input(
+          z
+            .object({
+              boardId: BoardIdSchema,
+              /* Set true to reach the archived columns for a restore view. It
+                 REPLACES the live filter rather than composing with it, so the
+                 board render cannot acquire archived columns by accident —
+                 the same shape `cards.list` uses. */
+              archivedOnly: z.boolean().default(false),
+            })
+            .strict(),
+        )
         .output(
           z
             .array(
@@ -255,9 +266,16 @@ export function createWorkRouter(deps: WorkRouterDeps) {
         .output(z.object({ rank: z.string() }))
         .mutation(({ input, ctx }) => lists.reorderList(actorOf(ctx), input)),
 
+      /**
+       * Archive AND restore, like `cards.archive`.
+       *
+       * It took a boolean-less `{ listId }` and returned `z.literal(true)`, so
+       * a column archived by mistake could not be recovered by anyone — there
+       * was no inverse to call. The cards inside it went with it.
+       */
       archive: route({ permission: 'board:update' })
-        .input(z.object({ listId: ListIdSchema }).strict())
-        .output(z.object({ archived: z.literal(true) }))
+        .input(z.object({ listId: ListIdSchema, archived: z.boolean() }).strict())
+        .output(z.object({ archived: z.boolean() }))
         .mutation(({ input, ctx }) => lists.archiveList(actorOf(ctx), input)),
     }),
 

@@ -115,9 +115,25 @@ export const listReordered = defineEvent(
     .strict(),
 );
 
+/**
+ * Covers restoring as well as archiving, carrying `restored` to say which —
+ * the same shape as `card.archived` below.
+ *
+ * One event rather than two because consumers care about the transition, not
+ * the verb: a notification, a search index and an activity feed each need to
+ * know a column left or rejoined the board, and splitting it would make every
+ * one of them subscribe twice to reconstruct a boolean.
+ */
 export const listArchived = defineEvent(
   'list.archived',
-  z.object({ listId: z.string(), boardId: z.string(), name: z.string() }).strict(),
+  z
+    .object({
+      listId: z.string(),
+      boardId: z.string(),
+      name: z.string(),
+      restored: z.boolean(),
+    })
+    .strict(),
 );
 
 /* -------------------------------------------------------------------------- *
