@@ -89,6 +89,7 @@ export interface CardSummary {
   readonly checklistDone: number;
   readonly checklistTotal: number;
   readonly version: number;
+  readonly archivedAt: Date | null;
 }
 
 /** `WEB-142` — the human-facing identity of a card. */
@@ -105,7 +106,11 @@ function referenceOf(key: string, number: number): string {
  */
 export async function listCards(
   actor: WorkActor,
-  input: { readonly boardId: string; readonly filter?: FilterNode | null },
+  input: {
+    readonly boardId: string;
+    readonly filter?: FilterNode | null;
+    readonly includeArchived?: boolean;
+  },
 ): Promise<readonly CardSummary[]> {
   return withOrgScope(orgOf(actor), async (tx) => {
     const boards = await tx
@@ -141,6 +146,7 @@ export async function listCards(
         checklistDone: schema.cards.checklistDone,
         checklistTotal: schema.cards.checklistTotal,
         version: schema.cards.version,
+        archivedAt: schema.cards.archivedAt,
       })
       .from(schema.cards)
       .innerJoin(schema.projects, eq(schema.projects.id, schema.cards.projectId))
@@ -148,7 +154,14 @@ export async function listCards(
         and(
           eq(schema.cards.boardId, input.boardId),
           isNull(schema.cards.deletedAt),
-          isNull(schema.cards.archivedAt),
+          /* Hardcoded rather than left to the `archived` filter field: the
+             board render must never depend on the caller having remembered to
+             ADD `archived = false` to its filter tree. `includeArchived` is a
+             separate, explicit switch for the one caller (the restore view)
+             that wants the opposite — it REPLACES this condition rather than
+             composing with it, so a stray `archived = true` in a saved filter
+             still cannot smuggle archived cards onto the board. */
+          input.includeArchived === true ? undefined : isNull(schema.cards.archivedAt),
           /* The filter AST (§10.2), compiled to a parameterized predicate.
              `compile` re-validates against the field whitelist and throws
              rather than emitting anything it does not recognize, so an
@@ -203,6 +216,7 @@ export async function getCard(
         checklistDone: schema.cards.checklistDone,
         checklistTotal: schema.cards.checklistTotal,
         version: schema.cards.version,
+        archivedAt: schema.cards.archivedAt,
         createdAt: schema.cards.createdAt,
         updatedAt: schema.cards.updatedAt,
       })

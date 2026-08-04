@@ -279,6 +279,12 @@ export function createWorkRouter(deps: WorkRouterDeps) {
             .object({
               boardId: BoardIdSchema,
               filter: FilterTree.nullable().default(null),
+              /* Defaults false so every existing caller — the board render
+                 above all — keeps seeing exactly the live cards it always has.
+                 Set true to reach the archived ones for a restore view; see
+                 `listCards` for why this REPLACES the hardcoded exclusion
+                 rather than composing with the `archived` filter field. */
+              includeArchived: z.boolean().default(false),
             })
             .strict(),
         )
@@ -300,6 +306,7 @@ export function createWorkRouter(deps: WorkRouterDeps) {
                 checklistDone: z.number().int().nonnegative(),
                 checklistTotal: z.number().int().nonnegative(),
                 version: z.number().int().positive(),
+                archivedAt: z.date().nullable(),
               }),
             )
             .readonly(),

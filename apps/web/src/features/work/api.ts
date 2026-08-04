@@ -89,6 +89,30 @@ export function cardsQuery(orgId: string, boardId: BoardId, filter: FilterNode |
   });
 }
 
+/**
+ * Archived cards on a board — the ones `cardsQuery` above will never return.
+ *
+ * `includeArchived: true` widens `cards.list` past its hardcoded live-only
+ * WHERE (see card.service.ts); it does not narrow to archived-only, so the
+ * caller filters for `archivedAt !== null`, same as `projects-page.tsx` does
+ * the opposite filter for live projects. The synthetic `'archived'` filter
+ * key keeps this in its own cache entry while staying inside
+ * `keys.cardsOfBoard`, so archiving or restoring a card — which already
+ * invalidates the whole `cardsOfBoard` family — refreshes this list too with
+ * no separate invalidation call to remember.
+ */
+export function archivedCardsQuery(orgId: string, boardId: BoardId) {
+  return queryOptions({
+    queryKey: keys.cards(orgId, boardId, 'archived'),
+    queryFn: async () => {
+      const rows = wire(
+        await api.work.cards.list.query({ boardId, filter: null, includeArchived: true }),
+      );
+      return rows.filter((card) => card.archivedAt !== null);
+    },
+  });
+}
+
 export function cardQuery(orgId: string, cardId: CardId) {
   return queryOptions({
     queryKey: keys.card(orgId, cardId),

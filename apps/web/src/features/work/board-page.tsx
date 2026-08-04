@@ -13,6 +13,7 @@ import { ListView } from './list-view.js';
 import { FilterBuilder } from './filter/filter-builder.js';
 import { CardDetailPanel } from './detail/card-detail-panel.js';
 import { ShareBoardDialog } from './share-board.js';
+import { ArchivedCardsDialog } from './archived-cards-dialog.js';
 import { GROUP_BY_OPTIONS, SORT_BY_OPTIONS, type GroupBy, type SortBy } from './grouping.js';
 import { cn } from '../../lib/cn.js';
 
@@ -152,6 +153,7 @@ export function BoardPage() {
             {filter !== null && ' matching'}
           </span>
 
+          <ArchivedCardsDialog orgId={orgId} boardId={boardId} />
           <ShareBoardDialog orgId={orgId} boardId={boardId} />
         </div>
 
