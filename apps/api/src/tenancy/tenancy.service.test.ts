@@ -30,8 +30,8 @@ import { loadTuples, resolveOrgMembership } from './resolve.js';
  */
 
 const AUDIT_URL =
-  process.env['DATABASE_AUDIT_URL'] ??
-  'postgresql://taskflow_audit:audit-dev-secret@localhost:5432/taskflow';
+  process.env['TEST_DATABASE_AUDIT_URL'] ??
+  'postgresql://taskflow_audit:audit-dev-secret@localhost:5433/taskflow_test';
 
 const OWNER = unsafeAsId<'UserId'>('0195dd00-0000-7000-8000-000000000001');
 const COLLEAGUE = unsafeAsId<'UserId'>('0195dd00-0000-7000-8000-000000000002');
@@ -522,6 +522,34 @@ describe('the audit projection', () => {
 
     const result = await audit.verifyAuditLog(orgId);
     expect(result.verified).toBe(3);
+    expect(result.intact).toBe(true);
+    expect(result.breaks).toEqual([]);
+  });
+
+  it('verifies an untouched chain of more than nine entries', async () => {
+    /* The same assertion as above, past the boundary where the reader's ORDER BY
+       used to matter. `readAuditChain` selects `seq::text AS seq`, and a bare
+       `ORDER BY seq` binds to that OUTPUT ALIAS rather than the bigint column —
+       so the verifier received 1, 10, 11, 12, 2, 3 … and reported sequence gaps
+       and broken links on a chain nobody had touched.
+
+       Below ten entries text and numeric order are identical, which is why the
+       existing tests here — three entries, four entries — could not see it, and
+       why this one seeds twelve. An integrity check that cries wolf on healthy
+       data is worse than none: the response to a real detection becomes "the
+       verifier is wrong again". */
+    const orgId = await newOrg('audit-many');
+    for (let i = 0; i < 11; i += 1) {
+      await teams.createTeam(
+        orgId,
+        { name: `Team ${String(i)}`, slug: `team-${String(i)}` },
+        actorOf(OWNER),
+      );
+    }
+    await drainOutboxFully();
+
+    const result = await audit.verifyAuditLog(orgId);
+    expect(result.verified).toBe(12);
     expect(result.intact).toBe(true);
     expect(result.breaks).toEqual([]);
   });

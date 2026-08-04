@@ -20,13 +20,38 @@ import type { Actor } from './org.service.js';
  * emits an event for the audit log.
  */
 
+export interface TeamMemberSummary {
+  readonly userId: string;
+  readonly email: string;
+}
+
 export interface TeamSummary {
   readonly teamId: string;
   readonly name: string;
   readonly slug: string;
-  readonly memberCount: number;
+  /** The roster itself. `memberCount` would be `members.length` — see below. */
+  readonly members: readonly TeamMemberSummary[];
 }
 
+/**
+ * Every team in the organization, each with its roster.
+ *
+ * ## Why the roster and not a count
+ *
+ * This used to return `memberCount`, and the settings page could therefore show
+ * how many people were on a team but never WHICH — so removing someone meant
+ * picking from a dropdown of every member in the org, including the ones who
+ * were not on the team, and the only feedback was the count changing (or not).
+ *
+ * The count was never cheaper. Computing it already required reading every
+ * `team_members` row, so the roster costs exactly one join to `users` for the
+ * addresses, over a table bounded by team membership rather than by anything
+ * unbounded.
+ *
+ * No new exposure either: `team:read` and `member:read` are held by the same
+ * roles, and `members.list` already returns every address in the org. A caller
+ * who can reach this route can already enumerate the same people.
+ */
 export async function listTeams(orgId: OrgId): Promise<readonly TeamSummary[]> {
   return withOrgScope(orgId, async (tx) => {
     const teams = await tx
@@ -34,16 +59,27 @@ export async function listTeams(orgId: OrgId): Promise<readonly TeamSummary[]> {
       .from(schema.teams)
       .orderBy(schema.teams.name);
 
+    /* No `org_id` in the WHERE clause — RLS enforces it (guardrail 2). The join
+       is to users, which is NOT tenant-scoped, so it is reached only through
+       team_members rows this org can already see. */
     const members = await tx
-      .select({ teamId: schema.teamMembers.teamId, userId: schema.teamMembers.userId })
-      .from(schema.teamMembers);
+      .select({
+        teamId: schema.teamMembers.teamId,
+        userId: schema.teamMembers.userId,
+        email: schema.users.email,
+      })
+      .from(schema.teamMembers)
+      .innerJoin(schema.users, eq(schema.users.id, schema.teamMembers.userId))
+      .orderBy(schema.users.email);
 
-    const counts = new Map<string, number>();
+    const rosters = new Map<string, TeamMemberSummary[]>();
     for (const row of members) {
-      counts.set(row.teamId, (counts.get(row.teamId) ?? 0) + 1);
+      const roster = rosters.get(row.teamId) ?? [];
+      roster.push({ userId: row.userId, email: row.email });
+      rosters.set(row.teamId, roster);
     }
 
-    return teams.map((team) => ({ ...team, memberCount: counts.get(team.teamId) ?? 0 }));
+    return teams.map((team) => ({ ...team, members: rosters.get(team.teamId) ?? [] }));
   });
 }
 

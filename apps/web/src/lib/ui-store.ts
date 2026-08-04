@@ -1,0 +1,148 @@
+import { create } from 'zustand';
+
+/**
+ * Client-only state (PLAN.md §10.5).
+ *
+ * The rule this file exists to obey: Zustand holds ONLY things with no server
+ * representation. Drag-in-flight, sidebar collapse, an unsaved filter draft, the
+ * command palette. Nothing here is fetched, and nothing fetched belongs here.
+ *
+ * A card copied into this store would need its own invalidation, its own
+ * optimistic rollback, and its own reconciliation with the query cache — three
+ * mechanisms that already exist, reimplemented worse and silently diverging. If
+ * something in this file starts needing a `refetch`, it is in the wrong place.
+ *
+ * Note what is also NOT here: which card is open. That is a URL search param
+ * (`?card=`), because a card panel must be deep-linkable, shareable, and correct
+ * under the back button (§10.5). State that belongs in the URL and lives in a
+ * store instead is how "share this card" stops working.
+ */
+
+export type ViewMode = 'board' | 'table';
+
+/**
+ * Sidebar shape, remembered between visits.
+ *
+ * Persisted because a navigation tree that forgets what you collapsed is a tree
+ * you re-collapse on every reload. Safe to leave in `localStorage` and safe
+ * across users: both hold opaque uuids, and a pinned board belonging to someone
+ * else's org simply does not appear in the current caller's board list, so it
+ * renders as nothing rather than as a name they should not see. Neither key is a
+ * credential and neither confers access — the server decides every read.
+ */
+const COLLAPSED_KEY = 'taskflow.sidebar.collapsed';
+const PINNED_KEY = 'taskflow.sidebar.pinned';
+
+function readIds(key: string): readonly string[] {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (raw === null) return [];
+    const parsed: unknown = JSON.parse(raw);
+    /* Validated, not cast. This is `localStorage`, which any script on the page
+       can write and which survives a version of the app that stored something
+       else here — and `.map()` over a non-array throws during render, taking the
+       whole shell down over a stale preference. */
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeIds(key: string, ids: readonly string[]): void {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(ids));
+  } catch {
+    // Private browsing and blocked storage both throw. A preference that does
+    // not survive a reload is a worse experience, not a broken app.
+  }
+}
+
+function toggled(ids: readonly string[], id: string): readonly string[] {
+  return ids.includes(id) ? ids.filter((entry) => entry !== id) : [...ids, id];
+}
+
+/** How a pinned board is identified. See `pinnedBoards`. */
+export function pinKey(projectId: string, boardId: string): string {
+  return `${projectId}/${boardId}`;
+}
+
+/** The projects that have at least one pin, so only those are queried. */
+export function pinnedProjectIds(pins: readonly string[]): readonly string[] {
+  return [...new Set(pins.map((pin) => pin.split('/')[0] ?? ''))].filter((id) => id !== '');
+}
+
+interface UiState {
+  readonly sidebarOpen: boolean;
+  readonly viewMode: ViewMode;
+  /**
+   * Projects whose board list is folded away.
+   *
+   * Stored as the COLLAPSED set rather than the expanded one, so a project
+   * created later — or first seen on another machine — arrives expanded. The
+   * inverse defaults every new project to hidden, which reads as the sidebar
+   * failing to notice it.
+   */
+  readonly collapsedProjects: readonly string[];
+  /**
+   * Boards pinned to the top of the sidebar, as `projectId/boardId`.
+   *
+   * The project id is in the key because a board's NAME lives in
+   * `boards.list`, which is queried per project. With bare board ids the pinned
+   * section would have to fetch every project's boards to find out which one
+   * each pin belonged to — turning a lazily-loaded tree into a full fan-out on
+   * every page load, for the sake of two shortcuts. `pinKey` is the only place
+   * that knows the shape.
+   */
+  readonly pinnedBoards: readonly string[];
+  /**
+   * The card being dragged, if any.
+   *
+   * Genuinely ephemeral: it exists between pointer-down and drop and has no
+   * server equivalent at any moment. Kept here rather than in component state
+   * so the drop target and the drag overlay — which are not in the same subtree
+   * — can both see it.
+   */
+  readonly draggingCardId: string | null;
+}
+
+interface UiActions {
+  readonly toggleSidebar: () => void;
+  readonly setViewMode: (mode: ViewMode) => void;
+  readonly setDraggingCard: (cardId: string | null) => void;
+  readonly toggleProject: (projectId: string) => void;
+  readonly togglePinnedBoard: (projectId: string, boardId: string) => void;
+}
+
+export const useUi = create<UiState & UiActions>((set) => ({
+  sidebarOpen: true,
+  viewMode: 'board',
+  draggingCardId: null,
+  collapsedProjects: readIds(COLLAPSED_KEY),
+  pinnedBoards: readIds(PINNED_KEY),
+
+  toggleSidebar: () => {
+    set((state) => ({ sidebarOpen: !state.sidebarOpen }));
+  },
+  setViewMode: (viewMode) => {
+    set({ viewMode });
+  },
+  setDraggingCard: (draggingCardId) => {
+    set({ draggingCardId });
+  },
+
+  toggleProject: (projectId) => {
+    set((state) => {
+      const collapsedProjects = toggled(state.collapsedProjects, projectId);
+      writeIds(COLLAPSED_KEY, collapsedProjects);
+      return { collapsedProjects };
+    });
+  },
+
+  togglePinnedBoard: (projectId, boardId) => {
+    set((state) => {
+      const pinnedBoards = toggled(state.pinnedBoards, pinKey(projectId, boardId));
+      writeIds(PINNED_KEY, pinnedBoards);
+      return { pinnedBoards };
+    });
+  },
+}));

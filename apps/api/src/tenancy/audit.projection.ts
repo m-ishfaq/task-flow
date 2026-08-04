@@ -56,6 +56,50 @@ const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>> = {
   'team.member_removed': { type: 'team', key: 'teamId' },
   'grant.created': { type: 'member', key: 'subjectId' },
   'grant.revoked': { type: 'member', key: 'subjectId' },
+
+  /* Work (Phase 3). Lists resolve to their BOARD, matching the authorization
+     model: there is no `list` resource type, because a list is not
+     independently grantable and no tuple can point at one. An audit entry
+     naming a resource type the policy engine has never heard of would be
+     unusable by the permission debug endpoint that reads the same vocabulary. */
+  'project.created': { type: 'project', key: 'projectId' },
+  'project.updated': { type: 'project', key: 'projectId' },
+  'project.archived': { type: 'project', key: 'projectId' },
+  'board.created': { type: 'board', key: 'boardId' },
+  'board.updated': { type: 'board', key: 'boardId' },
+  'board.archived': { type: 'board', key: 'boardId' },
+  'list.created': { type: 'board', key: 'boardId' },
+  'list.updated': { type: 'board', key: 'boardId' },
+  'list.reordered': { type: 'board', key: 'boardId' },
+  'list.archived': { type: 'board', key: 'boardId' },
+  'list.rebalanced': { type: 'board', key: 'boardId' },
+  'card.created': { type: 'card', key: 'cardId' },
+  'card.updated': { type: 'card', key: 'cardId' },
+  'card.moved': { type: 'card', key: 'cardId' },
+  'card.assigned': { type: 'card', key: 'cardId' },
+  'card.archived': { type: 'card', key: 'cardId' },
+
+  /* Card detail. Labels and custom field DEFINITIONS resolve to their project,
+     because that is what they belong to and what a grant could name; the
+     per-card events resolve to the card. Checklists and their items have no
+     resource type of their own for the same reason lists do not — nobody shares
+     one checklist — so they resolve to the card that owns them. */
+  'label.created': { type: 'project', key: 'projectId' },
+  'label.updated': { type: 'project', key: 'projectId' },
+  'label.deleted': { type: 'project', key: 'projectId' },
+  'card.labeled': { type: 'card', key: 'cardId' },
+  'checklist.created': { type: 'card', key: 'cardId' },
+  'checklist.deleted': { type: 'card', key: 'cardId' },
+  'checklist_item.created': { type: 'card', key: 'cardId' },
+  'checklist_item.updated': { type: 'card', key: 'cardId' },
+  'checklist_item.deleted': { type: 'card', key: 'cardId' },
+  'custom_field.created': { type: 'project', key: 'projectId' },
+  'custom_field.updated': { type: 'project', key: 'projectId' },
+  'custom_field.archived': { type: 'project', key: 'projectId' },
+  'card.field_set': { type: 'card', key: 'cardId' },
+  'comment.created': { type: 'comment', key: 'commentId' },
+  'comment.updated': { type: 'comment', key: 'commentId' },
+  'comment.deleted': { type: 'comment', key: 'commentId' },
 };
 
 interface Resource {

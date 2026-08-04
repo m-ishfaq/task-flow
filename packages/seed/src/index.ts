@@ -1,0 +1,50 @@
+/**
+ * @taskflow/seed — public surface.
+ *
+ * Consumed by `cli.ts` (this package's own entry point) and by tests that
+ * want to exercise a module or the registry without going through argv. Not
+ * meant to be imported by application code — this package takes the migrator
+ * connection directly (`@taskflow/db/testing`), which is legitimate for a
+ * seed and would be a guardrail violation anywhere else.
+ */
+
+export { createRng, type Rng } from './rng.js';
+export {
+  createSeedContext,
+  createSeedDb,
+  type SeedContext,
+  type SeedDb,
+  type SeedColumn,
+  type CreateContextOptions,
+  type SeedContextHandle,
+} from './context.js';
+export {
+  defineSeedModule,
+  resolveModules,
+  tablesInTeardownOrder,
+  type SeedModule,
+} from './registry.js';
+export {
+  PROFILES,
+  DEFAULT_PROFILE,
+  findProfile,
+  plannedCardCount,
+  LIST_NAMES,
+  WIP_LIMITED_LIST,
+  WIP_LIMIT,
+  type Profile,
+  type OrgPlan,
+  type ProjectPlan,
+  type BoardPlan,
+  type CardMix,
+} from './profiles.js';
+export { reset, type ResetOptions, type ResetResult } from './reset.js';
+
+export { usersModule, SEED_PASSWORD, SEED_EMAIL_DOMAIN } from './modules/identity.users.js';
+export { orgsModule } from './modules/tenancy.orgs.js';
+export { tuplesModule } from './modules/authz.tuples.js';
+export { projectsModule } from './modules/work.projects.js';
+export { boardsModule } from './modules/work.boards.js';
+export { cardsModule } from './modules/work.cards.js';
+export { attachmentsModule } from './modules/platform.attachments.js';
+export { auditModule } from './modules/platform.audit.js';

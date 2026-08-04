@@ -149,6 +149,89 @@ for (const expected of EXPECTED) {
 
 console.log(`\n${EXPECTED.length - failures.length}/${EXPECTED.length} guardrails firing.`);
 
+/* -------------------------------------------------------------------------- *
+ * apps/web — asserted on the COMPUTED CONFIG rather than on a fixture
+ *
+ * The fixtures above prove the rules fire where they are linted. They cannot
+ * prove anything about apps/web, because a fixture there would have to live
+ * inside the app's own source tree, be type-checked by the app's tsconfig, and
+ * be skipped by the app's own `eslint src` — three ways for the test to quietly
+ * stop being run.
+ *
+ * The computed config answers the question directly, and it is the RIGHT
+ * question: the failure this file exists to catch is a flat-config block that
+ * REPLACES `no-restricted-syntax` instead of merging into it, which is exactly
+ * what happens if the React block in eslint.config.js ever grows a
+ * `no-restricted-syntax` of its own. That would silently disarm every guardrail
+ * for the only app that renders HTML — including the XSS ban, which is the one
+ * that matters most there.
+ * -------------------------------------------------------------------------- */
+
+const WEB_FILE = resolve(repoRoot, 'apps', 'web', 'src', 'main.tsx');
+const webConfig = await eslint.calculateConfigForFile(WEB_FILE);
+
+/** Substrings that must appear in the effective ban list for apps/web. */
+const WEB_SYNTAX_BANS = [
+  ['XSS: rich text is stored as TipTap JSON', 'dangerouslySetInnerHTML'],
+  ['assigning innerHTML', 'innerHTML assignment'],
+  ['not cryptographically secure', 'Math.random()'],
+  ['Zod-validated schema', 'bare process.env'],
+  ['can() from @taskflow/policy', 'inline role comparison'],
+];
+
+const WEB_IMPORT_BANS = [
+  ['The browser never talks to the database', '@taskflow/db import'],
+  ['Cryptographic primitives belong in @taskflow/security', 'node:crypto import'],
+];
+
+const webFailures = [];
+
+const syntaxRule = webConfig.rules?.['no-restricted-syntax'] ?? [];
+const syntaxText = JSON.stringify(syntaxRule);
+
+for (const [needle, label] of WEB_SYNTAX_BANS) {
+  if (syntaxText.includes(needle)) {
+    console.log(`  ok    apps/web keeps the ${label} ban`);
+  } else {
+    console.error(`  FAIL  apps/web LOST the ${label} ban`);
+    webFailures.push(label);
+  }
+}
+
+const importRule = webConfig.rules?.['no-restricted-imports'] ?? [];
+const importText = JSON.stringify(importRule);
+
+for (const [needle, label] of WEB_IMPORT_BANS) {
+  if (importText.includes(needle)) {
+    console.log(`  ok    apps/web keeps the ${label} ban`);
+  } else {
+    console.error(`  FAIL  apps/web LOST the ${label} ban`);
+    webFailures.push(label);
+  }
+}
+
+/* And that the React rules are actually attached — a `files` glob that stops
+   matching would disable the accessibility rules with no error anywhere, and
+   the keyboard path through the kanban board is the thing they protect. */
+if (webConfig.rules?.['react-hooks/rules-of-hooks'] !== undefined) {
+  console.log('  ok    apps/web has the React rules attached');
+} else {
+  console.error(
+    '  FAIL  apps/web is missing the React rules — check the files glob in eslint.config.js',
+  );
+  webFailures.push('react rules');
+}
+
+if (webFailures.length > 0) {
+  console.error(
+    `\nFAIL: apps/web lost ${webFailures.length} guardrail(s).\n` +
+      `Most likely cause: a config block scoped to apps/web set 'no-restricted-syntax'\n` +
+      `or 'no-restricted-imports' without re-emitting the full list. Flat config\n` +
+      `REPLACES these options rather than merging them.\n`,
+  );
+  process.exit(1);
+}
+
 if (failures.length > 0) {
   console.error(
     `\nFAIL: ${failures.length} guardrail(s) not firing as specified.\n` +

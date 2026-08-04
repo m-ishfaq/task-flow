@@ -265,6 +265,55 @@ export async function down(options: RunnerOptions, count = 1): Promise<number> {
 }
 
 /**
+ * A database `verify` is permitted to destroy.
+ *
+ * `verify` reverts EVERY migration before re-applying them, so it drops every
+ * table and everything in them. Nothing distinguishes a database that exists to
+ * be thrown away from one holding a developer's own org, boards and cards except
+ * the connection string — which this command does not own and, until now, read
+ * from whatever `.env` happened to be on disk.
+ *
+ * That is not a hypothetical. Run against `taskflow`, it deleted a real account,
+ * project, board and card, and then printed `verify: OK — migrations are
+ * reversible and re-appliable`. The damage is invisible in the output and
+ * indistinguishable from success: the next sign-in fails with "Incorrect email
+ * or password", which reads as an authentication bug rather than as the command
+ * that caused it.
+ *
+ * So the target must be marked disposable IN ITS NAME. An assumption that the
+ * URL points somewhere safe is exactly the kind of vigilance this codebase does
+ * not rely on.
+ */
+const DISPOSABLE_SUFFIX = '_test';
+
+/**
+ * Throws unless `url` names a disposable database.
+ *
+ * Exported so the CLI can fail before doing anything, and so a test can prove
+ * the refusal still fires — a guard that silently stops matching is worse than
+ * no guard, because the command keeps reporting OK either way.
+ */
+export function assertDisposableDatabase(url: string): void {
+  let database: string;
+  try {
+    database = new URL(url).pathname.replace(/^\//, '');
+  } catch {
+    // An unparseable URL cannot be shown to be safe, and the whole point here is
+    // that "probably fine" is not good enough before dropping every table.
+    throw new Error('verify: could not read a database name from the connection string.');
+  }
+
+  if (!database.endsWith(DISPOSABLE_SUFFIX)) {
+    throw new Error(
+      `verify: refusing to run against "${database}".\n` +
+        'It reverts every migration, which drops every table and all of their\n' +
+        'contents. Only a database whose name ends in "_test" may be used.\n' +
+        'Set DATABASE_VERIFY_URL, or leave it unset to use taskflow_test.',
+    );
+  }
+}
+
+/**
  * The CI gate: apply everything, revert everything, apply everything again.
  *
  * Catches the two failure modes that only appear under rollback — a down script
@@ -273,6 +322,10 @@ export async function down(options: RunnerOptions, count = 1): Promise<number> {
  * during an incident.
  */
 export async function verify(options: RunnerOptions): Promise<void> {
+  // Before loading a file or opening a connection: this is destructive, and a
+  // check that runs after the first `down` has already lost the data.
+  assertDisposableDatabase(options.migrationUrl);
+
   const log = options.log ?? (() => undefined);
   const migrations = await loadMigrations(options.migrationsDir);
 

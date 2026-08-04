@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { publicRoute, router } from './trpc/builder.js';
 import { createIdentityRouter, type IdentityRouterDeps } from './identity/router.js';
 import { createTenancyRouter } from './tenancy/router.js';
+import { createWorkRouter, type WorkRouterDeps } from './work/router.js';
 
 /**
  * The root router.
@@ -13,7 +14,18 @@ import { createTenancyRouter } from './tenancy/router.js';
  * either way.
  */
 
-export function createAppRouter(deps: IdentityRouterDeps) {
+export interface AppRouterDeps extends IdentityRouterDeps {
+  /**
+   * Work's external dependencies — object storage and the virus scanner.
+   *
+   * Threaded through rather than constructed here so a test can supply a
+   * scanner that always answers 'infected', or a storage provider backed by a
+   * map, without a container.
+   */
+  readonly work: WorkRouterDeps;
+}
+
+export function createAppRouter(deps: AppRouterDeps) {
   return router({
     health: router({
       /**
@@ -40,6 +52,17 @@ export function createAppRouter(deps: IdentityRouterDeps) {
      * be an empty object threaded through for symmetry.
      */
     tenancy: createTenancyRouter(),
+
+    /**
+     * Work — projects, boards, lists, cards, card detail, attachments (Phase 3).
+     *
+     * Almost dependency-free, for the same reason as tenancy: the tenant-scoped
+     * database and the policy engine are module-level and stateless, and the
+     * rank generator is a pure function in @taskflow/contracts. Attachments are
+     * the exception — object storage and the virus scanner are external
+     * services with configuration and a lifecycle.
+     */
+    work: createWorkRouter(deps.work),
   });
 }
 

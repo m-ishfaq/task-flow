@@ -22,7 +22,8 @@
     },
     "test": {
       "dependsOn": ["^build"],
-      "outputs": []
+      "outputs": [],
+      "cache": false
     },
     "test:coverage": {
       "dependsOn": ["^build"],

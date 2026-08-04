@@ -102,3 +102,27 @@ export {
   type ChainVerification,
   type StoredAuditEntry,
 } from './audit-chain.js';
+
+/**
+ * Upload pipeline primitives (§8.4).
+ *
+ * Both live here rather than in the API for the reason the crypto ban exists:
+ * one file per security concern, on the human-review list, instead of a
+ * hand-rolled byte comparison in whatever service happened to need it.
+ */
+export {
+  verifyMagicBytes,
+  isAcceptedContentType,
+  ACCEPTED_CONTENT_TYPES,
+  MAGIC_BYTE_PREFIX_LENGTH,
+  type SniffResult,
+} from './magic-bytes.js';
+
+export {
+  scanBuffer,
+  isScannerReady,
+  EICAR_TEST_SIGNATURE,
+  type ScanResult,
+  type ScanVerdict,
+  type ScannerConfig,
+} from './virus-scan.js';

@@ -19,11 +19,59 @@ import { withAuditScope, withOrgScope, type GlobalDb } from './client.js';
  * was taken over.
  */
 
+/**
+ * Converts a timestamp column into a `Date`.
+ *
+ * Drizzle's raw `tx.execute(sql\`…\`)` does NOT apply the driver's type parsers —
+ * every column arrives as the text Postgres rendered, which is deliberate and is
+ * exactly what `readChainEntries` below depends on. It means a `timestamptz`
+ * comes back as `'2026-07-29 15:57:08.350265+00'`, not as a Date.
+ *
+ * This existed as `record['occurred_at'] as Date` — a cast, not a conversion.
+ * TypeScript believed it, the service believed it, and the route's `z.date()`
+ * output schema did not: every non-empty page of `tenancy.audit.list` failed
+ * output validation and answered INTERNAL_ERROR. The endpoint had never
+ * returned a row. Nothing caught it because the service tests call the service
+ * directly, where the cast is simply believed.
+ *
+ * Postgres renders `timestamptz` with a space rather than the `T` of ISO-8601,
+ * which `new Date()` accepts, but the offset form `+00` is not universally
+ * parsed — so it is normalized before parsing rather than trusted.
+ */
+function instant(value: unknown): Date {
+  if (value instanceof Date) return value;
+
+  if (typeof value !== 'string') {
+    throw new TypeError(`Expected a timestamp from audit.audit_log, received ${typeof value}.`);
+  }
+
+  const normalized = value.replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00');
+  const parsed = new Date(normalized);
+
+  if (Number.isNaN(parsed.getTime())) {
+    throw new TypeError(`Could not parse the audit timestamp ${JSON.stringify(value)}.`);
+  }
+  return parsed;
+}
+
 export interface AuditEntryRow {
   readonly id: string;
   readonly seq: string;
   readonly occurredAt: Date;
   readonly actorId: string | null;
+  /**
+   * The actor's address, resolved for display.
+   *
+   * NOT part of the hashed entry and deliberately not stored on it — see
+   * `readAuditEntries` for why the log records an id and resolves the address at
+   * read time.
+   *
+   * Null has two distinct causes, and the reader has to keep them apart:
+   * `actorId` null means the SYSTEM acted, while `actorId` set with a null email
+   * means the account itself is gone. `readAuditEntries` is a LEFT JOIN so the
+   * second case still returns the row.
+   */
+  readonly actorEmail: string | null;
   readonly action: string;
   readonly resourceType: string | null;
   readonly resourceId: string | null;
@@ -80,6 +128,33 @@ export interface ReadAuditInput {
  * it is being read, so an OFFSET page silently repeats rows as new entries push
  * older ones down — which reads as duplicated events rather than as a paging
  * artefact.
+ *
+ * ## Why the address is joined at read time and not stored on the entry
+ *
+ * The obvious alternative is to denormalize `actor_email` into `audit.audit_log`
+ * when the projection writes the row, which would survive the account being
+ * deleted outright. It is rejected for two reasons.
+ *
+ * The hashed entry is a record of WHAT HAPPENED, and an email address is not a
+ * property of the event — it is a mutable attribute of an account that can be
+ * changed afterwards. Freezing a copy into the chain means the log asserts an
+ * address that may no longer be the person's, with the authority of a digest
+ * behind it. The id is the durable fact; the address is a lookup.
+ *
+ * And adding a column to the hashed set is a change to the hash contract in
+ * migration 0007 and to `@taskflow/security/audit-chain.ts` at once, which would
+ * invalidate every digest already written.
+ *
+ * ## LEFT, not INNER
+ *
+ * `actor_id` is null for system actions — a retention sweep, a scheduled
+ * automation — and §8.6 treats "the system did it" as a real value rather than a
+ * missing one. An inner join would drop exactly those rows, and a compliance
+ * record that silently omits the unattended actions is worse than one that has
+ * none. `identity.users` carries no tenant policy of its own, so an actor who
+ * has since been removed from the ORG still resolves, which is the case that
+ * matters most: the people worth looking up in an audit log are usually the ones
+ * who have left.
  */
 export async function readAuditEntries(
   orgId: OrgId,
@@ -87,18 +162,20 @@ export async function readAuditEntries(
 ): Promise<readonly AuditEntryRow[]> {
   return withOrgScope(orgId, async (tx) => {
     const result = await tx.execute(sql`
-      SELECT id::text          AS id,
-             seq::text         AS seq,
-             occurred_at       AS occurred_at,
-             actor_id::text    AS actor_id,
-             action            AS action,
-             resource_type     AS resource_type,
-             resource_id::text AS resource_id,
-             changes           AS changes,
-             request_id        AS request_id
+      SELECT audit_log.id::text          AS id,
+             audit_log.seq::text         AS seq,
+             audit_log.occurred_at       AS occurred_at,
+             audit_log.actor_id::text    AS actor_id,
+             actor.email                 AS actor_email,
+             audit_log.action            AS action,
+             audit_log.resource_type     AS resource_type,
+             audit_log.resource_id::text AS resource_id,
+             audit_log.changes           AS changes,
+             audit_log.request_id        AS request_id
         FROM audit.audit_log
-       WHERE (${input.before}::bigint IS NULL OR seq < ${input.before}::bigint)
-       ORDER BY seq DESC
+        LEFT JOIN identity.users AS actor ON actor.id = audit_log.actor_id
+       WHERE (${input.before}::bigint IS NULL OR audit_log.seq < ${input.before}::bigint)
+       ORDER BY audit_log.seq DESC
        LIMIT ${input.limit}
     `);
 
@@ -107,8 +184,9 @@ export async function readAuditEntries(
       return {
         id: required(record['id']),
         seq: required(record['seq']),
-        occurredAt: record['occurred_at'] as Date,
+        occurredAt: instant(record['occurred_at']),
         actorId: text(record['actor_id']),
+        actorEmail: text(record['actor_email']),
         action: required(record['action']),
         resourceType: text(record['resource_type']),
         resourceId: text(record['resource_id']),
@@ -133,6 +211,24 @@ export async function readAuditEntries(
  *     timestamptz depends on the session's TimeZone and DateStyle, so a
  *     verifier connecting with different settings would report tampering on
  *     rows nobody touched.
+ *
+ * ## `ORDER BY audit_log.seq` is qualified, and must stay that way
+ *
+ * `seq::text AS seq` introduces an OUTPUT COLUMN called `seq`, and Postgres
+ * resolves a bare `ORDER BY seq` to that alias in preference to the underlying
+ * bigint column. The rows then come back in TEXT order — 1, 10, 11 … 16, 2, 3 —
+ * and the verifier, which checks that each entry's sequence follows the last,
+ * reports `sequence_gap`, `broken_link` and `hash_mismatch` on entries nobody
+ * touched.
+ *
+ * The effect is worse than a wrong sort: EVERY organization with ten or more
+ * audit entries reported its chain as broken. An integrity check that cries
+ * wolf on healthy data is not a weaker control, it is a negative one — the first
+ * response to a real detection would be to assume the verifier is wrong again.
+ *
+ * Qualifying the column binds to the table. `audit-log.test.ts` seeds more than
+ * nine entries specifically so text and numeric order diverge; with fewer, both
+ * orderings agree and the bug is invisible.
  */
 export async function readAuditChain(orgId: OrgId): Promise<readonly AuditChainRow[]> {
   return withOrgScope(orgId, async (tx) => {
@@ -154,7 +250,7 @@ export async function readAuditChain(orgId: OrgId): Promise<readonly AuditChainR
              prev_hash           AS prev_hash,
              hash                AS hash
         FROM audit.audit_log
-       ORDER BY seq
+       ORDER BY audit_log.seq
     `);
 
     return result.rows.map((row): AuditChainRow => {

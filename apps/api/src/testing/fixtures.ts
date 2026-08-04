@@ -2,6 +2,7 @@ import { unsafeAsId } from '@taskflow/contracts';
 import { RecordingEventBus } from '@taskflow/events';
 import { createAppRouter } from '../router.js';
 import { buildIdentityDeps, buildPasskeyDeps } from '../identity/deps.js';
+import { buildWorkDeps } from '../work/deps.js';
 import type { AuthenticatedPrincipal, OrgMembership, RequestContext } from '../trpc/context.js';
 import type { DeliverableLink } from '../identity/identity.service.js';
 import { parseEnv, type Env } from '../config/env.js';
@@ -15,7 +16,7 @@ import { parseEnv, type Env } from '../config/env.js';
  */
 
 export const TEST_ENV: Env = parseEnv({
-  DATABASE_URL: 'postgresql://taskflow_app:app-dev-secret@localhost:5432/taskflow',
+  DATABASE_URL: 'postgresql://taskflow_app:app-dev-secret@localhost:5433/taskflow_test',
   MASTER_KEY_ID: 'mk-test',
   MASTER_KEY_BASE64: Buffer.alloc(32, 1).toString('base64'),
   JWT_SECRET: Buffer.alloc(32, 2).toString('base64'),
@@ -24,6 +25,16 @@ export const TEST_ENV: Env = parseEnv({
   MAIL_FROM: 'TaskFlow <no-reply@taskflow.test>',
   WEB_ORIGIN: 'http://localhost:5173',
   LOG_LEVEL: 'fatal',
+
+  /* Object storage and the scanner, pointed at the local compose stack (§8.4).
+     Real values rather than placeholders because the storage contract tests
+     actually talk to MinIO — a fake endpoint here would make them fail in a way
+     that looks like a bug in the provider. */
+  STORAGE_ENDPOINT: 'http://localhost:9000',
+  STORAGE_ACCESS_KEY_ID: 'taskflow',
+  STORAGE_SECRET_ACCESS_KEY: 'taskflow-dev-secret',
+  STORAGE_BUCKET_ATTACHMENTS: 'taskflow-attachments',
+  STORAGE_BUCKET_EXPORTS: 'taskflow-exports',
 });
 
 export function testContext(overrides: Partial<RequestContext> = {}): RequestContext {
@@ -74,5 +85,10 @@ export function testAppRouter(options: { deliver?: (m: DeliverableLink) => Promi
   });
 
   const passkeys = buildPasskeyDeps(deps, TEST_ENV);
-  return { router: createAppRouter({ identity: deps, passkeys }), events, deps, passkeys };
+  return {
+    router: createAppRouter({ identity: deps, passkeys, work: buildWorkDeps(TEST_ENV) }),
+    events,
+    deps,
+    passkeys,
+  };
 }

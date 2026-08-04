@@ -1,0 +1,122 @@
+import { useMutation, useQuery } from '@tanstack/react-query';
+import type { BoardId, CardId, ProjectId, StatusId } from '@taskflow/contracts';
+import { api } from '../../../lib/trpc.js';
+import { keys } from '../../../lib/query.js';
+import { useOptimistic } from '../../../lib/optimistic.js';
+import { patchBoardCards, patchCardDetail, statusesQuery, type Priority } from '../api.js';
+import { useUpdateCard } from '../use-update-card.js';
+
+/**
+ * Status and priority — the two card-level fields Wave 2 adds
+ * (`ai/phase-3.5-work-ux.md` §5).
+ *
+ * Two different mutations on purpose, matching the split in `card.service.ts`:
+ * status goes through `cards.setStatus`, a dedicated route that emits
+ * `card.status_changed`; priority rides `cards.update` alongside title and
+ * dates. This component is scoped to ONE card, unlike `useUpdateCard` — so,
+ * unlike its board-tile-only optimism, `StatusSection` can patch
+ * `keys.card(orgId, cardId)` directly and have the select itself update
+ * before the round trip completes.
+ */
+
+export interface StatusSectionProps {
+  readonly orgId: string;
+  readonly boardId: BoardId;
+  readonly cardId: CardId;
+  readonly projectId: ProjectId;
+  readonly statusId: string | null;
+}
+
+export function StatusSection({ orgId, boardId, cardId, projectId, statusId }: StatusSectionProps) {
+  const optimistic = useOptimistic();
+  const list = useQuery(statusesQuery(orgId, projectId));
+
+  const setStatus = useMutation({
+    mutationFn: (next: StatusId | null) => api.work.cards.setStatus.mutate({ cardId, statusId: next }),
+
+    ...optimistic<StatusId | null>({
+      keys: [keys.card(orgId, cardId), keys.cardsOfBoard(orgId, boardId)],
+      patch: (client, next) => {
+        patchCardDetail(client, orgId, cardId, (card) => ({ ...card, statusId: next }));
+        patchBoardCards(client, orgId, boardId, (cards) =>
+          cards.map((card) => (card.cardId === cardId ? { ...card, statusId: next } : card)),
+        );
+      },
+      failureTitle: 'Status was not saved',
+    }),
+  });
+
+  return (
+    <section className="space-y-2">
+      <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Status</h3>
+      <select
+        aria-label="Status"
+        value={statusId ?? ''}
+        onChange={(event) => {
+          const value = event.target.value;
+          setStatus.mutate(value === '' ? null : (value as StatusId));
+        }}
+        className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+      >
+        <option value="">No status</option>
+        {(list.data ?? []).map((status) => (
+          <option key={status.statusId} value={status.statusId}>
+            {status.name}
+          </option>
+        ))}
+      </select>
+    </section>
+  );
+}
+
+const PRIORITIES: readonly Priority[] = ['urgent', 'high', 'normal', 'low'];
+const PRIORITY_LABEL: Readonly<Record<Priority, string>> = {
+  urgent: 'Urgent',
+  high: 'High',
+  normal: 'Normal',
+  low: 'Low',
+};
+
+export interface PrioritySectionProps {
+  readonly orgId: string;
+  readonly boardId: BoardId;
+  readonly cardId: CardId;
+  readonly priority: Priority | null;
+}
+
+/**
+ * Goes through `useUpdateCard`, not a bespoke mutation — priority rides
+ * `cards.update` on the server, and a caller holding only what this section
+ * needs cannot safely call that full-replace route directly (see the comment
+ * on `useUpdateCard`). This select therefore waits for the round trip the
+ * same way `DatesSection` does; the board tile updates sooner because
+ * `useUpdateCard` patches `cardsOfBoard` optimistically.
+ */
+export function PrioritySection({ orgId, boardId, cardId, priority }: PrioritySectionProps) {
+  const update = useUpdateCard(orgId, boardId);
+
+  return (
+    <section className="space-y-2">
+      <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Priority</h3>
+      <select
+        aria-label="Priority"
+        value={priority ?? ''}
+        onChange={(event) => {
+          const value = event.target.value;
+          update.mutate({
+            cardId,
+            patch: { priority: value === '' ? null : (value as Priority) },
+          });
+        }}
+        className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+      >
+        <option value="">No priority</option>
+        {PRIORITIES.map((entry) => (
+          <option key={entry} value={entry}>
+            {PRIORITY_LABEL[entry]}
+          </option>
+        ))}
+      </select>
+    </section>
+  );
+}

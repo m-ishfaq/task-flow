@@ -12,6 +12,7 @@ import {
   type OrgId,
 } from './client.js';
 import { appendToOutbox, claimPending, markPublished, recordFailure } from './outbox.js';
+import { readAuditChain, readAuditEntries } from './audit-log.js';
 import { up } from './migrate/runner.js';
 import type { DomainEvent } from '@taskflow/events';
 
@@ -31,13 +32,13 @@ import type { DomainEvent } from '@taskflow/events';
  */
 
 const APP_URL =
-  process.env['DATABASE_URL'] ?? 'postgresql://taskflow_app:app-dev-secret@localhost:5432/taskflow';
+  process.env['TEST_DATABASE_URL'] ?? 'postgresql://taskflow_app:app-dev-secret@localhost:5433/taskflow_test';
 const AUDIT_URL =
-  process.env['DATABASE_AUDIT_URL'] ??
-  'postgresql://taskflow_audit:audit-dev-secret@localhost:5432/taskflow';
+  process.env['TEST_DATABASE_AUDIT_URL'] ??
+  'postgresql://taskflow_audit:audit-dev-secret@localhost:5433/taskflow_test';
 const MIGRATION_URL =
-  process.env['DATABASE_MIGRATION_URL'] ??
-  'postgresql://taskflow_migrator:migrator-dev-secret@localhost:5432/taskflow';
+  process.env['TEST_DATABASE_MIGRATION_URL'] ??
+  'postgresql://taskflow_migrator:migrator-dev-secret@localhost:5433/taskflow_test';
 
 const MIGRATIONS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'migrations');
 
@@ -252,6 +253,74 @@ async function writeEntry(orgId: OrgId, action: string): Promise<void> {
     `),
   );
 }
+
+describe('reading the audit log', () => {
+  it('returns occurredAt as a Date, not as the string the driver hands back', async () => {
+    /**
+     * `readAuditEntries` declared `occurredAt: Date` and produced it with
+     * `record['occurred_at'] as Date` — a cast, not a conversion.
+     *
+     * The route's OUTPUT schema says `z.date()`, so every non-empty page of the
+     * audit log failed output validation and answered INTERNAL_ERROR. The
+     * endpoint had never worked. Nothing caught it because the service tests
+     * call the service directly, where the cast is believed, and the only thing
+     * that disagrees is Zod at the route boundary.
+     *
+     * Asserting `instanceof Date` is the whole point — a `typeof` check or a
+     * comparison would both pass on the string.
+     */
+    await writeEntry(ORG_A, 'member.invited');
+
+    const entries = await readAuditEntries(ORG_A, { limit: 10, before: null });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.occurredAt).toBeInstanceOf(Date);
+    expect(Number.isNaN(entries[0]?.occurredAt.getTime())).toBe(false);
+  });
+
+  /**
+   * TEN entries, not two, and that is the entire point of this test.
+   *
+   * Both readers select `seq::text AS seq`, which introduces an output column
+   * named `seq` — and Postgres resolves a bare `ORDER BY seq` to that ALIAS
+   * ahead of the bigint column. The rows then arrive in text order:
+   * 1, 10, 11 … 2, 3 …
+   *
+   * Below ten entries, text and numeric order are identical and the bug cannot
+   * be observed. That is why it survived: every existing test writes two or
+   * three rows.
+   */
+  const TEN = 10;
+
+  it('orders by sequence NUMERICALLY, not as text', async () => {
+    for (let i = 0; i < TEN; i += 1) await writeEntry(ORG_A, `action.${String(i)}`);
+
+    const entries = await readAuditEntries(ORG_A, { limit: 50, before: null });
+    const sequences = entries.map((entry) => Number(entry.seq));
+
+    // Newest first, so strictly descending.
+    expect(sequences).toEqual([...sequences].sort((a, b) => b - a));
+    expect(sequences[0]).toBe(TEN);
+    expect(sequences[sequences.length - 1]).toBe(1);
+  });
+
+  it('reads the chain in sequence order too', async () => {
+    /* The reader the VERIFIER uses. Its ordering had the same alias bug, and
+       there the consequence was not a scrambled page but a false tampering
+       alarm — see the header comment in audit-log.ts. The end-to-end assertion
+       that a healthy chain verifies intact lives in apps/api, which is where
+       @taskflow/security and @taskflow/db are composed; packages/db does not
+       depend on the crypto package and should not start. */
+    for (let i = 0; i < TEN + 2; i += 1) await writeEntry(ORG_A, `action.${String(i)}`);
+
+    const chain = await readAuditChain(ORG_A);
+    const sequences = chain.map((row) => Number(row.seq));
+
+    expect(sequences).toEqual([...sequences].sort((a, b) => a - b));
+    expect(sequences[0]).toBe(1);
+    expect(sequences[sequences.length - 1]).toBe(TEN + 2);
+  });
+});
 
 describe('audit chain', () => {
   it('assigns seq and hash in the trigger, ignoring what the caller supplied', async () => {

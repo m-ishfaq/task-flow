@@ -1,0 +1,13 @@
+{
+  "extends": "@taskflow/config/tsconfig/react.json",
+  "compilerOptions": {
+    /* `node` is here for the WORKSPACE PACKAGES this app imports types from —
+       @taskflow/api in particular, whose source is Fastify and tRPC server code
+       written against Node globals. Nothing in src/ may use them: the DOM is the
+       runtime, and `process.env` is a lint error everywhere in this repo
+       (packages/config/eslint/security.js, `bareEnv`). Env reaches the browser
+       through import.meta.env, typed in src/env.d.ts. */
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["src/**/*", "vite.config.ts", "eslint.config.js"]
+}

@@ -38,8 +38,16 @@ export interface FuzzOrg {
   /**
    * Ids belonging to this org, keyed by the input field name a route expects
    * (`cardId`, `boardId`). The harness feeds org B's ids to org A's session.
+   *
+   * Values are `unknown` rather than `string` because a cross-tenant id is not
+   * always a bare id. `cards.assign` takes an ARRAY of user ids and
+   * `cards.update` requires a numeric `version`; with only strings available,
+   * both routes would reject the bag on shape and answer BAD_REQUEST — which
+   * this harness counts as a refusal. They would pass without the tenant
+   * boundary ever being consulted, which is a false negative in the one
+   * direction that matters.
    */
-  readonly resourceIds: Readonly<Record<string, string>>;
+  readonly resourceIds: Readonly<Record<string, unknown>>;
 }
 
 export interface FuzzResult {

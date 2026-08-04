@@ -262,6 +262,16 @@ describe('bearer authentication', () => {
   });
 });
 
+/** The error envelope, as the tRPC formatter shapes it. */
+interface ValidationBody {
+  readonly error: {
+    readonly data: {
+      readonly code: string;
+      readonly details?: Record<string, string>;
+    };
+  };
+}
+
 describe('HTTP status mapping', () => {
   /**
    * Domain failures must carry the right STATUS, not just the right code.
@@ -310,6 +320,46 @@ describe('HTTP status mapping', () => {
     });
 
     expect(response.statusCode).toBe(400);
+  });
+
+  it('names the field that failed validation', async () => {
+    /* `details` is documented in ApiError as "field-level detail for
+       VALIDATION_FAILED" and went unfilled until a registration form answered
+       "The request was not valid." to a password one character short. The
+       server knew which field and why; the last step discarded it, and the user
+       was left guessing at a rule they had just been shown. */
+    const response = await app.inject({
+      method: 'POST',
+      url: '/trpc/auth.register',
+      payload: { email: 'short-pw2@example.test', password: 'tooshort' },
+    });
+
+    const body = response.json<ValidationBody>();
+
+    expect(body.error.data.code).toBe('VALIDATION_FAILED');
+    expect(body.error.data.details?.['password']).toContain('12');
+  });
+
+  it('reports which field, never what was in it', async () => {
+    /* The line this detail must not cross. Naming `password` states a published
+       constraint about data the caller already has; echoing the value would put
+       a credential in a response body, an error log, and any proxy that records
+       one. */
+    const secret = 'hunter2-was-here';
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/trpc/auth.register',
+      payload: { email: 'not-an-email', password: secret },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.payload).not.toContain(secret);
+
+    const body = response.json<ValidationBody>();
+    expect(body.error.data.details?.['email']).toBeTypeOf('string');
+    // And nothing keyed on the password, whose only issue would have to quote it.
+    expect(body.error.data.details?.['password']).toBeUndefined();
   });
 
   it('never answers 5xx for a client mistake', async () => {

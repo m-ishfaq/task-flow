@@ -37,10 +37,10 @@ import { up } from './migrate/runner.js';
  */
 
 const APP_URL =
-  process.env['DATABASE_URL'] ?? 'postgresql://taskflow_app:app-dev-secret@localhost:5432/taskflow';
+  process.env['TEST_DATABASE_URL'] ?? 'postgresql://taskflow_app:app-dev-secret@localhost:5433/taskflow_test';
 const MIGRATION_URL =
-  process.env['DATABASE_MIGRATION_URL'] ??
-  'postgresql://taskflow_migrator:migrator-dev-secret@localhost:5432/taskflow';
+  process.env['TEST_DATABASE_MIGRATION_URL'] ??
+  'postgresql://taskflow_migrator:migrator-dev-secret@localhost:5433/taskflow_test';
 
 const MIGRATIONS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'migrations');
 

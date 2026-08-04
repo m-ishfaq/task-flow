@@ -105,6 +105,45 @@ export const EnvSchema = z
       .transform((value) => value === 'true'),
     MAIL_FROM: NonEmpty,
 
+    /* Object storage (§5, §8.4). MinIO locally, Cloudflare R2 on the free tier,
+       S3 past 10 GB — all three speak the same API, so only these values
+       change.
+
+       Required rather than optional, for the same reason as MAIL_HOST: an
+       attachment upload that fails at presign time because a bucket name was
+       never set is a broken feature discovered by a user, where an unset
+       variable is a boot failure discovered by whoever deployed it. */
+    STORAGE_ENDPOINT: NonEmpty,
+    STORAGE_REGION: z.string().default('us-east-1'),
+    STORAGE_ACCESS_KEY_ID: NonEmpty,
+    STORAGE_SECRET_ACCESS_KEY: NonEmpty,
+    STORAGE_BUCKET_ATTACHMENTS: NonEmpty,
+    STORAGE_BUCKET_EXPORTS: NonEmpty,
+    /* Path-style addressing. Required by MinIO, which has no per-bucket DNS;
+       R2 and S3 accept either. Defaults to true because the local stack is the
+       one a developer runs without setting anything. */
+    STORAGE_FORCE_PATH_STYLE: z
+      .enum(['true', 'false'])
+      .default('true')
+      .transform((value) => value === 'true'),
+
+    /* Largest attachment accepted, in bytes. Pinned into the upload signature
+       and used as the ceiling on the server-side read during scanning, so it
+       bounds memory as well as storage. */
+    STORAGE_MAX_UPLOAD_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(500 * 1024 * 1024)
+      .default(25 * 1024 * 1024),
+
+    /* Virus scanning (§8.4). An attachment is not downloadable until clamd has
+       looked at it, and an unreachable scanner fails CLOSED — so these being
+       wrong makes uploads stop working, which is the correct direction for a
+       misconfiguration to fail in. */
+    CLAMAV_HOST: z.string().default('localhost'),
+    CLAMAV_PORT: z.coerce.number().int().positive().max(65_535).default(3310),
+
     API_PORT: z.coerce.number().int().positive().max(65_535).default(3000),
     API_HOST: z.string().default('0.0.0.0'),
     API_TRUST_PROXY: TrustProxy,
@@ -155,6 +194,9 @@ const KNOWN_VARIABLES = new Set([
   'STORAGE_BUCKET_ATTACHMENTS',
   'STORAGE_BUCKET_EXPORTS',
   'STORAGE_FORCE_PATH_STYLE',
+  'STORAGE_MAX_UPLOAD_BYTES',
+  'CLAMAV_HOST',
+  'CLAMAV_PORT',
   'MAIL_HOST',
   'MAIL_PORT',
   'MAIL_SECURE',
@@ -174,7 +216,16 @@ const KNOWN_VARIABLES = new Set([
  * Deliberately excludes `NODE_` and `LOG_`, which collide with tooling that has
  * nothing to do with this project.
  */
-const TASKFLOW_PREFIXES = ['DATABASE_', 'STORAGE_', 'MAIL_', 'MASTER_KEY', 'JWT_', 'API_', 'WEB_'];
+const TASKFLOW_PREFIXES = [
+  'DATABASE_',
+  'STORAGE_',
+  'MAIL_',
+  'MASTER_KEY',
+  'JWT_',
+  'API_',
+  'WEB_',
+  'CLAMAV_',
+];
 
 /**
  * Rejects a variable that looks like ours but is not one of ours.

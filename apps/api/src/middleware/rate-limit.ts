@@ -217,11 +217,41 @@ function clientKey(request: FastifyRequest): string {
 }
 
 /**
+ * tRPC's JSON-RPC code for TOO_MANY_REQUESTS.
+ *
+ * A literal because tRPC exports its code table only from
+ * `unstable-core-do-not-import`, and pinning this repo to that path would make a
+ * patch release of a dependency a build break. `rate-limit.test.ts` asserts the
+ * emitted body is one the real client can read, so a change on their side fails
+ * a test rather than surfacing as an unreadable error in a browser.
+ */
+const TRPC_TOO_MANY_REQUESTS = -32029;
+
+/**
  * Answers 429 and stops the hook chain.
  *
  * Returning the reply is what stops it — a Fastify async hook that merely calls
  * `send` and returns undefined lets the request continue to the handler, which
  * here would mean the throttled login runs anyway and the 429 is decoration.
+ *
+ * ## The body has to match the PROTOCOL of the route being refused
+ *
+ * This hook runs before tRPC, on every route, so it is the one place that has to
+ * know there are two error envelopes in this system:
+ *
+ *   REST   `{ error: { code, message, requestId, retryAfterSeconds } }`
+ *   tRPC   `{ error: { message, code: <number>, data: { code, httpStatus, … } } }`
+ *
+ * It used to send the REST envelope everywhere, with a comment claiming it was
+ * "the same envelope the tRPC layer produces". It is not, and the consequence
+ * was specific and bad: the tRPC client could not parse it at all — it failed
+ * with "Unable to transform response from server" and `error.data` undefined —
+ * so the browser rendered its generic "something went wrong, the server did not
+ * say what" for the ONE failure that is completely self-explanatory and arrives
+ * with a `retry-after` telling you exactly how long to wait.
+ *
+ * Nothing failed. The header was right, the status was right, the JSON was
+ * well-formed, and the message was unreachable.
  */
 async function refuse(
   request: FastifyRequest,
@@ -229,14 +259,24 @@ async function refuse(
   retryAfterSeconds: number,
 ): Promise<FastifyReply> {
   const error = errors.rateLimited(retryAfterSeconds);
+  const envelope = error.toResponse(request.id);
 
-  /* The same envelope the tRPC layer produces, because this hook answers before
-     tRPC is reached and a client must not have to parse two error shapes to
-     learn it was throttled. */
-  await reply
-    .status(429)
-    .header('retry-after', String(retryAfterSeconds))
-    .send(error.toResponse(request.id));
+  const body = request.url.startsWith('/trpc')
+    ? {
+        error: {
+          message: envelope.error.message,
+          code: TRPC_TOO_MANY_REQUESTS,
+          data: {
+            code: envelope.error.code,
+            httpStatus: 429,
+            requestId: envelope.error.requestId,
+            retryAfterSeconds,
+          },
+        },
+      }
+    : envelope;
+
+  await reply.status(429).header('retry-after', String(retryAfterSeconds)).send(body);
 
   return reply;
 }

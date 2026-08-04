@@ -114,7 +114,11 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: taskflow
         ports:
-          - 5432:5432
+          # Matches compose.yaml. The runner has no competing Postgres, so 5432
+          # would work here — but the test fallbacks are shared with local
+          # development, and a CI that listens somewhere else is a CI that only
+          # passes because every suite happened to read the env vars below.
+          - 5433:5432
         options: >-
           --health-cmd "pg_isready -U postgres -d taskflow"
           --health-interval 5s
@@ -122,8 +126,21 @@ jobs:
           --health-retries 10
 
     env:
-      DATABASE_URL: postgresql://taskflow_app:app-dev-secret@localhost:5432/taskflow
-      DATABASE_MIGRATION_URL: postgresql://taskflow_migrator:migrator-dev-secret@localhost:5432/taskflow
+      # TEST_* for the suites, which run against `taskflow_test` — a separate
+      # database, because they truncate what they touch (see 04-test-database.sql).
+      # Deliberately different NAMES, not just different values: were these called
+      # DATABASE_URL, anything that later taught the suites to read a .env would
+      # silently aim them back at the developer's own data.
+      TEST_DATABASE_URL: postgresql://taskflow_app:app-dev-secret@localhost:5433/taskflow_test
+      TEST_DATABASE_MIGRATION_URL: postgresql://taskflow_migrator:migrator-dev-secret@localhost:5433/taskflow_test
+      TEST_DATABASE_AUDIT_URL: postgresql://taskflow_audit:audit-dev-secret@localhost:5433/taskflow_test
+
+      # For `migrate:verify`. It reverts every migration before re-applying them,
+      # so it drops every table — aimed at `taskflow` it is a full wipe, which is
+      # harmless on a throwaway CI container and destroyed a developer's own data
+      # locally. The runner now refuses any database not named `*_test`; this is
+      # set explicitly so CI states its target rather than inheriting a default.
+      DATABASE_VERIFY_URL: postgresql://taskflow_migrator:migrator-dev-secret@localhost:5433/taskflow_test
 
     steps:
       - uses: actions/checkout@v4

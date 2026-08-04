@@ -10,11 +10,15 @@
  * given the application's DATABASE_URL: taskflow_app has no DDL rights, and
  * granting them to make migrations "just work" would hand the runtime role the
  * ability to drop its own RLS policies (§8.3).
+ *
+ * `verify` is the exception: it is destructive, so it reads DATABASE_VERIFY_URL
+ * and defaults to `taskflow_test`. See `resolveMigrationUrl` below.
  */
 
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { TEST_MIGRATION_URL } from '../testing/index.js';
 import { down, status, up, verify, type RunnerOptions } from './runner.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -33,25 +37,51 @@ if (existsSync(envFile)) {
   process.loadEnvFile(envFile);
 }
 
-const migrationUrl = process.env['DATABASE_MIGRATION_URL'];
-if (!migrationUrl) {
-  console.error(
-    'DATABASE_MIGRATION_URL is not set.\n' +
-      'Copy .env.example to .env, or export it directly. It must point at the\n' +
-      'taskflow_migrator role — not the application role.',
-  );
-  process.exit(1);
+const command = process.argv[2] ?? 'status';
+
+/**
+ * `verify` never reads DATABASE_MIGRATION_URL, and that is the whole fix.
+ *
+ * It reverts every migration before re-applying them, so it drops every table
+ * and everything in them. Sharing a URL with `up` meant the command a developer
+ * runs to check their migrations are reversible destroyed the org, boards and
+ * cards they had been developing against — and reported OK, because from the
+ * runner's point of view it worked perfectly.
+ *
+ * Reading a DIFFERENT variable is what makes the two impossible to confuse. The
+ * default is the same throwaway database the test suites use, so the safe path
+ * needs no configuration at all; `runner.assertDisposableDatabase` still refuses
+ * anything not named `*_test`, including an override set here.
+ */
+function resolveMigrationUrl(): string {
+  if (command === 'verify') {
+    return process.env['DATABASE_VERIFY_URL'] ?? TEST_MIGRATION_URL;
+  }
+
+  const migrationUrl = process.env['DATABASE_MIGRATION_URL'];
+  if (!migrationUrl) {
+    console.error(
+      'DATABASE_MIGRATION_URL is not set.\n' +
+        'Copy .env.example to .env, or export it directly. It must point at the\n' +
+        'taskflow_migrator role — not the application role.',
+    );
+    process.exit(1);
+  }
+
+  if (migrationUrl.includes('taskflow_app:')) {
+    // Cheap check against the most likely misconfiguration, which would otherwise
+    // fail deep inside a migration with a confusing permissions error.
+    console.error(
+      'DATABASE_MIGRATION_URL points at taskflow_app. Migrations must run as\n' +
+        'taskflow_migrator; the application role has no DDL rights by design.',
+    );
+    process.exit(1);
+  }
+
+  return migrationUrl;
 }
 
-if (migrationUrl.includes('taskflow_app:')) {
-  // Cheap check against the most likely misconfiguration, which would otherwise
-  // fail deep inside a migration with a confusing permissions error.
-  console.error(
-    'DATABASE_MIGRATION_URL points at taskflow_app. Migrations must run as\n' +
-      'taskflow_migrator; the application role has no DDL rights by design.',
-  );
-  process.exit(1);
-}
+const migrationUrl = resolveMigrationUrl();
 
 const options: RunnerOptions = {
   migrationUrl,
@@ -60,8 +90,6 @@ const options: RunnerOptions = {
     console.warn(message);
   },
 };
-
-const command = process.argv[2] ?? 'status';
 
 try {
   switch (command) {
@@ -112,6 +140,53 @@ try {
       process.exit(1);
   }
 } catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error(describe(error, migrationUrl));
   process.exit(1);
+}
+
+/**
+ * Turns a thrown value into something a developer can act on.
+ *
+ * `error.message` alone is not enough, and the gap is not cosmetic. Node reports
+ * a refused TCP connection as an `AggregateError` — one sub-error per address it
+ * tried, ::1 and 127.0.0.1 — and an AggregateError's own `message` is the EMPTY
+ * STRING. So the most common way to run this command wrongly, with Docker not
+ * started, printed a blank line and exited 1: no reason, nothing to search for,
+ * and no hint that the database was simply not there.
+ *
+ * That is the first command a new developer runs, so it is the worst possible
+ * place to say nothing at all.
+ */
+function describe(error: unknown, url: string): string {
+  if (!(error instanceof Error)) return String(error);
+
+  const code = (error as { code?: unknown }).code;
+
+  if (code === 'ECONNREFUSED') {
+    return (
+      `Could not reach Postgres at ${redactHost(url)} — connection refused.\n` +
+      'Start the local stack first:  docker compose up -d'
+    );
+  }
+
+  // Any other AggregateError: surface the causes, since the wrapper is empty.
+  if (error instanceof AggregateError) {
+    const causes = error.errors.map((inner: unknown) =>
+      inner instanceof Error ? inner.message : String(inner),
+    );
+    const detail = causes.length > 0 ? causes.join('; ') : 'no further detail';
+    return error.message === '' ? detail : `${error.message}: ${detail}`;
+  }
+
+  return error.message === '' ? `${error.name} (no message)` : error.message;
+}
+
+/** Host and port only — a connection string carries a password. */
+function redactHost(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.hostname}:${parsed.port === '' ? '5432' : parsed.port}`;
+  } catch {
+    return 'the configured host';
+  }
 }

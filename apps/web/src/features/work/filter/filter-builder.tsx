@@ -1,0 +1,490 @@
+import { useState } from 'react';
+import * as Popover from '@radix-ui/react-popover';
+import {
+  LIST_OPERATORS,
+  NULLARY_OPERATORS,
+  OPERATORS_BY_TYPE,
+  fieldsOf,
+  findField,
+  validate,
+  type ComparisonNode,
+  type FieldDefinition,
+  type FilterNode,
+  type FilterValue,
+  type GroupNode,
+  type Operator,
+} from '@taskflow/filter';
+import type { ProjectId } from '@taskflow/contracts';
+import { Button } from '../../../components/primitives.js';
+import { cn } from '../../../lib/cn.js';
+import { ValueEditor } from './value-editor.js';
+import {
+  defaultOperatorFor,
+  defaultScalarFor,
+  defaultValueFor,
+  describe,
+} from './builder-model.js';
+
+/**
+ * The visual filter builder (§10.2).
+ *
+ * It edits the AST DIRECTLY. There is no intermediate representation, no query
+ * string, and no serialization step of its own — what this component holds is
+ * the same `FilterNode` the SQL compiler consumes, the same one the Phase 10
+ * evaluator will run, and the same one Phase 8's TQL parser will produce. That
+ * is the entire reason the AST shipped before any of them: the builder needed
+ * something to edit rather than a language to invent.
+ *
+ * ## What keeps the builder from producing something the server rejects
+ *
+ * Every choice is drawn from the same closed sets the server validates against:
+ * fields from `fieldsOf('card')`, operators from `OPERATORS_BY_TYPE[type]`.
+ * There is no free-text field name and no free-text operator anywhere in this
+ * file, which is what makes "no user string reaches the database as a field
+ * name" true of the UI as well as the compiler.
+ *
+ * The tree is nonetheless run through `validate()` — the SAME validator the API
+ * calls — before it is emitted. Not because the builder is untrusted, but
+ * because an invalid tree must never reach the URL: the board would then fail to
+ * load from a link, which is a much worse failure than a disabled Apply button.
+ */
+
+export interface FilterBuilderProps {
+  readonly orgId: string;
+  readonly projectId: ProjectId | null;
+  readonly value: FilterNode | null;
+  readonly onChange: (filter: FilterNode | null) => void;
+}
+
+const FIELDS = fieldsOf('card');
+
+/** An empty top-level group. `and` because a new filter narrows rather than widens. */
+const EMPTY: GroupNode = { kind: 'group', combinator: 'and', children: [] };
+
+export function FilterBuilder({ orgId, projectId, value, onChange }: FilterBuilderProps) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<GroupNode>(() => asGroup(value));
+
+  const result = validate('card', draft);
+  const count = countComparisons(draft);
+
+  const apply = () => {
+    if (!result.ok) return;
+    onChange(count === 0 ? null : draft);
+    setOpen(false);
+  };
+
+  return (
+    <Popover.Root
+      open={open}
+      onOpenChange={(next) => {
+        /* The draft is re-seeded from the applied filter every time the panel
+           opens. Without this, closing without applying leaves the abandoned
+           edits in place, and the chips shown next time describe a filter that
+           is not the one the board is using. */
+        if (next) setDraft(asGroup(value));
+        setOpen(next);
+      }}
+    >
+      <Popover.Trigger asChild>
+        <Button size="sm" variant={value === null ? 'secondary' : 'primary'}>
+          Filter
+          {value !== null && (
+            <span className="rounded bg-black/20 px-1 text-[10px]">{countComparisons(value)}</span>
+          )}
+        </Button>
+      </Popover.Trigger>
+
+      <Popover.Portal>
+        <Popover.Content
+          align="start"
+          sideOffset={6}
+          className="w-[34rem] max-w-[95vw] rounded border border-line bg-surface-raised p-3 shadow-xl"
+        >
+          <GroupEditor
+            orgId={orgId}
+            projectId={projectId}
+            group={draft}
+            depth={0}
+            onChange={setDraft}
+          />
+
+          {!result.ok && (
+            <ul className="mt-2 space-y-0.5" role="alert">
+              {result.errors.map((error) => (
+                <li
+                  key={`${error.path.join('.')}-${error.message}`}
+                  className="text-xs text-danger"
+                >
+                  {error.message}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setDraft(EMPTY);
+                onChange(null);
+                setOpen(false);
+              }}
+            >
+              Clear
+            </Button>
+
+            <Button size="sm" variant="primary" onClick={apply} disabled={!result.ok}>
+              Apply
+            </Button>
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+/**
+ * One group: a combinator and its children, recursively.
+ *
+ * `depth` exists only to stop the UI offering "add a group" past the AST's own
+ * `MAX_DEPTH`. Offering a control that produces a tree the validator will reject
+ * is how a builder ends up with a permanently disabled Apply button and no
+ * explanation of which chip caused it.
+ */
+function GroupEditor({
+  orgId,
+  projectId,
+  group,
+  depth,
+  onChange,
+}: {
+  readonly orgId: string;
+  readonly projectId: ProjectId | null;
+  readonly group: GroupNode;
+  readonly depth: number;
+  readonly onChange: (group: GroupNode) => void;
+}) {
+  const replaceChild = (index: number, child: FilterNode) => {
+    onChange({ ...group, children: group.children.map((c, i) => (i === index ? child : c)) });
+  };
+
+  const removeChild = (index: number) => {
+    onChange({ ...group, children: group.children.filter((_, i) => i !== index) });
+  };
+
+  return (
+    <div className={cn('space-y-2', depth > 0 && 'rounded border border-line p-2')}>
+      <div className="flex items-center gap-2">
+        <div className="inline-flex overflow-hidden rounded border border-line text-[11px]">
+          {(['and', 'or'] as const).map((combinator) => (
+            <button
+              key={combinator}
+              type="button"
+              aria-pressed={group.combinator === combinator}
+              onClick={() => {
+                onChange({ ...group, combinator });
+              }}
+              className={cn(
+                'px-2 py-0.5 uppercase',
+                group.combinator === combinator
+                  ? 'bg-accent text-accent-ink'
+                  : 'text-ink-muted hover:bg-surface-hover',
+              )}
+            >
+              {combinator}
+            </button>
+          ))}
+        </div>
+        <span className="text-[11px] text-ink-faint">
+          {group.combinator === 'and' ? 'all of these match' : 'any of these match'}
+        </span>
+      </div>
+
+      <ul className="space-y-1.5">
+        {group.children.map((child, index) => (
+          /* The AST carries no node ids — it is a value, and Phase 8's parser
+             produces the same shape from text — so position is the only
+             identity a child has here. Rows are added and removed at the end far
+             more often than reordered, and a remount of one row costs nothing:
+             every editor below is controlled and holds no state of its own. */
+          <li key={`${String(index)}-${child.kind}`}>
+            {child.kind === 'group' ? (
+              <div className="flex items-start gap-2">
+                <div className="flex-1">
+                  <GroupEditor
+                    orgId={orgId}
+                    projectId={projectId}
+                    group={child}
+                    depth={depth + 1}
+                    onChange={(next) => {
+                      replaceChild(index, next);
+                    }}
+                  />
+                </div>
+                <RemoveButton
+                  onClick={() => {
+                    removeChild(index);
+                  }}
+                />
+              </div>
+            ) : child.kind === 'comparison' ? (
+              <ComparisonEditor
+                orgId={orgId}
+                projectId={projectId}
+                node={child}
+                onChange={(next) => {
+                  replaceChild(index, next);
+                }}
+                onRemove={() => {
+                  removeChild(index);
+                }}
+              />
+            ) : (
+              /* `not` nodes are part of the AST and are produced by Phase 8's
+                 parser, but this builder does not create them — "is not" is
+                 expressed by the negated operators (`neq`, `not_in`), which is
+                 what people reach for. Rendering one read-only means a filter
+                 written in TQL and opened here is described rather than silently
+                 dropped. */
+              <div className="rounded border border-line px-2 py-1 text-xs text-ink-muted">
+                NOT ({describe(child.child)})
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          onClick={() => {
+            onChange({ ...group, children: [...group.children, newComparison()] });
+          }}
+        >
+          + Condition
+        </Button>
+
+        {depth < 2 && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              onChange({
+                ...group,
+                children: [
+                  ...group.children,
+                  { kind: 'group', combinator: 'or', children: [newComparison()] },
+                ],
+              });
+            }}
+          >
+            + Group
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ComparisonEditor({
+  orgId,
+  projectId,
+  node,
+  onChange,
+  onRemove,
+}: {
+  readonly orgId: string;
+  readonly projectId: ProjectId | null;
+  readonly node: ComparisonNode;
+  readonly onChange: (node: ComparisonNode) => void;
+  readonly onRemove: () => void;
+}) {
+  const field = findField('card', node.field);
+  const operators = field === undefined ? [] : OPERATORS_BY_TYPE[field.type];
+  const takesValue = !NULLARY_OPERATORS.includes(node.operator);
+
+  /**
+   * Changing the field rewrites the operator and the value too.
+   *
+   * Keeping them would produce `due contains "x"` — a field/operator pairing the
+   * validator rejects — or `assignee > 5`, where the value is legal for the old
+   * type and meaningless for the new one. Both are states a user can reach in
+   * two clicks, and neither is recoverable except by deleting the row.
+   */
+  const changeField = (name: string) => {
+    const next = findField('card', name);
+    if (next === undefined) return;
+
+    const operator = defaultOperatorFor(next);
+    onChange(buildComparison(name, operator, defaultValueFor(next, operator)));
+  };
+
+  const changeOperator = (operator: Operator) => {
+    if (field === undefined) return;
+
+    /* Scalar and list operators do not share a value shape: switching `eq` to
+       `in` has to turn the value into an array, and back again. The schema
+       rejects the mismatch, so this is the difference between a working switch
+       and a chip that cannot be applied. */
+    onChange(buildComparison(node.field, operator, coerceValue(field, operator, node.value)));
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 rounded border border-line bg-surface px-2 py-1.5">
+      <select
+        aria-label="Field"
+        value={node.field}
+        onChange={(event) => {
+          changeField(event.target.value);
+        }}
+        className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+      >
+        {FIELDS.map((entry) => (
+          <option key={entry.name} value={entry.name}>
+            {entry.name}
+          </option>
+        ))}
+      </select>
+
+      <select
+        aria-label="Operator"
+        value={node.operator}
+        onChange={(event) => {
+          changeOperator(event.target.value as Operator);
+        }}
+        className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+      >
+        {operators.map((operator) => (
+          <option key={operator} value={operator}>
+            {OPERATOR_LABELS[operator]}
+          </option>
+        ))}
+      </select>
+
+      {takesValue && field !== undefined && (
+        <ValueEditor
+          orgId={orgId}
+          projectId={projectId}
+          field={field}
+          operator={node.operator}
+          value={node.value}
+          onChange={(value) => {
+            onChange(buildComparison(node.field, node.operator, value));
+          }}
+        />
+      )}
+
+      <RemoveButton onClick={onRemove} />
+    </div>
+  );
+}
+
+function RemoveButton({ onClick }: { readonly onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Remove condition"
+      className="ml-auto rounded px-1.5 text-xs text-ink-faint hover:bg-surface-hover hover:text-danger"
+    >
+      ✕
+    </button>
+  );
+}
+
+const OPERATOR_LABELS: Readonly<Record<Operator, string>> = {
+  eq: 'is',
+  neq: 'is not',
+  lt: 'before / <',
+  lte: '≤',
+  gt: 'after / >',
+  gte: '≥',
+  in: 'is one of',
+  not_in: 'is none of',
+  contains: 'contains',
+  is_empty: 'is empty',
+  is_not_empty: 'is not empty',
+};
+
+/* -------------------------------------------------------------------------- *
+ * Tree helpers
+ * -------------------------------------------------------------------------- */
+
+/**
+ * Builds a comparison with the value present only when the operator takes one.
+ *
+ * The schema rejects `is_empty` carrying a value AND an `eq` missing one, and
+ * `exactOptionalPropertyTypes` means `{ value: undefined }` is not the same as
+ * omitting the key. Constructing it in one place is what stops half the call
+ * sites getting that right.
+ */
+function buildComparison(
+  field: string,
+  operator: Operator,
+  value: ComparisonNode['value'],
+): ComparisonNode {
+  return NULLARY_OPERATORS.includes(operator)
+    ? { kind: 'comparison', field, operator }
+    : { kind: 'comparison', field, operator, value: value ?? null };
+}
+
+function newComparison(): ComparisonNode {
+  const first = FIELDS[0];
+  if (first === undefined) throw new Error('The card field set is empty.');
+
+  const operator = defaultOperatorFor(first);
+  return buildComparison(first.name, operator, defaultValueFor(first, operator));
+}
+
+/**
+ * Reshapes a value when the operator switches between scalar and list form.
+ *
+ * `eq` and `in` do not share a value shape, and the schema rejects the mismatch
+ * — so without this, changing the operator on an existing chip produces one that
+ * cannot be applied and gives no hint which control caused it.
+ */
+function coerceValue(
+  field: FieldDefinition,
+  operator: Operator,
+  value: ComparisonNode['value'],
+): ComparisonNode['value'] {
+  if (NULLARY_OPERATORS.includes(operator)) return undefined;
+
+  const wantsList = LIST_OPERATORS.includes(operator);
+
+  if (isValueList(value)) {
+    // Narrowing a list to a scalar keeps the first choice rather than
+    // discarding the edit entirely.
+    return wantsList ? value : (value[0] ?? defaultScalarFor(field));
+  }
+
+  const scalar = value ?? defaultScalarFor(field);
+  return wantsList ? [scalar] : scalar;
+}
+
+/**
+ * A type guard rather than a bare `Array.isArray`.
+ *
+ * `Array.isArray` narrows to the MUTABLE `any[]`, so on a union containing
+ * `readonly FilterValue[]` it fails to remove the array from the false branch —
+ * and the scalar path below then refuses to compile for a reason that has
+ * nothing to do with the logic.
+ */
+function isValueList(value: ComparisonNode['value']): value is readonly FilterValue[] {
+  return Array.isArray(value);
+}
+
+/** Wraps a bare comparison so the builder always edits a group. */
+function asGroup(node: FilterNode | null): GroupNode {
+  if (node === null) return EMPTY;
+  if (node.kind === 'group') return node;
+  return { kind: 'group', combinator: 'and', children: [node] };
+}
+
+function countComparisons(node: FilterNode): number {
+  if (node.kind === 'comparison') return 1;
+  if (node.kind === 'not') return countComparisons(node.child);
+  return node.children.reduce((total, child) => total + countComparisons(child), 0);
+}

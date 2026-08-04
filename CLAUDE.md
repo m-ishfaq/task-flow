@@ -69,17 +69,29 @@ For these, a second adversarial AI pass in a fresh context is expected, not opti
 ## Layout
 
 ```
-apps/       api                              (arriving: web, realtime, collab, worker)
+apps/       api                              (arriving: realtime, collab, worker)
               src/identity   ⚠ auth, tokens, sessions, passkeys
               src/tenancy      orgs, memberships, teams, grants, audit projection
+              src/work         projects, boards, lists, cards, ranking, rich text,
+                               labels, checklists, custom fields, comments,
+                               ⚠ attachments, filter wiring
+            web                React 19 + Vite
+              src/lib          tRPC client, session, query client, wire types
+              src/components   primitives + app shell
+              src/features     auth/ org/ work/ admin/
 packages/   config, contracts, db, security, policy, events, mail, observability,
-            feature-flags, guardrail-selftest        (arriving: ui)
+            feature-flags, guardrail-selftest, ⚠ storage, filter   (arriving: ui)
 docker/     compose config + Postgres init (roles, RLS)
 ```
 
 Two ESLint-enforced module boundaries carry the whole guardrail system:
 `packages/db` exports only the tenant-scoped client; `packages/policy` is the only module that
 may compare roles.
+
+**There is no per-package `eslint.config.js`, and adding one switches the guardrails off.**
+Flat config does not cascade: `eslint src` run inside a package finds that file first and never
+reaches the root. Framework rules are composed at the root with a `files` scope instead. The
+selftest asserts the computed config for `apps/web` still carries every ban.
 
 ---
 
@@ -91,11 +103,27 @@ pnpm verify                   # lint + typecheck + test — run before declaring
 pnpm format
 node packages/guardrail-selftest/verify.js          # prove guardrails still fire
 pnpm --filter @taskflow/db migrate:up
-pnpm --filter @taskflow/db migrate:verify           # up -> down -> up
+pnpm --filter @taskflow/db migrate:verify           # up -> down -> up, on taskflow_test
+
+pnpm --filter @taskflow/api dev                     # API on :3000
+pnpm --filter @taskflow/web dev                     # app on :5173, proxies /trpc
 ```
+
+The web dev server PROXIES `/trpc` rather than the API enabling CORS. The refresh cookie is
+`__Host-` prefixed and `SameSite=Strict`, so a browser on :5173 calling an API on :3000 is
+cross-site and never sends it — and the obvious fix is to weaken the cookie for everyone.
+Same-origin in development keeps it behaving exactly as it does in production.
 
 `pnpm verify` needs Docker running — the db tests hit real Postgres deliberately. RLS is a
 database behaviour; a mocked version would only prove the test agrees with itself.
+
+**`test` is `"cache": false` in `turbo.json`, and must stay that way.** Turbo keys its cache on
+file contents, and these suites assert against Postgres, MinIO and ClamAV — none of which are
+inputs it can see. So a cached PASS records the verdict of a machine that may no longer exist.
+This is not hypothetical: the ClamAV suite skips its live assertions when the scanner is not
+answering, that skip was cached as a pass, and a genuinely failing test stayed green through a
+full `pnpm verify` after the container came up. Caching a test whose result depends on the world
+outside the repo turns a green run into a statement about the past. It costs about 35 seconds.
 
 ---
 
@@ -123,8 +151,279 @@ database behaviour; a mocked version would only prove the test agrees with itsel
 
 ## Current state
 
-**Phase 0B, Phase 1 (identity) and Phase 2 (tenancy, authz & audit) complete.**
-Next: Phase 3 — Work.
+**Phase 0B, Phase 1 (identity), Phase 2 (tenancy, authz & audit) and Phase 3 (Work) complete** —
+backend and `apps/web`. Next is Phase 4.
+
+Deferred deliberately from Phase 3, and NOT bugs: passkey sign-in is wired on the API but the
+browser ceremony (`@simplewebauthn/browser`) is not in this build, so the login page says so
+rather than showing a button that does nothing. Calendar and timeline views are §10.4 surfaces
+the plan does not schedule until later. `packages/ui` is still unbuilt on purpose — §6 says
+extract a component only once the same pattern appears three times, and `components/primitives.tsx`
+is where that will be measured from.
+
+### Phase 3 — `apps/web`, and the two places its types lied
+
+`apps/web`. React 19 + Vite 6, TanStack Router/Query, Zustand, Tailwind v4, dnd-kit, TipTap.
+
+**The wire says `string` where the client type says `Date`.** No transformer is configured on
+either side (`initTRPC.create()` takes none), so `z.date()` outputs are `JSON.stringify`'d to
+ISO strings while tRPC infers them as `Date`. Nothing fails: `format(card.dueDate)` silently
+renders "Invalid Date", and a sort comparing them compares `undefined`. That is the one hole in
+guardrail 5, and it is invisible because the compiler agrees with the lie. `lib/wire.ts` restates
+each output as what JSON actually delivers, and `wire()` is called on every result — a no-op at
+runtime whose whole job is to make the compiler stop agreeing. Adding superjson later collapses
+`Wire` to identity and every call site is a greppable list of what to delete.
+
+**TipTap emits attributes the server refuses, and refuses them on purpose.** `getJSON()` includes
+every extension default — `orderedList` carries `type: null`, a link carries `rel` and `class` —
+and the API's node schemas are `.strict()`. `rel` is excluded deliberately: a document that could
+set it could opt itself out of noopener. So any document containing a numbered list or a link
+failed validation, and the tempting fix was to loosen the server. `detail/rich-text.ts` normalizes
+instead, and `rich-text.test.ts` parses with the API's REAL `RichTextDocument` schema — asserting
+both that the raw editor output is rejected and that the normalized output is not.
+
+**`cards.update` is a full replace, and the table view only holds a summary.** `cards.list`
+returns no `description` and no `startDate`; the update route writes all four fields and its Zod
+schema DEFAULTS the missing ones to null. So the obvious inline-edit implementation — take the
+row, change the title, send it — erases a description per rename, silently, with the panel that
+would show the loss closed. `useUpdateCard` reads the full card first and applies a patch to it,
+so a caller can only express "change these fields" and cannot express "clear the ones I could not
+see". It uses `'x' in patch` rather than `??` because clearing a date is `{ dueDate: null }` and
+`??` would treat that as "not supplied".
+
+**Neighbours, never a rank.** `neighbours.ts` is the entire client-side contribution to ordering,
+and every way it can be wrong is silent — the card lands one slot from where it was dropped, and
+the server faithfully places it between whatever it was given. Two traps: the dragged card must be
+removed before measuring (or a downward move lands one short), and a card dropped ON ITSELF has to
+resolve to its own current position — searching for it in the already-filtered array returns -1,
+which falls through to "append" and sends a card to the bottom of its column for being clicked.
+A test caught the second one. The last group in `neighbours.test.ts` feeds the result to the real
+`between()`, because a reversed pair is an `InvalidRankError` that makes the server rebalance an
+entire column over a client bug.
+
+**The selected org is remembered, and remembering it is not the same as knowing it.**
+`orgId` persists in `localStorage` and is read at module load — before a session exists, so
+before anyone knows whose selection it is. `requireOrg` only asked whether an org was SELECTED,
+and a stale id passed straight through to `/projects`, where every query answered NOT_A_MEMBER.
+A dropped database, a revoked membership, or a second person signing in at the same browser all
+produce that state. It was invisible because the only thing that cleared the stored value was
+the sign-out button, so it appeared exactly once per browser and then "fixed itself" forever —
+which reads as a fluke rather than a bug. Three things close it. `OrgGate` validates the stored
+id against `tenancy.orgs.list` — the one read that works with no org, answered by `withUserScope`
+— and BLOCKS the router until it settles, because a check that races the first org-scoped query
+is no check at all: the error card is already on screen by the time it answers. `clear()` drops
+the org so a session ending by expiry or reuse detection cannot leave one behind. And a
+NOT_A_MEMBER anywhere drops the selection and routes to the picker, because a membership can be
+revoked while the tab is open and the code is correctly classified as terminal — retrying it
+changes nothing, which is exactly why it used to be a dead end. The recovery is guarded on
+`orgId === null` so a board's dozen simultaneous failures act once. `OrgSwitcher` also renders
+with an empty list now: it used to return null, which hid the only route to `/orgs` from the one
+caller who needed it.
+
+**The access token is in memory and the refresh is single-flight.** `localStorage` survives the
+tab and is readable by any script, so one XSS is a token an attacker keeps; a module variable
+limits the same XSS to that tab. The cost is a refresh on every page load, accepted. Single-flight
+matters more than it looks: refresh tokens rotate with reuse detection, so a board firing a dozen
+queries at once against an expired token would present the same cookie a dozen times — the first
+rotates it and the rest are replays, revoking the whole session family for loading a page.
+
+**The URL is a trust boundary, parsed with the shared schemas.** Route params and search params go
+through `BoardIdSchema`, `CardIdSchema` and `FilterTree` — the same parsers the API uses — so a
+filter pasted into a link is validated against the real AST before a component sees it, and a
+corrupted one falls back to the unfiltered board instead of an error page. `next=` on the login
+route rejects anything not starting with a single `/`, because an absolute URL there turns sign-in
+into an open redirect wearing our branding.
+
+**The UI never re-derives authorization.** Every control is shown and the server answers. §8.2 is
+explicit that a UI reimplementing `can()` produces two models that drift, and the one users see is
+the one that is never tested — so the permission debug page renders the server's decision trace
+and computes nothing, and a member who cannot create a project gets an honest FORBIDDEN rather
+than a hidden button.
+
+### Phase 3 — the filter field that was broken in both backends
+
+`packages/filter/src/fields.ts`. `label` compiles to an aggregate subquery returning `uuid[]` and
+was declared `type: 'uuid'`. It had no test. The compiler emitted `uuid[] = uuid`, an operator
+Postgres does not have, so every label filter was a 500 — while the evaluator took the scalar
+path, compared an array with `includes`, and quietly matched nothing. Two backends, two different
+wrong answers, and the package whose entire purpose is that they agree.
+
+`uuid_array` puts both on the array path: `&&` overlap in SQL, `some()` in JavaScript, and
+`is_empty` covers the NULL that `array_agg` returns for an unlabelled card. The `not_in` case is
+the one worth keeping a test on — a bare `NOT (labels && ...)` is UNKNOWN for a card with no
+labels, so Postgres drops exactly the rows the user expects to see, and the compiler's COALESCE is
+what keeps them.
+
+### Phase 3 — attachments, and the control that was not real
+
+`packages/storage` · `packages/security/magic-bytes.ts` · `virus-scan.ts` ·
+`apps/api/src/work/attachment.service.ts`. ⚠ Human-review surface (§2.2).
+
+**The pipeline is a state machine on one column.** `pending → scanning → clean | infected |
+rejected`, and the whole security argument is that `presignDownload` is called for exactly one
+of those. The object exists in storage the moment the browser's PUT finishes — nothing can
+prevent that — so what the service controls is whether anyone is ever handed a URL to it.
+
+**"Pinned in the signature" was false until a test said so.** §8.4 specifies a presigned PUT
+with MIME type and size pinned. Setting `ContentType` on the SDK command does NOT do that: a
+SigV4 presigned URL only covers headers named in `X-Amz-SignedHeaders`, which defaults to
+`host` alone. The first version compiled, read correctly, documented the guarantee — and MinIO
+accepted HTML uploaded under a `text/plain` signature. `signableHeaders` is what makes it real,
+and `packages/storage/src/s3.test.ts` is what caught it. Do not remove that option.
+
+**Magic bytes are the second half, and are not redundant.** Pinning the header proves the
+client said `image/png` twice, not that the bytes are a PNG. `verifyMagicBytes` is a closed
+table — `image/svg+xml` and `text/html` are absent because SVG carries script and no signature
+distinguishes a safe one. `text/*` has no positive signature, so its check is negative: no NUL
+byte, and not markup after skipping a BOM and whitespace, exactly as a browser skips them.
+
+**The scanner fails closed, and that is the single most important line in the slice.** An
+unreachable clamd, a timeout, an unrecognized reply — all return `error`, and the service
+treats it as `rejected`. Treating "we could not check" as "clean" turns an outage into a window
+where unscanned files are downloadable, while uploads keep working perfectly and nothing goes
+red. `attachment.service.test.ts` asserts it against a port that always refuses.
+
+**EICAR cannot prove the scanner saw the whole file, and the obvious test that says it does is
+wrong.** Measured against this container: the 68-byte string is detected, padded to 128 bytes it
+is still detected, at 129 bytes it comes back CLEAN, and at offset 10 in a small file it comes
+back clean too. That is the EICAR standard working as specified, not a defect — but it means
+"bury EICAR in a 300 KB file and expect `infected`" fails against a perfectly healthy scanner,
+and sends the next reader hunting for a chunking bug in `scanBuffer` that is not there.
+
+So the INSTREAM framing is asserted against a stand-in clamd in `virus-scan.test.ts` that decodes
+the 4-byte length prefixes and reports the bytes back. A real clamd only ever answers with a
+verdict, so it cannot tell you what it received — a scanner sent half a file replies `OK` exactly
+like one sent all of it, which is a fail-OPEN outcome behind a green test. The payload is a
+repeating non-uniform pattern so a duplicated chunk fails on CONTENT, not just on length.
+
+**Confirm is a conditional claim, not a check-then-write.** `claimForScanning` puts
+`status = 'pending'` in its WHERE. Without it two racing confirms both scan and both write a
+verdict — including overwriting `infected` with `clean`. It lives outside `*.service.ts` for
+the same reason as `rebalance.ts`: guardrail 11's scope means repositories mutate by design,
+and the event belongs to the verdict.
+
+**Storage keys are server-generated and nothing from a client reaches them.** The filename
+lives in the database and is applied on download via `Content-Disposition`; a name in the key
+would need path escaping, which is the traversal this design removes rather than mitigates.
+
+### Phase 3 — card detail
+
+**Two authorization questions, deliberately not merged.** Managing the project's VOCABULARY —
+the label set, custom field definitions — is `project:update`, because it changes every card.
+Filling one in is `card:update`, because it changes one card. Collapsing them would either stop
+members tagging their own work or let them rewrite the project's labels from a card panel.
+
+**Comments are `comment:create`, never `card:update`.** That separation is the entire reason
+the `commenter` relation exists (§8.2): someone can be given a voice on a board without edit
+rights. Editing is author-only with no permission override — a discussion where an
+administrator can put words in your mouth is not a record of anything — while deleting is
+author-or-moderator, and the event records which.
+
+**Counters are recomputed, never incremented.** `recountChecklist` and `recountComments` in
+`counters.ts` run a SELECT inside the writing transaction. An increment is cheaper and drifts:
+deleting a DONE item must decrement two counters and a not-done item only one, and a branch
+that is wrong produces a number nothing ever corrects. A wrong badge looks exactly like a
+correct one.
+
+**Cross-project children are unwritable, not merely unwritten.** `card_labels` and
+`custom_field_values` carry `project_id` and reference BOTH the card and the definition on it.
+A label from another project is refused by the database, so the services do no lookup that
+could be forgotten. Custom field TYPES are immutable for a related reason: there is no honest
+migration from `select` to `number`.
+
+### Phase 3 — the filter AST (§10.2)
+
+`packages/filter`. Ships now; the TQL text parser is Phase 8 and produces the same tree.
+
+**`fields.ts` IS the security control.** A field name is a key into a map of literals, an
+operator is a key into a fixed token table, and every value is a `$n` placeholder. The compiler
+re-validates rather than trusting its caller and throws on an unknown field — because "the
+caller validated it" is an assumption that holds until someone adds a second call site.
+
+**The compiler and the evaluator must agree, and do not by default.** SQL is three-valued
+(`NULL = 5` is UNKNOWN, so a null due date matches neither `due < x` nor its negation),
+`ILIKE` is case-insensitive where `includes` is not, and Postgres compares timestamps as
+instants where JavaScript compares ISO strings as text. Each is handled explicitly, and
+`apps/api/src/work/filter.parity.test.ts` runs both backends over the same rows in real
+Postgres. A disagreement means a Phase 10 automation fires on cards the Phase 3 board would not
+have shown, and nothing fails.
+
+**`@me` stays symbolic until compile time.** The client substituting its own id would make a
+SHARED saved filter mean "assigned to whoever saved it". Validation and compilation reject the
+same trees — checking `@me` only in the uuid branch let `title = @me` validate and then throw,
+which is a chip the builder renders as valid and that explodes on apply.
+
+**`compiledPredicate` in `packages/db/expressions.ts` is the bridge**, and it is where the raw
+SQL ban is answered rather than widened: it copies only the literal segments between
+placeholders, so it cannot emit a value into SQL text even if handed one.
+
+### Phase 3 so far — the Work spine, and the parts that are easy to break
+
+**A rank is `<integer><fraction>`, not a fraction.** `packages/contracts/rank.ts`. The obvious
+implementation — treat the string as digits after `0.` and bisect — is correct and unusable:
+bisecting toward an endpoint adds a digit every ~6 insertions, so the 10,000th card appended to a
+list gets a rank about 1,600 characters long. Appending is not an adversarial case. So the integer
+part is incremented instead, and sequential insertion at either end grows the rank as log₆₂(n) —
+four characters at ten thousand cards. The head character encodes sign **and** length so a rank
+splits with no separator, and the whole scheme rests on `0-9 < A-Z < a-z` in ASCII. The test
+asserting 10,000 appends stay ≤ 4 characters is what rules out the naive version; don't relax it.
+
+**The hierarchy is enforced by composite foreign keys, not by the services.** A card carries
+`project_id`, `board_id` and `list_id` denormalized, and references all four columns against a
+unique index on `lists` that already includes its own ancestors. This catches something RLS
+cannot: `withOrgScope` stops a card being written into another **tenant**, and does nothing about
+a card written into another **board of the same tenant** — an ordinary authorization bug where the
+caller holds `card:create` on the board they named and nothing on the board they reached. Drizzle's
+`references()` is single-column and cannot express any of it, so `packages/db/src/schema/work.ts`
+shows the weaker half of the truth. The migration is the source.
+
+**There is no `list` resource type, deliberately.** A list is not independently grantable — nobody
+shares one column of a board — so every list-level authorization check names the **board** as its
+resource. Adding `'list'` to `RESOURCE_TYPES` would add a tuple level no product surface can
+create a grant on, and would need a migration to widen the `object_type` CHECK. The audit
+projection maps `list.*` events to `board` for the same reason.
+
+**`move` takes neighbours and derives the rank server-side.** No `position`, no `rank` field, on
+either `cards.move` or `lists.reorder`. A client-computed rank is computed from a board read some
+time ago, so two people dragging at once each place a card according to a different past. A
+neighbour that is not in the target list is a **404**, not a nearest-guess — that is how a drag
+silently lands in the wrong column.
+
+**A degenerate list is repaired by the move that discovers it.** Equal ranks are a legal outcome
+of concurrency, and `between` refuses them. `moveCard` catches `InvalidRankError` **specifically**
+— a NOT_FOUND from a stale neighbour is rethrown, because rebalancing would not fix it and would
+rewrite a whole column for a client error. The repair emits `list.rebalanced` alongside
+`card.moved`; without that event every open board keeps stale ranks for the column and silently
+desynchronizes. `rebalance.ts` is deliberately **not** a `*.service.ts` file: it mutates many rows
+and emits nothing, which is what the guardrail-11 scope means by "repositories mutate by design".
+The event belongs to the operation the user performed.
+
+**Card numbers come from a counter on the project row.** `WEB-142` must be gapless and
+per-project; a Postgres sequence is neither. `projects.next_card_number` is incremented by
+`UPDATE ... RETURNING` inside the card's own transaction, which takes a row lock and serializes
+card creation within one project — accepted knowingly. `RETURNING` gives the value **after** the
+increment, so the card's number is one less; that off-by-one is invisible except in the test
+asserting the first card is `WEB-1`.
+
+**Rich text is validated against a closed list, not a shape.** `work/richtext.ts`. "TipTap JSON,
+never HTML" removes the markup column and therefore the obvious XSS. It does not remove the second
+one: TipTap renders a node by looking its type up in an extension map, and `link.href` turns an
+attribute into a URL — `javascript:` there is script execution reached entirely through valid
+JSON. Node types, mark types, per-node attributes and URL schemes are all whitelisted, and an
+unknown node is **rejected rather than sanitized away**. The node budget is enforced after Zod has
+parsed the tree, so the Fastify body limit is what bounds the input first.
+
+**Guardrail 8 now seeds a full Work hierarchy.** `resourceIds` in the fuzz seed widened from
+`Record<string, string>` to `Record<string, unknown>` because `cards.assign` takes an array and
+`cards.update` a numeric `version` — with strings only, both routes reject the bag on shape and
+answer BAD_REQUEST, which the harness counts as a refusal. They would have passed without the
+tenant boundary ever being consulted. `tenancy-fuzz.test.ts` names the 14 Work mutations
+explicitly, so a route dropping to `not-applicable` fails a test instead of quietly losing
+coverage.
+
+**WIP limits are advisory.** `moveCard` reports the breach and completes the move. Blocking
+someone from recording work that is already in progress makes people stop using the board, not
+stop the work.
 
 ### Phase 2 — what changed, and the parts that are easy to break
 
@@ -156,6 +455,23 @@ choose its own position or digest. The hash covers a **length-prefixed** concate
 would otherwise have to reproduce Postgres's jsonb rendering, and drift there reports tampering
 on untouched rows. `packages/db/src/audit.test.ts` asserts the two agree against real Postgres.
 **The verification SELECT list in `packages/db/src/audit-log.ts` is part of that contract.**
+
+**So is its ORDER BY, and it must stay qualified.** `seq::text AS seq` introduces an output column
+named `seq`, and Postgres resolves a bare `ORDER BY seq` to that ALIAS in preference to the
+underlying bigint. Rows then arrive in text order — 1, 10, 11, 12, 2, 3 — and the verifier, which
+checks each entry follows the last, reported `sequence_gap` and `broken_link` on a chain nobody
+had touched. Every organization with ten or more entries failed its own integrity check. An
+integrity check that cries wolf on healthy data is not a weaker control but a negative one: the
+first response to a real detection becomes "the verifier is wrong again". Both readers now say
+`ORDER BY audit_log.seq`, and the tests seed twelve entries — below ten, text and numeric order
+agree and the bug is invisible, which is exactly how it survived every existing test.
+
+**`occurredAt` was a cast, not a conversion.** Drizzle's raw `tx.execute` applies no driver type
+parsers, so every column arrives as the text Postgres rendered; `record['occurred_at'] as Date`
+was believed by TypeScript and by the service, and refused by the route's own `z.date()` output
+schema. `tenancy.audit.list` answered INTERNAL_ERROR for every non-empty page and had never
+returned a row. The service tests could not see it because they call the service directly, where
+the cast is simply believed — it took a test that goes through the route.
 
 **Guardrail 8 now needs Docker.** The fuzz harness previously ran with no database because no
 registered route touched storage. Every tenancy route opens `withOrgScope`, so it now seeds two
@@ -204,7 +520,7 @@ What is enforced, and by what:
 | 2 no raw DB access   | ESLint import ban                        | guardrail-selftest                    |
 | 3 RLS                | Postgres policies                        | `packages/db` tests, real Postgres    |
 | 4 fail-closed routes | `route({ permission })` + boot assertion | `apps/api` guardrail tests            |
-| 5 generated client   | tRPC                                     | compile                               |
+| 5 generated client   | tRPC + `Wire<T>` at the browser boundary | compile, `apps/web` wire tests        |
 | 6 Zod at boundaries  | `.strict()` schemas                      | per-package tests                     |
 | 7 banned constructs  | ESLint                                   | guardrail-selftest                    |
 | 8 tenancy fuzz       | manifest-driven harness, two real orgs   | `apps/api/src/testing`, real Postgres |
@@ -213,7 +529,10 @@ What is enforced, and by what:
 | 11 domain events     | custom ESLint rule                       | guardrail-selftest                    |
 
 `node packages/guardrail-selftest/verify.js` proves the lint-enforced ones still fire — including
-the negative cases, since a rule that reports correct code is one that gets switched off.
+the negative cases, since a rule that reports correct code is one that gets switched off. It also
+asserts ESLint's COMPUTED config for `apps/web`, because that is where the bans are most likely to
+be lost without anything failing: a React block that grew its own `no-restricted-syntax` would
+replace the whole list, disarming the XSS ban in the one app that renders.
 
 Identity integration tests run against real Postgres (`docker compose up -d`) and, for
 passkeys, a real ES256-signing authenticator (`@taskflow/security/testing`). They assert the

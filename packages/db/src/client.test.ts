@@ -26,10 +26,10 @@ import { sql } from 'drizzle-orm';
  */
 
 const APP_URL =
-  process.env['DATABASE_URL'] ?? 'postgresql://taskflow_app:app-dev-secret@localhost:5432/taskflow';
+  process.env['TEST_DATABASE_URL'] ?? 'postgresql://taskflow_app:app-dev-secret@localhost:5433/taskflow_test';
 const MIGRATION_URL =
-  process.env['DATABASE_MIGRATION_URL'] ??
-  'postgresql://taskflow_migrator:migrator-dev-secret@localhost:5432/taskflow';
+  process.env['TEST_DATABASE_MIGRATION_URL'] ??
+  'postgresql://taskflow_migrator:migrator-dev-secret@localhost:5433/taskflow_test';
 
 const ORG_A = '11111111-1111-1111-1111-111111111111' as OrgId;
 const ORG_B = '22222222-2222-2222-2222-222222222222' as OrgId;
