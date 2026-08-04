@@ -19,11 +19,32 @@ export interface ClientOptions {
   readonly headers?: () => Promise<Record<string, string>> | Record<string, string>;
 }
 
+/**
+ * The point past which a batched GET request stops being safe to send.
+ *
+ * `httpBatchLink` defaults `maxURLLength` to `Infinity` — it packs every query
+ * firing in the same tick into ONE request with no ceiling, because queries
+ * are sent as GET (mutations already go through POST) so the whole batch's
+ * input has to fit in the URL. A busy board opening a card fires 15-20 of
+ * them at once, and once the combined query string got long enough, both this
+ * dev server's proxy and a production reverse proxy answered 414 for the
+ * WHOLE batch — every query in it, not just the one that pushed it over.
+ *
+ * Setting this makes `dataLoader` (internal to `httpBatchLink`) split the
+ * batch into as many smaller GET requests as it takes to stay under the
+ * limit, rather than one that keeps growing with the page. 2000 is the
+ * long-standing conservative "safe everywhere" URL length — the same number
+ * the tRPC docs themselves point to — chosen over this stack's actual proxy
+ * limits because those are deployment-specific and this constant is not.
+ */
+const MAX_BATCH_URL_LENGTH = 2000;
+
 export function createClient(options: ClientOptions = {}): Client {
   return createTRPCClient<AppRouter>({
     links: [
       httpBatchLink({
         url: TRPC_URL,
+        maxURLLength: MAX_BATCH_URL_LENGTH,
         ...(options.headers === undefined ? {} : { headers: options.headers }),
 
         /**

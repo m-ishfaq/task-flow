@@ -8,7 +8,8 @@ import { useSession } from '../../../lib/session.js';
 import { useOptimistic } from '../../../lib/optimistic.js';
 import { useToast } from '../../../lib/toast-context.js';
 import { cn } from '../../../lib/cn.js';
-import { Button } from '../../../components/primitives.js';
+import { Avatar, Button } from '../../../components/primitives.js';
+import { useMembers } from '../../org/use-members.js';
 import { commentsQuery, patchCommentCount, patchComments, type Comment } from '../api.js';
 import { RichTextEditor, RichTextView } from './rich-text-editor.js';
 import { EMPTY_DOCUMENT, isEmptyDocument, type DocumentNode } from './rich-text.js';
@@ -103,6 +104,7 @@ export function CommentSection({ orgId, boardId, cardId }: CommentSectionProps) 
   const toast = useToast();
   const comments = useQuery(commentsQuery(orgId, cardId));
   const viewerId = useSession((state) => state.userId);
+  const { personOf } = useMembers();
   const [draft, setDraft] = useState<DocumentNode>(EMPTY_DOCUMENT);
   const [editing, setEditing] = useState<string | null>(null);
 
@@ -205,12 +207,25 @@ export function CommentSection({ orgId, boardId, cardId }: CommentSectionProps) 
             key={comment.commentId}
             className={cn('space-y-1', isPending(comment.commentId) && 'opacity-60')}
           >
-            <div className="flex items-baseline gap-2 text-[11px] text-ink-faint">
+            <div className="flex items-center gap-1.5 text-[11px] text-ink-faint">
               {isPending(comment.commentId) ? (
                 <span>Posting…</span>
               ) : (
                 <>
-                  <span>{comment.authorId ?? 'Unknown author'}</span>
+                  {/* `personOf` falls back to the raw id itself when the author
+                      is not in this org's member list — someone who has since
+                      left, per its own doc comment — so this never regresses
+                      to a blank line, only to what it already rendered before. */}
+                  {comment.authorId !== null && (
+                    <Avatar
+                      userId={comment.authorId}
+                      label={personOf(comment.authorId).label}
+                      size="xs"
+                    />
+                  )}
+                  <span className="font-medium text-ink-muted">
+                    {comment.authorId === null ? 'Unknown author' : personOf(comment.authorId).label}
+                  </span>
                   <span>{formatRelative(comment.createdAt)}</span>
                   {comment.editedAt !== null && <span>(edited)</span>}
                 </>
