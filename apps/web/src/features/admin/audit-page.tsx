@@ -7,7 +7,7 @@ import { useSession } from '../../lib/session.js';
 import { wire } from '../../lib/wire.js';
 import { formatDateTime } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
-import { Button, Empty, Spinner } from '../../components/primitives.js';
+import { Avatar, Button, Empty, Spinner } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 
 /**
@@ -141,8 +141,8 @@ export function AuditPage() {
                           </span>
                         )}
                       </td>
-                      <td className="px-3 py-1.5 font-mono text-[10px] text-ink-faint">
-                        {entry.actorId?.slice(0, 8) ?? 'system'}
+                      <td className="px-3 py-1.5">
+                        <ActorCell actorId={entry.actorId} actorEmail={entry.actorEmail} />
                       </td>
                     </tr>
                   ))}
@@ -175,5 +175,70 @@ export function AuditPage() {
           </>
         ))}
     </div>
+  );
+}
+
+/**
+ * Who did it.
+ *
+ * Three states, and collapsing any two of them loses something an investigator
+ * needs:
+ *
+ *   - No actor at all — the SYSTEM acted. §8.6 treats this as a real value
+ *     rather than a missing one, so it is labelled rather than left blank.
+ *   - An actor with an address — the ordinary case.
+ *   - An actor whose account no longer exists. The id is still the durable fact
+ *     the entry was hashed over, so it is shown; what is missing is only the
+ *     lookup. Rendering this identically to "system" would attribute a person's
+ *     action to nobody.
+ *
+ * The id is kept alongside the address in the title rather than on screen: two
+ * people can share a display name, and the id is what the entry actually
+ * committed to.
+ */
+function ActorCell({
+  actorId,
+  actorEmail,
+}: {
+  readonly actorId: string | null;
+  readonly actorEmail: string | null;
+}) {
+  if (actorId === null) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-ink-faint">
+        <span
+          aria-hidden="true"
+          className="flex size-5 shrink-0 items-center justify-center rounded-full border border-line bg-surface-sunken text-[9px]"
+        >
+          SYS
+        </span>
+        <span className="text-[11px] italic">system</span>
+      </span>
+    );
+  }
+
+  if (actorEmail === null) {
+    return (
+      <span
+        title={actorId}
+        className="inline-flex items-center gap-1.5 text-ink-faint"
+      >
+        <span
+          aria-hidden="true"
+          className="flex size-5 shrink-0 items-center justify-center rounded-full border border-dashed border-line text-[9px]"
+        >
+          ?
+        </span>
+        <span className="font-mono text-[10px]">{actorId.slice(0, 8)}</span>
+        <span className="text-[10px] italic">deleted</span>
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5" title={`${actorEmail} · ${actorId}`}>
+      <Avatar userId={actorId} label={actorEmail} size="xs" />
+      <span className="truncate text-[11px] text-ink-muted">{actorEmail}</span>
+    </span>
   );
 }

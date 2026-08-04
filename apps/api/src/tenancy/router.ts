@@ -284,6 +284,11 @@ export function createTenancyRouter() {
                 seq: z.string(),
                 occurredAt: z.date(),
                 actorId: z.string().nullable(),
+                /* Resolved at read time, never stored on the hashed entry —
+                   see `readAuditEntries`. Null with a non-null `actorId` means
+                   the account is gone, which is different from the system
+                   having acted. */
+                actorEmail: z.string().nullable(),
                 action: z.string(),
                 resourceType: z.string().nullable(),
                 resourceId: z.string().nullable(),

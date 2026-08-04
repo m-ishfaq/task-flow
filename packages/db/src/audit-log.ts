@@ -59,6 +59,19 @@ export interface AuditEntryRow {
   readonly seq: string;
   readonly occurredAt: Date;
   readonly actorId: string | null;
+  /**
+   * The actor's address, resolved for display.
+   *
+   * NOT part of the hashed entry and deliberately not stored on it — see
+   * `readAuditEntries` for why the log records an id and resolves the address at
+   * read time.
+   *
+   * Null has two distinct causes, and the reader has to keep them apart:
+   * `actorId` null means the SYSTEM acted, while `actorId` set with a null email
+   * means the account itself is gone. `readAuditEntries` is a LEFT JOIN so the
+   * second case still returns the row.
+   */
+  readonly actorEmail: string | null;
   readonly action: string;
   readonly resourceType: string | null;
   readonly resourceId: string | null;
@@ -115,6 +128,33 @@ export interface ReadAuditInput {
  * it is being read, so an OFFSET page silently repeats rows as new entries push
  * older ones down — which reads as duplicated events rather than as a paging
  * artefact.
+ *
+ * ## Why the address is joined at read time and not stored on the entry
+ *
+ * The obvious alternative is to denormalize `actor_email` into `audit.audit_log`
+ * when the projection writes the row, which would survive the account being
+ * deleted outright. It is rejected for two reasons.
+ *
+ * The hashed entry is a record of WHAT HAPPENED, and an email address is not a
+ * property of the event — it is a mutable attribute of an account that can be
+ * changed afterwards. Freezing a copy into the chain means the log asserts an
+ * address that may no longer be the person's, with the authority of a digest
+ * behind it. The id is the durable fact; the address is a lookup.
+ *
+ * And adding a column to the hashed set is a change to the hash contract in
+ * migration 0007 and to `@taskflow/security/audit-chain.ts` at once, which would
+ * invalidate every digest already written.
+ *
+ * ## LEFT, not INNER
+ *
+ * `actor_id` is null for system actions — a retention sweep, a scheduled
+ * automation — and §8.6 treats "the system did it" as a real value rather than a
+ * missing one. An inner join would drop exactly those rows, and a compliance
+ * record that silently omits the unattended actions is worse than one that has
+ * none. `identity.users` carries no tenant policy of its own, so an actor who
+ * has since been removed from the ORG still resolves, which is the case that
+ * matters most: the people worth looking up in an audit log are usually the ones
+ * who have left.
  */
 export async function readAuditEntries(
   orgId: OrgId,
@@ -122,17 +162,19 @@ export async function readAuditEntries(
 ): Promise<readonly AuditEntryRow[]> {
   return withOrgScope(orgId, async (tx) => {
     const result = await tx.execute(sql`
-      SELECT id::text          AS id,
-             seq::text         AS seq,
-             occurred_at       AS occurred_at,
-             actor_id::text    AS actor_id,
-             action            AS action,
-             resource_type     AS resource_type,
-             resource_id::text AS resource_id,
-             changes           AS changes,
-             request_id        AS request_id
+      SELECT audit_log.id::text          AS id,
+             audit_log.seq::text         AS seq,
+             audit_log.occurred_at       AS occurred_at,
+             audit_log.actor_id::text    AS actor_id,
+             actor.email                 AS actor_email,
+             audit_log.action            AS action,
+             audit_log.resource_type     AS resource_type,
+             audit_log.resource_id::text AS resource_id,
+             audit_log.changes           AS changes,
+             audit_log.request_id        AS request_id
         FROM audit.audit_log
-       WHERE (${input.before}::bigint IS NULL OR seq < ${input.before}::bigint)
+        LEFT JOIN identity.users AS actor ON actor.id = audit_log.actor_id
+       WHERE (${input.before}::bigint IS NULL OR audit_log.seq < ${input.before}::bigint)
        ORDER BY audit_log.seq DESC
        LIMIT ${input.limit}
     `);
@@ -144,6 +186,7 @@ export async function readAuditEntries(
         seq: required(record['seq']),
         occurredAt: instant(record['occurred_at']),
         actorId: text(record['actor_id']),
+        actorEmail: text(record['actor_email']),
         action: required(record['action']),
         resourceType: text(record['resource_type']),
         resourceId: text(record['resource_id']),
