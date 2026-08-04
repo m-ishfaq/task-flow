@@ -38,7 +38,7 @@ export {
   appendToOutbox,
   outboxWriter,
   claimPending,
-  markPublished,
+  markDispatched,
   recordFailure,
   type OutboxRow,
 } from './outbox.js';
