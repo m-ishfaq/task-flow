@@ -12,7 +12,17 @@ import type {
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useSession } from '../../lib/session.js';
-import { Button, Empty, Field, Input, Spinner } from '../../components/primitives.js';
+import {
+  AddPanel,
+  Button,
+  ConfirmButton,
+  Empty,
+  Field,
+  Input,
+  Section,
+  SkeletonRows,
+  Spinner,
+} from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { boardsQuery, labelsQuery, projectsQuery, statusesQuery } from './api.js';
 
@@ -127,9 +137,7 @@ function ProjectDetails({
   });
 
   return (
-    <section className="space-y-3">
-      <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Project</h2>
-
+    <Section title="Project">
       <form
         className="space-y-3"
         onSubmit={(event) => {
@@ -161,16 +169,21 @@ function ProjectDetails({
           <Button type="submit" variant="primary" disabled={update.isPending}>
             Save
           </Button>
-          <Button
-            variant="ghost"
-            className="ml-auto text-danger"
-            disabled={archive.isPending}
-            onClick={() => {
-              archive.mutate();
-            }}
-          >
-            Archive project
-          </Button>
+          {/* Confirmed despite being restorable, unlike the other archive
+              buttons on this page: this one also NAVIGATES AWAY, so a stray
+              click loses the page you were working on as well as hiding the
+              project from everyone else. */}
+          <div className="ml-auto">
+            <ConfirmButton
+              label="Archive project"
+              confirmLabel="Archive and leave"
+              size="md"
+              disabled={archive.isPending}
+              onConfirm={() => {
+                archive.mutate();
+              }}
+            />
+          </div>
         </div>
       </form>
 
@@ -184,7 +197,7 @@ function ProjectDetails({
 
       {update.isError && <ErrorText error={update.error} />}
       {archive.isError && <ErrorText error={archive.error} />}
-    </section>
+    </Section>
   );
 }
 
@@ -218,11 +231,18 @@ function BoardSection({
   const live = (boards.data ?? []).filter((board) => board.archivedAt === null);
 
   return (
-    <section className="space-y-3">
-      <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Boards</h2>
+    <Section
+      title="Boards"
+      count={boards.data === undefined ? undefined : live.length}
+      description="Archiving a board hides it without touching its cards. Boards are created from the projects list."
+    >
+      {boards.isPending && <SkeletonRows rows={2} className="*:h-10" />}
 
-      {live.length === 0 ? (
-        <p className="text-xs text-ink-faint">No boards in this project.</p>
+      {boards.data !== undefined && live.length === 0 ? (
+        <Empty
+          title="No boards in this project"
+          description="A project without a board has nowhere to put cards."
+        />
       ) : (
         <ul className="divide-y divide-line rounded border border-line">
           {live.map((board) => (
@@ -278,10 +298,13 @@ function BoardSection({
                   >
                     Rename
                   </Button>
+                  {/* No confirm: archiving is reversible and the board's cards
+                      are untouched. Guarding an undoable action is the noise
+                      that trains people to click through the confirms that
+                      matter — the Delete buttons further down this page. */}
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="text-danger"
                     onClick={() => {
                       archive.mutate(board.boardId as BoardId);
                     }}
@@ -297,7 +320,7 @@ function BoardSection({
 
       {rename.isError && <ErrorText error={rename.error} />}
       {archive.isError && <ErrorText error={archive.error} />}
-    </section>
+    </Section>
   );
 }
 
@@ -330,13 +353,23 @@ function LabelSettings({
   });
 
   return (
-    <section className="space-y-3">
-      <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Labels</h2>
+    <Section
+      title="Labels"
+      count={labels.data?.length}
+      description="Deleting a label removes it from every card carrying it, and cannot be undone — a label holds no content of its own, so there is nothing to archive."
+    >
+      {labels.isPending && <SkeletonRows rows={3} className="*:h-10" />}
 
-      {(labels.data ?? []).length === 0 ? (
-        <p className="text-xs text-ink-faint">
-          No labels yet. They are created from a card, or here once one exists.
-        </p>
+      {/* No create form here, deliberately, and the empty state has to say so
+          rather than leave someone hunting for one. A label is minted from the
+          card panel at the moment it is first needed; a project-level "new
+          label" box invites naming a vocabulary up front for cards nobody has
+          written yet. This section EDITS the vocabulary that use produced. */}
+      {labels.data?.length === 0 ? (
+        <Empty
+          title="No labels yet"
+          description="Labels are created from a card's detail panel, the first time one is needed. They can be renamed and recoloured here afterwards."
+        />
       ) : (
         <ul className="divide-y divide-line rounded border border-line">
           {(labels.data ?? []).map((label) => (
@@ -406,16 +439,22 @@ function LabelSettings({
                   >
                     Edit
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-danger"
-                    onClick={() => {
+                  {/* The count is in the confirm label because it IS the
+                      decision: deleting a label nobody used and deleting one
+                      on forty cards are the same click and very different
+                      acts. */}
+                  <ConfirmButton
+                    label="Delete"
+                    confirmLabel={
+                      label.cardCount === 0
+                        ? 'Delete label'
+                        : `Delete from ${String(label.cardCount)} ${label.cardCount === 1 ? 'card' : 'cards'}`
+                    }
+                    disabled={remove.isPending}
+                    onConfirm={() => {
                       remove.mutate(label.labelId as LabelId);
                     }}
-                  >
-                    Delete
-                  </Button>
+                  />
                 </>
               )}
             </li>
@@ -425,7 +464,7 @@ function LabelSettings({
 
       {update.isError && <ErrorText error={update.error} />}
       {remove.isError && <ErrorText error={remove.error} />}
-    </section>
+    </Section>
   );
 }
 
@@ -496,15 +535,91 @@ function StatusSettings({
   });
 
   return (
-    <section className="space-y-3">
-      <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Statuses</h2>
-      <p className="text-xs text-ink-muted">
-        What a board grouped by status shows as columns. The default is where a new card lands when
-        nothing else was chosen.
-      </p>
+    <Section
+      title="Statuses"
+      count={statuses.data?.length}
+      description="What a board grouped by status shows as columns. The default is where a new card lands when nothing else was chosen."
+    >
+      {/* The create form, ABOVE the list.
+          It used to sit underneath, which is the wrong end for the one section
+          on this page that has a genuine create: a project accumulates statuses,
+          so the control drifted further down the page the more it was used — and
+          it was hidden entirely while any row was being edited. */}
+      {editing === null && (
+        <AddPanel>
+          <form
+            className="flex flex-wrap items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (draft.name.trim() !== '') {
+                create.mutate({ ...draft, name: draft.name.trim() });
+              }
+            }}
+          >
+            <input
+              type="color"
+              aria-label="New status colour"
+              value={draft.color}
+              onChange={(event) => {
+                setDraft((current) => ({ ...current, color: event.target.value }));
+              }}
+              className="h-8 w-10 rounded border border-line bg-surface"
+            />
+            <Input
+              aria-label="New status name"
+              placeholder="Status name"
+              value={draft.name}
+              onChange={(event) => {
+                setDraft((current) => ({ ...current, name: event.target.value }));
+              }}
+              className="h-8 flex-1 text-xs"
+            />
+            <select
+              aria-label="New status category"
+              value={draft.category}
+              onChange={(event) => {
+                setDraft((current) => ({
+                  ...current,
+                  category: event.target.value as StatusCategory,
+                }));
+              }}
+              className="h-8 rounded border border-line bg-surface px-1.5 text-xs text-ink"
+            >
+              {STATUS_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {STATUS_CATEGORY_LABEL[category]}
+                </option>
+              ))}
+            </select>
+            <label className="flex items-center gap-1 text-[11px] text-ink-muted">
+              <input
+                type="checkbox"
+                checked={draft.isDefault}
+                onChange={(event) => {
+                  setDraft((current) => ({ ...current, isDefault: event.target.checked }));
+                }}
+              />
+              Default
+            </label>
+            <Button
+              type="submit"
+              size="sm"
+              variant="primary"
+              disabled={create.isPending || draft.name.trim() === ''}
+            >
+              Add status
+            </Button>
+          </form>
+        </AddPanel>
+      )}
 
-      {(statuses.data ?? []).length === 0 ? (
-        <p className="text-xs text-ink-faint">No statuses yet — add one below.</p>
+      {statuses.isPending && <SkeletonRows rows={3} className="*:h-10" />}
+
+      {statuses.data?.length === 0 ? (
+        <Empty
+          title="No statuses yet"
+          description="A board grouped by status needs these to exist before a card can be dragged into one."
+        />
       ) : (
         <ul className="divide-y divide-line rounded border border-line">
           {(statuses.data ?? []).map((status) => (
@@ -610,16 +725,22 @@ function StatusSettings({
                   >
                     Edit
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-danger"
-                    onClick={() => {
+                  {/* Deleting a status un-classifies its cards rather than
+                      deleting them (`ON DELETE SET NULL`), so the count is what
+                      the confirm needs to state: nothing is lost except which
+                      column those cards were in, and that is not recoverable. */}
+                  <ConfirmButton
+                    label="Delete"
+                    confirmLabel={
+                      status.cardCount === 0
+                        ? 'Delete status'
+                        : `Un-classify ${String(status.cardCount)} ${status.cardCount === 1 ? 'card' : 'cards'}`
+                    }
+                    disabled={remove.isPending}
+                    onConfirm={() => {
                       remove.mutate(status.statusId as StatusId);
                     }}
-                  >
-                    Delete
-                  </Button>
+                  />
                 </>
               )}
             </li>
@@ -627,71 +748,10 @@ function StatusSettings({
         </ul>
       )}
 
-      {editing === null && (
-        <form
-          className="flex flex-wrap items-center gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (draft.name.trim() !== '') {
-              create.mutate({ ...draft, name: draft.name.trim() });
-            }
-          }}
-        >
-          <input
-            type="color"
-            aria-label="New status colour"
-            value={draft.color}
-            onChange={(event) => {
-              setDraft((current) => ({ ...current, color: event.target.value }));
-            }}
-            className="h-8 w-10 rounded border border-line bg-surface-sunken"
-          />
-          <Input
-            aria-label="New status name"
-            placeholder="Status name"
-            value={draft.name}
-            onChange={(event) => {
-              setDraft((current) => ({ ...current, name: event.target.value }));
-            }}
-            className="h-8 flex-1 text-xs"
-          />
-          <select
-            aria-label="New status category"
-            value={draft.category}
-            onChange={(event) => {
-              setDraft((current) => ({
-                ...current,
-                category: event.target.value as StatusCategory,
-              }));
-            }}
-            className="h-8 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
-          >
-            {STATUS_CATEGORIES.map((category) => (
-              <option key={category} value={category}>
-                {STATUS_CATEGORY_LABEL[category]}
-              </option>
-            ))}
-          </select>
-          <label className="flex items-center gap-1 text-[11px] text-ink-muted">
-            <input
-              type="checkbox"
-              checked={draft.isDefault}
-              onChange={(event) => {
-                setDraft((current) => ({ ...current, isDefault: event.target.checked }));
-              }}
-            />
-            Default
-          </label>
-          <Button type="submit" size="sm" variant="primary" disabled={create.isPending}>
-            Add status
-          </Button>
-        </form>
-      )}
-
       {create.isError && <ErrorText error={create.error} />}
       {update.isError && <ErrorText error={update.error} />}
       {remove.isError && <ErrorText error={remove.error} />}
-    </section>
+    </Section>
   );
 }
 
@@ -732,18 +792,18 @@ function FieldSettings({
   });
 
   return (
-    <section className="space-y-3">
-      <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
-        Custom fields
-      </h2>
-      <p className="text-xs text-ink-muted">
-        A field&rsquo;s TYPE is fixed once created — there is no honest migration from a choice list
-        to a number, and every option would silently rewrite data someone entered. Archiving hides a
-        field without discarding the values on existing cards.
-      </p>
+    <Section
+      title="Custom fields"
+      count={fields.data?.length}
+      description="A field's TYPE is fixed once created — there is no honest migration from a choice list to a number, and every option would silently rewrite data someone entered. Archiving hides a field without discarding the values on existing cards."
+    >
+      {fields.isPending && <SkeletonRows rows={2} className="*:h-10" />}
 
-      {(fields.data ?? []).length === 0 ? (
-        <p className="text-xs text-ink-faint">None yet. Add one from any card&rsquo;s panel.</p>
+      {fields.data?.length === 0 ? (
+        <Empty
+          title="No custom fields yet"
+          description="Fields are created from a card's detail panel. Archived ones stay listed here, which is the only place they can be restored."
+        />
       ) : (
         <ul className="divide-y divide-line rounded border border-line">
           {(fields.data ?? []).map((field) => (
@@ -819,6 +879,6 @@ function FieldSettings({
 
       {rename.isError && <ErrorText error={rename.error} />}
       {setArchived.isError && <ErrorText error={setArchived.error} />}
-    </section>
+    </Section>
   );
 }

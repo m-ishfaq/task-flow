@@ -1,6 +1,7 @@
 import {
   useEffect,
   useRef,
+  useState,
   type ComponentProps,
   type ComponentPropsWithoutRef,
   type ReactNode,
@@ -372,5 +373,138 @@ export function Empty({
       {description !== undefined && <p className="text-xs text-ink-muted">{description}</p>}
       {action}
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * Settings layout
+ *
+ * These three arrived by the §6 rule rather than ahead of it: `Section` is used
+ * eight times across the org and project settings pages, `AddPanel` four, and
+ * `ConfirmButton` five. Each existed first as copied markup in one file, and was
+ * lifted only once a second file needed the same thing.
+ * -------------------------------------------------------------------------- */
+
+/**
+ * A titled block, with an optional count and description.
+ *
+ * Exists because the heading markup was duplicated eight times and had already
+ * drifted: two spacing rhythms, and sections that silently lacked a description.
+ */
+export function Section({
+  title,
+  count,
+  description,
+  children,
+}: {
+  readonly title: string;
+  /* `| undefined` explicitly, not just `?`. Under `exactOptionalPropertyTypes`
+     an optional prop rejects an explicitly-passed `undefined`, and callers pass
+     `data?.length` — which is exactly that while the query is loading. */
+  readonly count?: number | undefined;
+  readonly description?: string | undefined;
+  readonly children: ReactNode;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center gap-2">
+        <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">{title}</h2>
+        {count !== undefined && <Badge>{count}</Badge>}
+      </div>
+      {description !== undefined && <p className="text-xs text-ink-muted">{description}</p>}
+      {children}
+    </section>
+  );
+}
+
+/**
+ * The bordered block an "add" control sits in.
+ *
+ * Dashed and sunken so the top of a list reads as a control rather than as the
+ * collection's first item — which is the risk of putting the form above the
+ * list, and the reason it is worth putting there anyway: a form BELOW forty rows
+ * moves further away the more the page is used.
+ */
+export function AddPanel({ children }: { readonly children: ReactNode }) {
+  return (
+    <div className="rounded-lg border border-dashed border-line bg-surface-sunken/60 p-3">
+      {children}
+    </div>
+  );
+}
+
+/**
+ * A destructive action that takes two clicks.
+ *
+ * Not `window.confirm`: that dialog is unstyleable, blocks the whole tab, and
+ * users dismiss it reflexively. Revealing the confirmation in place means the
+ * second click is on a different, differently-labelled control than the first,
+ * and clicking anywhere else cancels rather than confirming.
+ *
+ * `confirmLabel` is separate from `label` so the caller can state the BLAST
+ * RADIUS at the moment it matters — "Delete from 12 cards" is a different
+ * decision from "Delete", and the count is only known per row.
+ *
+ * Reserved for genuinely irreversible actions. Archiving is NOT one: it has
+ * Restore beside it, and a confirm on something already undoable is the noise
+ * that trains people to click through the confirms that matter.
+ */
+export function ConfirmButton({
+  label,
+  confirmLabel,
+  onConfirm,
+  disabled = false,
+  size = 'sm',
+  className,
+}: {
+  readonly label: string;
+  readonly confirmLabel?: string;
+  readonly onConfirm: () => void;
+  readonly disabled?: boolean;
+  readonly size?: ButtonSize;
+  readonly className?: string;
+}) {
+  const [confirming, setConfirming] = useState(false);
+
+  if (!confirming) {
+    return (
+      <Button
+        size={size}
+        variant="ghost"
+        className={cn('text-ink-faint hover:text-danger', className)}
+        disabled={disabled}
+        onClick={() => {
+          setConfirming(true);
+        }}
+      >
+        {label}
+      </Button>
+    );
+  }
+
+  return (
+    <span className="flex items-center gap-1">
+      <Button
+        size={size}
+        variant="ghost"
+        className="text-danger"
+        disabled={disabled}
+        onClick={() => {
+          onConfirm();
+          setConfirming(false);
+        }}
+      >
+        {confirmLabel ?? `Confirm ${label.toLowerCase()}`}
+      </Button>
+      <Button
+        size={size}
+        variant="ghost"
+        onClick={() => {
+          setConfirming(false);
+        }}
+      >
+        Cancel
+      </Button>
+    </span>
   );
 }

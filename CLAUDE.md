@@ -125,6 +125,26 @@ answering, that skip was cached as a pass, and a genuinely failing test stayed g
 full `pnpm verify` after the container came up. Caching a test whose result depends on the world
 outside the repo turns a green run into a statement about the past. It costs about 35 seconds.
 
+**A phantom `TS2307: Cannot find module` after installing a dependency is a stale
+`tsconfig.tsbuildinfo`. Delete it.** `incremental: true` in `packages/config/tsconfig/base.json`
+makes `tsc` persist its module-resolution results, and `node_modules` is not an input it tracks —
+so adding a dependency does not invalidate the cache, and the compiler keeps reporting the
+pre-install answer. The trap is that the error names a module that is demonstrably present, with a
+`dist/index.d.ts` you can `cat`, so the search goes to the exports map, the `moduleResolution`
+setting, and pnpm's symlinks — none of which are wrong. `--traceResolution` is what settles it, and
+it settles it confusingly: passing the flag changes the compiler options, which discards the cache,
+so the trace shows the module resolving perfectly while the plain run still fails.
+
+```bash
+find . -name '*.tsbuildinfo' -not -path '*/node_modules/*' -delete
+```
+
+Left incremental deliberately rather than switched off. Unlike the cached `test` result above this
+fails CLOSED — a false FAILURE, which stops and gets investigated, not a false pass that ships.
+Non-incremental costs about 5 seconds per package on `apps/web` (22.6s vs 17.5s), which is not
+worth paying on every run to avoid an error that announces itself. `*.tsbuildinfo` is gitignored,
+so CI starts from a clean checkout and never sees this.
+
 ---
 
 ## Conventions
@@ -152,7 +172,18 @@ outside the repo turns a green run into a statement about the past. It costs abo
 ## Current state
 
 **Phase 0B, Phase 1 (identity), Phase 2 (tenancy, authz & audit) and Phase 3 (Work) complete** —
-backend and `apps/web`. Next is Phase 4.
+backend and `apps/web`.
+
+**Phase 3.5 (Work UX) is APPROVED and IN PROGRESS** — spec in [ai/phase-3.5-work-ux.md](ai/phase-3.5-work-ux.md),
+approved 2026-07-30. Wave 1 (sidebar, optimistic mutations, inline create, detail modal) and Wave 2
+(status, priority, group-by/sort-by, List view — migrations 0011/0012) have shipped. **Wave 3 is the
+open work**: saved views, bulk actions, My Tasks, command palette, keyboard shortcuts.
+
+Phase 4 (realtime spine) comes after 3.5, not before it. §8.4 of the 3.5 spec is explicit that this
+phase must not pre-empt it — no polling loop and no socket to make two tabs agree. Read the spec's
+own status header before trusting a phase marker anywhere else: the §13 roadmap table and this
+section were both stale for the whole of Wave 1 and Wave 2, which is how an agent asked to find
+"what's next" confidently answered Phase 4.
 
 Deferred deliberately from Phase 3, and NOT bugs: passkey sign-in is wired on the API but the
 browser ceremony (`@simplewebauthn/browser`) is not in this build, so the login page says so

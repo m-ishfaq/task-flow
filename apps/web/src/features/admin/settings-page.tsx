@@ -9,12 +9,15 @@ import { useSession } from '../../lib/session.js';
 import { wire } from '../../lib/wire.js';
 import { formatDate } from '../../lib/format.js';
 import {
+  AddPanel,
   Avatar,
   Badge,
   Button,
+  ConfirmButton,
   Empty,
   Field,
   Input,
+  Section,
   SkeletonRows,
 } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
@@ -66,52 +69,6 @@ export function SettingsPage() {
       <OrgSection orgId={orgId} />
       <MemberSection orgId={orgId} />
       <TeamSection orgId={orgId} />
-    </div>
-  );
-}
-
-/**
- * A titled block with an optional count and description.
- *
- * Extracted because there are three of them and they were drifting: two heading
- * styles, two spacing rhythms, and one section that had no description at all.
- */
-function Section({
-  title,
-  count,
-  description,
-  children,
-}: {
-  readonly title: string;
-  /* `| undefined` explicitly, not just `?`. Under `exactOptionalPropertyTypes`
-     an optional prop rejects an explicitly-passed `undefined`, and the callers
-     pass `data?.length` — which is exactly that while the query is loading. */
-  readonly count?: number | undefined;
-  readonly description?: string | undefined;
-  readonly children: React.ReactNode;
-}) {
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center gap-2">
-        <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">{title}</h2>
-        {count !== undefined && <Badge>{count}</Badge>}
-      </div>
-      {description !== undefined && <p className="text-xs text-ink-muted">{description}</p>}
-      {children}
-    </section>
-  );
-}
-
-/**
- * The bordered block an "add" control sits in.
- *
- * Visually distinct from the rows below it, so the top of the list reads as a
- * control rather than as the first item of the collection.
- */
-function AddPanel({ children }: { readonly children: React.ReactNode }) {
-  return (
-    <div className="rounded-lg border border-dashed border-line bg-surface-sunken/60 p-3">
-      {children}
     </div>
   );
 }
@@ -332,15 +289,8 @@ interface MemberRowProps {
 }
 
 function MemberRow({ member, isSelf, busy, onRoleChange, onRemove }: MemberRowProps) {
-  const [confirming, setConfirming] = useState(false);
-
   return (
-    <li
-      className={cn(
-        'group flex items-center gap-3 px-3 py-2 transition-colors',
-        confirming ? 'bg-danger/5' : 'hover:bg-surface-hover',
-      )}
-    >
+    <li className="group flex items-center gap-3 px-3 py-2 transition-colors hover:bg-surface-hover">
       <Avatar userId={member.userId} label={member.email} />
 
       <div className="min-w-0 flex-1">
@@ -375,47 +325,17 @@ function MemberRow({ member, isSelf, busy, onRoleChange, onRemove }: MemberRowPr
         ))}
       </select>
 
-      {confirming ? (
-        <span className="flex items-center gap-1">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-danger"
-            disabled={busy}
-            onClick={() => {
-              onRemove();
-              setConfirming(false);
-            }}
-          >
-            Confirm
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              setConfirming(false);
-            }}
-          >
-            Cancel
-          </Button>
-        </span>
-      ) : (
-        /* Revealed on hover, but always reachable by keyboard — `opacity-0`
-           still takes focus, and `focus-visible:opacity-100` brings it back
-           into view when it does. A control that only exists under a pointer is
-           a control that does not exist for a keyboard. */
-        <Button
-          size="sm"
-          variant="ghost"
-          aria-label={`Remove ${member.email}`}
-          className="text-ink-faint hover:text-danger focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
-          onClick={() => {
-            setConfirming(true);
-          }}
-        >
-          Remove
-        </Button>
-      )}
+      {/* Revealed on hover, but always reachable by keyboard — `opacity-0` still
+          takes focus, and `focus-visible:opacity-100` brings it back into view
+          when it does. A control that only exists under a pointer is a control
+          that does not exist for a keyboard. */}
+      <ConfirmButton
+        label="Remove"
+        confirmLabel={`Remove ${member.email}`}
+        disabled={busy}
+        onConfirm={onRemove}
+        className="focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+      />
     </li>
   );
 }

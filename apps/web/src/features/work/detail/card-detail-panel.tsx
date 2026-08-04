@@ -11,6 +11,7 @@ import { useUpdateCard } from '../use-update-card.js';
 import { RichTextEditor } from './rich-text-editor.js';
 import { isEmptyDocument, type DocumentNode } from './rich-text.js';
 import { LabelSection } from './label-section.js';
+import { LocationSection } from './location-section.js';
 import { PrioritySection, StatusSection } from './status-priority-section.js';
 import { ChecklistSection } from './checklist-section.js';
 import { CustomFieldSection } from './custom-field-section.js';
@@ -146,6 +147,19 @@ export function CardDetailPanel({
                 </div>
 
                 <div className="space-y-6">
+                  {/* First in the properties column: where a card LIVES is the
+                      thing a reader orients by, and it is the one property the
+                      board behind this panel cannot show once the panel covers
+                      it. */}
+                  <LocationSection
+                    orgId={orgId}
+                    cardId={cardId}
+                    boardId={boardId}
+                    listId={card.data.listId}
+                    projectId={projectId}
+                    onLeaveBoard={onClose}
+                  />
+
                   {projectId !== null && (
                     <StatusSection
                       orgId={orgId}
