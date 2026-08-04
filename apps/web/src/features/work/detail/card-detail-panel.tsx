@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BoardId, CardId, ProjectId } from '@taskflow/contracts';
 import { Button, Input, Skeleton } from '../../../components/primitives.js';
@@ -17,11 +18,15 @@ import { AttachmentSection } from './attachment-section.js';
 import { AssigneeSection } from './assignee-section.js';
 
 /**
- * The card detail panel.
+ * The card detail — a centred modal, not a side panel (`ai/phase-3.5-work-ux.md` §4.7).
  *
  * Route-driven (`?card=`), so it is deep-linkable, shareable and correct under
  * the back button — §10.5 is explicit about this, and it is why the open card is
- * NOT in the Zustand store with the rest of the ephemeral UI state.
+ * NOT in the Zustand store with the rest of the ephemeral UI state. The parent
+ * only mounts this component while `search.card` is set, so `Dialog.Root` is
+ * always `open`; dismissing it — Escape, the overlay, or the Close button, all
+ * funnelled through `onOpenChange` — clears the search param instead of
+ * flipping local state, which is what keeps the URL the single source of truth.
  *
  * ## Saving is explicit, not on blur
  *
@@ -38,6 +43,14 @@ import { AssigneeSection } from './assignee-section.js';
  * (`project:update`); filling one in is `card:update`; commenting is
  * `comment:create`, which is what makes read-plus-comment access expressible at
  * all.
+ *
+ * ## The two-column body
+ *
+ * Content (title, description, checklist, attachments) sits left because it is
+ * what someone opens the card to read or write; properties (dates, assignees,
+ * labels, custom fields) sit right because they are glanced at and occasionally
+ * changed, never the reason the panel was opened. Activity — comments — runs
+ * full width below both, since a thread reads better long than narrow.
  */
 
 export interface CardDetailPanelProps {
@@ -58,84 +71,121 @@ export function CardDetailPanel({
   const card = useQuery(cardQuery(orgId, cardId));
 
   return (
-    <aside
-      aria-label="Card detail"
-      className="flex w-[28rem] max-w-full shrink-0 flex-col overflow-y-auto border-l border-line bg-surface-raised"
+    <Dialog.Root
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
     >
-      <header className="flex items-center gap-2 border-b border-line px-4 py-2">
-        <span className="font-mono text-xs text-ink-faint">{card.data?.reference ?? '…'}</span>
-        <div className="ml-auto flex items-center gap-1">
-          <ArchiveCardButton orgId={orgId} boardId={boardId} cardId={cardId} onArchived={onClose} />
-          <Button size="sm" variant="ghost" onClick={onClose}>
-            Close
-          </Button>
-        </div>
-      </header>
-
-      {card.isPending && (
-        <div aria-busy="true" className="space-y-4 p-4">
-          <Skeleton className="h-6 w-3/4" />
-          <Skeleton className="h-20 w-full" />
-          <div className="grid grid-cols-2 gap-3">
-            <Skeleton className="h-8" />
-            <Skeleton className="h-8" />
-          </div>
-          <Skeleton className="h-24 w-full" />
-        </div>
-      )}
-
-      {card.isError && (
-        <div className="p-4">
-          <ErrorView error={card.error} title="Could not load this card" />
-        </div>
-      )}
-
-      {card.isSuccess && (
-        <div className="space-y-6 p-4">
-          {/* Keyed by card id so switching cards REMOUNTS the editor rather
-              than resetting its state in an effect. The effect version works
-              and is a cascade — React renders the previous card's title, then
-              re-renders — and it silently regresses the moment someone adds a
-              field and forgets to reset it. A key cannot be forgotten. */}
-          <TitleAndDescription
-            key={card.data.cardId}
-            orgId={orgId}
-            boardId={boardId}
-            card={card.data}
-          />
-
-          <DatesSection orgId={orgId} boardId={boardId} card={card.data} />
-
-          <AssigneeSection
-            orgId={orgId}
-            boardId={boardId}
-            cardId={cardId}
-            assigneeIds={card.data.assigneeIds}
-          />
-
-          {projectId !== null && (
-            <>
-              <LabelSection orgId={orgId} boardId={boardId} cardId={cardId} projectId={projectId} />
-              <CustomFieldSection
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50" />
+        <Dialog.Content className="fixed top-1/2 left-1/2 flex max-h-[90vh] w-full max-w-4xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-card border border-line bg-surface-raised shadow-xl">
+          <header className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2">
+            <Dialog.Title className="font-mono text-xs text-ink-faint">
+              {card.data?.reference ?? 'Card'}
+            </Dialog.Title>
+            {/* Not shown — the two-column body under it says everything a
+                sighted user needs, and a visible sentence duplicating that
+                would just be noise above the title field. */}
+            <Dialog.Description className="sr-only">
+              Card details: title, description, properties and comments.
+            </Dialog.Description>
+            <div className="ml-auto flex items-center gap-1">
+              <ArchiveCardButton
                 orgId={orgId}
                 boardId={boardId}
                 cardId={cardId}
-                projectId={projectId}
+                onArchived={onClose}
               />
-            </>
-          )}
+              <Dialog.Close asChild>
+                <Button size="sm" variant="ghost">
+                  Close
+                </Button>
+              </Dialog.Close>
+            </div>
+          </header>
 
-          <ChecklistSection orgId={orgId} boardId={boardId} cardId={cardId} />
-          <AttachmentSection orgId={orgId} cardId={cardId} />
-          <CommentSection orgId={orgId} boardId={boardId} cardId={cardId} />
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {card.isPending && (
+              <div aria-busy="true" className="space-y-4 p-4">
+                <Skeleton className="h-6 w-3/4" />
+                <Skeleton className="h-20 w-full" />
+                <div className="grid grid-cols-2 gap-3">
+                  <Skeleton className="h-8" />
+                  <Skeleton className="h-8" />
+                </div>
+                <Skeleton className="h-24 w-full" />
+              </div>
+            )}
 
-          <p className="border-t border-line pt-3 text-[11px] text-ink-faint">
-            Created {formatDateTime(card.data.createdAt)} · updated{' '}
-            {formatDateTime(card.data.updatedAt)} · v{card.data.version}
-          </p>
-        </div>
-      )}
-    </aside>
+            {card.isError && (
+              <div className="p-4">
+                <ErrorView error={card.error} title="Could not load this card" />
+              </div>
+            )}
+
+            {card.isSuccess && (
+              <div className="grid gap-6 p-4 md:grid-cols-[1fr_18rem]">
+                <div className="min-w-0 space-y-6">
+                  {/* Keyed by card id so switching cards REMOUNTS the editor
+                      rather than resetting its state in an effect. The effect
+                      version works and is a cascade — React renders the
+                      previous card's title, then re-renders — and it silently
+                      regresses the moment someone adds a field and forgets to
+                      reset it. A key cannot be forgotten. */}
+                  <TitleAndDescription
+                    key={card.data.cardId}
+                    orgId={orgId}
+                    boardId={boardId}
+                    card={card.data}
+                  />
+
+                  <ChecklistSection orgId={orgId} boardId={boardId} cardId={cardId} />
+                  <AttachmentSection orgId={orgId} cardId={cardId} />
+                </div>
+
+                <div className="space-y-6">
+                  <DatesSection orgId={orgId} boardId={boardId} card={card.data} />
+
+                  <AssigneeSection
+                    orgId={orgId}
+                    boardId={boardId}
+                    cardId={cardId}
+                    assigneeIds={card.data.assigneeIds}
+                  />
+
+                  {projectId !== null && (
+                    <>
+                      <LabelSection
+                        orgId={orgId}
+                        boardId={boardId}
+                        cardId={cardId}
+                        projectId={projectId}
+                      />
+                      <CustomFieldSection
+                        orgId={orgId}
+                        boardId={boardId}
+                        cardId={cardId}
+                        projectId={projectId}
+                      />
+                    </>
+                  )}
+                </div>
+
+                <div className="space-y-6 border-t border-line pt-4 md:col-span-2">
+                  <CommentSection orgId={orgId} boardId={boardId} cardId={cardId} />
+
+                  <p className="text-[11px] text-ink-faint">
+                    Created {formatDateTime(card.data.createdAt)} · updated{' '}
+                    {formatDateTime(card.data.updatedAt)} · v{card.data.version}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 
