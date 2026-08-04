@@ -959,6 +959,38 @@ describe('archiving', () => {
     expect(await cards.listCards(fixture.owner, { boardId: fixture.boardId })).toHaveLength(1);
   });
 
+  it('surfaces an archived card only when the caller explicitly asks for it', async () => {
+    /* `includeArchived` REPLACES the hardcoded exclusion rather than composing
+       with it — this pins that a plain `listCards` call still cannot see the
+       archived row, and that the flag is what it takes to reach it. */
+    const fixture = await scaffold('work-archive-includeArchived');
+
+    const live = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Still here',
+      description: null,
+    });
+    const gone = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Archived',
+      description: null,
+    });
+    await cards.archiveCard(fixture.owner, { cardId: gone.cardId, archived: true });
+
+    const defaultView = await cards.listCards(fixture.owner, { boardId: fixture.boardId });
+    expect(defaultView.map((card) => card.cardId)).toEqual([live.cardId]);
+
+    const withArchived = await cards.listCards(fixture.owner, {
+      boardId: fixture.boardId,
+      includeArchived: true,
+    });
+    expect(new Set(withArchived.map((card) => card.cardId))).toEqual(
+      new Set([live.cardId, gone.cardId]),
+    );
+    expect(withArchived.find((card) => card.cardId === gone.cardId)?.archivedAt).not.toBeNull();
+    expect(withArchived.find((card) => card.cardId === live.cardId)?.archivedAt).toBeNull();
+  });
+
   it('refuses to archive a list that still holds cards', async () => {
     const fixture = await scaffold('work-archive-list');
 

@@ -214,9 +214,9 @@ export function CardDetailPanel({
  * the card keeps its number and its history. `cards.list` excludes archived
  * cards, so it leaves the board immediately.
  *
- * Confirmed first because the panel offers no way back: there is no archived
- * view in this build, so an accidental click makes the card unreachable from the
- * UI even though the data is intact.
+ * Confirmed first because the panel itself offers no way back — restoring
+ * happens from `ArchivedCardsDialog` on the board toolbar, not here, so an
+ * accidental click still costs a trip to a different part of the UI to undo.
  */
 function ArchiveCardButton({
   orgId,
