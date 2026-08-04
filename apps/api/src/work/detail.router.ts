@@ -7,6 +7,8 @@ import {
   CustomFieldIdSchema,
   LabelIdSchema,
   ProjectIdSchema,
+  StatusCategory,
+  StatusIdSchema,
 } from '@taskflow/contracts';
 import { route, router } from '../trpc/builder.js';
 import { subjectOf } from '../trpc/context.js';
@@ -14,20 +16,28 @@ import { RichTextDocument } from './richtext.js';
 import { CUSTOM_FIELD_TYPES, CustomFieldOptions } from './custom-field-value.js';
 import type { WorkActor } from './shared.js';
 import * as labels from './label.service.js';
+import * as statuses from './status.service.js';
 import * as checklists from './checklist.service.js';
 import * as fields from './custom-field.service.js';
 import * as comments from './comment.service.js';
 
 /**
- * Card detail routes — labels, checklists, custom fields, comments (§3.1).
+ * Card detail routes — labels, statuses, checklists, custom fields, comments
+ * (§3.1, and statuses per `ai/phase-3.5-work-ux.md` §5).
  *
  * The permission on each route is worth reading as a pair with its service.
  * Two distinct authorization questions run through this file:
  *
  *   `project:update`  changing the project's VOCABULARY — the label set, the
- *                     custom field definitions. Affects every card.
+ *                     status set, the custom field definitions. Affects
+ *                     every card.
  *   `card:update`     changing ONE card — which labels it carries, what its
  *                     fields say, its checklists.
+ *
+ * Setting a card's STATUS is `card:update` too, but it is not in this file —
+ * `cards.setStatus` lives in `router.ts` next to `cards.assign`, since it is a
+ * card-hierarchy route rather than a vocabulary one. Only status MANAGEMENT
+ * (`statuses.list/create/update/delete`) belongs here.
  *
  * and comments use neither: `comment:create` exists precisely so someone can be
  * given a voice on a board without being given edit rights (§8.2).
@@ -118,6 +128,65 @@ export function createCardDetailRouter() {
             .readonly(),
         )
         .query(({ input, ctx }) => labels.listCardLabels(actor(ctx), input)),
+    }),
+
+    statuses: router({
+      list: route({ permission: 'project:read' })
+        .input(z.object({ projectId: ProjectIdSchema }).strict())
+        .output(
+          z
+            .array(
+              z.object({
+                statusId: z.string(),
+                projectId: z.string(),
+                name: z.string(),
+                category: StatusCategory,
+                color: z.string(),
+                position: z.number().int(),
+                isDefault: z.boolean(),
+                cardCount: z.number().int().nonnegative(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => statuses.listStatuses(actor(ctx), input)),
+
+      /** `project:update` — a status is project vocabulary, same as a label. */
+      create: route({ permission: 'project:update' })
+        .input(
+          z
+            .object({
+              projectId: ProjectIdSchema,
+              name: Name,
+              category: StatusCategory,
+              color: Color,
+              isDefault: z.boolean().default(false),
+            })
+            .strict(),
+        )
+        .output(z.object({ statusId: z.string() }))
+        .mutation(({ input, ctx }) => statuses.createStatus(actor(ctx), input)),
+
+      update: route({ permission: 'project:update' })
+        .input(
+          z
+            .object({
+              statusId: StatusIdSchema,
+              name: Name,
+              category: StatusCategory,
+              color: Color,
+              isDefault: z.boolean().default(false),
+            })
+            .strict(),
+        )
+        .output(z.object({ name: z.string() }))
+        .mutation(({ input, ctx }) => statuses.updateStatus(actor(ctx), input)),
+
+      /** A real delete, not an archive — see the service for why. */
+      delete: route({ permission: 'project:update' })
+        .input(z.object({ statusId: StatusIdSchema }).strict())
+        .output(z.object({ deleted: z.literal(true), cardCount: z.number().int().nonnegative() }))
+        .mutation(({ input, ctx }) => statuses.deleteStatus(actor(ctx), input)),
     }),
 
     checklists: router({

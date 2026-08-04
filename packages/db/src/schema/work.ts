@@ -195,6 +195,18 @@ export const cards = work.table(
       .notNull()
       .default(sql`'{}'`),
 
+    /**
+     * Grouping and done-ness, independent of `listId` (migration 0011).
+     *
+     * Nullable: existing cards have no status until 0012 backfills them, and
+     * the composite FK to `statuses` (org_id, project_id, status_id) — which
+     * Drizzle cannot express, see the file header — is what stops a status
+     * from another project being set here.
+     */
+    statusId: uuid('status_id'),
+    /** One of PRIORITIES. Nullable — "no priority" is a real, common state. */
+    priority: text('priority'),
+
     dueDate: timestamp('due_date', { withTimezone: true }),
     startDate: timestamp('start_date', { withTimezone: true }),
 
@@ -405,4 +417,48 @@ export const cardComments = work.table(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index('card_comments_card_idx').on(table.orgId, table.cardId, table.id)],
+);
+
+/* -------------------------------------------------------------------------- *
+ * Status (migration 0011) — a card's grouping and done-ness, independent of
+ * `listId`. See the migration header for why this coexists with lists rather
+ * than replacing them.
+ * -------------------------------------------------------------------------- */
+
+/**
+ * A status, defined per PROJECT — matching labels and custom fields.
+ *
+ * `cards.statusId` carries the composite FK Drizzle cannot express: (org_id,
+ * project_id, status_id) against (org_id, project_id, id) here, with
+ * `ON DELETE SET NULL (status_id)` so deleting a status un-classifies its
+ * cards rather than deleting them. See the migration for why the column-list
+ * form of `SET NULL` is the one that matters — the bare form would also null
+ * a card's org_id and project_id.
+ */
+export const statuses = work.table(
+  'statuses',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+
+    name: text('name').notNull(),
+    /** One of not_started / active / done. The migration's CHECK is the enforcement. */
+    category: text('category').notNull(),
+    /** Hex triplet, same convention as `labels.color`. */
+    color: text('color').notNull(),
+    /** Display order. A plain integer — see the migration for why not a rank. */
+    position: integer('position').notNull(),
+    /** The status a new card lands in when nothing else was chosen. At most one per project. */
+    isDefault: boolean('is_default').notNull().default(false),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('statuses_org_project_id_key').on(table.orgId, table.projectId, table.id),
+    index('statuses_project_position_idx').on(table.orgId, table.projectId, table.position, table.id),
+    // `statuses_project_name_key` is case-insensitive (lower(name)) and
+    // `statuses_project_default_key` is partial (WHERE is_default) — both
+    // expression indexes Drizzle has no builder for. Migration only.
+  ],
 );

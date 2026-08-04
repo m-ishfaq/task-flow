@@ -17,6 +17,8 @@ import {
   errors,
   type CardId,
   type ListId,
+  type Priority,
+  type StatusId,
   type UserId,
 } from '@taskflow/contracts';
 import { createEvent, type DomainEvent } from '@taskflow/events';
@@ -26,6 +28,7 @@ import {
   cardAssigned,
   cardCreated,
   cardMoved,
+  cardStatusChanged,
   cardUpdated,
   listRebalanced,
 } from './events.js';
@@ -79,6 +82,8 @@ export interface CardSummary {
   readonly title: string;
   readonly rank: string;
   readonly assigneeIds: readonly string[];
+  readonly statusId: string | null;
+  readonly priority: Priority | null;
   readonly dueDate: Date | null;
   readonly commentCount: number;
   readonly checklistDone: number;
@@ -129,6 +134,8 @@ export async function listCards(
         title: schema.cards.title,
         rank: schema.cards.rank,
         assigneeIds: schema.cards.assigneeIds,
+        statusId: schema.cards.statusId,
+        priority: schema.cards.priority,
         dueDate: schema.cards.dueDate,
         commentCount: schema.cards.commentCount,
         checklistDone: schema.cards.checklistDone,
@@ -154,6 +161,10 @@ export async function listCards(
 
     return rows.map(({ number, projectKey, ...row }) => ({
       ...row,
+      // The column is text; the CHECK constraint is what actually limits it
+      // to the four values `Priority` names. Same narrowing as
+      // `StatusCategory` in status.service.ts.
+      priority: row.priority as Priority | null,
       reference: referenceOf(projectKey, number),
     }));
   });
@@ -184,6 +195,8 @@ export async function getCard(
         description: schema.cards.description,
         rank: schema.cards.rank,
         assigneeIds: schema.cards.assigneeIds,
+        statusId: schema.cards.statusId,
+        priority: schema.cards.priority,
         dueDate: schema.cards.dueDate,
         startDate: schema.cards.startDate,
         commentCount: schema.cards.commentCount,
@@ -204,7 +217,11 @@ export async function getCard(
     enforceOn(actor, 'card:read', { type: 'card', id: input.cardId }, card, ancestorsOfCard(card));
 
     const { number, projectKey, orgId: _orgId, projectId: _projectId, ...rest } = card;
-    return { ...rest, reference: referenceOf(projectKey, number) };
+    return {
+      ...rest,
+      priority: rest.priority as Priority | null,
+      reference: referenceOf(projectKey, number),
+    };
   });
 }
 
@@ -257,6 +274,18 @@ export async function createCard(
           .where(and(eq(schema.cards.listId, input.listId), isNull(schema.cards.deletedAt)))
           .orderBy(asc(schema.cards.rank), asc(schema.cards.id));
 
+        /* The project's default status, if it has one. Best-effort: a project
+           with no statuses yet (nothing has backfilled it, and nobody has
+           created one) leaves the card unclassified rather than failing the
+           whole creation over a vocabulary that has not been set up. */
+        const defaultStatus = await tx
+          .select({ statusId: schema.statuses.id })
+          .from(schema.statuses)
+          .where(
+            and(eq(schema.statuses.projectId, list.projectId), eq(schema.statuses.isDefault, true)),
+          )
+          .limit(1);
+
         await tx.insert(schema.cards).values({
           id: cardId,
           orgId,
@@ -271,6 +300,7 @@ export async function createCard(
           description: input.description,
           descriptionText: input.description === null ? null : flattenToText(input.description),
           rank: between(siblings.at(-1)?.rank ?? null, null),
+          statusId: defaultStatus[0]?.statusId ?? null,
           createdBy: actor.subject.userId,
         });
 
@@ -306,6 +336,9 @@ export async function updateCard(
     readonly description: RichTextNode | null;
     readonly dueDate: Date | null;
     readonly startDate: Date | null;
+    /** Rides this route rather than getting its own, per `card.updated` — see
+        `setCardStatus` for why status did not join it. */
+    readonly priority: Priority | null;
   },
 ): Promise<{ readonly version: number }> {
   return withOrgScope(orgOf(actor), async (tx) => {
@@ -323,6 +356,7 @@ export async function updateCard(
     if (card.title !== input.title) changed.push('title');
     if (!sameInstant(card.dueDate, input.dueDate)) changed.push('dueDate');
     if (!sameInstant(card.startDate, input.startDate)) changed.push('startDate');
+    if (card.priority !== input.priority) changed.push('priority');
     if (JSON.stringify(card.description) !== JSON.stringify(input.description)) {
       changed.push('description');
     }
@@ -340,6 +374,7 @@ export async function updateCard(
         descriptionText: input.description === null ? null : flattenToText(input.description),
         dueDate: input.dueDate,
         startDate: input.startDate,
+        priority: input.priority,
         version: nextVersion,
         updatedAt: new Date(),
       })
@@ -361,11 +396,13 @@ export async function updateCard(
             title: card.title,
             dueDate: card.dueDate?.toISOString() ?? null,
             startDate: card.startDate?.toISOString() ?? null,
+            priority: card.priority,
           },
           after: {
             title: input.title,
             dueDate: input.dueDate?.toISOString() ?? null,
             startDate: input.startDate?.toISOString() ?? null,
+            priority: input.priority,
           },
         },
         envelopeOf(actor),
@@ -374,6 +411,73 @@ export async function updateCard(
 
     return { version: nextVersion };
   });
+}
+
+/**
+ * Sets a card's status — the field a "group by status" board drags between
+ * columns, per §3.2 of the plan.
+ *
+ * A dedicated mutation rather than folding into `updateCard`, unlike
+ * priority. Two reasons: it emits `card.status_changed`, a FIRST-CLASS event
+ * Phase 10 automation fires on specifically (see `events.ts`) — folding it
+ * into `card.updated` would make every consumer diff `before`/`after` to
+ * notice a status transition, which is exactly the mistake `card.moved`
+ * already avoided for list moves. And unlike `updateCard`, this is not a full
+ * replace: a board dragging a card between status columns has never read the
+ * card's description or dates, and should not need to before it can move it.
+ *
+ * No explicit membership check on `statusId` beyond what the database already
+ * enforces: `cards_status_fk` is a COMPOSITE foreign key on (org_id,
+ * project_id, status_id), so a status from another project is refused by the
+ * database exactly as a label from another project is (`setCardLabels`) —
+ * translated to a 404 by `translatingConstraints` rather than a lookup this
+ * code would otherwise have to remember to do.
+ */
+export async function setCardStatus(
+  actor: WorkActor,
+  input: { readonly cardId: CardId; readonly statusId: StatusId | null },
+): Promise<{ readonly statusId: string | null }> {
+  return translatingConstraints(
+    async () =>
+      withOrgScope(orgOf(actor), async (tx) => {
+        const card = await loadCard(tx, input.cardId);
+
+        enforceOn(
+          actor,
+          'card:update',
+          { type: 'card', id: input.cardId },
+          card,
+          ancestorsOfCard(card),
+        );
+
+        if (card.statusId === input.statusId) {
+          // No-op save: keeps a card detail panel that fires on blur out of
+          // the audit log for a click that changed nothing.
+          return { statusId: card.statusId };
+        }
+
+        await tx
+          .update(schema.cards)
+          .set({ statusId: input.statusId, updatedAt: new Date() })
+          .where(eq(schema.cards.id, input.cardId));
+
+        await outboxWriter.append(tx, [
+          createEvent(
+            cardStatusChanged,
+            {
+              cardId: input.cardId,
+              boardId: card.boardId,
+              before: card.statusId,
+              after: input.statusId,
+            },
+            envelopeOf(actor),
+          ),
+        ]);
+
+        return { statusId: input.statusId };
+      }),
+    () => errors.notFound(),
+  );
 }
 
 /** Two nullable timestamps denote the same instant. */
@@ -697,6 +801,8 @@ export interface CardRow {
   readonly description: unknown;
   readonly rank: string;
   readonly assigneeIds: readonly string[];
+  readonly statusId: string | null;
+  readonly priority: Priority | null;
   readonly dueDate: Date | null;
   readonly startDate: Date | null;
   readonly version: number;
@@ -718,6 +824,8 @@ export async function loadCard(
       description: schema.cards.description,
       rank: schema.cards.rank,
       assigneeIds: schema.cards.assigneeIds,
+      statusId: schema.cards.statusId,
+      priority: schema.cards.priority,
       dueDate: schema.cards.dueDate,
       startDate: schema.cards.startDate,
       version: schema.cards.version,
@@ -728,5 +836,5 @@ export async function loadCard(
 
   const card = rows[0];
   if (!card) throw errors.notFound();
-  return card;
+  return { ...card, priority: card.priority as Priority | null };
 }

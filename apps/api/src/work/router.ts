@@ -3,7 +3,9 @@ import {
   BoardIdSchema,
   CardIdSchema,
   ListIdSchema,
+  Priority,
   ProjectIdSchema,
+  StatusIdSchema,
   UserIdSchema,
 } from '@taskflow/contracts';
 import { FilterTree } from '@taskflow/filter';
@@ -291,6 +293,8 @@ export function createWorkRouter(deps: WorkRouterDeps) {
                 title: z.string(),
                 rank: z.string(),
                 assigneeIds: z.array(z.string()).readonly(),
+                statusId: z.string().nullable(),
+                priority: Priority.nullable(),
                 dueDate: z.date().nullable(),
                 commentCount: z.number().int().nonnegative(),
                 checklistDone: z.number().int().nonnegative(),
@@ -314,6 +318,8 @@ export function createWorkRouter(deps: WorkRouterDeps) {
             description: z.unknown(),
             rank: z.string(),
             assigneeIds: z.array(z.string()).readonly(),
+            statusId: z.string().nullable(),
+            priority: Priority.nullable(),
             dueDate: z.date().nullable(),
             startDate: z.date().nullable(),
             commentCount: z.number().int().nonnegative(),
@@ -357,11 +363,24 @@ export function createWorkRouter(deps: WorkRouterDeps) {
               description: Description.default(null),
               dueDate: Timestamp.default(null),
               startDate: Timestamp.default(null),
+              priority: Priority.nullable().default(null),
             })
             .strict(),
         )
         .output(z.object({ version: z.number().int().positive() }))
         .mutation(({ input, ctx }) => cards.updateCard(actorOf(ctx), input)),
+
+      /**
+       * A dedicated route, not folded into `update` — see `setCardStatus` for
+       * why. Not a full replace: dragging a card between status columns has
+       * never read its description or dates and should not need to.
+       */
+      setStatus: route({ permission: 'card:update' })
+        .input(
+          z.object({ cardId: CardIdSchema, statusId: StatusIdSchema.nullable() }).strict(),
+        )
+        .output(z.object({ statusId: z.string().nullable() }))
+        .mutation(({ input, ctx }) => cards.setCardStatus(actorOf(ctx), input)),
 
       /**
        * The move API from §10.1 — neighbours in, rank derived on the server.

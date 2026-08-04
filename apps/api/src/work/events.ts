@@ -159,6 +159,7 @@ export const cardUpdated = defineEvent(
           title: z.string(),
           dueDate: z.string().nullable(),
           startDate: z.string().nullable(),
+          priority: z.string().nullable(),
         })
         .strict(),
       after: z
@@ -166,6 +167,7 @@ export const cardUpdated = defineEvent(
           title: z.string(),
           dueDate: z.string().nullable(),
           startDate: z.string().nullable(),
+          priority: z.string().nullable(),
         })
         .strict(),
     })
@@ -407,6 +409,86 @@ export const cardFieldSet = defineEvent(
       fieldType: z.string(),
       before: z.unknown(),
       after: z.unknown(),
+    })
+    .strict(),
+);
+
+/* -------------------------------------------------------------------------- *
+ * Status (migration 0011, `ai/phase-3.5-work-ux.md` §5.4)
+ *
+ * `card.status_changed` is a first-class event, not folded into `card.updated`
+ * the way priority rides it. Automation (Phase 10) fires on status TRANSITIONS
+ * specifically — "entered Done" — and a consumer that has to diff two
+ * `card.updated` payloads to notice one changed is a consumer that will get it
+ * wrong. `card.moved` is the existing analogue for list moves and this is its
+ * sibling.
+ * -------------------------------------------------------------------------- */
+
+export const statusCreated = defineEvent(
+  'status.created',
+  z
+    .object({
+      statusId: z.string(),
+      projectId: z.string(),
+      name: z.string(),
+      category: z.string(),
+    })
+    .strict(),
+);
+
+export const statusUpdated = defineEvent(
+  'status.updated',
+  z
+    .object({
+      statusId: z.string(),
+      projectId: z.string(),
+      before: z
+        .object({
+          name: z.string(),
+          category: z.string(),
+          color: z.string(),
+          isDefault: z.boolean(),
+        })
+        .strict(),
+      after: z
+        .object({
+          name: z.string(),
+          category: z.string(),
+          color: z.string(),
+          isDefault: z.boolean(),
+        })
+        .strict(),
+    })
+    .strict(),
+);
+
+/**
+ * A status was deleted outright, not archived — the same reasoning as
+ * `label.deleted`. A status carries no content of its own; deleting it
+ * un-classifies some cards (`ON DELETE SET NULL (status_id)`) and destroys
+ * nothing a user wrote, so an archived status would be a restorable nothing.
+ */
+export const statusDeleted = defineEvent(
+  'status.deleted',
+  z
+    .object({
+      statusId: z.string(),
+      projectId: z.string(),
+      name: z.string(),
+      cardCount: z.number().int(),
+    })
+    .strict(),
+);
+
+/** A card's status changed — the trigger Phase 10 automation asks about. */
+export const cardStatusChanged = defineEvent(
+  'card.status_changed',
+  z
+    .object({
+      cardId: z.string(),
+      boardId: z.string(),
+      before: z.string().nullable(),
+      after: z.string().nullable(),
     })
     .strict(),
 );

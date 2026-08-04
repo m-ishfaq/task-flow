@@ -5,7 +5,9 @@ import {
   type LabelId,
   type ListId,
   type OrgId,
+  type Priority,
   type ProjectId,
+  type StatusId,
   type UserId,
 } from '@taskflow/contracts';
 import { closeDatabase, initializeDatabase } from '@taskflow/db';
@@ -20,6 +22,7 @@ import * as boards from './board.service.js';
 import * as lists from './list.service.js';
 import * as cards from './card.service.js';
 import * as labels from './label.service.js';
+import * as statuses from './status.service.js';
 import type { WorkActor } from './shared.js';
 
 /**
@@ -57,6 +60,8 @@ let todo: ListId;
 let doing: ListId;
 let bug: LabelId;
 let chore: LabelId;
+let backlogStatus: StatusId;
+let doneStatus: StatusId;
 
 /** The rows, as the evaluator sees them — keyed by FIELD name, not column. */
 const expectedRows = new Map<string, Record<string, unknown>>();
@@ -75,6 +80,7 @@ async function removeOrg(id: string): Promise<void> {
     'work.card_labels',
     'work.labels',
     'work.cards',
+    'work.statuses',
     'work.lists',
     'work.boards',
     'work.projects',
@@ -128,6 +134,29 @@ beforeAll(async () => {
   bug = (await labels.createLabel(owner, { projectId, name: 'bug', color: '#ef4444' })).labelId;
   chore = (await labels.createLabel(owner, { projectId, name: 'chore', color: '#22c55e' })).labelId;
 
+  /* Neither marked `isDefault`, deliberately: `createCard` auto-assigns the
+     project's default status when one exists, and this corpus needs every
+     card's status to be exactly what the entry below says — including null —
+     not whatever a default would have supplied underneath it. */
+  backlogStatus = (
+    await statuses.createStatus(owner, {
+      projectId,
+      name: 'Backlog',
+      category: 'not_started',
+      color: '#94a3b8',
+      isDefault: false,
+    })
+  ).statusId;
+  doneStatus = (
+    await statuses.createStatus(owner, {
+      projectId,
+      name: 'Done',
+      category: 'done',
+      color: '#22c55e',
+      isDefault: false,
+    })
+  ).statusId;
+
   /* A deliberately awkward corpus. Every row exists to make one of the
      SQL/JavaScript disagreements observable: nulls, mixed case, a timezone
      offset, an empty assignee array, a LIKE metacharacter. */
@@ -141,6 +170,8 @@ beforeAll(async () => {
        and "an empty set" are produced by the database rather than written by
        the seed. A card with none must be distinguishable from one with some. */
     labels: readonly LabelId[];
+    status: StatusId | null;
+    priority: Priority | null;
   }[] = [
     {
       title: 'Ship the thing',
@@ -148,14 +179,26 @@ beforeAll(async () => {
       due: '2026-07-29T00:00:00Z',
       assignees: [OWNER],
       labels: [bug],
+      status: backlogStatus,
+      priority: 'urgent',
     },
-    { title: 'SHIP louder', listId: todo, due: null, assignees: [], labels: [bug, chore] },
+    {
+      title: 'SHIP louder',
+      listId: todo,
+      due: null,
+      assignees: [],
+      labels: [bug, chore],
+      status: null,
+      priority: 'urgent',
+    },
     {
       title: 'Discount 50% off',
       listId: doing,
       due: '2026-08-01T12:00:00Z',
       assignees: [MEMBER],
       labels: [chore],
+      status: doneStatus,
+      priority: 'low',
     },
     {
       title: 'Timezone edge',
@@ -163,6 +206,8 @@ beforeAll(async () => {
       due: '2026-07-29T00:30:00+01:00',
       assignees: [OWNER],
       labels: [],
+      status: doneStatus,
+      priority: null,
     },
     {
       title: 'no assignees at all',
@@ -170,8 +215,18 @@ beforeAll(async () => {
       due: '2026-06-01T00:00:00Z',
       assignees: [],
       labels: [],
+      status: backlogStatus,
+      priority: null,
     },
-    { title: 'Both of us', listId: doing, due: null, assignees: [OWNER, MEMBER], labels: [] },
+    {
+      title: 'Both of us',
+      listId: doing,
+      due: null,
+      assignees: [OWNER, MEMBER],
+      labels: [],
+      status: null,
+      priority: 'normal',
+    },
   ];
 
   for (const entry of corpus) {
@@ -181,14 +236,15 @@ beforeAll(async () => {
       description: null,
     });
 
-    if (entry.due !== null || entry.assignees.length > 0) {
-      await admin.setOrg(orgId);
-      await admin.query(
-        `UPDATE work.cards SET due_date = $2::timestamptz, assignee_ids = $3::uuid[] WHERE id = $1`,
-        [card.cardId, entry.due, [...entry.assignees]],
-      );
-      await admin.setOrg(null);
-    }
+    await admin.setOrg(orgId);
+    await admin.query(
+      `UPDATE work.cards
+       SET due_date = $2::timestamptz, assignee_ids = $3::uuid[],
+           status_id = $4::uuid, priority = $5
+       WHERE id = $1`,
+      [card.cardId, entry.due, [...entry.assignees], entry.status, entry.priority],
+    );
+    await admin.setOrg(null);
 
     if (entry.labels.length > 0) {
       await labels.setCardLabels(owner, {
@@ -208,6 +264,8 @@ beforeAll(async () => {
       archived: false,
       description: null,
       comments: 0,
+      status: entry.status,
+      priority: entry.priority,
       /* `array_agg` over no rows is NULL, not an empty array. The evaluator's
          row has to say the same thing, or `label is_empty` would agree for the
          wrong reason. */
@@ -340,6 +398,45 @@ describe('the two backends agree', () => {
 
     it('composes with another predicate', async () => {
       await expectParity(and(compare('label', 'in', [chore]), compare('due', 'is_not_empty')));
+    });
+  });
+
+  describe('on status and priority', () => {
+    it('finds cards by status, a real FK unlike label', async () => {
+      const matched = await expectParity(compare('status', 'eq', backlogStatus));
+      expect(matched).toHaveLength(2);
+    });
+
+    it('separates an unclassified card from a classified one', async () => {
+      const none = await expectParity(compare('status', 'is_empty'));
+      expect(none).toHaveLength(2);
+
+      const some = await expectParity(compare('status', 'is_not_empty'));
+      expect(some).toHaveLength(4);
+    });
+
+    it('matches priority by equality and by membership', async () => {
+      const urgent = await expectParity(compare('priority', 'eq', 'urgent'));
+      expect(urgent).toHaveLength(2);
+
+      const either = await expectParity(compare('priority', 'in', ['urgent', 'low']));
+      expect(either).toHaveLength(3);
+    });
+
+    it('separates "no priority" from every named one', async () => {
+      const matched = await expectParity(compare('priority', 'is_empty'));
+      expect(matched).toHaveLength(2);
+    });
+
+    it('counts a null priority as excluded from every not_in list', async () => {
+      /* The bug this phase's parity test discovered: bare `NOT IN` is UNKNOWN
+         for a NULL column, so Postgres silently dropped a card with no
+         priority from "not urgent" — while the evaluator, which treats a
+         missing value as simply not being in the list, kept it. `compile.ts`
+         now wraps scalar `not_in` in COALESCE, the same fix `label not_in`
+         already needed for its aggregate case. */
+      const matched = await expectParity(compare('priority', 'not_in', ['urgent']));
+      expect(matched).toHaveLength(4);
     });
   });
 

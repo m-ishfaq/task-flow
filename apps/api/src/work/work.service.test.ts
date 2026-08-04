@@ -20,6 +20,7 @@ import * as projects from './project.service.js';
 import * as boards from './board.service.js';
 import * as lists from './list.service.js';
 import * as cards from './card.service.js';
+import * as statuses from './status.service.js';
 import type { WorkActor } from './shared.js';
 
 /**
@@ -83,6 +84,7 @@ async function removeOrg(orgId: string): Promise<void> {
   await admin.query(`DELETE FROM audit.chain_heads WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM work.cards WHERE org_id = $1`, [orgId]);
+  await admin.query(`DELETE FROM work.statuses WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM work.lists WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM work.boards WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM work.projects WHERE org_id = $1`, [orgId]);
@@ -515,6 +517,7 @@ describe('optimistic concurrency', () => {
         description: null,
         dueDate: null,
         startDate: null,
+        priority: null,
       });
 
     const first = await update('Rewritten by A');
@@ -526,6 +529,233 @@ describe('optimistic concurrency', () => {
 
     const final = await cards.getCard(fixture.owner, { cardId: card.cardId });
     expect(final.title).toBe('Rewritten by A');
+  });
+});
+
+describe('status', () => {
+  it("assigns the project's default status to a new card", async () => {
+    const fixture = await scaffold('work-status-default');
+
+    const status = await statuses.createStatus(fixture.owner, {
+      projectId: fixture.projectId,
+      name: 'Backlog',
+      category: 'not_started',
+      color: '#94a3b8',
+      isDefault: true,
+    });
+
+    const card = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Fresh off the press',
+      description: null,
+    });
+
+    expect(await cards.getCard(fixture.owner, { cardId: card.cardId })).toMatchObject({
+      statusId: status.statusId,
+    });
+  });
+
+  it('leaves a card unclassified when the project has no default status', async () => {
+    const fixture = await scaffold('work-status-no-default');
+
+    const card = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'No vocabulary yet',
+      description: null,
+    });
+
+    expect(await cards.getCard(fixture.owner, { cardId: card.cardId })).toMatchObject({
+      statusId: null,
+    });
+  });
+
+  it('sets and clears a card status through the dedicated route, not update', async () => {
+    const fixture = await scaffold('work-status-set');
+
+    const status = await statuses.createStatus(fixture.owner, {
+      projectId: fixture.projectId,
+      name: 'In Progress',
+      category: 'active',
+      color: '#3b82f6',
+      isDefault: false,
+    });
+    const card = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Undecided',
+      description: null,
+    });
+
+    await cards.setCardStatus(fixture.owner, { cardId: card.cardId, statusId: status.statusId });
+    expect(await cards.getCard(fixture.owner, { cardId: card.cardId })).toMatchObject({
+      statusId: status.statusId,
+    });
+
+    await cards.setCardStatus(fixture.owner, { cardId: card.cardId, statusId: null });
+    expect(await cards.getCard(fixture.owner, { cardId: card.cardId })).toMatchObject({
+      statusId: null,
+    });
+  });
+
+  it('refuses a status from another project — enforced by the database', async () => {
+    const fixture = await scaffold('work-status-cross');
+
+    const other = await projects.createProject(fixture.owner, {
+      name: 'Other',
+      key: 'OTH',
+      description: null,
+    });
+    const foreign = await statuses.createStatus(fixture.owner, {
+      projectId: other.projectId,
+      name: 'Foreign',
+      category: 'not_started',
+      color: '#94a3b8',
+      isDefault: false,
+    });
+    const card = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Card in the right project',
+      description: null,
+    });
+
+    /* Same tenant, different project. RLS says nothing about this; the
+       composite foreign key on cards.status_id is what refuses it, exactly as
+       for a label from another project. */
+    await expect(
+      cards.setCardStatus(fixture.owner, { cardId: card.cardId, statusId: foreign.statusId }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('un-classifies a card when its status is deleted, rather than deleting the card', async () => {
+    const fixture = await scaffold('work-status-delete');
+
+    const status = await statuses.createStatus(fixture.owner, {
+      projectId: fixture.projectId,
+      name: 'Done',
+      category: 'done',
+      color: '#22c55e',
+      isDefault: false,
+    });
+    const card = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Shipped',
+      description: null,
+    });
+    await cards.setCardStatus(fixture.owner, { cardId: card.cardId, statusId: status.statusId });
+
+    const result = await statuses.deleteStatus(fixture.owner, { statusId: status.statusId });
+    expect(result.cardCount).toBe(1);
+
+    expect(await cards.getCard(fixture.owner, { cardId: card.cardId })).toMatchObject({
+      statusId: null,
+    });
+  });
+
+  it('clears the previous default when a new status becomes the default', async () => {
+    const fixture = await scaffold('work-status-reset-default');
+
+    const first = await statuses.createStatus(fixture.owner, {
+      projectId: fixture.projectId,
+      name: 'Backlog',
+      category: 'not_started',
+      color: '#94a3b8',
+      isDefault: true,
+    });
+    const second = await statuses.createStatus(fixture.owner, {
+      projectId: fixture.projectId,
+      name: 'Todo',
+      category: 'not_started',
+      color: '#60a5fa',
+      isDefault: true,
+    });
+
+    const list = await statuses.listStatuses(fixture.owner, { projectId: fixture.projectId });
+    const byId = new Map(list.map((row) => [row.statusId, row.isDefault]));
+    expect(byId.get(first.statusId)).toBe(false);
+    expect(byId.get(second.statusId)).toBe(true);
+  });
+
+  it("lets a member set a card's status but not manage the project's status set", async () => {
+    const fixture = await scaffold('work-status-authz');
+    await members.addMember(
+      fixture.orgId,
+      { email: 'member@work.test', role: 'member' },
+      { userId: OWNER, requestId },
+    );
+
+    const status = await statuses.createStatus(fixture.owner, {
+      projectId: fixture.projectId,
+      name: 'In Progress',
+      category: 'active',
+      color: '#3b82f6',
+      isDefault: false,
+    });
+    const card = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Team card',
+      description: null,
+    });
+    const member = await actorFor(fixture.orgId, MEMBER, 'member');
+
+    // Setting a card's own status is editing the card — a member may.
+    await expect(
+      cards.setCardStatus(member, { cardId: card.cardId, statusId: status.statusId }),
+    ).resolves.toMatchObject({ statusId: status.statusId });
+
+    // Managing the vocabulary is editing the project — a member may not.
+    await expect(
+      statuses.createStatus(member, {
+        projectId: fixture.projectId,
+        name: 'Sneaky',
+        category: 'active',
+        color: '#123456',
+        isDefault: false,
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});
+
+describe('priority', () => {
+  it("saves and clears a card's priority through cards.update", async () => {
+    const fixture = await scaffold('work-priority');
+
+    const card = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Triaged later',
+      description: null,
+    });
+    expect(await cards.getCard(fixture.owner, { cardId: card.cardId })).toMatchObject({
+      // No default: a default of 'normal' would make every card look
+      // deliberately triaged when none of them are (§5.1 of the phase plan).
+      priority: null,
+    });
+
+    const loaded = await cards.getCard(fixture.owner, { cardId: card.cardId });
+    await cards.updateCard(fixture.owner, {
+      cardId: card.cardId,
+      version: loaded.version,
+      title: loaded.title,
+      description: null,
+      dueDate: null,
+      startDate: null,
+      priority: 'urgent',
+    });
+    expect(await cards.getCard(fixture.owner, { cardId: card.cardId })).toMatchObject({
+      priority: 'urgent',
+    });
+
+    const reloaded = await cards.getCard(fixture.owner, { cardId: card.cardId });
+    await cards.updateCard(fixture.owner, {
+      cardId: card.cardId,
+      version: reloaded.version,
+      title: reloaded.title,
+      description: null,
+      dueDate: null,
+      startDate: null,
+      priority: null,
+    });
+    expect(await cards.getCard(fixture.owner, { cardId: card.cardId })).toMatchObject({
+      priority: null,
+    });
   });
 });
 
@@ -655,6 +885,7 @@ describe('authorization beyond the role', () => {
         description: null,
         dueDate: null,
         startDate: null,
+        priority: null,
       }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
 

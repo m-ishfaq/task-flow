@@ -64,7 +64,12 @@ export const OPERATORS_BY_TYPE: Readonly<Record<FieldType, readonly Operator[]>>
      the question people mean, and `=` on an array column would compare the
      whole set. */
   uuid_array: ['in', 'not_in', 'is_empty', 'is_not_empty'],
-  enum: ['eq', 'neq', 'in', 'not_in'],
+  /* `is_empty`/`is_not_empty` matter here specifically for `priority`, which
+     is NULLABLE (§5.1 of the phase plan — "no priority" is a real, common
+     state). Both compile and evaluate generically as a null check for any
+     non-array type, so adding them costs nothing for `status`, which never
+     stores null once a card has been through `cards.create`'s default. */
+  enum: ['eq', 'neq', 'in', 'not_in', 'is_empty', 'is_not_empty'],
 };
 
 /**
@@ -83,6 +88,19 @@ const CARD_FIELDS: readonly FieldDefinition[] = [
      `description_text` exists to remove. */
   { name: 'description', type: 'text', sql: 'work.cards.description_text' },
   { name: 'list', type: 'uuid', sql: 'work.cards.list_id' },
+  /* A real FK, unlike `label` — one status per card, not a set — so `uuid`
+     is the right type and there is no aggregate subquery to get wrong. */
+  { name: 'status', type: 'uuid', sql: 'work.cards.status_id' },
+  /* Closed list, not free text — matches the CHECK constraint on the column.
+     `options` is what makes `checkValue` in validate.ts reject anything a
+     client invents, the same closed-world reasoning as a custom field's
+     `select` type. */
+  {
+    name: 'priority',
+    type: 'enum',
+    sql: 'work.cards.priority',
+    options: ['urgent', 'high', 'normal', 'low'],
+  },
   { name: 'board', type: 'uuid', sql: 'work.cards.board_id' },
   { name: 'project', type: 'uuid', sql: 'work.cards.project_id' },
   { name: 'number', type: 'number', sql: 'work.cards.number' },

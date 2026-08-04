@@ -41,6 +41,7 @@ interface Tenant {
   readonly listId: string;
   readonly cardId: string;
   readonly labelId: string;
+  readonly statusId: string;
   readonly checklistId: string;
   readonly checklistItemId: string;
   readonly fieldId: string;
@@ -60,6 +61,7 @@ const ATTACKER: Tenant = {
   listId: '0195cc00-0000-7000-8000-000000000a06',
   cardId: '0195cc00-0000-7000-8000-000000000a07',
   labelId: '0195cc00-0000-7000-8000-000000000a08',
+  statusId: '0195cc00-0000-7000-8000-000000000a0e',
   checklistId: '0195cc00-0000-7000-8000-000000000a09',
   checklistItemId: '0195cc00-0000-7000-8000-000000000a0a',
   fieldId: '0195cc00-0000-7000-8000-000000000a0b',
@@ -77,6 +79,7 @@ const VICTIM: Tenant = {
   listId: '0195cc00-0000-7000-8000-000000000b06',
   cardId: '0195cc00-0000-7000-8000-000000000b07',
   labelId: '0195cc00-0000-7000-8000-000000000b08',
+  statusId: '0195cc00-0000-7000-8000-000000000b0e',
   checklistId: '0195cc00-0000-7000-8000-000000000b09',
   checklistItemId: '0195cc00-0000-7000-8000-000000000b0a',
   fieldId: '0195cc00-0000-7000-8000-000000000b0b',
@@ -158,6 +161,12 @@ async function seedTenant(admin: AdminConnection, tenant: Tenant, label: string)
   );
 
   await admin.query(
+    `INSERT INTO work.statuses (id, org_id, project_id, name, category, color, position)
+     VALUES ($1, $2, $3, 'Fuzz Status', 'not_started', '#4f46e5', 1)`,
+    [tenant.statusId, tenant.orgId, tenant.projectId],
+  );
+
+  await admin.query(
     `INSERT INTO work.checklists (id, org_id, card_id, name, rank)
      VALUES ($1, $2, $3, 'Fuzz Checklist', 'a0')`,
     [tenant.checklistId, tenant.orgId, tenant.cardId],
@@ -222,6 +231,10 @@ async function clearTenant(admin: AdminConnection, tenant: Tenant): Promise<void
   await admin.query(`DELETE FROM work.card_labels WHERE org_id = $1`, [tenant.orgId]);
   await admin.query(`DELETE FROM work.labels WHERE org_id = $1`, [tenant.orgId]);
   await admin.query(`DELETE FROM work.cards WHERE org_id = $1`, [tenant.orgId]);
+  // After cards: `cards_status_fk` is `ON DELETE SET NULL`, not a blocking
+  // constraint, but cards are gone by now regardless and this keeps the
+  // ordering read as "children before parents" throughout.
+  await admin.query(`DELETE FROM work.statuses WHERE org_id = $1`, [tenant.orgId]);
   await admin.query(`DELETE FROM work.lists WHERE org_id = $1`, [tenant.orgId]);
   await admin.query(`DELETE FROM work.boards WHERE org_id = $1`, [tenant.orgId]);
   await admin.query(`DELETE FROM work.projects WHERE org_id = $1`, [tenant.orgId]);
@@ -274,6 +287,9 @@ function fuzzOrgFor(tenant: Tenant, other: Tenant): FuzzOrg {
          the tenant boundary would never be reached. */
       labelId: other.labelId,
       labelIds: [other.labelId],
+      statusId: other.statusId,
+      category: 'not_started',
+      isDefault: false,
       checklistId: other.checklistId,
       itemId: other.checklistItemId,
       fieldId: other.fieldId,

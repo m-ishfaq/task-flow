@@ -160,7 +160,19 @@ function emitComparison(
         const expression = `${column} && ARRAY[${list}]::uuid[]`;
         return operator === 'in' ? `(${expression})` : `(NOT COALESCE(${expression}, FALSE))`;
       }
-      return operator === 'in' ? `${column} IN (${list})` : `${column} NOT IN (${list})`;
+
+      if (operator === 'in') return `${column} IN (${list})`;
+
+      /* The same three-valued trap `label not_in` already has a test for,
+         reached here through a SCALAR rather than an aggregate: bare
+         `column NOT IN (...)` is UNKNOWN — not TRUE — for a NULL column, so
+         Postgres drops a row with no priority from `priority NOT IN
+         ('urgent')` even though "no priority" plainly is not urgent. The
+         evaluator already treats a null `actual` as excluded from `wanted`
+         and answers `not_in` with true; COALESCE is what makes the compiler
+         agree instead of silently dropping those rows from a "not urgent"
+         filter. */
+      return `(NOT COALESCE(${column} IN (${list}), FALSE))`;
     }
 
     case 'contains': {

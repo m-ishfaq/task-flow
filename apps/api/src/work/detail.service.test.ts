@@ -21,6 +21,7 @@ import * as boards from './board.service.js';
 import * as lists from './list.service.js';
 import * as cards from './card.service.js';
 import * as labels from './label.service.js';
+import * as statuses from './status.service.js';
 import * as checklists from './checklist.service.js';
 import * as fields from './custom-field.service.js';
 import * as comments from './comment.service.js';
@@ -72,6 +73,7 @@ async function removeOrg(orgId: string): Promise<void> {
     'work.card_labels',
     'work.labels',
     'work.cards',
+    'work.statuses',
     'work.lists',
     'work.boards',
     'work.projects',
@@ -291,6 +293,85 @@ describe('labels', () => {
         color: '#123456',
       }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});
+
+describe('statuses', () => {
+  it('treats names case-insensitively within a project', async () => {
+    const fixture = await scaffold('detail-status-names');
+
+    await statuses.createStatus(fixture.owner, {
+      projectId: fixture.projectId,
+      name: 'Done',
+      category: 'done',
+      color: '#22c55e',
+      isDefault: false,
+    });
+
+    // "Done" and "done" are one status. Two of them would give a board two
+    // columns for the same concept.
+    await expect(
+      statuses.createStatus(fixture.owner, {
+        projectId: fixture.projectId,
+        name: 'done',
+        category: 'done',
+        color: '#16a34a',
+        isDefault: false,
+      }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+
+  it('lists statuses in position order and renames one', async () => {
+    const fixture = await scaffold('detail-status-order');
+
+    const first = await statuses.createStatus(fixture.owner, {
+      projectId: fixture.projectId,
+      name: 'To Do',
+      category: 'not_started',
+      color: '#94a3b8',
+      isDefault: false,
+    });
+    const second = await statuses.createStatus(fixture.owner, {
+      projectId: fixture.projectId,
+      name: 'Done',
+      category: 'done',
+      color: '#22c55e',
+      isDefault: false,
+    });
+
+    const listed = await statuses.listStatuses(fixture.owner, { projectId: fixture.projectId });
+    expect(listed.map((row) => row.statusId)).toEqual([first.statusId, second.statusId]);
+
+    await statuses.updateStatus(fixture.owner, {
+      statusId: first.statusId,
+      name: 'Backlog',
+      category: 'not_started',
+      color: '#94a3b8',
+      isDefault: false,
+    });
+    const renamed = await statuses.listStatuses(fixture.owner, { projectId: fixture.projectId });
+    expect(renamed[0]?.name).toBe('Backlog');
+  });
+
+  it('counts the cards carrying each status', async () => {
+    const fixture = await scaffold('detail-status-count');
+
+    const status = await statuses.createStatus(fixture.owner, {
+      projectId: fixture.projectId,
+      name: 'Active',
+      category: 'active',
+      color: '#3b82f6',
+      isDefault: false,
+    });
+    const card = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Counted',
+      description: null,
+    });
+    await cards.setCardStatus(fixture.owner, { cardId: card.cardId, statusId: status.statusId });
+
+    const listed = await statuses.listStatuses(fixture.owner, { projectId: fixture.projectId });
+    expect(listed.find((row) => row.statusId === status.statusId)?.cardCount).toBe(1);
   });
 });
 
@@ -733,6 +814,7 @@ describe('comments', () => {
         description: null,
         dueDate: null,
         startDate: null,
+        priority: null,
       }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });

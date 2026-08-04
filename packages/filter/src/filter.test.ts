@@ -64,6 +64,14 @@ describe('the whitelist', () => {
     expect(validate('card', compare('list', 'eq', 'not-a-uuid')).ok).toBe(false);
   });
 
+  it('checks an enum value against its closed option list', () => {
+    // Closed-world, matching the CHECK constraint on `work.cards.priority`:
+    // a value the column could never hold is rejected before it reaches SQL.
+    expect(validate('card', compare('priority', 'eq', 'urgent')).ok).toBe(true);
+    expect(validate('card', compare('priority', 'eq', 'critical')).ok).toBe(false);
+    expect(validate('card', compare('priority', 'eq', 'Urgent')).ok).toBe(false);
+  });
+
   it('reports every bad node, not just the first', () => {
     // The visual builder lights up three chips, not one.
     const result = validate(
@@ -191,6 +199,32 @@ describe('compiling to SQL', () => {
     expect(compile('card', compare('list', 'not_in', [])).sql).toBe('TRUE');
   });
 
+  it('compiles is_empty on a nullable enum to IS NULL, same as any scalar', () => {
+    // Priority is nullable (§5.1); `is_empty`/`is_not_empty` need no array
+    // handling for it, unlike `label` — one column, not an aggregate.
+    expect(compile('card', compare('priority', 'is_empty')).sql).toBe(
+      'work.cards.priority IS NULL',
+    );
+    expect(compile('card', compare('priority', 'is_not_empty')).sql).toBe(
+      'work.cards.priority IS NOT NULL',
+    );
+  });
+
+  it('compiles enum membership as a plain IN, not array overlap', () => {
+    // Unlike `assignee`, priority is one value per card — equality semantics,
+    // not "matches any of the array".
+    const { sql } = compile('card', compare('priority', 'in', ['urgent', 'high']));
+    expect(sql).toBe('work.cards.priority IN ($1, $2)');
+  });
+
+  it('wraps a scalar not_in in COALESCE so a NULL column still matches', () => {
+    /* The same trap `label not_in` has a test for, on a plain column instead
+       of an aggregate: bare `NOT IN` is UNKNOWN for a NULL value, and Postgres
+       drops that row rather than counting "no priority" as "not urgent". */
+    const { sql } = compile('card', compare('priority', 'not_in', ['urgent']));
+    expect(sql).toBe('(NOT COALESCE(work.cards.priority IN ($1), FALSE))');
+  });
+
   it('uses array overlap for multi-value fields', () => {
     const { sql } = compile('card', compare('assignee', 'in', [VIEWER, OTHER]));
     // Overlap, not containment: picking two names means "either", not "both".
@@ -283,6 +317,33 @@ describe('the evaluator', () => {
     expect(evaluate('card', compare('assignee', 'is_empty'), row({ assignee: [] }))).toBe(true);
     expect(evaluate('card', compare('assignee', 'is_not_empty'), row())).toBe(true);
     expect(evaluate('card', compare('due', 'is_empty'), row({ due: null }))).toBe(true);
+  });
+
+  it('matches an enum by equality and by membership', () => {
+    expect(evaluate('card', compare('priority', 'eq', 'high'), row({ priority: 'high' }))).toBe(
+      true,
+    );
+    expect(
+      evaluate('card', compare('priority', 'in', ['urgent', 'high']), row({ priority: 'high' })),
+    ).toBe(true);
+    expect(
+      evaluate('card', compare('priority', 'in', ['urgent']), row({ priority: 'low' })),
+    ).toBe(false);
+  });
+
+  it('is_empty on a nullable enum matches only the unset case', () => {
+    expect(evaluate('card', compare('priority', 'is_empty'), row({ priority: null }))).toBe(true);
+    expect(
+      evaluate('card', compare('priority', 'is_empty'), row({ priority: 'normal' })),
+    ).toBe(false);
+  });
+
+  it('counts a null scalar as "not in" the list, matching the compiler', () => {
+    // A card with no priority is not urgent — `not_in` must include it, the
+    // same rule `label not_in` already enforces on the SQL side.
+    expect(
+      evaluate('card', compare('priority', 'not_in', ['urgent']), row({ priority: null })),
+    ).toBe(true);
   });
 
   it('uses overlap semantics for array membership', () => {
