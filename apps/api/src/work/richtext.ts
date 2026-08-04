@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isValidId } from '@taskflow/contracts';
 
 /**
  * Rich text — TipTap JSON, never HTML (CLAUDE.md rule 4, PLAN.md §8.7).
@@ -50,6 +51,26 @@ const NODE_ATTRIBUTES = {
   codeBlock: z.object({ language: z.string().max(40).nullable().optional() }).strict(),
   taskList: z.object({}).strict(),
   taskItem: z.object({ checked: z.boolean() }).strict(),
+  /**
+   * `@mention` — an atomic, inline reference to a person.
+   *
+   * `label` is stored, not resolved live from `userId`, and that is
+   * deliberate: unlike an author or assignee id, this text is CONTENT —
+   * "hey @Jane Doe" is what was written, and Jane renaming herself later
+   * should no more rewrite it than editing any other word in the comment
+   * would. `userId` is validated for shape only (`isValidId`, the same check
+   * `custom-field-value.ts` uses for a `user`-type field) — confirming it
+   * names a real member of THIS org would need a database read, which this
+   * module deliberately never does (see the file header); a mention naming
+   * someone who is not a member resolves to nothing everywhere it is
+   * rendered, the same as a stale assignee id already does.
+   */
+  mention: z
+    .object({
+      userId: z.string().refine(isValidId, 'must be a user id'),
+      label: z.string().trim().min(1).max(120),
+    })
+    .strict(),
 } as const;
 
 type NodeType = keyof typeof NODE_ATTRIBUTES;
@@ -277,6 +298,18 @@ export function flattenToText(node: RichTextNode): string {
 
   const walk = (current: RichTextNode): void => {
     if (typeof current.text === 'string') parts.push(current.text);
+    // A mention carries its content in `attrs.label`, not `text` — see
+    // NODE_ATTRIBUTES.mention — so it contributes nothing here unless asked
+    // to explicitly. Read defensively even though `RichTextDocument` already
+    // validated `label`'s shape: this function's own contract only requires
+    // that a document PARSED that schema, and reading `attrs` blind on a
+    // node this loosely typed (see the `RichTextNode` interface comment) is
+    // exactly the kind of place a future caller could hand this unvalidated
+    // input.
+    if (current.type === 'mention') {
+      const label = (current.attrs as { readonly label?: unknown } | undefined)?.label;
+      if (typeof label === 'string') parts.push(`@${label}`);
+    }
     for (const child of current.content ?? []) walk(child);
     if (BLOCK_NODES.has(current.type)) parts.push('\n');
   };

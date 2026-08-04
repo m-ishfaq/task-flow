@@ -502,6 +502,8 @@ export const commentCreated = defineEvent(
       boardId: z.string(),
       /** Flattened text, not the JSON. Notifications need words, not a document. */
       excerpt: z.string(),
+      /** Null for a top-level comment, the parent's id for a reply. */
+      parentCommentId: z.string().nullable(),
     })
     .strict(),
 );

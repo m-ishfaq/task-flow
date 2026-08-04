@@ -52,6 +52,7 @@ const NODE_ATTRIBUTES: Readonly<Record<string, readonly string[]>> = {
   codeBlock: ['language'],
   taskList: [],
   taskItem: ['checked'],
+  mention: ['userId', 'label'],
 };
 
 /** Attributes each mark type may carry. */

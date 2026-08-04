@@ -356,6 +356,8 @@ export function createCardDetailRouter() {
               z.object({
                 commentId: z.string(),
                 cardId: z.string(),
+                /** Null for a top-level comment, the parent's id for a reply. */
+                parentCommentId: z.string().nullable(),
                 authorId: z.string().nullable(),
                 body: z.unknown(),
                 bodyText: z.string(),
@@ -373,9 +375,22 @@ export function createCardDetailRouter() {
        *
        * Using `card:update` here would make read-only-plus-comment access
        * impossible to express, which is the entire point of that relation.
+       *
+       * `parentCommentId` makes this a reply. The service is what enforces
+       * one level of nesting and that the parent belongs to the same card —
+       * this schema only shapes the input, same division as everywhere else
+       * in this file.
        */
       create: route({ permission: 'comment:create' })
-        .input(z.object({ cardId: CardIdSchema, body: RichTextDocument }).strict())
+        .input(
+          z
+            .object({
+              cardId: CardIdSchema,
+              body: RichTextDocument,
+              parentCommentId: CommentIdSchema.nullable().default(null),
+            })
+            .strict(),
+        )
         .output(z.object({ commentId: z.string() }))
         .mutation(({ input, ctx }) => comments.createComment(actor(ctx), input)),
 

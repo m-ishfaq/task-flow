@@ -52,6 +52,7 @@ function comment(commentId: string): Comment {
   return {
     commentId,
     cardId: CARD,
+    parentCommentId: null,
     authorId: 'user-1',
     body: { type: 'doc', content: [] },
     bodyText: '',

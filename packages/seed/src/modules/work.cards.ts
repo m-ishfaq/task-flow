@@ -531,7 +531,16 @@ function buildCard(args: {
       ctx.emit(
         createEvent(
           commentCreated,
-          { commentId: comment.id, cardId, boardId: board.id, excerpt: comment.excerpt },
+          {
+            commentId: comment.id,
+            cardId,
+            boardId: board.id,
+            excerpt: comment.excerpt,
+            // The seeder never generates replies (CLAUDE.md's own seeding
+            // plan scopes comments to flat threads); every seeded comment is
+            // top-level.
+            parentCommentId: null,
+          },
           envelopeFor(project.orgId, createdBy, comment.createdAt),
         ),
       );

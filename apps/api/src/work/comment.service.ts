@@ -36,6 +36,8 @@ import { ancestorsOfCard, enforceOn, envelopeOf, orgOf, type WorkActor } from '.
 export interface CommentSummary {
   readonly commentId: string;
   readonly cardId: string;
+  /** Null for a top-level comment, the parent's id for a reply — one level only. */
+  readonly parentCommentId: string | null;
   readonly authorId: string | null;
   readonly body: unknown;
   readonly bodyText: string;
@@ -62,6 +64,7 @@ export async function listComments(
       .select({
         commentId: schema.cardComments.id,
         cardId: schema.cardComments.cardId,
+        parentCommentId: schema.cardComments.parentCommentId,
         authorId: schema.cardComments.authorId,
         body: schema.cardComments.body,
         bodyText: schema.cardComments.bodyText,
@@ -84,7 +87,12 @@ export async function listComments(
 
 export async function createComment(
   actor: WorkActor,
-  input: { readonly cardId: CardId; readonly body: RichTextNode },
+  input: {
+    readonly cardId: CardId;
+    readonly body: RichTextNode;
+    /** Null (or omitted) for a top-level comment; a comment's id to reply to it. */
+    readonly parentCommentId?: CommentId | null;
+  },
 ): Promise<{ readonly commentId: CommentId }> {
   const commentId = newId<'CommentId'>();
   const orgId = orgOf(actor);
@@ -101,6 +109,23 @@ export async function createComment(
       ancestorsOfCard(card),
     );
 
+    /* Replies are ONE level deep — the migration's composite FK stops a reply
+       naming a parent from another card, but says nothing about depth, which
+       is a product rule rather than a relational one (0013's migration
+       comment). A parent that is itself a reply, or belongs to a different
+       card, or was deleted, is all the same answer: this cannot be replied
+       to. `errors.notFound()` for the cross-card case specifically — a
+       parent id from another card is indistinguishable from a made-up one to
+       whoever is calling this. */
+    if (input.parentCommentId != null) {
+      const parent = await loadComment(tx, input.parentCommentId);
+      if (parent.cardId !== input.cardId) throw errors.notFound();
+      if (parent.deletedAt !== null) throw errors.notFound();
+      if (parent.parentCommentId !== null) {
+        throw errors.validation({ parentCommentId: 'Replies cannot themselves be replied to.' });
+      }
+    }
+
     const bodyText = flattenToText(input.body);
     if (bodyText.length === 0) {
       // A document that renders to nothing is an empty comment with structure.
@@ -113,6 +138,7 @@ export async function createComment(
       id: commentId,
       orgId,
       cardId: input.cardId,
+      parentCommentId: input.parentCommentId ?? null,
       authorId: actor.subject.userId,
       body: input.body,
       bodyText,
@@ -129,6 +155,7 @@ export async function createComment(
           boardId: card.boardId,
           // Words, not a document: a notification cannot render TipTap JSON.
           excerpt: bodyText.slice(0, 280),
+          parentCommentId: input.parentCommentId ?? null,
         },
         envelopeOf(actor),
       ),
@@ -251,6 +278,7 @@ export async function deleteComment(
 interface CommentRow {
   readonly orgId: string;
   readonly cardId: string;
+  readonly parentCommentId: string | null;
   readonly authorId: string | null;
   readonly deletedAt: Date | null;
 }
@@ -263,6 +291,7 @@ async function loadComment(
     .select({
       orgId: schema.cardComments.orgId,
       cardId: schema.cardComments.cardId,
+      parentCommentId: schema.cardComments.parentCommentId,
       authorId: schema.cardComments.authorId,
       deletedAt: schema.cardComments.deletedAt,
     })

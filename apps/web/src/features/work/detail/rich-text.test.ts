@@ -117,6 +117,36 @@ describe('the attributes TipTap emits and the server refuses', () => {
   it('produces a document the server accepts for an untouched editor', () => {
     expect(RichTextDocument.safeParse(EMPTY_DOCUMENT).success).toBe(true);
   });
+
+  it('keeps a mention exactly as MentionExtension emits it — nothing to strip', () => {
+    /* Unlike orderedList/link/codeBlock above, the mention node this app's own
+       MentionExtension produces carries ONLY `userId` and `label` — there is
+       no TipTap-default attribute to drop, because this is a hand-written
+       node, not a stock extension. This pins that the two attribute maps
+       (`rich-text.ts`'s NODE_ATTRIBUTES here and the server's
+       NODE_ATTRIBUTES.mention) still agree on the name, not just the shape. */
+    const fromEditor = {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            {
+              type: 'mention',
+              attrs: { userId: '019fcd9b-92da-7217-82b0-022420254a31', label: 'Jane Doe' },
+            },
+          ],
+        },
+      ],
+    };
+
+    const normalized = toDocument(fromEditor);
+    expect(normalized.content?.[0]?.content?.[0]?.attrs).toEqual({
+      userId: '019fcd9b-92da-7217-82b0-022420254a31',
+      label: 'Jane Doe',
+    });
+    expect(RichTextDocument.safeParse(normalized).success).toBe(true);
+  });
 });
 
 describe('emptiness', () => {

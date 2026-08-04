@@ -818,4 +818,91 @@ describe('comments', () => {
       }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
+
+  it('replies to a comment, and the thread reports which is which', async () => {
+    const fixture = await scaffold('detail-comments-reply');
+
+    const top = await comments.createComment(fixture.owner, {
+      cardId: fixture.cardId,
+      body: body('Top-level'),
+    });
+    const reply = await comments.createComment(fixture.owner, {
+      cardId: fixture.cardId,
+      body: body('A reply'),
+      parentCommentId: top.commentId,
+    });
+
+    const thread = await comments.listComments(fixture.owner, { cardId: fixture.cardId });
+    const topRow = thread.find((entry) => entry.commentId === top.commentId);
+    const replyRow = thread.find((entry) => entry.commentId === reply.commentId);
+
+    expect(topRow?.parentCommentId).toBeNull();
+    expect(replyRow?.parentCommentId).toBe(top.commentId);
+
+    // A reply is still a comment on the card, so it counts the same way.
+    const card = await cards.getCard(fixture.owner, { cardId: fixture.cardId });
+    expect(card.commentCount).toBe(2);
+  });
+
+  it('refuses a reply to a reply — one level of nesting only', async () => {
+    const fixture = await scaffold('detail-comments-reply-depth');
+
+    const top = await comments.createComment(fixture.owner, {
+      cardId: fixture.cardId,
+      body: body('Top-level'),
+    });
+    const reply = await comments.createComment(fixture.owner, {
+      cardId: fixture.cardId,
+      body: body('A reply'),
+      parentCommentId: top.commentId,
+    });
+
+    await expect(
+      comments.createComment(fixture.owner, {
+        cardId: fixture.cardId,
+        body: body('A reply to a reply'),
+        parentCommentId: reply.commentId,
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+  });
+
+  it('refuses a reply naming a comment from a different card', async () => {
+    const fixture = await scaffold('detail-comments-reply-cross-card');
+
+    const otherCard = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'A different card',
+      description: null,
+    });
+    const elsewhere = await comments.createComment(fixture.owner, {
+      cardId: otherCard.cardId,
+      body: body('Posted on the other card'),
+    });
+
+    await expect(
+      comments.createComment(fixture.owner, {
+        cardId: fixture.cardId,
+        body: body('Replying across cards'),
+        parentCommentId: elsewhere.commentId,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('refuses a reply to a deleted comment', async () => {
+    const fixture = await scaffold('detail-comments-reply-deleted');
+
+    const top = await comments.createComment(fixture.owner, {
+      cardId: fixture.cardId,
+      body: body('Withdrawn shortly'),
+    });
+    await comments.deleteComment(fixture.owner, { commentId: top.commentId });
+
+    await expect(
+      comments.createComment(fixture.owner, {
+        cardId: fixture.cardId,
+        body: body('Too late'),
+        parentCommentId: top.commentId,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
 });

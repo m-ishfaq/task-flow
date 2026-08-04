@@ -62,6 +62,60 @@ describe('accepting what the editor produces', () => {
   });
 });
 
+describe('mentions', () => {
+  const UUID = '019fcd9b-92da-7217-82b0-022420254a31';
+
+  const mentioning = (attrs: unknown): unknown =>
+    doc({
+      type: 'paragraph',
+      content: [{ type: 'text', text: 'hey ' }, { type: 'mention', attrs }, { type: 'text', text: '!' }],
+    });
+
+  it('accepts a well-formed mention', () => {
+    expect(
+      RichTextDocument.safeParse(mentioning({ userId: UUID, label: 'Jane Doe' })).success,
+    ).toBe(true);
+  });
+
+  it('rejects a userId that is not a UUID', () => {
+    expect(
+      RichTextDocument.safeParse(mentioning({ userId: 'not-a-uuid', label: 'Jane Doe' })).success,
+    ).toBe(false);
+  });
+
+  it('rejects an empty label', () => {
+    expect(RichTextDocument.safeParse(mentioning({ userId: UUID, label: '' })).success).toBe(
+      false,
+    );
+  });
+
+  it('rejects an unlisted attribute, same as every other node', () => {
+    expect(
+      RichTextDocument.safeParse(mentioning({ userId: UUID, label: 'Jane Doe', href: 'x' }))
+        .success,
+    ).toBe(false);
+  });
+
+  it('flattens to "@label", not the id', () => {
+    const flattened = flattenToText({
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: 'hey ' },
+            { type: 'mention', attrs: { userId: UUID, label: 'Jane Doe' } },
+            { type: 'text', text: ', take a look' },
+          ],
+        },
+      ],
+    });
+
+    expect(flattened).toBe('hey @Jane Doe, take a look');
+    expect(flattened).not.toContain(UUID);
+  });
+});
+
 describe('link hrefs — the reason this file exists', () => {
   const withHref = (href: string): unknown =>
     doc({

@@ -396,13 +396,24 @@ export const customFieldValues = work.table(
   ],
 );
 
-/** A card comment. TipTap JSON with a flattened copy, exactly as `cards.description`. */
+/**
+ * A card comment. TipTap JSON with a flattened copy, exactly as `cards.description`.
+ *
+ * `parentCommentId` has no `references()` here because the migration's
+ * constraint is the composite `(org_id, card_id, parent_comment_id) ->
+ * card_comments (org_id, card_id, id)` (0013), which Drizzle's single-column
+ * `references()` cannot express — the same gap the file header describes for
+ * `boards.projectId` and every other cross-container reference in this file.
+ * Null means a top-level comment; a value means a reply, and the service
+ * refuses a reply to a reply (0013's migration comment, `comment.service.ts`).
+ */
 export const cardComments = work.table(
   'card_comments',
   {
     id: uuid('id').primaryKey(),
     orgId: uuid('org_id').notNull(),
     cardId: uuid('card_id').notNull(),
+    parentCommentId: uuid('parent_comment_id'),
 
     authorId: uuid('author_id').references(() => users.id, { onDelete: 'set null' }),
 
@@ -416,7 +427,11 @@ export const cardComments = work.table(
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index('card_comments_card_idx').on(table.orgId, table.cardId, table.id)],
+  (table) => [
+    index('card_comments_card_idx').on(table.orgId, table.cardId, table.id),
+    uniqueIndex('card_comments_org_card_id_key').on(table.orgId, table.cardId, table.id),
+    index('card_comments_parent_idx').on(table.orgId, table.parentCommentId, table.id),
+  ],
 );
 
 /* -------------------------------------------------------------------------- *

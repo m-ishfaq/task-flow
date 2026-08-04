@@ -4,6 +4,8 @@ import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import { cn } from '../../../lib/cn.js';
 import { Button } from '../../../components/primitives.js';
+import { useMembers } from '../../org/use-members.js';
+import { createMentionSuggestion, MentionExtension, type MentionCandidate } from './mention-extension.js';
 import { EMPTY_DOCUMENT, SAFE_SCHEMES, toDocument, type DocumentNode } from './rich-text.js';
 
 /**
@@ -45,6 +47,17 @@ export function RichTextEditor({
   className,
   footer,
 }: RichTextEditorProps) {
+  /* `@mention` needs the org's member list. Rebuilt fresh every render, same
+     as `Link`'s `isAllowedUri` below it — this file already relies on
+     `useEditor` re-syncing extension options each render rather than freezing
+     them at mount, so the suggestion's `items()` closure sees the current
+     members with no ref or memoization needed. */
+  const { people } = useMembers();
+  const candidates: readonly MentionCandidate[] = people.map((member) => ({
+    userId: member.userId,
+    label: member.email,
+  }));
+
   const editor = useEditor({
     editable,
     extensions: [
@@ -71,6 +84,9 @@ export function RichTextEditor({
             return false;
           }
         },
+      }),
+      MentionExtension.configure({
+        suggestion: createMentionSuggestion(() => candidates),
       }),
     ],
     /* TipTap types its content as MUTABLE `JSONContent`, and every document in
