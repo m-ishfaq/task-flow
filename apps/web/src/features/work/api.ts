@@ -26,6 +26,7 @@ interface Outputs {
   checklists: Awaited<ReturnType<typeof api.work.checklists.list.query>>;
   comments: Awaited<ReturnType<typeof api.work.comments.list.query>>;
   cardLabels: Awaited<ReturnType<typeof api.work.labels.onCard.query>>;
+  statuses: Awaited<ReturnType<typeof api.work.statuses.list.query>>;
 }
 
 export type ProjectSummary = Wire<Outputs['projects']>[number];
@@ -36,6 +37,9 @@ export type CardDetail = Wire<Outputs['card']>;
 export type Checklist = Wire<Outputs['checklists']>[number];
 export type Comment = Wire<Outputs['comments']>[number];
 export type CardLabel = Wire<Outputs['cardLabels']>[number];
+export type Status = Wire<Outputs['statuses']>[number];
+/** `CardSummary['priority']` on its own — used anywhere a picker needs just the enum. */
+export type Priority = NonNullable<CardSummary['priority']>;
 
 /**
  * The cache key for a filtered card query.
@@ -103,6 +107,13 @@ export function cardLabelsQuery(orgId: string, cardId: CardId) {
   return queryOptions({
     queryKey: keys.cardLabels(orgId, cardId),
     queryFn: async () => wire(await api.work.labels.onCard.query({ cardId })),
+  });
+}
+
+export function statusesQuery(orgId: string, projectId: ProjectId) {
+  return queryOptions({
+    queryKey: keys.statuses(orgId, projectId),
+    queryFn: async () => wire(await api.work.statuses.list.query({ projectId })),
   });
 }
 

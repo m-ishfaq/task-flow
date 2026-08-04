@@ -16,7 +16,7 @@ import { parseEnv, type Env } from '../config/env.js';
  */
 
 export const TEST_ENV: Env = parseEnv({
-  DATABASE_URL: 'postgresql://taskflow_app:app-dev-secret@localhost:5432/taskflow',
+  DATABASE_URL: 'postgresql://taskflow_app:app-dev-secret@localhost:5433/taskflow_test',
   MASTER_KEY_ID: 'mk-test',
   MASTER_KEY_BASE64: Buffer.alloc(32, 1).toString('base64'),
   JWT_SECRET: Buffer.alloc(32, 2).toString('base64'),

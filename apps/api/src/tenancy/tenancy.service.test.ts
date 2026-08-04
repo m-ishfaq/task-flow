@@ -30,8 +30,8 @@ import { loadTuples, resolveOrgMembership } from './resolve.js';
  */
 
 const AUDIT_URL =
-  process.env['DATABASE_AUDIT_URL'] ??
-  'postgresql://taskflow_audit:audit-dev-secret@localhost:5432/taskflow';
+  process.env['TEST_DATABASE_AUDIT_URL'] ??
+  'postgresql://taskflow_audit:audit-dev-secret@localhost:5433/taskflow_test';
 
 const OWNER = unsafeAsId<'UserId'>('0195dd00-0000-7000-8000-000000000001');
 const COLLEAGUE = unsafeAsId<'UserId'>('0195dd00-0000-7000-8000-000000000002');

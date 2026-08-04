@@ -22,15 +22,23 @@ import { up } from '../migrate/runner.js';
  */
 
 /**
- * The local development migrator connection.
+ * The migrator connection for TESTS — `taskflow_test`, never `taskflow`.
+ *
+ * The database name is the whole point of this constant. Every suite that
+ * imports this module truncates the tables it touches, so aimed at `taskflow`
+ * it deletes the developer's own account and boards on each `pnpm verify`. The
+ * damage is silent: the run passes, and the next sign-in fails with "Incorrect
+ * email or password" because `no_such_user` and a wrong password return the
+ * same message by design — so the symptom points at authentication rather than
+ * at the test run that caused it.
  *
  * A constant rather than a `process.env` read, because guardrail 7 bans bare
  * env access outside a validated schema and this package has none — it is a
  * library, and its configuration arrives as arguments. Callers that need a
  * different database pass `url`; CI sets exactly this value, so nothing has to.
  */
-export const DEV_MIGRATION_URL =
-  'postgresql://taskflow_migrator:migrator-dev-secret@localhost:5432/taskflow';
+export const TEST_MIGRATION_URL =
+  'postgresql://taskflow_migrator:migrator-dev-secret@localhost:5433/taskflow_test';
 
 export interface AdminOptions {
   /** Overrides the local development connection. */
@@ -45,7 +53,7 @@ export function migrationsDir(): string {
 /** Applies every pending migration. Idempotent, so every suite may call it. */
 export async function applyMigrations(options: AdminOptions = {}): Promise<void> {
   await up({
-    migrationUrl: options.url ?? DEV_MIGRATION_URL,
+    migrationUrl: options.url ?? TEST_MIGRATION_URL,
     migrationsDir: migrationsDir(),
   });
 }
@@ -68,7 +76,7 @@ export interface AdminConnection {
 
 export async function connectAsMigrator(options: AdminOptions = {}): Promise<AdminConnection> {
   const client = new pg.Client({
-    connectionString: options.url ?? DEV_MIGRATION_URL,
+    connectionString: options.url ?? TEST_MIGRATION_URL,
     application_name: 'taskflow-test-admin',
   });
   await client.connect();

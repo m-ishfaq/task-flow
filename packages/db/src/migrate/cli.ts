@@ -10,11 +10,15 @@
  * given the application's DATABASE_URL: taskflow_app has no DDL rights, and
  * granting them to make migrations "just work" would hand the runtime role the
  * ability to drop its own RLS policies (§8.3).
+ *
+ * `verify` is the exception: it is destructive, so it reads DATABASE_VERIFY_URL
+ * and defaults to `taskflow_test`. See `resolveMigrationUrl` below.
  */
 
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { TEST_MIGRATION_URL } from '../testing/index.js';
 import { down, status, up, verify, type RunnerOptions } from './runner.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -33,25 +37,51 @@ if (existsSync(envFile)) {
   process.loadEnvFile(envFile);
 }
 
-const migrationUrl = process.env['DATABASE_MIGRATION_URL'];
-if (!migrationUrl) {
-  console.error(
-    'DATABASE_MIGRATION_URL is not set.\n' +
-      'Copy .env.example to .env, or export it directly. It must point at the\n' +
-      'taskflow_migrator role — not the application role.',
-  );
-  process.exit(1);
+const command = process.argv[2] ?? 'status';
+
+/**
+ * `verify` never reads DATABASE_MIGRATION_URL, and that is the whole fix.
+ *
+ * It reverts every migration before re-applying them, so it drops every table
+ * and everything in them. Sharing a URL with `up` meant the command a developer
+ * runs to check their migrations are reversible destroyed the org, boards and
+ * cards they had been developing against — and reported OK, because from the
+ * runner's point of view it worked perfectly.
+ *
+ * Reading a DIFFERENT variable is what makes the two impossible to confuse. The
+ * default is the same throwaway database the test suites use, so the safe path
+ * needs no configuration at all; `runner.assertDisposableDatabase` still refuses
+ * anything not named `*_test`, including an override set here.
+ */
+function resolveMigrationUrl(): string {
+  if (command === 'verify') {
+    return process.env['DATABASE_VERIFY_URL'] ?? TEST_MIGRATION_URL;
+  }
+
+  const migrationUrl = process.env['DATABASE_MIGRATION_URL'];
+  if (!migrationUrl) {
+    console.error(
+      'DATABASE_MIGRATION_URL is not set.\n' +
+        'Copy .env.example to .env, or export it directly. It must point at the\n' +
+        'taskflow_migrator role — not the application role.',
+    );
+    process.exit(1);
+  }
+
+  if (migrationUrl.includes('taskflow_app:')) {
+    // Cheap check against the most likely misconfiguration, which would otherwise
+    // fail deep inside a migration with a confusing permissions error.
+    console.error(
+      'DATABASE_MIGRATION_URL points at taskflow_app. Migrations must run as\n' +
+        'taskflow_migrator; the application role has no DDL rights by design.',
+    );
+    process.exit(1);
+  }
+
+  return migrationUrl;
 }
 
-if (migrationUrl.includes('taskflow_app:')) {
-  // Cheap check against the most likely misconfiguration, which would otherwise
-  // fail deep inside a migration with a confusing permissions error.
-  console.error(
-    'DATABASE_MIGRATION_URL points at taskflow_app. Migrations must run as\n' +
-      'taskflow_migrator; the application role has no DDL rights by design.',
-  );
-  process.exit(1);
-}
+const migrationUrl = resolveMigrationUrl();
 
 const options: RunnerOptions = {
   migrationUrl,
@@ -60,8 +90,6 @@ const options: RunnerOptions = {
     console.warn(message);
   },
 };
-
-const command = process.argv[2] ?? 'status';
 
 try {
   switch (command) {

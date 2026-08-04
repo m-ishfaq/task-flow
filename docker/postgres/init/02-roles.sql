@@ -35,42 +35,14 @@ CREATE ROLE taskflow_app WITH LOGIN PASSWORD 'app-dev-secret' NOSUPERUSER NOCREA
 CREATE ROLE taskflow_audit WITH LOGIN PASSWORD 'audit-dev-secret' NOSUPERUSER NOCREATEDB
   NOCREATEROLE NOBYPASSRLS;
 
--- ---------------------------------------------------------------------------
--- Baseline grants.
--- ---------------------------------------------------------------------------
-GRANT CONNECT ON DATABASE taskflow TO taskflow_app, taskflow_migrator, taskflow_audit;
-
--- Only the migrator may create schemas. The app role deliberately cannot: if it
--- could, a compromised runtime could create objects outside RLS coverage, or
--- drop the policies protecting existing tables.
-GRANT CREATE ON DATABASE taskflow TO taskflow_migrator;
-
--- Revoke the implicit PUBLIC grant on the public schema — nothing should be
--- created there, and no role should get privileges by default.
-REVOKE ALL ON SCHEMA public FROM PUBLIC;
-GRANT ALL ON SCHEMA public TO taskflow_migrator;
-
--- USAGE lets a role RESOLVE names inside a schema; it grants no access to any
--- table. Without it the app cannot reach its own tables at all ("permission
--- denied for schema"). Every migration that creates a schema (identity, work,
--- chat, docs, comms, platform, audit — §7) must repeat this pairing:
+-- Baseline grants live in 03-grants.sql, NOT here.
 --
---   GRANT USAGE ON SCHEMA <name> TO taskflow_app;
---   ALTER DEFAULT PRIVILEGES FOR ROLE taskflow_migrator IN SCHEMA <name>
---     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO taskflow_app;
---
--- Table-level access still comes from the grants below, and row-level access
--- still comes from RLS. This only makes the namespace visible.
-GRANT USAGE ON SCHEMA public TO taskflow_app, taskflow_audit;
-
--- Objects the migrator creates must be usable by the app role WITHOUT the app
--- role ever being granted DDL rights. Default privileges apply to future objects;
--- each migration that creates a schema repeats this for that schema.
-ALTER DEFAULT PRIVILEGES FOR ROLE taskflow_migrator IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO taskflow_app;
-
-ALTER DEFAULT PRIVILEGES FOR ROLE taskflow_migrator IN SCHEMA public
-  GRANT USAGE, SELECT ON SEQUENCES TO taskflow_app;
+-- Roles are cluster-wide; grants are per-database. This file creates the roles
+-- once, and 03-grants.sql is applied separately to each database that needs
+-- them — `taskflow` for development and `taskflow_test` for the suites (see
+-- 04-test-database.sql). Keeping the two apart is what lets the test database
+-- receive an identical, and therefore trustworthy, privilege setup without the
+-- grants being written down twice and drifting.
 
 -- ---------------------------------------------------------------------------
 -- Sanity check — fail loudly at container init if any role can bypass RLS.

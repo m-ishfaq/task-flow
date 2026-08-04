@@ -103,7 +103,7 @@ pnpm verify                   # lint + typecheck + test — run before declaring
 pnpm format
 node packages/guardrail-selftest/verify.js          # prove guardrails still fire
 pnpm --filter @taskflow/db migrate:up
-pnpm --filter @taskflow/db migrate:verify           # up -> down -> up
+pnpm --filter @taskflow/db migrate:verify           # up -> down -> up, on taskflow_test
 
 pnpm --filter @taskflow/api dev                     # API on :3000
 pnpm --filter @taskflow/web dev                     # app on :5173, proxies /trpc

@@ -22,7 +22,21 @@ services:
       # Deterministic collation — index ordering must not vary by host locale.
       POSTGRES_INITDB_ARGS: '--locale=C --encoding=UTF8'
     ports:
-      - '5432:5432'
+      # 5433 on the HOST, 5432 inside the container.
+      #
+      # Not cosmetic. A machine with PostgreSQL installed natively — which is
+      # what the pgAdmin installer bundles, and what a Homebrew or apt postgres
+      # leaves running — already has a service on 5432 that starts at boot,
+      # before Docker. Docker still registers the mapping and `docker port`
+      # reports success, but the socket belongs to the other server, so every
+      # connection lands in the wrong database.
+      #
+      # The failure is disguised: that server has no `taskflow_app` role, and
+      # Postgres answers a MISSING role with "password authentication failed"
+      # rather than "no such user", deliberately, so the error cannot be used to
+      # enumerate accounts. So the symptom is a credentials error against
+      # credentials that are provably correct.
+      - '5433:5432'
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro

@@ -37,6 +37,8 @@ function card(overrides: Partial<CardSummary> = {}): CardSummary {
     title: 'A card',
     rank: 'a0',
     assigneeIds: [],
+    statusId: null,
+    priority: null,
     dueDate: null,
     commentCount: 0,
     checklistDone: 0,
