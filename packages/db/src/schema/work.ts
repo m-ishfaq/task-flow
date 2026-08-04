@@ -477,3 +477,58 @@ export const statuses = work.table(
     // expression indexes Drizzle has no builder for. Migration only.
   ],
 );
+
+/**
+ * Saved views (migration 0014, `ai/phase-3.5-work-ux.md` §6).
+ *
+ * A named, stored arrangement of one board — type, grouping, sort and filter.
+ * `filter` holds a `FilterNode` tree exactly as `packages/filter` defines it,
+ * with `@me` stored UNRESOLVED: substituting a user id at save time would turn
+ * a shared "assigned to me" view into "assigned to whoever saved it" (§10.2).
+ *
+ * As everywhere else in this file, the composite foreign key asserting
+ * board-within-project-within-org is expressible only in the migration —
+ * Drizzle's `references()` is single-column. The migration is the source.
+ */
+export const views = work.table(
+  'views',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    boardId: uuid('board_id').notNull(),
+
+    name: text('name').notNull(),
+    /** One of board / table / list. The migration's CHECK is the enforcement. */
+    type: text('type').notNull(),
+
+    /** Null means "no grouping" / "board order" — both real, neither a default. */
+    groupBy: text('group_by'),
+    sortBy: text('sort_by'),
+
+    /** The filter AST, or null for unfiltered. Never `{}` — see the migration. */
+    filter: jsonb('filter'),
+    /** Table view's column selection; null means "whatever the table defaults to". */
+    visibleColumns: jsonb('visible_columns'),
+
+    /** Shared views belong to the board; private ones are visible only to their author. */
+    isShared: boolean('is_shared').notNull().default(false),
+
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+
+    /** Display order in the board's view tabs. A plain integer, like `statuses.position`. */
+    position: integer('position').notNull().default(0),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('views_board_position_idx').on(table.orgId, table.boardId, table.position, table.id),
+    index('views_author_idx').on(table.orgId, table.createdBy, table.boardId),
+    // `views_board_shared_name_key` and `views_board_private_name_key` are both
+    // case-insensitive (lower(name)) AND partial (WHERE is_shared / WHERE NOT
+    // is_shared) — expression indexes Drizzle has no builder for. Migration only.
+  ],
+);

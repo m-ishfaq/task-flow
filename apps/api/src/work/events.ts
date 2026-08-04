@@ -643,3 +643,55 @@ export const attachmentPresigned = defineEvent(
     })
     .strict(),
 );
+
+/* -------------------------------------------------------------------------- *
+ * Saved views (ai/phase-3.5-work-ux.md §6)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * `shared` rides on all three because it is the field that decides the
+ * AUDIENCE of the change. A consumer deciding whether to notify a board — an
+ * activity feed, Phase 9's notifications — needs to distinguish someone
+ * rearranging their own bookmark from someone adding a tab everyone will see,
+ * and it cannot ask the row afterwards for a deleted view.
+ *
+ * The filter tree is deliberately NOT in these payloads. It is unbounded in
+ * size, every consumer that wants it can read the row, and an outbox entry is
+ * replayed into an audit log that keeps it forever.
+ */
+export const viewCreated = defineEvent(
+  'view.created',
+  z
+    .object({
+      viewId: z.string(),
+      boardId: z.string(),
+      name: z.string(),
+      type: z.string(),
+      shared: z.boolean(),
+    })
+    .strict(),
+);
+
+export const viewUpdated = defineEvent(
+  'view.updated',
+  z
+    .object({
+      viewId: z.string(),
+      boardId: z.string(),
+      name: z.string(),
+      shared: z.boolean(),
+    })
+    .strict(),
+);
+
+export const viewDeleted = defineEvent(
+  'view.deleted',
+  z
+    .object({
+      viewId: z.string(),
+      boardId: z.string(),
+      name: z.string(),
+      shared: z.boolean(),
+    })
+    .strict(),
+);
