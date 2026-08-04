@@ -1,7 +1,9 @@
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { BoardId, CardId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
-import { cardQuery, invalidateCard, type CardDetail } from './api.js';
+import { keys } from '../../lib/query.js';
+import { useOptimistic } from '../../lib/optimistic.js';
+import { cardQuery, invalidateCard, patchBoardCards, type CardDetail } from './api.js';
 
 /**
  * Editing a card without silently destroying the fields you did not touch.
@@ -33,6 +35,24 @@ import { cardQuery, invalidateCard, type CardDetail } from './api.js';
  * keeps the optimistic-concurrency check honest: the version travelling with the
  * write is the version of the values being written, not one a stale row happened
  * to carry.
+ *
+ * ## The board tile updates before the server answers — the detail query does not
+ *
+ * ONLY `cardsOfBoard` is patched optimistically. It is keyed by `(orgId,
+ * boardId)` alone, so it can be patched from `variables` at any call site — the
+ * table view's inline rename and the tile's quick-due-date both share ONE hook
+ * instance across many cards, and `boardId` is the only piece of the key fixed
+ * when the hook is built. `keys.card(orgId, cardId)` cannot join that patch the
+ * same way: it is keyed PER CARD, and the cardId is only known per `mutate()`
+ * call — `useOptimistic` needs its `keys` list up front, to snapshot and cancel
+ * before the patch runs, and there is no single card-detail key to give it.
+ *
+ * That leaves one real gap: `DatesSection` in the card detail panel reads
+ * `dueDate`/`startDate` straight from `cardQuery` (`keys.card`), not from
+ * `cardsOfBoard`, so changing a date THERE still waits for the round trip before
+ * the input reflects it. Pre-existing, not introduced here, and not fixed here —
+ * fixing it needs either a per-card optimistic key `useOptimistic` does not
+ * support today or a local-state buffer like `TitleAndDescription` uses.
  */
 
 /**
@@ -97,16 +117,42 @@ function asRichText(value: unknown): RichText | null {
 
 export function useUpdateCard(orgId: string, boardId: BoardId) {
   const queryClient = useQueryClient();
+  const optimistic = useOptimistic();
 
   return useMutation({
     mutationFn: ({ cardId, patch }: { cardId: CardId; patch: CardPatch }) =>
       applyPatch(queryClient, orgId, cardId, patch),
 
+    ...optimistic<{ cardId: CardId; patch: CardPatch }>({
+      keys: [keys.cardsOfBoard(orgId, boardId)],
+      patch: (client, { cardId, patch }) => {
+        patchBoardCards(client, orgId, boardId, (cards) =>
+          cards.map((card) =>
+            card.cardId === cardId
+              ? {
+                  ...card,
+                  ...(patch.title !== undefined ? { title: patch.title } : {}),
+                  /* `startDate` and `description` are not on the SUMMARY row this
+                     patches, so they are not applied here — only what the tile
+                     and the table row actually render. */
+                  ...('dueDate' in patch ? { dueDate: patch.dueDate ?? null } : {}),
+                }
+              : card,
+          ),
+        );
+      },
+      failureTitle: 'The card was not saved',
+    }),
+
+    /* Overrides the helper's `onSettled`, which would only invalidate
+       `cardsOfBoard`. `invalidateCard` also invalidates `keys.card`, and this
+       runs on success as much as failure: the patch above guessed at title and
+       dueDate alone, and the server holds the rest — version, description,
+       startDate — the tile's cache never had. Not retried on CONFLICT: someone
+       else saved first, and the correct response is to show them the current
+       card, which invalidation does, rather than resend the same version and
+       lose the other edit on a second attempt. */
     onSettled: async (_result, _error, variables) => {
-      /* Not retried and not optimistic. A CONFLICT here means someone else saved
-         first, and the correct response is to show them the current card — which
-         invalidation does — rather than to re-send the same version and lose the
-         other edit on the second attempt. */
       await invalidateCard(queryClient, orgId, variables.cardId, boardId);
     },
   });

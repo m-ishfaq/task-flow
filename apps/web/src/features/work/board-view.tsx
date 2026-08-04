@@ -229,7 +229,7 @@ export function BoardView({ orgId, boardId, lists, cards, onOpenCard }: BoardVie
                   strategy={verticalListSortingStrategy}
                 >
                   {columnCards.map((card) => (
-                    <SortableCard key={card.cardId} card={card} onOpen={onOpenCard} />
+                    <SortableCard key={card.cardId} orgId={orgId} card={card} onOpen={onOpenCard} />
                   ))}
                 </SortableContext>
               </ListColumn>
@@ -254,9 +254,11 @@ export function BoardView({ orgId, boardId, lists, cards, onOpenCard }: BoardVie
 }
 
 function SortableCard({
+  orgId,
   card,
   onOpen,
 }: {
+  readonly orgId: string;
   readonly card: CardSummary;
   readonly onOpen: (cardId: string) => void;
 }) {
@@ -272,7 +274,7 @@ function SortableCard({
       {...attributes}
       {...listeners}
     >
-      <CardTile card={card} onOpen={onOpen} />
+      <CardTile orgId={orgId} card={card} onOpen={onOpen} />
     </div>
   );
 }
