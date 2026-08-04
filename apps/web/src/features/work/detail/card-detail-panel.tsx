@@ -11,6 +11,7 @@ import { useUpdateCard } from '../use-update-card.js';
 import { RichTextEditor } from './rich-text-editor.js';
 import { isEmptyDocument, type DocumentNode } from './rich-text.js';
 import { LabelSection } from './label-section.js';
+import { PrioritySection, StatusSection } from './status-priority-section.js';
 import { ChecklistSection } from './checklist-section.js';
 import { CustomFieldSection } from './custom-field-section.js';
 import { CommentSection } from './comment-section.js';
@@ -145,6 +146,23 @@ export function CardDetailPanel({
                 </div>
 
                 <div className="space-y-6">
+                  {projectId !== null && (
+                    <StatusSection
+                      orgId={orgId}
+                      boardId={boardId}
+                      cardId={cardId}
+                      projectId={projectId}
+                      statusId={card.data.statusId}
+                    />
+                  )}
+
+                  <PrioritySection
+                    orgId={orgId}
+                    boardId={boardId}
+                    cardId={cardId}
+                    priority={card.data.priority}
+                  />
+
                   <DatesSection orgId={orgId} boardId={boardId} card={card.data} />
 
                   <AssigneeSection

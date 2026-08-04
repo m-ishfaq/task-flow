@@ -1,17 +1,35 @@
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import type { CardId } from '@taskflow/contracts';
+import type { CardId, ProjectId } from '@taskflow/contracts';
 import type { FilterNode } from '@taskflow/filter';
 import { useSession } from '../../lib/session.js';
 import { Skeleton } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
-import { cardsQuery, listsQuery } from './api.js';
+import { useMembers } from '../org/use-members.js';
+import { cardsQuery, listsQuery, statusesQuery } from './api.js';
 import { BoardView } from './board-view.js';
 import { TableView } from './table-view.js';
+import { ListView } from './list-view.js';
 import { FilterBuilder } from './filter/filter-builder.js';
 import { CardDetailPanel } from './detail/card-detail-panel.js';
 import { ShareBoardDialog } from './share-board.js';
+import { GROUP_BY_OPTIONS, SORT_BY_OPTIONS, type GroupBy, type SortBy } from './grouping.js';
 import { cn } from '../../lib/cn.js';
+
+const GROUP_BY_LABEL: Readonly<Record<GroupBy, string>> = {
+  list: 'List',
+  status: 'Status',
+  assignee: 'Assignee',
+  priority: 'Priority',
+  due: 'Due date',
+};
+
+const SORT_BY_LABEL: Readonly<Record<SortBy, string>> = {
+  manual: 'Manual',
+  title: 'Title',
+  due: 'Due date',
+  priority: 'Priority',
+};
 
 /**
  * A board, in either of its two views (§10.4).
@@ -35,9 +53,24 @@ export function BoardPage() {
 
   const filter: FilterNode | null = search.filter ?? null;
   const view = search.view ?? 'board';
+  const groupBy = search.groupBy ?? 'list';
+  const sortBy = search.sortBy ?? 'manual';
+  const projectId = search.project ?? null;
 
   const lists = useQuery(listsQuery(orgId, boardId));
   const cards = useQuery(cardsQuery(orgId, boardId, filter));
+  const { people: members, peopleOf } = useMembers();
+  const people = peopleOf(members.map((member) => member.userId));
+  /* Loading is not gated on this — a board grouped by status while the
+     vocabulary is still in flight just shows the "No status" bucket for a
+     moment, which is the same graceful-degradation `useMembers` already
+     accepts for avatars. `projectId` can be missing on a board reached by a
+     pasted URL with no `?project=`; the query simply does not fire, and
+     grouping by status shows nothing to group by rather than throwing. */
+  const statuses = useQuery({
+    ...statusesQuery(orgId, projectId ?? ('' as ProjectId)),
+    enabled: projectId !== null,
+  });
 
   const setSearch = (next: Partial<typeof search>) => {
     void navigate({ search: (previous) => ({ ...previous, ...next }) });
@@ -87,12 +120,32 @@ export function BoardPage() {
 
           <FilterBuilder
             orgId={orgId}
-            projectId={search.project ?? null}
+            projectId={projectId}
             value={filter}
             onChange={(next) => {
               setSearch({ filter: next ?? undefined });
             }}
           />
+
+          {/* Grouping and sorting are view SETTINGS (§5.6) — meaningless for
+              the table, which has its own columns, so they only render for
+              board and list. */}
+          {view !== 'table' && (
+            <>
+              <GroupBySelect
+                value={groupBy}
+                onChange={(next) => {
+                  setSearch({ groupBy: next });
+                }}
+              />
+              <SortBySelect
+                value={sortBy}
+                onChange={(next) => {
+                  setSearch({ sortBy: next });
+                }}
+              />
+            </>
+          )}
 
           <span className="ml-auto text-xs text-ink-faint">
             {cards.data.length} {cards.data.length === 1 ? 'card' : 'cards'}
@@ -102,17 +155,37 @@ export function BoardPage() {
           <ShareBoardDialog orgId={orgId} boardId={boardId} />
         </div>
 
-        {view === 'board' ? (
+        {view === 'board' && (
           <BoardView
             orgId={orgId}
             boardId={boardId}
             lists={liveLists}
             cards={cards.data}
+            statuses={statuses.data ?? []}
+            people={people}
+            groupBy={groupBy}
+            sortBy={sortBy}
             onOpenCard={(cardId) => {
               setSearch({ card: cardId as CardId });
             }}
           />
-        ) : (
+        )}
+
+        {view === 'list' && (
+          <ListView
+            lists={liveLists}
+            cards={cards.data}
+            statuses={statuses.data ?? []}
+            people={people}
+            groupBy={groupBy}
+            sortBy={sortBy}
+            onOpenCard={(cardId) => {
+              setSearch({ card: cardId as CardId });
+            }}
+          />
+        )}
+
+        {view === 'table' && (
           <TableView
             orgId={orgId}
             boardId={boardId}
@@ -144,12 +217,12 @@ function ViewToggle({
   value,
   onChange,
 }: {
-  readonly value: 'board' | 'table';
-  readonly onChange: (value: 'board' | 'table') => void;
+  readonly value: 'board' | 'table' | 'list';
+  readonly onChange: (value: 'board' | 'table' | 'list') => void;
 }) {
   return (
     <div className="inline-flex rounded border border-line" role="group" aria-label="View">
-      {(['board', 'table'] as const).map((mode) => (
+      {(['board', 'list', 'table'] as const).map((mode) => (
         <button
           key={mode}
           type="button"
@@ -166,5 +239,61 @@ function ViewToggle({
         </button>
       ))}
     </div>
+  );
+}
+
+function GroupBySelect({
+  value,
+  onChange,
+}: {
+  readonly value: GroupBy;
+  readonly onChange: (value: GroupBy) => void;
+}) {
+  return (
+    <label className="flex items-center gap-1.5 text-xs text-ink-muted">
+      Group by
+      <select
+        aria-label="Group by"
+        value={value}
+        onChange={(event) => {
+          onChange(event.target.value as GroupBy);
+        }}
+        className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+      >
+        {GROUP_BY_OPTIONS.map((option) => (
+          <option key={option} value={option}>
+            {GROUP_BY_LABEL[option]}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function SortBySelect({
+  value,
+  onChange,
+}: {
+  readonly value: SortBy;
+  readonly onChange: (value: SortBy) => void;
+}) {
+  return (
+    <label className="flex items-center gap-1.5 text-xs text-ink-muted">
+      Sort by
+      <select
+        aria-label="Sort by"
+        value={value}
+        onChange={(event) => {
+          onChange(event.target.value as SortBy);
+        }}
+        className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+      >
+        {SORT_BY_OPTIONS.map((option) => (
+          <option key={option} value={option}>
+            {SORT_BY_LABEL[option]}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

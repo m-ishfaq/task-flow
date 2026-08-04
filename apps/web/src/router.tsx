@@ -184,7 +184,7 @@ const boardRoute = createRoute({
   parseParams: (params) => ({ boardId: BoardIdSchema.parse(params.boardId) }),
   stringifyParams: (params) => ({ boardId: params.boardId }),
   validateSearch: z.object({
-    view: z.enum(['board', 'table']).catch('board').optional(),
+    view: z.enum(['board', 'table', 'list']).catch('board').optional(),
     card: CardIdSchema.optional().catch(undefined),
     project: ProjectIdSchema.optional().catch(undefined),
     /**
@@ -197,6 +197,9 @@ const boardRoute = createRoute({
      * useful without it.
      */
     filter: FilterTree.optional().catch(undefined),
+    /** View settings (`ai/phase-3.5-work-ux.md` §5.6) — also shareable, same reasoning as `filter`. */
+    groupBy: z.enum(['list', 'status', 'assignee', 'priority', 'due']).catch('list').optional(),
+    sortBy: z.enum(['manual', 'title', 'due', 'priority']).catch('manual').optional(),
   }),
   beforeLoad: ({ params }) => requireOrg(`/boards/${params.boardId}`),
   component: BoardPage,

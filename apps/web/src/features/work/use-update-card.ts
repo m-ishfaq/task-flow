@@ -3,7 +3,7 @@ import type { BoardId, CardId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useOptimistic } from '../../lib/optimistic.js';
-import { cardQuery, invalidateCard, patchBoardCards, type CardDetail } from './api.js';
+import { cardQuery, invalidateCard, patchBoardCards, type CardDetail, type Priority } from './api.js';
 
 /**
  * Editing a card without silently destroying the fields you did not touch.
@@ -76,6 +76,7 @@ export interface CardPatch {
   readonly description?: RichText | null;
   readonly dueDate?: string | null;
   readonly startDate?: string | null;
+  readonly priority?: Priority | null;
 }
 
 async function applyPatch(
@@ -97,6 +98,7 @@ async function applyPatch(
       'description' in patch ? (patch.description ?? null) : asRichText(current.description),
     dueDate: 'dueDate' in patch ? (patch.dueDate ?? null) : current.dueDate,
     startDate: 'startDate' in patch ? (patch.startDate ?? null) : current.startDate,
+    priority: 'priority' in patch ? (patch.priority ?? null) : current.priority,
   });
 }
 
@@ -136,6 +138,7 @@ export function useUpdateCard(orgId: string, boardId: BoardId) {
                      patches, so they are not applied here — only what the tile
                      and the table row actually render. */
                   ...('dueDate' in patch ? { dueDate: patch.dueDate ?? null } : {}),
+                  ...('priority' in patch ? { priority: patch.priority ?? null } : {}),
                 }
               : card,
           ),

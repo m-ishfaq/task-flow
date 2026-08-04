@@ -1,13 +1,20 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { BoardId, CustomFieldId, LabelId, ProjectId } from '@taskflow/contracts';
+import type {
+  BoardId,
+  CustomFieldId,
+  LabelId,
+  ProjectId,
+  StatusCategory,
+  StatusId,
+} from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useSession } from '../../lib/session.js';
 import { Button, Empty, Field, Input, Spinner } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
-import { boardsQuery, labelsQuery, projectsQuery } from './api.js';
+import { boardsQuery, labelsQuery, projectsQuery, statusesQuery } from './api.js';
 
 /**
  * Everything about a project that is not a card.
@@ -77,6 +84,7 @@ export function ProjectSettingsPage() {
       <ProjectDetails orgId={orgId} project={project} />
       <BoardSection orgId={orgId} projectId={projectId} />
       <LabelSettings orgId={orgId} projectId={projectId} />
+      <StatusSettings orgId={orgId} projectId={projectId} />
       <FieldSettings orgId={orgId} projectId={projectId} />
     </div>
   );
@@ -415,6 +423,272 @@ function LabelSettings({
         </ul>
       )}
 
+      {update.isError && <ErrorText error={update.error} />}
+      {remove.isError && <ErrorText error={remove.error} />}
+    </section>
+  );
+}
+
+const STATUS_CATEGORIES: readonly StatusCategory[] = ['not_started', 'active', 'done'];
+const STATUS_CATEGORY_LABEL: Readonly<Record<StatusCategory, string>> = {
+  not_started: 'Not started',
+  active: 'Active',
+  done: 'Done',
+};
+
+/**
+ * Statuses — the one vocabulary here that has NOWHERE ELSE to be created.
+ *
+ * Unlike a label, which can be minted from the card panel the first time
+ * someone wants to tag something, a status has no such entry point: a board
+ * grouped by status needs the columns to exist before anyone can drag a card
+ * into one. So this is the only form on the page with a genuine "create".
+ */
+function StatusSettings({
+  orgId,
+  projectId,
+}: {
+  readonly orgId: string;
+  readonly projectId: ProjectId;
+}) {
+  const queryClient = useQueryClient();
+  const statuses = useQuery(statusesQuery(orgId, projectId));
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{
+    name: string;
+    category: StatusCategory;
+    color: string;
+    isDefault: boolean;
+  }>({ name: '', category: 'not_started', color: '#94a3b8', isDefault: false });
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: keys.statuses(orgId, projectId) });
+
+  const create = useMutation({
+    mutationFn: (input: {
+      name: string;
+      category: StatusCategory;
+      color: string;
+      isDefault: boolean;
+    }) => api.work.statuses.create.mutate({ projectId, ...input }),
+    onSuccess: async () => {
+      setDraft({ name: '', category: 'not_started', color: '#94a3b8', isDefault: false });
+      await refresh();
+    },
+  });
+
+  const update = useMutation({
+    mutationFn: (input: {
+      statusId: StatusId;
+      name: string;
+      category: StatusCategory;
+      color: string;
+      isDefault: boolean;
+    }) => api.work.statuses.update.mutate(input),
+    onSuccess: async () => {
+      setEditing(null);
+      await refresh();
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: (statusId: StatusId) => api.work.statuses.delete.mutate({ statusId }),
+    onSuccess: refresh,
+  });
+
+  return (
+    <section className="space-y-3">
+      <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Statuses</h2>
+      <p className="text-xs text-ink-muted">
+        What a board grouped by status shows as columns. The default is where a new card lands when
+        nothing else was chosen.
+      </p>
+
+      {(statuses.data ?? []).length === 0 ? (
+        <p className="text-xs text-ink-faint">No statuses yet — add one below.</p>
+      ) : (
+        <ul className="divide-y divide-line rounded border border-line">
+          {(statuses.data ?? []).map((status) => (
+            <li key={status.statusId} className="flex items-center gap-2 px-3 py-2">
+              {editing === status.statusId ? (
+                <form
+                  className="flex flex-1 flex-wrap items-center gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (draft.name.trim() !== '') {
+                      update.mutate({ statusId: status.statusId as StatusId, ...draft });
+                    }
+                  }}
+                >
+                  <input
+                    type="color"
+                    aria-label="Status colour"
+                    value={draft.color}
+                    onChange={(event) => {
+                      setDraft((current) => ({ ...current, color: event.target.value }));
+                    }}
+                    className="h-7 w-10 rounded border border-line bg-surface-sunken"
+                  />
+                  <Input
+                    aria-label="Status name"
+                    value={draft.name}
+                    onChange={(event) => {
+                      setDraft((current) => ({ ...current, name: event.target.value }));
+                    }}
+                    className="h-7 flex-1 text-xs"
+                  />
+                  <select
+                    aria-label="Category"
+                    value={draft.category}
+                    onChange={(event) => {
+                      setDraft((current) => ({
+                        ...current,
+                        category: event.target.value as StatusCategory,
+                      }));
+                    }}
+                    className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+                  >
+                    {STATUS_CATEGORIES.map((category) => (
+                      <option key={category} value={category}>
+                        {STATUS_CATEGORY_LABEL[category]}
+                      </option>
+                    ))}
+                  </select>
+                  <label className="flex items-center gap-1 text-[11px] text-ink-muted">
+                    <input
+                      type="checkbox"
+                      checked={draft.isDefault}
+                      onChange={(event) => {
+                        setDraft((current) => ({ ...current, isDefault: event.target.checked }));
+                      }}
+                    />
+                    Default
+                  </label>
+                  <Button type="submit" size="sm" variant="primary" disabled={update.isPending}>
+                    Save
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setEditing(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </form>
+              ) : (
+                <>
+                  <span
+                    className="size-3 shrink-0 rounded"
+                    style={{ backgroundColor: status.color }}
+                    aria-hidden="true"
+                  />
+                  <span className="flex-1 truncate text-sm text-ink">
+                    {status.name}
+                    {status.isDefault && (
+                      <span className="ml-2 text-[11px] text-ink-faint">default</span>
+                    )}
+                  </span>
+                  <span className="text-[11px] text-ink-faint">
+                    {STATUS_CATEGORY_LABEL[status.category]}
+                  </span>
+                  <span className="text-[11px] text-ink-faint">
+                    {status.cardCount} {status.cardCount === 1 ? 'card' : 'cards'}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setEditing(status.statusId);
+                      setDraft({
+                        name: status.name,
+                        category: status.category,
+                        color: status.color,
+                        isDefault: status.isDefault,
+                      });
+                    }}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-danger"
+                    onClick={() => {
+                      remove.mutate(status.statusId as StatusId);
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {editing === null && (
+        <form
+          className="flex flex-wrap items-center gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (draft.name.trim() !== '') {
+              create.mutate({ ...draft, name: draft.name.trim() });
+            }
+          }}
+        >
+          <input
+            type="color"
+            aria-label="New status colour"
+            value={draft.color}
+            onChange={(event) => {
+              setDraft((current) => ({ ...current, color: event.target.value }));
+            }}
+            className="h-8 w-10 rounded border border-line bg-surface-sunken"
+          />
+          <Input
+            aria-label="New status name"
+            placeholder="Status name"
+            value={draft.name}
+            onChange={(event) => {
+              setDraft((current) => ({ ...current, name: event.target.value }));
+            }}
+            className="h-8 flex-1 text-xs"
+          />
+          <select
+            aria-label="New status category"
+            value={draft.category}
+            onChange={(event) => {
+              setDraft((current) => ({
+                ...current,
+                category: event.target.value as StatusCategory,
+              }));
+            }}
+            className="h-8 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+          >
+            {STATUS_CATEGORIES.map((category) => (
+              <option key={category} value={category}>
+                {STATUS_CATEGORY_LABEL[category]}
+              </option>
+            ))}
+          </select>
+          <label className="flex items-center gap-1 text-[11px] text-ink-muted">
+            <input
+              type="checkbox"
+              checked={draft.isDefault}
+              onChange={(event) => {
+                setDraft((current) => ({ ...current, isDefault: event.target.checked }));
+              }}
+            />
+            Default
+          </label>
+          <Button type="submit" size="sm" variant="primary" disabled={create.isPending}>
+            Add status
+          </Button>
+        </form>
+      )}
+
+      {create.isError && <ErrorText error={create.error} />}
       {update.isError && <ErrorText error={update.error} />}
       {remove.isError && <ErrorText error={remove.error} />}
     </section>

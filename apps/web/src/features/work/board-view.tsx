@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   DndContext,
   DragOverlay,
   KeyboardSensor,
   PointerSensor,
   closestCorners,
+  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -18,7 +19,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { BoardId, CardId, ListId } from '@taskflow/contracts';
+import type { BoardId, CardId, ListId, StatusId, UserId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useOptimistic } from '../../lib/optimistic.js';
@@ -27,7 +28,19 @@ import { CardTile } from './card-tile.js';
 import { ListColumn } from './list-column.js';
 import { neighboursForSortableDrop } from './neighbours.js';
 import { AddListColumn, EmptyBoard } from './add-list.js';
-import { patchBoardCards, type CardSummary, type ListSummary } from './api.js';
+import { patchBoardCards, type CardSummary, type ListSummary, type Status } from './api.js';
+import { useUpdateCard } from './use-update-card.js';
+import {
+  NONE_KEY,
+  fieldPatchForGroup,
+  groupCards,
+  isDraggable,
+  sortCards,
+  type Group,
+  type GroupBy,
+  type SortBy,
+} from './grouping.js';
+import type { Person } from '../org/use-members.js';
 
 interface MoveInput {
   readonly cardId: CardId;
@@ -37,34 +50,38 @@ interface MoveInput {
 }
 
 /**
- * The kanban board (§10.4, dnd-kit).
+ * The kanban board (§10.4, dnd-kit; grouping per `ai/phase-3.5-work-ux.md` §5.6).
  *
  * ## What is sent on a drop
  *
- * Neighbours, never a rank or a position — see neighbours.ts. The server derives
- * the rank inside the same transaction that moves the card, so two people
- * dragging at once are adjudicated against one present rather than two pasts.
+ * Grouped by LIST, neighbours — never a rank or a position, see neighbours.ts.
+ * The server derives the rank inside the same transaction that moves the
+ * card, so two people dragging at once are adjudicated against one present
+ * rather than two pasts.
+ *
+ * Grouped by anything else, there is no rank to derive: `fieldPatchForGroup`
+ * (grouping.ts) says which field the drop sets — status, assignee, or
+ * priority — and the mutation for that field runs instead of `cards.move`.
+ * §3.2's rule is why: a group has no stored order of its own, so dragging
+ * within one is not persisted, only dragging ACROSS groups.
+ *
+ * ## Two id schemes share one DndContext
+ *
+ * Every grouping but `assignee` gives a card exactly one group, so its own
+ * `cardId` is a safe, unique dnd-kit element id. `assignee` does not — a
+ * card assigned to two people renders once in EACH of their columns — so
+ * dnd-kit would see the same id twice in the tree, which it cannot resolve.
+ * `elementIdOf`/`cardIdOfElement` exist only for that one grouping: they
+ * compose a group-scoped id (`groupKey::cardId`) and decode it back, so two
+ * renders of the same card get two distinct, draggable identities.
  *
  * ## The optimistic update
  *
- * Through `useOptimistic` (lib/optimistic.ts), which owns the cancel → snapshot
- * → patch → rollback → invalidate cycle so it cannot be implemented two-thirds
- * of the way.
- *
- * It replaced a hand-written version that was correct in every respect except
- * its REACH: it snapshotted and patched `keys.cards(org, board, filterKey)` —
- * the currently visible filter — and a board holds one such entry per filter the
- * user has visited. So a card dragged while a filter was applied moved in that
- * entry and stayed put in the unfiltered one, which then rendered from cache the
- * instant the filter was cleared. The card appeared to jump back on its own, some
- * time after a drag that had already succeeded. `patchBoardCards` resolves the
- * prefix and rewrites all of them.
- *
- * The optimistic rank is deliberately not computed. `between()` is available and
- * would be wrong here: the value it produced would be a second opinion about
- * ordering, and if it differed from the server's the board would reorder again on
- * invalidation. Rewriting the array's ORDER means the only claim being made is
- * the one the user just made with the pointer.
+ * Through `useOptimistic` (lib/optimistic.ts), which owns the cancel →
+ * snapshot → patch → rollback → invalidate cycle so it cannot be implemented
+ * two-thirds of the way. `patchBoardCards` resolves every cached filter
+ * variant by prefix, so a card moved while a filter is applied does not
+ * appear to jump back the instant the filter clears.
  */
 
 export interface BoardViewProps {
@@ -72,31 +89,45 @@ export interface BoardViewProps {
   readonly boardId: BoardId;
   readonly lists: readonly ListSummary[];
   readonly cards: readonly CardSummary[];
+  readonly statuses: readonly Status[];
+  readonly people: readonly Person[];
+  readonly groupBy: GroupBy;
+  readonly sortBy: SortBy;
   readonly onOpenCard: (cardId: string) => void;
 }
 
-/* No `filter` prop any more. It existed only to rebuild the cache key this
-   component patched, and `patchBoardCards` patches every filter variant by
-   prefix — so a view that does not need to know which filter produced its cards
-   should not be told. */
-export function BoardView({ orgId, boardId, lists, cards, onOpenCard }: BoardViewProps) {
+const GROUP_SEP = '::';
+
+function elementIdOf(groupBy: GroupBy, groupKey: string, cardId: string): string {
+  return groupBy === 'assignee' ? `${groupKey}${GROUP_SEP}${cardId}` : cardId;
+}
+
+function cardIdOfElement(groupBy: GroupBy, elementId: string): string {
+  if (groupBy !== 'assignee') return elementId;
+  const index = elementId.indexOf(GROUP_SEP);
+  return index === -1 ? elementId : elementId.slice(index + GROUP_SEP.length);
+}
+
+export function BoardView({
+  orgId,
+  boardId,
+  lists,
+  cards,
+  statuses,
+  people,
+  groupBy,
+  sortBy,
+  onOpenCard,
+}: BoardViewProps) {
   const queryClient = useQueryClient();
   const optimistic = useOptimistic();
+  const updateCard = useUpdateCard(orgId, boardId);
   const [dragging, setDragging] = useState<CardSummary | null>(null);
 
-  const byList = useMemo(() => {
-    const grouped = new Map<string, CardSummary[]>();
-    for (const list of lists) grouped.set(list.listId, []);
-    for (const card of cards) {
-      const bucket = grouped.get(card.listId);
-      if (bucket !== undefined) bucket.push(card);
-    }
-    /* The API already returns cards ordered by (list, rank, id). Sorting again
-       is what keeps an OPTIMISTICALLY moved card in place: the patch below
-       rewrites `listId` without a real rank, and re-sorting on rank alone would
-       bounce it back to where its old rank says it belongs. */
-    return grouped;
-  }, [lists, cards]);
+  const groups = useMemo(
+    () => groupCards(cards, groupBy, { lists, statuses, people }),
+    [cards, groupBy, lists, statuses, people],
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -142,8 +173,39 @@ export function BoardView({ orgId, boardId, lists, cards, onOpenCard }: BoardVie
     },
   });
 
+  const optimisticStatus = optimistic<{ cardId: CardId; statusId: StatusId | null }>({
+    keys: [keys.cardsOfBoard(orgId, boardId)],
+    patch: (client, { cardId, statusId }) => {
+      patchBoardCards(client, orgId, boardId, (current) =>
+        current.map((card) => (card.cardId === cardId ? { ...card, statusId } : card)),
+      );
+    },
+    failureTitle: 'Status was not saved',
+  });
+  const setStatus = useMutation({
+    mutationFn: (input: { cardId: CardId; statusId: StatusId | null }) =>
+      api.work.cards.setStatus.mutate(input),
+    ...optimisticStatus,
+  });
+
+  const optimisticAssignees = optimistic<{ cardId: CardId; assigneeIds: readonly UserId[] }>({
+    keys: [keys.cardsOfBoard(orgId, boardId)],
+    patch: (client, { cardId, assigneeIds }) => {
+      patchBoardCards(client, orgId, boardId, (current) =>
+        current.map((card) => (card.cardId === cardId ? { ...card, assigneeIds } : card)),
+      );
+    },
+    failureTitle: 'Assignees were not saved',
+  });
+  const setAssignees = useMutation({
+    mutationFn: (input: { cardId: CardId; assigneeIds: readonly UserId[] }) =>
+      api.work.cards.assign.mutate({ cardId: input.cardId, assigneeIds: [...input.assigneeIds] }),
+    ...optimisticAssignees,
+  });
+
   const onDragStart = (event: DragStartEvent) => {
-    const card = cards.find((entry) => entry.cardId === event.active.id);
+    const cardId = cardIdOfElement(groupBy, String(event.active.id));
+    const card = cards.find((entry) => entry.cardId === cardId);
     setDragging(card ?? null);
   };
 
@@ -153,41 +215,79 @@ export function BoardView({ orgId, boardId, lists, cards, onOpenCard }: BoardVie
     const { active, over } = event;
     if (over === null) return;
 
-    const cardId = String(active.id);
-    const overId = String(over.id);
-
+    const cardId = cardIdOfElement(groupBy, String(active.id));
     const card = cards.find((entry) => entry.cardId === cardId);
     if (card === undefined) return;
 
-    /* Which list was it dropped into? `over` is either a card — whose list is
-       the answer — or a column, whose id IS the list id. Anything else means
-       the pointer was released outside the board. */
-    const overCard = cards.find((entry) => entry.cardId === overId);
-    const targetListId =
-      overCard?.listId ?? (lists.some((l) => l.listId === overId) ? overId : null);
-    if (targetListId === null) return;
+    if (groupBy === 'list') {
+      const overId = String(over.id);
 
-    const siblings = byList.get(targetListId) ?? [];
-    const { beforeCardId, afterCardId } = neighboursForSortableDrop(siblings, cardId, overId);
+      /* Which list was it dropped into? `over` is either a card — whose list
+         is the answer — or a column, whose id IS the list id. Anything else
+         means the pointer was released outside the board. */
+      const overCard = cards.find((entry) => entry.cardId === overId);
+      const targetListId =
+        overCard?.listId ?? (lists.some((l) => l.listId === overId) ? overId : null);
+      if (targetListId === null) return;
 
-    // Dropping a card back exactly where it was is not a move.
-    if (
-      card.listId === targetListId &&
-      beforeCardId === (previousOf(siblings, cardId)?.cardId ?? null)
-    ) {
+      const siblings = groups.find((g) => g.key === targetListId)?.cards ?? [];
+      const { beforeCardId, afterCardId } = neighboursForSortableDrop(siblings, cardId, overId);
+
+      // Dropping a card back exactly where it was is not a move.
+      if (
+        card.listId === targetListId &&
+        beforeCardId === (previousOf(siblings, cardId)?.cardId ?? null)
+      ) {
+        return;
+      }
+
+      move.mutate({
+        cardId: cardId as CardId,
+        targetListId: targetListId as ListId,
+        beforeCardId,
+        afterCardId,
+      });
       return;
     }
 
-    move.mutate({
-      cardId: cardId as CardId,
-      targetListId: targetListId as ListId,
-      beforeCardId,
-      afterCardId,
-    });
+    const targetGroupKey = resolveTargetGroupKey(String(over.id), groupBy, groups, cards);
+    if (targetGroupKey === null) return;
+
+    const alreadyThere = groups.some(
+      (g) => g.key === targetGroupKey && g.cards.some((entry) => entry.cardId === cardId),
+    );
+    if (alreadyThere) return;
+
+    const patch = fieldPatchForGroup(groupBy, targetGroupKey);
+    if (patch === null) return;
+
+    if ('statusId' in patch) {
+      setStatus.mutate({ cardId: cardId as CardId, statusId: patch.statusId as StatusId | null });
+    } else if ('assigneeIds' in patch) {
+      setAssignees.mutate({ cardId: cardId as CardId, assigneeIds: patch.assigneeIds as UserId[] });
+    } else {
+      updateCard.mutate({ cardId: cardId as CardId, patch: { priority: patch.priority } });
+    }
   };
 
   if (lists.length === 0) {
     return <EmptyBoard orgId={orgId} boardId={boardId} />;
+  }
+
+  if (!isDraggable(groupBy)) {
+    return (
+      <div className="min-h-0 flex-1 overflow-x-auto">
+        <div className="flex h-full items-start gap-3 p-3">
+          {groups.map((group) => (
+            <StaticColumn key={group.key} group={group}>
+              {sortCards(group.cards, sortBy).map((card) => (
+                <CardTile key={card.cardId} orgId={orgId} card={card} onOpen={onOpenCard} />
+              ))}
+            </StaticColumn>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -213,33 +313,62 @@ export function BoardView({ orgId, boardId, lists, cards, onOpenCard }: BoardVie
         }}
       >
         <div className={cn('flex h-full items-start gap-3 p-3')}>
-          {lists.map((list) => {
-            const columnCards = byList.get(list.listId) ?? [];
-            return (
-              <ListColumn
-                key={list.listId}
-                orgId={orgId}
-                boardId={boardId}
-                list={list}
-                count={columnCards.length}
-                siblings={lists}
-              >
-                <SortableContext
-                  items={columnCards.map((card) => card.cardId)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  {columnCards.map((card) => (
-                    <SortableCard key={card.cardId} orgId={orgId} card={card} onOpen={onOpenCard} />
-                  ))}
-                </SortableContext>
-              </ListColumn>
-            );
-          })}
+          {groupBy === 'list'
+            ? lists.map((list) => {
+                const columnCards = groups.find((g) => g.key === list.listId)?.cards ?? [];
+                return (
+                  <ListColumn
+                    key={list.listId}
+                    orgId={orgId}
+                    boardId={boardId}
+                    list={list}
+                    count={columnCards.length}
+                    siblings={lists}
+                  >
+                    <SortableContext
+                      items={columnCards.map((card) => card.cardId)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {columnCards.map((card) => (
+                        <SortableCard
+                          key={card.cardId}
+                          orgId={orgId}
+                          card={card}
+                          elementId={card.cardId}
+                          onOpen={onOpenCard}
+                        />
+                      ))}
+                    </SortableContext>
+                  </ListColumn>
+                );
+              })
+            : groups.map((group) => {
+                const ordered = sortCards(group.cards, sortBy);
+                return (
+                  <DroppableColumn key={group.key} group={group}>
+                    <SortableContext
+                      items={ordered.map((card) => elementIdOf(groupBy, group.key, card.cardId))}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {ordered.map((card) => (
+                        <SortableCard
+                          key={elementIdOf(groupBy, group.key, card.cardId)}
+                          orgId={orgId}
+                          card={card}
+                          elementId={elementIdOf(groupBy, group.key, card.cardId)}
+                          onOpen={onOpenCard}
+                        />
+                      ))}
+                    </SortableContext>
+                  </DroppableColumn>
+                );
+              })}
 
-          {/* Always present, so a board is never a dead end. Cards are added
-              from inside a column, which means "no lists" used to mean "no way
-              to put anything on this board". */}
-          <AddListColumn orgId={orgId} boardId={boardId} />
+          {/* Always present in list grouping, so a board is never a dead end —
+              cards are added from inside a column. Other groupings add no
+              column of their own: the vocabulary (a status, say) is managed
+              from project settings, not invented mid-drag. */}
+          {groupBy === 'list' && <AddListColumn orgId={orgId} boardId={boardId} />}
         </div>
 
         {/* The overlay is what the pointer carries. Without it the original tile
@@ -253,17 +382,101 @@ export function BoardView({ orgId, boardId, lists, cards, onOpenCard }: BoardVie
   );
 }
 
+/**
+ * Which group a drop lands in, for every grouping but `list` (handled inline
+ * in `onDragEnd` because it alone produces neighbours rather than a group key).
+ *
+ * `over` is either a column itself — its id IS the group key — or a card
+ * rendered inside one. For `assignee`, that card's rendered id already
+ * carries its group as a prefix (`elementIdOf`), because the same card can
+ * render in several columns and only the ELEMENT says which one the pointer
+ * is over. For `status` and `priority`, a card has exactly one group, so it
+ * is read straight off the card's own field.
+ */
+function resolveTargetGroupKey(
+  overRaw: string,
+  groupBy: GroupBy,
+  groups: readonly Group[],
+  cards: readonly CardSummary[],
+): string | null {
+  if (groups.some((g) => g.key === overRaw)) return overRaw;
+
+  if (groupBy === 'assignee') {
+    const index = overRaw.indexOf(GROUP_SEP);
+    return index === -1 ? null : overRaw.slice(0, index);
+  }
+
+  const overCard = cards.find((entry) => entry.cardId === overRaw);
+  if (overCard === undefined) return null;
+
+  if (groupBy === 'status') return overCard.statusId ?? NONE_KEY;
+  if (groupBy === 'priority') return overCard.priority ?? NONE_KEY;
+  return null;
+}
+
+/** A column for any grouping but `list`, which keeps its own `ListColumn` and its settings menu. */
+function DroppableColumn({ group, children }: { readonly group: Group; readonly children: ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: group.key });
+
+  return (
+    <section
+      ref={setNodeRef}
+      aria-label={group.label}
+      className={cn(
+        'flex max-h-full w-72 shrink-0 flex-col rounded-card bg-surface-sunken',
+        isOver && 'ring-1 ring-accent',
+      )}
+    >
+      <ColumnHeader group={group} />
+      <div className="flex min-h-16 flex-col gap-2 overflow-y-auto px-2 pb-2">{children}</div>
+    </section>
+  );
+}
+
+/** Same header, for the non-draggable `due` grouping — no droppable registration, nothing to drop onto. */
+function StaticColumn({ group, children }: { readonly group: Group; readonly children: ReactNode }) {
+  return (
+    <section
+      aria-label={group.label}
+      className="flex max-h-full w-72 shrink-0 flex-col rounded-card bg-surface-sunken"
+    >
+      <ColumnHeader group={group} />
+      <div className="flex min-h-16 flex-col gap-2 overflow-y-auto px-2 pb-2">{children}</div>
+    </section>
+  );
+}
+
+function ColumnHeader({ group }: { readonly group: Group }) {
+  return (
+    <header className="flex items-center gap-2 px-3 py-2">
+      {group.color !== null && (
+        <span
+          className="size-2.5 shrink-0 rounded-full"
+          style={{ backgroundColor: group.color }}
+          aria-hidden="true"
+        />
+      )}
+      <h2 className="min-w-0 flex-1 truncate text-xs font-semibold tracking-wide text-ink-muted uppercase">
+        {group.label}
+      </h2>
+      <span className="text-[11px] text-ink-faint">{group.cards.length}</span>
+    </header>
+  );
+}
+
 function SortableCard({
   orgId,
   card,
+  elementId,
   onOpen,
 }: {
   readonly orgId: string;
   readonly card: CardSummary;
+  readonly elementId: string;
   readonly onOpen: (cardId: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: card.cardId,
+    id: elementId,
   });
 
   return (
