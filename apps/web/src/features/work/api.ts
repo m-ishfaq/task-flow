@@ -23,6 +23,9 @@ interface Outputs {
   lists: Awaited<ReturnType<typeof api.work.lists.list.query>>;
   cards: Awaited<ReturnType<typeof api.work.cards.list.query>>;
   card: Awaited<ReturnType<typeof api.work.cards.get.query>>;
+  checklists: Awaited<ReturnType<typeof api.work.checklists.list.query>>;
+  comments: Awaited<ReturnType<typeof api.work.comments.list.query>>;
+  cardLabels: Awaited<ReturnType<typeof api.work.labels.onCard.query>>;
 }
 
 export type ProjectSummary = Wire<Outputs['projects']>[number];
@@ -30,6 +33,9 @@ export type BoardSummary = Wire<Outputs['boards']>[number];
 export type ListSummary = Wire<Outputs['lists']>[number];
 export type CardSummary = Wire<Outputs['cards']>[number];
 export type CardDetail = Wire<Outputs['card']>;
+export type Checklist = Wire<Outputs['checklists']>[number];
+export type Comment = Wire<Outputs['comments']>[number];
+export type CardLabel = Wire<Outputs['cardLabels']>[number];
 
 /**
  * The cache key for a filtered card query.
@@ -176,6 +182,125 @@ export function patchCardDetail(
 ): void {
   const current = client.getQueryData<CardDetail>(keys.card(orgId, cardId));
   if (current !== undefined) client.setQueryData(keys.card(orgId, cardId), fn(current));
+}
+
+/**
+ * Adjusts a card's checklist counters everywhere they are rendered.
+ *
+ * The counters live on the CARD row, not on the checklist, because the board
+ * tile shows `☑ 2/5` without loading any checklists. So ticking an item in the
+ * detail panel has to move a number the panel is not displaying — and forgetting
+ * it leaves a badge that is wrong until the next full refetch, which is the
+ * failure `counters.ts` recomputes server-side specifically to avoid. An
+ * optimistic update that skipped it would reintroduce the drift on the client.
+ *
+ * The deltas are applied rather than recomputed because the caller knows exactly
+ * what changed and the cache may not hold the checklists at all.
+ */
+export function patchChecklistCounters(
+  client: QueryClient,
+  orgId: string,
+  boardId: BoardId,
+  cardId: CardId,
+  delta: { readonly done: number; readonly total: number },
+): void {
+  patchBoardCards(client, orgId, boardId, (cards) =>
+    cards.map((card) =>
+      card.cardId === cardId
+        ? {
+            ...card,
+            /* Clamped. A double-click that fires two toggles before either
+               settles would otherwise show `-1/5`, and a negative count reads as
+               a bug in a way that a momentarily stale one does not. */
+            checklistDone: Math.max(0, card.checklistDone + delta.done),
+            checklistTotal: Math.max(0, card.checklistTotal + delta.total),
+          }
+        : card,
+    ),
+  );
+}
+
+/** Rewrites the cached checklists for a card. A no-op when not cached. */
+export function patchChecklists(
+  client: QueryClient,
+  orgId: string,
+  cardId: CardId,
+  fn: (checklists: readonly Checklist[]) => readonly Checklist[],
+): void {
+  const key = keys.checklists(orgId, cardId);
+  const current = client.getQueryData<readonly Checklist[]>(key);
+  if (current !== undefined) client.setQueryData(key, fn(current));
+}
+
+/**
+ * The same, for a card's comments.
+ *
+ * Unlike the checklist helpers this one is also used to INSERT, so it is written
+ * to seed an empty array rather than no-op when the key is cold: the panel that
+ * posts a comment is the panel that renders them, so the query is always
+ * present in practice — but a rollback removes an entry it did not find (see
+ * `optimistic.ts`), and seeding here keeps that path honest rather than relying
+ * on it never being taken.
+ */
+export function patchComments(
+  client: QueryClient,
+  orgId: string,
+  cardId: CardId,
+  fn: (comments: readonly Comment[]) => readonly Comment[],
+): void {
+  const key = keys.comments(orgId, cardId);
+  const current = client.getQueryData<readonly Comment[]>(key);
+  if (current !== undefined) client.setQueryData(key, fn(current));
+}
+
+/**
+ * Moves a card's comment counter everywhere it is rendered.
+ *
+ * Same reasoning as `patchChecklistCounters`, and the same trap: `commentCount`
+ * lives on the CARD row and is drawn as `💬 3` on the board tile, which the
+ * detail panel is covering at the moment someone posts. Before this existed the
+ * comment mutations invalidated only `keys.comments`, so the badge stayed at its
+ * old number until something else refetched the board — and a stale badge looks
+ * exactly like a correct one.
+ */
+export function patchCommentCount(
+  client: QueryClient,
+  orgId: string,
+  boardId: BoardId,
+  cardId: CardId,
+  delta: number,
+): void {
+  patchBoardCards(client, orgId, boardId, (cards) =>
+    cards.map((card) =>
+      card.cardId === cardId
+        ? { ...card, commentCount: Math.max(0, card.commentCount + delta) }
+        : card,
+    ),
+  );
+}
+
+/** Rewrites the labels cached against one card. A no-op when not cached. */
+export function patchCardLabels(
+  client: QueryClient,
+  orgId: string,
+  cardId: CardId,
+  fn: (labels: readonly CardLabel[]) => readonly CardLabel[],
+): void {
+  const key = keys.cardLabels(orgId, cardId);
+  const current = client.getQueryData<readonly CardLabel[]>(key);
+  if (current !== undefined) client.setQueryData(key, fn(current));
+}
+
+/** Rewrites a board's cached list order. A no-op when not cached. */
+export function patchLists(
+  client: QueryClient,
+  orgId: string,
+  boardId: BoardId,
+  fn: (lists: readonly ListSummary[]) => readonly ListSummary[],
+): void {
+  const key = keys.lists(orgId, boardId);
+  const current = client.getQueryData<readonly ListSummary[]>(key);
+  if (current !== undefined) client.setQueryData(key, fn(current));
 }
 
 /* -------------------------------------------------------------------------- *

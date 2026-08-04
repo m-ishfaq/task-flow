@@ -127,7 +127,7 @@ export function CardDetailPanel({
 
           <ChecklistSection orgId={orgId} boardId={boardId} cardId={cardId} />
           <AttachmentSection orgId={orgId} cardId={cardId} />
-          <CommentSection orgId={orgId} cardId={cardId} />
+          <CommentSection orgId={orgId} boardId={boardId} cardId={cardId} />
 
           <p className="border-t border-line pt-3 text-[11px] text-ink-faint">
             Created {formatDateTime(card.data.createdAt)} · updated{' '}

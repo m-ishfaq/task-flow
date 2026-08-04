@@ -4,10 +4,17 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BoardId, CardId, ChecklistId, ChecklistItemId } from '@taskflow/contracts';
 import { api } from '../../../lib/trpc.js';
 import { keys } from '../../../lib/query.js';
+import { useOptimistic } from '../../../lib/optimistic.js';
+import { useToast } from '../../../lib/toast-context.js';
 import { cn } from '../../../lib/cn.js';
 import { Button, Input } from '../../../components/primitives.js';
-import { ErrorText } from '../../../components/error-view.js';
-import { checklistsQuery, invalidateCard } from '../api.js';
+import {
+  checklistsQuery,
+  invalidateCard,
+  patchChecklistCounters,
+  patchChecklists,
+  type Checklist,
+} from '../api.js';
 
 /**
  * Checklists on a card.
@@ -29,6 +36,8 @@ export interface ChecklistSectionProps {
 
 export function ChecklistSection({ orgId, boardId, cardId }: ChecklistSectionProps) {
   const queryClient = useQueryClient();
+  const optimistic = useOptimistic();
+  const toast = useToast();
   const checklists = useQuery(checklistsQuery(orgId, cardId));
   const [name, setName] = useState('');
 
@@ -41,32 +50,124 @@ export function ChecklistSection({ orgId, boardId, cardId }: ChecklistSectionPro
 
   const createList = useMutation({
     mutationFn: (value: string) => api.work.checklists.create.mutate({ cardId, name: value }),
-    onSuccess: async () => {
+    onSuccess: () => {
       setName('');
+    },
+    onError: (error) => {
+      toast.failure('The checklist was not created', error);
+    },
+    onSettled: async () => {
       await refresh();
     },
   });
 
+  /**
+   * Ticking a box.
+   *
+   * The one interaction here that has to be instant: a checkbox that waits for a
+   * round trip before it fills in is the canonical example of an app feeling
+   * slow, and someone working through a list of eight items pays for it eight
+   * times.
+   *
+   * It patches THREE places, because the state is rendered in three: the item
+   * itself, the card's `checklistDone` counter behind the panel, and the same
+   * counter on the board tile.
+   */
   const toggleItem = useMutation({
     mutationFn: (input: { itemId: ChecklistItemId; text: string; done: boolean }) =>
       api.work.checklists.updateItem.mutate(input),
-    onSuccess: refresh,
+
+    ...optimistic<{ itemId: ChecklistItemId; text: string; done: boolean }>({
+      keys: [
+        keys.checklists(orgId, cardId),
+        keys.card(orgId, cardId),
+        keys.cardsOfBoard(orgId, boardId),
+      ],
+      patch: (client, input) => {
+        patchChecklists(client, orgId, cardId, (lists) =>
+          lists.map((checklist) => ({
+            ...checklist,
+            items: checklist.items.map((item) =>
+              item.itemId === input.itemId ? { ...item, done: input.done } : item,
+            ),
+          })),
+        );
+        patchChecklistCounters(client, orgId, boardId, cardId, {
+          done: input.done ? 1 : -1,
+          total: 0,
+        });
+      },
+      failureTitle: 'The item was not updated',
+    }),
   });
 
   const addItem = useMutation({
     mutationFn: (input: { checklistId: ChecklistId; text: string }) =>
       api.work.checklists.addItem.mutate(input),
-    onSuccess: refresh,
+    /* Not optimistic: the item id comes from the server and the row needs one to
+       be deletable. An invented id would make the ✕ next to a just-added item
+       delete nothing until the refetch replaced it — the same reason the card
+       tile does not fake a `WEB-142`. The counter still moves immediately, since
+       that number is a count and not an identity. */
+    onSettled: async () => {
+      await refresh();
+    },
+    onError: (error) => {
+      toast.failure('The item was not added', error);
+    },
   });
 
   const removeItem = useMutation({
     mutationFn: (itemId: ChecklistItemId) => api.work.checklists.deleteItem.mutate({ itemId }),
-    onSuccess: refresh,
+
+    ...optimistic<ChecklistItemId>({
+      keys: [
+        keys.checklists(orgId, cardId),
+        keys.card(orgId, cardId),
+        keys.cardsOfBoard(orgId, boardId),
+      ],
+      patch: (client, itemId) => {
+        /* The removed item's own `done` decides the counter delta, so it is READ
+           first and dropped second. Deleting a ticked item lowers both numbers;
+           deleting an unticked one lowers only the total. Getting that branch
+           wrong produces a badge nothing ever corrects — which is exactly why
+           the server recomputes rather than increments.
+
+           Reading it into a variable the filter assigns would be the shorter
+           version and is a trap: TypeScript cannot see a write from inside a
+           callback, narrows the flag to `false`, and the delta becomes a
+           constant the compiler is happy with. */
+        const cached = client.getQueryData<readonly Checklist[]>(keys.checklists(orgId, cardId));
+        const removed = (cached ?? [])
+          .flatMap((checklist) => checklist.items)
+          .find((item) => item.itemId === itemId);
+
+        patchChecklists(client, orgId, cardId, (lists) =>
+          lists.map((checklist) => ({
+            ...checklist,
+            items: checklist.items.filter((item) => item.itemId !== itemId),
+          })),
+        );
+
+        /* Nothing moves when the item was not in the cache: the row cannot have
+           been clicked, so a delta here would be inventing a change. */
+        patchChecklistCounters(client, orgId, boardId, cardId, {
+          done: removed?.done === true ? -1 : 0,
+          total: removed === undefined ? 0 : -1,
+        });
+      },
+      failureTitle: 'The item was not deleted',
+    }),
   });
 
   const removeList = useMutation({
     mutationFn: (checklistId: ChecklistId) => api.work.checklists.delete.mutate({ checklistId }),
-    onSuccess: refresh,
+    onError: (error) => {
+      toast.failure('The checklist was not deleted', error);
+    },
+    onSettled: async () => {
+      await refresh();
+    },
   });
 
   return (
@@ -167,8 +268,8 @@ export function ChecklistSection({ orgId, boardId, cardId }: ChecklistSectionPro
         </Button>
       </form>
 
-      {createList.isError && <ErrorText error={createList.error} />}
-      {toggleItem.isError && <ErrorText error={toggleItem.error} />}
+      {/* No inline error rows. Every mutation here reports through a toast, which
+          also survives the panel being closed by the failure it is reporting. */}
     </section>
   );
 }

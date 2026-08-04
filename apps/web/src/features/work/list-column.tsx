@@ -4,11 +4,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { BoardId, ListId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
+import { useOptimistic } from '../../lib/optimistic.js';
 import { useToast } from '../../lib/toast-context.js';
 import { cn } from '../../lib/cn.js';
 import { Button, Input } from '../../components/primitives.js';
 import { ErrorText } from '../../components/error-view.js';
-import type { ListSummary } from './api.js';
+import { patchLists, type ListSummary } from './api.js';
 
 /**
  * One column of the board.
@@ -94,6 +95,7 @@ function ListMenu({
   readonly siblings: readonly ListSummary[];
 }) {
   const queryClient = useQueryClient();
+  const optimistic = useOptimistic();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(list.name);
   const [wip, setWip] = useState(list.wipLimit === null ? '' : String(list.wipLimit));
@@ -147,7 +149,33 @@ function ListMenu({
         afterListId: afterList?.listId ?? null,
       });
     },
-    onSuccess: refresh,
+
+    ...optimistic<-1 | 1>({
+      /* Only the lists query. The cards are keyed by list and the board draws the
+         columns in the order this array arrives, so moving the entry moves the
+         whole column with its cards — patching them too would be patching the
+         same fact twice. */
+      keys: [keys.lists(orgId, boardId)],
+      patch: (client, direction) => {
+        patchLists(client, orgId, boardId, (current) => {
+          /* Re-found in the CACHED array rather than reusing the index computed
+             from `siblings`. The two agree today, but `siblings` is a filtered
+             prop and a caller that later hides archived columns would make the
+             index mean a different row here — which reorders the wrong column
+             and looks like a server bug. */
+          const from = current.findIndex((entry) => entry.listId === list.listId);
+          const to = from + direction;
+          if (from === -1 || to < 0 || to >= current.length) return current;
+
+          const next = [...current];
+          const [moved] = next.splice(from, 1);
+          if (moved === undefined) return current;
+          next.splice(to, 0, moved);
+          return next;
+        });
+      },
+      failureTitle: 'The list was not moved',
+    }),
   });
 
   const index = siblings.findIndex((entry) => entry.listId === list.listId);
@@ -191,7 +219,10 @@ function ListMenu({
             size="sm"
             variant="ghost"
             aria-label="Move list left"
-            disabled={index <= 0 || reorder.isPending}
+            /* Disabled only at the end of the row, not while pending — the
+               column has already moved in the cache, so a second press moves it
+               again from where it now is. */
+            disabled={index <= 0}
             onClick={() => {
               reorder.mutate(-1);
             }}
@@ -202,7 +233,7 @@ function ListMenu({
             size="sm"
             variant="ghost"
             aria-label="Move list right"
-            disabled={index === -1 || index >= siblings.length - 1 || reorder.isPending}
+            disabled={index === -1 || index >= siblings.length - 1}
             onClick={() => {
               reorder.mutate(1);
             }}
@@ -238,7 +269,9 @@ function ListMenu({
         </div>
         {update.isError && <ErrorText error={update.error} />}
         {archive.isError && <ErrorText error={archive.error} />}
-        {reorder.isError && <ErrorText error={reorder.error} />}
+        {/* Reorder reports through a toast instead: its failure rolls the column
+            back on the BOARD, which is behind this menu and may already be
+            closed by the time the answer arrives. */}
       </form>
     );
   }

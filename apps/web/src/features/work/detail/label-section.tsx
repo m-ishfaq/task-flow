@@ -3,10 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BoardId, CardId, LabelId, ProjectId } from '@taskflow/contracts';
 import { api } from '../../../lib/trpc.js';
 import { keys } from '../../../lib/query.js';
+import { useOptimistic } from '../../../lib/optimistic.js';
+import { useToast } from '../../../lib/toast-context.js';
 import { cn } from '../../../lib/cn.js';
 import { Button, Input } from '../../../components/primitives.js';
-import { ErrorText } from '../../../components/error-view.js';
-import { cardLabelsQuery, invalidateCard, labelsQuery } from '../api.js';
+import { cardLabelsQuery, labelsQuery, patchCardLabels } from '../api.js';
 
 /**
  * Labels on a card, and the project's label set.
@@ -33,6 +34,8 @@ export interface LabelSectionProps {
 
 export function LabelSection({ orgId, boardId, cardId, projectId }: LabelSectionProps) {
   const queryClient = useQueryClient();
+  const optimistic = useOptimistic();
+  const toast = useToast();
   const all = useQuery(labelsQuery(orgId, projectId));
   const onCard = useQuery(cardLabelsQuery(orgId, cardId));
   const [creating, setCreating] = useState('');
@@ -46,19 +49,44 @@ export function LabelSection({ orgId, boardId, cardId, projectId }: LabelSection
        wins something a human actually asked for. */
     mutationFn: (labelIds: readonly LabelId[]) =>
       api.work.labels.setOnCard.mutate({ cardId, labelIds: [...labelIds] }),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: keys.cardLabels(orgId, cardId) }),
-        invalidateCard(queryClient, orgId, cardId, boardId),
-      ]);
-    },
+
+    ...optimistic<readonly LabelId[]>({
+      /* The board is in the key list without being patched, and that is the
+         point: a board can be FILTERED BY LABEL, so removing one may remove the
+         card from the view entirely. That is a decision only the server's filter
+         compiler makes, so the board is invalidated and refetched rather than
+         guessed at — while the chips themselves, which are what the user is
+         looking at, update instantly. */
+      keys: [keys.cardLabels(orgId, cardId), keys.cardsOfBoard(orgId, boardId)],
+      patch: (client, labelIds) => {
+        const chosen = new Set<string>(labelIds);
+        /* Rebuilt from the PROJECT's label list rather than by adding to and
+           removing from the card's own, so the chips keep the project's order.
+           Appending the newly-ticked one instead would reorder the row under the
+           pointer, and the next click would land on a different label. */
+        patchCardLabels(client, orgId, cardId, (current) => {
+          const known = all.data ?? current;
+          return known.filter((label) => chosen.has(label.labelId));
+        });
+      },
+      failureTitle: 'Labels were not saved',
+    }),
   });
 
   const create = useMutation({
     mutationFn: (name: string) =>
       api.work.labels.create.mutate({ projectId, name, color: nextColor(all.data?.length ?? 0) }),
-    onSuccess: async () => {
+    /* Not optimistic: the label id comes from the server, and a chip that cannot
+       be ticked until the refetch lands is worse than one that appears a moment
+       late — the same reason `checklists.addItem` and `cards.create` stay
+       round-trip. */
+    onSuccess: () => {
       setCreating('');
+    },
+    onError: (error) => {
+      toast.failure('The label was not created', error);
+    },
+    onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: keys.labels(orgId, projectId) });
     },
   });
@@ -85,7 +113,11 @@ export function LabelSection({ orgId, boardId, cardId, projectId }: LabelSection
                 <button
                   type="button"
                   aria-pressed={on}
-                  disabled={setLabels.isPending}
+                  /* Not disabled while pending. Tagging a card is usually two or
+                     three labels in a row, and a control that goes dead between
+                     each one turns one gesture into three waits. Every click
+                     sends the full set built from the already-patched cache, so
+                     they compose rather than race. */
                   onClick={() => {
                     toggle(label.labelId);
                   }}
@@ -125,8 +157,8 @@ export function LabelSection({ orgId, boardId, cardId, projectId }: LabelSection
         </Button>
       </form>
 
-      {create.isError && <ErrorText error={create.error} />}
-      {setLabels.isError && <ErrorText error={setLabels.error} />}
+      {/* No inline error rows — both mutations report through a toast, which
+          outlives the panel being closed by the failure it is reporting. */}
     </section>
   );
 }
