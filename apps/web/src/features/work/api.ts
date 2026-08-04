@@ -58,13 +58,21 @@ export function filterKey(filter: FilterNode | null): string {
  * Reads
  * -------------------------------------------------------------------------- */
 
-export function projectsQuery(orgId: string) {
+/**
+ * The org's projects.
+ *
+ * `includeArchived` is part of the query KEY as well as the request: the two
+ * responses are different lists, and caching them under one key means opening
+ * the archived view serves the live list from cache and then replaces it —
+ * a flash of the wrong answer, and a stale one if the refetch is deduped.
+ */
+export function projectsQuery(orgId: string, includeArchived = false) {
   return queryOptions({
-    queryKey: keys.projects(orgId),
-    /* `includeArchived` is left at its default rather than passed as `false`.
-       The default lives in the route's Zod schema, and restating it here is a
-       second place for it to be wrong. */
-    queryFn: async () => wire(await api.work.projects.list.query({})),
+    queryKey: keys.projectList(orgId, includeArchived),
+    /* Only sent when true. The default lives in the route's Zod schema, and
+       restating `false` here is a second place for it to be wrong. */
+    queryFn: async () =>
+      wire(await api.work.projects.list.query(includeArchived ? { includeArchived: true } : {})),
   });
 }
 

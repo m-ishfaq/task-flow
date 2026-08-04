@@ -8,8 +8,17 @@ import { keys } from '../../lib/query.js';
 import { useSession } from '../../lib/session.js';
 import { wire } from '../../lib/wire.js';
 import { formatDate } from '../../lib/format.js';
-import { Button, Empty, Field, Input, Spinner } from '../../components/primitives.js';
+import {
+  Avatar,
+  Badge,
+  Button,
+  Empty,
+  Field,
+  Input,
+  SkeletonRows,
+} from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
+import { cn } from '../../lib/cn.js';
 import { useStepUp } from '../auth/use-step-up.js';
 import { membersQuery } from '../org/api.js';
 
@@ -27,15 +36,29 @@ import { membersQuery } from '../org/api.js';
  * not a role change, and offering it in this dropdown would render a control
  * that always fails. Hard-coding `['admin','member','guest']` here would work
  * until the matrix changed, and then silently disagree with it.
+ *
+ * ## Add first, then the list
+ *
+ * Every section here puts its ADD control above the collection it adds to. The
+ * page is visited most often by someone who came to add a person or a team, and
+ * a form underneath a list of forty members is a form nobody finds — the list
+ * grows, the control moves further away, and the page gets worse the more it is
+ * used. A fixed position at the top does not.
  */
 export function SettingsPage() {
   const orgId = useSession((state) => state.orgId) ?? '';
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-8 p-6">
+    <div className="mx-auto flex max-w-3xl flex-col gap-10 p-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-ink">Organization settings</h1>
-        <Link to="/settings/audit" className="text-sm text-accent underline">
+        <div>
+          <h1 className="text-lg font-semibold text-ink">Organization settings</h1>
+          <p className="text-xs text-ink-muted">Members, teams, and who can reach what.</p>
+        </div>
+        <Link
+          to="/settings/audit"
+          className="rounded border border-line px-2 py-1 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
+        >
           Audit log
         </Link>
       </div>
@@ -43,6 +66,52 @@ export function SettingsPage() {
       <OrgSection orgId={orgId} />
       <MemberSection orgId={orgId} />
       <TeamSection orgId={orgId} />
+    </div>
+  );
+}
+
+/**
+ * A titled block with an optional count and description.
+ *
+ * Extracted because there are three of them and they were drifting: two heading
+ * styles, two spacing rhythms, and one section that had no description at all.
+ */
+function Section({
+  title,
+  count,
+  description,
+  children,
+}: {
+  readonly title: string;
+  /* `| undefined` explicitly, not just `?`. Under `exactOptionalPropertyTypes`
+     an optional prop rejects an explicitly-passed `undefined`, and the callers
+     pass `data?.length` — which is exactly that while the query is loading. */
+  readonly count?: number | undefined;
+  readonly description?: string | undefined;
+  readonly children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center gap-2">
+        <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">{title}</h2>
+        {count !== undefined && <Badge>{count}</Badge>}
+      </div>
+      {description !== undefined && <p className="text-xs text-ink-muted">{description}</p>}
+      {children}
+    </section>
+  );
+}
+
+/**
+ * The bordered block an "add" control sits in.
+ *
+ * Visually distinct from the rows below it, so the top of the list reads as a
+ * control rather than as the first item of the collection.
+ */
+function AddPanel({ children }: { readonly children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-dashed border-line bg-surface-sunken/60 p-3">
+      {children}
     </div>
   );
 }
@@ -77,44 +146,44 @@ function OrgSection({ orgId }: { readonly orgId: string }) {
   const current = name ?? org.data.name;
 
   return (
-    <section className="space-y-3">
-      <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Organization</h2>
-
-      <form
-        className="flex items-end gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (current.trim() !== '' && current !== org.data.name) rename.mutate(current.trim());
-        }}
-      >
-        <div className="flex-1">
-          <Field label="Name" htmlFor="org-name">
-            <Input
-              id="org-name"
-              value={current}
-              onChange={(event) => {
-                setName(event.target.value);
-              }}
-            />
-          </Field>
-        </div>
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={rename.isPending || current === org.data.name}
+    <Section title="Organization">
+      <div className="rounded-lg border border-line bg-surface-raised p-3">
+        <form
+          className="flex items-end gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (current.trim() !== '' && current !== org.data.name) rename.mutate(current.trim());
+          }}
         >
-          Save
-        </Button>
-      </form>
+          <div className="flex-1">
+            <Field label="Name" htmlFor="org-name">
+              <Input
+                id="org-name"
+                value={current}
+                onChange={(event) => {
+                  setName(event.target.value);
+                }}
+              />
+            </Field>
+          </div>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={rename.isPending || current === org.data.name}
+          >
+            Save
+          </Button>
+        </form>
 
-      <p className="text-xs text-ink-faint">
-        Slug <span className="font-mono">{org.data.slug}</span> · created{' '}
-        {formatDate(org.data.createdAt)}. The slug is fixed — it appears in links that already
-        exist.
-      </p>
+        <p className="mt-2 text-xs text-ink-faint">
+          Slug <span className="font-mono text-ink-muted">{org.data.slug}</span> · created{' '}
+          {formatDate(org.data.createdAt)}. The slug is fixed — it appears in links that already
+          exist.
+        </p>
+      </div>
 
       {rename.isError && <ErrorText error={rename.error} />}
-    </section>
+    </Section>
   );
 }
 
@@ -126,6 +195,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
   const queryClient = useQueryClient();
   const members = useQuery(membersQuery(orgId));
   const { guard, dialog } = useStepUp();
+  const currentUserId = useSession((state) => state.userId);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.members(orgId) });
 
@@ -159,110 +229,194 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
   const [role, setRole] = useState<Role>('member');
 
   return (
-    <section className="space-y-3">
-      <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Members</h2>
+    <Section
+      title="Members"
+      count={members.data?.length}
+      description="Everyone with access to this organization. A role decides what they can do across it; a team grant can narrow or widen that on one resource."
+    >
+      <AddPanel>
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (email.trim() !== '') add.mutate({ email: email.trim(), role });
+          }}
+        >
+          <div className="min-w-[16rem] flex-1">
+            <Field
+              label="Add a member"
+              htmlFor="member-email"
+              hint="The person must already have a TaskFlow account — email invitations arrive in a later phase."
+            >
+              <Input
+                id="member-email"
+                type="email"
+                placeholder="colleague@example.com"
+                value={email}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                }}
+              />
+            </Field>
+          </div>
 
-      {members.isPending && <Spinner />}
+          <select
+            aria-label="Role for the new member"
+            value={role}
+            onChange={(event) => {
+              setRole(event.target.value as Role);
+            }}
+            className="h-9 rounded border border-line bg-surface px-2 text-sm text-ink"
+          >
+            {DIRECTLY_ASSIGNABLE_ROLES.map((entry) => (
+              <option key={entry} value={entry}>
+                {entry}
+              </option>
+            ))}
+          </select>
+
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={add.isPending || email.trim() === ''}
+          >
+            {add.isPending ? 'Adding…' : 'Add'}
+          </Button>
+        </form>
+
+        {add.isError && <ErrorText error={add.error} />}
+      </AddPanel>
+
+      {members.isPending && <SkeletonRows rows={4} className="*:h-12" />}
       {members.isError && <ErrorView error={members.error} title="Could not load members" />}
 
       {members.data !== undefined && (
-        <ul className="divide-y divide-line rounded border border-line">
+        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
           {members.data.map((member) => (
-            <li key={member.userId} className="flex items-center gap-3 px-3 py-2">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm text-ink">{member.email}</p>
-                <p className="text-[11px] text-ink-faint">
-                  {member.status} · joined {formatDate(member.joinedAt)}
-                </p>
-              </div>
-
-              <select
-                aria-label={`Role for ${member.email}`}
-                value={member.role}
-                onChange={(event) => {
-                  changeRole.mutate({
-                    userId: member.userId as UserId,
-                    role: event.target.value as Role,
-                  });
-                }}
-                className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
-              >
-                {/* The CURRENT role is always present as an option even when it
-                    is not directly assignable — an owner's row would otherwise
-                    render showing "admin", which is a lie about who they are. */}
-                {[...new Set<string>([member.role, ...DIRECTLY_ASSIGNABLE_ROLES])].map((entry) => (
-                  <option key={entry} value={entry}>
-                    {entry}
-                  </option>
-                ))}
-              </select>
-
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-danger"
-                onClick={() => {
-                  remove.mutate(member.userId as UserId);
-                }}
-              >
-                Remove
-              </Button>
-            </li>
+            <MemberRow
+              key={member.userId}
+              member={member}
+              isSelf={member.userId === currentUserId}
+              busy={changeRole.isPending || remove.isPending}
+              onRoleChange={(next) => {
+                changeRole.mutate({ userId: member.userId as UserId, role: next });
+              }}
+              onRemove={() => {
+                remove.mutate(member.userId as UserId);
+              }}
+            />
           ))}
         </ul>
       )}
 
-      <form
-        className="flex items-end gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (email.trim() !== '') add.mutate({ email: email.trim(), role });
-        }}
-      >
-        <div className="flex-1">
-          <Field
-            label="Add a member"
-            htmlFor="member-email"
-            hint="The person must already have a TaskFlow account — email invitations arrive in a later phase."
-          >
-            <Input
-              id="member-email"
-              type="email"
-              placeholder="colleague@example.com"
-              value={email}
-              onChange={(event) => {
-                setEmail(event.target.value);
-              }}
-            />
-          </Field>
-        </div>
-
-        <select
-          aria-label="Role"
-          value={role}
-          onChange={(event) => {
-            setRole(event.target.value as Role);
-          }}
-          className="h-9 rounded border border-line bg-surface-sunken px-2 text-sm text-ink"
-        >
-          {DIRECTLY_ASSIGNABLE_ROLES.map((entry) => (
-            <option key={entry} value={entry}>
-              {entry}
-            </option>
-          ))}
-        </select>
-
-        <Button type="submit" variant="primary" disabled={add.isPending}>
-          Add
-        </Button>
-      </form>
-
-      {add.isError && <ErrorText error={add.error} />}
       {changeRole.isError && <ErrorText error={changeRole.error} />}
       {remove.isError && <ErrorText error={remove.error} />}
 
       {dialog}
-    </section>
+    </Section>
+  );
+}
+
+interface MemberRowProps {
+  readonly member: {
+    readonly userId: string;
+    readonly email: string;
+    readonly role: string;
+    readonly status: string;
+    readonly joinedAt: string;
+  };
+  readonly isSelf: boolean;
+  readonly busy: boolean;
+  readonly onRoleChange: (role: Role) => void;
+  readonly onRemove: () => void;
+}
+
+function MemberRow({ member, isSelf, busy, onRoleChange, onRemove }: MemberRowProps) {
+  const [confirming, setConfirming] = useState(false);
+
+  return (
+    <li
+      className={cn(
+        'group flex items-center gap-3 px-3 py-2 transition-colors',
+        confirming ? 'bg-danger/5' : 'hover:bg-surface-hover',
+      )}
+    >
+      <Avatar userId={member.userId} label={member.email} />
+
+      <div className="min-w-0 flex-1">
+        <p className="flex items-center gap-1.5 truncate text-sm text-ink">
+          {member.email}
+          {isSelf && <span className="text-[11px] text-ink-faint">(you)</span>}
+        </p>
+        <p className="text-[11px] text-ink-faint">
+          {member.status !== 'active' && (
+            <span className="mr-1 text-warning">{member.status}</span>
+          )}
+          joined {formatDate(member.joinedAt)}
+        </p>
+      </div>
+
+      <select
+        aria-label={`Role for ${member.email}`}
+        value={member.role}
+        disabled={busy}
+        onChange={(event) => {
+          onRoleChange(event.target.value as Role);
+        }}
+        className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+      >
+        {/* The CURRENT role is always present as an option even when it is not
+            directly assignable — an owner's row would otherwise render showing
+            "admin", which is a lie about who they are. */}
+        {[...new Set<string>([member.role, ...DIRECTLY_ASSIGNABLE_ROLES])].map((entry) => (
+          <option key={entry} value={entry}>
+            {entry}
+          </option>
+        ))}
+      </select>
+
+      {confirming ? (
+        <span className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-danger"
+            disabled={busy}
+            onClick={() => {
+              onRemove();
+              setConfirming(false);
+            }}
+          >
+            Confirm
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setConfirming(false);
+            }}
+          >
+            Cancel
+          </Button>
+        </span>
+      ) : (
+        /* Revealed on hover, but always reachable by keyboard — `opacity-0`
+           still takes focus, and `focus-visible:opacity-100` brings it back
+           into view when it does. A control that only exists under a pointer is
+           a control that does not exist for a keyboard. */
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-label={`Remove ${member.email}`}
+          className="text-ink-faint hover:text-danger focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+          onClick={() => {
+            setConfirming(true);
+          }}
+        >
+          Remove
+        </Button>
+      )}
+    </li>
   );
 }
 
@@ -304,13 +458,53 @@ function TeamSection({ orgId }: { readonly orgId: string }) {
   });
 
   return (
-    <section className="space-y-3">
-      <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Teams</h2>
-      <p className="text-xs text-ink-muted">
-        A team is a subject a grant can name. Adding someone to a team gives them everything that
-        team has been granted, immediately — which is why it is an authorization change and is
-        audited as one.
-      </p>
+    <Section
+      title="Teams"
+      count={teams.data?.length}
+      description="A team is a subject a grant can name. Adding someone to a team gives them everything that team has been granted, immediately — which is why it is an authorization change and is audited as one."
+    >
+      <AddPanel>
+        <form
+          className="flex items-end gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (name.trim() !== '') create.mutate(name.trim());
+          }}
+        >
+          <div className="flex-1">
+            <Field
+              label="New team"
+              htmlFor="team-name"
+              hint={
+                name.trim() === ''
+                  ? 'The address is derived from the name and must be unique.'
+                  : `Address: ${slugify(name)}`
+              }
+            >
+              <Input
+                id="team-name"
+                placeholder="Engineering"
+                value={name}
+                onChange={(event) => {
+                  setName(event.target.value);
+                }}
+              />
+            </Field>
+          </div>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={create.isPending || name.trim() === ''}
+          >
+            {create.isPending ? 'Creating…' : 'Create'}
+          </Button>
+        </form>
+
+        {create.isError && <ErrorText error={create.error} />}
+      </AddPanel>
+
+      {teams.isPending && <SkeletonRows rows={2} className="*:h-24" />}
+      {teams.isError && <ErrorView error={teams.error} title="Could not load teams" />}
 
       {teams.data?.length === 0 && (
         <Empty
@@ -321,89 +515,174 @@ function TeamSection({ orgId }: { readonly orgId: string }) {
 
       <ul className="space-y-2">
         {(teams.data ?? []).map((team) => (
-          <li key={team.teamId} className="rounded border border-line p-3">
-            <div className="flex items-baseline gap-2">
-              <span className="text-sm text-ink">{team.name}</span>
-              <span className="font-mono text-[11px] text-ink-faint">{team.slug}</span>
-              <span className="ml-auto text-[11px] text-ink-faint">
-                {team.memberCount} {team.memberCount === 1 ? 'member' : 'members'}
-              </span>
-            </div>
-
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <select
-                aria-label={`Add someone to ${team.name}`}
-                defaultValue=""
-                onChange={(event) => {
-                  const userId = event.target.value;
-                  if (userId === '') return;
-                  addMember.mutate({ teamId: team.teamId as TeamId, userId: userId as UserId });
-                  event.currentTarget.value = '';
-                }}
-                className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
-              >
-                <option value="">Add member…</option>
-                {(members.data ?? []).map((member) => (
-                  <option key={member.userId} value={member.userId}>
-                    {member.email}
-                  </option>
-                ))}
-              </select>
-
-              {/* `teams.list` returns a COUNT, not the roster, so removal takes
-                  the same member picker. Listing a team's members needs a route
-                  that does not exist yet — noted rather than faked. */}
-              <select
-                aria-label={`Remove someone from ${team.name}`}
-                defaultValue=""
-                onChange={(event) => {
-                  const userId = event.target.value;
-                  if (userId === '') return;
-                  removeMember.mutate({ teamId: team.teamId as TeamId, userId: userId as UserId });
-                  event.currentTarget.value = '';
-                }}
-                className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
-              >
-                <option value="">Remove member…</option>
-                {(members.data ?? []).map((member) => (
-                  <option key={member.userId} value={member.userId}>
-                    {member.email}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </li>
+          <TeamCard
+            key={team.teamId}
+            team={team}
+            orgMembers={members.data ?? []}
+            onAdd={(userId) => {
+              addMember.mutate({ teamId: team.teamId as TeamId, userId });
+            }}
+            onRemove={(userId) => {
+              removeMember.mutate({ teamId: team.teamId as TeamId, userId });
+            }}
+            busy={addMember.isPending || removeMember.isPending}
+          />
         ))}
       </ul>
 
-      <form
-        className="flex items-end gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (name.trim() !== '') create.mutate(name.trim());
-        }}
-      >
-        <div className="flex-1">
-          <Field label="New team" htmlFor="team-name">
-            <Input
-              id="team-name"
-              placeholder="Engineering"
-              value={name}
-              onChange={(event) => {
-                setName(event.target.value);
-              }}
-            />
-          </Field>
-        </div>
-        <Button type="submit" variant="primary" disabled={create.isPending}>
-          Create
-        </Button>
-      </form>
-
-      {create.isError && <ErrorText error={create.error} />}
       {addMember.isError && <ErrorText error={addMember.error} />}
       {removeMember.isError && <ErrorText error={removeMember.error} />}
-    </section>
+    </Section>
+  );
+}
+
+interface TeamCardProps {
+  readonly team: {
+    readonly teamId: string;
+    readonly name: string;
+    readonly slug: string;
+    readonly members: readonly { readonly userId: string; readonly email: string }[];
+  };
+  readonly orgMembers: readonly { readonly userId: string; readonly email: string }[];
+  readonly onAdd: (userId: UserId) => void;
+  readonly onRemove: (userId: UserId) => void;
+  readonly busy: boolean;
+}
+
+/**
+ * One team, with its roster.
+ *
+ * The version this replaced had two dropdowns — "Add member…" and "Remove
+ * member…" — both listing every member of the ORG, because the list route
+ * returned a count and not the roster. Three things were wrong with it, and they
+ * are what the layout below is shaped around:
+ *
+ *   - You could not see who was on the team. The only feedback was a number.
+ *   - "Remove" offered people who were never on the team, and each of those
+ *     picks was a guaranteed 404.
+ *   - "Add" offered people already on it, where the service correctly does
+ *     nothing — a control that reports success and changes nothing.
+ *
+ * So membership is now shown as the thing it is, a list of people, and each
+ * removal happens on the row of the person being removed. The add picker lists
+ * only candidates: an empty picker means everyone is already here, which is a
+ * fact worth rendering rather than a dropdown that silently does nothing.
+ */
+function TeamCard({ team, orgMembers, onAdd, onRemove, busy }: TeamCardProps) {
+  const [confirming, setConfirming] = useState<string | null>(null);
+
+  const onTeam = new Set(team.members.map((member) => member.userId));
+  const candidates = orgMembers.filter((member) => !onTeam.has(member.userId));
+
+  return (
+    <li className="rounded-lg border border-line bg-surface-raised p-3">
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium text-ink">{team.name}</span>
+        <span className="font-mono text-[11px] text-ink-faint">{team.slug}</span>
+        <Badge className="ml-auto">
+          {team.members.length} {team.members.length === 1 ? 'member' : 'members'}
+        </Badge>
+      </div>
+
+      {/* Add first, then the roster — the same order as every other section. */}
+      <div className="mt-2.5">
+        {candidates.length === 0 ? (
+          <p className="text-[11px] text-ink-faint">
+            {orgMembers.length === 0
+              ? 'No org members to add.'
+              : 'Everyone in the organization is on this team.'}
+          </p>
+        ) : (
+          <select
+            aria-label={`Add someone to ${team.name}`}
+            value=""
+            disabled={busy}
+            onChange={(event) => {
+              const userId = event.target.value;
+              if (userId === '') return;
+              onAdd(userId as UserId);
+            }}
+            className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+          >
+            <option value="">Add member…</option>
+            {candidates.map((member) => (
+              <option key={member.userId} value={member.userId}>
+                {member.email}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      {team.members.length === 0 ? (
+        <p className="mt-2.5 text-xs text-ink-faint">
+          Nobody on this team yet. A grant naming it currently reaches no one.
+        </p>
+      ) : (
+        <ul className="mt-2.5 flex flex-wrap gap-1.5">
+          {team.members.map((member) => {
+            const isConfirming = confirming === member.userId;
+            return (
+              <li
+                key={member.userId}
+                className={cn(
+                  'group flex items-center gap-1.5 rounded-full border py-0.5 pr-1 pl-1',
+                  isConfirming ? 'border-danger/40 bg-danger/10' : 'border-line bg-surface-sunken',
+                )}
+              >
+                <Avatar userId={member.userId} label={member.email} size="xs" />
+                <span className="text-xs text-ink">{member.email}</span>
+
+                {isConfirming ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        onRemove(member.userId as UserId);
+                        setConfirming(null);
+                      }}
+                      className="rounded-full px-1.5 text-[11px] font-medium text-danger hover:underline"
+                    >
+                      Remove
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConfirming(null);
+                      }}
+                      className="rounded-full px-1 text-[11px] text-ink-muted hover:underline"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  /* Two clicks, not a window.confirm: removing someone from a
+                     team is an authorization change that takes effect
+                     immediately, and a single stray click on a chip is too cheap
+                     for that. The confirm is inline so it cannot be dismissed by
+                     clicking the wrong thing. */
+                  <button
+                    type="button"
+                    aria-label={`Remove ${member.email} from ${team.name}`}
+                    onClick={() => {
+                      setConfirming(member.userId);
+                    }}
+                    className={cn(
+                      'flex size-4 items-center justify-center rounded-full text-ink-faint',
+                      'hover:bg-danger/15 hover:text-danger',
+                      'focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100',
+                    )}
+                  >
+                    <span aria-hidden="true">&times;</span>
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </li>
   );
 }
 

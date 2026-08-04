@@ -168,7 +168,17 @@ export const keys = {
 
   org: (orgId: string) => ['org', orgId] as const,
 
+  /**
+   * Every projects query for an org, archived or not.
+   *
+   * The PREFIX, so invalidating it covers both variants below — a project
+   * created while the archived view is open must invalidate the live list too,
+   * and a key per variant with no shared prefix would leave one of them stale.
+   */
   projects: (orgId: string) => ['org', orgId, 'projects'] as const,
+  /** One projects query. `includeArchived` changes the response, so it is in the key. */
+  projectList: (orgId: string, includeArchived: boolean) =>
+    ['org', orgId, 'projects', includeArchived ? 'all' : 'live'] as const,
   boards: (orgId: string, projectId: string) =>
     ['org', orgId, 'projects', projectId, 'boards'] as const,
 

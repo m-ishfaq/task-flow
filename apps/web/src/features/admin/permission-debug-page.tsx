@@ -142,11 +142,20 @@ export function PermissionDebugPage() {
           </select>
         </Field>
 
-        <Field label="Resource id" htmlFor="debug-resource-id">
+        <Field
+          label="Resource id"
+          htmlFor="debug-resource-id"
+          hint={
+            resourceType === ''
+              ? 'Pick a resource type first — an id with no type names nothing.'
+              : `The ${resourceType} to ask about.`
+          }
+        >
           <Input
             id="debug-resource-id"
             placeholder="UUID"
             value={resourceId}
+            disabled={resourceType === ''}
             className="font-mono text-xs"
             onChange={(event) => {
               setResourceId(event.target.value);
@@ -161,6 +170,16 @@ export function PermissionDebugPage() {
         </div>
       </form>
 
+      {submitted === null && (
+        <div className="rounded-lg border border-dashed border-line px-3 py-6 text-center">
+          <p className="text-sm text-ink-muted">Pick a member and a permission, then Explain.</p>
+          <p className="mt-1 text-xs text-ink-faint">
+            Every layer the engine consulted is listed in order, including the ones that did not
+            decide anything.
+          </p>
+        </div>
+      )}
+
       {explanation.isFetching && <Spinner />}
 
       {explanation.isError && (
@@ -168,70 +187,115 @@ export function PermissionDebugPage() {
       )}
 
       {explanation.isSuccess && (
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div
             className={cn(
-              'rounded border px-3 py-2',
+              'flex items-start gap-3 rounded-lg border px-3 py-2.5',
               explanation.data.allowed
                 ? 'border-success/40 bg-success/10'
                 : 'border-danger/40 bg-danger/10',
             )}
           >
-            <p className="text-sm font-medium text-ink">
-              {explanation.data.allowed ? 'Allowed' : 'Denied'} — role{' '}
-              <span className="font-mono">{explanation.data.role}</span>
-            </p>
-            <p className="text-xs text-ink-muted">{explanation.data.reason}</p>
+            <span
+              aria-hidden="true"
+              className={cn(
+                'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-sm font-bold',
+                explanation.data.allowed
+                  ? 'bg-success/20 text-success'
+                  : 'bg-danger/20 text-danger',
+              )}
+            >
+              {explanation.data.allowed ? '✓' : '✗'}
+            </span>
+
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-ink">
+                {explanation.data.allowed ? 'Allowed' : 'Denied'}
+                <span className="ml-2 font-normal text-ink-muted">
+                  as <span className="font-mono text-xs">{explanation.data.role}</span>
+                </span>
+              </p>
+              <p className="mt-0.5 text-xs text-ink-muted">{explanation.data.reason}</p>
+            </div>
           </div>
 
           <div>
-            <h2 className="mb-1 text-xs font-semibold tracking-wide text-ink-muted uppercase">
+            <h2 className="mb-2 text-xs font-semibold tracking-wide text-ink-muted uppercase">
               Decision trace
             </h2>
-            <ol className="space-y-1">
+
+            {/* A stepper rather than a table. The layers run in a fixed order and
+                each one either decides or passes the question on, so the reason
+                an answer came out the way it did is a PATH — and a grid of rows
+                renders that as four unrelated facts. */}
+            <ol className="space-y-0">
               {explanation.data.trace.map((step, index) => (
                 <li
                   key={`${String(step.layer)}-${step.rule}-${String(index)}`}
-                  className="grid grid-cols-[7rem_5rem_1fr] items-baseline gap-2 rounded border border-line px-2 py-1 text-xs"
+                  className="grid grid-cols-[1.5rem_1fr] gap-x-3"
                 >
-                  <span className="text-ink-faint">
-                    {LAYER_NAMES[step.layer] ?? `Layer ${String(step.layer)}`}
-                  </span>
-                  <span
-                    className={cn(
-                      'font-medium',
-                      step.outcome === 'allow'
-                        ? 'text-success'
-                        : step.outcome === 'deny'
-                          ? 'text-danger'
-                          : 'text-ink-muted',
+                  <div className="flex flex-col items-center">
+                    <span
+                      className={cn(
+                        'flex size-6 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold',
+                        step.outcome === 'allow'
+                          ? 'border-success/40 bg-success/15 text-success'
+                          : step.outcome === 'deny'
+                            ? 'border-danger/40 bg-danger/15 text-danger'
+                            : 'border-line bg-surface-sunken text-ink-faint',
+                      )}
+                    >
+                      {step.layer}
+                    </span>
+                    {/* The connector, omitted on the last step so the line does
+                        not dangle past the end of the path. */}
+                    {index < explanation.data.trace.length - 1 && (
+                      <span aria-hidden="true" className="w-px flex-1 bg-line" />
                     )}
-                  >
-                    {step.outcome}
-                  </span>
-                  <span className="text-ink">
-                    {step.rule}
+                  </div>
+
+                  <div className="min-w-0 pb-3">
+                    <p className="flex flex-wrap items-baseline gap-x-2">
+                      <span className="text-sm text-ink">{step.rule}</span>
+                      <span className="text-[11px] text-ink-faint">
+                        {LAYER_NAMES[step.layer] ?? `Layer ${String(step.layer)}`}
+                      </span>
+                      <span
+                        className={cn(
+                          'rounded px-1.5 py-0.5 text-[10px] font-medium',
+                          step.outcome === 'allow'
+                            ? 'bg-success/15 text-success'
+                            : step.outcome === 'deny'
+                              ? 'bg-danger/15 text-danger'
+                              : 'bg-surface-hover text-ink-muted',
+                        )}
+                      >
+                        {step.outcome}
+                      </span>
+                    </p>
                     {step.detail !== undefined && (
-                      <span className="text-ink-faint"> — {step.detail}</span>
+                      <p className="mt-0.5 text-xs text-ink-muted">{step.detail}</p>
                     )}
-                  </span>
+                  </div>
                 </li>
               ))}
             </ol>
           </div>
 
-          <div>
-            <h2 className="mb-1 text-xs font-semibold tracking-wide text-ink-muted uppercase">
+          {/* Collapsed: it is the same information again, and it is here so the
+              page can be pasted into an issue verbatim rather than to be read. */}
+          <details className="rounded-lg border border-line">
+            <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-ink-muted hover:text-ink">
               As the server formats it
-            </h2>
+            </summary>
             {/* `formatted` is a plain string produced by `formatTrace()` on the
                 server. Rendered as text in a <pre>, never as markup — there is
                 no HTML anywhere in this app, and `dangerouslySetInnerHTML` is a
                 lint error workspace-wide. */}
-            <pre className="overflow-x-auto rounded border border-line bg-surface-sunken p-2 font-mono text-[11px] text-ink-muted">
+            <pre className="overflow-x-auto border-t border-line bg-surface-sunken p-3 font-mono text-[11px] text-ink-muted">
               {explanation.data.formatted}
             </pre>
-          </div>
+          </details>
         </div>
       )}
     </div>
