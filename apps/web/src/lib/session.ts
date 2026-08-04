@@ -79,6 +79,21 @@ interface SessionState {
   /** Epoch millis. Null when there is no token. */
   readonly expiresAt: number | null;
   readonly sessionId: string | null;
+  /**
+   * This browser's own user id, read from the access token's `sub` claim.
+   *
+   * Not part of `SessionResponse` (`session-response.ts` deliberately excludes
+   * it — `sessionId` identifies the token PAIR for revocation, not the person).
+   * So the only place this id exists on the client at all is inside the JWT it
+   * already holds, and `decodeUserId` below reads it with no signature check.
+   * That is safe only because nothing here TRUSTS the value: every mutation is
+   * still authorized by the server from the verified token on every request.
+   * This copy exists purely so the UI can answer "is this mine?" — e.g. a
+   * comment's edit control (`comment-section.tsx`), which is author-only with
+   * no permission override, so there is no case where showing it to someone
+   * else could ever succeed.
+   */
+  readonly userId: string | null;
   readonly orgId: OrgId | null;
   /**
    * The address this session signed in with, when it is known.
@@ -129,11 +144,39 @@ function storeOrg(orgId: OrgId | null): void {
   }
 }
 
+/**
+ * Reads the `sub` claim out of a JWT access token, unverified.
+ *
+ * Verification is deliberately not done here — that would need the signing
+ * key, which this app never holds, and would be pointless anyway: the SERVER
+ * verifies the same token on every request this id could ever influence.
+ * Returns null for anything that does not parse rather than throwing, since a
+ * malformed token should fail the request that uses it for real, not a
+ * cosmetic id lookup.
+ */
+function decodeUserId(accessToken: string): string | null {
+  try {
+    const segment = accessToken.split('.')[1];
+    if (segment === undefined) return null;
+
+    const base64 = segment.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+    const claims: unknown = JSON.parse(atob(padded));
+
+    if (typeof claims !== 'object' || claims === null) return null;
+    const sub = (claims as Record<string, unknown>)['sub'];
+    return typeof sub === 'string' ? sub : null;
+  } catch {
+    return null;
+  }
+}
+
 export const useSession = create<SessionState & SessionActions>((set) => ({
   status: 'restoring',
   accessToken: null,
   expiresAt: null,
   sessionId: null,
+  userId: null,
   orgId: storedOrg(),
   email: null,
 
@@ -143,6 +186,7 @@ export const useSession = create<SessionState & SessionActions>((set) => ({
       accessToken: body.accessToken,
       expiresAt: Date.now() + body.expiresInSeconds * 1000,
       sessionId: body.sessionId,
+      userId: decodeUserId(body.accessToken),
       // Only set when the caller knows it. A refresh does not, and must not
       // erase what a sign-in recorded.
       ...(email === undefined ? {} : { email }),
@@ -169,6 +213,7 @@ export const useSession = create<SessionState & SessionActions>((set) => ({
       accessToken: null,
       expiresAt: null,
       sessionId: null,
+      userId: null,
       orgId: null,
       email: null,
     });

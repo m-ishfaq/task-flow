@@ -24,10 +24,17 @@ import { EMPTY_DOCUMENT, isEmptyDocument, type DocumentNode } from './rich-text.
  *   EDIT is author-only with NO permission override. Not "owners can also edit"
  *   — nobody can. A discussion where an administrator can put words in your
  *   mouth is not a record of anything, which is the entire reason the audit log
- *   is worth keeping.
+ *   is worth keeping. Because there is no override, showing the control to
+ *   anyone else has no legitimate outcome — it can only end in a FORBIDDEN
+ *   toast — so it is hidden for every comment that is not the viewer's own.
+ *   That is an IDENTITY check (`comment.authorId === viewerId`), the same one
+ *   `updateComment` makes inline rather than through `can()`, not a role
+ *   decision this component would be re-deriving (CLAUDE.md, §8.2).
  *
  *   DELETE is author-or-moderator, and the event records which. Moderation is a
- *   real need; rewriting is not.
+ *   real need, so unlike Edit there IS a legitimate way for someone else's
+ *   Delete to succeed — the control stays visible to everyone and the server
+ *   decides, same as every other permission-gated control in this app.
  *
  * Commenting is `comment:create`, never `card:update`. That separation is why
  * the `commenter` relation exists at all (§8.2): someone can be given a voice on
@@ -95,7 +102,7 @@ export function CommentSection({ orgId, boardId, cardId }: CommentSectionProps) 
   const optimistic = useOptimistic();
   const toast = useToast();
   const comments = useQuery(commentsQuery(orgId, cardId));
-  const viewerId = useSession((state) => state.sessionId);
+  const viewerId = useSession((state) => state.userId);
   const [draft, setDraft] = useState<DocumentNode>(EMPTY_DOCUMENT);
   const [editing, setEditing] = useState<string | null>(null);
 
@@ -107,10 +114,10 @@ export function CommentSection({ orgId, boardId, cardId }: CommentSectionProps) 
         {
           commentId: nextPendingId(current),
           cardId,
-          /* Null, and rendered as "Posting…" rather than as the author's name.
-             The session store holds a session id, not a user id, so this client
-             genuinely does not know who it is — and "Unknown author" against
-             your own sentence reads as data loss. */
+          /* Null. The row below renders "Posting…" for anything pending
+             (isPending), never the author line, so this value is never shown
+             — filling in `viewerId` here would be display work with nothing
+             to display it to. */
           authorId: null,
           body,
           bodyText: '',
@@ -231,21 +238,24 @@ export function CommentSection({ orgId, boardId, cardId }: CommentSectionProps) 
               <>
                 <RichTextView value={comment.body} />
                 <div className="flex gap-1">
-                  {/* Both controls are shown to everyone; the server decides.
-                      The client does not know who the author is — the API
-                      returns an `authorId`, not "was this you" — and guessing
-                      from a session id would be a second authorization model
-                      that drifts from the one that is enforced. */}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-5 px-1 text-[11px]"
-                    onClick={() => {
-                      setEditing(comment.commentId);
-                    }}
-                  >
-                    Edit
-                  </Button>
+                  {/* Edit is hidden for anyone but the author — there is no
+                      override, ever (updateComment), so showing it to someone
+                      else could only ever end in a FORBIDDEN toast. Delete
+                      stays visible to everyone: a moderator without
+                      `comment:delete` gets a real denial from the server, the
+                      same as every other permission-gated control here. */}
+                  {comment.authorId !== null && comment.authorId === viewerId && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-5 px-1 text-[11px]"
+                      onClick={() => {
+                        setEditing(comment.commentId);
+                      }}
+                    >
+                      Edit
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="ghost"
