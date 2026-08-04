@@ -214,6 +214,10 @@ const DEMO: Profile = {
           key: 'OPS',
           labels: 6,
           customFields: 'standard',
+          /* The archived project (see `ProjectPlan.archived`) — populated rather
+             than empty, so the "show archived" affordance reveals a project with
+             real content rather than a folder that was never used. */
+          archived: true,
           boards: [
             { name: 'Runbook Tasks', lists: 4, cards: 110 },
             { name: 'Vendor Reviews', lists: 4, cards: 40 },
@@ -346,7 +350,7 @@ const LARGE: Profile = {
       teams: ['Alpha', 'Beta'],
       members: Array.from({ length: 60 }, (_, i) => ({
         user: i,
-        role: (i === 0 ? 'owner' : i < 4 ? 'admin' : 'member') as Role,
+        role: i === 0 ? 'owner' : i < 4 ? 'admin' : 'member',
       })),
       projects: [
         {

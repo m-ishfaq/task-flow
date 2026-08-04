@@ -1,5 +1,6 @@
 import type { DomainEvent } from '@taskflow/events';
 import type { AdminConnection } from '@taskflow/db/testing';
+import type { StorageProvider } from '@taskflow/contracts';
 import type { SeedModule } from './registry.js';
 import type { Profile } from './profiles.js';
 import type { Rng } from './rng.js';
@@ -31,6 +32,22 @@ export interface SeedContext {
    * write them.
    */
   readonly now: Date;
+  /**
+   * `--chaos` (off by default). Lets a module deliberately create the
+   * pathological states normal generation never produces on its own — two
+   * cards with equal ranks in one list, so the `InvalidRankError` -> rebalance
+   * -> `list.rebalanced` path (CLAUDE.md) can be exercised on demand instead of
+   * waiting for a real collision.
+   */
+  readonly chaos: boolean;
+  /**
+   * Object storage, or null when attachments cannot be seeded for real —
+   * `STORAGE_*` unset, or the profile does not ask for them. `platform.attachments`
+   * treats null as "skip", never as "fake it": CLAUDE.md is explicit that an
+   * attachment row with no object behind it is a lie, not a smaller version of
+   * the feature.
+   */
+  readonly storage: StorageProvider | null;
   log(message: string): void;
   /**
    * The output of a module this one declared in `requires`.
@@ -178,13 +195,19 @@ export interface CreateContextOptions {
   readonly rng: Rng;
   readonly profile: Profile;
   readonly now: Date;
+  readonly chaos: boolean;
+  readonly storage: StorageProvider | null;
   readonly log: (message: string) => void;
 }
 
 /** The context plus the internals the runner needs to drive it. */
 export interface SeedContextHandle {
   readonly ctx: SeedContext;
-  record(module: SeedModule, output: unknown): void;
+  /** An arrow-typed property, not method shorthand — `cli.ts` destructures
+   * this alongside `ctx`, and method shorthand on an interface leaves
+   * `@typescript-eslint/unbound-method` unable to tell the implementation
+   * never reads `this` (which it does not; see below). */
+  readonly record: (module: SeedModule, output: unknown) => void;
 }
 
 export function createSeedContext(options: CreateContextOptions): SeedContextHandle {
@@ -199,6 +222,8 @@ export function createSeedContext(options: CreateContextOptions): SeedContextHan
     rng: options.rng,
     profile: options.profile,
     now: options.now,
+    chaos: options.chaos,
+    storage: options.storage,
     log: options.log,
 
     use: <Out,>(module: SeedModule<Out>): Out => {

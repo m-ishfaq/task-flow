@@ -18,6 +18,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "verify": "turbo run lint typecheck test",
+    "seed": "pnpm --filter @taskflow/seed seed",
     "verify:guardrails": "node packages/guardrail-selftest/verify.js && node scripts/verify-semgrep-rules.mjs",
     "check:encoding": "node scripts/check-encoding.mjs",
     "check:encoding:fix": "node scripts/check-encoding.mjs --fix",

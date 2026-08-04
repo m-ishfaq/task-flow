@@ -1,6 +1,6 @@
 import { createEvent } from '@taskflow/events';
 import { memberAdded, orgCreated, teamCreated, teamMemberAdded } from '@taskflow/api/events/tenancy';
-import type { Role } from '@taskflow/policy';
+import { isIndispensableRole, type Role } from '@taskflow/policy';
 import { defineSeedModule } from '../registry.js';
 import { daysBefore, envelopeFor, slugify } from '../support.js';
 import { usersModule, type SeededUser } from './identity.users.js';
@@ -87,7 +87,7 @@ export const orgsModule = defineSeedModule({
         return { membershipId: rng.uuid(ctx.now), user, role: entry.role };
       });
 
-      const owner = memberships.find((membership) => membership.role === 'owner')?.user;
+      const owner = memberships.find((membership) => isIndispensableRole(membership.role))?.user;
       if (!owner) {
         throw new Error(`Org "${plan.slug}" has no owner. Every org needs exactly one.`);
       }
@@ -128,7 +128,7 @@ export const orgsModule = defineSeedModule({
               'active',
               // Null for the founding owner, who was invited by nobody. A real
               // value rather than a missing one — see the column comment.
-              membership.role === 'owner' ? null : owner.id,
+              isIndispensableRole(membership.role) ? null : owner.id,
               joined,
               joined,
               joined,
@@ -176,7 +176,7 @@ export const orgsModule = defineSeedModule({
               userId: membership.user.id,
               email: membership.user.email,
               role: membership.role,
-              invitedBy: membership.role === 'owner' ? null : owner.id,
+              invitedBy: isIndispensableRole(membership.role) ? null : owner.id,
             },
             envelope,
           ),
