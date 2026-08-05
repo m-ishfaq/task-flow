@@ -211,6 +211,12 @@ export const keys = {
 
   members: (orgId: string) => ['org', orgId, 'members'] as const,
   explain: (orgId: string, input: string) => ['org', orgId, 'authz', 'explain', input] as const,
+
+  /** Every channel the caller may see (Phase 5, chat/api.ts) — public, private, and DMs alike. */
+  channels: (orgId: string) => ['org', orgId, 'channels'] as const,
+  channel: (orgId: string, channelId: string) => ['org', orgId, 'channel', channelId] as const,
+  messages: (orgId: string, channelId: string) =>
+    ['org', orgId, 'channel', channelId, 'messages'] as const,
 } as const;
 
 /** The org id every key needs, or a placeholder that matches nothing. */

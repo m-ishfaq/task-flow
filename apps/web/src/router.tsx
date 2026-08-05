@@ -6,7 +6,7 @@ import {
 } from '@tanstack/react-router';
 import type { QueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
-import { BoardIdSchema, CardIdSchema, ProjectIdSchema } from '@taskflow/contracts';
+import { BoardIdSchema, CardIdSchema, ChannelIdSchema, ProjectIdSchema } from '@taskflow/contracts';
 import { FilterTree } from '@taskflow/filter';
 import { useSession } from './lib/session.js';
 import { Shell } from './components/shell.js';
@@ -19,6 +19,7 @@ import { OrgPickerPage } from './features/org/org-picker-page.js';
 import { ProjectsPage } from './features/work/projects-page.js';
 import { HomePage } from './features/work/home-page.js';
 import { BoardPage } from './features/work/board-page.js';
+import { ChatPage } from './features/chat/chat-page.js';
 import { PermissionDebugPage } from './features/admin/permission-debug-page.js';
 import { SettingsPage } from './features/admin/settings-page.js';
 import { AuditPage } from './features/admin/audit-page.js';
@@ -213,6 +214,24 @@ const boardRoute = createRoute({
   component: BoardPage,
 });
 
+/**
+ * Channels and direct messages (Phase 5, ai/phase-5-chat.md §5 Wave 1).
+ *
+ * `channel` is a search param rather than a nested route, for the same reason
+ * `boardRoute`'s `card` is: it must be deep-linkable and back-button correct
+ * while the channel list stays mounted, and a child route would unmount it on
+ * every switch.
+ */
+const chatRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/chat',
+  validateSearch: z.object({
+    channel: ChannelIdSchema.optional().catch(undefined),
+  }),
+  beforeLoad: () => requireOrg('/chat'),
+  component: ChatPage,
+});
+
 const permissionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/admin/permissions',
@@ -255,6 +274,7 @@ const routeTree = rootRoute.addChildren([
   projectsRoute,
   projectSettingsRoute,
   boardRoute,
+  chatRoute,
   settingsRoute,
   auditRoute,
   permissionsRoute,

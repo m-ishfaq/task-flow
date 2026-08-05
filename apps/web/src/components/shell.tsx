@@ -5,6 +5,7 @@ import type { OrgId } from '@taskflow/contracts';
 import { signOut, useSession } from '../lib/session.js';
 import { resetCache } from '../lib/query.js';
 import { disconnectSocket } from '../lib/socket.js';
+import { disconnectChatSocket } from '../lib/chat-socket.js';
 import { useUi } from '../lib/ui-store.js';
 import { orgsQuery } from '../features/org/api.js';
 import { cn } from '../lib/cn.js';
@@ -170,19 +171,21 @@ function Breadcrumbs() {
     ? 'Board'
     : pathname.startsWith('/home')
       ? 'My tasks'
-      : pathname.startsWith('/projects/')
-        ? 'Project'
-        : pathname.startsWith('/projects')
-          ? 'Projects'
-          : pathname.startsWith('/settings/audit')
-            ? 'Audit log'
-            : pathname.startsWith('/settings')
-              ? 'Settings'
-              : pathname.startsWith('/admin/permissions')
-                ? 'Permissions'
-                : pathname.startsWith('/orgs')
-                  ? 'Organizations'
-                  : 'TaskFlow';
+      : pathname.startsWith('/chat')
+        ? 'Chat'
+        : pathname.startsWith('/projects/')
+          ? 'Project'
+          : pathname.startsWith('/projects')
+            ? 'Projects'
+            : pathname.startsWith('/settings/audit')
+              ? 'Audit log'
+              : pathname.startsWith('/settings')
+                ? 'Settings'
+                : pathname.startsWith('/admin/permissions')
+                  ? 'Permissions'
+                  : pathname.startsWith('/orgs')
+                    ? 'Organizations'
+                    : 'TaskFlow';
 
   return <h1 className="truncate text-sm font-medium text-ink">{label}</h1>;
 }
@@ -319,6 +322,7 @@ function AccountMenu() {
       // the NEXT person's board would otherwise join rooms over a connection
       // still carrying the previous user's token in its `auth` closure.
       disconnectSocket();
+      disconnectChatSocket();
       await navigate({ to: '/login' });
     })();
   };
