@@ -20,7 +20,18 @@ import { accessToken } from './session.js';
  * `BroadcastMessage` are deliberately separate types (wire.ts's own reasoning):
  * a shared type would let a board listener silently accept a chat broadcast it
  * has no handler for, with the compiler agreeing.
+ *
+ * `TRANSPORT_OPTIONS` is the one exception to "mirrors socket.ts exactly" being
+ * a single shared constant instead of an import — see `socket.ts`'s own note on
+ * why the transport order is `['websocket', 'polling']` rather than the
+ * library default. Duplicated rather than imported for the same reason the
+ * rest of this file duplicates `socket.ts`'s shape instead of importing from
+ * it: each namespace's connection module should be readable on its own.
  */
+const TRANSPORT_OPTIONS = {
+  transports: ['websocket', 'polling'] as string[],
+  tryAllTransports: true,
+};
 
 /** Server -> client payloads this module understands. Mirrors apps/realtime's wire.ts. */
 interface ReadyMessage {
@@ -70,6 +81,7 @@ function buildSocket(): ChatSocket {
   const created: ChatSocket = io(`${config.apiBaseUrl}/chat`, {
     path: '/socket.io',
     autoConnect: false,
+    ...TRANSPORT_OPTIONS,
     auth: (callback) => {
       void accessToken().then((token) => {
         callback({ token: token ?? '' });

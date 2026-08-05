@@ -24,7 +24,37 @@ import { accessToken, useSession } from './session.js';
  * `board:join` or `board:leave` — a subscription request, not a write. That is
  * CLAUDE.md rule 8's other half: sockets broadcast, and a client that could
  * write over one would be the second write path §9 warns about.
+ *
+ * ## Why the transport order is `['websocket', 'polling']`, not the library default
+ *
+ * The default (`['polling', 'websocket']`) opens with an HTTP long-polling
+ * handshake and upgrades to a WebSocket once that succeeds. A same-origin
+ * polling request through the Vite dev proxy — the exact setup this file's own
+ * module comment on same-origin development describes — does not carry an
+ * `Origin` header the way a WebSocket upgrade always does (browsers add it to
+ * every WebSocket handshake regardless of same- or cross-origin, but not to a
+ * same-origin XHR). `apps/realtime`'s handshake refuses a connection with no
+ * origin (§3.7's own reasoning for why a missing origin is refused rather than
+ * treated as trusted), so the polling-first default means the FIRST attempt is
+ * refused before a WebSocket is ever tried, and the client is left relying on
+ * the ordinary polled query for anything that arrives while it silently
+ * retries — indistinguishable from "realtime is slow" rather than "realtime
+ * never connected."
+ *
+ * Trying `websocket` first sends the handshake as a real upgrade request,
+ * which does carry `Origin`, so the SAME server-side check that was already
+ * correct now has the header it was always documented to expect. `polling`
+ * stays second and `tryAllTransports` stays on, so a network that blocks
+ * WebSocket outright — not the origin-header gap, an actual blocked transport
+ * — still falls back exactly the way this app did before this change; nothing
+ * about a genuinely restrictive network path was removed, only the ordering
+ * that made the common case go through the transport already known not to
+ * carry the header this server relies on.
  */
+const TRANSPORT_OPTIONS = {
+  transports: ['websocket', 'polling'] as string[],
+  tryAllTransports: true,
+};
 
 /** Server -> client payloads this module understands. Mirrors apps/realtime's wire.ts. */
 interface ReadyMessage {
@@ -135,6 +165,7 @@ function buildSocket(): GatewaySocket {
     // Connect only once something actually joins a room — a tab that never
     // opens a board should not hold a socket open for nothing.
     autoConnect: false,
+    ...TRANSPORT_OPTIONS,
     /* A function, not a value: socket.io-client calls this on EVERY connection
        attempt, including reconnects, so a refreshed token is picked up without
        this module having to know when one was minted. `accessToken()` itself
