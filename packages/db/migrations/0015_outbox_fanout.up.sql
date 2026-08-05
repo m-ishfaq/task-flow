@@ -1,4 +1,4 @@
--- 0014 — the outbox fan-out seam (PLAN.md §10.6, Phase 4)
+-- 0015 — the outbox fan-out seam (PLAN.md §10.6, Phase 4)
 --
 -- Migration 0006 built the outbox around one `published_at` flag on the
 -- explicit reasoning "one relay drains one queue". That reasoning was

@@ -246,7 +246,7 @@ describe('outbox — draining side', () => {
   });
 
   /**
-   * The property this whole migration exists for (0014). Before it, a single
+   * The property this whole migration exists for (0015). Before it, a single
    * `published_at` meant whichever consumer marked an event first made it
    * vanish from every consumer's scan — a realtime broadcaster standing up
    * after audit had already drained the backlog would find nothing to send.

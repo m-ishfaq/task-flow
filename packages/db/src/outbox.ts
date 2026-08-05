@@ -17,7 +17,7 @@ import { outbox, outboxDispatch } from './schema/platform.js';
  *   `markDispatched` / a future `withRealtimeScope` for Phase 4's broadcaster)
  *   `recordFailure`    across every org. Each drains its OWN queue — one row
  *                      per (event, consumer) in `outbox_dispatch`, migration
- *                      0014 — not one shared queue, which is what makes it
+ *                      0015 — not one shared queue, which is what makes it
  *                      safe for more than one consumer to exist at all. See
  *                      that migration for why a shared `published_at` broke
  *                      the moment a second consumer was added.

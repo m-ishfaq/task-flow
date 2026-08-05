@@ -28,7 +28,7 @@ const platform = pgSchema('platform');
  * so the event and the change it describes commit or roll back together.
  *
  * `publishedAt`, `attempts` and `lastError` below are RETIRED as of migration
- * 0014 — superseded by `outboxDispatch`, which tracks dispatch per (event,
+ * 0015 — superseded by `outboxDispatch`, which tracks dispatch per (event,
  * consumer) instead of one global flag. They are not yet dropped
  * (expand-migrate-contract, PLAN.md §7.4): nothing in this codebase writes
  * them anymore, but a contract migration removing them is a separate,
@@ -72,7 +72,7 @@ export const outbox = platform.table(
 
 /**
  * Per-(event, consumer) dispatch state — the fan-out seam Phase 4 needs
- * (migration 0014, PLAN.md §10.6).
+ * (migration 0015, PLAN.md §10.6).
  *
  * `outbox`'s original design had ONE reader draining the whole table, so a
  * single `publishedAt` flag was correct: once dispatched, an event was done,

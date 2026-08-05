@@ -22,7 +22,7 @@ import {
  * duplicates nothing.
  *
  * Consumers added later — notifications, realtime, search, automation — do NOT
- * get this property, and as of migration 0014 they no longer SHARE this one's
+ * get this property, and as of migration 0015 they no longer SHARE this one's
  * bookkeeping either: each claims and marks its own rows in `outbox_dispatch`
  * under its own consumer name, so one falling behind or erroring never
  * starves another. They will be dispatched by pg-boss after their own commit
@@ -127,7 +127,7 @@ function resourceOf(row: OutboxRow): Resource {
 }
 
 /**
- * This consumer's name in `outbox_dispatch` (migration 0014). Fixed and
+ * This consumer's name in `outbox_dispatch` (migration 0015). Fixed and
  * never derived from anything the caller supplies — a wrong value here would
  * silently start a NEW, empty backlog under a different name rather than
  * failing, since `outbox_dispatch` has no registry of valid consumer names

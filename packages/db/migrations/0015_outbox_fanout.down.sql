@@ -1,4 +1,4 @@
--- Revert 0014 — the outbox fan-out seam.
+-- Revert 0015 — the outbox fan-out seam.
 
 DROP POLICY IF EXISTS outbox_dispatch_audit_read ON platform.outbox_dispatch;
 DROP POLICY IF EXISTS outbox_dispatch_audit_insert ON platform.outbox_dispatch;
