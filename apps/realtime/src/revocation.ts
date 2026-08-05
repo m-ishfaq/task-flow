@@ -60,9 +60,7 @@ export function revocationOf(row: OutboxRow): RevocationMessage | null {
   switch (row.name) {
     case 'session.revoked': {
       const sessionId = text('sessionId');
-      return sessionId === null
-        ? null
-        : { kind: 'session', sessionId, reason: 'session_revoked' };
+      return sessionId === null ? null : { kind: 'session', sessionId, reason: 'session_revoked' };
     }
 
     case 'session.token_reuse_detected': {
@@ -196,12 +194,7 @@ async function recheck(socket: GatewaySocket, orgId: string, logger: Logger): Pr
   }
 }
 
-function leaveRoom(
-  socket: GatewaySocket,
-  boardId: string,
-  logger: Logger,
-  reason: string,
-): void {
+function leaveRoom(socket: GatewaySocket, boardId: string, logger: Logger, reason: string): void {
   socket.data.rooms.delete(boardId);
   void socket.leave(boardRoom(boardId));
   socket.emit('room:closed', { boardId });

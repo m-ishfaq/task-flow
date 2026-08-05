@@ -19,6 +19,7 @@ DROP POLICY IF EXISTS outbox_dispatch_realtime_read ON platform.outbox_dispatch;
 DROP POLICY IF EXISTS outbox_dispatch_realtime_insert ON platform.outbox_dispatch;
 DROP POLICY IF EXISTS outbox_dispatch_realtime_update ON platform.outbox_dispatch;
 DROP POLICY IF EXISTS outbox_realtime_read ON platform.outbox;
+DROP POLICY IF EXISTS outbox_realtime_mark ON platform.outbox;
 
 REVOKE ALL ON platform.outbox_dispatch FROM taskflow_realtime;
 REVOKE ALL ON platform.outbox FROM taskflow_realtime;

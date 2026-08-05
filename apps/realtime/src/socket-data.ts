@@ -33,11 +33,20 @@ export interface SocketData {
   readonly address: string;
 }
 
-/** The fully-typed socket, so handlers get inference on both event maps. */
+/**
+ * The fully-typed socket, so handlers get inference on both event maps.
+ *
+ * The third parameter is server-side events, and it MUST match `GatewayServer`'s
+ * — every socket `io.on('connection', ...)` hands back is a
+ * `Socket<L, E, InterServerEvents, D>` because that is the `S` the `Server` it
+ * came from was built with. Declaring it as `Record<string, never>` here typechecks
+ * in isolation but not against a real connection handler, which is exactly the
+ * kind of mismatch a type-only module does not catch on its own.
+ */
 export type GatewaySocket = Socket<
   ClientToServerEvents,
   ServerToClientEvents,
-  Record<string, never>,
+  InterServerEvents,
   SocketData
 >;
 

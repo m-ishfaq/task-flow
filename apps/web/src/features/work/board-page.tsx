@@ -8,6 +8,7 @@ import { Skeleton } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { useMembers } from '../org/use-members.js';
 import { cardsQuery, listsQuery, statusesQuery } from './api.js';
+import { useBoardRoom } from './use-board-room.js';
 import { BoardView } from './board-view.js';
 import { TableView } from './table-view.js';
 import { ListView } from './list-view.js';
@@ -70,6 +71,14 @@ export function BoardPage() {
 
   const lists = useQuery(listsQuery(orgId, boardId));
   const cards = useQuery(cardsQuery(orgId, boardId, filter));
+
+  /* Realtime spine, Wave 1 (ai/phase-4-realtime.md §5): joins this board's
+     room and patches `cards` above live on a `card.moved` broadcast from
+     another client. Called unconditionally, before either loading state
+     below can return early — Rules of Hooks — which is also correct for what
+     it does: a board still loading its OWN queries can still join the room
+     that will patch them the moment they land. */
+  useBoardRoom(orgId, boardId);
   const { people: members, peopleOf } = useMembers();
   const people = peopleOf(members.map((member) => member.userId));
   /* Loading is not gated on this — a board grouped by status while the

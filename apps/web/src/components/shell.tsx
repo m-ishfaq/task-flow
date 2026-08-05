@@ -4,6 +4,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import type { OrgId } from '@taskflow/contracts';
 import { signOut, useSession } from '../lib/session.js';
 import { resetCache } from '../lib/query.js';
+import { disconnectSocket } from '../lib/socket.js';
 import { useUi } from '../lib/ui-store.js';
 import { orgsQuery } from '../features/org/api.js';
 import { cn } from '../lib/cn.js';
@@ -313,6 +314,11 @@ function AccountMenu() {
          user's data, and the next person to use this browser must not be handed
          it by a component that renders from cache before its query settles. */
       resetCache(queryClient);
+      // A socket that outlived the session it authenticated with is the same
+      // stale-connection shape resetCache prevents for the query cache — and
+      // the NEXT person's board would otherwise join rooms over a connection
+      // still carrying the previous user's token in its `auth` closure.
+      disconnectSocket();
       await navigate({ to: '/login' });
     })();
   };

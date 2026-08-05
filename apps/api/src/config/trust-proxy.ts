@@ -42,7 +42,7 @@ export const TrustProxy = z
       });
     }
   })
-  .transform((value): boolean | number | string => {
+  .transform((value): false | number | string => {
     const trimmed = value.trim();
     if (trimmed === '' || trimmed === 'false') return false;
     if (/^\d+$/.test(trimmed)) return Number(trimmed);

@@ -47,11 +47,7 @@ export {
   type OutboxRow,
 } from './outbox.js';
 
-export {
-  listenForOutboxAppends,
-  type OutboxListener,
-  type ListenOptions,
-} from './notify.js';
+export { listenForOutboxAppends, type OutboxListener, type ListenOptions } from './notify.js';
 
 export {
   readAuditEntries,

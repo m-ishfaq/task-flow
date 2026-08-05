@@ -87,12 +87,33 @@ export async function listenForOutboxAppends(options: ListenOptions): Promise<Ou
     );
   }
 
+  /* `isStopped()` is a function rather than a bare flag read.
+   *
+   * `stop()` is only reachable by a caller after `await connect()` on line 149
+   * below has already resolved, so on the FIRST call the flag genuinely cannot
+   * flip mid-flight — but `connect()` runs again from `rebuild()`'s retry
+   * timer, well after `stop` has been handed out, and a `stop()` racing that
+   * SECOND call is the exact case the checks below exist for: without them, a
+   * caller that asked to stop while a reconnect was mid-`connect()` would end
+   * up with a live LISTEN and an open client nothing will ever close.
+   *
+   * TypeScript's control-flow narrowing does not model that interleaving.
+   * `await` is treated as a plain continuation, and TS 4.4+'s "aliased
+   * conditions" tracking narrows a `let`, or even a `const` object's property,
+   * to a literal `false` across it — so `no-unnecessary-condition` reports the
+   * SECOND check below as dead code. It would be, if `stop()` could only run
+   * synchronously between the two lines; it cannot, which is the entire reason
+   * this function is async. Routing the read through a function call defeats
+   * that narrowing correctly rather than suppressing the warning: TypeScript
+   * does not assume two calls to an arbitrary function return the same value,
+   * so the type stays the real `boolean` at both call sites. */
   let stopped = false;
+  const isStopped = (): boolean => stopped;
   let client: pg.Client | undefined;
   let retry: NodeJS.Timeout | undefined;
 
   const connect = async (): Promise<void> => {
-    if (stopped) return;
+    if (isStopped()) return;
 
     const next = new Client({
       connectionString: url,
@@ -113,7 +134,7 @@ export async function listenForOutboxAppends(options: ListenOptions): Promise<Ou
     });
 
     await next.connect();
-    if (stopped) {
+    if (isStopped()) {
       await next.end();
       return;
     }
@@ -127,7 +148,7 @@ export async function listenForOutboxAppends(options: ListenOptions): Promise<Ou
   };
 
   const rebuild = async (): Promise<void> => {
-    if (stopped || retry !== undefined) return;
+    if (isStopped() || retry !== undefined) return;
 
     const dying = client;
     client = undefined;

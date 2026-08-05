@@ -45,11 +45,7 @@ export interface SocketIdentity {
   readonly tokenExpiresAt: number;
 }
 
-export type HandshakeRefusal =
-  | 'no_token'
-  | 'invalid_token'
-  | 'forbidden_origin'
-  | 'rate_limited';
+export type HandshakeRefusal = 'no_token' | 'invalid_token' | 'forbidden_origin' | 'rate_limited';
 
 export class HandshakeError extends Error {
   constructor(readonly refusal: HandshakeRefusal) {
@@ -88,7 +84,20 @@ export function clientAddress(request: IncomingMessage, trustProxy: TrustProxyVa
  */
 function compileTrust(value: TrustProxyValue): (address: string, hop: number) => boolean {
   if (value === false) return () => false;
-  if (typeof value === 'number') return proxyaddr.compile(value);
+
+  /* `proxy-addr`'s own `compile()` only understands a string or an array of
+     them — passed a number it throws `TypeError: unsupported trust argument`,
+     which would mean every handshake refused the instant `REALTIME_TRUST_PROXY`
+     was set to a hop count, the single most likely value anyone configures. A
+     numeric trust IS a real case `proxy-addr` supports, just not through
+     `compile`: `proxyaddr(req, trust)` accepts a bare `(address, hop) => boolean`
+     predicate directly, so a hop count becomes one without needing the library's
+     string/CIDR path at all. This is the identical function Fastify's own
+     `getTrustProxyFn` builds for the same input — `apps/api` gets it from
+     `@fastify/proxy-addr` internally; this module has to build it by hand
+     because there is no Fastify here to do it. */
+  if (typeof value === 'number') return (_address, hop) => hop < value;
+
   return proxyaddr.compile(value.split(',').map((entry) => entry.trim()));
 }
 

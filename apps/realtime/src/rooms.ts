@@ -1,6 +1,6 @@
 import { withOrgScope } from '@taskflow/db';
 import { can, type Decision } from '@taskflow/policy';
-import type { BoardId, OrgId, UserId } from '@taskflow/contracts';
+import { OrgIdSchema, type BoardId, type OrgId, type UserId } from '@taskflow/contracts';
 import { resolveOrgMembership } from '@taskflow/api/tenancy/resolve';
 import { loadBoard } from '@taskflow/api/work/board';
 
@@ -97,8 +97,13 @@ export async function authorizeJoin(
     {
       /* The org from the BOARD ROW, not from the request — `Target.orgId` is
          documented as exactly that, and it is what makes layer 2a's cross-tenant
-         check meaningful rather than a comparison of a value with itself. */
-      orgId: board.orgId,
+         check meaningful rather than a comparison of a value with itself.
+         `BoardRow.orgId` is a plain `string` (it comes straight off the
+         Drizzle row, not through a contracts parser), so it is branded here,
+         at the point it crosses into a `can()` call that requires it —
+         guardrail 1 is that a branded id is constructed only by a parser at a
+         trust boundary, and this row is that boundary for this module. */
+      orgId: OrgIdSchema.parse(board.orgId),
       resource: { type: 'board', id: boardId },
       /* The project ancestor, so a grant on the project reaches its boards —
          identical to what `listLists` passes on the HTTP side. Omitting it would

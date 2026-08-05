@@ -383,8 +383,8 @@ place for the number to live. See §7.6.
 
 Confirmed as §3.3 proposed, with the split written out so a test can assert it:
 
-| Event                          | Response                                                |
-| ------------------------------ | ------------------------------------------------------- |
+| Event                          | Response                                                 |
+| ------------------------------ | -------------------------------------------------------- |
 | `grant.revoked`                | re-run `can()`; force-leave only the rooms that now fail |
 | `member.role_changed`          | re-run `can()`; force-leave only the rooms that now fail |
 | `member.removed`               | leave every room belonging to that org                   |
@@ -436,11 +436,11 @@ Not the login middleware's. Legitimate traffic here has a shape the login limite
 for: one connection per tab, then a handful of joins, then hours of silence. Wave 1's starting
 numbers:
 
-| Control                 | Limit                          | What it is actually stopping                                 |
-| ----------------------- | ------------------------------ | ------------------------------------------------------------ |
-| New connections / IP    | 30 per minute                  | connection floods; reconnect storms from one bad client       |
-| Room joins / socket     | 60 per minute                  | the §3.7 enumeration loop, which needs volume to pay          |
-| Refused joins / socket  | 10 per minute, then disconnect | the same loop, caught faster because refusals are the signal  |
+| Control                | Limit                          | What it is actually stopping                                 |
+| ---------------------- | ------------------------------ | ------------------------------------------------------------ |
+| New connections / IP   | 30 per minute                  | connection floods; reconnect storms from one bad client      |
+| Room joins / socket    | 60 per minute                  | the §3.7 enumeration loop, which needs volume to pay         |
+| Refused joins / socket | 10 per minute, then disconnect | the same loop, caught faster because refusals are the signal |
 
 The third row carries the weight. A legitimate client's joins essentially never fail — it only asks
 for boards the user just navigated to — so a run of refusals is not a user having a bad day, it is

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BoardIdSchema, OrgIdSchema } from '@taskflow/contracts';
+import { BoardIdSchema, OrgIdSchema, type BoardId, type OrgId } from '@taskflow/contracts';
 
 /**
  * The socket wire contract (ai/phase-4-realtime.md §3.6, §3.7, §6.3).
@@ -57,13 +57,37 @@ import { BoardIdSchema, OrgIdSchema } from '@taskflow/contracts';
  * a far better outcome than the field being dropped silently and someone later
  * "fixing" the handler to read it.
  */
-export const JoinRequestSchema = z
-  .object({ orgId: OrgIdSchema, boardId: BoardIdSchema })
-  .strict();
-export type JoinRequest = z.infer<typeof JoinRequestSchema>;
+export interface JoinRequest {
+  readonly orgId: OrgId;
+  readonly boardId: BoardId;
+}
 
-export const LeaveRequestSchema = z.object({ boardId: BoardIdSchema }).strict();
-export type LeaveRequest = z.infer<typeof LeaveRequestSchema>;
+/**
+ * Annotated with its own output type rather than left to infer.
+ *
+ * A branded id's tag (`ids.ts`'s `declare const brand: unique symbol`) is
+ * intentionally unexported — naming a type is not the same as being able to
+ * mint one. `tsc`'s declaration emit (`base.json`'s `declaration: true`) has to
+ * print SOME type for this exported binding, though, and Zod's own inferred
+ * type for a schema this shape is a large structural expansion that goes
+ * looking for a name for that symbol and fails with TS4023. The explicit
+ * `z.ZodType<JoinRequest>` gives it an already-nameable type to check against
+ * instead of one to derive, the same fix `packages/filter/src/ast.ts` and
+ * `work/richtext.ts` use for their own recursive schemas.
+ */
+export const JoinRequestSchema: z.ZodType<
+  JoinRequest,
+  z.ZodTypeDef,
+  { orgId: string; boardId: string }
+> = z.object({ orgId: OrgIdSchema, boardId: BoardIdSchema }).strict();
+
+export interface LeaveRequest {
+  readonly boardId: BoardId;
+}
+
+export const LeaveRequestSchema: z.ZodType<LeaveRequest, z.ZodTypeDef, { boardId: string }> = z
+  .object({ boardId: BoardIdSchema })
+  .strict();
 
 /**
  * Why a join was refused.

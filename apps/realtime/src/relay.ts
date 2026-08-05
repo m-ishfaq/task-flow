@@ -155,26 +155,41 @@ export function startRealtimeRelay(options: StartRelayOptions): RelayHandle {
     }
   };
 
-  const timer = setInterval(() => void tick(), options.pollIntervalMs);
+  const timer = setInterval(() => {
+    void tick();
+  }, options.pollIntervalMs);
   timer.unref();
 
   /* The listener is best-effort. A gateway that could not establish it still
      works — at the poll interval — so failing to start is a warning rather than
      a boot failure. Saying so out loud matters: the symptom of a silently absent
      listener is "realtime feels slow", which is the hardest kind of report to
-     act on. */
-  void listenForOutboxAppends({
-    onAppend: () => void tick(),
-    onError: (error) =>
+     act on.
+     The chain is awaited by `stop()` below rather than fired-and-forgotten:
+     `connect()`/`LISTEN` take a real round trip, so a caller invoking
+     `stop()` shortly after `startRealtimeRelay()` would otherwise find
+     `listener` still `undefined` — `await listener?.stop()` a no-op — and
+     return with the underlying `pg.Client` still connected and still
+     listening for a beat after `stop()` resolved. That window is exactly
+     enough for a stray notification to reach a relay a caller believes is
+     already stopped. */
+  const listenSetup: Promise<void> = listenForOutboxAppends({
+    onAppend: () => {
+      void tick();
+    },
+    onError: (error) => {
       options.logger.warn(
         { err: error },
         'outbox LISTEN connection failed; falling back to the poll interval until it recovers',
-      ),
+      );
+    },
   })
-    .then((handle) => {
-      if (stopped) return handle.stop();
+    .then(async (handle) => {
+      if (stopped) {
+        await handle.stop();
+        return;
+      }
       listener = handle;
-      return undefined;
     })
     .catch((error: unknown) => {
       options.logger.warn(
@@ -187,6 +202,11 @@ export function startRealtimeRelay(options: StartRelayOptions): RelayHandle {
     drainNow: drainFully,
     stop: async () => {
       stopped = true;
+      /* Ensures the branch above has resolved — either the listener was
+         never assigned (and this awaits its own self-stop), or it was
+         assigned and the explicit stop just below tears it down. Either
+         way, `stop()` resolving means no live LISTEN connection remains. */
+      await listenSetup;
       clearInterval(timer);
       await listener?.stop();
     },

@@ -21,19 +21,42 @@
 -- where revoking one consumer's access means editing a predicate that another
 -- consumer depends on.
 --
--- Note what is NOT granted, and the difference from taskflow_audit: no UPDATE
--- on platform.outbox. The audit role holds it only because of the deprecated
--- published_at column (0015's closing note); the realtime consumer never had a
--- reason for it, and starting without it means the later contract migration has
--- one fewer grant to remember to drop.
+-- Both a GRANT and a POLICY for UPDATE here, and neither alone is enough —
+-- confirmed against a real database, the hard way. Not for writing a column:
+-- nothing this role does touches outbox.published_at or any other field on
+-- this table, and its own bookkeeping lives entirely in outbox_dispatch below.
+-- It is required because claimPending's claim is
+-- `SELECT ... FOR UPDATE OF o SKIP LOCKED`, and Postgres's row-level security
+-- for a LOCKING select is not decided by the SELECT policy alone: a row must
+-- ALSO pass a policy that applies to UPDATE (or ALL), or it is silently
+-- excluded from the lock — not an error, just absent, indistinguishable from
+-- an empty queue. `outbox_tenant_isolation` below is exactly such a policy,
+-- but it is scoped to the CALLER'S org (`current_setting('app.org_id')`),
+-- which this role always runs with cleared (`withRealtimeScope` sets it to
+-- ''), so it evaluates false for every row and this role needs its own
+-- UPDATE-permitting policy the same way outbox_relay_mark (0006) already
+-- gives taskflow_audit one. Two ways this looked fixed and was not, both
+-- caught only by seeding a real row and running the exact claim query:
+--   1. GRANT SELECT alone: fails at the privilege check itself
+--      ("permission denied for table outbox").
+--   2. GRANT SELECT, UPDATE with no matching policy: the privilege check
+--      passes, `assertRoomTableIsSafe` passes, boot succeeds — and the claim
+--      silently returns zero rows, forever, which is indistinguishable from
+--      an idle queue with no other signal anywhere.
 -- --------------------------------------------------------------------------
 GRANT USAGE ON SCHEMA platform TO taskflow_realtime;
-GRANT SELECT ON platform.outbox TO taskflow_realtime;
+GRANT SELECT, UPDATE ON platform.outbox TO taskflow_realtime;
 
 DROP POLICY IF EXISTS outbox_realtime_read ON platform.outbox;
 CREATE POLICY outbox_realtime_read ON platform.outbox
   FOR SELECT TO taskflow_realtime
   USING (true);
+
+DROP POLICY IF EXISTS outbox_realtime_mark ON platform.outbox;
+CREATE POLICY outbox_realtime_mark ON platform.outbox
+  FOR UPDATE TO taskflow_realtime
+  USING (true)
+  WITH CHECK (true);
 
 -- --------------------------------------------------------------------------
 -- Its own dispatch bookkeeping, pinned to its own consumer name.

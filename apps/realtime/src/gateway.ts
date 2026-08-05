@@ -91,7 +91,9 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
   /* Address windows are keyed by remote address and would otherwise grow
      without bound — slowly, which is why it would be found in production rather
      than in a test. Per-socket windows are dropped on disconnect instead. */
-  const sweeper = setInterval(() => connectionsPerAddress.sweep(), 60_000);
+  const sweeper = setInterval(() => {
+    connectionsPerAddress.sweep();
+  }, 60_000);
   sweeper.unref();
 
   /* -------------------------------------------------------------------- *
@@ -115,7 +117,7 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
 
         /* THE one assignment of a socket's identity (§3.7). Everything else in
            this file reads `socket.data.identity`; nothing anywhere writes it. */
-        const data = socket.data as GatewaySocket['data'];
+        const data = socket.data;
         data.identity = { userId: identity.userId, sessionId: identity.sessionId };
         Object.assign(data, { rooms: new Map(), address });
 
@@ -235,7 +237,7 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
   /* Applied on every instance, not only the one whose relay claimed the event —
      the relay claims disjoint batches, so the claiming instance is almost never
      the one holding the affected socket. */
-  io.on('revocation' as never, (message: never) => {
+  io.on('revocation', (message) => {
     void applyRevocation(io, message, logger);
   });
 

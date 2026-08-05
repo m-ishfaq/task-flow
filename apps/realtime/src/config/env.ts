@@ -85,11 +85,7 @@ export const EnvSchema = z
      * How long before expiry the client proactively refreshes and reconnects
      * (§7.1). Bounded at both ends below; see the superRefine for the ceiling.
      */
-    REALTIME_REAUTH_LEAD_SECONDS: z.coerce
-      .number()
-      .int()
-      .min(MIN_REAUTH_LEAD_SECONDS)
-      .default(60),
+    REALTIME_REAUTH_LEAD_SECONDS: z.coerce.number().int().min(MIN_REAUTH_LEAD_SECONDS).default(60),
 
     /* The relay's poll interval — the CORRECTNESS floor, not the delivery
        mechanism (§7.3). LISTEN/NOTIFY makes the common case fast; this is what
