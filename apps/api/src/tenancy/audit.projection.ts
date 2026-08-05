@@ -1,7 +1,7 @@
 import {
   claimPending,
   insertAuditEntry,
-  markPublished,
+  markDispatched,
   withAuditScope,
   type OutboxRow,
 } from '@taskflow/db';
@@ -22,11 +22,14 @@ import {
  * duplicates nothing.
  *
  * Consumers added later — notifications, realtime, search, automation — do NOT
- * get this property. They will be dispatched by pg-boss after the relay commits
- * and must be idempotent, which is the normal outbox contract. Audit is treated
- * differently because a duplicated audit entry is not a cosmetic problem: it
- * breaks the hash chain's meaning, since the chain would then attest to
- * something that happened once as though it happened twice.
+ * get this property, and as of migration 0015 they no longer SHARE this one's
+ * bookkeeping either: each claims and marks its own rows in `outbox_dispatch`
+ * under its own consumer name, so one falling behind or erroring never
+ * starves another. They will be dispatched by pg-boss after their own commit
+ * and must be idempotent, which is the normal outbox contract. Audit is
+ * treated differently because a duplicated audit entry is not a cosmetic
+ * problem: it breaks the hash chain's meaning, since the chain would then
+ * attest to something that happened once as though it happened twice.
  *
  * ## Where this will live
  *
@@ -123,6 +126,15 @@ function resourceOf(row: OutboxRow): Resource {
   return { type: mapping.type, id: value };
 }
 
+/**
+ * This consumer's name in `outbox_dispatch` (migration 0015). Fixed and
+ * never derived from anything the caller supplies — a wrong value here would
+ * silently start a NEW, empty backlog under a different name rather than
+ * failing, since `outbox_dispatch` has no registry of valid consumer names
+ * to reject an unrecognized one against.
+ */
+const CONSUMER = 'audit';
+
 export interface DrainResult {
   readonly processed: number;
 }
@@ -135,7 +147,7 @@ export interface DrainResult {
  */
 export async function drainOutbox(limit = 100): Promise<DrainResult> {
   return withAuditScope(async (tx) => {
-    const pending = await claimPending(tx, limit);
+    const pending = await claimPending(tx, CONSUMER, limit);
     if (pending.length === 0) return { processed: 0 };
 
     for (const row of pending) {
@@ -163,8 +175,9 @@ export async function drainOutbox(limit = 100): Promise<DrainResult> {
       });
     }
 
-    await markPublished(
+    await markDispatched(
       tx,
+      CONSUMER,
       pending.map((row) => row.id),
     );
 

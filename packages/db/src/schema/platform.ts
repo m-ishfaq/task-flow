@@ -5,6 +5,7 @@ import {
   integer,
   jsonb,
   pgSchema,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -24,9 +25,15 @@ const platform = pgSchema('platform');
  * reactive (audit, notifications, realtime, search, automation).
  *
  * Rows are written by `appendToOutbox` inside the mutation's own transaction,
- * so the event and the change it describes commit or roll back together. One
- * relay drains the table and fans out downstream, which is why a single
- * `publishedAt` is sufficient rather than a cursor per consumer.
+ * so the event and the change it describes commit or roll back together.
+ *
+ * `publishedAt`, `attempts` and `lastError` below are RETIRED as of migration
+ * 0015 — superseded by `outboxDispatch`, which tracks dispatch per (event,
+ * consumer) instead of one global flag. They are not yet dropped
+ * (expand-migrate-contract, PLAN.md §7.4): nothing in this codebase writes
+ * them anymore, but a contract migration removing them is a separate,
+ * later change so a mid-deploy instance still running old code does not
+ * fail against a missing column.
  */
 export const outbox = platform.table(
   'outbox',
@@ -43,19 +50,68 @@ export const outbox = platform.table(
     requestId: text('request_id'),
     payload: jsonb('payload').notNull(),
 
-    /** Null until the relay has dispatched it. Not a deletion — history stays. */
+    /** @deprecated Superseded by `outboxDispatch`. See the table comment above. */
     publishedAt: timestamp('published_at', { withTimezone: true }),
+    /** @deprecated Superseded by `outboxDispatch.attempts`. */
     attempts: integer('attempts').notNull().default(0),
+    /** @deprecated Superseded by `outboxDispatch.lastError`. */
     lastError: text('last_error'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    // Partial, so it tracks the backlog rather than the history.
+    // Partial, so it tracks the backlog rather than the history. Retained
+    // even though nothing queries `published_at` anymore — dropping the
+    // index is part of the contract migration that drops the column.
     index('outbox_pending_idx')
       .on(table.occurredAt, table.id)
       .where(sql`published_at IS NULL`),
     index('outbox_org_idx').on(table.orgId, table.occurredAt.desc()),
+  ],
+);
+
+/**
+ * Per-(event, consumer) dispatch state — the fan-out seam Phase 4 needs
+ * (migration 0015, PLAN.md §10.6).
+ *
+ * `outbox`'s original design had ONE reader draining the whole table, so a
+ * single `publishedAt` flag was correct: once dispatched, an event was done,
+ * full stop. That stops being true the moment a second consumer exists —
+ * `published_at` set by audit makes the row invisible to realtime's own scan,
+ * because both would have been reading the exact same flag. This table
+ * replaces "dispatched" (one boolean) with "dispatched to CONSUMER X" (one
+ * row per consumer that has claimed the event), so audit finishing first
+ * no longer erases the event for anyone dispatched after it.
+ *
+ * `dispatchedAt IS NULL` is deliberately an EXISTENCE scan, not a position
+ * cursor. A cursor recording "processed up through position N" would skip
+ * any transaction that commits late with an occurredAt earlier than N — the
+ * exact failure `outbox_pending_idx` above was built to avoid for the single
+ * consumer, and turning it into a per-consumer cursor would reintroduce it
+ * once for every consumer instead of once for the whole table.
+ */
+export const outboxDispatch = platform.table(
+  'outbox_dispatch',
+  {
+    eventId: uuid('event_id')
+      .notNull()
+      .references(() => outbox.id, { onDelete: 'cascade' }),
+    /** A short, stable name — `'audit'`, `'realtime'` — never user input. */
+    consumer: text('consumer').notNull(),
+
+    /** Null until THIS consumer has dispatched the event. */
+    dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+    attempts: integer('attempts').notNull().default(0),
+    lastError: text('last_error'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.eventId, table.consumer] }),
+    // Every consumer's claim query, proportional to ITS OWN backlog rather
+    // than the union of every consumer's — same reasoning as
+    // `outbox_pending_idx`.
+    index('outbox_dispatch_pending_idx')
+      .on(table.consumer, table.eventId)
+      .where(sql`dispatched_at IS NULL`),
   ],
 );
 

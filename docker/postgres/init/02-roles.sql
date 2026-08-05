@@ -35,6 +35,29 @@ CREATE ROLE taskflow_app WITH LOGIN PASSWORD 'app-dev-secret' NOSUPERUSER NOCREA
 CREATE ROLE taskflow_audit WITH LOGIN PASSWORD 'audit-dev-secret' NOSUPERUSER NOCREATEDB
   NOCREATEROLE NOBYPASSRLS;
 
+-- ---------------------------------------------------------------------------
+-- taskflow_realtime — the socket gateway's outbox consumer (Phase 4, §3.5).
+--
+-- A SECOND consumer role rather than reusing taskflow_audit, which is the whole
+-- point of migration 0015's per-consumer dispatch table. Two properties follow
+-- from the separation, and neither survives sharing one role:
+--
+--   - The gateway can never write an audit entry. It holds nothing on
+--     audit.audit_log, so a bug in the broadcaster cannot append to, or fail a
+--     write against, the compliance record.
+--   - The gateway can never mark an event dispatched to AUDIT. Migration 0016's
+--     policies pin it to consumer = 'realtime' with a WITH CHECK, so a mixed-up
+--     consumer name is refused by the database rather than silently erasing an
+--     event from the audit relay's queue.
+--
+-- It reads platform.outbox and writes only its own dispatch bookkeeping. It has
+-- no access to any tenant table: the gateway resolves membership and tuples
+-- over the ORDINARY taskflow_app connection, under RLS, exactly as the API
+-- does — see apps/realtime's env schema for why it holds two URLs.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_realtime WITH LOGIN PASSWORD 'realtime-dev-secret' NOSUPERUSER NOCREATEDB
+  NOCREATEROLE NOBYPASSRLS;
+
 -- Baseline grants live in 03-grants.sql, NOT here.
 --
 -- Roles are cluster-wide; grants are per-database. This file creates the roles

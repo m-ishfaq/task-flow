@@ -38,7 +38,7 @@ import { withAuditScope, withOrgScope, type GlobalDb } from './client.js';
  * which `new Date()` accepts, but the offset form `+00` is not universally
  * parsed — so it is normalized before parsing rather than trusted.
  */
-function instant(value: unknown): Date {
+export function instant(value: unknown): Date {
   if (value instanceof Date) return value;
 
   if (typeof value !== 'string') {

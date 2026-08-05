@@ -92,8 +92,23 @@ beforeEach(async () => {
   // sessions, refresh tokens and one-time links through their foreign keys, so
   // it is one statement either way, and running the fixture with exactly the
   // privileges the application has is the more honest test anyway.
+  //
+  // Scoped to THIS file's own fixture emails, not a whole-table wipe: CI runs
+  // every package's tests against the same shared `taskflow_test` database
+  // (packages/db's own README on this), so an unscoped DELETE here raced a
+  // concurrently-running suite in another package that had inserted its own
+  // `identity.users` row for an unrelated foreign key (`apps/realtime`'s
+  // `relay.test.ts` creates one for `platform.outbox.actor_id`) and deleted it
+  // out from under that suite mid-run — an FK violation that reads as a bug in
+  // the OTHER package's code, not as what it is.
   await withGlobalScope(async (tx) => {
-    await tx.execute(sql`DELETE FROM identity.users`);
+    await tx.execute(sql`
+      DELETE FROM identity.users
+      WHERE email_normalized = ${'alice@example.test'}
+         OR email_normalized = ${'bob@example.test'}
+         OR email_normalized = ${'carol@example.test'}
+         OR email_normalized = ${'nobody@example.test'}
+    `);
   });
 });
 
@@ -639,10 +654,10 @@ describe('credential hygiene', () => {
   });
 
   it('stores an Argon2id hash, not the password', async () => {
-    await registeredUser();
+    const email = await registeredUser();
 
     const rows = await withGlobalScope(async (tx) =>
-      tx.execute(sql`SELECT password_hash FROM identity.users`),
+      tx.execute(sql`SELECT password_hash FROM identity.users WHERE email_normalized = ${email}`),
     );
     const hash = (rows.rows[0] as { password_hash: string }).password_hash;
 

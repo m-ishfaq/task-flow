@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { TrustProxy } from './trust-proxy.js';
 
 /**
  * Validated environment — guardrail 7 (PLAN.md §2.1, §8.7).
@@ -26,45 +27,6 @@ const Base64Key = z.string().refine(
   },
   { message: 'must be 32 bytes of base64-encoded key material' },
 );
-
-/**
- * How far to trust `X-Forwarded-For`.
- *
- * The default is `false`, and that default is the point. Fastify's `trustProxy:
- * true` — which this app previously hardcoded — means the client address is
- * whatever the leftmost entry of a caller-supplied header says it is. Every
- * per-IP rate limit then becomes opt-out (send a fresh `X-Forwarded-For` per
- * request and each one is a new address), and every audit entry records an
- * attacker-chosen origin.
- *
- * Accepted forms:
- *   false           no proxy — `request.ip` is the socket address
- *   <n>             trust exactly n hops, counted from the right
- *   <cidr>,<cidr>   trust these proxy addresses
- *
- * `true` is rejected on purpose: there is no deployment it is correct for that a
- * hop count does not also cover, and the error is cheaper than the silent
- * disabling of a control.
- */
-const TrustProxy = z
-  .string()
-  .default('false')
-  .superRefine((value, ctx) => {
-    if (value.trim() === 'true') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message:
-          'API_TRUST_PROXY=true trusts an X-Forwarded-For header from anyone, which makes every ' +
-          'per-IP rate limit opt-out. Use a hop count (e.g. 1) or a CIDR list instead.',
-      });
-    }
-  })
-  .transform((value): boolean | number | string => {
-    const trimmed = value.trim();
-    if (trimmed === '' || trimmed === 'false') return false;
-    if (/^\d+$/.test(trimmed)) return Number(trimmed);
-    return trimmed;
-  });
 
 export const EnvSchema = z
   .object({
@@ -186,6 +148,11 @@ const KNOWN_VARIABLES = new Set([
   'DATABASE_URL',
   'DATABASE_MIGRATION_URL',
   'DATABASE_AUDIT_URL',
+  /* apps/realtime's own consumer role (Phase 4 §3.5). Listed here — as the
+     comment above this set explains — because a developer's environment
+     legitimately carries variables this app does not read, and the misspelling
+     check would otherwise reject a correct setup. */
+  'DATABASE_REALTIME_URL',
   'DATABASE_POOL_MAX',
   'STORAGE_ENDPOINT',
   'STORAGE_REGION',
@@ -208,6 +175,25 @@ const KNOWN_VARIABLES = new Set([
   'API_HOST',
   'API_TRUST_PROXY',
   'WEB_ORIGIN',
+  /* Read by apps/web's vite.config.ts, never by a server — but they carry the
+     `WEB_` prefix, so `assertNoMisspelledVariables` treats them as ours and
+     REJECTS them unless they are listed here. A developer who set either one in
+     .env to point the dev server at a non-default backend would find both the
+     API and the gateway refusing to boot, with an error naming a variable that
+     is spelled perfectly correctly. */
+  'WEB_API_ORIGIN',
+  'WEB_REALTIME_ORIGIN',
+  /* apps/realtime (Phase 4). Same reasoning as DATABASE_REALTIME_URL above —
+     this set is every TaskFlow variable across ALL services, not the ones this
+     app reads, so that a typo is caught wherever it is made. */
+  'REALTIME_PORT',
+  'REALTIME_HOST',
+  'REALTIME_TRUST_PROXY',
+  'REALTIME_REAUTH_LEAD_SECONDS',
+  'REALTIME_POLL_INTERVAL_MS',
+  'REALTIME_MAX_CONNECTIONS_PER_IP_PER_MINUTE',
+  'REALTIME_MAX_JOINS_PER_MINUTE',
+  'REALTIME_MAX_REFUSED_JOINS_PER_MINUTE',
 ]);
 
 /**
@@ -225,6 +211,7 @@ const TASKFLOW_PREFIXES = [
   'API_',
   'WEB_',
   'CLAMAV_',
+  'REALTIME_',
 ];
 
 /**

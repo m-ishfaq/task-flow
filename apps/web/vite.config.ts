@@ -32,6 +32,16 @@ import tailwindcss from '@tailwindcss/vite';
 
 const API_ORIGIN = process.env['WEB_API_ORIGIN'] ?? 'http://localhost:3000';
 
+/**
+ * `apps/realtime` (ai/phase-4-realtime.md §7.0) — its own process, its own
+ * port, proxied for the identical reason `/trpc` is: the socket's `auth`
+ * payload carries the access token rather than a cookie, so nothing here is
+ * `SameSite`-fragile the way the refresh cookie is, but the gateway's own
+ * handshake origin check (§3.2) validates `Origin` against `WEB_ORIGIN` —
+ * simplest kept true in development by making that origin the same one too.
+ */
+const REALTIME_ORIGIN = process.env['WEB_REALTIME_ORIGIN'] ?? 'http://localhost:3001';
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
 
@@ -49,6 +59,11 @@ export default defineConfig({
       '/trpc': {
         target: API_ORIGIN,
         changeOrigin: false,
+      },
+      '/socket.io': {
+        target: REALTIME_ORIGIN,
+        changeOrigin: false,
+        ws: true,
       },
     },
   },
