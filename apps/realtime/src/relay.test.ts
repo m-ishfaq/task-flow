@@ -219,7 +219,7 @@ describe('startRealtimeRelay', () => {
       expect(calls).toBe(2);
       expect(delivered).toBe(1);
 
-      const retry = await withRealtimeScope((tx) => claimPending(tx, CONSUMER));
+      const retry = ours(await withRealtimeScope((tx) => claimPending(tx, CONSUMER)));
       expect(retry).toHaveLength(1);
       expect(retry[0]?.name).toBe('card.moved');
       expect(retry[0]?.attempts).toBe(1);
