@@ -29,6 +29,8 @@ export interface UserRow {
   id: string;
   email: string;
   emailNormalized: string;
+  /** Null until the person sets one — see migration 0019 on why not backfilled. */
+  displayName: string | null;
   emailVerifiedAt: Date | null;
   passwordHash: string | null;
   status: string;
@@ -66,6 +68,7 @@ async function selectUser(
       id: schema.users.id,
       email: schema.users.email,
       emailNormalized: schema.users.emailNormalized,
+      displayName: schema.users.displayName,
       emailVerifiedAt: schema.users.emailVerifiedAt,
       passwordHash: schema.users.passwordHash,
       status: schema.users.status,
@@ -427,4 +430,34 @@ export async function consumePasswordReset(input: {
 
     return row;
   });
+}
+
+/**
+ * Sets or clears a user's display name (migration 0019).
+ *
+ * Returns the stored value, so a caller emitting an event records what the
+ * database actually holds rather than what was submitted — the two differ by a
+ * trim, and an event carrying the untrimmed string would make the audit log
+ * disagree with the row it describes.
+ *
+ * Null clears it, which is a real operation: someone removing their name goes
+ * back to being shown by address, and there is no other way to express that.
+ */
+export async function updateDisplayName(
+  userId: string,
+  displayName: string | null,
+): Promise<string | null> {
+  /* Trimmed here rather than relying on the CHECK constraint to refuse a blank
+     one. The constraint is the backstop — it turns "  " into a failed write
+     instead of a name that renders as an empty gap — but a name with trailing
+     whitespace is not an error, it is a typo, and refusing the whole save for
+     it would be hostile. */
+  const trimmed = displayName === null ? null : displayName.trim();
+  const value = trimmed === '' ? null : trimmed;
+
+  await withGlobalScope(async (tx) =>
+    tx.update(schema.users).set({ displayName: value, updatedAt: new Date() }).where(eq(schema.users.id, userId)),
+  );
+
+  return value;
 }

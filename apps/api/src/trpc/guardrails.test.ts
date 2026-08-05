@@ -307,6 +307,18 @@ describe('the real application router', () => {
       'auth.passkeys.remove',
       'auth.passkeys.rename',
       'auth.passkeys.startRegistration',
+      /* Setting your own display name (migration 0019). Self-scoped for the
+         same reason `logoutEverywhere` is: no ORG permission describes it, and
+         a guest — who holds nothing from their role — must still be able to do
+         it, or the people with the least access are the ones permanently shown
+         as an email address.
+
+         Not step-up, unlike `logoutEverywhere`. The worst an attacker with a
+         stolen session achieves here is a confusing label, which is audited and
+         reversible; signing every other device out is not. It carries no user
+         id in its input — the subject comes from the verified principal — which
+         is what keeps it "rename myself" rather than "rename anyone". */
+      'auth.updateProfile',
       /* The two tenancy routes a caller with NO membership must still reach.
          Neither can be permission-bearing without a contradiction: a user who
          belongs to no organization has no role, so requiring an org permission

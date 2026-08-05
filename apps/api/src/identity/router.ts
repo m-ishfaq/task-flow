@@ -7,6 +7,7 @@ import { createPasskeyRouter } from './passkey.router.js';
 import type { PasskeyDeps } from './passkey.service.js';
 import type { IdentityDeps, RequestMeta } from './identity.service.js';
 import * as identity from './identity.service.js';
+import * as profile from './profile.service.js';
 
 /**
  * Identity routes (PLAN.md §8.1).
@@ -119,6 +120,35 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
       .output(z.object({ revoked: z.number().int().nonnegative() }))
       .mutation(({ ctx }) =>
         identity.logoutEverywhere(deps.identity, { userId: ctx.principal.userId }),
+      ),
+
+    /**
+     * Sets the caller's own display name (migration 0019).
+     *
+     * `selfRoute`, not `route({ permission })`, and the reason is the same one
+     * `logoutEverywhere` gives: there is no ORG permission that describes
+     * changing your own name, and a guest — who holds nothing from their role —
+     * must still be able to do it. A `member:manage` gate here would mean the
+     * people with the least access could never be shown as anything but an
+     * email address.
+     *
+     * No step-up. Renaming yourself is not a credential-adjacent action: the
+     * worst an attacker with a stolen session achieves is a confusing label,
+     * which is recoverable and audited, unlike signing every other device out.
+     *
+     * The input carries NO user id. The subject comes from `ctx.principal`,
+     * which came from the verified token — an id in the body would make this
+     * "rename any account", which is the shape of the bug §3.7 rules out on the
+     * socket path for the same reason.
+     */
+    updateProfile: selfRoute({
+      selfReason:
+        'A user setting their own display name. No org permission describes it, and a guest must be able to do it.',
+    })
+      .input(z.object({ displayName: z.string().trim().max(80).nullable() }).strict())
+      .output(z.object({ displayName: z.string().nullable() }))
+      .mutation(({ input, ctx }) =>
+        profile.updateProfile(deps.identity, ctx.principal.userId, input),
       ),
 
     /** Nested rather than merged, so the manifest reads `auth.passkeys.*`. */

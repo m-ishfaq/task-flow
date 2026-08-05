@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Popover from '@radix-ui/react-popover';
@@ -41,11 +41,14 @@ import {
   toggleReaction,
   unpinMessage,
   unreadCountsQuery,
+  entryCursorQuery,
+  type ChannelDetail,
   type ChannelSummary,
   type Message,
   type PinnedMessageRow,
   type ReactionRow,
 } from './api.js';
+import { ChannelDetailsPanel } from './channel-details.js';
 import { useChannelRoom } from './use-channel-room.js';
 import { groupMessages, type MessageGroup } from './grouping.js';
 
@@ -111,6 +114,7 @@ function ChannelListPanel({
 }) {
   const channels = useQuery({ ...channelsQuery(orgId), enabled: orgId !== '' });
   const list = channels.data ?? [];
+  const { personOf } = useMembers();
 
   const unread = useQuery({
     ...unreadCountsQuery(
@@ -169,7 +173,13 @@ function ChannelListPanel({
           <ChannelRow
             key={channel.channelId}
             channel={channel}
-            label={channel.name ?? 'Direct message'}
+            /* A DM has no name — the database refuses one — so it is labelled by
+               WHO is in it, from `participantIds` (the viewer already excluded
+               server-side) resolved through the same member lookup every avatar
+               uses. "Direct message" only survives as a fallback for the case
+               where `member:read` is denied and the lookup returns nothing;
+               rendering a raw uuid there would be worse than saying nothing. */
+            label={directLabel(channel.participantIds, personOf)}
             active={selected === channel.channelId}
             unreadCount={unreadByChannel.get(channel.channelId) ?? 0}
             onSelect={onSelect}
@@ -452,6 +462,7 @@ function ChannelPanel({
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<DocumentNode>(EMPTY_DOCUMENT);
   const [pinsOpen, setPinsOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [openThreadId, setOpenThreadId] = useState<string | null>(null);
 
   const allMessageIds = (messages.data ?? []).map((message) => message.messageId);
@@ -460,6 +471,28 @@ function ChannelPanel({
 
   const pins = useQuery(pinsQuery(orgId, channelId));
   const pinnedIds = new Set((pins.data ?? []).map((row) => row.messageId));
+
+  /**
+   * The first message this person had not read when they opened the channel —
+   * where the "new messages" divider goes.
+   *
+   * ## The cursor has to be frozen, and this is why
+   *
+   * This panel marks the channel read on every message that arrives while it is
+   * mounted. So a divider computed from the LIVE cursor would chase itself: it
+   * would appear for one render and vanish, and while someone was reading, it
+   * would walk down the list as each new message advanced the cursor past it.
+   *
+   * `ChannelPanel` is keyed by channel in `ChatPage`, so it remounts whenever
+   * the conversation changes — which makes a ref captured on first resolve
+   * exactly "the cursor as it was when this channel was opened", with no
+   * per-channel bookkeeping of its own.
+   *
+   * `staleTime: Infinity` stops the shared 15-second poll from refetching under
+   * this component; the sidebar's copy of the same query keeps updating for the
+   * badges, which is the one place a live count is wanted.
+   */
+  const entryCursor = useQuery(entryCursorQuery(orgId, channelId));
 
   const send = useMutation({
     mutationFn: (body: DocumentNode) => sendMessage({ channelId, body }),
@@ -545,6 +578,32 @@ function ChannelPanel({
     .toReversed();
   const groups = groupMessages(topLevel);
 
+  /**
+   * Where the "new messages" divider goes.
+   *
+   * Derived from `topLevel` — the list that is actually RENDERED — and not from
+   * `messages.data`, which is the same rows in the opposite order with thread
+   * replies still in it. Using the raw query result here was wrong twice over,
+   * and the two mistakes hid each other:
+   *
+   *   * `messages.list` returns NEWEST FIRST, so "the message after the cursor"
+   *     resolved to the next OLDER one — the line was computed for a message
+   *     above where it belonged.
+   *   * The raw list includes replies, which are filtered out of `topLevel` and
+   *     rendered inside a thread panel instead. When the cursor landed next to
+   *     one, the divider named a message that appears in no group, and nothing
+   *     drew it at all.
+   *
+   * Neither failed loudly: the first put the line in the wrong place and the
+   * second removed it entirely, which is indistinguishable from "you have no
+   * unread messages". The rule that prevents both is that the divider is
+   * computed from the same array, in the same order, that the map below walks.
+   */
+  const firstUnreadId = firstUnreadAfter(
+    entryCursor.data,
+    topLevel.map((message) => message.messageId),
+  );
+
   /* Computed from the same page rather than a separate count query — a
      channel's first 100 messages are already loaded whole, replies included,
      so "how many replies does this message have" is a filter over data
@@ -578,6 +637,19 @@ function ChannelPanel({
   const lastMessageId = topLevel.at(-1)?.messageId;
   useEffect(() => {
     if (lastMessageId === undefined) return;
+
+    /* ORDERED AFTER the entry cursor has been read, and that ordering is the
+       whole correctness of the "new messages" divider.
+
+       Both of these touch the same cursor: this advances it, and
+       `entryCursorQuery` reads it to decide where the line goes. Started
+       together they race — if this wins, the line never appears; if the read
+       wins, it appears. Which one happened was down to network timing, so the
+       divider showed up on some channel opens and not others, with nothing to
+       distinguish the two cases. Waiting for the read makes the line a function
+       of what the person had actually seen. */
+    if (!entryCursor.isSuccess) return;
+
     markChannelRead({ channelId, messageId: lastMessageId as MessageId })
       .then(() => {
         invalidateUnreadCounts(queryClient, orgId);
@@ -587,7 +659,7 @@ function ChannelPanel({
         // worth surfacing to the person reading the channel right now.
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- queryClient/orgId are stable
-  }, [channelId, lastMessageId]);
+  }, [channelId, lastMessageId, entryCursor.isSuccess]);
 
   const typingUsers = useTypingUsers(channelId, viewerId);
   const typingLabel = describeTyping(typingUsers, personOf);
@@ -596,15 +668,34 @@ function ChannelPanel({
     <div className="flex min-h-0 flex-1">
       <div className="flex min-h-0 flex-1 flex-col">
         <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
-          <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
-            {channel.data === undefined
-              ? '…'
-              : channel.data.type === 'public'
-                ? `# ${channel.data.name ?? ''}`
-                : channel.data.type === 'private'
-                  ? `🔒 ${channel.data.name ?? ''}`
-                  : (channel.data.name ?? 'Direct message')}
-          </h2>
+          <div className="flex min-w-0 flex-1 flex-col">
+            <h2 className="min-w-0 truncate text-sm font-medium text-ink">
+              {channel.data === undefined ? '…' : channelTitle(channel.data, viewerId, personOf)}
+            </h2>
+            {/* The second line carries whichever of the two things the channel
+                actually has: a topic for a named channel, the other person for
+                a DM. Rendered only when there is something to say — an empty
+                sub-line makes every header taller for no information. */}
+            {channel.data !== undefined && channelSubtitle(channel.data) !== null && (
+              <p className="min-w-0 truncate text-xs text-ink-faint">
+                {channelSubtitle(channel.data)}
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setDetailsOpen((open) => !open);
+            }}
+            className={cn(
+              'flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs',
+              detailsOpen
+                ? 'bg-accent text-accent-ink'
+                : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+            )}
+          >
+            👥 {channel.data?.memberIds.length ?? 0}
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -646,9 +737,23 @@ function ChannelPanel({
           ) : (
             <div className="space-y-4">
               {groups.map((group) => (
+                <Fragment key={group.messages[0]?.messageId}>
+                  {/* The "new messages" line, placed by the read CURSOR rather
+                      than by counting back from the end. A count-based position
+                      lands somewhere plausible and wrong the moment a message
+                      is deleted or the page is partially loaded — and it does so
+                      silently, which is the worst property a divider can have. */}
+                  {firstUnreadId !== null &&
+                    group.messages.some((message) => message.messageId === firstUnreadId) && (
+                      <div className="flex items-center gap-2" role="separator">
+                        <span className="h-px flex-1 bg-danger/40" />
+                        <span className="text-[11px] font-medium text-danger">New messages</span>
+                        <span className="h-px flex-1 bg-danger/40" />
+                      </div>
+                    )}
                 <MessageGroupView
-                  key={group.messages[0]?.messageId}
                   group={group}
+                  canModerate={channel.data?.capabilities.moderate ?? false}
                   viewerId={viewerId}
                   authorLabel={group.authorId === null ? null : personOf(group.authorId).label}
                   editingId={editing}
@@ -675,6 +780,7 @@ function ChannelPanel({
                   replyCounts={replyCounts}
                   onOpenThread={setOpenThreadId}
                 />
+                </Fragment>
               ))}
             </div>
           )}
@@ -684,6 +790,18 @@ function ChannelPanel({
           <div className="h-5 shrink-0 px-4 text-xs text-ink-faint italic">{typingLabel}</div>
         )}
 
+        {/* The composer is hidden when the server says this person cannot post
+            — a `viewer` tuple on a channel, or an archived channel. Both are
+            the server's answer (`capabilitiesFor`), not a rule re-derived here.
+            While the channel is still loading `post` is false, which shows the
+            notice for a moment rather than a composer that might be refused. */}
+        {channel.data !== undefined && !channel.data.capabilities.post ? (
+          <div className="shrink-0 border-t border-line px-4 py-3 text-xs text-ink-faint">
+            {channel.data.archivedAt !== null
+              ? 'This channel is archived. No new messages can be posted.'
+              : 'You have read-only access to this conversation.'}
+          </div>
+        ) : (
         <div className="shrink-0 border-t border-line px-4 py-3">
           <RichTextEditor
             value={draft}
@@ -694,17 +812,25 @@ function ChannelPanel({
             }}
             onSubmit={submit}
             footer={
-              <Button
-                size="sm"
-                variant="primary"
-                disabled={isEmptyDocument(draft) || send.isPending}
-                onClick={submit}
-              >
-                Send
-              </Button>
+              <div className="flex items-center gap-1">
+                <EmojiPickerButton
+                  onPick={(emoji) => {
+                    setDraft((current) => appendText(current, emoji));
+                  }}
+                />
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={isEmptyDocument(draft) || send.isPending}
+                  onClick={submit}
+                >
+                  Send
+                </Button>
+              </div>
             }
           />
         </div>
+        )}
       </div>
 
       {openThreadId !== null &&
@@ -726,8 +852,158 @@ function ChannelPanel({
             />
           );
         })()}
+
+      {/* Details and a thread are both right-hand panels. Rendering the thread
+          first and this second means opening a thread while details are open
+          shows both, which at 72rem+ is fine and below it is not — but the
+          layout is `flex`, so the message column shrinks rather than either
+          panel overflowing the page. */}
+      {detailsOpen && (
+        <ChannelDetailsPanel
+          orgId={orgId}
+          channelId={channelId}
+          onClose={() => {
+            setDetailsOpen(false);
+          }}
+        />
+      )}
     </div>
   );
+}
+
+/**
+ * The message the "new messages" divider belongs above, or null for no divider.
+ *
+ * Exported-shaped as a pure function so the placement rules are testable
+ * without mounting a panel — every branch below is a case where drawing the
+ * line would be wrong, and each is silent if it regresses.
+ *
+ * `undefined` for the cursor means "not resolved yet"; `null` means "resolved,
+ * and this person has never read this channel". They are deliberately different:
+ * the first must not draw a line prematurely, the second must not draw one at
+ * all — a divider above the very first message labels the entire conversation
+ * "new", which is true and useless.
+ */
+export function firstUnreadAfter(
+  cursor: string | null | undefined,
+  messageIds: readonly string[],
+): string | null {
+  if (cursor === undefined || cursor === null) return null;
+
+  const index = messageIds.indexOf(cursor);
+
+  /* The cursor names a message outside the loaded page — older than it, or
+     since deleted. Neither is a place to put a line: guessing would land it
+     somewhere plausible and wrong. */
+  if (index === -1) return null;
+
+  /* Read right up to the end. Everything is read, so there is nothing new to
+     separate — this is the ordinary case for a channel someone left open. */
+  if (index === messageIds.length - 1) return null;
+
+  return messageIds[index + 1] ?? null;
+}
+
+/**
+ * How a direct message is named in the sidebar.
+ *
+ * Two people get one name; three or more get "A, B and 2 others" rather than a
+ * list that truncates mid-address, because an ellipsis in the middle of an
+ * email is indistinguishable from a different person's.
+ */
+function directLabel(
+  participantIds: readonly string[],
+  personOf: (userId: string) => { readonly label: string },
+): string {
+  if (participantIds.length === 0) return 'Direct message';
+
+  const labels = participantIds.map((userId) => personOf(userId).label);
+  const [first, second, ...rest] = labels;
+
+  if (rest.length > 0) return `${first ?? ''}, ${second ?? ''} and ${String(rest.length)} others`;
+  if (second !== undefined) return `${first ?? ''}, ${second}`;
+  return first ?? 'Direct message';
+}
+
+/**
+ * Appends text to the end of a document, for the composer's emoji picker.
+ *
+ * Writes into the LAST paragraph rather than adding a new one — picking three
+ * emoji should produce one line, not three. If the document somehow has no
+ * block to append to, one is created, because the server's `doc` schema
+ * requires content and an empty `doc` is refused.
+ *
+ * The result stays inside the node/mark whitelist `RichTextDocument` enforces:
+ * an emoji is ordinary text, so this adds a `text` node and nothing else. That
+ * is the reason this is a document edit and not a string concatenation on
+ * `bodyText` — there is no HTML path here, and this must not open one.
+ */
+function appendText(document: DocumentNode, text: string): DocumentNode {
+  const blocks = document.content ?? [];
+  const last = blocks.at(-1);
+
+  if (last?.type !== 'paragraph') {
+    return {
+      ...document,
+      content: [...blocks, { type: 'paragraph', content: [{ type: 'text', text }] }],
+    };
+  }
+
+  const inline = last.content ?? [];
+  const tail = inline.at(-1);
+
+  /* Merged into the trailing text node when there is one, so the document does
+     not accumulate a node per keystroke-equivalent. Two adjacent `text` nodes
+     render identically, but they compare and diff differently, and the server
+     stores what it is given. */
+  const nextInline =
+    tail?.type === 'text' && tail.marks === undefined
+      ? [...inline.slice(0, -1), { ...tail, text: `${tail.text ?? ''}${text}` }]
+      : [...inline, { type: 'text', text }];
+
+  return {
+    ...document,
+    content: [...blocks.slice(0, -1), { ...last, content: nextInline }],
+  };
+}
+
+/**
+ * The header title for a channel.
+ *
+ * A DM has no name — the database refuses one, because a named DM would be
+ * listable — so it is titled by WHO is in it, resolved through the same member
+ * lookup every avatar uses. Falling back to "Direct message" covers the case
+ * where `member:read` is denied and the lookup returns nothing: a header
+ * reading "Direct message" is honest, where one reading a raw uuid is not.
+ */
+function channelTitle(
+  channel: ChannelDetail,
+  viewerId: string | null,
+  personOf: (userId: string) => { readonly label: string },
+): string {
+  if (channel.type === 'public') return `# ${channel.name ?? ''}`;
+  if (channel.type === 'private') return `🔒 ${channel.name ?? ''}`;
+
+  const others = channel.memberIds.filter((userId) => userId !== viewerId);
+  if (others.length === 0) return 'Direct message';
+
+  const labels = others.map((userId) => personOf(userId).label);
+  return labels.length <= 2
+    ? labels.join(', ')
+    : `${labels[0] ?? ''} and ${String(labels.length - 1)} others`;
+}
+
+/**
+ * The line under the title, or null when there is nothing to put there.
+ *
+ * Only a topic today. There is deliberately no "3 members" here — the roster is
+ * a click away in the details panel, and a count in the header is the kind of
+ * thing that has to be kept in sync with a live membership change for no
+ * benefit.
+ */
+function channelSubtitle(channel: ChannelDetail): string | null {
+  if (channel.archivedAt !== null) return 'Archived — no new messages can be posted.';
+  return channel.topic;
 }
 
 /** Every reaction row, grouped by message then emoji, with who reacted. */
@@ -995,6 +1271,7 @@ function ThreadPanel({
  */
 function MessageGroupView({
   group,
+  canModerate,
   viewerId,
   authorLabel,
   editingId,
@@ -1012,6 +1289,8 @@ function MessageGroupView({
   onOpenThread,
 }: {
   readonly group: MessageGroup;
+  /** From the server (`capabilitiesFor`) — never computed in the client. */
+  readonly canModerate: boolean;
   readonly viewerId: string | null;
   readonly authorLabel: string | null;
   readonly editingId: string | null;
@@ -1056,6 +1335,7 @@ function MessageGroupView({
             key={message.messageId}
             message={message}
             isOwn={isOwn}
+            canModerate={canModerate}
             isFirstInGroup={index === 0}
             isLastInGroup={index === group.messages.length - 1}
             isEditing={editingId === message.messageId}
@@ -1093,6 +1373,7 @@ function MessageGroupView({
 
 function MessageBubble({
   message,
+  canModerate,
   isOwn,
   isFirstInGroup,
   isLastInGroup,
@@ -1113,6 +1394,7 @@ function MessageBubble({
 }: {
   readonly message: Message;
   readonly isOwn: boolean;
+  readonly canModerate: boolean;
   readonly isFirstInGroup: boolean;
   readonly isLastInGroup: boolean;
   readonly isEditing: boolean;
@@ -1220,14 +1502,22 @@ function MessageBubble({
           >
             {pinned ? 'Unpin' : 'Pin'}
           </Button>
+          {/* Editing is AUTHORSHIP, which the client knows for certain — there
+              is no permission that overrides it, so no server answer is needed. */}
           {isOwn && (
             <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onStartEdit}>
               Edit
             </Button>
           )}
-          <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onDelete}>
-            Delete
-          </Button>
+          {/* Deleting is authorship OR moderation. The second half is the
+              server's decision, delivered on the channel (`capabilitiesFor`) —
+              not recomputed here. Hidden rather than shown-and-refused because
+              a button whose only outcome is an error toast is not a control. */}
+          {(isOwn || canModerate) && (
+            <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onDelete}>
+              Delete
+            </Button>
+          )}
         </div>
       </div>
 

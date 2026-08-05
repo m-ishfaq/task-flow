@@ -11,12 +11,14 @@ import {
   channelUpdated,
 } from './events.js';
 import {
+  capabilitiesFor,
   enforceOnChannel,
   envelopeOf,
   isClosedChannel,
   loadChannel,
   orgOf,
   userOf,
+  type ChannelCapabilities,
   type ChatActor,
 } from './shared.js';
 import {
@@ -67,6 +69,24 @@ export interface ChannelSummary {
   readonly createdAt: Date;
   /** Whether the caller holds a `member` tuple — renders "joined" state. */
   readonly joined: boolean;
+  /**
+   * The OTHER participants, for a DM or group DM. Empty for a named channel.
+   *
+   * A DM has no name — the database refuses one, because a named DM would show
+   * up in a channel browser — so a sidebar has nothing to label it with unless
+   * it is told who is in it. Without this the list renders "Direct message"
+   * for every conversation, which is unusable the moment there are two.
+   *
+   * The viewer is excluded here rather than in the client: "who is this
+   * conversation with" never means "me", and every caller would otherwise
+   * filter themselves out identically.
+   *
+   * Named channels get an empty array rather than their full roster. A sidebar
+   * does not render a public channel's members, and sending the roster of every
+   * channel in the org on every sidebar load is a payload that grows with the
+   * organization for nothing.
+   */
+  readonly participantIds: readonly string[];
 }
 
 /* -------------------------------------------------------------------------- *
@@ -111,17 +131,32 @@ export async function listChannels(actor: ChatActor): Promise<readonly ChannelSu
        "public OR I hold a tuple", and the tuple half lives in memory. The set
        of live channels in one org is small enough that this is not the query to
        optimize; a channel a caller cannot see is never returned either way. */
-    return rows
-      .filter((row) => !isClosedChannel(row) || joinedIds.has(row.channelId))
-      .map((row) => ({
-        channelId: row.channelId,
-        type: row.type,
-        name: row.name,
-        topic: row.topic,
-        archivedAt: row.archivedAt,
-        createdAt: row.createdAt,
-        joined: joinedIds.has(row.channelId),
-      }));
+    const visible = rows.filter(
+      (row) => !isClosedChannel(row) || joinedIds.has(row.channelId),
+    );
+
+    /* Rosters for the DMs only, in ONE query rather than per channel. A named
+       channel's members are not sent (see `participantIds`), so this reads
+       nothing for an org that uses no direct messages. */
+    const directIds = visible
+      .filter((row) => row.type === 'dm' || row.type === 'group_dm')
+      .map((row) => row.channelId);
+    const membersByChannel = await membersOfChannels(tx, directIds);
+
+    const self = userOf(actor);
+
+    return visible.map((row) => ({
+      channelId: row.channelId,
+      type: row.type,
+      name: row.name,
+      topic: row.topic,
+      archivedAt: row.archivedAt,
+      createdAt: row.createdAt,
+      joined: joinedIds.has(row.channelId),
+      participantIds: [...(membersByChannel.get(row.channelId) ?? [])].filter(
+        (userId) => userId !== self,
+      ),
+    }));
   });
 }
 
@@ -136,6 +171,7 @@ export async function getChannel(
   readonly topic: string | null;
   readonly archivedAt: Date | null;
   readonly memberIds: readonly string[];
+  readonly capabilities: ChannelCapabilities;
 }> {
   return withOrgScope(orgOf(actor), async (tx) => {
     const channel = await loadChannel(tx, input.channelId);
@@ -150,6 +186,10 @@ export async function getChannel(
       topic: channel.topic,
       archivedAt: channel.archivedAt,
       memberIds,
+      /* Computed from the SAME `can()` the enforcement above uses, so the
+         client is told the server's decision rather than reaching its own —
+         see `capabilitiesFor`. */
+      capabilities: capabilitiesFor(actor, channel),
     };
   });
 }

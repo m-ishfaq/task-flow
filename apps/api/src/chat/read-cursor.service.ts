@@ -86,6 +86,17 @@ export async function markRead(
 export interface UnreadCount {
   readonly channelId: string;
   readonly unreadCount: number;
+  /**
+   * The last message this person had read, or null if they never have.
+   *
+   * Sent so a client can draw the "new messages" divider in the right place.
+   * Deriving it from `unreadCount` instead — "the Nth message from the end" —
+   * breaks the moment a message is deleted or a page is partially loaded, and
+   * breaks silently: the line simply lands somewhere plausible and wrong.
+   *
+   * Null means "everything is new", which is what an unopened channel is.
+   */
+  readonly lastReadMessageId: string | null;
 }
 
 /**
@@ -169,7 +180,11 @@ export async function unreadCounts(
             : and(eq(schema.messages.channelId, channel.id), gt(schema.messages.id, cursor)),
         );
 
-      results.push({ channelId: channel.id, unreadCount: rows.length });
+      results.push({
+        channelId: channel.id,
+        unreadCount: rows.length,
+        lastReadMessageId: cursor,
+      });
     }
 
     return results;

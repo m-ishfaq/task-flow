@@ -7,7 +7,7 @@ import {
   type RequestId,
   type UserId,
 } from '@taskflow/contracts';
-import { enforce, type Permission, type ResourceRef, type Subject } from '@taskflow/policy';
+import { can, enforce, type Permission, type ResourceRef, type Subject } from '@taskflow/policy';
 
 /**
  * Shared plumbing for the Chat services (PLAN.md §3.2; ai/phase-5-chat.md §3.3).
@@ -107,6 +107,57 @@ export function channelTarget(channel: ChannelRow): {
     resource: { type: 'channel', id: channel.id },
     ancestors: [],
     closed: isClosedChannel(channel),
+  };
+}
+
+/**
+ * What this caller may do in this channel.
+ *
+ * ## Why the SERVER answers this
+ *
+ * CLAUDE.md §8.2 says the UI never re-derives authorization, and that rule
+ * exists because a client that recomputes `can()` produces a second model which
+ * drifts from the real one — and the drifted copy is the one users see. The
+ * usual consequence is that every control is rendered and the server refuses
+ * what it must.
+ *
+ * That is honest but it is not kind: a member who cannot moderate is offered a
+ * Delete button whose only possible outcome is an error toast, on every message
+ * anyone else wrote. The fix is not to move the decision into the browser — it
+ * is to have the server SEND its decision, computed by the same `can()` on the
+ * same `Subject` as the enforcement itself. One model, two consumers: `enforce`
+ * throws on it, and this reports it.
+ *
+ * So a client may hide a control it is told it does not have, and still never
+ * decides anything: if this and the enforcement ever disagreed, the enforcement
+ * is what would refuse the request.
+ *
+ * `post` is not `channel:read`. Someone with a `viewer` tuple on a channel can
+ * read every message in it and write none — that is the whole reason the
+ * relation exists — so a composer hidden on `channel:read` would be hidden from
+ * nobody and shown to people who cannot use it.
+ */
+export interface ChannelCapabilities {
+  /** Rename, set a topic, archive, add and remove members. */
+  readonly manage: boolean;
+  /** Delete someone ELSE's message. Deleting your own needs only `post`. */
+  readonly moderate: boolean;
+  /** Post a message. */
+  readonly post: boolean;
+}
+
+export function capabilitiesFor(actor: ChatActor, channel: ChannelRow): ChannelCapabilities {
+  const target = channelTarget(channel);
+
+  /* An archived channel accepts no new messages, and the service refuses a
+     send into one. Reported here so the composer can say so rather than
+     letting someone type a message that cannot land. */
+  const live = channel.archivedAt === null;
+
+  return {
+    manage: can(actor.subject, 'channel:manage', target).allowed,
+    moderate: can(actor.subject, 'message:delete', target).allowed,
+    post: live && can(actor.subject, 'message:create', target).allowed,
   };
 }
 

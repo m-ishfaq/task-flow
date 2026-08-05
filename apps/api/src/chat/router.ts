@@ -100,6 +100,7 @@ export function createChatRouter() {
                 archivedAt: z.date().nullable(),
                 createdAt: z.date(),
                 joined: z.boolean(),
+                participantIds: z.array(z.string()).readonly(),
               }),
             )
             .readonly(),
@@ -116,6 +117,13 @@ export function createChatRouter() {
             topic: z.string().nullable(),
             archivedAt: z.date().nullable(),
             memberIds: z.array(z.string()).readonly(),
+            /* The server's own decision, not a hint the client may override.
+               See `capabilitiesFor` on why this is sent rather than recomputed. */
+            capabilities: z.object({
+              manage: z.boolean(),
+              moderate: z.boolean(),
+              post: z.boolean(),
+            }),
           }),
         )
         .query(({ input, ctx }) => channels.getChannel(actorOf(ctx), input)),
@@ -210,7 +218,13 @@ export function createChatRouter() {
         .input(z.object({ channelIds: z.array(ChannelIdSchema).min(1).max(200).readonly() }).strict())
         .output(
           z
-            .array(z.object({ channelId: z.string(), unreadCount: z.number().int().nonnegative() }))
+            .array(
+              z.object({
+                channelId: z.string(),
+                unreadCount: z.number().int().nonnegative(),
+                lastReadMessageId: z.string().nullable(),
+              }),
+            )
             .readonly(),
         )
         .query(({ input, ctx }) => readCursors.unreadCounts(actorOf(ctx), input)),

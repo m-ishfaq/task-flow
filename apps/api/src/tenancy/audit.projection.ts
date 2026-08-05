@@ -49,6 +49,12 @@ import {
  * is worse than one that attributes it to nothing.
  */
 const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>> = {
+  /* A person renaming themselves. Resolves to `member` keyed on `userId`,
+     matching `member.role_changed` above: the subject of the entry is the
+     account, and "what has this account been called" is the question a reader
+     of an old entry has when a name no longer matches anyone. */
+  'user.display_name_changed': { type: 'member', key: 'userId' },
+
   'org.created': { type: 'org', key: 'orgId' },
   'org.updated': { type: 'org', key: 'orgId' },
   'member.added': { type: 'member', key: 'userId' },

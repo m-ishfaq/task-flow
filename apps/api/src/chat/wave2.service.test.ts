@@ -191,7 +191,16 @@ describe('reactions', () => {
   it('hides a private channel from someone not in it, even to react', async () => {
     const { orgId, alice } = await scaffold('react-private-hidden');
     const channel = await channels.createChannel(alice, { type: 'private', name: 'leadership' });
-    const sent = await messages.sendMessage(alice, { channelId: channel.channelId, body: body('hi') });
+
+    /* Rebuilt AFTER the channel exists. `createChannel` writes the creator's own
+       `member` tuple, and an actor captured before that call does not carry it —
+       so posting into your own private channel is refused, which reads as a bug
+       in the service rather than a stale fixture. */
+    const author = await actorFor(orgId, ALICE, 'owner');
+    const sent = await messages.sendMessage(author, {
+      channelId: channel.channelId,
+      body: body('hi'),
+    });
 
     const bob = await actorFor(orgId, BOB, 'member');
 
@@ -263,7 +272,12 @@ describe('read cursors', () => {
     await messages.sendMessage(alice, { channelId: channel.channelId, body: body('three') });
 
     const beforeCounts = await readCursors.unreadCounts(alice, { channelIds: [channel.channelId] });
-    expect(beforeCounts).toEqual([{ channelId: channel.channelId, unreadCount: 3 }]);
+    /* Null, not the first message's id: this person has never opened the
+       channel, so there is no cursor — which is what tells a client to draw no
+       "new messages" divider rather than one above the whole conversation. */
+    expect(beforeCounts).toEqual([
+      { channelId: channel.channelId, unreadCount: 3, lastReadMessageId: null },
+    ]);
 
     const advanced = await readCursors.markRead(alice, {
       channelId: channel.channelId,
@@ -272,7 +286,9 @@ describe('read cursors', () => {
     expect(advanced.advanced).toBe(true);
 
     const midCounts = await readCursors.unreadCounts(alice, { channelIds: [channel.channelId] });
-    expect(midCounts).toEqual([{ channelId: channel.channelId, unreadCount: 1 }]);
+    expect(midCounts).toEqual([
+      { channelId: channel.channelId, unreadCount: 1, lastReadMessageId: two.messageId },
+    ]);
 
     void orgId;
   });
@@ -292,13 +308,20 @@ describe('read cursors', () => {
     expect(rewound.advanced).toBe(false);
 
     const counts = await readCursors.unreadCounts(alice, { channelIds: [channel.channelId] });
-    expect(counts).toEqual([{ channelId: channel.channelId, unreadCount: 0 }]);
+    /* The cursor stayed on `two` — that is what "refuses to move backward"
+       means, and reporting it is how a client can tell a rewind was ignored. */
+    expect(counts).toEqual([
+      { channelId: channel.channelId, unreadCount: 0, lastReadMessageId: two.messageId },
+    ]);
   });
 
   it('drops a channel the caller cannot read from the unread counts, silently', async () => {
     const { orgId, alice } = await scaffold('read-unreadable');
     const channel = await channels.createChannel(alice, { type: 'private', name: 'leadership' });
-    await messages.sendMessage(alice, { channelId: channel.channelId, body: body('secret') });
+
+    // Rebuilt after creation — see the note in the reactions suite above.
+    const author = await actorFor(orgId, ALICE, 'owner');
+    await messages.sendMessage(author, { channelId: channel.channelId, body: body('secret') });
 
     const bob = await actorFor(orgId, BOB, 'member');
     const counts = await readCursors.unreadCounts(bob, { channelIds: [channel.channelId] });

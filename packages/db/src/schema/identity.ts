@@ -30,6 +30,20 @@ export const users = identity.table(
     id: uuid('id').primaryKey(),
     email: text('email').notNull(),
     emailNormalized: text('email_normalized').notNull(),
+
+    /**
+     * What to call this person (migration 0019). Null until they set one.
+     *
+     * Deliberately NOT unique and never an identifier: two people are often
+     * called the same thing. Nothing looks a user up by this, and no
+     * authorization decision reads it — the unique identifier is
+     * `emailNormalized`, and the key every decision uses is `id`.
+     *
+     * The fallback to the email address lives in the read path rather than in a
+     * backfill, so a guessed name never gets written into a column that looks
+     * authored. See the migration.
+     */
+    displayName: text('display_name'),
     emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
 
     /** Null for a passkey-only account — never treat null as "no password needed". */
