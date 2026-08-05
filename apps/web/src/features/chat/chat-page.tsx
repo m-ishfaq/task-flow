@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Popover from '@radix-ui/react-popover';
@@ -6,7 +6,6 @@ import type { ChannelId, MessageId, UserId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
-import { formatRelative } from '../../lib/format.js';
 import {
   Avatar,
   Button,
@@ -34,6 +33,7 @@ import {
   type Message,
 } from './api.js';
 import { useChannelRoom } from './use-channel-room.js';
+import { groupMessages, type MessageGroup } from './grouping.js';
 
 /**
  * Channels and direct messages (ai/phase-5-chat.md §5 Wave 1).
@@ -452,7 +452,31 @@ function ChannelPanel({
     send.mutate(body);
   };
 
-  const topLevel = (messages.data ?? []).filter((message) => message.parentMessageId === null);
+  /* `messages.list` orders newest-first (`message.service.ts`'s own
+     `before`-cursor pagination needs the most recent page, not the oldest),
+     but a chat pane reads top-to-bottom chronologically like every other
+     chat product — oldest at the top, newest just above the composer. The
+     API's order is right for "give me the latest page and let me page
+     backwards from it"; this reverses it for the one thing that reads it
+     as a transcript. */
+  const topLevel = (messages.data ?? [])
+    .filter((message) => message.parentMessageId === null)
+    .toReversed();
+  const groups = groupMessages(topLevel);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  /* Bottom-anchored, like every chat product trains people to expect: a
+     conversation is read newest-first from the bottom, not discovered by
+     scrolling down from wherever the list happened to mount. Re-runs on
+     every length change — a message arriving live (`use-channel-room.ts`
+     invalidating this same query) re-triggers it exactly like one this tab
+     just sent. */
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (node === null) return;
+    node.scrollTop = node.scrollHeight;
+  }, [topLevel.length, channelId]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -468,48 +492,49 @@ function ChannelPanel({
         </h2>
       </header>
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         {messages.isLoading ? (
           <div className="space-y-2">
             <Skeleton className="h-10 w-3/4" />
             <Skeleton className="h-10 w-1/2" />
           </div>
-        ) : topLevel.length === 0 ? (
+        ) : groups.length === 0 ? (
           <Empty
             title="No messages yet"
             description="Say something to get the conversation going."
           />
         ) : (
-          topLevel.map((message) => (
-            <MessageRow
-              key={message.messageId}
-              message={message}
-              viewerId={viewerId}
-              authorLabel={message.authorId === null ? null : personOf(message.authorId).label}
-              isEditing={editing === message.messageId}
-              onStartEdit={() => {
-                setEditing(message.messageId);
-              }}
-              onCancelEdit={() => {
-                setEditing(null);
-              }}
-              onSaveEdit={(body) => {
-                edit.mutate({ messageId: message.messageId as MessageId, body });
-              }}
-              editPending={edit.isPending}
-              onDelete={() => {
-                remove.mutate(message.messageId as MessageId);
-              }}
-            />
-          ))
+          <div className="space-y-4">
+            {groups.map((group) => (
+              <MessageGroupView
+                key={group.messages[0]?.messageId}
+                group={group}
+                viewerId={viewerId}
+                authorLabel={group.authorId === null ? null : personOf(group.authorId).label}
+                editingId={editing}
+                onStartEdit={setEditing}
+                onCancelEdit={() => {
+                  setEditing(null);
+                }}
+                onSaveEdit={(messageId, body) => {
+                  edit.mutate({ messageId: messageId as MessageId, body });
+                }}
+                editPending={edit.isPending}
+                onDelete={(messageId) => {
+                  remove.mutate(messageId as MessageId);
+                }}
+              />
+            ))}
+          </div>
         )}
       </div>
 
       <div className="shrink-0 border-t border-line px-4 py-3">
         <RichTextEditor
           value={draft}
-          placeholder="Write a message…"
+          placeholder="Message… (Enter to send, Shift+Enter for a new line)"
           onChange={setDraft}
+          onSubmit={submit}
           footer={
             <Button
               size="sm"
@@ -526,10 +551,90 @@ function ChannelPanel({
   );
 }
 
-function MessageRow({
-  message,
+/**
+ * A group, WhatsApp/Telegram-style: the viewer's OWN messages align right in
+ * an accent bubble with no avatar (the side is already the identity signal —
+ * repeating your own name and picture next to it is the thing this layout
+ * exists to avoid); everyone else's align left, with an avatar next to the
+ * FIRST bubble in the group and a matching space held next to the rest, so
+ * the second and third bubbles in a run still line up under the first
+ * instead of drifting to the edge once the avatar is gone.
+ */
+function MessageGroupView({
+  group,
   viewerId,
   authorLabel,
+  editingId,
+  onStartEdit,
+  onCancelEdit,
+  onSaveEdit,
+  editPending,
+  onDelete,
+}: {
+  readonly group: MessageGroup;
+  readonly viewerId: string | null;
+  readonly authorLabel: string | null;
+  readonly editingId: string | null;
+  readonly onStartEdit: (messageId: string) => void;
+  readonly onCancelEdit: () => void;
+  readonly onSaveEdit: (messageId: string, body: DocumentNode) => void;
+  readonly editPending: boolean;
+  readonly onDelete: (messageId: string) => void;
+}) {
+  const isOwn = group.authorId !== null && group.authorId === viewerId;
+  const first = group.messages[0];
+  if (first === undefined) return null;
+
+  return (
+    <div className={cn('flex gap-2', isOwn ? 'flex-row-reverse' : 'flex-row')}>
+      <div className="w-6 shrink-0 self-end">
+        {!isOwn && group.authorId !== null && (
+          <Avatar userId={group.authorId} label={authorLabel ?? group.authorId} size="sm" />
+        )}
+      </div>
+
+      <div className={cn('flex min-w-0 max-w-[75%] flex-col gap-0.5', isOwn && 'items-end')}>
+        {/* Own bubbles skip the name — the side they're on already says who
+            sent them — but every group still gets ONE relative timestamp,
+            because "who and when" is what a message header is for and only
+            half of that is redundant here. */}
+        {!isOwn && (
+          <span className="px-1 text-xs font-medium text-ink-muted">
+            {authorLabel ?? 'Unknown'}
+          </span>
+        )}
+
+        {group.messages.map((message, index) => (
+          <MessageBubble
+            key={message.messageId}
+            message={message}
+            isOwn={isOwn}
+            isFirstInGroup={index === 0}
+            isLastInGroup={index === group.messages.length - 1}
+            isEditing={editingId === message.messageId}
+            onStartEdit={() => {
+              onStartEdit(message.messageId);
+            }}
+            onCancelEdit={onCancelEdit}
+            onSaveEdit={(body) => {
+              onSaveEdit(message.messageId, body);
+            }}
+            editPending={editPending}
+            onDelete={() => {
+              onDelete(message.messageId);
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MessageBubble({
+  message,
+  isOwn,
+  isFirstInGroup,
+  isLastInGroup,
   isEditing,
   onStartEdit,
   onCancelEdit,
@@ -538,8 +643,9 @@ function MessageRow({
   onDelete,
 }: {
   readonly message: Message;
-  readonly viewerId: string | null;
-  readonly authorLabel: string | null;
+  readonly isOwn: boolean;
+  readonly isFirstInGroup: boolean;
+  readonly isLastInGroup: boolean;
   readonly isEditing: boolean;
   readonly onStartEdit: () => void;
   readonly onCancelEdit: () => void;
@@ -547,54 +653,93 @@ function MessageRow({
   readonly editPending: boolean;
   readonly onDelete: () => void;
 }) {
-  const isAuthor = message.authorId !== null && message.authorId === viewerId;
-
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center gap-1.5 text-[11px] text-ink-faint">
-        {message.authorId !== null && (
-          <Avatar userId={message.authorId} label={authorLabel ?? message.authorId} size="xs" />
+  if (message.deletedAt !== null) {
+    return (
+      <p
+        className={cn(
+          'rounded-2xl px-3 py-1.5 text-xs text-ink-faint italic',
+          isOwn ? 'bg-accent/10' : 'bg-surface-raised',
         )}
-        <span className="font-medium text-ink-muted">{authorLabel ?? 'Unknown'}</span>
-        <span>{formatRelative(message.createdAt)}</span>
-        {message.editedAt !== null && <span>(edited)</span>}
-      </div>
+      >
+        This message was deleted.
+      </p>
+    );
+  }
 
-      {message.deletedAt !== null ? (
-        <p className="text-xs text-ink-faint italic">This message was deleted.</p>
-      ) : isEditing ? (
+  if (isEditing) {
+    return (
+      <div className="w-full min-w-56">
         <EditMessage
           initial={message.body}
           pending={editPending}
           onCancel={onCancelEdit}
           onSave={onSaveEdit}
         />
-      ) : (
-        <>
-          <RichTextView value={message.body} />
-          <div className="flex gap-1">
-            {/* Edit is author-only with no override, same reasoning as
-                Work's comments (CLAUDE.md, §8.2) — nobody else's edit control
-                would ever succeed. Delete stays visible to everyone; a
-                moderator without the permission gets an honest FORBIDDEN. */}
-            {isAuthor && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-5 px-1 text-[11px]"
-                onClick={onStartEdit}
-              >
-                Edit
-              </Button>
-            )}
-            <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onDelete}>
-              Delete
-            </Button>
-          </div>
-        </>
-      )}
+      </div>
+    );
+  }
+
+  /* A run of same-author bubbles gets one rounded corner shaved flat where
+     it touches its neighbour — the "tail only on the outermost bubble" shape
+     every chat product uses so a run of three reads as one utterance
+     instead of three separate boxes stacked with identical corners. */
+  const cornerClass = isOwn
+    ? cn(!isFirstInGroup && 'rounded-tr-md', !isLastInGroup && 'rounded-br-md')
+    : cn(!isFirstInGroup && 'rounded-tl-md', !isLastInGroup && 'rounded-bl-md');
+
+  return (
+    <div className={cn('group/message relative flex items-end gap-1', isOwn && 'flex-row-reverse')}>
+      <div
+        className={cn(
+          'rounded-2xl px-3 py-1.5',
+          isOwn ? 'bg-accent text-accent-ink' : 'bg-surface-raised text-ink',
+          cornerClass,
+        )}
+      >
+        <RichTextView value={message.body} bare />
+        <div
+          className={cn(
+            'flex items-center gap-1 text-[10px]',
+            isOwn ? 'text-accent-ink/70' : 'text-ink-faint',
+          )}
+        >
+          <span>{formatTime(message.createdAt)}</span>
+          {message.editedAt !== null && <span>edited</span>}
+        </div>
+      </div>
+
+      {/* Hover actions sit OUTSIDE the bubble, on its outer edge, rather than
+          overlapping the text — the same `opacity-0 group-hover:opacity-100`
+          shape `card-tile.tsx`'s quick actions already use, visible on hover
+          or keyboard focus rather than as permanent clutter on every bubble.
+
+          Edit is author-only with no override, same reasoning as Work's
+          comments (CLAUDE.md, §8.2) — nobody else's edit control would ever
+          succeed, so it never renders for someone else's bubble regardless
+          of side. Delete stays visible wherever a moderator override is
+          possible; the server is the one that turns an unearned click into
+          an honest FORBIDDEN rather than a silent no-op. */}
+      <div
+        className={cn(
+          'mb-1 flex items-center gap-0.5 rounded border border-line bg-surface-raised px-0.5 opacity-0 shadow-sm transition-opacity',
+          'group-hover/message:opacity-100 group-focus-within/message:opacity-100',
+        )}
+      >
+        {isOwn && (
+          <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onStartEdit}>
+            Edit
+          </Button>
+        )}
+        <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onDelete}>
+          Delete
+        </Button>
+      </div>
     </div>
   );
+}
+
+function formatTime(value: string): string {
+  return new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
 function EditMessage({

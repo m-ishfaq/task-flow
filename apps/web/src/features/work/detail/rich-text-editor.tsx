@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
+import { SuggestionPluginKey } from '@tiptap/suggestion';
 import { cn } from '../../../lib/cn.js';
 import { Button } from '../../../components/primitives.js';
 import { useMembers } from '../../org/use-members.js';
@@ -41,6 +42,26 @@ export interface RichTextEditorProps {
   readonly className?: string;
   /** Rendered under the editor, e.g. Save / Cancel. */
   readonly footer?: React.ReactNode;
+  /**
+   * Enter sends; Shift+Enter still inserts a line break. Omitted by every
+   * caller that does not pass it, which is what keeps this additive — Work's
+   * comment composer submits on an explicit button only, and nothing about
+   * that changes unless a caller opts in. Chat's composer is the one that
+   * does, because "Enter sends" is the one keyboard behaviour every chat
+   * product trains people to expect before they ever look for a button.
+   */
+  readonly onSubmit?: () => void;
+  /**
+   * Skips the bordered/background card `RichTextEditor` normally wraps
+   * itself in, rendering just the content. Only meaningful with
+   * `editable={false}` — `RichTextView`'s job is showing a stored document
+   * inline where the surrounding component already provides the container
+   * (a chat message line, sitting inside its own hover-highlighted row) —
+   * an editable surface still needs the frame that visually marks it as a
+   * text box you can click into. Omitted by every existing caller, so
+   * Work's comments and card descriptions render exactly as before.
+   */
+  readonly bare?: boolean;
 }
 
 export function RichTextEditor({
@@ -50,6 +71,8 @@ export function RichTextEditor({
   editable = true,
   className,
   footer,
+  onSubmit,
+  bare = false,
 }: RichTextEditorProps) {
   /* `@mention` needs the org's member list. Rebuilt fresh every render, same
      as `Link`'s `isAllowedUri` below it — this file already relies on
@@ -101,8 +124,30 @@ export function RichTextEditor({
     content: (isDocument(value) ? value : EMPTY_DOCUMENT) as never,
     editorProps: {
       attributes: {
-        class: cn('rich-text min-h-24 px-3 py-2 focus:outline-none', className),
+        class: cn(
+          'rich-text focus:outline-none',
+          bare ? undefined : 'min-h-24 px-3 py-2',
+          className,
+        ),
         'data-placeholder': placeholder,
+      },
+      handleKeyDown: (view, event) => {
+        if (onSubmit === undefined || event.key !== 'Enter' || event.shiftKey) return false;
+
+        /* `editorProps.handleKeyDown` runs BEFORE any extension's own
+           ProseMirror plugin gets a chance at the event (`EditorView.someProp`
+           checks the view's direct props first) — so without this check, Enter
+           would submit the message instead of picking the highlighted
+           `@mention` candidate while the suggestion popup is open. Querying the
+           suggestion plugin's own state is what tells the two cases apart,
+           rather than guessing from the document around the cursor. */
+        const suggestionState = SuggestionPluginKey.getState(view.state) as
+          { readonly active?: boolean } | undefined;
+        if (suggestionState?.active === true) return false;
+
+        event.preventDefault();
+        onSubmit();
+        return true;
       },
     },
     onUpdate: ({ editor: instance }) => {
@@ -123,6 +168,10 @@ export function RichTextEditor({
 
     editor.commands.setContent(next as never, { emitUpdate: false });
   }, [editor, value]);
+
+  if (bare) {
+    return <EditorContent editor={editor} />;
+  }
 
   return (
     <div className="rounded border border-line bg-surface-sunken">
@@ -200,11 +249,19 @@ function Toolbar({ editor }: { readonly editor: Editor }) {
 }
 
 /** A read-only rendering of a stored document. */
-export function RichTextView({ value }: { readonly value: unknown }) {
+export function RichTextView({
+  value,
+  bare = false,
+}: {
+  readonly value: unknown;
+  /** See `RichTextEditorProps.bare`. */
+  readonly bare?: boolean;
+}) {
   return (
     <RichTextEditor
       value={value}
       editable={false}
+      bare={bare}
       onChange={() => {
         /* Read-only: TipTap still calls onUpdate for its own internal
            normalization on mount, and there is nothing to persist. */
