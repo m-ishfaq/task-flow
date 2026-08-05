@@ -51,7 +51,10 @@ of an activity feed to prove the spine carries real traffic.
 
 ## 3. Structural decisions
 
-The six things worth getting right before any gateway code exists.
+The eight things worth getting right before any gateway code exists. §3.7 and §3.8 are the two
+that matter most if you read nothing else here: this section exists because a socket layer with no
+authorization model — one that trusts whatever identity a client claims in a payload — is a real,
+observed failure mode, not a theoretical one.
 
 ### 3.1 A room is a board
 
@@ -84,6 +87,22 @@ reason the HTTP principal carries neither (`context.ts`: "an earlier draft... as
 would carry a role]... a revoked admin keeps admin for the ten minutes that matter most"). Org and
 role are resolved per ROOM JOIN, in §3.3, not per connection.
 
+**A connection presenting no token, an invalid one, or an expired one is refused at the handshake
+— `io.use()` middleware rejects it before `connection` fires, not "accepted, then treated as
+anonymous."** There is no anonymous state for a socket to be in: CLAUDE.md is explicit that nothing
+in Work happens without an org, and there is no `publicRoute`/`selfRoute` equivalent for
+`apps/realtime` to carry over. A connection that never authenticates has no work to do here — it
+should not be able to open a socket and sit on it waiting to see what it can get away with next.
+
+**Origin is checked at the same handshake, allow-listing only this app's own origin(s)** — the
+identical purpose `apps/api`'s CORS policy already serves for HTTP. A page loaded from anywhere
+else must never get far enough to present a token in the first place. This is NOT a substitute for
+XSS defenses (a script running inside the app's own origin, in an already-authenticated tab, still
+has a real token — that is what CLAUDE.md rule 4's TipTap-only rich text and the
+`dangerouslySetInnerHTML` ban exist to prevent, and nothing here relaxes either); it is the
+narrower, cheaper control that stops a connection attempt from a domain that was never supposed to
+be able to reach this server at all.
+
 **Reauth is reconnect, not refresh-in-place.** When the access token nears expiry, the client
 already has a working silent-refresh path (`lib/session.ts`, single-flight). The socket client
 disconnects and reconnects with the freshly refreshed token rather than the gateway implementing a
@@ -99,6 +118,13 @@ built from a `Subject` assembled by `loadTuples(orgId, userId)` + the current me
 identical inputs `resolveOrgMembership` produces for an HTTP request. **This must not be a special
 second authorization path.** A gateway that reimplements "can this user see this board" is the
 same mistake §8.2 forbids the UI from making, aimed at a different consumer.
+
+The `userId` half of that `Subject` is `socket.data.userId` — set once at handshake in §3.2, from
+the verified token. It is never read from the join request's payload. `boardId` IS client-supplied
+(it is a request: "let me into this room"), and that is fine, because `can()` is what decides
+whether the request is granted — the client naming a board is not different from a browser naming
+a URL to navigate to. See §3.7 for why that distinction (a REQUEST vs. a CLAIMED IDENTITY) is the
+entire security model of this section.
 
 The harder question §8.2's HTTP model doesn't have to answer: a socket can stay joined to a room
 for hours, and a membership can change in that window — a role demotion, a revoked `viewer` tuple,
@@ -152,6 +178,44 @@ separately. `version` lets a client that's behind (reconnected after a gap, or r
 out of order across two boards) know to refetch rather than trust a payload that assumes a state it
 never saw.
 
+### 3.7 No identity, ever, from an event payload
+
+A payload field is not a badge. A message telling the gateway "I am user 4821" or "subscribe me to
+board X's room" proves nothing about who is actually holding the socket — it is a value in JSON,
+indistinguishable from any other value an attacker chose to write. The socket's identity is decided
+EXACTLY ONCE, at the handshake in §3.2, from the verified access token, and stored on
+`socket.data.userId` — a server-controlled property, not a client-writable one. Every handler that
+needs "who is this," for the rest of the connection's life, reads that stored value. None of them
+ever reads a `userId` field the client sent in a connect payload or an event.
+
+This is not a hypothetical failure mode; it is the exact shape of the most damaging class of
+Socket.io vulnerability that shows up in real deployments: a "subscribe me to my own notifications"
+handler that takes `userId` from the message and joins that user's channel with no check that the
+connection ever authenticated as them — looped across a range of ids, this harvests every user's
+private messages, file-download links, and session data from a socket that never proved any
+identity at all, and leaves nothing in an HTTP audit log because no HTTP route was ever touched.
+`apps/realtime` has exactly one identity-bearing property per socket (`socket.data.userId`, set once,
+read-only from every handler's perspective), and exactly one authorization check per room (§3.3) —
+if a future change needs a second personal channel, a second identity field, or a "trusted" event
+that skips `can()`, that change is the vulnerability, not a shortcut around one.
+
+### 3.8 The handshake is a perimeter, not a formality
+
+Two controls beyond the token check itself:
+
+- **Rejected outright, not degraded to anonymous.** A connection with no token, an invalid one, or
+  an expired one is refused before `connection` fires (Socket.io `io.use()` middleware). There is
+  no anonymous-but-limited state to fall into — CLAUDE.md is explicit that nothing in Work happens
+  without an org, and `apps/realtime` carries that over rather than inventing a lighter tier "just
+  for sockets."
+- **Failed attempts are observable, even though sockets never write to the audit log.** A token
+  that fails verification, or a room join `can()` refuses, goes through `@taskflow/observability`
+  with enough shape to see a pattern — the same socket, or the same source IP, refused across a wide
+  range of rooms in a short window is exactly what enumerating "which boards exist and which of
+  them will let me in" looks like. Guardrail 6 (every state-mutating service method emits a typed
+  domain event) does not apply here — a refusal is not a mutation — but "not an audit event" and
+  "invisible to anyone" are not the same requirement, and this phase should not conflate them.
+
 ## 4. Event catalog for Wave 1 — nothing new to define
 
 Every event this phase broadcasts already exists (`apps/api/src/work/events.ts`) and already flows
@@ -165,6 +229,14 @@ board.created · board.updated · board.archived
 comment.created · comment.updated · comment.deleted
 checklist.* · custom_field.* · label.* · view.*
 ```
+
+**Deliberately excluded from this catalog: `attachment.*`.** A presigned download URL is a bearer
+credential for the one file it names — the entire design CLAUDE.md's attachments notes describe,
+with its own short expiry — and broadcasting one to a room hands it to everyone currently
+subscribed, not only the uploader. If attachment events are ever added to a later wave, the
+broadcast payload carries `attachmentId`, and the client re-requests a presigned URL through the
+normal authorized HTTP path — never the URL itself, and never `presignDownload`'s result relayed
+through a channel with a broader audience than the one caller who asked for it.
 
 No new `defineEvent()` calls, no new payload schemas. The event→room table in §3.4 is the only new
 mapping this phase introduces.
@@ -185,7 +257,11 @@ mapping this phase introduces.
 - **Acceptance:** two browser tabs on the same board; a card dragged in one appears in the other
   without a refresh, within the outbox relay's tick interval. A tab on a DIFFERENT board's room
   never receives it. A tab whose `viewer` tuple gets revoked mid-session is force-left within one
-  tick of the `grant.revoked` event.
+  tick of the `grant.revoked` event. A socket with a valid token for one user, sent a join request
+  naming a board that user has no membership on, is refused — and the same socket cannot join
+  ANY room by asserting a different `userId` in the request, because there is nowhere in the
+  protocol a `userId` can be asserted (§3.7). A connection presenting no token, or a token for a
+  different origin's app, never reaches `connection` at all.
 
 ### Wave 2 — full catalog, presence, reconnect
 
@@ -239,6 +315,23 @@ other — which `packages/db/src/audit.test.ts` already has for `'audit'` vs `'r
 consumer name; extend it to prove the REAL realtime consumer that Wave 1 adds behaves the same way
 against a live gateway, not just the table.
 
+**One test is not optional: a socket presenting a VALID token for user A, attempting to join a room
+by naming user B's id or a board A has no membership on, must be refused.** This is §3.7 written as
+an assertion instead of a paragraph — the one property that, if it silently regressed, would turn
+this gateway into the exact shape of vulnerability §3.7 describes. It belongs in the suite as its
+own named test, not folded into a general "authorization works" case that could pass while this one
+path regressed.
+
+### 6.5 Room-join and connection attempts are rate-limited
+
+`apps/api/src/middleware/rate-limit.ts` already exists for this exact shape of problem on HTTP —
+repeated attempts against one account or one IP. `apps/realtime` needs the same control on new
+connections per IP and room-join attempts per socket. `can()` correctly refusing every attempt in
+an enumeration loop (§3.7) is not the same as that loop being free: a single valid token is enough
+to attempt joining every board id in the system in a tight loop, and an unbounded refusal path is
+still a resource-exhaustion vector and still the reconnaissance phase of the same attack, whether or
+not any individual attempt succeeds.
+
 ## 7. Open decisions — need a call before or during Wave 1
 
 Unlike §3, these don't have a codebase precedent to lean on and should get an explicit answer
@@ -257,6 +350,11 @@ rather than a default nobody chose on purpose.
    demonstrably isn't.
 4. **How far "activity stream" goes in Wave 2.** §2 scopes it to "the broadcast shape supports one"
    — confirm that's the intended bar for Phase 4, versus pulling a minimal persisted feed in now.
+5. **Rate-limit thresholds for §6.5.** The HTTP middleware's existing per-account/per-IP numbers
+   were tuned for login and password-reset abuse specifically. Connection attempts and room joins
+   are a different shape of traffic (a legitimate client opens one connection and joins a handful of
+   rooms per session; an enumeration attempt looks like neither) — worth its own numbers rather than
+   reusing the login ones by default.
 
 ---
 
