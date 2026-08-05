@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
-import type { BoardId, CardId } from '@taskflow/contracts';
+import { CardIdSchema, type BoardId, type CardId } from '@taskflow/contracts';
 import { keys } from '../../lib/query.js';
 import {
   joinBoardRoom,
@@ -156,8 +156,8 @@ function applyBroadcast(
       if (cardId === null || after === null) return;
 
       const title = str(after, 'title');
-      const priority = strOrNull(after, 'priority');
-      const dueDate = strOrNull(after, 'dueDate');
+      const priority = str(after, 'priority');
+      const dueDate = str(after, 'dueDate');
 
       patchBoardCards(client, orgId, boardId, (cards) =>
         cards.map((card) =>
@@ -189,7 +189,7 @@ function applyBroadcast(
     case 'card.status_changed': {
       const cardId = str(payload, 'cardId');
       if (cardId === null) return;
-      const statusId = strOrNull(payload, 'after');
+      const statusId = str(payload, 'after');
 
       patchBoardCards(client, orgId, boardId, (cards) =>
         cards.map((card) => (card.cardId === cardId ? { ...card, statusId } : card)),
@@ -201,29 +201,29 @@ function applyBroadcast(
      * Adjust: a counter, by an exact delta the payload can compute.
      * ---------------------------------------------------------------- */
     case 'comment.created': {
-      const cardId = str(payload, 'cardId');
+      const cardId = cardIdOf(payload);
       if (cardId === null) return;
-      patchCommentCount(client, orgId, boardId, cardId as CardId, 1);
+      patchCommentCount(client, orgId, boardId, cardId, 1);
       return;
     }
 
     case 'comment.deleted': {
-      const cardId = str(payload, 'cardId');
+      const cardId = cardIdOf(payload);
       if (cardId === null) return;
-      patchCommentCount(client, orgId, boardId, cardId as CardId, -1);
+      patchCommentCount(client, orgId, boardId, cardId, -1);
       return;
     }
 
     case 'checklist_item.created': {
-      const cardId = str(payload, 'cardId');
+      const cardId = cardIdOf(payload);
       if (cardId === null) return;
       // A new item is never created done.
-      patchChecklistCounters(client, orgId, boardId, cardId as CardId, { done: 0, total: 1 });
+      patchChecklistCounters(client, orgId, boardId, cardId, { done: 0, total: 1 });
       return;
     }
 
     case 'checklist_item.updated': {
-      const cardId = str(payload, 'cardId');
+      const cardId = cardIdOf(payload);
       const before = asRecord(payload['before']);
       const after = asRecord(payload['after']);
       if (cardId === null || before === null || after === null) return;
@@ -231,7 +231,7 @@ function applyBroadcast(
       const doneDelta = Number(bool(after, 'done')) - Number(bool(before, 'done'));
       if (doneDelta === 0) return; // a text-only edit touches no counter.
 
-      patchChecklistCounters(client, orgId, boardId, cardId as CardId, {
+      patchChecklistCounters(client, orgId, boardId, cardId, {
         done: doneDelta,
         total: 0,
       });
@@ -315,15 +315,43 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
 }
 
+/**
+ * A string field, or null for anything else — including an explicit `null`.
+ *
+ * There used to be a second function here, `strOrNull`, documented as treating
+ * a present `null` differently from a missing field. It did not: the two bodies
+ * were identical. The comment was the only thing distinguishing them, which is
+ * worse than having no comment at all — the next reader picks one on purpose,
+ * believing it means something.
+ *
+ * Collapsing them is safe because every caller wants the same behaviour. For a
+ * nullable field (`priority`, `dueDate`, `statusId`) the event's `after` value
+ * IS the new value, so `null` and "absent" both correctly mean "no value" —
+ * these payloads are `.strict()` server-side, so the field is always present
+ * and the distinction never arises in practice.
+ */
 function str(payload: Record<string, unknown>, key: string): string | null {
   const value = payload[key];
   return typeof value === 'string' ? value : null;
 }
 
-/** Like `str`, but a present `null` is a real value, not a missing field. */
-function strOrNull(payload: Record<string, unknown>, key: string): string | null {
-  const value = payload[key];
-  return typeof value === 'string' ? value : null;
+/**
+ * The payload's `cardId`, PARSED into its branded type rather than asserted.
+ *
+ * A socket payload is a trust boundary — the same kind the route params and
+ * search params go through `CardIdSchema` at (CLAUDE.md, "The URL is a trust
+ * boundary"). These ids reach here having been produced by the API's own
+ * services, so in practice they are well formed; the point is that `as CardId`
+ * would keep compiling on the day one is not, and guardrail 1 exists precisely
+ * so a brand means "a parser checked this" rather than "someone was confident".
+ *
+ * Only the counter helpers need the brand, so only they pay for the parse. The
+ * plain `str()` above still serves the cases that merely compare against a
+ * card's own id, where no brand is required and none is claimed.
+ */
+function cardIdOf(payload: Record<string, unknown>): CardId | null {
+  const parsed = CardIdSchema.safeParse(payload['cardId']);
+  return parsed.success ? parsed.data : null;
 }
 
 function bool(payload: Record<string, unknown>, key: string): boolean {

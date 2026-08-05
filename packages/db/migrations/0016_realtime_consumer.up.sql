@@ -52,11 +52,37 @@ CREATE POLICY outbox_realtime_read ON platform.outbox
   FOR SELECT TO taskflow_realtime
   USING (true);
 
+-- WITH CHECK (false), not (true), and the asymmetry is the whole point.
+--
+-- Postgres applies the two halves of an UPDATE policy at different moments:
+-- USING decides which rows may be SELECTED for update (and is what a locking
+-- SELECT consults), while WITH CHECK validates a row actually being WRITTEN.
+-- A `SELECT ... FOR UPDATE` never writes one, so it never reaches WITH CHECK.
+--
+-- That splits the two things the grant above was conflating. This role needs to
+-- LOCK outbox rows — that is what claimPending does — and has never had any
+-- reason to MODIFY one: its own bookkeeping lives entirely in outbox_dispatch,
+-- and the deprecated published_at column belongs to the audit relay. So the
+-- lock is permitted and the write is refused by the database rather than by
+-- this role simply never attempting it.
+--
+-- Verified against a real database rather than reasoned about, because the
+-- claim "a locking select skips WITH CHECK" is exactly the kind that is easy to
+-- believe and expensive to be wrong about — the same way the UPDATE requirement
+-- above was found:
+--   1. `SELECT ... FOR UPDATE OF o SKIP LOCKED` as taskflow_realtime still
+--      returns the row.
+--   2. `UPDATE platform.outbox SET name = ...` as taskflow_realtime fails with
+--      "new row violates row-level security policy for table outbox".
+--
+-- Contrast taskflow_audit's outbox_relay_mark (0006), which keeps
+-- WITH CHECK (true) because that role genuinely did write published_at. Tighten
+-- it in the migration that drops the deprecated columns, not here.
 DROP POLICY IF EXISTS outbox_realtime_mark ON platform.outbox;
 CREATE POLICY outbox_realtime_mark ON platform.outbox
   FOR UPDATE TO taskflow_realtime
   USING (true)
-  WITH CHECK (true);
+  WITH CHECK (false);
 
 -- --------------------------------------------------------------------------
 -- Its own dispatch bookkeeping, pinned to its own consumer name.

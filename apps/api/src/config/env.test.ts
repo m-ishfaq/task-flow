@@ -118,6 +118,23 @@ describe('parseEnv', () => {
     ).not.toThrow();
   });
 
+  it('accepts the WEB_ variables only apps/web reads', () => {
+    /* These are read by vite.config.ts and by no server. They still have to be
+       in the known set, because the `WEB_` prefix makes the misspelling check
+       claim them — so an unlisted one does not merely go unvalidated, it stops
+       the API booting with an error naming a variable that is spelled
+       correctly. The one who would hit it is a developer pointing the dev
+       server at a non-default backend, which is exactly when a confusing boot
+       failure is most expensive. */
+    expect(() =>
+      parseEnv({
+        ...valid,
+        WEB_API_ORIGIN: 'http://localhost:3000',
+        WEB_REALTIME_ORIGIN: 'http://localhost:3001',
+      }),
+    ).not.toThrow();
+  });
+
   it('rejects reusing one secret for two purposes in production', () => {
     // Compromising either would compromise both, and the two keys could no
     // longer be rotated independently.

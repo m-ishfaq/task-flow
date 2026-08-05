@@ -76,9 +76,33 @@ async function clearOutbox(): Promise<void> {
   // and, correctly, to this test file too; @taskflow/db/testing exists so
   // fixtures can reach across orgs without reimporting `pg` (see its own
   // header comment).
+  //
+  // Scoped to THIS suite's org, deliberately. Emptying the whole table would
+  // make this file delete fixtures belonging to suites it knows nothing about —
+  // the same hazard apps/api/vitest.config.ts's note describes. The cost is
+  // that assertions here must not read GLOBAL queue state; see `ours()` below.
   await admin.setOrg(ORG);
   await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [ORG]);
   await admin.setOrg(null);
+}
+
+/**
+ * Narrows a claim to the events THIS suite wrote.
+ *
+ * The outbox is one global queue by design — a consumer drains every org (§3.5)
+ * — so `claimPending` legitimately returns other suites' rows when the test
+ * database has any. `apps/api`'s tests leave `org.created` / `project.created`
+ * events behind that nothing dispatches to 'audit', and an assertion like
+ * `expect(forAudit).toHaveLength(1)` then fails with `expected 3 to be 1`,
+ * which reads as a batching bug in the relay rather than as a dirty fixture.
+ *
+ * Filtering by org keeps the property each test is actually about — "MY event
+ * was drained", "MY event is still owed to audit" — without either emptying a
+ * table this suite does not own or depending on the order suites happen to run
+ * in.
+ */
+function ours(rows: readonly OutboxRow[]): readonly OutboxRow[] {
+  return rows.filter((row) => row.orgId === ORG);
 }
 
 beforeAll(async () => {
@@ -129,12 +153,14 @@ describe('startRealtimeRelay', () => {
     const dispatch = vi.fn((_row: OutboxRow) => undefined);
     const relay = startRealtimeRelay({ logger, dispatch, pollIntervalMs: 300_000 });
 
-    try {
-      const delivered = await relay.drainNow();
+    /** This suite's own dispatched rows — see `ours()`. */
+    const delivered = (): readonly OutboxRow[] => ours(dispatch.mock.calls.map(([row]) => row));
 
-      expect(delivered).toBe(1);
-      expect(dispatch).toHaveBeenCalledTimes(1);
-      expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
+    try {
+      await relay.drainNow();
+
+      expect(delivered()).toHaveLength(1);
+      expect(delivered()[0]).toMatchObject({
         orgId: ORG,
         name: 'card.moved',
         payload: { boardId: 'board-relay-test' },
@@ -144,9 +170,8 @@ describe('startRealtimeRelay', () => {
       // now marked, and this is the exact property migration 0015 exists for:
       // a single published_at would have made this event invisible to every
       // consumer the instant ANY of them marked it, not just this one.
-      const again = await relay.drainNow();
-      expect(again).toBe(0);
-      expect(dispatch).toHaveBeenCalledTimes(1);
+      await relay.drainNow();
+      expect(delivered()).toHaveLength(1);
     } finally {
       await relay.stop();
     }
@@ -160,7 +185,7 @@ describe('startRealtimeRelay', () => {
 
     try {
       await relay.drainNow();
-      expect(dispatch).toHaveBeenCalledTimes(1);
+      expect(ours(dispatch.mock.calls.map(([row]) => row))).toHaveLength(1);
 
       // 'realtime' marking this event dispatched must not hide it from
       // 'audit' — the CONSUMER export is asserted to be the literal string
@@ -168,7 +193,7 @@ describe('startRealtimeRelay', () => {
       // stand-in.
       expect(CONSUMER).toBe('realtime');
       const forAudit = await withAuditScope(async (tx) => claimPending(tx, 'audit'));
-      expect(forAudit).toHaveLength(1);
+      expect(ours(forAudit)).toHaveLength(1);
     } finally {
       await relay.stop();
     }

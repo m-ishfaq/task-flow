@@ -158,6 +158,12 @@ const KNOWN_VARIABLES = new Set([
   'API_HOST',
   'API_TRUST_PROXY',
   'WEB_ORIGIN',
+  /* apps/web's vite.config.ts reads these; no server does. They still have to
+     be listed, because the `WEB_` prefix makes the misspelling check claim them
+     — and an unlisted one stops this process booting over a variable that is
+     not misspelled at all. */
+  'WEB_API_ORIGIN',
+  'WEB_REALTIME_ORIGIN',
   'REALTIME_PORT',
   'REALTIME_HOST',
   'REALTIME_TRUST_PROXY',

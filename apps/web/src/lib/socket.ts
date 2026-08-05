@@ -80,8 +80,15 @@ let reauthTimer: ReturnType<typeof setTimeout> | undefined;
  * re-authenticates and stops there would leave the client silently receiving
  * nothing further for a board it still has open. This map is what `reconnect`
  * (below) replays `board:join` from.
+ *
+ * Keyed by `BoardId`, not `string`. The ids only ever arrive here as an
+ * already-branded parameter of `joinBoardRoom`, so widening the key to `string`
+ * bought nothing and cost a `boardId as BoardId` cast on the way back out —
+ * re-asserting a brand that had simply been discarded in between. Guardrail 1
+ * is that a brand is constructed by a parser at a trust boundary; a cast that
+ * re-asserts one is the pattern that makes a real violation unremarkable.
  */
-const joinedBoards = new Map<string, string>();
+const joinedBoards = new Map<BoardId, string>();
 
 /**
  * Notified after every RECONNECT (not the first connection) — never called
@@ -169,7 +176,7 @@ function buildSocket(): GatewaySocket {
    */
   created.io.on('reconnect', () => {
     for (const [boardId, orgId] of joinedBoards) {
-      created.emit('board:join', { orgId, boardId: boardId as BoardId }, () => {
+      created.emit('board:join', { orgId, boardId }, () => {
         /* Best-effort. If access was revoked while disconnected, the ack says
            so and there is nothing further to do — the same as an ordinary
            refused join; there is no error path here a caller could act on
@@ -201,13 +208,25 @@ export async function joinBoardRoom(orgId: string, boardId: BoardId): Promise<bo
   const active = ensureSocket();
   if (!active.connected) active.connect();
 
+  /* Recorded BEFORE the emit, and regardless of the ack.
+   *
+   * `joinedBoards` is "what this tab wants joined", not "what is currently
+   * granted" — so a refused join stays recorded, and the next reconnect asks
+   * again (access may have been restored while the socket was down).
+   *
+   * Recording it inside the ack instead is the subtle version of this, and it
+   * is wrong: an ack only arrives if the connection survives long enough to
+   * carry it back. Drop the socket after the join is sent but before the ack
+   * returns — the exact window a reconnect exists to recover from — and the
+   * callback never runs, the board is never recorded, and the `reconnect`
+   * handler below has nothing to replay. The tab then sits on a board that
+   * looks connected and silently receives no broadcasts for the rest of its
+   * life, with the polled query masking it well enough that nobody reports a
+   * bug. */
+  joinedBoards.set(boardId, orgId);
+
   return new Promise((resolve) => {
     active.emit('board:join', { orgId, boardId }, (result) => {
-      // Recorded regardless of the ack, deliberately: a join that failed
-      // because the gateway was mid-disconnect when this fired should still
-      // be retried by the NEXT reconnect, and `joinedBoards` is "what this
-      // tab wants joined," not "what is currently granted."
-      joinedBoards.set(boardId, orgId);
       resolve(result.ok);
     });
   });

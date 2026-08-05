@@ -49,6 +49,30 @@ const ACTOR = '0195bb00-0000-7000-8000-000000000001';
 
 const ORG_IDS = [ORG_A, ORG_B];
 
+/**
+ * Narrows a claim to the events THIS suite wrote.
+ *
+ * `platform.outbox` is one global queue by design — a consumer drains every org,
+ * which is the property `claims pending events across every org` below exists to
+ * prove — so `claimPending` legitimately returns rows belonging to whatever else
+ * has touched the test database. `apps/api`'s suites leave `org.created`,
+ * `project.created` and `board.created` events behind that nothing dispatches to
+ * 'audit', and `turbo` runs package tasks in PARALLEL against the one
+ * `taskflow_test` database, so those rows can also appear mid-run.
+ *
+ * Unscoped, the assertions here fail with `expected 6 to be 1`, which reads as a
+ * fan-out bug in `outbox_dispatch` rather than as a foreign fixture — and it
+ * fails only sometimes, so the natural response is a re-run rather than an
+ * investigation. Filtering by org keeps every property intact ("MY event is
+ * still owed to realtime", "MY event kept its own attempt count") while making
+ * them independent of what else is in the table. The alternative — emptying the
+ * outbox here — would delete other suites' fixtures mid-assertion, which is the
+ * hazard `apps/api/vitest.config.ts` documents.
+ */
+function ours<T extends { readonly orgId: string }>(rows: readonly T[]): readonly T[] {
+  return rows.filter((row) => ORG_IDS.includes(row.orgId as OrgId));
+}
+
 /** SQLSTATE for "new row violates row-level security policy". */
 const RLS_VIOLATION = '42501';
 
@@ -201,7 +225,11 @@ describe('outbox — draining side', () => {
     await withOrgScope(ORG_B, async (tx) => appendToOutbox(tx, [eventFor(ORG_B)]));
 
     const claimed = await withAuditScope(async (tx) => claimPending(tx, 'audit'));
-    expect(claimed.map((row) => row.orgId).sort()).toEqual([ORG_A, ORG_B].sort());
+    expect(
+      ours(claimed)
+        .map((row) => row.orgId)
+        .sort(),
+    ).toEqual([ORG_A, ORG_B].sort());
   });
 
   it('does not re-claim what it has marked dispatched', async () => {
@@ -229,7 +257,7 @@ describe('outbox — draining side', () => {
       await recordFailure(tx, 'audit', claimed.id, 'consumer exploded');
     });
 
-    const retry = await withAuditScope(async (tx) => claimPending(tx, 'audit'));
+    const retry = ours(await withAuditScope(async (tx) => claimPending(tx, 'audit')));
     expect(retry).toHaveLength(1);
     expect(retry[0]?.attempts).toBe(1);
   });
@@ -269,7 +297,7 @@ describe('outbox — draining side', () => {
 
       // 'audit' is done with this event. A second consumer asking for its OWN
       // backlog must still see it — the old single-flag design would not.
-      const forRealtime = await withAuditScope(async (tx) => claimPending(tx, 'realtime'));
+      const forRealtime = ours(await withAuditScope(async (tx) => claimPending(tx, 'realtime')));
       expect(forRealtime).toHaveLength(1);
 
       // And 'audit' really is done — this is not a fluke of never having
@@ -289,11 +317,11 @@ describe('outbox — draining side', () => {
 
       // realtime never attempted this event, so it is unaffected by audit's
       // failure — a shared attempts counter would have poisoned it too.
-      const forRealtime = await withAuditScope(async (tx) => claimPending(tx, 'realtime'));
+      const forRealtime = ours(await withAuditScope(async (tx) => claimPending(tx, 'realtime')));
       expect(forRealtime).toHaveLength(1);
       expect(forRealtime[0]?.attempts).toBe(0);
 
-      const auditRetry = await withAuditScope(async (tx) => claimPending(tx, 'audit'));
+      const auditRetry = ours(await withAuditScope(async (tx) => claimPending(tx, 'audit')));
       expect(auditRetry).toHaveLength(1);
       expect(auditRetry[0]?.attempts).toBe(1);
     });

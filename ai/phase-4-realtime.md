@@ -1,12 +1,21 @@
 # Phase 4 — Realtime spine
 
-**Status: APPROVED 2026-08-05 — Wave 1 in progress.** Drafted to be reviewed and argued with, the
+**Status: APPROVED 2026-08-05 — Waves 1 and 2 built.** Drafted to be reviewed and argued with, the
 same way `phase-3.5-work-ux.md` was before its own approval. §3 stands as written; the five open
 questions in §7 were answered on approval and are recorded there with the reasoning, not left as a
 default nobody chose. Getting §3 wrong is expensive to unwind once a gateway is broadcasting to
 real clients, which is why it was argued about first.
 
 Read §7 before §5 — three of those answers change what Wave 1 builds.
+
+**Where the draft turned out to be wrong.** Four places, all corrected in place rather than left for
+a reader to trip over, because a spec that disagrees with the code teaches the code is wrong:
+§4.1 (the catalog's exclusions are three different arguments, not one), §4.2 (one payload change WAS
+needed, contradicting "no new payload schemas"), §5.1 (presence must use `fetchSockets()`, not
+`adapter.rooms`), and §5.2 (reconnect needs an explicit rejoin, not just a refetch). §7.2's event
+name was also wrong — `session.token_reuse_detected`, not `token.reuse_detected`.
+
+Wave 3 (activity-stream persistence) remains out of scope — see §2 and §7.4.
 
 Parent: [PLAN.md](../PLAN.md) §9 (Real-Time Architecture), §10.6 (Domain events), §13 (Roadmap).
 
@@ -218,30 +227,70 @@ Two controls beyond the token check itself:
   domain event) does not apply here — a refusal is not a mutation — but "not an audit event" and
   "invisible to anyone" are not the same requirement, and this phase should not conflate them.
 
-## 4. Event catalog for Wave 1 — nothing new to define
+## 4. Event catalog — nothing new to define
 
 Every event this phase broadcasts already exists (`apps/api/src/work/events.ts`) and already flows
 through the outbox in its own transaction (guardrail 11). This phase is a BROADCASTER, not a new
-producer:
+producer.
+
+**As built (Wave 2), the room table carries these 25** — `apps/realtime/src/event-rooms.ts` is the
+authority; this list is a description of it, not a second source of truth:
 
 ```
-card.created · card.updated · card.moved · card.assigned · card.archived · card.status_changed
+card.created · card.updated · card.moved · card.assigned · card.archived
+card.status_changed · card.labeled · card.field_set
 list.created · list.updated · list.reordered · list.archived · list.rebalanced
-board.created · board.updated · board.archived
+board.updated · board.archived
 comment.created · comment.updated · comment.deleted
-checklist.* · custom_field.* · label.* · view.*
+checklist.created · checklist.deleted
+checklist_item.created · checklist_item.updated · checklist_item.deleted
+view.created · view.updated · view.deleted
 ```
 
-**Deliberately excluded from this catalog: `attachment.*`.** A presigned download URL is a bearer
-credential for the one file it names — the entire design CLAUDE.md's attachments notes describe,
-with its own short expiry — and broadcasting one to a room hands it to everyone currently
-subscribed, not only the uploader. If attachment events are ever added to a later wave, the
-broadcast payload carries `attachmentId`, and the client re-requests a presigned URL through the
-normal authorized HTTP path — never the URL itself, and never `presignDownload`'s result relayed
-through a channel with a broader audience than the one caller who asked for it.
+### 4.1 The three exclusions, and why each is a different argument
 
-No new `defineEvent()` calls, no new payload schemas. The event→room table in §3.4 is the only new
-mapping this phase introduces.
+The draft catalog above listed `checklist.*`, `custom_field.*`, `label.*` and `board.created`
+loosely. Building it forced each to be decided, and they did not decide the same way. All three are
+enforced at boot by `assertRoomTableIsSafe`, not by comment alone — the check runs in CI and on
+every developer's machine, before a connection is accepted, rather than in production on the first
+real event.
+
+**`attachment.*` — a security exclusion.** A presigned download URL is a bearer credential for the
+one file it names, with its own short expiry, and broadcasting one to a room hands it to everyone
+currently subscribed rather than the one caller who asked. If attachment events are ever added, the
+payload carries `attachmentId` and the client re-requests a URL over the normal authorized HTTP
+path. This is the one exclusion where being wrong leaks data.
+
+**`label.*`, `custom_field.*`, `status.*` — a routing exclusion.** These are PROJECT-scoped
+vocabulary changes: their payloads carry `projectId`, never a single `boardId`, because a project
+commonly has more than one board and renaming a label affects every card carrying it across all of
+them. §3.4's whole design is one fixed key per event precisely so "which room" is never a judgment
+made at broadcast time, and there is no single board room that is the right answer here. Routing to
+"every board under the project" would need a project-room concept §3.1 does not have, or a
+per-broadcast database lookup the table exists to avoid. Left on the 30-second `staleTime` poll
+instead: renaming a label is a low-frequency admin action, and the gap is a wait of at most half a
+minute rather than a silently broken feature.
+
+**`board.created` — a pointless-broadcast exclusion.** It names a board that did not exist a moment
+ago, so no client can have joined `board:{boardId}` for it. The room always has zero subscribers.
+Excluded not because it is unsafe but because including it would look like a working feature under
+any test that does not check who actually received it.
+
+### 4.2 One payload change was needed after all
+
+The draft claimed "no new `defineEvent()` calls, no new payload schemas." That held for Wave 1 and
+broke in Wave 2: the five `checklist.*` / `checklist_item.*` events carried `cardId` but no
+`boardId`, and `cardId` names a card, not a room. Since §3.4 routes strictly on a fixed payload key
+with no lookup, those events could not be routed at all.
+
+`boardId` was added to all five payloads (`apps/api/src/work/events.ts`, and the corresponding
+`createEvent` calls in `checklist.service.ts`). Every caller already held the parent card, so this
+is a field already in hand rather than a new query. The alternative — letting the room table do a
+database read to resolve a card's board — is the exact per-broadcast lookup §3.4 exists to prevent.
+
+Old outbox rows written before this change carry no `boardId`, and `roomBoardIdOf` returns null for
+them rather than guessing: they are marked dispatched and broadcast nowhere, which is correct for
+an event whose audience cannot be determined.
 
 ## 5. Waves
 
@@ -267,19 +316,58 @@ mapping this phase introduces.
 
 ### Wave 2 — full catalog, presence, reconnect
 
-- Every event in §4 wired through the room table.
-- Presence: in-process, ephemeral, per §9 — who else has this room open, no persistence, cleared on
-  disconnect. Socket.io's own room membership is presence; this is mostly a client-side avatar
-  stack reading `io.sockets.adapter.rooms`, not a new data model.
-- Reconnect-and-diff (§9): on reconnect, the client refetches the board's queries rather than
-  replaying a missed-event log — `apps/web` already has this shape in `refetchOnReconnect: true`
-  (`lib/query.ts`); Wave 2 is confirming the socket's own reconnect triggers it, not building a new
-  mechanism.
-- Session/membership-revocation force-disconnect (§3.3) extended to every event named there, not
-  just the one Wave 1 proved.
+- Every event in §4 wired through the room table, with the three exclusion classes in §4.1 enforced
+  at boot and the payload change in §4.2 made to reach them.
+- `apps/web` handles the catalog with three strategies chosen per event — PATCH the field, ADJUST a
+  counter by a delta the payload can compute exactly, or INVALIDATE. The rule for choosing is the
+  same one §3.4 applies to rooms: never guess. `checklist_item.deleted` invalidates rather than
+  adjusts because its payload carries no `done` state for the item it removed, so the counter delta
+  is unknowable; `checklist_item.updated` adjusts, because `before`/`after` give it outright.
+- Presence: ephemeral, per §9 — who else has this room open, no persistence, no domain event,
+  cleared on disconnect.
+- Reconnect-and-diff (§9).
+- Session/membership-revocation force-disconnect (§3.3) extended to every event named there.
 - **Acceptance:** every board interaction Phase 3.5 shipped (drag, quick-assign, comment, status
   change, checklist toggle) is visible to a second viewer live. A socket that drops for thirty
   seconds and reconnects ends up in the same state a hard refresh would have produced.
+
+#### 5.1 Presence reads `fetchSockets()`, not `io.sockets.adapter.rooms`
+
+The draft said "mostly a client-side avatar stack reading `io.sockets.adapter.rooms`". That is
+wrong the moment there is a second instance, and wrong silently: `adapter.rooms` only ever sees
+sockets connected to THIS process, so presence would report a subset of who is actually there, with
+nothing failing to say so. Since §5 wires the Postgres adapter at single-instance scale precisely so
+a second instance is not a retrofit, presence must not be the one thing that quietly assumes one.
+
+`io.in(room).fetchSockets()` is the adapter-aware API for exactly this — it asks every instance and
+answers as one cluster — so `presence.ts` is already correct whether the gateway is one process or
+several.
+
+The broadcast is the FULL member list, never a delta. A client that missed one update is correct
+again on the very next one, with nothing to reconcile; a delta stream would need the client to
+detect and repair its own drift.
+
+#### 5.2 Reconnect needs an explicit rejoin, which the draft did not anticipate
+
+The draft treated reconnect-and-diff as "confirming the socket's own reconnect triggers
+`refetchOnReconnect`, not building a new mechanism." The refetch half is indeed that. The other half
+is not, and missing it leaves a tab that looks connected and receives nothing:
+
+**Room membership does not survive a reconnect.** The gateway's `disconnect` handler already ran and
+cleared its side, so a socket that re-authenticates and stops there is in no rooms at all. The
+client therefore tracks which boards this tab wants joined and replays `board:join` for each on
+Socket.io's `reconnect` event (`lib/socket.ts`).
+
+Two details worth keeping:
+
+- It is the Manager's `reconnect`, not the socket's `connect`. `connect` also fires on the FIRST
+  connection, where there is no membership to have lost and nothing to diff — firing there would
+  invalidate every board query on every page load.
+- The room is recorded BEFORE the join is emitted, not in its ack. An ack only arrives if the
+  connection survives long enough to carry it back, so recording it there loses exactly the joins
+  that were in flight when the socket dropped — the precise case a reconnect exists to recover from.
+  `apps/web/src/lib/socket.test.ts` asserts this directly, and the assertion fails against the
+  ack-based version.
 
 Wave 3 (activity-stream persistence) is explicitly not scoped here — see §2.
 

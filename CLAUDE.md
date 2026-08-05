@@ -69,12 +69,16 @@ For these, a second adversarial AI pass in a fresh context is expected, not opti
 ## Layout
 
 ```
-apps/       api                              (arriving: realtime, collab, worker)
+apps/       api                              (arriving: collab, worker)
               src/identity   ⚠ auth, tokens, sessions, passkeys
               src/tenancy      orgs, memberships, teams, grants, audit projection
               src/work         projects, boards, lists, cards, ranking, rich text,
                                labels, checklists, custom fields, comments,
                                ⚠ attachments, filter wiring
+            realtime           Socket.io gateway — broadcast only, never writes
+              src/auth.ts    ⚠ handshake: token, origin, socket.data.identity
+              src/rooms.ts   ⚠ room join = a fresh can() check
+              src/relay.ts     the 'realtime' outbox consumer
             web                React 19 + Vite
               src/lib          tRPC client, session, query client, wire types
               src/components   primitives + app shell
@@ -106,7 +110,8 @@ pnpm --filter @taskflow/db migrate:up
 pnpm --filter @taskflow/db migrate:verify           # up -> down -> up, on taskflow_test
 
 pnpm --filter @taskflow/api dev                     # API on :3000
-pnpm --filter @taskflow/web dev                     # app on :5173, proxies /trpc
+pnpm --filter @taskflow/realtime dev                # socket gateway on :3001
+pnpm --filter @taskflow/web dev                     # app on :5173, proxies /trpc + /socket.io
 ```
 
 The web dev server PROXIES `/trpc` rather than the API enabling CORS. The refresh cookie is
@@ -174,16 +179,22 @@ so CI starts from a clean checkout and never sees this.
 **Phase 0B, Phase 1 (identity), Phase 2 (tenancy, authz & audit) and Phase 3 (Work) complete** —
 backend and `apps/web`.
 
-**Phase 3.5 (Work UX) is APPROVED and IN PROGRESS** — spec in [ai/phase-3.5-work-ux.md](ai/phase-3.5-work-ux.md),
-approved 2026-07-30. Wave 1 (sidebar, optimistic mutations, inline create, detail modal) and Wave 2
-(status, priority, group-by/sort-by, List view — migrations 0011/0012) have shipped. **Wave 3 is the
-open work**: saved views, bulk actions, My Tasks, command palette, keyboard shortcuts.
+**Phase 3.5 (Work UX) is COMPLETE** — spec in [ai/phase-3.5-work-ux.md](ai/phase-3.5-work-ux.md),
+approved 2026-07-30. All three waves shipped: sidebar, optimistic mutations, inline create and the
+detail modal; status, priority, group-by/sort-by and List view (migrations 0011/0012); then saved
+views, bulk actions, My Tasks, the command palette and keyboard shortcuts.
 
-Phase 4 (realtime spine) comes after 3.5, not before it. §8.4 of the 3.5 spec is explicit that this
-phase must not pre-empt it — no polling loop and no socket to make two tabs agree. Read the spec's
-own status header before trusting a phase marker anywhere else: the §13 roadmap table and this
-section were both stale for the whole of Wave 1 and Wave 2, which is how an agent asked to find
-"what's next" confidently answered Phase 4.
+**Phase 4 (realtime spine) is COMPLETE for its scoped waves** — spec in
+[ai/phase-4-realtime.md](ai/phase-4-realtime.md), approved 2026-08-05. Wave 1 (the gateway, room
+authorization, the `'realtime'` outbox consumer) and Wave 2 (the full event catalog, presence,
+reconnect-and-diff) both shipped. Wave 3 — a persisted activity stream — is explicitly NOT in this
+phase; §2 and §7.4 argue why, and it is a follow-up rather than an omission.
+
+**Read a spec's own status header before trusting a phase marker anywhere else.** The §13 roadmap
+table and this section were both stale for the whole of Phase 3.5's Wave 1 and Wave 2, which is how
+an agent asked to find "what's next" confidently answered Phase 4 while Wave 3 was still open. The
+same staleness recurred at the end of 3.5. If you are reading this to decide what to build, open the
+newest `ai/phase-*.md` and read its header first.
 
 Deferred deliberately from Phase 3, and NOT bugs: passkey sign-in is wired on the API but the
 browser ceremony (`@simplewebauthn/browser`) is not in this build, so the login page says so
@@ -191,6 +202,63 @@ rather than showing a button that does nothing. Calendar and timeline views are 
 the plan does not schedule until later. `packages/ui` is still unbuilt on purpose — §6 says
 extract a component only once the same pattern appears three times, and `components/primitives.tsx`
 is where that will be measured from.
+
+### Phase 4 — the realtime spine, and the failures that do not announce themselves
+
+`apps/realtime` · migration 0016 · `apps/web/src/lib/socket.ts`. ⚠ `auth.ts` and `rooms.ts` are
+human-review surfaces (§2.2): together they decide who is in which room, for hours at a time.
+
+**There is nowhere in the protocol to assert an identity, and that is the design.** A socket's
+identity is set exactly once, at the handshake, from the verified token, onto `socket.data`. Every
+handler reads it from there. `JoinRequest` carries an org and a board and nothing else, `.strict()`,
+so a client sending `userId` is REFUSED rather than having the field ignored — ignoring it reads as
+"harmless" to the next person and invites a handler that trusts it. This is the shape of the most
+damaging Socket.io bug there is: "subscribe me to my own notifications", taking the id from the
+message, looped over a range harvests everyone's data from a connection that proved nothing, and
+leaves no HTTP audit trail because no route was touched. `wire.test.ts` asserts the refusal.
+
+**The org id in a join IS client-supplied, and that is safe for the same reason the
+`x-taskflow-org` header is.** It selects a row inside `withUserScope(verifiedUserId)`; it is never
+written to `app.org_id` and never becomes a role. Naming an org you are not in matches zero
+membership rows. Do not "harden" this by trusting a token claim instead — that reintroduces the
+staleness the HTTP path spends a query per request to avoid.
+
+**`FOR UPDATE` needs an UPDATE policy, and the failure is silent.** Migration 0016 granted the
+consumer role SELECT only. `claimPending`'s claim is `SELECT ... FOR UPDATE OF o SKIP LOCKED`, and
+Postgres will not lock a row that does not also pass a policy applying to UPDATE — it EXCLUDES the
+row rather than erroring. The gateway booted cleanly, logged nothing, and delivered zero broadcasts,
+indistinguishable from an idle queue. The policy's `WITH CHECK` is `false`, not `true`: a locking
+select never writes a row, so it never reaches WITH CHECK — the lock is permitted and an actual
+write is refused by the database. Both halves were confirmed against a real database, because
+"a locking select skips WITH CHECK" is exactly the kind of claim that is cheap to believe.
+
+**`NOTIFY` is an optimization; the poll is the correctness guarantee.** Nothing queues a
+notification for a disconnected listener, so a gateway that woke only on `NOTIFY` would lose events
+precisely when it had just recovered. Delete `notify.ts` and everything still arrives, one poll
+later; delete the poll and events vanish. That asymmetry is why both exist, and why the poll
+interval is free to stay lazy.
+
+**Rooms do not survive a reconnect, and the client must replay the join.** The gateway's own
+`disconnect` handler already cleared its side, so a socket that merely re-authenticates sits in no
+rooms — receiving nothing, while looking connected, forever. `socket.ts` tracks what this tab wants
+joined and replays it on the Manager's `reconnect` (not `connect`, which also fires on the first
+connection and would refetch every board on every page load). The room is recorded BEFORE the emit,
+never in the ack: an ack only arrives if the connection survives to carry it back, so recording it
+there loses exactly the joins that were in flight when the socket dropped.
+
+**Presence uses `fetchSockets()`, never `io.sockets.adapter.rooms`.** The latter sees only sockets
+on THIS instance, so presence would report a subset the day a second one starts, with nothing
+failing to say so. The Postgres adapter is wired at single-instance scale precisely so that day is
+not a retrofit; presence must not be the one thing that quietly assumes one process.
+
+**A test asserting on the outbox must scope to its own org.** `platform.outbox` is one global queue
+— a consumer drains every tenant by design — so `claimPending` legitimately returns other suites'
+rows, and turbo runs packages in parallel against one `taskflow_test`. Unscoped assertions fail with
+`expected 6 to be 1`, which reads as a fan-out bug rather than a foreign fixture, and only
+sometimes, so the reflex is to re-run rather than investigate. `ours()` in `relay.test.ts` and
+`audit.test.ts` is the fix; emptying the table instead would delete fixtures belonging to suites
+that file knows nothing about. Residue is not self-generating — a clean run leaves zero rows — but
+an ABORTED run skips `afterAll` and seeds the next failure, which is how one red suite cascades.
 
 ### Phase 3 — `apps/web`, and the two places its types lied
 

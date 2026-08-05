@@ -175,6 +175,14 @@ const KNOWN_VARIABLES = new Set([
   'API_HOST',
   'API_TRUST_PROXY',
   'WEB_ORIGIN',
+  /* Read by apps/web's vite.config.ts, never by a server — but they carry the
+     `WEB_` prefix, so `assertNoMisspelledVariables` treats them as ours and
+     REJECTS them unless they are listed here. A developer who set either one in
+     .env to point the dev server at a non-default backend would find both the
+     API and the gateway refusing to boot, with an error naming a variable that
+     is spelled perfectly correctly. */
+  'WEB_API_ORIGIN',
+  'WEB_REALTIME_ORIGIN',
   /* apps/realtime (Phase 4). Same reasoning as DATABASE_REALTIME_URL above —
      this set is every TaskFlow variable across ALL services, not the ones this
      app reads, so that a typo is caught wherever it is made. */
