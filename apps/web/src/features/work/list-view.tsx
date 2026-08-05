@@ -31,9 +31,20 @@ export interface ListViewProps {
   readonly groupBy: GroupBy;
   readonly sortBy: SortBy;
   readonly onOpenCard: (cardId: string) => void;
+  /** Overridden by `home-page.tsx`, which is not showing a board's filter. */
+  readonly emptyDescription?: string;
 }
 
-export function ListView({ lists, cards, statuses, people, groupBy, sortBy, onOpenCard }: ListViewProps) {
+export function ListView({
+  lists,
+  cards,
+  statuses,
+  people,
+  groupBy,
+  sortBy,
+  onOpenCard,
+  emptyDescription = "Nothing matches this board's filter yet.",
+}: ListViewProps) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const { peopleOf } = useMembers();
 
@@ -42,7 +53,7 @@ export function ListView({ lists, cards, statuses, people, groupBy, sortBy, onOp
   if (groups.length === 0) {
     return (
       <div className="flex-1 p-6">
-        <Empty title="No cards" description="Nothing matches this board's filter yet." />
+        <Empty title="No cards" description={emptyDescription} />
       </div>
     );
   }

@@ -23,6 +23,7 @@ import {
 } from '@taskflow/contracts';
 import { createEvent, type DomainEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
+import { can } from '@taskflow/policy';
 import {
   cardArchived,
   cardAssigned,
@@ -32,7 +33,7 @@ import {
   cardUpdated,
   listRebalanced,
 } from './events.js';
-import { compile, type FilterNode } from '@taskflow/filter';
+import { ME, compare, compile, type FilterNode } from '@taskflow/filter';
 import { loadList } from './list.service.js';
 import { rebalanceList } from './rebalance.js';
 import { flattenToText, type RichTextNode } from './richtext.js';
@@ -181,6 +182,89 @@ export async function listCards(
       reference: referenceOf(projectKey, number),
     }));
   });
+}
+
+/**
+ * Every live card ASSIGNED to the actor, across every board they can reach
+ * (`ai/phase-3.5-work-ux.md` §6 — My Tasks / Home).
+ *
+ * Unlike `listCards`, there is no single board to gate the read on — the
+ * whole point is to cross them. The route's `card:read` is only the ORG-level
+ * floor (layer 1), so this still has to ask the per-board question `enforceOn`
+ * asks everywhere else in this file: being ASSIGNED to a card is not the same
+ * as being able to READ its board, and a restrictive `viewer` tuple can land
+ * on a board after someone was already assigned to a card there (§8.2).
+ *
+ * `can()` — not `enforceOn`, which throws — because one board going private
+ * must shrink this list, not break it. It is cheap to call per row: it is
+ * pure and the actor's tuples are already resolved for this request, so the
+ * filter below is in-memory and costs no extra query.
+ */
+export async function listMyCards(
+  actor: WorkActor,
+  input: { readonly includeArchived?: boolean },
+): Promise<readonly CardSummary[]> {
+  return withOrgScope(orgOf(actor), async (tx) => {
+    const rows = await tx
+      .select({
+        cardId: schema.cards.id,
+        listId: schema.cards.listId,
+        boardId: schema.cards.boardId,
+        projectId: schema.cards.projectId,
+        number: schema.cards.number,
+        projectKey: schema.projects.key,
+        title: schema.cards.title,
+        rank: schema.cards.rank,
+        assigneeIds: schema.cards.assigneeIds,
+        statusId: schema.cards.statusId,
+        priority: schema.cards.priority,
+        dueDate: schema.cards.dueDate,
+        commentCount: schema.cards.commentCount,
+        checklistDone: schema.cards.checklistDone,
+        checklistTotal: schema.cards.checklistTotal,
+        version: schema.cards.version,
+        archivedAt: schema.cards.archivedAt,
+      })
+      .from(schema.cards)
+      .innerJoin(schema.projects, eq(schema.projects.id, schema.cards.projectId))
+      .where(
+        and(
+          isNull(schema.cards.deletedAt),
+          input.includeArchived === true ? undefined : isNull(schema.cards.archivedAt),
+          // Reuses the same field the visual filter builder offers rather
+          // than a bespoke array-contains query, so "assigned to me" means
+          // exactly one thing everywhere it is asked (§10.2).
+          myAssignmentPredicate(actor),
+        ),
+      )
+      // No board to scope a rank within, so ordered by due date — nulls
+      // last, matching `grouping.ts`'s "someday is not soonest" rule — with
+      // `id` breaking ties deterministically.
+      .orderBy(asc(schema.cards.dueDate), asc(schema.cards.id));
+
+    return rows
+      .filter(
+        (row) =>
+          can(actor.subject, 'card:read', {
+            orgId: orgOf(actor),
+            resource: { type: 'card', id: row.cardId },
+            ancestors: ancestorsOfCard(row),
+          }).allowed,
+      )
+      .map(({ number, projectKey, projectId: _projectId, ...row }) => ({
+        ...row,
+        priority: row.priority as Priority | null,
+        reference: referenceOf(projectKey, number),
+      }));
+  });
+}
+
+/** `assignee` overlaps `[@me]` — the filter compiler's own field, not a raw query. */
+function myAssignmentPredicate(actor: WorkActor): SQL | undefined {
+  const compiled = compile('card', compare('assignee', 'in', [ME]), {
+    viewerId: actor.subject.userId,
+  });
+  return compiledPredicate(compiled.sql, compiled.params);
 }
 
 export interface CardDetail extends CardSummary {

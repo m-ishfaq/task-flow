@@ -992,6 +992,84 @@ describe('authorization beyond the role', () => {
   });
 });
 
+describe('my tasks (cross-board)', () => {
+  it('lists cards assigned to the caller, but only on boards they can still read', async () => {
+    const fixture = await scaffold('work-my-tasks');
+    await members.addMember(
+      fixture.orgId,
+      { email: 'viewer@work.test', role: 'guest' },
+      { userId: OWNER, requestId },
+    );
+
+    // A second board in the same project, so the two cards differ only in
+    // which board they sit on.
+    const otherBoard = await boards.createBoard(fixture.owner, {
+      projectId: fixture.projectId,
+      name: 'Marketing',
+    });
+    const otherList = await lists.createList(fixture.owner, {
+      boardId: otherBoard.boardId,
+      name: 'Todo',
+      wipLimit: null,
+    });
+
+    const visible = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Visible to the guest',
+      description: null,
+    });
+    const hidden = await cards.createCard(fixture.owner, {
+      listId: otherList.listId,
+      title: 'Hidden from the guest',
+      description: null,
+    });
+
+    await cards.assignCard(fixture.owner, { cardId: visible.cardId, assigneeIds: [VIEWER] });
+    await cards.assignCard(fixture.owner, { cardId: hidden.cardId, assigneeIds: [VIEWER] });
+
+    /* Guest grants NOTHING from the role alone (packages/policy/src/roles.ts).
+       A `viewer` tuple on the FIRST board only is what should make one card
+       visible and the other not — being ASSIGNED to a card is not the same as
+       being able to READ the board it lives on (§8.2), and this is the one
+       cross-board read with no board-level `card:read` gate above it to catch
+       that. */
+    await grants.grant(
+      fixture.orgId,
+      {
+        subjectType: 'user',
+        subjectId: VIEWER,
+        relation: 'viewer',
+        objectType: 'board',
+        objectId: fixture.boardId,
+        expiresAt: null,
+      },
+      { userId: OWNER, requestId },
+    );
+
+    const guest = await actorFor(fixture.orgId, VIEWER, 'guest');
+    const mine = await cards.listMyCards(guest, {});
+
+    expect(mine.map((card) => card.cardId)).toEqual([visible.cardId]);
+  });
+
+  it('excludes archived cards by default and includes them when asked', async () => {
+    const fixture = await scaffold('work-my-tasks-archive');
+
+    const card = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Assigned to the owner',
+      description: null,
+    });
+    await cards.assignCard(fixture.owner, { cardId: card.cardId, assigneeIds: [OWNER] });
+    await cards.archiveCard(fixture.owner, { cardId: card.cardId, archived: true });
+
+    expect(await cards.listMyCards(fixture.owner, {})).toHaveLength(0);
+
+    const withArchived = await cards.listMyCards(fixture.owner, { includeArchived: true });
+    expect(withArchived.map((row) => row.cardId)).toEqual([card.cardId]);
+  });
+});
+
 describe('archiving', () => {
   it('hides an archived card from the board', async () => {
     const fixture = await scaffold('work-archive');
@@ -1242,11 +1320,16 @@ describe('saved views', () => {
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
 
     await expect(
-      views.updateView(fixture.owner, { ...body, viewId: view.viewId, name: 'Mine', isShared: true }),
+      views.updateView(fixture.owner, {
+        ...body,
+        viewId: view.viewId,
+        name: 'Mine',
+        isShared: true,
+      }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
-  it("stores @me unresolved, so a shared view does not mean its author", async () => {
+  it('stores @me unresolved, so a shared view does not mean its author', async () => {
     const fixture = await scaffold('work-views-me');
 
     await views.createView(fixture.owner, {

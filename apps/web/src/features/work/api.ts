@@ -152,6 +152,24 @@ export function archivedCardsQuery(orgId: string, boardId: BoardId) {
   });
 }
 
+/**
+ * My Tasks / Home (`ai/phase-3.5-work-ux.md` §6) — every live card assigned
+ * to the caller, across every board they can reach.
+ *
+ * Deliberately not `cardsQuery` with `boardId` made optional: that query's key
+ * is `keys.cards(orgId, boardId, filterKey)`, and a board-shaped key with no
+ * board would either collide with a real board's cache or need a sentinel
+ * that every other reader of `keys.cards` has to know to skip. A separate
+ * key (`keys.myCards`) keeps the two caches from ever answering for each
+ * other.
+ */
+export function myCardsQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.myCards(orgId),
+    queryFn: async () => wire(await api.work.cards.mine.query({})),
+  });
+}
+
 export function cardQuery(orgId: string, cardId: CardId) {
   return queryOptions({
     queryKey: keys.card(orgId, cardId),

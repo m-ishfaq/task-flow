@@ -110,6 +110,36 @@ const ViewBody = z.object({
 });
 
 /**
+ * The shape `cards.list` and `cards.mine` both return — one card summary.
+ *
+ * Factored out because the two routes are the same row shape read two
+ * different ways (one board vs. every board the caller can reach), and a
+ * schema that drifted between them would be a field silently missing from
+ * one but not the other.
+ */
+const CardSummaryOutput = z
+  .array(
+    z.object({
+      cardId: z.string(),
+      listId: z.string(),
+      boardId: z.string(),
+      reference: z.string(),
+      title: z.string(),
+      rank: z.string(),
+      assigneeIds: z.array(z.string()).readonly(),
+      statusId: z.string().nullable(),
+      priority: Priority.nullable(),
+      dueDate: z.date().nullable(),
+      commentCount: z.number().int().nonnegative(),
+      checklistDone: z.number().int().nonnegative(),
+      checklistTotal: z.number().int().nonnegative(),
+      version: z.number().int().positive(),
+      archivedAt: z.date().nullable(),
+    }),
+  )
+  .readonly();
+
+/**
  * Dependencies the Work module cannot construct for itself.
  *
  * Only attachments need any: everything else in Work reaches the tenant-scoped
@@ -402,30 +432,24 @@ export function createWorkRouter(deps: WorkRouterDeps) {
             })
             .strict(),
         )
-        .output(
-          z
-            .array(
-              z.object({
-                cardId: z.string(),
-                listId: z.string(),
-                boardId: z.string(),
-                reference: z.string(),
-                title: z.string(),
-                rank: z.string(),
-                assigneeIds: z.array(z.string()).readonly(),
-                statusId: z.string().nullable(),
-                priority: Priority.nullable(),
-                dueDate: z.date().nullable(),
-                commentCount: z.number().int().nonnegative(),
-                checklistDone: z.number().int().nonnegative(),
-                checklistTotal: z.number().int().nonnegative(),
-                version: z.number().int().positive(),
-                archivedAt: z.date().nullable(),
-              }),
-            )
-            .readonly(),
-        )
+        .output(CardSummaryOutput)
         .query(({ input, ctx }) => cards.listCards(actorOf(ctx), input)),
+
+      /**
+       * My Tasks / Home (`ai/phase-3.5-work-ux.md` §6) — every live card
+       * assigned to the caller, across every board they can reach.
+       *
+       * No `boardId`: this is the one card read that is deliberately
+       * cross-board, so there is no single `card:read` target for the route
+       * to gate on beyond the org-level floor declared here. `listMyCards`
+       * makes up for that by checking each row against the caller's actual
+       * board access before returning it — see the service for why that
+       * cannot be skipped.
+       */
+      mine: route({ permission: 'card:read' })
+        .input(z.object({ includeArchived: z.boolean().default(false) }).strict())
+        .output(CardSummaryOutput)
+        .query(({ input, ctx }) => cards.listMyCards(actorOf(ctx), input)),
 
       get: route({ permission: 'card:read' })
         .input(z.object({ cardId: CardIdSchema }).strict())
@@ -497,9 +521,7 @@ export function createWorkRouter(deps: WorkRouterDeps) {
        * never read its description or dates and should not need to.
        */
       setStatus: route({ permission: 'card:update' })
-        .input(
-          z.object({ cardId: CardIdSchema, statusId: StatusIdSchema.nullable() }).strict(),
-        )
+        .input(z.object({ cardId: CardIdSchema, statusId: StatusIdSchema.nullable() }).strict())
         .output(z.object({ statusId: z.string().nullable() }))
         .mutation(({ input, ctx }) => cards.setCardStatus(actorOf(ctx), input)),
 

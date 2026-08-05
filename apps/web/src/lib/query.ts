@@ -190,6 +190,9 @@ export const keys = {
   cardsOfBoard: (orgId: string, boardId: string) =>
     ['org', orgId, 'board', boardId, 'cards'] as const,
 
+  /** Cross-board — every live card assigned to the caller (`home-page.tsx`). */
+  myCards: (orgId: string) => ['org', orgId, 'myCards'] as const,
+
   card: (orgId: string, cardId: string) => ['org', orgId, 'card', cardId] as const,
   cardLabels: (orgId: string, cardId: string) => ['org', orgId, 'card', cardId, 'labels'] as const,
   cardFields: (orgId: string, cardId: string) => ['org', orgId, 'card', cardId, 'fields'] as const,
