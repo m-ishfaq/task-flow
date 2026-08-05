@@ -1,7 +1,8 @@
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import type { DomainEvent, OutboxWriter } from '@taskflow/events';
 import type { GlobalDb, TenantDb } from './client.js';
 import { outbox, outboxDispatch } from './schema/platform.js';
+import { instant } from './audit-log.js';
 
 /**
  * The outbox — writing side and draining side (PLAN.md §10.6, guardrail 11).
@@ -86,52 +87,85 @@ export interface OutboxRow {
   readonly attempts: number;
 }
 
+/** Narrows an unknown raw-row column to text, without stringifying an object into it. */
+function text(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+function required(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
 /**
  * Claims up to `limit` events not yet dispatched to `consumer`, oldest first.
  *
- * The LEFT JOIN against `outbox_dispatch` filtered on `dispatchedAt IS NULL`
- * matches two cases identically: no dispatch row at all (never attempted),
- * and a dispatch row whose `dispatchedAt` is still null (attempted and
- * failed — see `recordFailure`). Both are "still owed to this consumer".
+ * Raw SQL (`tx.execute`), not the query builder — see `audit-log.ts` for the
+ * same choice made for the same kind of reason. Here it is `FOR UPDATE OF`:
+ * Postgres requires an UNQUALIFIED relation name in that clause ("FOR UPDATE
+ * must specify unqualified relation names"), but `.for('update', { of: outbox
+ * })` renders the fully schema-qualified `"platform"."outbox"` — there is no
+ * builder option to ask for just the bare name. Aliasing the table in the
+ * FROM clause (`platform.outbox o`) and writing `FOR UPDATE OF o` satisfies
+ * Postgres AND keeps the lock scoped to the outbox row alone, not the
+ * (possibly absent) dispatch row — which matters because Postgres also
+ * refuses a bare `FOR UPDATE` with no `OF` when the query outer-joins a
+ * table that may have no matching row ("FOR UPDATE cannot be applied to the
+ * nullable side of an outer join"). `o` alone avoids both errors at once.
  *
- * `FOR UPDATE OF <outbox> SKIP LOCKED` locks only the outbox row, not the
- * (possibly absent) dispatch row — Postgres cannot lock a row a LEFT JOIN
- * didn't find, and outer-joined columns are never the thing two consumers
- * would contend on anyway. This is what lets a second instance of the SAME
- * consumer start without coordination: each claims a disjoint set instead of
- * both blocking on the same head row. Two DIFFERENT consumers were never
- * contending on this table to begin with — a realtime claim and an audit
- * claim touch disjoint `outbox_dispatch` rows regardless of locking, which is
- * the entire point of the table.
+ * The LEFT JOIN against `outbox_dispatch` filtered on `dispatched_at IS
+ * NULL` matches two cases identically: no dispatch row at all (never
+ * attempted), and a dispatch row whose `dispatched_at` is still null
+ * (attempted and failed — see `recordFailure`). Both are "still owed to this
+ * consumer". Locking only `o` is what lets a second instance of the SAME
+ * consumer start without coordination — each claims a disjoint set instead
+ * of both blocking on the same head row. Two DIFFERENT consumers were never
+ * contending on this table to begin with: a realtime claim and an audit
+ * claim touch disjoint `outbox_dispatch` rows regardless of locking, which
+ * is the entire point of the table.
+ *
+ * `instant()` (from `audit-log.ts`) is needed for the same reason it is
+ * there: raw `tx.execute` does not run the column through drizzle's
+ * schema-aware type mapping, so `occurred_at` arrives as the text Postgres
+ * rendered, not a `Date`.
  */
 export async function claimPending(
   tx: GlobalDb,
   consumer: string,
   limit = 100,
 ): Promise<readonly OutboxRow[]> {
-  const rows = await tx
-    .select({
-      id: outbox.id,
-      orgId: outbox.orgId,
-      name: outbox.name,
-      version: outbox.version,
-      actorId: outbox.actorId,
-      occurredAt: outbox.occurredAt,
-      requestId: outbox.requestId,
-      payload: outbox.payload,
-      attempts: sql<number>`coalesce(${outboxDispatch.attempts}, 0)`.as('attempts'),
-    })
-    .from(outbox)
-    .leftJoin(
-      outboxDispatch,
-      and(eq(outboxDispatch.eventId, outbox.id), eq(outboxDispatch.consumer, consumer)),
-    )
-    .where(isNull(outboxDispatch.dispatchedAt))
-    .orderBy(asc(outbox.occurredAt), asc(outbox.id))
-    .limit(limit)
-    .for('update', { of: outbox, skipLocked: true });
+  const result = await tx.execute(sql`
+    SELECT o.id::text            AS id,
+           o.org_id::text        AS org_id,
+           o.name                AS name,
+           o.version              AS version,
+           o.actor_id::text      AS actor_id,
+           o.occurred_at          AS occurred_at,
+           o.request_id           AS request_id,
+           o.payload              AS payload,
+           coalesce(d.attempts, 0) AS attempts
+      FROM platform.outbox o
+      LEFT JOIN platform.outbox_dispatch d
+        ON d.event_id = o.id AND d.consumer = ${consumer}
+     WHERE d.dispatched_at IS NULL
+     ORDER BY o.occurred_at, o.id
+     LIMIT ${limit}
+       FOR UPDATE OF o SKIP LOCKED
+  `);
 
-  return rows;
+  return result.rows.map((row): OutboxRow => {
+    const record: Record<string, unknown> = row;
+    return {
+      id: required(record['id']),
+      orgId: required(record['org_id']),
+      name: required(record['name']),
+      version: Number(record['version']),
+      actorId: text(record['actor_id']),
+      occurredAt: instant(record['occurred_at']),
+      requestId: text(record['request_id']),
+      payload: record['payload'],
+      attempts: Number(record['attempts']),
+    };
+  });
 }
 
 /**
