@@ -136,7 +136,8 @@ export async function applyRevocation(
       case 'member_removed': {
         if (socket.data.identity.userId !== message.userId) break;
         for (const [boardId, orgId] of [...socket.data.rooms]) {
-          if (orgId === message.orgId) await leaveRoom(io, socket, boardId, logger, 'member removed');
+          if (orgId === message.orgId)
+            await leaveRoom(io, socket, boardId, logger, 'member removed');
         }
         break;
       }

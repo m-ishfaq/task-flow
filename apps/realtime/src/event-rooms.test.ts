@@ -106,7 +106,10 @@ describe('assertRoomTableIsSafe', () => {
 
     for (const name of broadcastEventNames()) {
       expect(name).not.toBe('board.created');
-      expect(projectScopedPrefixes.some((prefix) => name.startsWith(prefix)), name).toBe(false);
+      expect(
+        projectScopedPrefixes.some((prefix) => name.startsWith(prefix)),
+        name,
+      ).toBe(false);
     }
   });
 });
