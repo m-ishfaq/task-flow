@@ -92,8 +92,21 @@ function text(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
 }
 
-function required(value: unknown): string {
-  return typeof value === 'string' ? value : '';
+/**
+ * Narrows a raw-row column that the schema guarantees is present — `id`,
+ * `orgId`, `name` are all `NOT NULL` on `platform.outbox`.
+ *
+ * Throws rather than falling back to `''`, matching `instant()` above. A
+ * silent empty string here does not fail where the invariant actually
+ * broke: it would flow into `markDispatched`'s `event_id`, which fails on
+ * the foreign key to `outbox.id` — a confusing error several calls away
+ * from a raw SQL row that did not have the shape this function assumed.
+ */
+function required(column: string, value: unknown): string {
+  if (typeof value !== 'string') {
+    throw new TypeError(`Expected ${column} from platform.outbox, received ${typeof value}.`);
+  }
+  return value;
 }
 
 /**
@@ -155,9 +168,9 @@ export async function claimPending(
   return result.rows.map((row): OutboxRow => {
     const record: Record<string, unknown> = row;
     return {
-      id: required(record['id']),
-      orgId: required(record['org_id']),
-      name: required(record['name']),
+      id: required('id', record['id']),
+      orgId: required('org_id', record['org_id']),
+      name: required('name', record['name']),
       version: Number(record['version']),
       actorId: text(record['actor_id']),
       occurredAt: instant(record['occurred_at']),
