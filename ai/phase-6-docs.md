@@ -63,7 +63,7 @@ templates, permissions inheriting down the tree, publish-to-public, PDF export, 
   mutations, permission grants, comments, versions, publish) is an ordinary tRPC route on
   `apps/api`, exactly like Work and Chat.
 - **Full-text search over page content.** PLAN.md §10.2's TQL AST already models `type IN (page,
-  message)` as a target shape; cross-product indexing is Phase 8/11's job. This phase emits
+message)` as a target shape; cross-product indexing is Phase 8/11's job. This phase emits
   `page.updated` as a real, typed, outbox-carried event for Phase 8 to index later — it does not
   build the index.
 - **Automation triggers on doc events** ("page published in this space" — PLAN.md §10.3). Same
@@ -99,14 +99,14 @@ column.
 
 This is a narrower exception than "Docs writes through sockets" might suggest, and keeping it
 narrow is the point: every place this codebase reasons about tenancy, authorization, and audit for
-*structural* changes to a page (move it, delete it, publish it, grant access to it) stays on the
+_structural_ changes to a page (move it, delete it, publish it, grant access to it) stays on the
 exact same rails as everything else. The exception is contained to the one thing that genuinely
 cannot go through a request/response API and stay correct under concurrent editing: the live text
 itself.
 
 ### 3.2 `apps/collab` is a separate app, not a namespace on `apps/realtime`
 
-Phase 5 §3.2 puts Chat delivery on the *same* `apps/realtime` process, as a second Socket.io
+Phase 5 §3.2 puts Chat delivery on the _same_ `apps/realtime` process, as a second Socket.io
 namespace, specifically because Chat's sockets still broadcast-only — reusing the handshake and
 room-authorization machinery costs nothing and duplicates no trust boundary. Docs is the opposite
 case. `apps/collab` (Hocuspocus / y-websocket) is the one process in the whole system allowed to
@@ -117,7 +117,7 @@ labeled exception. Keeping `apps/collab` a small, separate, single-purpose servi
 
 - A bug in `apps/realtime`'s socket handling still cannot write anything, by construction — the
   blast radius of a Work- or Chat-side defect is unchanged by Docs existing.
-- The one process that *can* write from a socket is minimal enough to review as a whole. Its only
+- The one process that _can_ write from a socket is minimal enough to review as a whole. Its only
   job is CRDT sync plus the auth hook in §3.3 — there is no unrelated feature code in the same
   process for a reviewer to lose the write-exception in.
 - Operationally this is a new deployable and a new thing to monitor (§7.2 raises whether that's
@@ -151,7 +151,7 @@ exists (see §6.2), the same way `apps/realtime/src/auth.ts` and `rooms.ts` are 
 
 **Read-only grants map to Hocuspocus's read-only connection mode** — a viewer-relation tuple or a
 Guest granted only `page:read` gets a connection that receives sync/awareness updates but has
-writes rejected server-side. Whether Hocuspocus's read-only mode is a *server-enforced* rejection
+writes rejected server-side. Whether Hocuspocus's read-only mode is a _server-enforced_ rejection
 of persisted writes, versus merely a client-side hint that a determined client could still send
 updates past, is not assumed here — §7.4 flags it as needing verification against the library's
 actual behavior before Wave 1 ships anything relying on it. If the library's guarantee turns out
@@ -206,8 +206,8 @@ Comments and suggestions are relational data — they need `comment:create`/`com
 permissions distinct from `page:update`, matching Work's card-detail precedent exactly (CLAUDE.md:
 "Comments are `comment:create`, never `card:update`... someone can be given a voice ... without
 edit rights"; editing is author-only, deleting is author-or-moderator). What's new here is that a
-comment has to stay attached to a *range of text inside a document that keeps changing underneath
-it*. Storing a plain character offset would detach the comment from its text the moment anyone
+comment has to stay attached to a _range of text inside a document that keeps changing underneath
+it_. Storing a plain character offset would detach the comment from its text the moment anyone
 edits anything before that offset. Yjs's own `RelativePosition` API exists specifically to survive
 concurrent edits before or after an anchor; a comment or suggestion stores a serialized relative
 position (resolved against the live Yjs doc when rendered), not a byte offset or a copy of the
@@ -257,7 +257,7 @@ raw-`tx.execute` cast in Phase 2's audit reader). `cards.update` validates a **c
 document** and accepts-or-rejects it whole. A Yjs update is a binary CRDT operation, not a document
 — there is no "reject this operation" hook that can whitelist-check it mid-stream the way a Zod
 schema checks a full-document replace. The realistic enforcement point is a server-side pass that
-decodes the *materialized* document (on save-boundary, matching §3.9's compaction/snapshot
+decodes the _materialized_ document (on save-boundary, matching §3.9's compaction/snapshot
 cadence) and validates its shape, rejecting or stripping anything outside the whitelist at that
 point — meaning a disallowed node can exist in live, uncommitted CRDT state for as long as it takes
 to reach the next validation pass, which is a materially weaker guarantee than Work's "invalid
