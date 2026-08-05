@@ -54,6 +54,47 @@ export interface Target {
    * the caller has already loaded the row.
    */
   readonly ancestors?: readonly ResourceRef[];
+  /**
+   * When true, an org ROLE alone never reaches this resource. Only a relation
+   * on it or on one of its ancestors does.
+   *
+   * ## Why the engine needed a third answer
+   *
+   * Until Phase 5 every resource in this system was open to the org: a member
+   * holding `card:read` could read every card, and a tuple's job was only to
+   * ADD access (an `editor` on one board) or CAP it (a `viewer` who may not
+   * write). Absence of a tuple therefore meant "no opinion", and the engine
+   * correctly fell through to the role.
+   *
+   * A private channel and a DM are the first resources where absence of a tuple
+   * must mean DENY. Without this flag, `member` holding `channel:read` from the
+   * role matrix reads every private channel and every direct message in the
+   * organization — and does so silently, because nothing in the trace looks
+   * wrong: the role genuinely grants the permission, and there is genuinely no
+   * tuple to consider.
+   *
+   * ## Why it is a property of the TARGET and not of the resource type
+   *
+   * `channel` is not uniformly closed. A public channel is open to the org by
+   * design and a private one is not, and they are rows in the same table with
+   * the same resource type. Only the caller — which has loaded the row — knows
+   * which it is holding, exactly as only the caller knows the ancestor chain.
+   * Keying this off `resource.type` would force the engine to learn what a
+   * channel is, and would make "public" unexpressible.
+   *
+   * ## Owners and admins do NOT bypass this
+   *
+   * `bypassesRestrictions` lets an administrator through a restrictive CAP, on
+   * the reasoning that they could delete the tuple anyway so enforcing it would
+   * be confusing rather than safer. That reasoning does not extend here, and the
+   * difference is visibility. An admin adding themselves to a private channel is
+   * an act its members can see and the audit log records; an admin reading a
+   * closed resource they were never given is indistinguishable from a member
+   * doing it, and for a DM there is no membership they could grant themselves at
+   * all. The audited path to someone else's private conversation is compliance
+   * export, not an ambient capability every administrator carries.
+   */
+  readonly closed?: boolean;
 }
 
 export interface Decision {
@@ -162,6 +203,19 @@ export function can(subject: Subject, permission: Permission, target?: Target): 
   const nearest = nearestApplicable(subject.tuples, target);
 
   if (nearest.length === 0) {
+    /* A closed resource is not reachable by role. Checked BEFORE the role
+       fallback rather than after, so the trace reads as the denial it is
+       instead of showing a role grant that was then discarded. */
+    if (target.closed) {
+      trace.push({
+        layer: 2,
+        outcome: 'deny',
+        rule: 'resource is closed and the subject holds no relation on it',
+        detail: 'membership of a private channel or DM is a tuple, not a role',
+      });
+      return finish(false, 'You are not a member of this resource.');
+    }
+
     trace.push({ layer: 2, outcome: 'skip', rule: 'no relationship tuple on this resource' });
     return byRole
       ? finish(true, `Role ${subject.role} grants ${permission}.`)

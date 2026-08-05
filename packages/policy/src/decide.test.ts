@@ -191,6 +191,78 @@ describe('fail-closed behaviour', () => {
   });
 });
 
+/**
+ * Closed resources — a private channel or a DM (ai/phase-5-chat.md §3.3).
+ *
+ * Every assertion here is about the same failure, approached from a different
+ * angle: `member` holds `channel:read` from the role matrix, so a channel target
+ * built WITHOUT `closed` is allowed for everyone in the organization. Nothing
+ * throws and the decision trace reads as correct — the role really does grant
+ * the permission and there really is no tuple to weigh against it — so the only
+ * thing standing between a private conversation and every colleague is the flag
+ * these tests pin down.
+ */
+describe('closed resources', () => {
+  const CHANNEL = { type: 'channel', id: 'chan_5a1' } as const;
+
+  const openChannel: Target = { orgId: ORG_A, resource: CHANNEL, ancestors: [] };
+  const closedChannel: Target = { ...openChannel, closed: true };
+
+  it('lets the role reach an OPEN channel — the public case', () => {
+    expect(can(subject('member'), 'channel:read', openChannel).allowed).toBe(true);
+  });
+
+  it('denies a closed channel to a member holding no relation on it', () => {
+    // The whole point. Without `closed`, this is `true`.
+    expect(can(subject('member'), 'channel:read', closedChannel).allowed).toBe(false);
+  });
+
+  it('allows a closed channel to someone holding a member tuple on it', () => {
+    const insider = subject('member', [tuple('member', CHANNEL)]);
+    expect(can(insider, 'channel:read', closedChannel).allowed).toBe(true);
+    expect(can(insider, 'message:create', closedChannel).allowed).toBe(true);
+  });
+
+  it('does NOT let an owner or admin bypass it', () => {
+    /* `bypassesRestrictions` lets an administrator through a restrictive CAP,
+       because they could delete the tuple anyway. That reasoning does not extend
+       to a resource they hold nothing on, and the difference is visibility:
+       adding yourself to a private channel is an act its members can see, and
+       for a DM there is no membership to grant yourself at all. The audited path
+       to someone else's conversation is compliance export. */
+    expect(can(subject('owner'), 'channel:read', closedChannel).allowed).toBe(false);
+    expect(can(subject('admin'), 'channel:read', closedChannel).allowed).toBe(false);
+  });
+
+  it('still honours a grant on the resource for an admin', () => {
+    const admin = subject('admin', [tuple('member', CHANNEL)]);
+    expect(can(admin, 'channel:read', closedChannel).allowed).toBe(true);
+  });
+
+  it('says why, rather than denying silently', () => {
+    const decision = can(subject('member'), 'channel:read', closedChannel);
+    const denial = decision.trace.find((step) => step.outcome === 'deny');
+
+    expect(denial?.rule).toContain('closed');
+    expect(decision.reason).toContain('not a member');
+  });
+
+  it('answers 404 through enforce, not 403', () => {
+    /* A non-member must not learn that a private channel exists. `enforce`
+       derives this from `channel:read` also failing, so it falls out of the
+       closed check rather than needing its own branch. */
+    expect(thrownCode(() => enforce(subject('member'), 'message:create', closedChannel))).toBe(
+      'NOT_FOUND',
+    );
+  });
+
+  it('leaves every open resource unaffected', () => {
+    // The flag is opt-in. Work has no closed resources and must not acquire one
+    // by accident, so the default is checked explicitly.
+    expect(can(subject('member'), 'card:read', cardTarget()).allowed).toBe(true);
+  });
+});
+
 /** The error code `fn` throws, or a description of why it did not. */
 function thrownCode(fn: () => unknown): string {
   try {

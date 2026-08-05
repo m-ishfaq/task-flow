@@ -1,6 +1,11 @@
-import type { Server, Socket } from 'socket.io';
+import type { Namespace, Server, Socket } from 'socket.io';
 import type { OrgId, UserId } from '@taskflow/contracts';
-import type { ClientToServerEvents, ServerToClientEvents } from './wire.js';
+import type {
+  ChatClientToServerEvents,
+  ChatServerToClientEvents,
+  ClientToServerEvents,
+  ServerToClientEvents,
+} from './wire.js';
 
 /**
  * What the server knows about a socket.
@@ -53,6 +58,35 @@ export type GatewaySocket = Socket<
 export type GatewayServer = Server<
   ClientToServerEvents,
   ServerToClientEvents,
+  InterServerEvents,
+  SocketData
+>;
+
+/**
+ * The `/chat` namespace and its sockets (ai/phase-5-chat.md §3.2).
+ *
+ * `SocketData` is REUSED rather than copied, and that is worth pausing on. A
+ * namespace connection is a distinct `Socket` object with its own `data`, so a
+ * chat socket's `rooms` map holds CHANNEL ids while a board socket's holds board
+ * ids — the same field name, two disjoint populations, no possibility of one
+ * being read as the other because they are never the same object.
+ *
+ * What is shared is `identity`, and it is shared in the way that matters: the
+ * chat namespace runs the SAME `verifyHandshake` middleware, so a chat socket's
+ * identity is set once, from the same verified token, and is never assignable
+ * from a chat message. §3.2's "this phase adds zero new authentication code" is
+ * this line.
+ */
+export type ChatSocket = Socket<
+  ChatClientToServerEvents,
+  ChatServerToClientEvents,
+  InterServerEvents,
+  SocketData
+>;
+
+export type ChatNamespace = Namespace<
+  ChatClientToServerEvents,
+  ChatServerToClientEvents,
   InterServerEvents,
   SocketData
 >;

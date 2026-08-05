@@ -319,6 +319,49 @@ describe('the application router', () => {
     }
   });
 
+  /**
+   * The Chat routes (Phase 5, ai/phase-5-chat.md §6.4).
+   *
+   * Named explicitly for the same reason Work's are: a route whose input schema
+   * stops matching the seeded bag silently drops to `not-applicable` and takes
+   * its coverage with it.
+   *
+   * Two of these are worth more than the rest. `channels.addMember` writes a
+   * relationship TUPLE, so a cross-tenant leak there is not a data read — it is
+   * granting somebody access, in another organization, permanently, through a
+   * table the policy engine consults on every request. And `channels.openDirect`
+   * takes a user id rather than a channel id, so it is the one route here that
+   * could name a person in another tenant rather than a resource; a leak would
+   * write a membership row about someone who has never heard of this org.
+   */
+  it('enrols the Chat routes and denies every one of them', async () => {
+    const results = await runTenancyFuzz({
+      router: appRouter,
+      attacker: seeded.attacker,
+      victim: seeded.victim,
+      callerFor: (context) => callerFor(context, appRouter),
+    });
+
+    const byPath = new Map(results.map((result) => [result.path, result.outcome]));
+
+    for (const path of [
+      'chat.channels.get',
+      'chat.channels.create',
+      'chat.channels.openDirect',
+      'chat.channels.update',
+      'chat.channels.archive',
+      'chat.channels.addMember',
+      'chat.channels.removeMember',
+      'chat.messages.list',
+      'chat.messages.thread',
+      'chat.messages.send',
+      'chat.messages.edit',
+      'chat.messages.delete',
+    ]) {
+      expect(byPath.get(path), `${path} was not enrolled by the fuzz harness`).toBe('denied');
+    }
+  });
+
   it('marks input-less routes not-applicable rather than silently passing them', async () => {
     /* These four read their org from the principal and accept no identifier, so
        there is nothing for this technique to substitute. Naming them here keeps
@@ -337,6 +380,12 @@ describe('the application router', () => {
       .sort();
 
     expect(exempt).toEqual([
+      /* `chat.channels.list` reads the caller's own tuples and their org's
+         public channels. There is no id to substitute, so calling it with the
+         victim's bag returns the ATTACKER's own channels and succeeds — which
+         the harness would otherwise report as a leak, permanently. RLS's own
+         tests and `chat-rooms.test.ts` cover it instead. */
+      'chat.channels.list',
       'tenancy.audit.verify',
       'tenancy.members.list',
       'tenancy.orgs.get',

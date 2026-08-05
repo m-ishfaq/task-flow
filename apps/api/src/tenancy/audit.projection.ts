@@ -103,6 +103,28 @@ const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>> = {
   'comment.created': { type: 'comment', key: 'commentId' },
   'comment.updated': { type: 'comment', key: 'commentId' },
   'comment.deleted': { type: 'comment', key: 'commentId' },
+
+  /* Chat (Phase 5). Membership changes resolve to the CHANNEL rather than to
+     the member, which is the opposite of what `member.added` does one section
+     up — and the difference is what a reader of the audit log is looking for.
+     An org membership change is a fact about a PERSON ("what happened to this
+     account?"); a channel membership change is a fact about a private space
+     ("who has had access to this conversation, and when?"). Resolving these to
+     the user would scatter one channel's access history across as many resource
+     ids as it has members, which is precisely the query an access review needs
+     to be able to run.
+
+     Messages resolve to the message, not the channel, for the ordinary reason
+     `card.moved` resolves to the card: the compliance record should name the
+     thing that changed. */
+  'channel.created': { type: 'channel', key: 'channelId' },
+  'channel.updated': { type: 'channel', key: 'channelId' },
+  'channel.archived': { type: 'channel', key: 'channelId' },
+  'channel.member_added': { type: 'channel', key: 'channelId' },
+  'channel.member_removed': { type: 'channel', key: 'channelId' },
+  'message.sent': { type: 'message', key: 'messageId' },
+  'message.edited': { type: 'message', key: 'messageId' },
+  'message.deleted': { type: 'message', key: 'messageId' },
 };
 
 interface Resource {

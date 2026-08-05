@@ -3,6 +3,7 @@ import { publicRoute, router } from './trpc/builder.js';
 import { createIdentityRouter, type IdentityRouterDeps } from './identity/router.js';
 import { createTenancyRouter } from './tenancy/router.js';
 import { createWorkRouter, type WorkRouterDeps } from './work/router.js';
+import { createChatRouter } from './chat/router.js';
 
 /**
  * The root router.
@@ -63,6 +64,17 @@ export function createAppRouter(deps: AppRouterDeps) {
      * services with configuration and a lifecycle.
      */
     work: createWorkRouter(deps.work),
+
+    /**
+     * Chat — channels, direct messages, messages (Phase 5).
+     *
+     * Dependency-free for the same reason as tenancy: the tenant-scoped
+     * database and the policy engine are module-level and stateless, and the
+     * rich-text validator is a pure schema. File sharing arrives in Wave 3 and
+     * reuses Work's attachment pipeline rather than growing a second one, so
+     * even that will not add a dependency here.
+     */
+    chat: createChatRouter(),
   });
 }
 

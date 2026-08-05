@@ -74,6 +74,45 @@ const BOARD_KEY_OF: Readonly<Record<string, string>> = {
 };
 
 /**
+ * Event name → the payload key holding the channel id its room is named after
+ * (ai/phase-5-chat.md §3.4).
+ *
+ * The SAME mechanism as `BOARD_KEY_OF`, a second table rather than a second
+ * code path — §3.4 asks for rows, not for chat-specific room-resolution logic.
+ * Two tables rather than one because the two rooms are keyed on different
+ * payload fields and a single map would need a discriminator that is itself a
+ * judgment call at broadcast time.
+ *
+ * `channel.member_added` and `channel.member_removed` are absent, and NOT by
+ * oversight. Broadcasting them to `channel:{id}` would tell everyone currently
+ * in a private channel who just joined or left, which is fine — but the socket
+ * that actually needs to act on a removal is the REMOVED person's, and that
+ * socket is by definition no longer entitled to the room the message would be
+ * sent to. That eviction is `revocation.ts`'s job, driven by the `grant.revoked`
+ * event the tuple write produces, and adding a room mapping here would make it
+ * look as though the broadcast were doing the work.
+ *
+ * `channel.created` is absent for the same reason `board.created` is: no client
+ * can have joined a room for a channel whose id it has never seen, so the
+ * broadcast would always have zero subscribers and would look like a working
+ * feature under any test that does not check who received it.
+ */
+const CHANNEL_KEY_OF: Readonly<Record<string, string>> = {
+  'message.sent': 'channelId',
+  'message.edited': 'channelId',
+  'message.deleted': 'channelId',
+
+  /* A rename or a topic change is visible to everyone with the channel open,
+     and unlike a label rename (see the project-scoped note below) it names
+     exactly one room. */
+  'channel.updated': 'channelId',
+
+  /* Archiving stops a channel accepting messages. Everyone watching needs to
+     know, and they are all in the one room this names. */
+  'channel.archived': 'channelId',
+};
+
+/**
  * Deliberately absent, and NOT an oversight: `attachment.*` (§4).
  *
  * A presigned download URL is a bearer credential for the file it names. If an
@@ -138,6 +177,16 @@ const BOARD_CREATED_REASON =
   '"board.created" names a board no client has ever seen, so its room always has zero ' +
   'subscribers — the broadcast would be a silent no-op, not a working feature.';
 
+const CHANNEL_CREATED_REASON =
+  '"channel.created" names a channel no client has ever joined, so its room always has zero ' +
+  'subscribers — the same silent no-op as "board.created". A client learns about a new ' +
+  'channel from the polled channel list, not from a room it cannot be in.';
+
+const DUAL_ROOM_REASON =
+  'This event is mapped to BOTH a board room and a channel room. They are different rooms on ' +
+  'different namespaces with independently authorized membership, so it would be delivered ' +
+  'twice to two audiences — and a mistake in either is invisible from inside the other.';
+
 /**
  * Fails the process at boot if the table above ever grows a forbidden entry.
  *
@@ -156,6 +205,27 @@ export function assertRoomTableIsSafe(): void {
     }
     if (name === 'board.created') {
       throw new UnsafeRoomMappingError(name, BOARD_CREATED_REASON);
+    }
+  }
+
+  for (const name of Object.keys(CHANNEL_KEY_OF)) {
+    /* The attachment ban applies identically to chat (§3.10). Chat file sharing
+       reuses the existing pipeline, so `attachment.uploaded` is exactly as much
+       of a bearer credential in a channel as it is on a card — and a channel
+       room is a larger audience. */
+    if (name.startsWith(NEVER_BROADCAST_PREFIX)) {
+      throw new UnsafeRoomMappingError(name, ATTACHMENT_REASON);
+    }
+    if (name === 'channel.created') {
+      throw new UnsafeRoomMappingError(name, CHANNEL_CREATED_REASON);
+    }
+    /* A channel and a board are different rooms on different namespaces. One
+       event mapped into both would be delivered twice, to two audiences whose
+       membership was decided by two different `can()` calls — and the one that
+       is wrong would be invisible, because each broadcast looks correct from
+       inside its own namespace. */
+    if (name in BOARD_KEY_OF) {
+      throw new UnsafeRoomMappingError(name, DUAL_ROOM_REASON);
     }
   }
 }
@@ -178,7 +248,31 @@ export function roomBoardIdOf(name: string, payload: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-/** Every event name currently routed to a room. For tests and diagnostics. */
+/**
+ * The channel id an event should be broadcast to, or null if it has no room.
+ *
+ * Same contract as `roomBoardIdOf`: null covers both "not a broadcast event" and
+ * "the payload did not carry the id the table expects", and the correct response
+ * to the second is still not to broadcast. A malformed payload is not a reason
+ * to guess at an audience — and on this table the audience is a private
+ * conversation.
+ */
+export function roomChannelIdOf(name: string, payload: unknown): string | null {
+  const key = CHANNEL_KEY_OF[name];
+  if (key === undefined) return null;
+
+  if (typeof payload !== 'object' || payload === null) return null;
+
+  const value = (payload as Record<string, unknown>)[key];
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+/** Every event name currently routed to a board room. For tests and diagnostics. */
 export function broadcastEventNames(): readonly string[] {
   return Object.keys(BOARD_KEY_OF);
+}
+
+/** Every event name currently routed to a channel room. */
+export function chatBroadcastEventNames(): readonly string[] {
+  return Object.keys(CHANNEL_KEY_OF);
 }
