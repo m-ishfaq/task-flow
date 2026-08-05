@@ -355,7 +355,12 @@ export function CommentSection({ orgId, boardId, cardId }: CommentSectionProps) 
              round trip between two replies is what makes people stop using it.
              The comment is already visible in the list above by the time this
              runs. */
-          <Button size="sm" variant="primary" disabled={isEmptyDocument(composer.draft)} onClick={composer.submit}>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={isEmptyDocument(composer.draft)}
+            onClick={composer.submit}
+          >
             Comment
           </Button>
         }
@@ -455,7 +460,11 @@ function CommentRow({
                 per its own doc comment — so this never regresses to a blank
                 line, only to what it already rendered before. */}
             {comment.authorId !== null && (
-              <Avatar userId={comment.authorId} label={personOf(comment.authorId).label} size="xs" />
+              <Avatar
+                userId={comment.authorId}
+                label={personOf(comment.authorId).label}
+                size="xs"
+              />
             )}
             <span className="font-medium text-ink-muted">
               {comment.authorId === null ? 'Unknown author' : personOf(comment.authorId).label}
@@ -490,7 +499,12 @@ function CommentRow({
                 denial from the server, the same as every other
                 permission-gated control here. */}
             {comment.authorId !== null && comment.authorId === viewerId && (
-              <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onStartEdit}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-5 px-1 text-[11px]"
+                onClick={onStartEdit}
+              >
                 Edit
               </Button>
             )}

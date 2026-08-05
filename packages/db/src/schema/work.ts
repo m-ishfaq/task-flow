@@ -471,7 +471,12 @@ export const statuses = work.table(
   },
   (table) => [
     uniqueIndex('statuses_org_project_id_key').on(table.orgId, table.projectId, table.id),
-    index('statuses_project_position_idx').on(table.orgId, table.projectId, table.position, table.id),
+    index('statuses_project_position_idx').on(
+      table.orgId,
+      table.projectId,
+      table.position,
+      table.id,
+    ),
     // `statuses_project_name_key` is case-insensitive (lower(name)) and
     // `statuses_project_default_key` is partial (WHERE is_default) — both
     // expression indexes Drizzle has no builder for. Migration only.

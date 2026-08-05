@@ -27,7 +27,13 @@ import type { CardSummary, Priority, Status } from './api.js';
 export type GroupBy = 'list' | 'status' | 'assignee' | 'priority' | 'due';
 export type SortBy = 'manual' | 'title' | 'due' | 'priority';
 
-export const GROUP_BY_OPTIONS: readonly GroupBy[] = ['list', 'status', 'assignee', 'priority', 'due'];
+export const GROUP_BY_OPTIONS: readonly GroupBy[] = [
+  'list',
+  'status',
+  'assignee',
+  'priority',
+  'due',
+];
 export const SORT_BY_OPTIONS: readonly SortBy[] = ['manual', 'title', 'due', 'priority'];
 
 export interface Group {

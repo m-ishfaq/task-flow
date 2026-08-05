@@ -108,7 +108,10 @@ export async function createStatus(
             .update(schema.statuses)
             .set({ isDefault: false })
             .where(
-              and(eq(schema.statuses.projectId, input.projectId), eq(schema.statuses.isDefault, true)),
+              and(
+                eq(schema.statuses.projectId, input.projectId),
+                eq(schema.statuses.isDefault, true),
+              ),
             );
         }
 
@@ -235,9 +238,7 @@ export async function deleteStatus(
     const attached = await tx
       .select({ cardId: schema.cards.id })
       .from(schema.cards)
-      .where(
-        and(eq(schema.cards.statusId, input.statusId), isNull(schema.cards.deletedAt)),
-      );
+      .where(and(eq(schema.cards.statusId, input.statusId), isNull(schema.cards.deletedAt)));
 
     await tx.delete(schema.statuses).where(eq(schema.statuses.id, input.statusId));
 

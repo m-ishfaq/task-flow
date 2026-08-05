@@ -142,9 +142,7 @@ export function createTenancyRouter() {
                 teamId: z.string(),
                 name: z.string(),
                 slug: z.string(),
-                members: z
-                  .array(z.object({ userId: z.string(), email: z.string() }))
-                  .readonly(),
+                members: z.array(z.object({ userId: z.string(), email: z.string() })).readonly(),
               }),
             )
             .readonly(),

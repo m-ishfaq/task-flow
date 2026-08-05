@@ -57,7 +57,9 @@ export async function reset(options: ResetOptions): Promise<ResetResult> {
   }
 
   const orgIds = await findSeededOrgIds(connection, userIds);
-  log(`reset: found ${String(orgIds.length)} seeded org(s), ${String(userIds.length)} seeded user(s)`);
+  log(
+    `reset: found ${String(orgIds.length)} seeded org(s), ${String(userIds.length)} seeded user(s)`,
+  );
 
   const tables = tablesInTeardownOrder(resolveModules(roots)).filter(
     (table) => table !== 'identity.users',

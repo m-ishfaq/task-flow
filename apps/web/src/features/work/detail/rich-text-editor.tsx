@@ -5,7 +5,11 @@ import Link from '@tiptap/extension-link';
 import { cn } from '../../../lib/cn.js';
 import { Button } from '../../../components/primitives.js';
 import { useMembers } from '../../org/use-members.js';
-import { createMentionSuggestion, MentionExtension, type MentionCandidate } from './mention-extension.js';
+import {
+  createMentionSuggestion,
+  MentionExtension,
+  type MentionCandidate,
+} from './mention-extension.js';
 import { EMPTY_DOCUMENT, SAFE_SCHEMES, toDocument, type DocumentNode } from './rich-text.js';
 
 /**

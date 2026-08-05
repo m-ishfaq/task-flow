@@ -395,8 +395,10 @@ function buildCard(args: {
     ? latest(createdAt, daysBefore(now, rng.int(5, 60)))
     : null;
 
-  const archivedAt = draft.kind === 'archived' ? latest(createdAt, daysBefore(now, rng.int(1, 45))) : null;
-  const deletedAt = draft.kind === 'deleted' ? latest(createdAt, daysBefore(now, rng.int(1, 45))) : null;
+  const archivedAt =
+    draft.kind === 'archived' ? latest(createdAt, daysBefore(now, rng.int(1, 45))) : null;
+  const deletedAt =
+    draft.kind === 'deleted' ? latest(createdAt, daysBefore(now, rng.int(1, 45))) : null;
 
   /* ---------------------------------------------------------------------- *
    * Labels
@@ -429,7 +431,15 @@ function buildCard(args: {
     if (checklistRank === undefined) break;
 
     const checklistId = rng.uuid(now);
-    checklistRows.push([checklistId, project.orgId, cardId, checklistName(rng), checklistRank, createdAt, createdAt]);
+    checklistRows.push([
+      checklistId,
+      project.orgId,
+      cardId,
+      checklistName(rng),
+      checklistRank,
+      createdAt,
+      createdAt,
+    ]);
 
     const itemCount = rng.int(mix.checklistItems[0], mix.checklistItems[1]);
     const itemRanks = [...rankSequence(itemCount)];
@@ -477,7 +487,11 @@ function buildCard(args: {
    * ---------------------------------------------------------------------- */
 
   const commentRows: unknown[][] = [];
-  const liveComments: { readonly id: string; readonly createdAt: Date; readonly excerpt: string }[] = [];
+  const liveComments: {
+    readonly id: string;
+    readonly createdAt: Date;
+    readonly excerpt: string;
+  }[] = [];
 
   const commentCount = rng.int(mix.comments[0], mix.comments[1]);
   let cursor = createdAt;
@@ -509,7 +523,8 @@ function buildCard(args: {
       cursor,
     ]);
 
-    if (!isDeleted) liveComments.push({ id: commentId, createdAt: cursor, excerpt: bodyText.slice(0, 200) });
+    if (!isDeleted)
+      liveComments.push({ id: commentId, createdAt: cursor, excerpt: bodyText.slice(0, 200) });
   }
 
   /* ---------------------------------------------------------------------- *
@@ -519,13 +534,29 @@ function buildCard(args: {
   if (rng.chance(ctx.profile.cardEventSampleRate)) {
     const envelope = envelopeFor(project.orgId, createdBy, createdAt);
     ctx.emit(
-      createEvent(cardCreated, { cardId, boardId: board.id, listId: list.id, projectId: project.id, reference, title }, envelope),
+      createEvent(
+        cardCreated,
+        { cardId, boardId: board.id, listId: list.id, projectId: project.id, reference, title },
+        envelope,
+      ),
     );
     if (labelIds.length > 0) {
-      ctx.emit(createEvent(cardLabeled, { cardId, boardId: board.id, before: [], after: labelIds }, envelope));
+      ctx.emit(
+        createEvent(
+          cardLabeled,
+          { cardId, boardId: board.id, before: [], after: labelIds },
+          envelope,
+        ),
+      );
     }
     if (assigneeIds.length > 0) {
-      ctx.emit(createEvent(cardAssigned, { cardId, boardId: board.id, before: [], after: assigneeIds }, envelope));
+      ctx.emit(
+        createEvent(
+          cardAssigned,
+          { cardId, boardId: board.id, before: [], after: assigneeIds },
+          envelope,
+        ),
+      );
     }
     for (const comment of liveComments) {
       ctx.emit(
@@ -575,7 +606,9 @@ function buildCard(args: {
   ];
 
   const cardRef: SeededCardRef | null =
-    draft.kind === 'deleted' ? null : { id: cardId, orgId: project.orgId, boardId: board.id, createdAt, createdBy };
+    draft.kind === 'deleted'
+      ? null
+      : { id: cardId, orgId: project.orgId, boardId: board.id, createdAt, createdBy };
 
   return { cardRow, labelRows, checklistRows, itemRows, fieldRows, commentRows, cardRef };
 }

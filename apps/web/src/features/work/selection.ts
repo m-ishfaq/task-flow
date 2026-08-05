@@ -85,10 +85,7 @@ export function selectRange(
  * and a bulk action reaches rows the user believes they deselected when they
  * narrowed the filter.
  */
-export function pruneSelection(
-  state: SelectionState,
-  ordered: readonly string[],
-): SelectionState {
+export function pruneSelection(state: SelectionState, ordered: readonly string[]): SelectionState {
   const visible = new Set(ordered);
   const selected = new Set([...state.selected].filter((id) => visible.has(id)));
   const anchor = state.anchor !== null && visible.has(state.anchor) ? state.anchor : null;

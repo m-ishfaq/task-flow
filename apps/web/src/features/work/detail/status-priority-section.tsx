@@ -32,7 +32,8 @@ export function StatusSection({ orgId, boardId, cardId, projectId, statusId }: S
   const list = useQuery(statusesQuery(orgId, projectId));
 
   const setStatus = useMutation({
-    mutationFn: (next: StatusId | null) => api.work.cards.setStatus.mutate({ cardId, statusId: next }),
+    mutationFn: (next: StatusId | null) =>
+      api.work.cards.setStatus.mutate({ cardId, statusId: next }),
 
     ...optimistic<StatusId | null>({
       keys: [keys.card(orgId, cardId), keys.cardsOfBoard(orgId, boardId)],

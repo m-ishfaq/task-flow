@@ -226,7 +226,7 @@ export function createSeedContext(options: CreateContextOptions): SeedContextHan
     storage: options.storage,
     log: options.log,
 
-    use: <Out,>(module: SeedModule<Out>): Out => {
+    use: <Out>(module: SeedModule<Out>): Out => {
       if (!outputs.has(module)) {
         throw new Error(
           `Seed module "${module.name}" has not run. Add it to the \`requires\` list of the ` +

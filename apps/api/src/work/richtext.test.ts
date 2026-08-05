@@ -68,7 +68,11 @@ describe('mentions', () => {
   const mentioning = (attrs: unknown): unknown =>
     doc({
       type: 'paragraph',
-      content: [{ type: 'text', text: 'hey ' }, { type: 'mention', attrs }, { type: 'text', text: '!' }],
+      content: [
+        { type: 'text', text: 'hey ' },
+        { type: 'mention', attrs },
+        { type: 'text', text: '!' },
+      ],
     });
 
   it('accepts a well-formed mention', () => {
@@ -84,9 +88,7 @@ describe('mentions', () => {
   });
 
   it('rejects an empty label', () => {
-    expect(RichTextDocument.safeParse(mentioning({ userId: UUID, label: '' })).success).toBe(
-      false,
-    );
+    expect(RichTextDocument.safeParse(mentioning({ userId: UUID, label: '' })).success).toBe(false);
   });
 
   it('rejects an unlisted attribute, same as every other node', () => {

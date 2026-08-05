@@ -32,7 +32,8 @@ import type { DomainEvent } from '@taskflow/events';
  */
 
 const APP_URL =
-  process.env['TEST_DATABASE_URL'] ?? 'postgresql://taskflow_app:app-dev-secret@localhost:5433/taskflow_test';
+  process.env['TEST_DATABASE_URL'] ??
+  'postgresql://taskflow_app:app-dev-secret@localhost:5433/taskflow_test';
 const AUDIT_URL =
   process.env['TEST_DATABASE_AUDIT_URL'] ??
   'postgresql://taskflow_audit:audit-dev-secret@localhost:5433/taskflow_test';

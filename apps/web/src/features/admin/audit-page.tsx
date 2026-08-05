@@ -219,10 +219,7 @@ function ActorCell({
 
   if (actorEmail === null) {
     return (
-      <span
-        title={actorId}
-        className="inline-flex items-center gap-1.5 text-ink-faint"
-      >
+      <span title={actorId} className="inline-flex items-center gap-1.5 text-ink-faint">
         <span
           aria-hidden="true"
           className="flex size-5 shrink-0 items-center justify-center rounded-full border border-dashed border-line text-[9px]"

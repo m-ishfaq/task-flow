@@ -83,10 +83,10 @@ Add `statuses` as a per-project vocabulary and `cards.status_id` as a field. **K
 Lists remain the physical board columns and the ranking dimension; status becomes the semantic
 one. They coexist:
 
-| Concept | Owns | Used for |
-| --- | --- | --- |
-| `list` | board layout, `rank` scope, WIP limits | the default board grouping, drag ordering |
-| `status` | project vocabulary, done-ness | grouping, filtering, reporting, automation later |
+| Concept  | Owns                                   | Used for                                         |
+| -------- | -------------------------------------- | ------------------------------------------------ |
+| `list`   | board layout, `rank` scope, WIP limits | the default board grouping, drag ordering        |
+| `status` | project vocabulary, done-ness          | grouping, filtering, reporting, automation later |
 
 Migrating lists away entirely is a bigger and more destructive change than this phase needs, and
 composite-FK hierarchy enforcement (CLAUDE.md, Phase 3 notes) is built on `list_id`. Keeping both
@@ -319,7 +319,7 @@ exactly as `label` was.
 **~2–3 weeks.**
 
 - **Saved views** as rows, not URL params: `work.views` with `{ container, type, group_by,
-  sort_by, filter, visible_columns, is_shared }`. The filter column stores the existing AST —
+sort_by, filter, visible_columns, is_shared }`. The filter column stores the existing AST —
   which is why the AST shipping in Phase 3 rather than Phase 8 keeps paying off. `@me` stays
   symbolic in a stored filter for the reason §10.2 gives: substituting a user id at save time
   turns a shared view into "assigned to whoever saved it".
@@ -350,22 +350,26 @@ estimate and tracking · recurring cards · watchers.
 Nothing in this phase suspends the working agreement. The four that will actually come up:
 
 ### 8.1 The wire lies about dates
+
 Every new date-bearing output goes through `Wire<T>` and `wire()`. tRPC infers `Date` where JSON
 delivers a string, the compiler agrees with the lie, and `format()` silently renders
 "Invalid Date". Priority and status are strings, but due-date grouping in Wave 2 is exactly the
 code that breaks on this.
 
 ### 8.2 The UI never re-derives authorization
+
 Status controls, bulk bars and quick actions are all rendered; the server answers. §8.2 is
 explicit that a UI reimplementing `can()` produces two models that drift and the one users see is
 never tested.
 
 ### 8.3 Tests ship with the slice
+
 A slice with untested authorization is not done. Specifically: `grouping.ts` is pure and gets unit
 tests; every new filter field gets a parity case; every new route is enrolled in the fuzz
 manifest; any new policy action gets matrix rows before it gets an implementation.
 
 ### 8.4 Do not pre-empt Phase 4
+
 Optimistic updates are a cache concern and belong in the mutation. Cross-client invalidation is
 the realtime spine's job, from **one module**, per §10.5. Wave 1 must not grow a polling loop or a
 socket to make two tabs agree — that is Phase 4's design decision, not this phase's workaround.
@@ -374,12 +378,12 @@ socket to make two tabs agree — that is Phase 4's design decision, not this ph
 
 ## 9. Sequencing and cost
 
-| Wave | Delivers | Migrations | Est. |
-| --- | --- | --- | --- |
-| 1 | Sidebar, breadcrumbs, optimistic mutations, inline create, hover actions, avatars, toasts, skeletons, detail modal | none | 1–2 wks |
-| 2 | Status, priority, group-by, sort-by, List view | 0011, 0012 | 2–3 wks |
-| 3 | Saved views, bulk actions, My Tasks, command palette, shortcuts | 0013 | 2–3 wks |
-| 4 | Subtasks, dependencies, time tracking | TBD | not sized |
+| Wave | Delivers                                                                                                           | Migrations | Est.      |
+| ---- | ------------------------------------------------------------------------------------------------------------------ | ---------- | --------- |
+| 1    | Sidebar, breadcrumbs, optimistic mutations, inline create, hover actions, avatars, toasts, skeletons, detail modal | none       | 1–2 wks   |
+| 2    | Status, priority, group-by, sort-by, List view                                                                     | 0011, 0012 | 2–3 wks   |
+| 3    | Saved views, bulk actions, My Tasks, command palette, shortcuts                                                    | 0013       | 2–3 wks   |
+| 4    | Subtasks, dependencies, time tracking                                                                              | TBD        | not sized |
 
 **Waves 1–3 ≈ 5–8 weeks.** Wave 4 is a separate decision.
 

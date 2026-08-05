@@ -164,7 +164,7 @@ jobs:
         run: |
           for f in docker/postgres/init/*.sql; do
             echo "applying $f"
-            PGPASSWORD=postgres psql -h localhost -U postgres -d taskflow -v ON_ERROR_STOP=1 -f "$f"
+            PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d taskflow -v ON_ERROR_STOP=1 -f "$f"
           done
 
       - name: Cache Turborepo
@@ -191,13 +191,22 @@ jobs:
       - name: Guardrail self-test
         run: node packages/guardrail-selftest/verify.js
 
+      # Lives in THIS job, not the tiered `sast` one below. A tenant table
+      # without FORCE RLS is the single highest-impact mistake in the system, and
+      # gating it behind CI_SECURITY_ALWAYS means the default configuration does
+      # not check it. Pure Node — no database, no scanner image, no minutes worth
+      # saving. Was a Semgrep rule until generic-mode ellipsis spans made it
+      # report every correct migration; see .semgrep/taskflow.yml.
+      - name: Migration RLS invariants
+        run: node scripts/check-migration-rls.mjs
+
       - name: Migrations are reversible (up -> down -> up)
         run: pnpm --filter @taskflow/db migrate:verify
 
       # Proves RLS isolates and fails closed against the real engine.
       - name: RLS isolation probe
         run: |
-          PGPASSWORD=postgres psql -h localhost -U postgres -d taskflow \
+          PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d taskflow \
             -v ON_ERROR_STOP=1 -f docker/postgres/rls-probe.sql
 
   # ---------------------------------------------------------------------------

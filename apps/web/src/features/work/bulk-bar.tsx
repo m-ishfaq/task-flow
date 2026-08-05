@@ -39,14 +39,7 @@ export interface BulkBarProps {
 
 const PRIORITIES: readonly Priority[] = ['urgent', 'high', 'normal', 'low'];
 
-export function BulkBar({
-  orgId,
-  boardId,
-  selected,
-  statuses,
-  people,
-  onClear,
-}: BulkBarProps) {
+export function BulkBar({ orgId, boardId, selected, statuses, people, onClear }: BulkBarProps) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [running, setRunning] = useState(false);
@@ -88,9 +81,7 @@ export function BulkBar({
       aria-label="Bulk actions"
       className="absolute inset-x-0 bottom-4 z-10 mx-auto flex w-fit max-w-[95%] flex-wrap items-center gap-2 rounded-card border border-line bg-surface-raised px-3 py-2 shadow-xl"
     >
-      <span className="text-xs font-semibold text-ink">
-        {selected.size} selected
-      </span>
+      <span className="text-xs font-semibold text-ink">{selected.size} selected</span>
 
       <select
         aria-label="Set status"
@@ -102,7 +93,7 @@ export function BulkBar({
           void run('updated', (cardId) =>
             api.work.cards.setStatus.mutate({
               cardId: cardId,
-              statusId: value === '__none__' ? null : (value),
+              statusId: value === '__none__' ? null : value,
             }),
           );
         }}

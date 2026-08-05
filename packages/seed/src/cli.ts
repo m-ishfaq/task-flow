@@ -103,7 +103,7 @@ function printHelp(): void {
       '',
       '  --profile <name>   minimal | demo (default) | large',
       '  --seed <value>     RNG seed — same value always produces the same database',
-      '  --reset            remove this package\'s previously seeded orgs/users first',
+      "  --reset            remove this package's previously seeded orgs/users first",
       '  --chaos            deliberately create a degenerate rank, to exercise rebalance',
       '  --help             this message',
     ].join('\n'),
@@ -259,7 +259,9 @@ async function main(): Promise<void> {
     for (const org of orgs) {
       console.warn(`  ${org.slug.padEnd(12)} owner: ${org.owner.email}`);
     }
-    console.warn(`  (${String(users.length)} accounts total, @${users[0]?.email.split('@')[1] ?? ''})`);
+    console.warn(
+      `  (${String(users.length)} accounts total, @${users[0]?.email.split('@')[1] ?? ''})`,
+    );
 
     console.warn('\nDone.');
   } finally {
@@ -268,6 +270,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.stack ?? error.message : String(error));
+  console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
   process.exit(1);
 });

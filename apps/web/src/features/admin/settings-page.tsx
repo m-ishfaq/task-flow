@@ -232,11 +232,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
             ))}
           </select>
 
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={add.isPending || email.trim() === ''}
-          >
+          <Button type="submit" variant="primary" disabled={add.isPending || email.trim() === ''}>
             {add.isPending ? 'Adding…' : 'Add'}
           </Button>
         </form>
@@ -299,9 +295,7 @@ function MemberRow({ member, isSelf, busy, onRoleChange, onRemove }: MemberRowPr
           {isSelf && <span className="text-[11px] text-ink-faint">(you)</span>}
         </p>
         <p className="text-[11px] text-ink-faint">
-          {member.status !== 'active' && (
-            <span className="mr-1 text-warning">{member.status}</span>
-          )}
+          {member.status !== 'active' && <span className="mr-1 text-warning">{member.status}</span>}
           joined {formatDate(member.joinedAt)}
         </p>
       </div>
@@ -411,11 +405,7 @@ function TeamSection({ orgId }: { readonly orgId: string }) {
               />
             </Field>
           </div>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={create.isPending || name.trim() === ''}
-          >
+          <Button type="submit" variant="primary" disabled={create.isPending || name.trim() === ''}>
             {create.isPending ? 'Creating…' : 'Create'}
           </Button>
         </form>

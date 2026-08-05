@@ -326,16 +326,16 @@ describe('the evaluator', () => {
     expect(
       evaluate('card', compare('priority', 'in', ['urgent', 'high']), row({ priority: 'high' })),
     ).toBe(true);
-    expect(
-      evaluate('card', compare('priority', 'in', ['urgent']), row({ priority: 'low' })),
-    ).toBe(false);
+    expect(evaluate('card', compare('priority', 'in', ['urgent']), row({ priority: 'low' }))).toBe(
+      false,
+    );
   });
 
   it('is_empty on a nullable enum matches only the unset case', () => {
     expect(evaluate('card', compare('priority', 'is_empty'), row({ priority: null }))).toBe(true);
-    expect(
-      evaluate('card', compare('priority', 'is_empty'), row({ priority: 'normal' })),
-    ).toBe(false);
+    expect(evaluate('card', compare('priority', 'is_empty'), row({ priority: 'normal' }))).toBe(
+      false,
+    );
   });
 
   it('counts a null scalar as "not in" the list, matching the compiler', () => {

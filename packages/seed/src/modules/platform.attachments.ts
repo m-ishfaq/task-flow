@@ -28,7 +28,13 @@ import { cardsModule } from './work.cards.js';
 const PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
-const FILENAMES = ['screenshot.png', 'diagram.png', 'mockup.png', 'before.png', 'after.png'] as const;
+const FILENAMES = [
+  'screenshot.png',
+  'diagram.png',
+  'mockup.png',
+  'before.png',
+  'after.png',
+] as const;
 
 export interface AttachmentsOutput {
   readonly attachmentCount: number;

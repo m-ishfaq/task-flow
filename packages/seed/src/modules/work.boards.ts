@@ -148,7 +148,9 @@ export const boardsModule = defineSeedModule({
           createEvent(boardCreated, { boardId, projectId: project.id, name: plan.name }, envelope),
         );
         for (const list of lists) {
-          ctx.emit(createEvent(listCreated, { listId: list.id, boardId, name: list.name }, envelope));
+          ctx.emit(
+            createEvent(listCreated, { listId: list.id, boardId, name: list.name }, envelope),
+          );
         }
 
         boards.push({

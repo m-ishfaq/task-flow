@@ -247,6 +247,7 @@ check('lint + typecheck + test', 'pnpm', ['verify'], { shell: true });
 console.log('\n── Security gates ' + '─'.repeat(37));
 
 check('guardrail self-test (ESLint rules fire)', 'node', ['packages/guardrail-selftest/verify.js']);
+check('migration RLS invariants', 'node', ['scripts/check-migration-rls.mjs']);
 check('semgrep custom rules fire', 'node', ['scripts/verify-semgrep-rules.mjs']);
 check('dependency audit', 'pnpm', ['audit', '--audit-level', 'high'], { shell: true });
 

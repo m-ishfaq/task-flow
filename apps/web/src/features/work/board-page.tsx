@@ -218,9 +218,7 @@ export function BoardPage() {
             selected={visibleSelection.selected}
             onToggleSelect={(cardId, extend) => {
               setSelection((previous) =>
-                extend
-                  ? selectRange(previous, cardId, visibleIds)
-                  : toggle(previous, cardId),
+                extend ? selectRange(previous, cardId, visibleIds) : toggle(previous, cardId),
               );
             }}
             onOpenCard={(cardId) => {

@@ -7,12 +7,7 @@ import {
   projectCreated,
   statusCreated,
 } from '@taskflow/api/events/work';
-import {
-  customFields,
-  LABEL_PALETTE,
-  STATUS_SET,
-  type CustomFieldSpec,
-} from '../corpus.js';
+import { customFields, LABEL_PALETTE, STATUS_SET, type CustomFieldSpec } from '../corpus.js';
 import { defineSeedModule } from '../registry.js';
 import { daysBefore, envelopeFor, latest } from '../support.js';
 import { orgsModule, type SeededOrg } from './tenancy.orgs.js';
@@ -152,7 +147,17 @@ export const projectsModule = defineSeedModule({
 
           await ctx.db.insert(
             'work.statuses',
-            ['id', 'org_id', 'project_id', 'name', 'category', 'color', 'position', 'is_default', 'created_at'],
+            [
+              'id',
+              'org_id',
+              'project_id',
+              'name',
+              'category',
+              'color',
+              'position',
+              'is_default',
+              'created_at',
+            ],
             statuses.map((status, index) => {
               const spec = STATUS_SET[index];
               if (!spec) throw new Error('STATUS_SET and statuses[] must stay the same length.');

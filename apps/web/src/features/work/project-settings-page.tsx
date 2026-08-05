@@ -500,7 +500,8 @@ function StatusSettings({
     isDefault: boolean;
   }>({ name: '', category: 'not_started', color: '#94a3b8', isDefault: false });
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: keys.statuses(orgId, projectId) });
+  const refresh = () =>
+    queryClient.invalidateQueries({ queryKey: keys.statuses(orgId, projectId) });
 
   const create = useMutation({
     mutationFn: (input: {

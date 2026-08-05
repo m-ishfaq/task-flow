@@ -357,8 +357,7 @@ function QuickOverflow({
   const [confirming, setConfirming] = useState(false);
 
   const archive = useMutation({
-    mutationFn: () =>
-      api.work.cards.archive.mutate({ cardId: card.cardId, archived: true }),
+    mutationFn: () => api.work.cards.archive.mutate({ cardId: card.cardId, archived: true }),
     onSuccess: () => invalidateCard(queryClient, orgId, card.cardId as CardId, boardId),
   });
 

@@ -474,7 +474,13 @@ function resolveTargetGroupKey(
 }
 
 /** A column for any grouping but `list`, which keeps its own `ListColumn` and its settings menu. */
-function DroppableColumn({ group, children }: { readonly group: Group; readonly children: ReactNode }) {
+function DroppableColumn({
+  group,
+  children,
+}: {
+  readonly group: Group;
+  readonly children: ReactNode;
+}) {
   const { setNodeRef, isOver } = useDroppable({ id: group.key });
 
   return (
@@ -493,7 +499,13 @@ function DroppableColumn({ group, children }: { readonly group: Group; readonly 
 }
 
 /** Same header, for the non-draggable `due` grouping — no droppable registration, nothing to drop onto. */
-function StaticColumn({ group, children }: { readonly group: Group; readonly children: ReactNode }) {
+function StaticColumn({
+  group,
+  children,
+}: {
+  readonly group: Group;
+  readonly children: ReactNode;
+}) {
   return (
     <section
       aria-label={group.label}

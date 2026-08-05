@@ -28,15 +28,15 @@ describe('preferring the innermost droppable', () => {
 
   it('keeps every card when several are candidates, preserving dnd-kit order', () => {
     // Ranking between cards is dnd-kit's job; this only removes containers.
-    expect(preferInnermost([collision('b1'), collision('doing'), collision('b2')], columns)).toEqual(
-      [collision('b1'), collision('b2')],
-    );
+    expect(
+      preferInnermost([collision('b1'), collision('doing'), collision('b2')], columns),
+    ).toEqual([collision('b1'), collision('b2')]);
   });
 
   it('drops every column when the pointer spans more than one', () => {
-    expect(preferInnermost([collision('todo'), collision('doing'), collision('a1')], columns)).toEqual(
-      [collision('a1')],
-    );
+    expect(
+      preferInnermost([collision('todo'), collision('doing'), collision('a1')], columns),
+    ).toEqual([collision('a1')]);
   });
 
   it('passes an empty candidate list through unchanged', () => {

@@ -25,18 +25,18 @@ import { spawnSync } from 'node:child_process';
  * `global-scope-outside-identity` was added here after it was found to have been
  * mis-scoped since the day it was written: its exclusion list named two paths
  * that never existed, so it reported every legitimate call in the identity
- * module and caught nothing. The three SQL rules were verified; it was not, and
- * that is precisely why nobody noticed for a whole phase.
+ * module and caught nothing.
  *
- * The lesson generalizes: every custom rule belongs in this list, including the
- * ones that look too simple to break.
+ * It is the only entry now. The three SQL RLS rules moved to
+ * scripts/check-migration-rls.mjs — generic mode could not correlate a
+ * CREATE TABLE with an ALTER ... FORCE far below it, and they had been reporting
+ * every real tenant migration as a violation since Phase 2. That script runs the
+ * same two directions this one does.
+ *
+ * The lesson generalizes: every custom rule belongs in a list like this,
+ * including the ones that look too simple to break.
  */
-const EXPECTED_ON_FIXTURE = [
-  'tenant-table-without-force-rls',
-  'rls-policy-without-nullif',
-  'rls-policy-without-with-check',
-  'global-scope-outside-identity',
-];
+const EXPECTED_ON_FIXTURE = ['global-scope-outside-identity'];
 
 const useDocker = process.env.SEMGREP_ON_PATH !== '1';
 

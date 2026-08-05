@@ -120,7 +120,7 @@ export function createRng(seed: string): Rng {
       return min + Math.floor(next() * (max - min + 1));
     },
 
-    pick: <T,>(items: readonly T[]): T => {
+    pick: <T>(items: readonly T[]): T => {
       const item = items[Math.floor(next() * items.length)];
       if (item === undefined) {
         throw new Error('pick() on an empty list — the caller has nothing to choose from.');
@@ -128,11 +128,11 @@ export function createRng(seed: string): Rng {
       return item;
     },
 
-    sample: <T,>(items: readonly T[], count: number): T[] => rng.shuffle(items).slice(0, count),
+    sample: <T>(items: readonly T[], count: number): T[] => rng.shuffle(items).slice(0, count),
 
     chance: (probability) => next() < probability,
 
-    weighted: <T,>(entries: readonly (readonly [T, number])[]): T => {
+    weighted: <T>(entries: readonly (readonly [T, number])[]): T => {
       const total = entries.reduce((sum, [, weight]) => sum + weight, 0);
       if (total <= 0) throw new Error('weighted() needs at least one positive weight.');
 
@@ -147,7 +147,7 @@ export function createRng(seed: string): Rng {
       return last[0];
     },
 
-    shuffle: <T,>(items: readonly T[]): T[] => {
+    shuffle: <T>(items: readonly T[]): T[] => {
       const copy = [...items];
       for (let i = copy.length - 1; i > 0; i -= 1) {
         const j = Math.floor(next() * (i + 1));
