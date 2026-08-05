@@ -86,7 +86,7 @@ const Timestamp = z
  * ------------------------------------------------------------------------- */
 const ViewType = z.enum(['board', 'table', 'list']);
 const ViewGroupBy = z.enum(['list', 'status', 'assignee', 'priority', 'due']);
-const ViewSortBy = z.enum(['rank', 'title', 'due', 'priority', 'created']);
+const ViewSortBy = z.enum(['manual', 'title', 'due', 'priority']);
 
 /**
  * The body shared by `views.create` and `views.update`.

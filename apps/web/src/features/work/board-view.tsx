@@ -95,6 +95,9 @@ export interface BoardViewProps {
   readonly people: readonly Person[];
   readonly groupBy: GroupBy;
   readonly sortBy: SortBy;
+  readonly selected: ReadonlySet<string>;
+  /** `extend` is a shift-click — a range from the anchor, not a single toggle. */
+  readonly onToggleSelect: (cardId: string, extend: boolean) => void;
   readonly onOpenCard: (cardId: string) => void;
 }
 
@@ -119,6 +122,8 @@ export function BoardView({
   people,
   groupBy,
   sortBy,
+  selected,
+  onToggleSelect,
   onOpenCard,
 }: BoardViewProps) {
   const queryClient = useQueryClient();
@@ -306,7 +311,14 @@ export function BoardView({
           {groups.map((group) => (
             <StaticColumn key={group.key} group={group}>
               {sortCards(group.cards, sortBy).map((card) => (
-                <CardTile key={card.cardId} orgId={orgId} card={card} onOpen={onOpenCard} />
+                <CardTile
+                  key={card.cardId}
+                  orgId={orgId}
+                  card={card}
+                  selected={selected.has(card.cardId)}
+                  onToggleSelect={onToggleSelect}
+                  onOpen={onOpenCard}
+                />
               ))}
             </StaticColumn>
           ))}
@@ -378,6 +390,8 @@ export function BoardView({
                           orgId={orgId}
                           card={card}
                           elementId={card.cardId}
+                          selected={selected.has(card.cardId)}
+                          onToggleSelect={onToggleSelect}
                           onOpen={onOpenCard}
                         />
                       ))}
@@ -399,6 +413,8 @@ export function BoardView({
                           orgId={orgId}
                           card={card}
                           elementId={elementIdOf(groupBy, group.key, card.cardId)}
+                          selected={selected.has(card.cardId)}
+                          onToggleSelect={onToggleSelect}
                           onOpen={onOpenCard}
                         />
                       ))}
@@ -511,11 +527,15 @@ function SortableCard({
   orgId,
   card,
   elementId,
+  selected,
+  onToggleSelect,
   onOpen,
 }: {
   readonly orgId: string;
   readonly card: CardSummary;
   readonly elementId: string;
+  readonly selected: boolean;
+  readonly onToggleSelect: (cardId: string, extend: boolean) => void;
   readonly onOpen: (cardId: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -550,7 +570,13 @@ function SortableCard({
       {...attributes}
       {...listeners}
     >
-      <CardTile orgId={orgId} card={card} onOpen={onOpen} />
+      <CardTile
+        orgId={orgId}
+        card={card}
+        selected={selected}
+        onToggleSelect={onToggleSelect}
+        onOpen={onOpen}
+      />
     </div>
   );
 }

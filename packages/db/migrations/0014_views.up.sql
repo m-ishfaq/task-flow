@@ -88,10 +88,15 @@ CREATE TABLE work.views (
   -- Mirrors GroupBy and SortBy in apps/web/src/features/work/grouping.ts. A
   -- value the client cannot render is a view that silently shows the wrong
   -- thing, so the column refuses it rather than the UI falling back.
+  --
+  -- `manual` is the board's own rank order, and it is the default the toolbar
+  -- starts in — NOT a synonym for "unsorted". Naming it `rank` here would have
+  -- been a CHECK that rejected the single most common value a saved view can
+  -- hold, and every attempt to save an unmodified board would have been a 500.
   CONSTRAINT views_group_by_valid
     CHECK (group_by IS NULL OR group_by IN ('list', 'status', 'assignee', 'priority', 'due')),
   CONSTRAINT views_sort_by_valid
-    CHECK (sort_by IS NULL OR sort_by IN ('rank', 'title', 'due', 'priority', 'created')),
+    CHECK (sort_by IS NULL OR sort_by IN ('manual', 'title', 'due', 'priority')),
 
   -- A filter must be an OBJECT if present. Catches an array or a bare string
   -- reaching the column, which would fail to parse on every subsequent read.

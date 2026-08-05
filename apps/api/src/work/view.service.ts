@@ -61,7 +61,8 @@ import {
  */
 export type ViewType = 'board' | 'table' | 'list';
 export type ViewGroupBy = 'list' | 'status' | 'assignee' | 'priority' | 'due';
-export type ViewSortBy = 'rank' | 'title' | 'due' | 'priority' | 'created';
+/** `manual` is the board's own rank order — the toolbar's default, not "unsorted". */
+export type ViewSortBy = 'manual' | 'title' | 'due' | 'priority';
 
 export interface ViewSummary {
   readonly viewId: string;

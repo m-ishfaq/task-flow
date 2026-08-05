@@ -183,6 +183,7 @@ export const keys = {
     ['org', orgId, 'projects', projectId, 'boards'] as const,
 
   lists: (orgId: string, boardId: string) => ['org', orgId, 'board', boardId, 'lists'] as const,
+  views: (orgId: string, boardId: string) => ['org', orgId, 'board', boardId, 'views'] as const,
   cards: (orgId: string, boardId: string, filterKey: string) =>
     ['org', orgId, 'board', boardId, 'cards', filterKey] as const,
   /** Every cards query for a board, whatever filter it carries. */

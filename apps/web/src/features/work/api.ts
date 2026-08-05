@@ -27,6 +27,7 @@ interface Outputs {
   comments: Awaited<ReturnType<typeof api.work.comments.list.query>>;
   cardLabels: Awaited<ReturnType<typeof api.work.labels.onCard.query>>;
   statuses: Awaited<ReturnType<typeof api.work.statuses.list.query>>;
+  views: Awaited<ReturnType<typeof api.work.views.list.query>>;
 }
 
 export type ProjectSummary = Wire<Outputs['projects']>[number];
@@ -38,6 +39,7 @@ export type Checklist = Wire<Outputs['checklists']>[number];
 export type Comment = Wire<Outputs['comments']>[number];
 export type CardLabel = Wire<Outputs['cardLabels']>[number];
 export type Status = Wire<Outputs['statuses']>[number];
+export type SavedView = Wire<Outputs['views']>[number];
 /** `CardSummary['priority']` on its own — used anywhere a picker needs just the enum. */
 export type Priority = NonNullable<CardSummary['priority']>;
 
@@ -103,6 +105,19 @@ export function archivedListsQuery(orgId: string, boardId: BoardId) {
   return queryOptions({
     queryKey: [...keys.lists(orgId, boardId), 'archived'] as const,
     queryFn: async () => wire(await api.work.lists.list.query({ boardId, archivedOnly: true })),
+  });
+}
+
+/**
+ * The board's saved views: every shared one, plus the caller's own private ones.
+ *
+ * The server decides which — a private view belongs to its author and the read
+ * filters on `created_by`. Nothing here re-derives that, per §8.2.
+ */
+export function viewsQuery(orgId: string, boardId: BoardId) {
+  return queryOptions({
+    queryKey: keys.views(orgId, boardId),
+    queryFn: async () => wire(await api.work.views.list.query({ boardId })),
   });
 }
 
