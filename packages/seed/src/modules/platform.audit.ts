@@ -51,7 +51,16 @@ export const auditModule = defineSeedModule({
       await ctx.orgScope(orgId, async () => {
         await ctx.db.insert(
           'platform.outbox',
-          ['id', 'org_id', 'name', 'version', 'actor_id', 'occurred_at', 'request_id', 'payload::jsonb'],
+          [
+            'id',
+            'org_id',
+            'name',
+            'version',
+            'actor_id',
+            'occurred_at',
+            'request_id',
+            'payload::jsonb',
+          ],
           orgEvents.map((event) => [
             event.id,
             event.orgId,
@@ -77,7 +86,9 @@ export const auditModule = defineSeedModule({
     }
 
     const result = await drainOutboxFully();
-    ctx.log(`platform.audit: drained ${String(result.processed)} entries into the hash-chained log`);
+    ctx.log(
+      `platform.audit: drained ${String(result.processed)} entries into the hash-chained log`,
+    );
 
     return { outboxCount: events.length, auditProcessed: result.processed };
   },

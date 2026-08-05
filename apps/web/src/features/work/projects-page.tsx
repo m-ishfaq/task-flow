@@ -350,7 +350,11 @@ function CreateProjectForm({
       }}
     >
       <Field label="Name" htmlFor="project-name">
-        <Input id="project-name" placeholder="Web Platform" {...register('name', { required: true })} />
+        <Input
+          id="project-name"
+          placeholder="Web Platform"
+          {...register('name', { required: true })}
+        />
       </Field>
 
       {/**

@@ -4,10 +4,12 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import type { OrgId } from '@taskflow/contracts';
 import { signOut, useSession } from '../lib/session.js';
 import { resetCache } from '../lib/query.js';
+import { useUi } from '../lib/ui-store.js';
 import { orgsQuery } from '../features/org/api.js';
 import { cn } from '../lib/cn.js';
 import { Avatar, Button } from './primitives.js';
 import { Sidebar } from './sidebar.js';
+import { CommandPalette } from './command-palette.js';
 
 /**
  * The application frame: the navigation tree, the org switcher, and sign-out.
@@ -73,6 +75,10 @@ export function Shell() {
         <SidebarFooter standalone={!hasOrg} />
       </div>
 
+      {/* Global — reached by Ctrl/⌘K and `?` from anywhere in the frame, not
+          just the sidebar it visually sits near. */}
+      {hasOrg && <CommandPalette />}
+
       <div className="flex min-w-0 flex-1 flex-col">
         <Header />
         <main className="min-h-0 flex-1">
@@ -117,11 +123,27 @@ function SidebarFooter({ standalone }: { readonly standalone: boolean }) {
  * page but one.
  */
 function Header() {
+  const setShortcutsOpen = useUi((state) => state.setShortcutsOpen);
+
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-4">
       <Breadcrumbs />
 
       <nav className="ml-auto flex items-center gap-1" aria-label="Settings">
+        {/* The only visible route to the shortcuts overlay — everything else
+            about it is keyboard-only, and a feature reachable by one key
+            nobody was told about is not discoverable. */}
+        <button
+          type="button"
+          onClick={() => {
+            setShortcutsOpen(true);
+          }}
+          aria-label="Keyboard shortcuts"
+          title="Keyboard shortcuts (?)"
+          className="rounded px-2 py-1 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
+        >
+          ?
+        </button>
         <NavLink to="/settings" label="Settings" />
         <NavLink to="/admin/permissions" label="Permissions" />
       </nav>
@@ -145,19 +167,21 @@ function Breadcrumbs() {
 
   const label = pathname.startsWith('/boards/')
     ? 'Board'
-    : pathname.startsWith('/projects/')
-      ? 'Project'
-      : pathname.startsWith('/projects')
-        ? 'Projects'
-        : pathname.startsWith('/settings/audit')
-          ? 'Audit log'
-          : pathname.startsWith('/settings')
-            ? 'Settings'
-            : pathname.startsWith('/admin/permissions')
-              ? 'Permissions'
-              : pathname.startsWith('/orgs')
-                ? 'Organizations'
-                : 'TaskFlow';
+    : pathname.startsWith('/home')
+      ? 'My tasks'
+      : pathname.startsWith('/projects/')
+        ? 'Project'
+        : pathname.startsWith('/projects')
+          ? 'Projects'
+          : pathname.startsWith('/settings/audit')
+            ? 'Audit log'
+            : pathname.startsWith('/settings')
+              ? 'Settings'
+              : pathname.startsWith('/admin/permissions')
+                ? 'Permissions'
+                : pathname.startsWith('/orgs')
+                  ? 'Organizations'
+                  : 'TaskFlow';
 
   return <h1 className="truncate text-sm font-medium text-ink">{label}</h1>;
 }

@@ -23,6 +23,7 @@ import {
 } from '@taskflow/contracts';
 import { createEvent, type DomainEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
+import { can } from '@taskflow/policy';
 import {
   cardArchived,
   cardAssigned,
@@ -32,7 +33,7 @@ import {
   cardUpdated,
   listRebalanced,
 } from './events.js';
-import { compile, type FilterNode } from '@taskflow/filter';
+import { ME, compare, compile, type FilterNode } from '@taskflow/filter';
 import { loadList } from './list.service.js';
 import { rebalanceList } from './rebalance.js';
 import { flattenToText, type RichTextNode } from './richtext.js';
@@ -181,6 +182,89 @@ export async function listCards(
       reference: referenceOf(projectKey, number),
     }));
   });
+}
+
+/**
+ * Every live card ASSIGNED to the actor, across every board they can reach
+ * (`ai/phase-3.5-work-ux.md` §6 — My Tasks / Home).
+ *
+ * Unlike `listCards`, there is no single board to gate the read on — the
+ * whole point is to cross them. The route's `card:read` is only the ORG-level
+ * floor (layer 1), so this still has to ask the per-board question `enforceOn`
+ * asks everywhere else in this file: being ASSIGNED to a card is not the same
+ * as being able to READ its board, and a restrictive `viewer` tuple can land
+ * on a board after someone was already assigned to a card there (§8.2).
+ *
+ * `can()` — not `enforceOn`, which throws — because one board going private
+ * must shrink this list, not break it. It is cheap to call per row: it is
+ * pure and the actor's tuples are already resolved for this request, so the
+ * filter below is in-memory and costs no extra query.
+ */
+export async function listMyCards(
+  actor: WorkActor,
+  input: { readonly includeArchived?: boolean },
+): Promise<readonly CardSummary[]> {
+  return withOrgScope(orgOf(actor), async (tx) => {
+    const rows = await tx
+      .select({
+        cardId: schema.cards.id,
+        listId: schema.cards.listId,
+        boardId: schema.cards.boardId,
+        projectId: schema.cards.projectId,
+        number: schema.cards.number,
+        projectKey: schema.projects.key,
+        title: schema.cards.title,
+        rank: schema.cards.rank,
+        assigneeIds: schema.cards.assigneeIds,
+        statusId: schema.cards.statusId,
+        priority: schema.cards.priority,
+        dueDate: schema.cards.dueDate,
+        commentCount: schema.cards.commentCount,
+        checklistDone: schema.cards.checklistDone,
+        checklistTotal: schema.cards.checklistTotal,
+        version: schema.cards.version,
+        archivedAt: schema.cards.archivedAt,
+      })
+      .from(schema.cards)
+      .innerJoin(schema.projects, eq(schema.projects.id, schema.cards.projectId))
+      .where(
+        and(
+          isNull(schema.cards.deletedAt),
+          input.includeArchived === true ? undefined : isNull(schema.cards.archivedAt),
+          // Reuses the same field the visual filter builder offers rather
+          // than a bespoke array-contains query, so "assigned to me" means
+          // exactly one thing everywhere it is asked (§10.2).
+          myAssignmentPredicate(actor),
+        ),
+      )
+      // No board to scope a rank within, so ordered by due date — nulls
+      // last, matching `grouping.ts`'s "someday is not soonest" rule — with
+      // `id` breaking ties deterministically.
+      .orderBy(asc(schema.cards.dueDate), asc(schema.cards.id));
+
+    return rows
+      .filter(
+        (row) =>
+          can(actor.subject, 'card:read', {
+            orgId: orgOf(actor),
+            resource: { type: 'card', id: row.cardId },
+            ancestors: ancestorsOfCard(row),
+          }).allowed,
+      )
+      .map(({ number, projectKey, projectId: _projectId, ...row }) => ({
+        ...row,
+        priority: row.priority as Priority | null,
+        reference: referenceOf(projectKey, number),
+      }));
+  });
+}
+
+/** `assignee` overlaps `[@me]` — the filter compiler's own field, not a raw query. */
+function myAssignmentPredicate(actor: WorkActor): SQL | undefined {
+  const compiled = compile('card', compare('assignee', 'in', [ME]), {
+    viewerId: actor.subject.userId,
+  });
+  return compiledPredicate(compiled.sql, compiled.params);
 }
 
 export interface CardDetail extends CardSummary {
@@ -539,6 +623,32 @@ export async function moveCard(
     enforceOn(actor, 'card:move', { type: 'board', id: target.boardId }, target, [
       { type: 'project', id: target.projectId },
     ]);
+
+    /* Cross-PROJECT moves are refused here rather than attempted and left to
+       fail in the database.
+
+       The UPDATE below writes the destination's `project_id` onto the card, and
+       three composite foreign keys are defined against it: `(org_id,
+       project_id, status_id)` on cards itself (migration 0011), and
+       `(org_id, project_id, card_id)` from both `card_labels` and
+       `custom_field_values` (0009). A card carrying a status — which every card
+       does since the 0012 backfill — therefore violates its own FK the moment
+       its project changes, and the caller sees an unhandled driver error as a
+       500 rather than a refusal.
+
+       Refusing is also the honest answer, not merely the safe one: a card
+       moved between projects would keep a number minted from the old project's
+       counter, and its labels and custom field values are vocabulary the
+       destination does not have. Making that work is a migration and a
+       remapping decision (what becomes of a label the target project lacks?),
+       not a relaxed check. Boards WITHIN a project stay legitimate and are the
+       case the destination-authorization above exists for. */
+    if (target.projectId !== card.projectId) {
+      throw errors.validation(
+        { targetListId: 'That list belongs to a different project.' },
+        'A card cannot be moved to another project.',
+      );
+    }
 
     let rebalancedCount: number | null = null;
     let rank: string;

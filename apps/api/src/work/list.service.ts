@@ -1,4 +1,14 @@
-import { and, asc, eq, isNull, ne, schema, withOrgScope, outboxWriter } from '@taskflow/db';
+import {
+  and,
+  asc,
+  eq,
+  isNotNull,
+  isNull,
+  ne,
+  schema,
+  withOrgScope,
+  outboxWriter,
+} from '@taskflow/db';
 import { between, errors, type BoardId, type ListId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
@@ -35,7 +45,7 @@ export interface ListSummary {
 
 export async function listLists(
   actor: WorkActor,
-  input: { readonly boardId: BoardId },
+  input: { readonly boardId: BoardId; readonly archivedOnly?: boolean },
 ): Promise<readonly ListSummary[]> {
   return withOrgScope(orgOf(actor), async (tx) => {
     const board = await loadBoard(tx, input.boardId);
@@ -56,7 +66,14 @@ export async function listLists(
         and(
           eq(schema.lists.boardId, input.boardId),
           isNull(schema.lists.deletedAt),
-          isNull(schema.lists.archivedAt),
+          /* `archivedOnly` REPLACES the live filter rather than widening it, the
+             same shape `listCards` uses for `includeArchived`. A board render
+             must never be able to acquire archived columns by a caller passing
+             the wrong flag — the two states are separate views, not a superset
+             and a subset. */
+          input.archivedOnly === true
+            ? isNotNull(schema.lists.archivedAt)
+            : isNull(schema.lists.archivedAt),
         ),
       )
       .orderBy(asc(schema.lists.rank), asc(schema.lists.id));
@@ -247,11 +264,22 @@ export async function reorderList(
  * already archived beforehand. Making the caller empty it first keeps both the
  * write and the undo bounded.
  */
+/**
+ * Archives a list, or restores one.
+ *
+ * `archived` is a parameter rather than this being two functions for the reason
+ * `cards.archive` takes one: archiving without a way back is a delete wearing a
+ * softer word. A column archived by mistake used to be unreachable — there was
+ * no route, so not even an administrator could undo it, and the cards inside it
+ * stayed invisible along with it.
+ */
 export async function archiveList(
   actor: WorkActor,
-  input: { readonly listId: ListId },
-): Promise<{ readonly archived: true }> {
+  input: { readonly listId: ListId; readonly archived: boolean },
+): Promise<{ readonly archived: boolean }> {
   return withOrgScope(orgOf(actor), async (tx) => {
+    /* `loadList` filters on `deletedAt` only, so an archived list is still
+       loadable — which is what makes restoring one possible at all. */
     const list = await loadList(tx, input.listId);
 
     enforceOn(
@@ -262,36 +290,46 @@ export async function archiveList(
       ancestorsOfBoard(list),
     );
 
-    const remaining = await tx
-      .select({ id: schema.cards.id })
-      .from(schema.cards)
-      .where(
-        and(
-          eq(schema.cards.listId, input.listId),
-          isNull(schema.cards.deletedAt),
-          isNull(schema.cards.archivedAt),
-        ),
-      )
-      .limit(1);
+    /* Only when archiving. Restoring a list cannot strand cards — it reveals
+       the ones already in it — and running this check on the way back would
+       refuse to restore exactly the columns worth restoring. */
+    if (input.archived) {
+      const remaining = await tx
+        .select({ id: schema.cards.id })
+        .from(schema.cards)
+        .where(
+          and(
+            eq(schema.cards.listId, input.listId),
+            isNull(schema.cards.deletedAt),
+            isNull(schema.cards.archivedAt),
+          ),
+        )
+        .limit(1);
 
-    if (remaining[0]) {
-      throw errors.conflict('Move or archive the cards in this list before archiving it.');
+      if (remaining[0]) {
+        throw errors.conflict('Move or archive the cards in this list before archiving it.');
+      }
     }
 
     await tx
       .update(schema.lists)
-      .set({ archivedAt: new Date(), updatedAt: new Date() })
+      .set({ archivedAt: input.archived ? new Date() : null, updatedAt: new Date() })
       .where(eq(schema.lists.id, input.listId));
 
     await outboxWriter.append(tx, [
       createEvent(
         listArchived,
-        { listId: input.listId, boardId: list.boardId, name: list.name },
+        {
+          listId: input.listId,
+          boardId: list.boardId,
+          name: list.name,
+          restored: !input.archived,
+        },
         envelopeOf(actor),
       ),
     ]);
 
-    return { archived: true as const };
+    return { archived: input.archived };
   });
 }
 

@@ -32,7 +32,8 @@ import type { DomainEvent } from '@taskflow/events';
  */
 
 const APP_URL =
-  process.env['TEST_DATABASE_URL'] ?? 'postgresql://taskflow_app:app-dev-secret@localhost:5433/taskflow_test';
+  process.env['TEST_DATABASE_URL'] ??
+  'postgresql://taskflow_app:app-dev-secret@localhost:5433/taskflow_test';
 const AUDIT_URL =
   process.env['TEST_DATABASE_AUDIT_URL'] ??
   'postgresql://taskflow_audit:audit-dev-secret@localhost:5433/taskflow_test';
@@ -302,6 +303,67 @@ describe('reading the audit log', () => {
     expect(sequences).toEqual([...sequences].sort((a, b) => b - a));
     expect(sequences[0]).toBe(TEN);
     expect(sequences[sequences.length - 1]).toBe(1);
+  });
+
+  it("resolves the actor's address for display", async () => {
+    await writeEntry(ORG_A, 'member.invited');
+
+    const entries = await readAuditEntries(ORG_A, { limit: 10, before: null });
+
+    expect(entries[0]?.actorId).toBe(ACTOR);
+    expect(entries[0]?.actorEmail).toBe('audit-actor@example.test');
+  });
+
+  /**
+   * A LEFT JOIN, and this is what makes it have to be one.
+   *
+   * `actor_id` is null for anything the SYSTEM did — a retention sweep, a
+   * scheduled automation — and §8.6 treats that as a real value rather than a
+   * missing one. An INNER JOIN compiles, passes every test above, and silently
+   * drops exactly those rows: the audit log would keep showing entries, would
+   * never error, and would simply have no record of unattended actions.
+   *
+   * That is the worst shape a bug in a compliance record can take, so the empty
+   * actor is asserted rather than assumed.
+   */
+  it('keeps entries the system wrote, which have no actor at all', async () => {
+    await withAuditScope(async (tx) =>
+      tx.execute(sql`
+        INSERT INTO audit.audit_log (id, org_id, occurred_at, actor_id, action, hash)
+        VALUES (gen_random_uuid(), ${ORG_A}, now(), NULL, 'retention.swept', '\\x00'::bytea)
+      `),
+    );
+
+    const entries = await readAuditEntries(ORG_A, { limit: 10, before: null });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.action).toBe('retention.swept');
+    expect(entries[0]?.actorId).toBeNull();
+    expect(entries[0]?.actorEmail).toBeNull();
+  });
+
+  /**
+   * An actor whose account is gone keeps its row AND its id.
+   *
+   * The id is the durable fact the entry was hashed over; only the lookup is
+   * missing. A reader has to be able to tell this apart from "the system did
+   * it", which is why the two nulls are separate fields rather than one
+   * `actor: string | null`.
+   */
+  it('keeps the entry when the actor account no longer exists', async () => {
+    const ghost = '0195bb00-0000-7000-8000-0000000000ff';
+    await withAuditScope(async (tx) =>
+      tx.execute(sql`
+        INSERT INTO audit.audit_log (id, org_id, occurred_at, actor_id, action, hash)
+        VALUES (gen_random_uuid(), ${ORG_A}, now(), ${ghost}, 'member.removed', '\\x00'::bytea)
+      `),
+    );
+
+    const entries = await readAuditEntries(ORG_A, { limit: 10, before: null });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.actorId).toBe(ghost);
+    expect(entries[0]?.actorEmail).toBeNull();
   });
 
   it('reads the chain in sequence order too', async () => {

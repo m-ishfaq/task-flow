@@ -116,7 +116,7 @@ function ListMenu({
   });
 
   const archive = useMutation({
-    mutationFn: () => api.work.lists.archive.mutate({ listId: list.listId }),
+    mutationFn: () => api.work.lists.archive.mutate({ listId: list.listId, archived: true }),
     onSuccess: refresh,
   });
 

@@ -17,6 +17,7 @@ import { ResetPasswordPage } from './features/auth/reset-password-page.js';
 import { ForgotPasswordPage } from './features/auth/forgot-password-page.js';
 import { OrgPickerPage } from './features/org/org-picker-page.js';
 import { ProjectsPage } from './features/work/projects-page.js';
+import { HomePage } from './features/work/home-page.js';
 import { BoardPage } from './features/work/board-page.js';
 import { PermissionDebugPage } from './features/admin/permission-debug-page.js';
 import { SettingsPage } from './features/admin/settings-page.js';
@@ -171,6 +172,13 @@ const projectsRoute = createRoute({
   component: ProjectsPage,
 });
 
+const homeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/home',
+  beforeLoad: () => requireOrg('/home'),
+  component: HomePage,
+});
+
 /**
  * The board — kanban and table over the same query (§10.4).
  *
@@ -243,6 +251,7 @@ const routeTree = rootRoute.addChildren([
   resetPasswordRoute,
   forgotPasswordRoute,
   orgsRoute,
+  homeRoute,
   projectsRoute,
   projectSettingsRoute,
   boardRoute,

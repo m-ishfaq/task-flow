@@ -1,8 +1,13 @@
 -- FIXTURE — deliberately wrong. Not a real migration; never applied.
 --
--- Exists so scripts/verify-semgrep-rules.sh can assert that the RLS rules
--- actually fire. A security rule that silently matches nothing is worse than no
--- rule, because the protection is assumed but absent (PLAN.md 2.3).
+-- Exists so scripts/check-migration-rls.mjs can assert that the RLS checks
+-- actually fire. A security check that silently matches nothing is worse than
+-- no check, because the protection is assumed but absent (PLAN.md 2.3).
+--
+-- It stays under .semgrep/fixtures even though the checks are no longer Semgrep
+-- rules: this is where the deliberately-wrong code lives, and the full Semgrep
+-- scan already excludes the directory. Moving it would mean teaching that
+-- exclusion a second path for no gain.
 --
 -- Expected findings:
 --   tenant-table-without-force-rls   (ENABLE without FORCE)

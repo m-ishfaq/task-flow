@@ -183,11 +183,15 @@ export const keys = {
     ['org', orgId, 'projects', projectId, 'boards'] as const,
 
   lists: (orgId: string, boardId: string) => ['org', orgId, 'board', boardId, 'lists'] as const,
+  views: (orgId: string, boardId: string) => ['org', orgId, 'board', boardId, 'views'] as const,
   cards: (orgId: string, boardId: string, filterKey: string) =>
     ['org', orgId, 'board', boardId, 'cards', filterKey] as const,
   /** Every cards query for a board, whatever filter it carries. */
   cardsOfBoard: (orgId: string, boardId: string) =>
     ['org', orgId, 'board', boardId, 'cards'] as const,
+
+  /** Cross-board — every live card assigned to the caller (`home-page.tsx`). */
+  myCards: (orgId: string) => ['org', orgId, 'myCards'] as const,
 
   card: (orgId: string, cardId: string) => ['org', orgId, 'card', cardId] as const,
   cardLabels: (orgId: string, cardId: string) => ['org', orgId, 'card', cardId, 'labels'] as const,

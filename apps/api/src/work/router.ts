@@ -7,6 +7,7 @@ import {
   ProjectIdSchema,
   StatusIdSchema,
   UserIdSchema,
+  ViewIdSchema,
 } from '@taskflow/contracts';
 import { FilterTree } from '@taskflow/filter';
 import { route, router } from '../trpc/builder.js';
@@ -17,6 +18,7 @@ import * as projects from './project.service.js';
 import * as boards from './board.service.js';
 import * as lists from './list.service.js';
 import * as cards from './card.service.js';
+import * as views from './view.service.js';
 import { createCardDetailRouter } from './detail.router.js';
 import { createAttachmentRouter } from './attachment.router.js';
 import type { AttachmentDeps } from './attachment.service.js';
@@ -70,6 +72,72 @@ const Timestamp = z
   .datetime()
   .transform((value) => new Date(value))
   .nullable();
+
+/* ---------------------------------------------------------------------------
+ * Saved views
+ *
+ * These three enums MIRROR the CHECK constraints in migration 0014, and the
+ * migration is the enforcement — not this. Stated that way round deliberately:
+ * a value that passes here and fails the CHECK is a 500, so the pair must stay
+ * in step, and the database is the copy that cannot be bypassed by a second
+ * call site. `ViewGroupBy` and `ViewSortBy` also mirror `GroupBy`/`SortBy` in
+ * apps/web/src/features/work/grouping.ts, where a value the client cannot
+ * render is a view that silently shows the wrong thing.
+ * ------------------------------------------------------------------------- */
+const ViewType = z.enum(['board', 'table', 'list']);
+const ViewGroupBy = z.enum(['list', 'status', 'assignee', 'priority', 'due']);
+const ViewSortBy = z.enum(['manual', 'title', 'due', 'priority']);
+
+/**
+ * The body shared by `views.create` and `views.update`.
+ *
+ * A full replace, and unlike `cards.update` that is safe here: a view has no
+ * field the editor cannot see. The trap `useUpdateCard` exists to prevent —
+ * a summary-shaped write erasing a description nobody had loaded — has no
+ * analogue, because the client always holds the whole view.
+ */
+const ViewBody = z.object({
+  name: z.string().trim().min(1).max(60),
+  type: ViewType,
+  groupBy: ViewGroupBy.nullable().default(null),
+  sortBy: ViewSortBy.nullable().default(null),
+  /* The AST from §10.2, parsed against the same schema `cards.list` uses, so a
+     saved filter is validated before it is stored rather than on the way out.
+     `@me` stays symbolic — see the service. */
+  filter: FilterTree.nullable().default(null),
+  visibleColumns: z.array(z.string().max(60)).max(50).readonly().nullable().default(null),
+  isShared: z.boolean().default(false),
+});
+
+/**
+ * The shape `cards.list` and `cards.mine` both return — one card summary.
+ *
+ * Factored out because the two routes are the same row shape read two
+ * different ways (one board vs. every board the caller can reach), and a
+ * schema that drifted between them would be a field silently missing from
+ * one but not the other.
+ */
+const CardSummaryOutput = z
+  .array(
+    z.object({
+      cardId: z.string(),
+      listId: z.string(),
+      boardId: z.string(),
+      reference: z.string(),
+      title: z.string(),
+      rank: z.string(),
+      assigneeIds: z.array(z.string()).readonly(),
+      statusId: z.string().nullable(),
+      priority: Priority.nullable(),
+      dueDate: z.date().nullable(),
+      commentCount: z.number().int().nonnegative(),
+      checklistDone: z.number().int().nonnegative(),
+      checklistTotal: z.number().int().nonnegative(),
+      version: z.number().int().positive(),
+      archivedAt: z.date().nullable(),
+    }),
+  )
+  .readonly();
 
 /**
  * Dependencies the Work module cannot construct for itself.
@@ -187,7 +255,18 @@ export function createWorkRouter(deps: WorkRouterDeps) {
 
     lists: router({
       list: route({ permission: 'board:read' })
-        .input(z.object({ boardId: BoardIdSchema }).strict())
+        .input(
+          z
+            .object({
+              boardId: BoardIdSchema,
+              /* Set true to reach the archived columns for a restore view. It
+                 REPLACES the live filter rather than composing with it, so the
+                 board render cannot acquire archived columns by accident —
+                 the same shape `cards.list` uses. */
+              archivedOnly: z.boolean().default(false),
+            })
+            .strict(),
+        )
         .output(
           z
             .array(
@@ -255,10 +334,75 @@ export function createWorkRouter(deps: WorkRouterDeps) {
         .output(z.object({ rank: z.string() }))
         .mutation(({ input, ctx }) => lists.reorderList(actorOf(ctx), input)),
 
+      /**
+       * Archive AND restore, like `cards.archive`.
+       *
+       * It took a boolean-less `{ listId }` and returned `z.literal(true)`, so
+       * a column archived by mistake could not be recovered by anyone — there
+       * was no inverse to call. The cards inside it went with it.
+       */
       archive: route({ permission: 'board:update' })
-        .input(z.object({ listId: ListIdSchema }).strict())
-        .output(z.object({ archived: z.literal(true) }))
+        .input(z.object({ listId: ListIdSchema, archived: z.boolean() }).strict())
+        .output(z.object({ archived: z.boolean() }))
         .mutation(({ input, ctx }) => lists.archiveList(actorOf(ctx), input)),
+    }),
+
+    /**
+     * Saved views (`ai/phase-3.5-work-ux.md` §6).
+     *
+     * Every route here declares `board:read` — the FLOOR, not the whole answer.
+     * A private view is a personal bookmark and needs nothing more; a shared
+     * one is part of the board for everyone, so `view.service.ts` adds a
+     * `board:update` check when `isShared` is true, and an author-only check
+     * when it is not. That is a second question about a different thing, the
+     * same shape as `cards.move` authorizing its destination separately — not
+     * the anti-pattern of checking one permission in two places.
+     */
+    views: router({
+      list: route({ permission: 'board:read' })
+        .input(z.object({ boardId: BoardIdSchema }).strict())
+        .output(
+          z
+            .array(
+              z.object({
+                viewId: z.string(),
+                boardId: z.string(),
+                name: z.string(),
+                type: ViewType,
+                groupBy: ViewGroupBy.nullable(),
+                sortBy: ViewSortBy.nullable(),
+                /* `unknown`, not `FilterTree`. The service has already parsed
+                   the stored tree and reports an unreadable one via
+                   `filterBroken` — re-parsing it here would turn one corrupt
+                   row back into a 500 for the whole list, which is exactly
+                   what that flag exists to prevent. */
+                filter: z.unknown(),
+                filterBroken: z.boolean(),
+                visibleColumns: z.array(z.string()).readonly().nullable(),
+                isShared: z.boolean(),
+                createdBy: z.string(),
+                position: z.number().int().nonnegative(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => views.listViews(actorOf(ctx), input)),
+
+      create: route({ permission: 'board:read' })
+        .input(ViewBody.extend({ boardId: BoardIdSchema }).strict())
+        .output(z.object({ viewId: z.string() }))
+        .mutation(({ input, ctx }) => views.createView(actorOf(ctx), input)),
+
+      update: route({ permission: 'board:read' })
+        .input(ViewBody.extend({ viewId: ViewIdSchema }).strict())
+        .output(z.object({ name: z.string() }))
+        .mutation(({ input, ctx }) => views.updateView(actorOf(ctx), input)),
+
+      /** A real delete, not an archive — a view holds no work. See the service. */
+      delete: route({ permission: 'board:read' })
+        .input(z.object({ viewId: ViewIdSchema }).strict())
+        .output(z.object({ deleted: z.literal(true) }))
+        .mutation(({ input, ctx }) => views.deleteView(actorOf(ctx), input)),
     }),
 
     cards: router({
@@ -288,30 +432,24 @@ export function createWorkRouter(deps: WorkRouterDeps) {
             })
             .strict(),
         )
-        .output(
-          z
-            .array(
-              z.object({
-                cardId: z.string(),
-                listId: z.string(),
-                boardId: z.string(),
-                reference: z.string(),
-                title: z.string(),
-                rank: z.string(),
-                assigneeIds: z.array(z.string()).readonly(),
-                statusId: z.string().nullable(),
-                priority: Priority.nullable(),
-                dueDate: z.date().nullable(),
-                commentCount: z.number().int().nonnegative(),
-                checklistDone: z.number().int().nonnegative(),
-                checklistTotal: z.number().int().nonnegative(),
-                version: z.number().int().positive(),
-                archivedAt: z.date().nullable(),
-              }),
-            )
-            .readonly(),
-        )
+        .output(CardSummaryOutput)
         .query(({ input, ctx }) => cards.listCards(actorOf(ctx), input)),
+
+      /**
+       * My Tasks / Home (`ai/phase-3.5-work-ux.md` §6) — every live card
+       * assigned to the caller, across every board they can reach.
+       *
+       * No `boardId`: this is the one card read that is deliberately
+       * cross-board, so there is no single `card:read` target for the route
+       * to gate on beyond the org-level floor declared here. `listMyCards`
+       * makes up for that by checking each row against the caller's actual
+       * board access before returning it — see the service for why that
+       * cannot be skipped.
+       */
+      mine: route({ permission: 'card:read' })
+        .input(z.object({ includeArchived: z.boolean().default(false) }).strict())
+        .output(CardSummaryOutput)
+        .query(({ input, ctx }) => cards.listMyCards(actorOf(ctx), input)),
 
       get: route({ permission: 'card:read' })
         .input(z.object({ cardId: CardIdSchema }).strict())
@@ -383,9 +521,7 @@ export function createWorkRouter(deps: WorkRouterDeps) {
        * never read its description or dates and should not need to.
        */
       setStatus: route({ permission: 'card:update' })
-        .input(
-          z.object({ cardId: CardIdSchema, statusId: StatusIdSchema.nullable() }).strict(),
-        )
+        .input(z.object({ cardId: CardIdSchema, statusId: StatusIdSchema.nullable() }).strict())
         .output(z.object({ statusId: z.string().nullable() }))
         .mutation(({ input, ctx }) => cards.setCardStatus(actorOf(ctx), input)),
 

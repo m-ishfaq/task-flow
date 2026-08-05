@@ -19,7 +19,7 @@
     "format:check": "prettier --check .",
     "verify": "turbo run lint typecheck test",
     "seed": "pnpm --filter @taskflow/seed seed",
-    "verify:guardrails": "node packages/guardrail-selftest/verify.js && node scripts/verify-semgrep-rules.mjs",
+    "verify:guardrails": "node packages/guardrail-selftest/verify.js && node scripts/check-migration-rls.mjs && node scripts/verify-semgrep-rules.mjs",
     "check:encoding": "node scripts/check-encoding.mjs",
     "check:encoding:fix": "node scripts/check-encoding.mjs --fix",
     "preflight": "node scripts/preflight.mjs"
@@ -50,8 +50,11 @@
       "sharp"
     ],
     "overrides": {
-      "brace-expansion@5": ">=5.0.8",
+      "brace-expansion@1": ">=1.1.18 <2",
+      "brace-expansion@5": ">=5.0.9",
       "esbuild@<0.25.0": ">=0.25.0",
+      "fast-uri@3": ">=3.1.5 <4",
+      "fast-uri@4": ">=4.1.2",
       "vite@<6.4.3": ">=6.4.3"
     },
     "auditConfig": {

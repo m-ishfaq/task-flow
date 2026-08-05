@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { CardId, ProjectId } from '@taskflow/contracts';
@@ -11,6 +12,15 @@ import { BoardView } from './board-view.js';
 import { TableView } from './table-view.js';
 import { ListView } from './list-view.js';
 import { FilterBuilder } from './filter/filter-builder.js';
+import { ViewTabs } from './view-tabs.js';
+import { BulkBar } from './bulk-bar.js';
+import {
+  EMPTY_SELECTION,
+  pruneSelection,
+  selectRange,
+  toggle,
+  type SelectionState,
+} from './selection.js';
 import { CardDetailPanel } from './detail/card-detail-panel.js';
 import { ShareBoardDialog } from './share-board.js';
 import { ArchivedCardsDialog } from './archived-cards-dialog.js';
@@ -77,6 +87,16 @@ export function BoardPage() {
     void navigate({ search: (previous) => ({ ...previous, ...next }) });
   };
 
+  /* Selection is genuinely client-only state with no server representation, so
+     it lives here rather than in the URL: a link that carried a selection would
+     restore a bulk action someone had half-composed, and §10.5 keeps the URL
+     for what is being LOOKED at, not what is being done to it.
+
+     Local to this page rather than Zustand for the same reason — it must not
+     survive navigating to another board, and a store would make that survival
+     the default. */
+  const [selection, setSelection] = useState<SelectionState>(EMPTY_SELECTION);
+
   if (lists.isPending || cards.isPending) {
     /* Columns, not a spinner. The board's shape is known before its contents
        are, so the layout can exist while the cards are still in flight — which
@@ -108,14 +128,42 @@ export function BoardPage() {
      would be a second, weaker copy of a rule that is already enforced. */
   const liveLists = lists.data;
 
+  /* Pruned against what is actually on screen. A filter narrowed after cards
+     were picked would otherwise leave the bulk bar counting — and acting on —
+     rows the user can no longer see. `pruneSelection` returns the same object
+     when nothing changed, so reading it during render does not loop. */
+  const visibleIds = cards.data.map((card) => card.cardId);
+  const visibleSelection = pruneSelection(selection, visibleIds);
+
   return (
     <div className="flex h-full min-h-0">
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* `relative` so the bulk bar can float against the board column rather
+          than the viewport — it must sit above the cards and below any dialog,
+          and anchoring it to the viewport would put it over the sidebar. */}
+      <div className="relative flex min-w-0 flex-1 flex-col">
         <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-4 py-2">
           <ViewToggle
             value={view}
             onChange={(next) => {
               setSearch({ view: next });
+            }}
+          />
+
+          {/* Selecting a view WRITES the four URL params rather than becoming
+              state of its own. The URL stays the single description of what is
+              on screen, so a pasted link and the highlighted tab can never
+              disagree — see view-tabs.tsx. */}
+          <ViewTabs
+            orgId={orgId}
+            boardId={boardId}
+            current={{ type: view, groupBy, sortBy, filter }}
+            onApply={(arrangement) => {
+              setSearch({
+                view: arrangement.type,
+                groupBy: arrangement.groupBy,
+                sortBy: arrangement.sortBy,
+                filter: arrangement.filter ?? undefined,
+              });
             }}
           />
 
@@ -167,6 +215,12 @@ export function BoardPage() {
             people={people}
             groupBy={groupBy}
             sortBy={sortBy}
+            selected={visibleSelection.selected}
+            onToggleSelect={(cardId, extend) => {
+              setSelection((previous) =>
+                extend ? selectRange(previous, cardId, visibleIds) : toggle(previous, cardId),
+              );
+            }}
             onOpenCard={(cardId) => {
               setSearch({ card: cardId as CardId });
             }}
@@ -198,6 +252,17 @@ export function BoardPage() {
             }}
           />
         )}
+
+        <BulkBar
+          orgId={orgId}
+          boardId={boardId}
+          selected={visibleSelection.selected}
+          statuses={statuses.data ?? []}
+          people={people}
+          onClear={() => {
+            setSelection(EMPTY_SELECTION);
+          }}
+        />
       </div>
 
       {search.card !== undefined && (

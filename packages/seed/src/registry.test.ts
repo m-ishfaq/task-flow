@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { defineSeedModule, resolveModules, tablesInTeardownOrder, type SeedModule } from './registry.js';
+import {
+  defineSeedModule,
+  resolveModules,
+  tablesInTeardownOrder,
+  type SeedModule,
+} from './registry.js';
 
 /** A no-op module, for graph shape tests that never actually run `seed`. */
-function stub(name: string, requires: readonly SeedModule[], tables: readonly string[]): SeedModule {
+function stub(
+  name: string,
+  requires: readonly SeedModule[],
+  tables: readonly string[],
+): SeedModule {
   return defineSeedModule({ name, requires, tables, seed: () => Promise.resolve(undefined) });
 }
 
@@ -48,8 +57,18 @@ describe('resolveModules', () => {
     // modules exist — a real cycle cannot be expressed any other way in
     // TypeScript, since each module would need the other before it is defined.
     const requiresOfA: SeedModule[] = [];
-    const a = defineSeedModule({ name: 'a', requires: requiresOfA, tables: [], seed: () => Promise.resolve(undefined) });
-    const b = defineSeedModule({ name: 'b', requires: [a], tables: [], seed: () => Promise.resolve(undefined) });
+    const a = defineSeedModule({
+      name: 'a',
+      requires: requiresOfA,
+      tables: [],
+      seed: () => Promise.resolve(undefined),
+    });
+    const b = defineSeedModule({
+      name: 'b',
+      requires: [a],
+      tables: [],
+      seed: () => Promise.resolve(undefined),
+    });
     requiresOfA.push(b);
 
     expect(() => resolveModules([a])).toThrow(/circular/i);
@@ -84,7 +103,12 @@ describe('tablesInTeardownOrder', () => {
     const ordered = resolveModules([projects]);
     const tables = tablesInTeardownOrder(ordered);
 
-    expect(tables).toEqual(['work.projects', 'identity.memberships', 'identity.orgs', 'identity.users']);
+    expect(tables).toEqual([
+      'work.projects',
+      'identity.memberships',
+      'identity.orgs',
+      'identity.users',
+    ]);
   });
 
   it('keeps only the LAST occurrence when two modules declare the same table', () => {

@@ -103,6 +103,10 @@ interface UiState {
    * — can both see it.
    */
   readonly draggingCardId: string | null;
+  /** The command palette (Cmd/Ctrl+K) — see `command-palette.tsx`. */
+  readonly commandPaletteOpen: boolean;
+  /** The `?` keyboard-shortcuts overlay, discoverable from the same key everywhere. */
+  readonly shortcutsOpen: boolean;
 }
 
 interface UiActions {
@@ -111,6 +115,8 @@ interface UiActions {
   readonly setDraggingCard: (cardId: string | null) => void;
   readonly toggleProject: (projectId: string) => void;
   readonly togglePinnedBoard: (projectId: string, boardId: string) => void;
+  readonly setCommandPaletteOpen: (open: boolean) => void;
+  readonly setShortcutsOpen: (open: boolean) => void;
 }
 
 export const useUi = create<UiState & UiActions>((set) => ({
@@ -119,6 +125,8 @@ export const useUi = create<UiState & UiActions>((set) => ({
   draggingCardId: null,
   collapsedProjects: readIds(COLLAPSED_KEY),
   pinnedBoards: readIds(PINNED_KEY),
+  commandPaletteOpen: false,
+  shortcutsOpen: false,
 
   toggleSidebar: () => {
     set((state) => ({ sidebarOpen: !state.sidebarOpen }));
@@ -144,5 +152,12 @@ export const useUi = create<UiState & UiActions>((set) => ({
       writeIds(PINNED_KEY, pinnedBoards);
       return { pinnedBoards };
     });
+  },
+
+  setCommandPaletteOpen: (commandPaletteOpen) => {
+    set({ commandPaletteOpen });
+  },
+  setShortcutsOpen: (shortcutsOpen) => {
+    set({ shortcutsOpen });
   },
 }));

@@ -8,7 +8,7 @@ import {
   type ProjectId,
   type UserId,
 } from '@taskflow/contracts';
-import { closeDatabase, initializeDatabase, schema, withOrgScope } from '@taskflow/db';
+import { closeDatabase, eq, initializeDatabase, schema, withOrgScope } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import type { Subject } from '@taskflow/policy';
 import { TEST_ENV } from '../testing/fixtures.js';
@@ -21,6 +21,7 @@ import * as boards from './board.service.js';
 import * as lists from './list.service.js';
 import * as cards from './card.service.js';
 import * as statuses from './status.service.js';
+import * as views from './view.service.js';
 import type { WorkActor } from './shared.js';
 
 /**
@@ -86,6 +87,11 @@ async function removeOrg(orgId: string): Promise<void> {
   await admin.query(`DELETE FROM work.cards WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM work.statuses WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM work.lists WHERE org_id = $1`, [orgId]);
+  /* Before boards. `views_board_fk` is ON DELETE CASCADE so this would happen
+     anyway, but every other table here is listed explicitly and relying on a
+     cascade for one of them is how a future FK change turns teardown into a
+     confusing failure in an unrelated test. */
+  await admin.query(`DELETE FROM work.views WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM work.boards WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM work.projects WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM authz.relationship_tuples WHERE org_id = $1`, [orgId]);
@@ -357,6 +363,51 @@ describe('ordering', () => {
         afterCardId: null,
       }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('refuses a move into another project rather than letting the database reject it', async () => {
+    const fixture = await scaffold('work-cross-project');
+
+    /* A second project in the SAME org, so RLS has nothing to say about it —
+       this is the ordinary-authorization shape the composite foreign keys
+       exist for, not a tenant boundary. */
+    const other = await projects.createProject(fixture.owner, {
+      name: 'Mobile',
+      key: 'MOB',
+      description: null,
+    });
+    const otherBoard = await boards.createBoard(fixture.owner, {
+      projectId: other.projectId,
+      name: 'Delivery',
+    });
+    const otherList = await lists.createList(fixture.owner, {
+      boardId: otherBoard.boardId,
+      name: 'Todo',
+      wipLimit: null,
+    });
+
+    const card = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Stays in its project',
+      description: null,
+    });
+
+    /* Without the guard this reaches the UPDATE, which rewrites `project_id`
+       and violates the card's own `(org_id, project_id, status_id)` FK — a
+       driver error surfacing as a 500. The card would also keep a number
+       minted from the old project's counter. */
+    await expect(
+      cards.moveCard(fixture.owner, {
+        cardId: card.cardId,
+        targetListId: otherList.listId,
+        beforeCardId: null,
+        afterCardId: null,
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    // And the refusal left it exactly where it was.
+    const still = await cards.listCards(fixture.owner, { boardId: fixture.boardId });
+    expect(still.map((entry) => entry.cardId)).toContain(card.cardId);
   });
 
   it('repairs a degenerate list and reports it, rather than failing the move', async () => {
@@ -941,6 +992,84 @@ describe('authorization beyond the role', () => {
   });
 });
 
+describe('my tasks (cross-board)', () => {
+  it('lists cards assigned to the caller, but only on boards they can still read', async () => {
+    const fixture = await scaffold('work-my-tasks');
+    await members.addMember(
+      fixture.orgId,
+      { email: 'viewer@work.test', role: 'guest' },
+      { userId: OWNER, requestId },
+    );
+
+    // A second board in the same project, so the two cards differ only in
+    // which board they sit on.
+    const otherBoard = await boards.createBoard(fixture.owner, {
+      projectId: fixture.projectId,
+      name: 'Marketing',
+    });
+    const otherList = await lists.createList(fixture.owner, {
+      boardId: otherBoard.boardId,
+      name: 'Todo',
+      wipLimit: null,
+    });
+
+    const visible = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Visible to the guest',
+      description: null,
+    });
+    const hidden = await cards.createCard(fixture.owner, {
+      listId: otherList.listId,
+      title: 'Hidden from the guest',
+      description: null,
+    });
+
+    await cards.assignCard(fixture.owner, { cardId: visible.cardId, assigneeIds: [VIEWER] });
+    await cards.assignCard(fixture.owner, { cardId: hidden.cardId, assigneeIds: [VIEWER] });
+
+    /* Guest grants NOTHING from the role alone (packages/policy/src/roles.ts).
+       A `viewer` tuple on the FIRST board only is what should make one card
+       visible and the other not — being ASSIGNED to a card is not the same as
+       being able to READ the board it lives on (§8.2), and this is the one
+       cross-board read with no board-level `card:read` gate above it to catch
+       that. */
+    await grants.grant(
+      fixture.orgId,
+      {
+        subjectType: 'user',
+        subjectId: VIEWER,
+        relation: 'viewer',
+        objectType: 'board',
+        objectId: fixture.boardId,
+        expiresAt: null,
+      },
+      { userId: OWNER, requestId },
+    );
+
+    const guest = await actorFor(fixture.orgId, VIEWER, 'guest');
+    const mine = await cards.listMyCards(guest, {});
+
+    expect(mine.map((card) => card.cardId)).toEqual([visible.cardId]);
+  });
+
+  it('excludes archived cards by default and includes them when asked', async () => {
+    const fixture = await scaffold('work-my-tasks-archive');
+
+    const card = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Assigned to the owner',
+      description: null,
+    });
+    await cards.assignCard(fixture.owner, { cardId: card.cardId, assigneeIds: [OWNER] });
+    await cards.archiveCard(fixture.owner, { cardId: card.cardId, archived: true });
+
+    expect(await cards.listMyCards(fixture.owner, {})).toHaveLength(0);
+
+    const withArchived = await cards.listMyCards(fixture.owner, { includeArchived: true });
+    expect(withArchived.map((row) => row.cardId)).toEqual([card.cardId]);
+  });
+});
+
 describe('archiving', () => {
   it('hides an archived card from the board', async () => {
     const fixture = await scaffold('work-archive');
@@ -963,7 +1092,11 @@ describe('archiving', () => {
     /* `includeArchived` REPLACES the hardcoded exclusion rather than composing
        with it — this pins that a plain `listCards` call still cannot see the
        archived row, and that the flag is what it takes to reach it. */
-    const fixture = await scaffold('work-archive-includeArchived');
+    /* Lowercase, and not merely by convention: `orgs_slug_format` is
+       `^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$` (migration 0004), so a camelCase
+       slug fails the CHECK before the test reaches anything it means to
+       assert. */
+    const fixture = await scaffold('work-archive-explicit');
 
     const live = await cards.createCard(fixture.owner, {
       listId: fixture.listId,
@@ -1003,13 +1136,53 @@ describe('archiving', () => {
     /* Cascading would be an unbounded write behind one click, and restoring
        could not know which cards were already archived beforehand. */
     await expect(
-      lists.archiveList(fixture.owner, { listId: fixture.listId }),
+      lists.archiveList(fixture.owner, { listId: fixture.listId, archived: true }),
     ).rejects.toMatchObject({ code: 'CONFLICT' });
 
     await cards.archiveCard(fixture.owner, { cardId: card.cardId, archived: true });
     await expect(
-      lists.archiveList(fixture.owner, { listId: fixture.listId }),
+      lists.archiveList(fixture.owner, { listId: fixture.listId, archived: true }),
     ).resolves.toMatchObject({ archived: true });
+  });
+
+  it('restores an archived list, and does not re-run the occupancy check on the way back', async () => {
+    const fixture = await scaffold('work-restore-list');
+
+    await lists.archiveList(fixture.owner, { listId: fixture.listId, archived: true });
+    expect(await lists.listLists(fixture.owner, { boardId: fixture.boardId })).toEqual([]);
+
+    // Only reachable through the archived view, which is the point of having one.
+    const archived = await lists.listLists(fixture.owner, {
+      boardId: fixture.boardId,
+      archivedOnly: true,
+    });
+    expect(archived.map((list) => list.listId)).toEqual([fixture.listId]);
+
+    await expect(
+      lists.archiveList(fixture.owner, { listId: fixture.listId, archived: false }),
+    ).resolves.toMatchObject({ archived: false });
+
+    const live = await lists.listLists(fixture.owner, { boardId: fixture.boardId });
+    expect(live.map((list) => list.listId)).toEqual([fixture.listId]);
+  });
+
+  it('restores a list that still holds archived cards, rather than refusing it', async () => {
+    const fixture = await scaffold('work-restore-occupied');
+
+    const card = await cards.createCard(fixture.owner, {
+      listId: fixture.listId,
+      title: 'Went with it',
+      description: null,
+    });
+    await cards.archiveCard(fixture.owner, { cardId: card.cardId, archived: true });
+    await lists.archiveList(fixture.owner, { listId: fixture.listId, archived: true });
+
+    /* The occupancy check exists to stop cards being stranded by an archive.
+       Running it on restore would refuse exactly the columns worth restoring —
+       the ones that had contents when they were archived. */
+    await expect(
+      lists.archiveList(fixture.owner, { listId: fixture.listId, archived: false }),
+    ).resolves.toMatchObject({ archived: false });
   });
 });
 
@@ -1050,5 +1223,200 @@ describe('rich text', () => {
 
     const detail = await cards.getCard(fixture.owner, { cardId: card.cardId });
     expect(detail.description).toMatchObject({ type: 'doc' });
+  });
+});
+
+describe('saved views', () => {
+  const body = {
+    type: 'board' as const,
+    groupBy: 'status' as const,
+    sortBy: null,
+    filter: null,
+    visibleColumns: null,
+  };
+
+  it('keeps a private view visible to its author and invisible to everyone else', async () => {
+    const fixture = await scaffold('work-views-private');
+    const member = await actorFor(fixture.orgId, MEMBER, 'member');
+
+    await views.createView(fixture.owner, {
+      ...body,
+      boardId: fixture.boardId,
+      name: 'Mine',
+      isShared: false,
+    });
+
+    /* RLS has nothing to say here — both are members of the same org, on the
+       same side of the tenant boundary. The `created_by` half of the read is
+       what makes private mean private. */
+    expect(await views.listViews(fixture.owner, { boardId: fixture.boardId })).toHaveLength(1);
+    expect(await views.listViews(member, { boardId: fixture.boardId })).toEqual([]);
+  });
+
+  it('lets a member keep a private view but not publish a shared one', async () => {
+    const fixture = await scaffold('work-views-sharing');
+    const member = await actorFor(fixture.orgId, MEMBER, 'member');
+
+    // A personal bookmark changes nothing anyone else sees — `board:read`.
+    await expect(
+      views.createView(member, {
+        ...body,
+        boardId: fixture.boardId,
+        name: 'My cards',
+        isShared: false,
+      }),
+    ).resolves.toMatchObject({ viewId: expect.any(String) as unknown as string });
+
+    // A shared tab is part of the board for every reader — `board:update`.
+    await expect(
+      views.createView(member, {
+        ...body,
+        boardId: fixture.boardId,
+        name: 'Team triage',
+        isShared: true,
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it("refuses to edit someone else's private view, and does not admit it exists", async () => {
+    const fixture = await scaffold('work-views-authoronly');
+    const member = await actorFor(fixture.orgId, MEMBER, 'member');
+
+    const view = await views.createView(fixture.owner, {
+      ...body,
+      boardId: fixture.boardId,
+      name: 'Owner only',
+      isShared: false,
+    });
+
+    /* NOT_FOUND rather than FORBIDDEN, and the owner's role is irrelevant:
+       author-only with no permission override, the same rule comment editing
+       uses. A personal bookmark an administrator can silently rewrite is not
+       personal. */
+    await expect(
+      views.updateView(member, { ...body, viewId: view.viewId, name: 'Hijacked', isShared: false }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+    await expect(views.deleteView(member, { viewId: view.viewId })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it('treats publishing an existing private view as a board change', async () => {
+    const fixture = await scaffold('work-views-publish');
+    const member = await actorFor(fixture.orgId, MEMBER, 'member');
+
+    const view = await views.createView(member, {
+      ...body,
+      boardId: fixture.boardId,
+      name: 'Mine',
+      isShared: false,
+    });
+
+    // Their own view, so author-only passes — but sharing it puts it in front
+    // of everyone, which is the permission they do not hold.
+    await expect(
+      views.updateView(member, { ...body, viewId: view.viewId, name: 'Mine', isShared: true }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+
+    await expect(
+      views.updateView(fixture.owner, {
+        ...body,
+        viewId: view.viewId,
+        name: 'Mine',
+        isShared: true,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('stores @me unresolved, so a shared view does not mean its author', async () => {
+    const fixture = await scaffold('work-views-me');
+
+    await views.createView(fixture.owner, {
+      ...body,
+      boardId: fixture.boardId,
+      name: 'Assigned to me',
+      isShared: true,
+      filter: { kind: 'comparison', field: 'assignee', operator: 'in', value: ['@me'] },
+    });
+
+    const [saved] = await views.listViews(fixture.owner, { boardId: fixture.boardId });
+
+    /* The whole point of §10.2. Substituting a user id at save time would make
+       this view mean "assigned to the owner" for every member who opened it. */
+    expect(saved?.filter).toMatchObject({ value: ['@me'] });
+    expect(JSON.stringify(saved?.filter)).not.toContain(OWNER);
+  });
+
+  it('reports an unreadable stored filter as one broken view, not a failed list', async () => {
+    const fixture = await scaffold('work-views-broken');
+
+    const good = await views.createView(fixture.owner, {
+      ...body,
+      boardId: fixture.boardId,
+      name: 'Fine',
+      isShared: true,
+    });
+    const bad = await views.createView(fixture.owner, {
+      ...body,
+      boardId: fixture.boardId,
+      name: 'Corrupt',
+      isShared: true,
+    });
+
+    /* Structurally PERFECT and semantically meaningless — a field that was
+       removed in a later build, or a hand-edited row. This is the shape the
+       service has to catch: `FilterTree` accepts it happily, because a Zod
+       schema checks shape and cannot know the tree is filtering cards. Written
+       straight to the column because the service now refuses it at the write,
+       which is the whole point of `assertFilterUsable`. */
+    await withOrgScope(fixture.orgId, async (tx) =>
+      tx
+        .update(schema.views)
+        .set({ filter: { kind: 'comparison', field: 'assignedTo', operator: 'eq', value: 'x' } })
+        .where(eq(schema.views.id, bad.viewId)),
+    );
+
+    const listed = await views.listViews(fixture.owner, { boardId: fixture.boardId });
+
+    /* Both views still listed. Letting the bad tree reach `compile()` would
+       surface as a 500 for the whole board rather than as one bad tab. */
+    expect(listed).toHaveLength(2);
+    expect(listed.find((v) => v.viewId === good.viewId)?.filterBroken).toBe(false);
+
+    const broken = listed.find((v) => v.viewId === bad.viewId);
+    expect(broken?.filterBroken).toBe(true);
+    expect(broken?.filter).toBeNull();
+  });
+
+  it('refuses two shared views of the same name, case-insensitively', async () => {
+    const fixture = await scaffold('work-views-dupe');
+
+    await views.createView(fixture.owner, {
+      ...body,
+      boardId: fixture.boardId,
+      name: 'Triage',
+      isShared: true,
+    });
+
+    await expect(
+      views.createView(fixture.owner, {
+        ...body,
+        boardId: fixture.boardId,
+        name: 'triage',
+        isShared: true,
+      }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+
+    /* But a PRIVATE view may reuse the name: the shared index is partial
+       (WHERE is_shared), so two people may each keep their own "Triage". */
+    await expect(
+      views.createView(fixture.owner, {
+        ...body,
+        boardId: fixture.boardId,
+        name: 'Triage',
+        isShared: false,
+      }),
+    ).resolves.toMatchObject({ viewId: expect.any(String) as unknown as string });
   });
 });

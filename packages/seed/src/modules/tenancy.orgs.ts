@@ -1,5 +1,10 @@
 import { createEvent } from '@taskflow/events';
-import { memberAdded, orgCreated, teamCreated, teamMemberAdded } from '@taskflow/api/events/tenancy';
+import {
+  memberAdded,
+  orgCreated,
+  teamCreated,
+  teamMemberAdded,
+} from '@taskflow/api/events/tenancy';
 import { isIndispensableRole, type Role } from '@taskflow/policy';
 import { defineSeedModule } from '../registry.js';
 import { daysBefore, envelopeFor, slugify } from '../support.js';
@@ -59,12 +64,7 @@ export interface OrgsOutput {
 export const orgsModule = defineSeedModule({
   name: 'tenancy.orgs',
   requires: [usersModule],
-  tables: [
-    'identity.orgs',
-    'identity.memberships',
-    'identity.teams',
-    'identity.team_members',
-  ],
+  tables: ['identity.orgs', 'identity.memberships', 'identity.teams', 'identity.team_members'],
 
   async seed(ctx): Promise<OrgsOutput> {
     const rng = ctx.rng.fork('tenancy.orgs');
@@ -116,7 +116,17 @@ export const orgsModule = defineSeedModule({
 
         await ctx.db.insert(
           'identity.memberships',
-          ['id', 'org_id', 'user_id', 'role', 'status', 'invited_by', 'joined_at', 'created_at', 'updated_at'],
+          [
+            'id',
+            'org_id',
+            'user_id',
+            'role',
+            'status',
+            'invited_by',
+            'joined_at',
+            'created_at',
+            'updated_at',
+          ],
           memberships.map((membership) => {
             const joinedAt = daysBefore(ctx.now, rng.int(10, 190));
             const joined = joinedAt.getTime() < createdAt.getTime() ? createdAt : joinedAt;
@@ -185,16 +195,10 @@ export const orgsModule = defineSeedModule({
 
       for (const team of teams) {
         ctx.emit(
-          createEvent(
-            teamCreated,
-            { teamId: team.id, name: team.name, slug: team.slug },
-            envelope,
-          ),
+          createEvent(teamCreated, { teamId: team.id, name: team.name, slug: team.slug }, envelope),
         );
         for (const member of team.members) {
-          ctx.emit(
-            createEvent(teamMemberAdded, { teamId: team.id, userId: member.id }, envelope),
-          );
+          ctx.emit(createEvent(teamMemberAdded, { teamId: team.id, userId: member.id }, envelope));
         }
       }
 

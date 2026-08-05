@@ -3,7 +3,13 @@ import type { BoardId, CardId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useOptimistic } from '../../lib/optimistic.js';
-import { cardQuery, invalidateCard, patchBoardCards, type CardDetail, type Priority } from './api.js';
+import {
+  cardQuery,
+  invalidateCard,
+  patchBoardCards,
+  type CardDetail,
+  type Priority,
+} from './api.js';
 
 /**
  * Editing a card without silently destroying the fields you did not touch.

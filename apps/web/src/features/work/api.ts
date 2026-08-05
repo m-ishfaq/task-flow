@@ -27,6 +27,7 @@ interface Outputs {
   comments: Awaited<ReturnType<typeof api.work.comments.list.query>>;
   cardLabels: Awaited<ReturnType<typeof api.work.labels.onCard.query>>;
   statuses: Awaited<ReturnType<typeof api.work.statuses.list.query>>;
+  views: Awaited<ReturnType<typeof api.work.views.list.query>>;
 }
 
 export type ProjectSummary = Wire<Outputs['projects']>[number];
@@ -38,6 +39,7 @@ export type Checklist = Wire<Outputs['checklists']>[number];
 export type Comment = Wire<Outputs['comments']>[number];
 export type CardLabel = Wire<Outputs['cardLabels']>[number];
 export type Status = Wire<Outputs['statuses']>[number];
+export type SavedView = Wire<Outputs['views']>[number];
 /** `CardSummary['priority']` on its own — used anywhere a picker needs just the enum. */
 export type Priority = NonNullable<CardSummary['priority']>;
 
@@ -90,6 +92,35 @@ export function listsQuery(orgId: string, boardId: BoardId) {
   });
 }
 
+/**
+ * Archived columns — the ones `listsQuery` above will never return.
+ *
+ * `archivedOnly` REPLACES the live-only WHERE rather than widening it (see
+ * list.service.ts), so unlike `archivedCardsQuery` there is nothing to filter
+ * client-side. The key nests UNDER `keys.lists` so archiving or restoring a
+ * column, which already invalidates that family, refreshes this list too with
+ * no second invalidation to remember.
+ */
+export function archivedListsQuery(orgId: string, boardId: BoardId) {
+  return queryOptions({
+    queryKey: [...keys.lists(orgId, boardId), 'archived'] as const,
+    queryFn: async () => wire(await api.work.lists.list.query({ boardId, archivedOnly: true })),
+  });
+}
+
+/**
+ * The board's saved views: every shared one, plus the caller's own private ones.
+ *
+ * The server decides which — a private view belongs to its author and the read
+ * filters on `created_by`. Nothing here re-derives that, per §8.2.
+ */
+export function viewsQuery(orgId: string, boardId: BoardId) {
+  return queryOptions({
+    queryKey: keys.views(orgId, boardId),
+    queryFn: async () => wire(await api.work.views.list.query({ boardId })),
+  });
+}
+
 export function cardsQuery(orgId: string, boardId: BoardId, filter: FilterNode | null) {
   return queryOptions({
     queryKey: keys.cards(orgId, boardId, filterKey(filter)),
@@ -118,6 +149,24 @@ export function archivedCardsQuery(orgId: string, boardId: BoardId) {
       );
       return rows.filter((card) => card.archivedAt !== null);
     },
+  });
+}
+
+/**
+ * My Tasks / Home (`ai/phase-3.5-work-ux.md` §6) — every live card assigned
+ * to the caller, across every board they can reach.
+ *
+ * Deliberately not `cardsQuery` with `boardId` made optional: that query's key
+ * is `keys.cards(orgId, boardId, filterKey)`, and a board-shaped key with no
+ * board would either collide with a real board's cache or need a sentinel
+ * that every other reader of `keys.cards` has to know to skip. A separate
+ * key (`keys.myCards`) keeps the two caches from ever answering for each
+ * other.
+ */
+export function myCardsQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.myCards(orgId),
+    queryFn: async () => wire(await api.work.cards.mine.query({})),
   });
 }
 

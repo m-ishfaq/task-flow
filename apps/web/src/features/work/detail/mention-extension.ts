@@ -89,7 +89,10 @@ export const MentionExtension = Node.create<MentionOptions>({
     const label = typeof node.attrs['label'] === 'string' ? node.attrs['label'] : '';
     return [
       'span',
-      mergeAttributes({ 'data-mention': '', class: 'rounded bg-accent/15 px-0.5 text-accent' }, HTMLAttributes),
+      mergeAttributes(
+        { 'data-mention': '', class: 'rounded bg-accent/15 px-0.5 text-accent' },
+        HTMLAttributes,
+      ),
       `@${label}`,
     ];
   },
@@ -131,7 +134,9 @@ export function createMentionSuggestion(
       const needle = query.trim().toLowerCase();
       const candidates = getCandidates();
       const matches =
-        needle === '' ? candidates : candidates.filter((c) => c.label.toLowerCase().includes(needle));
+        needle === ''
+          ? candidates
+          : candidates.filter((c) => c.label.toLowerCase().includes(needle));
       return matches.slice(0, 8);
     },
 

@@ -54,9 +54,19 @@ export interface CardTileProps {
   readonly orgId?: string;
   readonly onOpen?: (cardId: string) => void;
   readonly dragging?: boolean;
+  /** Omitted where multi-select does not apply — the drag overlay, and the table view. */
+  readonly selected?: boolean;
+  readonly onToggleSelect?: (cardId: string, extend: boolean) => void;
 }
 
-export function CardTile({ card, orgId, onOpen, dragging = false }: CardTileProps) {
+export function CardTile({
+  card,
+  orgId,
+  onOpen,
+  dragging = false,
+  selected,
+  onToggleSelect,
+}: CardTileProps) {
   const due = formatDueDate(card.dueDate);
   const { peopleOf } = useMembers();
   const assignees = peopleOf(card.assigneeIds);
@@ -110,13 +120,54 @@ export function CardTile({ card, orgId, onOpen, dragging = false }: CardTileProp
     <div className="group relative">
       <button
         type="button"
-        className={tileClassName}
-        onClick={() => {
+        className={cn(tileClassName, selected === true && 'ring-1 ring-accent')}
+        onClick={(event) => {
+          /* Ctrl/Cmd- or shift-click SELECTS instead of opening. Two gestures
+             on one target, distinguished by modifier, because a card is
+             overwhelmingly opened rather than selected — putting selection on
+             the plain click would make the common action the awkward one.
+             Shift is the range extend; the meta/ctrl pair is the single toggle,
+             matching every file manager. */
+          if (onToggleSelect !== undefined && (event.shiftKey || event.metaKey || event.ctrlKey)) {
+            event.preventDefault();
+            onToggleSelect(card.cardId, event.shiftKey);
+            return;
+          }
           onOpen(card.cardId);
         }}
       >
         {body}
       </button>
+
+      {/* Shown once anything is selected, not only on hover: the affordance
+          that got you into selection mode has to stay visible while you are in
+          it, or the only way to see what is picked is to hover each card. */}
+      {onToggleSelect !== undefined && (
+        <label
+          className={cn(
+            'absolute top-1.5 left-1.5 transition-opacity',
+            selected === true
+              ? 'opacity-100'
+              : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
+          )}
+        >
+          <span className="sr-only">Select {card.title}</span>
+          <input
+            type="checkbox"
+            checked={selected === true}
+            /* `stopPropagation` on pointerdown, not just click: dnd-kit's
+               PointerSensor listens on the wrapper this tile sits inside, so
+               without it a press on the checkbox begins a drag and the tick
+               never registers. */
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            onChange={(event) => {
+              onToggleSelect(card.cardId, (event.nativeEvent as PointerEvent).shiftKey);
+            }}
+          />
+        </label>
+      )}
 
       {orgId !== undefined && (
         <div
@@ -306,8 +357,7 @@ function QuickOverflow({
   const [confirming, setConfirming] = useState(false);
 
   const archive = useMutation({
-    mutationFn: () =>
-      api.work.cards.archive.mutate({ cardId: card.cardId, archived: true }),
+    mutationFn: () => api.work.cards.archive.mutate({ cardId: card.cardId, archived: true }),
     onSuccess: () => invalidateCard(queryClient, orgId, card.cardId as CardId, boardId),
   });
 

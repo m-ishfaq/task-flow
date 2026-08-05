@@ -14,73 +14,37 @@
 ## handling, and a rule whose paths silently stop matching is a rule you believe
 ## is protecting you while it scans nothing.
 ##
-## Verified by scripts/verify-semgrep-rules.sh, which runs these rules against
-## deliberately-bad fixtures and asserts each one fires.
+## Verified by scripts/verify-semgrep-rules.mjs, which runs these rules against
+## deliberately-bad fixtures and asserts each one fires — and separately asserts
+## they stay silent on correct code.
+
+## ---------------------------------------------------------------------------
+## THE THREE SQL RLS RULES LIVED HERE, AND DO NOT ANY MORE.
+##
+## `tenant-table-without-force-rls`, `rls-policy-without-nullif` and
+## `rls-policy-without-with-check` moved to scripts/check-migration-rls.mjs.
+## They are not weakened — they run on every push now rather than only when the
+## tiered security jobs do.
+##
+## They were removed because all three are CORRELATIONS between statements far
+## apart in a file (a CREATE TABLE here, its ALTER ... FORCE eighty lines
+## below), and generic mode expresses that as `pattern-not-inside: ... FORCE ROW
+## LEVEL SECURITY ...` — an ellipsis with a bounded line span. The suppression
+## silently stops applying once a CREATE TABLE block grows past it.
+##
+## The rules were written and verified in Phase 1, when the only migrations that
+## existed were identity tables with no org_id column, so the "no false
+## positives on real migrations" assertion had nothing to assert against. Every
+## tenant migration from 0004 on then reported a false positive — 25 of them —
+## and because the security jobs default to off, nothing ran to say so until a
+## scheduled sweep did.
+##
+## Do not reintroduce them here. A rule that flags correct code trains people to
+## mute the scanner, which is strictly worse than no rule. Semgrep keeps what it
+## is good at: matching a pattern within a single expression, below.
+## ---------------------------------------------------------------------------
 
 rules:
-  # ---------------------------------------------------------------------------
-  # The single highest-impact mistake in the system: a tenant table without RLS.
-  # ESLint cannot see this, because it lives in .sql files.
-  # ---------------------------------------------------------------------------
-  - id: tenant-table-without-force-rls
-    languages: [generic]
-    severity: ERROR
-    paths:
-      include:
-        - '/packages/db/migrations/*.up.sql'
-        - '/.semgrep/fixtures/*.up.sql'
-    patterns:
-      - pattern: CREATE TABLE $SCHEMA.$TABLE ... org_id ...
-      - pattern-not-inside: |
-          ... FORCE ROW LEVEL SECURITY ...
-    message: >-
-      This migration creates a table with org_id but never applies
-      FORCE ROW LEVEL SECURITY. ENABLE alone does NOT protect against the table
-      owner, which is taskflow_migrator. Use tenantRlsPolicy() from
-      @taskflow/db and paste its output. See PLAN.md 8.3.
-
-  # ---------------------------------------------------------------------------
-  # The RLS predicate must use NULLIF. Without it an empty org context throws
-  # 22P02 (surfacing as a 500) instead of returning zero rows, and behaviour
-  # diverges depending on how the context was cleared.
-  # ---------------------------------------------------------------------------
-  - id: rls-policy-without-nullif
-    languages: [generic]
-    severity: ERROR
-    paths:
-      include:
-        - '/packages/db/migrations/*.sql'
-        - '/.semgrep/fixtures/*.sql'
-    patterns:
-      - pattern: current_setting('app.org_id', true)::uuid
-      - pattern-not-inside: NULLIF(current_setting('app.org_id', true), '')::uuid
-    message: >-
-      RLS predicate is missing NULLIF. An empty app.org_id raises 22P02 instead
-      of filtering to zero rows. Use
-      NULLIF(current_setting('app.org_id', true), '')::uuid. See PLAN.md 8.3.
-
-  # ---------------------------------------------------------------------------
-  # USING controls what a query can SEE; WITH CHECK controls what it may WRITE.
-  # A policy with only USING lets a caller insert rows stamped with another
-  # org's id: invisible to them afterwards, but present in the victim's data.
-  # ---------------------------------------------------------------------------
-  - id: rls-policy-without-with-check
-    languages: [generic]
-    severity: ERROR
-    paths:
-      include:
-        - '/packages/db/migrations/*.up.sql'
-        - '/.semgrep/fixtures/*.up.sql'
-    patterns:
-      # Metavariables are avoided here: in generic mode they match a single
-      # token, so $TABLE cannot span a dotted `work.cards`. Ellipsis matching is
-      # the reliable form. Verified by scripts/verify-semgrep-rules.mjs.
-      - pattern: CREATE POLICY ... USING ...
-      - pattern-not: CREATE POLICY ... WITH CHECK ...
-    message: >-
-      RLS policy defines USING but not WITH CHECK, so cross-tenant WRITES are
-      still possible. See PLAN.md 8.3.
-
   # ---------------------------------------------------------------------------
   # withGlobalScope bypasses tenant scoping by design. Legitimate only for
   # genuinely pre-tenant operations, all of which live in identity.

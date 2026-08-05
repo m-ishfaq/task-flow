@@ -115,9 +115,25 @@ export const listReordered = defineEvent(
     .strict(),
 );
 
+/**
+ * Covers restoring as well as archiving, carrying `restored` to say which —
+ * the same shape as `card.archived` below.
+ *
+ * One event rather than two because consumers care about the transition, not
+ * the verb: a notification, a search index and an activity feed each need to
+ * know a column left or rejoined the board, and splitting it would make every
+ * one of them subscribe twice to reconstruct a boolean.
+ */
 export const listArchived = defineEvent(
   'list.archived',
-  z.object({ listId: z.string(), boardId: z.string(), name: z.string() }).strict(),
+  z
+    .object({
+      listId: z.string(),
+      boardId: z.string(),
+      name: z.string(),
+      restored: z.boolean(),
+    })
+    .strict(),
 );
 
 /* -------------------------------------------------------------------------- *
@@ -624,6 +640,58 @@ export const attachmentPresigned = defineEvent(
       filename: z.string(),
       contentType: z.string(),
       declaredBytes: z.number().int().positive(),
+    })
+    .strict(),
+);
+
+/* -------------------------------------------------------------------------- *
+ * Saved views (ai/phase-3.5-work-ux.md §6)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * `shared` rides on all three because it is the field that decides the
+ * AUDIENCE of the change. A consumer deciding whether to notify a board — an
+ * activity feed, Phase 9's notifications — needs to distinguish someone
+ * rearranging their own bookmark from someone adding a tab everyone will see,
+ * and it cannot ask the row afterwards for a deleted view.
+ *
+ * The filter tree is deliberately NOT in these payloads. It is unbounded in
+ * size, every consumer that wants it can read the row, and an outbox entry is
+ * replayed into an audit log that keeps it forever.
+ */
+export const viewCreated = defineEvent(
+  'view.created',
+  z
+    .object({
+      viewId: z.string(),
+      boardId: z.string(),
+      name: z.string(),
+      type: z.string(),
+      shared: z.boolean(),
+    })
+    .strict(),
+);
+
+export const viewUpdated = defineEvent(
+  'view.updated',
+  z
+    .object({
+      viewId: z.string(),
+      boardId: z.string(),
+      name: z.string(),
+      shared: z.boolean(),
+    })
+    .strict(),
+);
+
+export const viewDeleted = defineEvent(
+  'view.deleted',
+  z
+    .object({
+      viewId: z.string(),
+      boardId: z.string(),
+      name: z.string(),
+      shared: z.boolean(),
     })
     .strict(),
 );

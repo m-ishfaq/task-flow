@@ -77,6 +77,14 @@ export function Sidebar() {
           keeping the toggle is honest about what a 3rem column can show. */}
       {open && (
         <nav aria-label="Projects" className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+          <Link
+            to="/home"
+            className="mb-2 block rounded px-1 py-1 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
+            activeProps={{ className: 'bg-surface-hover text-ink' }}
+          >
+            My tasks
+          </Link>
+
           <PinnedBoards />
 
           <p className="px-1 pt-2 pb-1 text-[10px] font-semibold tracking-wide text-ink-faint uppercase">

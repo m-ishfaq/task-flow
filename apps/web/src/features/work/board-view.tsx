@@ -3,8 +3,8 @@ import {
   DndContext,
   DragOverlay,
   KeyboardSensor,
+  MeasuringStrategy,
   PointerSensor,
-  closestCorners,
   useDroppable,
   useSensor,
   useSensors,
@@ -23,10 +23,12 @@ import type { BoardId, CardId, ListId, StatusId, UserId } from '@taskflow/contra
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useOptimistic } from '../../lib/optimistic.js';
+import { useToast } from '../../lib/toast-context.js';
 import { cn } from '../../lib/cn.js';
 import { CardTile } from './card-tile.js';
 import { ListColumn } from './list-column.js';
-import { neighboursForSortableDrop } from './neighbours.js';
+import { resolveListDrop } from './drop.js';
+import { boardCollisionDetection } from './collision.js';
 import { AddListColumn, EmptyBoard } from './add-list.js';
 import { patchBoardCards, type CardSummary, type ListSummary, type Status } from './api.js';
 import { useUpdateCard } from './use-update-card.js';
@@ -93,6 +95,9 @@ export interface BoardViewProps {
   readonly people: readonly Person[];
   readonly groupBy: GroupBy;
   readonly sortBy: SortBy;
+  readonly selected: ReadonlySet<string>;
+  /** `extend` is a shift-click — a range from the anchor, not a single toggle. */
+  readonly onToggleSelect: (cardId: string, extend: boolean) => void;
   readonly onOpenCard: (cardId: string) => void;
 }
 
@@ -117,16 +122,30 @@ export function BoardView({
   people,
   groupBy,
   sortBy,
+  selected,
+  onToggleSelect,
   onOpenCard,
 }: BoardViewProps) {
   const queryClient = useQueryClient();
   const optimistic = useOptimistic();
+  const toast = useToast();
   const updateCard = useUpdateCard(orgId, boardId);
   const [dragging, setDragging] = useState<CardSummary | null>(null);
 
   const groups = useMemo(
     () => groupCards(cards, groupBy, { lists, statuses, people }),
     [cards, groupBy, lists, statuses, people],
+  );
+
+  /* The column droppable ids, so collision detection can tell a container from
+     the cards inside it. Under LIST grouping the columns are the lists
+     themselves — including any with no cards, which still accept a drop. */
+  const collisionDetection = useMemo(
+    () =>
+      boardCollisionDetection(
+        new Set(groupBy === 'list' ? lists.map((list) => list.listId) : groups.map((g) => g.key)),
+      ),
+    [groupBy, lists, groups],
   );
 
   const sensors = useSensors(
@@ -156,6 +175,28 @@ export function BoardView({
     mutationFn: (input: MoveInput) => api.work.cards.move.mutate(input),
 
     ...optimisticMove,
+
+    /* A WIP breach is a transient NOTICE about one move, and `move.data` is
+       persistent STATE about the last one. Rendering the notice from that state
+       — which this did — leaves it on screen indefinitely after the drop that
+       caused it, because nothing clears `data` until another move replaces it.
+       The result is a warning about a card the user has long since stopped
+       looking at, pinned above a board they may have scrolled away from, with
+       no way to dismiss it and no indication of which list it means.
+
+       A toast is the right shape: it is raised by the event, it names the list,
+       and it expires on its own. `neutral`, not `danger` — the limit is
+       advisory by design (§10.1) and the move succeeded, so colouring it as a
+       failure would contradict the sentence it is showing. */
+    onSuccess: (result, variables) => {
+      if (!result.wipExceeded) return;
+      const name = lists.find((list) => list.listId === variables.targetListId)?.name;
+
+      toast.show(
+        name === undefined ? 'That list is over its WIP limit' : `${name} is over its WIP limit`,
+        { description: 'The move was recorded anyway — the limit is a signal, not a gate.' },
+      );
+    },
 
     /* Overrides the helper's `onSettled` rather than replacing it — note the
        delegation on the first line.
@@ -220,32 +261,21 @@ export function BoardView({
     if (card === undefined) return;
 
     if (groupBy === 'list') {
-      const overId = String(over.id);
-
-      /* Which list was it dropped into? `over` is either a card — whose list
-         is the answer — or a column, whose id IS the list id. Anything else
-         means the pointer was released outside the board. */
-      const overCard = cards.find((entry) => entry.cardId === overId);
-      const targetListId =
-        overCard?.listId ?? (lists.some((l) => l.listId === overId) ? overId : null);
-      if (targetListId === null) return;
-
-      const siblings = groups.find((g) => g.key === targetListId)?.cards ?? [];
-      const { beforeCardId, afterCardId } = neighboursForSortableDrop(siblings, cardId, overId);
-
-      // Dropping a card back exactly where it was is not a move.
-      if (
-        card.listId === targetListId &&
-        beforeCardId === (previousOf(siblings, cardId)?.cardId ?? null)
-      ) {
-        return;
-      }
+      // Resolved in drop.ts, where it is unit tested — see that file's header.
+      const resolved = resolveListDrop({
+        cards,
+        lists,
+        groups,
+        activeCardId: cardId,
+        overId: String(over.id),
+      });
+      if (resolved === null) return;
 
       move.mutate({
         cardId: cardId as CardId,
-        targetListId: targetListId as ListId,
-        beforeCardId,
-        afterCardId,
+        targetListId: resolved.targetListId,
+        beforeCardId: resolved.beforeCardId,
+        afterCardId: resolved.afterCardId,
       });
       return;
     }
@@ -281,7 +311,14 @@ export function BoardView({
           {groups.map((group) => (
             <StaticColumn key={group.key} group={group}>
               {sortCards(group.cards, sortBy).map((card) => (
-                <CardTile key={card.cardId} orgId={orgId} card={card} onOpen={onOpenCard} />
+                <CardTile
+                  key={card.cardId}
+                  orgId={orgId}
+                  card={card}
+                  selected={selected.has(card.cardId)}
+                  onToggleSelect={onToggleSelect}
+                  onOpen={onOpenCard}
+                />
               ))}
             </StaticColumn>
           ))}
@@ -292,20 +329,38 @@ export function BoardView({
 
   return (
     <div className="min-h-0 flex-1 overflow-x-auto">
-      {/* No error banner. A failed move is reported by the toast the optimistic
-          helper raises, next to where the card snapped back rather than pinned to
-          the top of a horizontally scrolling board the user may have scrolled
-          away from. */}
-      {move.data?.wipExceeded === true && (
-        <p className="border-b border-warning/40 bg-warning/10 px-4 py-1.5 text-xs text-ink">
-          That list is over its WIP limit. The move was recorded anyway — the limit is a signal, not
-          a gate.
-        </p>
-      )}
-
+      {/* No banners of any kind. A failed move is reported by the toast the
+          optimistic helper raises, and a WIP breach by the one `move.onSuccess`
+          raises — both next to where the card landed rather than pinned to the
+          top of a horizontally scrolling board the user may have scrolled away
+          from. See `onSuccess` for why this one cannot be rendered from
+          `move.data`. */}
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={collisionDetection}
+        /* Re-measure the columns continuously, not once at drag start.
+
+           This is what makes dragging BETWEEN columns work at all. dnd-kit's
+           default droppable strategy is `WhileDragging`, which measures every
+           droppable once when the drag begins. Each column here is its own
+           scroll container inside a horizontally scrolling board, and the
+           moment cards reflow — which they do as soon as the dragged card is
+           lifted out of its column — every OTHER column's cached rect is
+           stale. `closestCorners` then compares the pointer against rectangles
+           that no longer describe the page, resolves `over` to nothing, and
+           `onDragEnd` returns early having never called a mutation.
+
+           The failure is silent by construction: no request is made, so there
+           is no error, no toast, and nothing in the network tab. The card
+           simply snaps home, which reads as "drag and drop is broken" with no
+           thread to pull. Reordering WITHIN a column keeps working the whole
+           time, because that collision is resolved against sortable items
+           whose transforms dnd-kit is already tracking — which is what makes
+           it look like a cross-list bug rather than a measurement one.
+
+           `resolveListDrop` is unit tested (drop.ts) and was correct
+           throughout; no amount of reading it would have found this. */
+        measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
         onDragCancel={() => {
@@ -335,6 +390,8 @@ export function BoardView({
                           orgId={orgId}
                           card={card}
                           elementId={card.cardId}
+                          selected={selected.has(card.cardId)}
+                          onToggleSelect={onToggleSelect}
                           onOpen={onOpenCard}
                         />
                       ))}
@@ -356,6 +413,8 @@ export function BoardView({
                           orgId={orgId}
                           card={card}
                           elementId={elementIdOf(groupBy, group.key, card.cardId)}
+                          selected={selected.has(card.cardId)}
+                          onToggleSelect={onToggleSelect}
                           onOpen={onOpenCard}
                         />
                       ))}
@@ -415,7 +474,13 @@ function resolveTargetGroupKey(
 }
 
 /** A column for any grouping but `list`, which keeps its own `ListColumn` and its settings menu. */
-function DroppableColumn({ group, children }: { readonly group: Group; readonly children: ReactNode }) {
+function DroppableColumn({
+  group,
+  children,
+}: {
+  readonly group: Group;
+  readonly children: ReactNode;
+}) {
   const { setNodeRef, isOver } = useDroppable({ id: group.key });
 
   return (
@@ -434,7 +499,13 @@ function DroppableColumn({ group, children }: { readonly group: Group; readonly 
 }
 
 /** Same header, for the non-draggable `due` grouping — no droppable registration, nothing to drop onto. */
-function StaticColumn({ group, children }: { readonly group: Group; readonly children: ReactNode }) {
+function StaticColumn({
+  group,
+  children,
+}: {
+  readonly group: Group;
+  readonly children: ReactNode;
+}) {
   return (
     <section
       aria-label={group.label}
@@ -468,11 +539,15 @@ function SortableCard({
   orgId,
   card,
   elementId,
+  selected,
+  onToggleSelect,
   onOpen,
 }: {
   readonly orgId: string;
   readonly card: CardSummary;
   readonly elementId: string;
+  readonly selected: boolean;
+  readonly onToggleSelect: (cardId: string, extend: boolean) => void;
   readonly onOpen: (cardId: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -482,20 +557,40 @@ function SortableCard({
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
+      style={{
+        /* The DRAGGED card must not translate. Everything else must.
+
+           A `DragOverlay` is what follows the pointer here, so the original
+           node stays where it was, dimmed. Applying `transform` to it as well
+           moved the real node under the cursor too — and a droppable is
+           measured from its node, so the dragged card's own drop target
+           travelled with the pointer and stayed permanently underneath it.
+           Collision detection then answered "you are over the card you are
+           dragging" for the entire gesture, no matter which column the pointer
+           reached, and `resolveListDrop` correctly read that as a drop onto
+           itself: a no-op. Every drag ended with the card back where it began
+           and no request made.
+
+           The other cards' transforms are what open a gap to drop into, so this
+           is conditional rather than removed. `undefined` rather than `'none'`
+           so nothing is written to the style attribute at all — the overlay
+           owns the moving copy. */
+        transform: isDragging ? undefined : CSS.Transform.toString(transform),
+        transition,
+      }}
       className={cn(isDragging && 'opacity-40')}
       {...attributes}
       {...listeners}
     >
-      <CardTile orgId={orgId} card={card} onOpen={onOpen} />
+      <CardTile
+        orgId={orgId}
+        card={card}
+        selected={selected}
+        onToggleSelect={onToggleSelect}
+        onOpen={onOpen}
+      />
     </div>
   );
-}
-
-/** The card immediately above `cardId`, or null if it is first. */
-function previousOf(ordered: readonly CardSummary[], cardId: string): CardSummary | null {
-  const index = ordered.findIndex((card) => card.cardId === cardId);
-  return index <= 0 ? null : (ordered[index - 1] ?? null);
 }
 
 /**
