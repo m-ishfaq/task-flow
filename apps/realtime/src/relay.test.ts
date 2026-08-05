@@ -204,20 +204,25 @@ describe('startRealtimeRelay', () => {
       appendToOutbox(tx, [eventFor('card.moved'), eventFor('card.created')]),
     );
 
-    let calls = 0;
+    // Scoped to THIS suite's own org, deliberately — the outbox is a global queue
+    // (§3.5) that other suites' concurrently-running fixtures write to, and a
+    // throw keyed on NAME ALONE would fire for their 'card.moved' events too,
+    // corrupting a dispatch row this test does not own with an attempt it
+    // never made. `calls` below is filtered through `ours()` for the same
+    // reason `dispatch` itself now checks `orgId` before throwing.
     const dispatch = vi.fn((row: OutboxRow) => {
-      calls += 1;
-      if (row.name === 'card.moved') throw new Error('dispatch exploded');
+      if (row.orgId === ORG && row.name === 'card.moved') throw new Error('dispatch exploded');
     });
 
     const relay = startRealtimeRelay({ logger, dispatch, pollIntervalMs: 300_000 });
 
     try {
-      const delivered = await relay.drainNow();
+      await relay.drainNow();
 
       // Both were attempted; only the non-throwing one counts as delivered.
-      expect(calls).toBe(2);
-      expect(delivered).toBe(1);
+      const calls = ours(dispatch.mock.calls.map(([row]) => row));
+      expect(calls).toHaveLength(2);
+      expect(calls.filter((row) => row.name === 'card.created')).toHaveLength(1);
 
       const retry = ours(await withRealtimeScope((tx) => claimPending(tx, CONSUMER)));
       expect(retry).toHaveLength(1);

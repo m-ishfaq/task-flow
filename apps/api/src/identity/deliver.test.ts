@@ -1,9 +1,18 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { closeDatabase, initializeDatabase } from '@taskflow/db';
+import { connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { MemoryMailer } from '@taskflow/mail';
 import { buildServer } from '../server.js';
 import { TEST_ENV } from '../testing/fixtures.js';
+
+/** Every fixed email this file registers — see the note on `afterAll` below. */
+const FIXTURE_EMAILS = [
+  'deliver-verify@example.test',
+  'deliver-roundtrip@example.test',
+  'deliver-duplicate@example.test',
+  'deliver-reset@example.test',
+];
 
 /**
  * The seam between the identity service and outbound mail (PLAN.md §8.1).
@@ -16,10 +25,31 @@ import { TEST_ENV } from '../testing/fixtures.js';
  */
 
 let app: FastifyInstance;
+let admin: AdminConnection;
 const mailer = new MemoryMailer();
+
+/**
+ * Deletes this file's own fixture users, scoped to its own fixed addresses —
+ * never a whole-table wipe, for the reason `identity.service.test.ts`'s own
+ * cleanup gives: `taskflow_test` is shared across every package's suite, so an
+ * unscoped delete would race a concurrently-running one.
+ *
+ * Run before the tests, not only after. A registration answers identically for
+ * an address that already exists ("Someone tried to sign up with your email
+ * address") and a fresh one, which is the correct anti-enumeration behaviour —
+ * and also means a row an ABORTED previous run left behind (skipping this
+ * file's own `afterAll`) makes every assertion below fail as if registration
+ * itself were broken, not as what it is: stale fixture data from a run that
+ * never finished.
+ */
+async function cleanupFixtures(): Promise<void> {
+  await admin.query(`DELETE FROM identity.users WHERE email = ANY($1::text[])`, [FIXTURE_EMAILS]);
+}
 
 beforeAll(async () => {
   initializeDatabase({ url: TEST_ENV.DATABASE_URL, applicationName: 'deliver-test' });
+  admin = await connectAsMigrator();
+  await cleanupFixtures();
   app = await buildServer({ env: TEST_ENV, mailer });
 });
 
@@ -27,6 +57,8 @@ afterAll(async () => {
   // Closing the server drains the queue, which is what makes the assertions
   // below deterministic rather than racing the background sender.
   await app.close();
+  await cleanupFixtures();
+  await admin.end();
   await closeDatabase();
 });
 
