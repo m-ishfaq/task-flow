@@ -1,10 +1,12 @@
 # Phase 4 — Realtime spine
 
-**Status: DRAFT — not yet approved.** Written to be reviewed and argued with, the same way
-`phase-3.5-work-ux.md` was before its own approval. Nothing here should be built until the
-structural decisions in §3 are settled, for the same reason `feature-template.md` puts permission
-before code: getting §3 wrong is expensive to unwind once a gateway is broadcasting to real
-clients, and cheap to argue about now.
+**Status: APPROVED 2026-08-05 — Wave 1 in progress.** Drafted to be reviewed and argued with, the
+same way `phase-3.5-work-ux.md` was before its own approval. §3 stands as written; the five open
+questions in §7 were answered on approval and are recorded there with the reasoning, not left as a
+default nobody chose. Getting §3 wrong is expensive to unwind once a gateway is broadcasting to
+real clients, which is why it was argued about first.
+
+Read §7 before §5 — three of those answers change what Wave 1 builds.
 
 Parent: [PLAN.md](../PLAN.md) §9 (Real-Time Architecture), §10.6 (Domain events), §13 (Roadmap).
 
@@ -332,35 +334,146 @@ to attempt joining every board id in the system in a tight loop, and an unbounde
 still a resource-exhaustion vector and still the reconnaissance phase of the same attack, whether or
 not any individual attempt succeeds.
 
-## 7. Open decisions — need a call before or during Wave 1
+## 7. Decisions — answered on approval
 
-Unlike §3, these don't have a codebase precedent to lean on and should get an explicit answer
-rather than a default nobody chose on purpose.
+These had no codebase precedent to lean on, which is why they were pulled out of §3 and answered
+explicitly rather than defaulted into.
 
-1. **Reauth cadence (§3.2).** Reconnect-on-refresh is proposed, but the exact trigger — client
-   disconnects proactively when the token has, say, 60 seconds left, vs. waits for the gateway to
-   reject a stale token and reconnects reactively — changes whether a user ever sees a visible gap.
-2. **Force-leave vs. full disconnect (§3.3).** A revoked board `viewer` tuple should probably leave
-   just that room; a revoked SESSION should probably close the whole connection. Worth confirming
-   that split rather than assuming it.
-3. **Relay tick interval for the realtime consumer.** The audit relay's 5 seconds was chosen for a
-   compliance record, where a few seconds of lag is invisible. Realtime is the channel where lag is
-   the whole point of the feature — worth deciding whether it needs a shorter tick, a
-   `LISTEN`/`NOTIFY` wake-up instead of polling, or is fine inheriting the same number until it
-   demonstrably isn't.
-4. **How far "activity stream" goes in Wave 2.** §2 scopes it to "the broadcast shape supports one"
-   — confirm that's the intended bar for Phase 4, versus pulling a minimal persisted feed in now.
-5. **Rate-limit thresholds for §6.5.** The HTTP middleware's existing per-account/per-IP numbers
-   were tuned for login and password-reset abuse specifically. Connection attempts and room joins
-   are a different shape of traffic (a legitimate client opens one connection and joins a handful of
-   rooms per session; an enumeration attempt looks like neither) — worth its own numbers rather than
-   reusing the login ones by default.
+### 7.0 The gateway is its own app
+
+`apps/realtime`, not Socket.io bolted onto `apps/api`'s Fastify instance. CLAUDE.md's layout
+already names it (`apps/ api (arriving: realtime, collab, worker)`), and Chat (Phase 5) and Docs
+(Phase 6) both land on this process — moving a gateway that already holds open connections is the
+expensive version of this decision, and it gets more expensive every phase.
+
+What it does NOT mean is a second copy of anything security-relevant. The gateway imports
+`resolveOrgMembership` and `loadTuples` from `@taskflow/api` — the SAME functions the HTTP path
+calls, not a reimplementation — for the reason §6.2 gives. A separate app is a separate deployment
+unit, not a separate authorization model. The one thing genuinely duplicated is the relay loop
+(§3.5), and that duplication is argued for there.
+
+Cost accepted: its own env schema, its own `taskflow_realtime` Postgres role, and the web dev
+server has to proxy the WebSocket upgrade the same way it already proxies `/trpc` — same
+same-origin reasoning CLAUDE.md gives for why that proxy exists at all.
+
+### 7.1 Reauth is proactive, and the lead time is configuration
+
+The client refreshes through the existing single-flight path and reconnects **while the old token
+is still valid**, rather than waiting for the gateway to refuse a stale one. Reactive reauth means
+every user gets a visible disconnected window every ten minutes, and — the part that matters more —
+it fills the logs with refusals indistinguishable from the enumeration attempts §3.8 asks us to
+watch for. A control whose signal is buried in routine noise is not a control.
+
+**The lead time is `REALTIME_REAUTH_LEAD_SECONDS`, not a literal.** It lives in the validated env
+schema (guardrail 3) and is bounded there at both ends:
+
+- **Floor of 30 seconds.** Below that a slow refresh does not reliably finish before the token it
+  is replacing expires, and proactive reauth degrades into the reactive behaviour it exists to
+  avoid — silently, and only for users on bad networks.
+- **Ceiling strictly below `ACCESS_TOKEN_TTL_SECONDS`.** A lead time at or above the TTL means the
+  token is always "about to expire", so the client reconnects continuously. That is a self-inflicted
+  denial of service configured in one line, and the schema refuses it at boot rather than at 3am.
+
+**The client reads the value from the server**, in the handshake acknowledgement — it does not
+hardcode 60. That seam is the point: today the value comes from the environment, and when a
+platform-settings surface exists it comes from there instead, with no client change and no second
+place for the number to live. See §7.6.
+
+### 7.2 Revocation: force-leave for grants, disconnect for sessions
+
+Confirmed as §3.3 proposed, with the split written out so a test can assert it:
+
+| Event                          | Response                                                |
+| ------------------------------ | ------------------------------------------------------- |
+| `grant.revoked`                | re-run `can()`; force-leave only the rooms that now fail |
+| `member.role_changed`          | re-run `can()`; force-leave only the rooms that now fail |
+| `member.removed`               | leave every room belonging to that org                   |
+| `session.revoked`              | disconnect the whole connection                          |
+| `session.token_reuse_detected` | disconnect the whole connection                          |
+
+The last row is named `session.token_reuse_detected`, not `token.reuse_detected` as §3.3 first
+wrote it — `apps/api/src/identity/events.ts` is the authority. Worth spelling out because a
+subscription keyed on a name that does not exist raises nothing anywhere: it simply never matches,
+and the control is silently absent.
+
+A `grant.revoked` naming a TEAM is handled by re-checking every socket in that org rather than
+expanding the team's membership. Expanding it would mean querying the very relation the event says
+just changed, and the cheap-but-partial alternative — re-check only the subject id — leaves exactly
+the people a team grant was revoked from sitting in their rooms.
+
+The line between the two halves is whether the CREDENTIAL is still good. A revoked board tuple
+says "not this room" — kicking that user off every other board they had open is a correctness-free
+punishment that makes revoking one share look like an outage. A revoked session says the
+credential itself is gone, and there is no room it is still safe in.
+
+### 7.3 `LISTEN`/`NOTIFY` to wake the relay, with the poll as the floor
+
+The audit relay's five-second tick was chosen for a compliance record where lag is invisible.
+Realtime is the channel where lag IS the feature, and five seconds of it reads as broken.
+
+Both mechanisms, deliberately, and the ordering matters: the **poll is the correctness guarantee**
+and the notification is only a latency optimization. `NOTIFY` is fire-and-forget — not queued for a
+disconnected listener, dropped if the notifying transaction rolls back, and missed entirely for the
+window a listener's connection was down. A gateway that woke ONLY on notification would lose events
+in exactly those cases and have no way to notice. So the drain path is unchanged (`claimPending` →
+broadcast → `markDispatched`); a notification just runs it sooner, and the poll behind it means a
+missed notification costs latency rather than an event.
+
+The poll interval is therefore free to stay lazy — 5 seconds, inherited from the audit relay,
+because it is now a safety net rather than the delivery mechanism.
+
+### 7.4 Wave 2's activity-stream bar stays at "the shape supports one"
+
+As §2 scoped it. A persisted, paginated feed is a read model with its own migration, its own query,
+and its own authorization question — which events may this member see in a feed, given that room
+membership answered that question only for rooms they had OPEN. None of that is proven by the spine
+working, and folding it in would make Wave 2's acceptance depend on a surface nobody has designed.
+It is a follow-up.
+
+### 7.5 Rate limits get their own numbers
+
+Not the login middleware's. Legitimate traffic here has a shape the login limiter was never tuned
+for: one connection per tab, then a handful of joins, then hours of silence. Wave 1's starting
+numbers:
+
+| Control                 | Limit                          | What it is actually stopping                                 |
+| ----------------------- | ------------------------------ | ------------------------------------------------------------ |
+| New connections / IP    | 30 per minute                  | connection floods; reconnect storms from one bad client       |
+| Room joins / socket     | 60 per minute                  | the §3.7 enumeration loop, which needs volume to pay          |
+| Refused joins / socket  | 10 per minute, then disconnect | the same loop, caught faster because refusals are the signal  |
+
+The third row carries the weight. A legitimate client's joins essentially never fail — it only asks
+for boards the user just navigated to — so a run of refusals is not a user having a bad day, it is
+someone finding out which board ids exist. Ten is generous for a real client and cheap for an
+attacker to hit.
+
+Numbers, not a law: they are one env-tunable block, and §7.6 is where they eventually move.
+
+### 7.6 Follow-up: a platform-settings surface, and the min-cap policy
+
+Two things this phase deliberately does NOT build, recorded here so they are a decision rather than
+an omission:
+
+1. **Runtime platform settings.** `REALTIME_REAUTH_LEAD_SECONDS` and the §7.5 thresholds are
+   environment variables today, which means changing one is a deploy. The eventual home is an
+   instance- or org-level settings surface (PLAN.md §3.6, Platform) read at runtime.
+   `packages/feature-flags` is NOT that home and must not become it — guardrail 7 is explicit that
+   flags gate product surface only, and every value listed above is a security-relevant timing or
+   abuse control.
+2. **A shared min-cap convention.** §7.1's floor-and-ceiling pattern is currently one hand-written
+   Zod refinement. Any settings surface that lets these be edited at runtime needs the SAME bounds
+   enforced at the write path — a value refused at boot but accepted from an admin form is a bound
+   that does not exist. Whatever builds §7.6.1 owns making the cap one definition consulted by both.
 
 ---
 
 ## 8. Sequencing and cost
 
 Per PLAN.md §13: 3 weeks estimated, following directly after 3.5. Phases 5, 6, and 7 (Chat, Docs,
-Voice) do not start until this is done — see §1. No migration beyond the `'realtime'` consumer rows
-added to `outbox_dispatch` in Wave 1; the schema fan-out work is already built on
+Voice) do not start until this is done — see §1. The schema fan-out work is already built on
 `development-phase4` (PR #15) — not yet merged to `development`.
+
+Wave 1 adds exactly one migration, `0016_realtime_consumer`, and it is smaller than it looks:
+the `taskflow_realtime` role plus the three `outbox_dispatch` policies migration 0015's closing
+comment already specified, and the `NOTIFY` trigger §7.3 decided on. No new tables, no column
+changes, nothing to backfill.

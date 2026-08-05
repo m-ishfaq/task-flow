@@ -1,0 +1,173 @@
+import { z } from 'zod';
+import { BoardIdSchema, OrgIdSchema } from '@taskflow/contracts';
+
+/**
+ * The socket wire contract (ai/phase-4-realtime.md §3.6, §3.7, §6.3).
+ *
+ * Exported from this app's `./events` entry point so `apps/web` compiles
+ * against the SAME declarations the gateway serves — the socket equivalent of
+ * what tRPC's generated client does for HTTP. Two hand-maintained copies of a
+ * message shape drift, and the drift shows up as a broadcast the client
+ * silently ignores.
+ *
+ * ## Two things this file is careful about
+ *
+ * **There is nowhere to assert an identity.** `JoinRequest` carries a board id
+ * and nothing else. That is not an omission to be filled in later: §3.7 is that
+ * a socket's identity is decided once, at the handshake, from a verified token,
+ * and every handler reads it from `socket.data`. A `userId` field here would be
+ * a value in JSON indistinguishable from any other value an attacker chose to
+ * write, and the shape of the most damaging Socket.io vulnerability there is.
+ * Adding one to this interface IS the vulnerability, not a step toward it.
+ *
+ * **Dates are strings.** Every payload here crosses a JSON boundary, so
+ * `occurredAt` arrives as the string `JSON.stringify` produced — exactly the
+ * problem `apps/web/src/lib/wire.ts` exists for on the tRPC side. It is typed
+ * as `string` rather than `Date` so the compiler stops agreeing with a lie
+ * nothing at runtime supports.
+ */
+
+/* -------------------------------------------------------------------------- *
+ * Client -> server
+ * -------------------------------------------------------------------------- */
+
+/**
+ * "Let me into this board's room."
+ *
+ * Both fields are client-supplied, and both are safe for the same reason — but
+ * the reason is worth stating precisely, because it is exactly the distinction
+ * §3.7 turns on.
+ *
+ * `boardId` is a REQUEST, the same way a browser naming a URL is a request.
+ * `can()` decides whether to grant it; the client was never trusted to ask only
+ * for boards it can see.
+ *
+ * `orgId` is a SCOPE SELECTOR, and it is the socket's equivalent of the
+ * `x-taskflow-org` header — which CLAUDE.md's Phase 2 notes describe as
+ * attacker-controlled and treated as such. It is used identically here: never
+ * written to `app.org_id`, never turned into a role, only a WHERE filter inside
+ * `withUserScope(verifiedUserId)`. Naming an org you are not in matches zero
+ * membership rows and the join is refused.
+ *
+ * What is NOT here, and must never be, is a subject. Neither field says who the
+ * caller is; that was decided at the handshake and lives on `socket.data`.
+ *
+ * `.strict()` so an extra field is a rejection rather than something quietly
+ * ignored. A client sending `{ orgId, boardId, userId }` gets an error, which is
+ * a far better outcome than the field being dropped silently and someone later
+ * "fixing" the handler to read it.
+ */
+export const JoinRequestSchema = z
+  .object({ orgId: OrgIdSchema, boardId: BoardIdSchema })
+  .strict();
+export type JoinRequest = z.infer<typeof JoinRequestSchema>;
+
+export const LeaveRequestSchema = z.object({ boardId: BoardIdSchema }).strict();
+export type LeaveRequest = z.infer<typeof LeaveRequestSchema>;
+
+/**
+ * Why a join was refused.
+ *
+ * Deliberately coarse. `denied` covers "no such board", "board in another
+ * tenant", and "you are not permitted" identically, for the same reason
+ * `enforce()` answers 404 rather than 403 for an invisible resource: a refusal
+ * that distinguishes them lets someone enumerate which board ids exist by
+ * reading the reason string.
+ */
+export type JoinRefusal = 'denied' | 'invalid' | 'rate_limited';
+
+export type JoinAck = { readonly ok: true } | { readonly ok: false; readonly reason: JoinRefusal };
+
+/* -------------------------------------------------------------------------- *
+ * Server -> client
+ * -------------------------------------------------------------------------- */
+
+/**
+ * What the gateway tells a client once its handshake succeeded.
+ *
+ * `reauthLeadSeconds` is served rather than hardcoded in the browser (§7.1).
+ * Today it comes from the gateway's environment; when a platform-settings
+ * surface exists (§7.6) it comes from there, and the client does not change.
+ * A constant in `apps/web` would be a second place for the number to live and
+ * the one nobody remembers to update.
+ */
+export interface ReadyMessage {
+  readonly reauthLeadSeconds: number;
+}
+
+/**
+ * One broadcast domain event.
+ *
+ * `mutationId` is the originating request's id, carried through from
+ * `envelopeOf(actor)` in the API rather than minted here — §3.6. A client that
+ * just performed a mutation optimistically already has this state, so it drops
+ * the echo instead of re-applying it and flickering. Null when the event had no
+ * request behind it (a scheduled job, a system action), which is a real value
+ * and not a missing one.
+ *
+ * `version` is the EVENT SCHEMA's version, from the outbox row. A client seeing
+ * a version it does not know refetches rather than parsing a payload whose shape
+ * it is guessing at.
+ */
+export interface BroadcastMessage {
+  readonly name: string;
+  readonly version: number;
+  readonly orgId: string;
+  /** The room this was delivered on — `board:{boardId}`'s subject. */
+  readonly boardId: string;
+  readonly actorId: string | null;
+  readonly mutationId: string | null;
+  /** ISO 8601. A string on the wire; see the note at the top of this file. */
+  readonly occurredAt: string;
+  readonly payload: unknown;
+}
+
+/**
+ * The gateway removed this socket from a room it had joined (§7.2).
+ *
+ * Sent when a membership or grant changed underneath a long-lived connection —
+ * the case §3.3 exists for, where a join decision made an hour ago is no longer
+ * true. The client drops its live state for that board and falls back to
+ * ordinary polled queries; it does not retry the join, because the answer will
+ * not have changed.
+ */
+export interface RoomClosedMessage {
+  readonly boardId: string;
+}
+
+/**
+ * The credential itself is gone — a revoked session, or refresh-token reuse
+ * detected (§7.2). The connection closes immediately after this is sent.
+ *
+ * Distinct from `room:closed` because the client's response is different: there
+ * is no board to fall back to polling on, and reconnecting with the same token
+ * would fail. The web client treats this the way an expired session is treated
+ * everywhere else — it stops, rather than retrying into a loop.
+ */
+export interface SessionEndedMessage {
+  readonly reason: 'session_revoked' | 'token_reuse_detected';
+}
+
+/** Server-to-client events, named for `io.on`/`socket.on` type inference. */
+export interface ServerToClientEvents {
+  ready: (message: ReadyMessage) => void;
+  broadcast: (message: BroadcastMessage) => void;
+  'room:closed': (message: RoomClosedMessage) => void;
+  'session:ended': (message: SessionEndedMessage) => void;
+}
+
+/** Client-to-server events. Note that neither carries an identity — see above. */
+export interface ClientToServerEvents {
+  'board:join': (request: JoinRequest, ack: (result: JoinAck) => void) => void;
+  'board:leave': (request: LeaveRequest) => void;
+}
+
+/** The Socket.io room name for a board. One definition, used on both sides. */
+export function boardRoom(boardId: string): string {
+  return `board:${boardId}`;
+}
+
+/** The inverse of `boardRoom`, or null if the room is not a board room. */
+export function boardIdOfRoom(room: string): string | null {
+  return room.startsWith('board:') ? room.slice('board:'.length) : null;
+}

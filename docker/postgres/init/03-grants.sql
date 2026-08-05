@@ -18,7 +18,7 @@
 DO $$
 BEGIN
   EXECUTE format(
-    'GRANT CONNECT ON DATABASE %I TO taskflow_app, taskflow_migrator, taskflow_audit',
+    'GRANT CONNECT ON DATABASE %I TO taskflow_app, taskflow_migrator, taskflow_audit, taskflow_realtime',
     current_database()
   );
 
@@ -45,7 +45,7 @@ GRANT ALL ON SCHEMA public TO taskflow_migrator;
 --
 -- Table-level access still comes from the grants below, and row-level access
 -- still comes from RLS. This only makes the namespace visible.
-GRANT USAGE ON SCHEMA public TO taskflow_app, taskflow_audit;
+GRANT USAGE ON SCHEMA public TO taskflow_app, taskflow_audit, taskflow_realtime;
 
 -- Objects the migrator creates must be usable by the app role WITHOUT the app
 -- role ever being granted DDL rights. Default privileges apply to future objects;

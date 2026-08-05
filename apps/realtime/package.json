@@ -1,17 +1,10 @@
 {
-  "name": "@taskflow/api",
+  "name": "@taskflow/realtime",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "exports": {
-    "./router": "./src/router.ts",
-    "./richtext": "./src/work/richtext.ts",
-    "./events/tenancy": "./src/tenancy/events.ts",
-    "./events/work": "./src/work/events.ts",
-    "./audit": "./src/tenancy/audit.projection.ts",
-    "./config/trust-proxy": "./src/config/trust-proxy.ts",
-    "./tenancy/resolve": "./src/tenancy/resolve.ts",
-    "./work/board": "./src/work/board.service.ts"
+    "./events": "./src/wire.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",
@@ -21,25 +14,24 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@simplewebauthn/server": "^13.3.2",
+    "@socket.io/postgres-adapter": "^0.5.0",
+    "@taskflow/api": "workspace:*",
     "@taskflow/contracts": "workspace:*",
     "@taskflow/db": "workspace:*",
     "@taskflow/events": "workspace:*",
-    "@taskflow/feature-flags": "workspace:*",
-    "@taskflow/filter": "workspace:*",
-    "@taskflow/mail": "workspace:*",
     "@taskflow/observability": "workspace:*",
     "@taskflow/policy": "workspace:*",
     "@taskflow/security": "workspace:*",
-    "@taskflow/storage": "workspace:*",
-    "@trpc/server": "^11.18.0",
-    "fastify": "^5.10.0",
+    "proxy-addr": "^2.0.7",
+    "socket.io": "^4.8.3",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@taskflow/config": "workspace:*",
     "@types/node": "^22.10.2",
+    "@types/proxy-addr": "^2.0.3",
     "eslint": "^9.17.0",
+    "socket.io-client": "^4.8.3",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^3.2.7"
