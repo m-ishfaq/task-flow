@@ -125,7 +125,31 @@ const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>> = {
   'message.sent': { type: 'message', key: 'messageId' },
   'message.edited': { type: 'message', key: 'messageId' },
   'message.deleted': { type: 'message', key: 'messageId' },
+  'message.reaction_added': { type: 'message', key: 'messageId' },
+  'message.reaction_removed': { type: 'message', key: 'messageId' },
+  'message.pinned': { type: 'message', key: 'messageId' },
+  'message.unpinned': { type: 'message', key: 'messageId' },
+
+  /* `channel.read_advanced` is deliberately ABSENT from this table. It is
+     never looked up here because it never reaches `insertAuditEntry` at all
+     — see `NEVER_AUDITED` below, which is where the exclusion actually
+     happens. */
 };
+
+/**
+ * Events that reach this consumer and are claimed/marked exactly like any
+ * other, but must never become an `audit.audit_log` row (ai/phase-5-chat.md
+ * §3.6; migration 0018's header comment).
+ *
+ * `channel.read_advanced` fires on ordinary scrolling — the highest-frequency
+ * write this phase introduces — and "user read up to message X" is not a
+ * compliance-relevant fact at the volume it will actually see. Excluding it
+ * here rather than not emitting it at all keeps guardrail 11 satisfied (every
+ * state-mutating service method still emits a typed event, so the outbox
+ * still drives unread-badge sync and any future consumer) while keeping the
+ * append-only, hash-chained log free of a write nobody will ever audit.
+ */
+const NEVER_AUDITED: ReadonlySet<string> = new Set(['channel.read_advanced']);
 
 interface Resource {
   readonly type: string | null;
@@ -173,6 +197,8 @@ export async function drainOutbox(limit = 100): Promise<DrainResult> {
     if (pending.length === 0) return { processed: 0 };
 
     for (const row of pending) {
+      if (NEVER_AUDITED.has(row.name)) continue;
+
       const resource = resourceOf(row);
 
       /* `id` is the EVENT's id, reused as the audit entry's id. One event

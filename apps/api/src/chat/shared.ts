@@ -1,5 +1,12 @@
 import { eq, schema, type withOrgScope } from '@taskflow/db';
-import { errors, type ChannelId, type OrgId, type RequestId, type UserId } from '@taskflow/contracts';
+import {
+  errors,
+  type ChannelId,
+  type MessageId,
+  type OrgId,
+  type RequestId,
+  type UserId,
+} from '@taskflow/contracts';
 import { enforce, type Permission, type ResourceRef, type Subject } from '@taskflow/policy';
 
 /**
@@ -138,6 +145,31 @@ export async function loadChannel(tx: ChatTx, channelId: ChannelId): Promise<Cha
   const channel = rows[0];
   if (!channel) throw errors.notFound();
   return channel;
+}
+
+/**
+ * Confirms a message exists, is not deleted, and belongs to THIS channel —
+ * the guard every Wave 2 write (react, pin, mark-read) applies before
+ * touching a row that references the message. Without it, the composite
+ * foreign key each child table carries would still refuse a cross-channel
+ * write, but as a raw constraint violation surfacing as INTERNAL_ERROR
+ * rather than a reason a caller can act on.
+ */
+export async function assertMessageInChannel(
+  tx: ChatTx,
+  channelId: ChannelId,
+  messageId: MessageId,
+): Promise<void> {
+  const rows = await tx
+    .select({ channelId: schema.messages.channelId, deletedAt: schema.messages.deletedAt })
+    .from(schema.messages)
+    .where(eq(schema.messages.id, messageId))
+    .limit(1);
+
+  const message = rows[0];
+  if (message?.channelId !== channelId || message.deletedAt !== null) {
+    throw errors.notFound();
+  }
 }
 
 /* Membership lives in `membership.ts` — it is a repository, and keeping the

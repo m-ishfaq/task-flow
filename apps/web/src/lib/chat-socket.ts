@@ -53,12 +53,18 @@ interface ChannelClosedMessage {
 interface SessionEndedMessage {
   readonly reason: 'session_revoked' | 'token_reuse_detected';
 }
+interface TypingMessage {
+  readonly channelId: string;
+  readonly userId: string;
+  readonly typing: boolean;
+}
 
 interface ServerToClientEvents {
   ready: (message: ReadyMessage) => void;
   broadcast: (message: ChatBroadcastMessage) => void;
   'channel:closed': (message: ChannelClosedMessage) => void;
   'session:ended': (message: SessionEndedMessage) => void;
+  typing: (message: TypingMessage) => void;
 }
 interface ClientToServerEvents {
   'channel:join': (
@@ -66,6 +72,8 @@ interface ClientToServerEvents {
     ack: (result: { ok: true } | { ok: false; reason: string }) => void,
   ) => void;
   'channel:leave': (request: { channelId: ChannelId }) => void;
+  'typing:start': (request: { channelId: ChannelId }) => void;
+  'typing:stop': (request: { channelId: ChannelId }) => void;
 }
 
 type ChatSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -156,6 +164,26 @@ export function onChannelClosed(handler: (message: ChannelClosedMessage) => void
   return () => active.off('channel:closed', handler);
 }
 
+/**
+ * Typing indicators. No ack, no persisted state, no domain event — see
+ * `apps/api/src/chat/events.ts`'s header on why. Best-effort only: if the
+ * socket is not connected the emit is silently dropped, which is the correct
+ * behaviour for a signal nobody needs delivered reliably.
+ */
+export function startTyping(channelId: ChannelId): void {
+  socket?.emit('typing:start', { channelId });
+}
+
+export function stopTyping(channelId: ChannelId): void {
+  socket?.emit('typing:stop', { channelId });
+}
+
+export function onTyping(handler: (message: TypingMessage) => void): () => void {
+  const active = ensureSocket();
+  active.on('typing', handler);
+  return () => active.off('typing', handler);
+}
+
 /** Torn down on sign-out, alongside the board socket (`shell.tsx`). */
 export function disconnectChatSocket(): void {
   joinedChannels.clear();
@@ -164,4 +192,4 @@ export function disconnectChatSocket(): void {
   socket = undefined;
 }
 
-export type { ChannelClosedMessage, ChatBroadcastMessage };
+export type { ChannelClosedMessage, ChatBroadcastMessage, TypingMessage };

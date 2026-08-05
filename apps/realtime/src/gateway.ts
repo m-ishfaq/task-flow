@@ -20,6 +20,7 @@ import {
   CHAT_NAMESPACE,
   JoinRequestSchema,
   LeaveRequestSchema,
+  TypingRequestSchema,
   type JoinAck,
 } from './wire.js';
 
@@ -333,6 +334,30 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
       const { channelId } = parsed.data;
       socket.data.rooms.delete(channelId);
       void socket.leave(channelRoom(channelId));
+    });
+
+    /* Typing indicators (ai/phase-5-chat.md §5) — relayed in-process, never a
+       domain event (see `events.ts`'s header on why). `socket.to(...)` rather
+       than `chat.to(...)` so the sender never receives its own typing state
+       back, and only sockets that already hold the room — meaning they passed
+       `authorizeChannelJoin` — ever receive it. A channel named here that this
+       socket never joined is silently ignored rather than relayed: there is no
+       ack on this event for a refusal to answer through. */
+    const relayTyping = (request: unknown, typing: boolean): void => {
+      const parsed = TypingRequestSchema.safeParse(request);
+      if (!parsed.success) return;
+
+      const { channelId } = parsed.data;
+      if (!socket.data.rooms.has(channelId)) return;
+
+      socket.to(channelRoom(channelId)).emit('typing', { channelId, userId, typing });
+    };
+
+    socket.on('typing:start', (request: unknown) => {
+      relayTyping(request, true);
+    });
+    socket.on('typing:stop', (request: unknown) => {
+      relayTyping(request, false);
     });
 
     socket.on('disconnect', () => {

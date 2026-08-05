@@ -4,6 +4,7 @@ import {
   index,
   jsonb,
   pgSchema,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -136,4 +137,72 @@ export const messages = chat.table(
       .on(table.orgId, table.parentMessageId, table.id)
       .where(sql`parent_message_id IS NOT NULL`),
   ],
+);
+
+/**
+ * Wave 2 tables (migration 0018, ai/phase-5-chat.md §5).
+ *
+ * Same composite-FK caveat as `messages` above: each of these ties
+ * `(orgId, channelId, messageId)` together against `messages`' own composite
+ * unique index in the migration, which Drizzle's single-column `references()`
+ * cannot express. Read these as pointing at a message, not as independently
+ * enforcing which channel that message is in.
+ */
+export const messageReactions = chat.table(
+  'message_reactions',
+  {
+    orgId: uuid('org_id').notNull(),
+    channelId: uuid('channel_id').notNull(),
+    messageId: uuid('message_id').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+
+    /** A short unicode string — bounded, not restricted to a fixed set (see the migration). */
+    emoji: text('emoji').notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.messageId, table.userId, table.emoji] }),
+    index('message_reactions_message_idx').on(table.orgId, table.messageId),
+  ],
+);
+
+export const pinnedMessages = chat.table(
+  'pinned_messages',
+  {
+    orgId: uuid('org_id').notNull(),
+    channelId: uuid('channel_id').notNull(),
+    messageId: uuid('message_id').notNull(),
+
+    /** Null once the pinner's account is deleted; the pin survives. */
+    pinnedBy: uuid('pinned_by').references(() => users.id, { onDelete: 'set null' }),
+    pinnedAt: timestamp('pinned_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.channelId, table.messageId] }),
+    index('pinned_messages_channel_idx').on(table.orgId, table.channelId, table.pinnedAt),
+  ],
+);
+
+/**
+ * One row per (channel, user) — "how far this person has read". Deliberately
+ * the one write in this phase whose domain event is excluded from the audit
+ * projection; see the migration's header comment and
+ * `apps/api/src/tenancy/audit.projection.ts`'s `NEVER_AUDITED` set.
+ */
+export const readCursors = chat.table(
+  'read_cursors',
+  {
+    orgId: uuid('org_id').notNull(),
+    channelId: uuid('channel_id').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+
+    lastReadMessageId: uuid('last_read_message_id').notNull(),
+    lastReadAt: timestamp('last_read_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.channelId, table.userId] })],
 );

@@ -9,7 +9,13 @@ import {
   onChatReconnect,
   type ChatBroadcastMessage,
 } from '../../lib/chat-socket.js';
-import { invalidateChannels, invalidateMessages } from './api.js';
+import {
+  invalidateChannels,
+  invalidateMessages,
+  invalidatePins,
+  invalidateReactions,
+  invalidateUnreadCounts,
+} from './api.js';
 
 /**
  * Mounted from `chat-page.tsx` while a channel is open (ai/phase-5-chat.md
@@ -49,6 +55,15 @@ export function useChannelRoom(orgId: string, channelId: ChannelId): void {
         invalidateChannelList: () => {
           invalidateChannels(queryClient, orgId);
         },
+        invalidateReactions: () => {
+          invalidateReactions(queryClient, orgId, channelId);
+        },
+        invalidatePins: () => {
+          invalidatePins(queryClient, orgId, channelId);
+        },
+        invalidateUnread: () => {
+          invalidateUnreadCounts(queryClient, orgId);
+        },
       });
     });
 
@@ -81,10 +96,17 @@ function applyBroadcast(
   actions: {
     readonly invalidateThisChannel: () => void;
     readonly invalidateChannelList: () => void;
+    readonly invalidateReactions: () => void;
+    readonly invalidatePins: () => void;
+    readonly invalidateUnread: () => void;
   },
 ): void {
   switch (message.name) {
     case 'message.sent':
+      actions.invalidateThisChannel();
+      actions.invalidateUnread();
+      return;
+
     case 'message.edited':
     case 'message.deleted':
       actions.invalidateThisChannel();
@@ -99,6 +121,16 @@ function applyBroadcast(
       // both are cheap, infrequent reads.
       actions.invalidateChannelList();
       actions.invalidateThisChannel();
+      return;
+
+    case 'message.reaction_added':
+    case 'message.reaction_removed':
+      actions.invalidateReactions();
+      return;
+
+    case 'message.pinned':
+    case 'message.unpinned':
+      actions.invalidatePins();
       return;
 
     default:

@@ -110,6 +110,19 @@ const CHANNEL_KEY_OF: Readonly<Record<string, string>> = {
   /* Archiving stops a channel accepting messages. Everyone watching needs to
      know, and they are all in the one room this names. */
   'channel.archived': 'channelId',
+
+  /* Reactions and pins (Wave 2, ai/phase-5-chat.md §5) — everyone with the
+     channel open needs to see the reaction bar or the pinned-messages panel
+     update, and both events carry exactly one channelId. */
+  'message.reaction_added': 'channelId',
+  'message.reaction_removed': 'channelId',
+  'message.pinned': 'channelId',
+  'message.unpinned': 'channelId',
+
+  /* `channel.read_advanced` is deliberately ABSENT. A read cursor is personal
+     state — nobody else viewing the channel needs to learn where ONE person
+     has scrolled to, and broadcasting it would turn the highest-frequency
+     write in this phase into the highest-frequency room broadcast too. */
 };
 
 /**

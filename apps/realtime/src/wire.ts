@@ -278,6 +278,36 @@ export const ChannelLeaveRequestSchema: z.ZodType<
 > = z.object({ channelId: ChannelIdSchema }).strict();
 
 /**
+ * "I am typing in this channel" / "I stopped."
+ *
+ * Never a domain event (`apps/api/src/chat/events.ts`'s header names this
+ * exact exclusion) — there is no persisted state for guardrail 11 to require
+ * an event for, so it is relayed in-process on the already-joined room and
+ * dies with the connection. The same no-identity rule as `ChannelJoinRequest`
+ * applies for the same reason: this carries only the channel, never a userId,
+ * because the gateway already knows who sent it from `socket.data.identity`.
+ */
+export interface TypingRequest {
+  readonly channelId: ChannelId;
+}
+
+export const TypingRequestSchema: z.ZodType<TypingRequest, z.ZodTypeDef, { channelId: string }> =
+  z.object({ channelId: ChannelIdSchema }).strict();
+
+/**
+ * Relayed to everyone else in the room. `userId` is filled in by the gateway
+ * from the sender's own `socket.data.identity`, never from the client's
+ * request — the same reason a join request carries no subject. `typing`
+ * distinguishes a start from a stop on the one event name, rather than two
+ * message shapes a listener would need to tell apart by which handler fired.
+ */
+export interface TypingMessage {
+  readonly channelId: string;
+  readonly userId: string;
+  readonly typing: boolean;
+}
+
+/**
  * One broadcast chat event.
  *
  * Structurally the board version with `channelId` in place of `boardId`, and
@@ -312,11 +342,14 @@ export interface ChatServerToClientEvents {
   broadcast: (message: ChatBroadcastMessage) => void;
   'channel:closed': (message: ChannelClosedMessage) => void;
   'session:ended': (message: SessionEndedMessage) => void;
+  typing: (message: TypingMessage) => void;
 }
 
 export interface ChatClientToServerEvents {
   'channel:join': (request: ChannelJoinRequest, ack: (result: JoinAck) => void) => void;
   'channel:leave': (request: ChannelLeaveRequest) => void;
+  'typing:start': (request: TypingRequest) => void;
+  'typing:stop': (request: TypingRequest) => void;
 }
 
 /** The Socket.io room name for a channel. One definition, used on both sides. */

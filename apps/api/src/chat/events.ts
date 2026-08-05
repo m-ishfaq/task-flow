@@ -220,3 +220,77 @@ export const messageDeleted = defineEvent(
     })
     .strict(),
 );
+
+/* -------------------------------------------------------------------------- *
+ * Reactions and pins (Wave 2, ai/phase-5-chat.md §5)
+ * -------------------------------------------------------------------------- */
+
+export const messageReactionAdded = defineEvent(
+  'message.reaction_added',
+  z
+    .object({
+      messageId: z.string(),
+      channelId: z.string(),
+      userId: z.string(),
+      emoji: z.string(),
+    })
+    .strict(),
+);
+
+export const messageReactionRemoved = defineEvent(
+  'message.reaction_removed',
+  z
+    .object({
+      messageId: z.string(),
+      channelId: z.string(),
+      userId: z.string(),
+      emoji: z.string(),
+    })
+    .strict(),
+);
+
+export const messagePinned = defineEvent(
+  'message.pinned',
+  z
+    .object({
+      messageId: z.string(),
+      channelId: z.string(),
+      pinnedBy: z.string(),
+    })
+    .strict(),
+);
+
+export const messageUnpinned = defineEvent(
+  'message.unpinned',
+  z
+    .object({
+      messageId: z.string(),
+      channelId: z.string(),
+    })
+    .strict(),
+);
+
+/* -------------------------------------------------------------------------- *
+ * Read cursors (§3.6) — excluded from the audit projection ON PURPOSE.
+ *
+ * This event still exists, still satisfies guardrail 11, and still goes
+ * through the outbox — what's different is the one consumer that reads
+ * EVERY event unconditionally today. `apps/api/src/tenancy/audit.projection.ts`
+ * claims and marks this event dispatched exactly like any other (so the
+ * exactly-once bookkeeping stays true), but skips writing it into
+ * `audit.audit_log`. See that file's `NEVER_AUDITED` set and the migration's
+ * header comment for why: a read cursor advances on ordinary scrolling, and
+ * "user read up to message X" is not a compliance-relevant fact at any volume
+ * this event will actually see.
+ * -------------------------------------------------------------------------- */
+
+export const channelReadAdvanced = defineEvent(
+  'channel.read_advanced',
+  z
+    .object({
+      channelId: z.string(),
+      userId: z.string(),
+      lastReadMessageId: z.string(),
+    })
+    .strict(),
+);

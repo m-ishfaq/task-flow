@@ -217,6 +217,12 @@ export const keys = {
   channel: (orgId: string, channelId: string) => ['org', orgId, 'channel', channelId] as const,
   messages: (orgId: string, channelId: string) =>
     ['org', orgId, 'channel', channelId, 'messages'] as const,
+  reactions: (orgId: string, channelId: string) =>
+    ['org', orgId, 'channel', channelId, 'reactions'] as const,
+  pins: (orgId: string, channelId: string) =>
+    ['org', orgId, 'channel', channelId, 'pins'] as const,
+  /** Unread counts for the sidebar badge — one query across every channel id given. */
+  unreadCounts: (orgId: string) => ['org', orgId, 'channels', 'unread'] as const,
 } as const;
 
 /** The org id every key needs, or a placeholder that matches nothing. */

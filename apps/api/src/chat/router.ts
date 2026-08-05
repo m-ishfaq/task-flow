@@ -6,6 +6,9 @@ import { RichTextDocument } from '../work/richtext.js';
 import type { ChatActor } from './shared.js';
 import * as channels from './channel.service.js';
 import * as messages from './message.service.js';
+import * as reactions from './reaction.service.js';
+import * as pins from './pin.service.js';
+import * as readCursors from './read-cursor.service.js';
 
 /**
  * Chat routes (PLAN.md §3.2, §13 phase 5).
@@ -191,6 +194,26 @@ export function createChatRouter() {
         .input(z.object({ channelId: ChannelIdSchema, userId: UserIdSchema }).strict())
         .output(z.object({ removed: z.boolean() }))
         .mutation(({ input, ctx }) => channels.removeChannelMember(actorOf(ctx), input)),
+
+      /**
+       * Advances the caller's own read cursor. `channel:read` — reading is not
+       * participating, so a read-only tuple must be able to mark itself caught
+       * up same as a full member (§3.6).
+       */
+      markRead: route({ permission: 'channel:read' })
+        .input(z.object({ channelId: ChannelIdSchema, messageId: MessageIdSchema }).strict())
+        .output(z.object({ advanced: z.boolean() }))
+        .mutation(({ input, ctx }) => readCursors.markRead(actorOf(ctx), input)),
+
+      /** Unread counts for the sidebar badge, across the named channels. */
+      unreadCounts: route({ permission: 'channel:read' })
+        .input(z.object({ channelIds: z.array(ChannelIdSchema).min(1).max(200).readonly() }).strict())
+        .output(
+          z
+            .array(z.object({ channelId: z.string(), unreadCount: z.number().int().nonnegative() }))
+            .readonly(),
+        )
+        .query(({ input, ctx }) => readCursors.unreadCounts(actorOf(ctx), input)),
     }),
 
     messages: router({
@@ -249,6 +272,70 @@ export function createChatRouter() {
         .input(z.object({ messageId: MessageIdSchema }).strict())
         .output(z.object({ deleted: z.literal(true) }))
         .mutation(({ input, ctx }) => messages.deleteMessage(actorOf(ctx), input)),
+
+      /**
+       * Toggles the caller's own reaction. `message:create` at layer 1 — see
+       * `reaction.service.ts`'s header on why reacting needs the same
+       * permission posting does.
+       */
+      react: route({ permission: 'message:create' })
+        .input(
+          z
+            .object({
+              channelId: ChannelIdSchema,
+              messageId: MessageIdSchema,
+              emoji: z.string().trim().min(1).max(32),
+            })
+            .strict(),
+        )
+        .output(z.object({ reacted: z.boolean() }))
+        .mutation(({ input, ctx }) => reactions.toggleReaction(actorOf(ctx), input)),
+
+      /** Every reaction on the named messages — the reaction bar under each. */
+      reactions: route({ permission: 'message:read' })
+        .input(
+          z
+            .object({
+              channelId: ChannelIdSchema,
+              messageIds: z.array(MessageIdSchema).min(1).max(200).readonly(),
+            })
+            .strict(),
+        )
+        .output(
+          z
+            .array(
+              z.object({ messageId: z.string(), userId: z.string(), emoji: z.string() }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => reactions.listReactions(actorOf(ctx), input)),
+
+      /** Pins a message. `message:create` — pinning curates, it does not moderate. */
+      pin: route({ permission: 'message:create' })
+        .input(z.object({ channelId: ChannelIdSchema, messageId: MessageIdSchema }).strict())
+        .output(z.object({ pinned: z.boolean() }))
+        .mutation(({ input, ctx }) => pins.pinMessage(actorOf(ctx), input)),
+
+      unpin: route({ permission: 'message:create' })
+        .input(z.object({ channelId: ChannelIdSchema, messageId: MessageIdSchema }).strict())
+        .output(z.object({ unpinned: z.boolean() }))
+        .mutation(({ input, ctx }) => pins.unpinMessage(actorOf(ctx), input)),
+
+      /** The pinned-messages panel. */
+      pins: route({ permission: 'message:read' })
+        .input(z.object({ channelId: ChannelIdSchema }).strict())
+        .output(
+          z
+            .array(
+              z.object({
+                messageId: z.string(),
+                pinnedBy: z.string().nullable(),
+                pinnedAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => pins.listPinnedMessages(actorOf(ctx), input)),
     }),
   });
 }
