@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { unsafeAsId, type ChannelId, type OrgId, type UserId } from '@taskflow/contracts';
+import { unsafeAsId, type ChannelId, type UserId } from '@taskflow/contracts';
 import { closeDatabase, initializeDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { authorizeChannelJoin } from './rooms.js';

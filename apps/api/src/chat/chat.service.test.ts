@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { isAppError, unsafeAsId, type ChannelId, type OrgId, type UserId } from '@taskflow/contracts';
+import { isAppError, unsafeAsId, type OrgId, type UserId } from '@taskflow/contracts';
 import { closeDatabase, initializeDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import type { Subject } from '@taskflow/policy';
+import { TEST_ENV } from '../testing/fixtures.js';
 import * as orgs from '../tenancy/org.service.js';
 import * as members from '../tenancy/member.service.js';
 import { loadTuples } from '../tenancy/resolve.js';
@@ -97,8 +98,9 @@ async function scaffold(slug: string): Promise<Fixture> {
 
   const alice = await actorFor(result.orgId, ALICE, 'owner');
 
-  for (const userId of [BOB, CAROL]) {
-    await members.addMember(result.orgId, { userId, role: 'member' }, { userId: ALICE, requestId });
+  for (const [userId, email] of USERS) {
+    if (userId === ALICE) continue;
+    await members.addMember(result.orgId, { email, role: 'member' }, { userId: ALICE, requestId });
   }
 
   return { orgId: result.orgId, alice };
@@ -120,7 +122,7 @@ beforeAll(async () => {
     );
   }
 
-  initializeDatabase({ applicationName: 'taskflow-chat-test' });
+  initializeDatabase({ url: TEST_ENV.DATABASE_URL, applicationName: 'taskflow-chat-test' });
 });
 
 afterAll(async () => {
@@ -154,16 +156,26 @@ describe('channel visibility', () => {
        for a private channel is itself the disclosure — `enforce` derives this
        from `channel:read` also failing, so it falls out of the closed check
        rather than needing a branch. */
-    expect(await rejectionCode(() => channels.getChannel(bob, { channelId: channel.channelId }))).toBe(
-      'NOT_FOUND',
-    );
+    expect(
+      await rejectionCode(() => channels.getChannel(bob, { channelId: channel.channelId })),
+    ).toBe('NOT_FOUND');
   });
 
   it('admits the same member once they hold the tuple', async () => {
     const { orgId, alice } = await scaffold('private-admitted');
     const channel = await channels.createChannel(alice, { type: 'private', name: 'leadership' });
 
-    await channels.addChannelMember(alice, { channelId: channel.channelId, userId: BOB });
+    /* Re-read: `createChannel` just wrote alice's OWN membership tuple on this
+       channel, and `alice` here is still the actor built in `scaffold`, before
+       that tuple existed. `channel:manage` on a closed channel is decided by
+       the tuple, not the role (§3.3) — acting with the stale actor would deny
+       this with NOT_FOUND, for the same reason a real request wouldn't: each
+       HTTP call rebuilds the actor from the database, this test must too. */
+    const aliceWithChannel = await actorFor(orgId, ALICE, 'owner');
+    await channels.addChannelMember(aliceWithChannel, {
+      channelId: channel.channelId,
+      userId: BOB,
+    });
 
     const bob = await actorFor(orgId, BOB, 'member');
     const seen = await channels.getChannel(bob, { channelId: channel.channelId });
@@ -195,7 +207,7 @@ describe('channel visibility', () => {
     // they mean" conversation permanent.
     expect(
       await rejectionCode(() => channels.createChannel(alice, { type: 'public', name: 'General' })),
-    ).toBe('VALIDATION_ERROR');
+    ).toBe('VALIDATION_FAILED');
   });
 });
 
@@ -204,10 +216,18 @@ describe('direct messages', () => {
     /* The property with no unique index behind it. Two DMs between the same pair
        splits their history in half with no error anywhere — each person sees
        whichever one their client opened, and messages appear to vanish. */
-    const { alice } = await scaffold('dm-unique');
+    const { orgId, alice } = await scaffold('dm-unique');
 
     const first = await channels.openDirectMessage(alice, { userIds: [BOB] });
-    const second = await channels.openDirectMessage(alice, { userIds: [BOB] });
+
+    // Re-read before the second call: `findDirectMessage` matches against the
+    // CALLER's already-loaded tuples (§3.1's docstring), and the first call
+    // wrote alice's tuple on the new DM to the database, not onto this JS
+    // object. Reusing the stale actor would make the second call blind to the
+    // conversation it is supposed to find, same as every other closed-channel
+    // case in this file.
+    const aliceAfterFirst = await actorFor(orgId, ALICE, 'owner');
+    const second = await channels.openDirectMessage(aliceAfterFirst, { userIds: [BOB] });
 
     expect(first.created).toBe(true);
     expect(second.created).toBe(false);
@@ -257,22 +277,27 @@ describe('direct messages', () => {
     const { alice } = await scaffold('dm-stranger');
     const outsider = unsafeAsId<'UserId'>('0195ee00-0000-7000-8000-0000000000aa');
 
-    expect(await rejectionCode(() => channels.openDirectMessage(alice, { userIds: [outsider] }))).toBe(
-      'NOT_FOUND',
-    );
+    expect(
+      await rejectionCode(() => channels.openDirectMessage(alice, { userIds: [outsider] })),
+    ).toBe('NOT_FOUND');
   });
 
   it('cannot have participants added to it after the fact', async () => {
-    const { alice } = await scaffold('dm-fixed');
+    const { orgId, alice } = await scaffold('dm-fixed');
     const dm = await channels.openDirectMessage(alice, { userIds: [BOB] });
+
+    // Re-read for the same reason as the private-channel case above: opening
+    // the DM just wrote alice's own tuple on it, which the stale actor from
+    // `scaffold` does not carry.
+    const aliceInDm = await actorFor(orgId, ALICE, 'owner');
 
     // Adding a third person would silently expose the entire history to someone
     // who was not part of it. The group DM they wanted is a NEW channel.
     expect(
       await rejectionCode(() =>
-        channels.addChannelMember(alice, { channelId: dm.channelId, userId: CAROL }),
+        channels.addChannelMember(aliceInDm, { channelId: dm.channelId, userId: CAROL }),
       ),
-    ).toBe('VALIDATION_ERROR');
+    ).toBe('VALIDATION_FAILED');
   });
 });
 
@@ -303,7 +328,7 @@ describe('messages', () => {
           body: { type: 'doc', content: [{ type: 'paragraph' }] },
         }),
       ),
-    ).toBe('VALIDATION_ERROR');
+    ).toBe('VALIDATION_FAILED');
   });
 
   it('lets only the author edit, with no permission override', async () => {
@@ -321,7 +346,10 @@ describe('messages', () => {
        words in your mouth is not a record of anything. */
     expect(
       await rejectionCode(() =>
-        messages.editMessage(alice, { messageId: posted.messageId, body: body('alice wrote this') }),
+        messages.editMessage(alice, {
+          messageId: posted.messageId,
+          body: body('alice wrote this'),
+        }),
       ),
     ).toBe('FORBIDDEN');
 
@@ -359,9 +387,9 @@ describe('messages', () => {
 
     const bob = await actorFor(orgId, BOB, 'member');
 
-    expect(await rejectionCode(() => messages.deleteMessage(bob, { messageId: posted.messageId }))).toBe(
-      'FORBIDDEN',
-    );
+    expect(
+      await rejectionCode(() => messages.deleteMessage(bob, { messageId: posted.messageId })),
+    ).toBe('FORBIDDEN');
   });
 
   it('keeps a deleted message in place and strips its content', async () => {
@@ -433,7 +461,7 @@ describe('messages', () => {
           parentMessageId: reply.messageId,
         }),
       ),
-    ).toBe('VALIDATION_ERROR');
+    ).toBe('VALIDATION_FAILED');
   });
 });
 
@@ -468,7 +496,11 @@ describe('membership changes', () => {
   it('lets anyone leave a channel they are in', async () => {
     const { orgId, alice } = await scaffold('leave-self');
     const channel = await channels.createChannel(alice, { type: 'private', name: 'leadership' });
-    await channels.addChannelMember(alice, { channelId: channel.channelId, userId: BOB });
+    const aliceWithChannel = await actorFor(orgId, ALICE, 'owner');
+    await channels.addChannelMember(aliceWithChannel, {
+      channelId: channel.channelId,
+      userId: BOB,
+    });
 
     const bob = await actorFor(orgId, BOB, 'member');
     await expect(
@@ -484,15 +516,19 @@ describe('membership changes', () => {
   });
 
   it('is idempotent when adding an existing member', async () => {
-    const { alice } = await scaffold('add-twice');
+    const { orgId, alice } = await scaffold('add-twice');
     const channel = await channels.createChannel(alice, { type: 'private', name: 'leadership' });
+    const aliceWithChannel = await actorFor(orgId, ALICE, 'owner');
 
-    await channels.addChannelMember(alice, { channelId: channel.channelId, userId: BOB });
+    await channels.addChannelMember(aliceWithChannel, {
+      channelId: channel.channelId,
+      userId: BOB,
+    });
 
     // The unique index on the tuple would refuse the second row anyway;
     // answering cleanly keeps a double-click from surfacing a constraint error.
     await expect(
-      channels.addChannelMember(alice, { channelId: channel.channelId, userId: BOB }),
+      channels.addChannelMember(aliceWithChannel, { channelId: channel.channelId, userId: BOB }),
     ).resolves.toEqual({ added: false });
   });
 });
@@ -504,19 +540,25 @@ describe('the outbox', () => {
        would otherwise have to iterate a list to find itself. */
     const { orgId, alice } = await scaffold('events');
     const channel = await channels.createChannel(alice, { type: 'private', name: 'leadership' });
-    await channels.addChannelMember(alice, { channelId: channel.channelId, userId: BOB });
+    const aliceWithChannel = await actorFor(orgId, ALICE, 'owner');
+    await channels.addChannelMember(aliceWithChannel, {
+      channelId: channel.channelId,
+      userId: BOB,
+    });
 
     await admin.setOrg(orgId);
-    const rows = await admin.query<{ name: string; payload: { userId?: string } }>(
+    const { rows } = await admin.query(
       `SELECT name, payload FROM platform.outbox WHERE org_id = $1 ORDER BY id`,
       [orgId],
     );
     await admin.setOrg(null);
 
-    const added = rows.filter((row) => row.name === 'channel.member_added');
+    const added = rows.filter((row) => row['name'] === 'channel.member_added');
 
     // Two: the creator, written in the same transaction as the channel, and Bob.
     expect(added).toHaveLength(2);
-    expect(added.map((row) => row.payload.userId).sort()).toEqual([ALICE, BOB].sort());
+    expect(
+      added.map((row) => (row['payload'] as { userId?: string } | null)?.userId).sort(),
+    ).toEqual([ALICE, BOB].sort());
   });
 });
