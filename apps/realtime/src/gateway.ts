@@ -6,6 +6,7 @@ import type { Logger } from '@taskflow/observability';
 import { clientAddress, HandshakeError, verifyHandshake } from './auth.js';
 import { allowedOrigins, type Env } from './config/env.js';
 import { assertRoomTableIsSafe, roomBoardIdOf } from './event-rooms.js';
+import { broadcastPresence } from './presence.js';
 import { FixedWindowLimiter } from './rate-limit.js';
 import { authorizeJoin } from './rooms.js';
 import { applyRevocation, revocationOf } from './revocation.js';
@@ -193,6 +194,11 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
         socket.data.rooms.set(boardId, orgId);
         logger.debug({ userId, boardId }, 'socket joined room');
         respond({ ok: true });
+
+        // After the join actually took effect, not before — a client reading
+        // its own ack alongside the first presence broadcast must find itself
+        // already in the list (§9, Wave 2).
+        void broadcastPresence(io, boardId);
       })();
     });
 
@@ -202,13 +208,28 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
 
       const { boardId } = parsed.data;
       socket.data.rooms.delete(boardId);
-      void socket.leave(boardRoom(boardId));
+
+      void (async () => {
+        // `leave()` is typed `Promise<void> | void` — the adapter decides
+        // which, so this always awaits rather than assuming either.
+        await socket.leave(boardRoom(boardId));
+        await broadcastPresence(io, boardId);
+      })();
     });
 
     socket.on('disconnect', () => {
       joinsPerSocket.forget(socket.id);
       refusedJoinsPerSocket.forget(socket.id);
       logger.debug({ userId }, 'socket disconnected');
+
+      /* Socket.io has already removed this socket from every room by the time
+         this fires — `socket.data.rooms` (this module's own tracking, not
+         Socket.io's internal set) is what still remembers which boards to
+         tell. One broadcast per board this socket had open, so anyone left
+         watching sees the departure. */
+      for (const boardId of socket.data.rooms.keys()) {
+        void broadcastPresence(io, boardId);
+      }
     });
   });
 

@@ -3,6 +3,7 @@ import { createLogger } from '@taskflow/observability';
 import type { OrgId, UserId } from '@taskflow/contracts';
 import { applyRevocation, revocationOf } from './revocation.js';
 import type { GatewayServer, GatewaySocket } from './socket-data.js';
+import { boardIdOfRoom } from './wire.js';
 import type { OutboxRow } from '@taskflow/db';
 
 /**
@@ -148,9 +149,28 @@ function fakeSocket(userId: UserId, sessionId: string, rooms: [string, OrgId][])
   };
 }
 
+/**
+ * `.in(room).fetchSockets()` is faked over the SAME `sockets` list, reading
+ * each one's live `data.rooms` — which `leaveRoom` mutates via `.delete()`
+ * before broadcasting presence — so a departed socket is correctly absent by
+ * the time `broadcastPresence` (called from `leaveRoom`/the session path)
+ * queries it, the same as the real adapter-backed implementation.
+ */
 function fakeIo(sockets: GatewaySocket[]): GatewayServer {
   const map = new Map(sockets.map((socket, index) => [String(index), socket]));
-  return { sockets: { sockets: map } } as unknown as GatewayServer;
+
+  return {
+    sockets: { sockets: map },
+    in: (room: string) => ({
+      fetchSockets: () =>
+        Promise.resolve(
+          sockets
+            .filter((socket) => socket.data.rooms.has(boardIdOfRoom(room) ?? ''))
+            .map((socket) => ({ data: socket.data })),
+        ),
+    }),
+    to: () => ({ emit: () => undefined }),
+  } as unknown as GatewayServer;
 }
 
 describe('applyRevocation', () => {

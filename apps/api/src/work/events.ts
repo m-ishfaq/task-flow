@@ -324,9 +324,20 @@ export const cardLabeled = defineEvent(
     .strict(),
 );
 
+/**
+ * `boardId` added for Phase 4 Wave 2 (ai/phase-4-realtime.md §5): the
+ * realtime event→room table (`apps/realtime/src/event-rooms.ts`) routes
+ * strictly on a fixed payload key, no lookup, so a checklist event needs its
+ * board id on the payload the same way `card.labeled` and `card.field_set`
+ * already carry theirs — `cardId` alone names a card, not a room. Every
+ * caller here already holds the parent card (`loadCard`/`loadItem` +
+ * `loadCard`), so this is not a new query, just a field already in hand.
+ */
 export const checklistCreated = defineEvent(
   'checklist.created',
-  z.object({ checklistId: z.string(), cardId: z.string(), name: z.string() }).strict(),
+  z
+    .object({ checklistId: z.string(), cardId: z.string(), boardId: z.string(), name: z.string() })
+    .strict(),
 );
 
 export const checklistDeleted = defineEvent(
@@ -335,6 +346,7 @@ export const checklistDeleted = defineEvent(
     .object({
       checklistId: z.string(),
       cardId: z.string(),
+      boardId: z.string(),
       name: z.string(),
       itemCount: z.number().int(),
     })
@@ -344,7 +356,13 @@ export const checklistDeleted = defineEvent(
 export const checklistItemCreated = defineEvent(
   'checklist_item.created',
   z
-    .object({ itemId: z.string(), checklistId: z.string(), cardId: z.string(), text: z.string() })
+    .object({
+      itemId: z.string(),
+      checklistId: z.string(),
+      cardId: z.string(),
+      boardId: z.string(),
+      text: z.string(),
+    })
     .strict(),
 );
 
@@ -362,6 +380,7 @@ export const checklistItemUpdated = defineEvent(
       itemId: z.string(),
       checklistId: z.string(),
       cardId: z.string(),
+      boardId: z.string(),
       before: z.object({ text: z.string(), done: z.boolean() }).strict(),
       after: z.object({ text: z.string(), done: z.boolean() }).strict(),
     })
@@ -371,7 +390,13 @@ export const checklistItemUpdated = defineEvent(
 export const checklistItemDeleted = defineEvent(
   'checklist_item.deleted',
   z
-    .object({ itemId: z.string(), checklistId: z.string(), cardId: z.string(), text: z.string() })
+    .object({
+      itemId: z.string(),
+      checklistId: z.string(),
+      cardId: z.string(),
+      boardId: z.string(),
+      text: z.string(),
+    })
     .strict(),
 );
 

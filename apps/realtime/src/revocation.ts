@@ -1,6 +1,7 @@
 import type { Logger } from '@taskflow/observability';
 import { OrgIdSchema, BoardIdSchema } from '@taskflow/contracts';
 import type { OutboxRow } from '@taskflow/db';
+import { broadcastPresence } from './presence.js';
 import { authorizeJoin } from './rooms.js';
 import { boardRoom } from './wire.js';
 import type { GatewayServer, GatewaySocket, RevocationMessage } from './socket-data.js';
@@ -135,19 +136,19 @@ export async function applyRevocation(
       case 'member_removed': {
         if (socket.data.identity.userId !== message.userId) break;
         for (const [boardId, orgId] of [...socket.data.rooms]) {
-          if (orgId === message.orgId) leaveRoom(socket, boardId, logger, 'member removed');
+          if (orgId === message.orgId) await leaveRoom(io, socket, boardId, logger, 'member removed');
         }
         break;
       }
 
       case 'recheck_user': {
         if (socket.data.identity.userId !== message.userId) break;
-        await recheck(socket, message.orgId, logger);
+        await recheck(io, socket, message.orgId, logger);
         break;
       }
 
       case 'recheck_org': {
-        await recheck(socket, message.orgId, logger);
+        await recheck(io, socket, message.orgId, logger);
         break;
       }
     }
@@ -163,7 +164,12 @@ export async function applyRevocation(
  * definition of who may be in a room, and a future change to the rules cannot
  * apply to joins but not to re-checks.
  */
-async function recheck(socket: GatewaySocket, orgId: string, logger: Logger): Promise<void> {
+async function recheck(
+  io: GatewayServer,
+  socket: GatewaySocket,
+  orgId: string,
+  logger: Logger,
+): Promise<void> {
   for (const [boardId, roomOrgId] of [...socket.data.rooms]) {
     if (roomOrgId !== orgId) continue;
 
@@ -174,7 +180,7 @@ async function recheck(socket: GatewaySocket, orgId: string, logger: Logger): Pr
     const org = OrgIdSchema.safeParse(roomOrgId);
     const board = BoardIdSchema.safeParse(boardId);
     if (!org.success || !board.success) {
-      leaveRoom(socket, boardId, logger, 'unparseable room key');
+      await leaveRoom(io, socket, boardId, logger, 'unparseable room key');
       continue;
     }
 
@@ -190,13 +196,22 @@ async function recheck(socket: GatewaySocket, orgId: string, logger: Logger): Pr
       logger.error({ err: error, boardId }, 'room re-check failed; leaving the room');
     }
 
-    if (!allowed) leaveRoom(socket, boardId, logger, 'authorization re-check failed');
+    if (!allowed) await leaveRoom(io, socket, boardId, logger, 'authorization re-check failed');
   }
 }
 
-function leaveRoom(socket: GatewaySocket, boardId: string, logger: Logger, reason: string): void {
+async function leaveRoom(
+  io: GatewayServer,
+  socket: GatewaySocket,
+  boardId: string,
+  logger: Logger,
+  reason: string,
+): Promise<void> {
   socket.data.rooms.delete(boardId);
-  void socket.leave(boardRoom(boardId));
+  await socket.leave(boardRoom(boardId));
   socket.emit('room:closed', { boardId });
   logger.info({ userId: socket.data.identity.userId, boardId, reason }, 'socket left room');
+  // After the leave actually took effect — a presence broadcast made before
+  // this resolved would still count the departing socket as present (§9).
+  await broadcastPresence(io, boardId);
 }

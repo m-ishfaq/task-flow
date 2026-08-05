@@ -172,12 +172,34 @@ export interface SessionEndedMessage {
   readonly reason: 'session_revoked' | 'token_reuse_detected';
 }
 
+/**
+ * Who currently has this board's room open (§9, Wave 2).
+ *
+ * `userIds` is the full current membership, not a delta — the same reasoning
+ * `card.assigned`'s `before`/`after` sets give: a client rendering an avatar
+ * stack needs "who is here now," and reconstructing that from a stream of
+ * joined/left deltas means every client must never miss one or its stack
+ * silently drifts from reality. Deduplicated: one person with two tabs open
+ * on the same board appears once.
+ *
+ * In-process and ephemeral (§9) — computed from the gateway's own room
+ * membership at the moment of the change, never persisted, never the audit
+ * log's business. It is not a domain event and does not go through the
+ * outbox: nothing here is a fact about the ORG's data, only about who is
+ * currently looking at it, which stops being true the instant a tab closes.
+ */
+export interface PresenceMessage {
+  readonly boardId: string;
+  readonly userIds: readonly string[];
+}
+
 /** Server-to-client events, named for `io.on`/`socket.on` type inference. */
 export interface ServerToClientEvents {
   ready: (message: ReadyMessage) => void;
   broadcast: (message: BroadcastMessage) => void;
   'room:closed': (message: RoomClosedMessage) => void;
   'session:ended': (message: SessionEndedMessage) => void;
+  presence: (message: PresenceMessage) => void;
 }
 
 /** Client-to-server events. Note that neither carries an identity — see above. */

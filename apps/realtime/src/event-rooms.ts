@@ -31,13 +31,46 @@
 /**
  * Event name → the payload key holding the board id its room is named after.
  *
- * Wave 1 seeds only the two events its acceptance criteria name (§5). Everything
- * else resolves to null and is skipped — dispatched, so it does not accumulate,
- * but broadcast nowhere. Wave 2 fills in the rest of the §4 catalog.
+ * Wave 2 (ai/phase-4-realtime.md §5) fills this in to every event §4 named
+ * that a SINGLE board room can actually carry — see the two exclusion notes
+ * below for the ones that cannot.
  */
 const BOARD_KEY_OF: Readonly<Record<string, string>> = {
   'card.created': 'boardId',
+  'card.updated': 'boardId',
   'card.moved': 'boardId',
+  'card.assigned': 'boardId',
+  'card.archived': 'boardId',
+  'card.status_changed': 'boardId',
+  'card.labeled': 'boardId',
+  'card.field_set': 'boardId',
+
+  'list.created': 'boardId',
+  'list.updated': 'boardId',
+  'list.reordered': 'boardId',
+  'list.archived': 'boardId',
+  'list.rebalanced': 'boardId',
+
+  /* NOT 'board.created' — see the exclusion note below. */
+  'board.updated': 'boardId',
+  'board.archived': 'boardId',
+
+  'comment.created': 'boardId',
+  'comment.updated': 'boardId',
+  'comment.deleted': 'boardId',
+
+  /* boardId added to these five payloads in Phase 4 Wave 2 specifically so
+     this table could name them — see the comment on their definitions in
+     apps/api/src/work/events.ts. */
+  'checklist.created': 'boardId',
+  'checklist.deleted': 'boardId',
+  'checklist_item.created': 'boardId',
+  'checklist_item.updated': 'boardId',
+  'checklist_item.deleted': 'boardId',
+
+  'view.created': 'boardId',
+  'view.updated': 'boardId',
+  'view.deleted': 'boardId',
 };
 
 /**
@@ -55,18 +88,55 @@ const BOARD_KEY_OF: Readonly<Record<string, string>> = {
  */
 const NEVER_BROADCAST_PREFIX = 'attachment.';
 
+/**
+ * Also deliberately absent, for two DIFFERENT reasons than the attachment ban
+ * — worth naming so a future "just add it" pass has to read this first.
+ *
+ * `board.created` names a board that did not exist a moment ago. No client
+ * can have joined `board:{boardId}` for a board whose id it has never seen,
+ * so this room always has zero subscribers and the broadcast is a no-op that
+ * would look, incorrectly, like a working feature under any test that does
+ * not check WHO received it.
+ *
+ * `label.*`, `custom_field.*`, and `status.*` (created/updated/deleted/
+ * archived) are PROJECT-scoped vocabulary changes, not board-scoped ones —
+ * their event payloads carry `projectId`, never a single `boardId`, because a
+ * project commonly has more than one board and a rename affects every card
+ * carrying that label or field across all of them. This table's whole design
+ * (§3.4) is one fixed key per event, precisely because "which room" must
+ * never be a judgment call made at broadcast time — and there is no single
+ * board room that is the right answer for a project-wide change. Routing it
+ * to "every board under the project" would need a project-room concept
+ * §3.1 does not have, or a per-broadcast database lookup this table exists
+ * to avoid. Left on the existing 30-second `staleTime` poll (`lib/query.ts`)
+ * instead: renaming a label is a low-frequency admin action, not a board
+ * interaction, and the gap this leaves is a wait of at most half a minute —
+ * not a silently broken feature.
+ */
+const PROJECT_SCOPED_PREFIXES = ['label.', 'custom_field.', 'status.'] as const;
+
 /** Thrown at boot, not at broadcast time — see `assertRoomTableIsSafe`. */
 export class UnsafeRoomMappingError extends Error {
-  constructor(name: string) {
-    super(
-      `Event "${name}" must not be mapped to a room. Attachment events carry presigned ` +
-        'download URLs, which are bearer credentials for one file; broadcasting one hands ' +
-        'it to every socket in the room. Broadcast the attachmentId and let the client ' +
-        'request a URL over authorized HTTP. See ai/phase-4-realtime.md §4.',
-    );
+  constructor(name: string, reason: string) {
+    super(`Event "${name}" must not be mapped to a room. ${reason} See ai/phase-4-realtime.md §4.`);
     this.name = 'UnsafeRoomMappingError';
   }
 }
+
+const ATTACHMENT_REASON =
+  'Attachment events carry presigned download URLs, which are bearer credentials for one ' +
+  'file; broadcasting one hands it to every socket in the room. Broadcast the attachmentId ' +
+  'and let the client request a URL over authorized HTTP.';
+
+const PROJECT_SCOPED_REASON =
+  'This event is project-scoped (payload carries projectId, not a single boardId) — a ' +
+  'project commonly has more than one board, so no one board room is the right audience. ' +
+  'Leave it on the polled query rather than guessing at a board, or routing it at broadcast ' +
+  'time with a database lookup this table exists to avoid.';
+
+const BOARD_CREATED_REASON =
+  '"board.created" names a board no client has ever seen, so its room always has zero ' +
+  'subscribers — the broadcast would be a silent no-op, not a working feature.';
 
 /**
  * Fails the process at boot if the table above ever grows a forbidden entry.
@@ -78,7 +148,15 @@ export class UnsafeRoomMappingError extends Error {
  */
 export function assertRoomTableIsSafe(): void {
   for (const name of Object.keys(BOARD_KEY_OF)) {
-    if (name.startsWith(NEVER_BROADCAST_PREFIX)) throw new UnsafeRoomMappingError(name);
+    if (name.startsWith(NEVER_BROADCAST_PREFIX)) {
+      throw new UnsafeRoomMappingError(name, ATTACHMENT_REASON);
+    }
+    if (PROJECT_SCOPED_PREFIXES.some((prefix) => name.startsWith(prefix))) {
+      throw new UnsafeRoomMappingError(name, PROJECT_SCOPED_REASON);
+    }
+    if (name === 'board.created') {
+      throw new UnsafeRoomMappingError(name, BOARD_CREATED_REASON);
+    }
   }
 }
 

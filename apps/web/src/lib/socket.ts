@@ -46,12 +46,17 @@ interface RoomClosedMessage {
 interface SessionEndedMessage {
   readonly reason: 'session_revoked' | 'token_reuse_detected';
 }
+interface PresenceMessage {
+  readonly boardId: string;
+  readonly userIds: readonly string[];
+}
 
 interface ServerToClientEvents {
   ready: (message: ReadyMessage) => void;
   broadcast: (message: BroadcastMessage) => void;
   'room:closed': (message: RoomClosedMessage) => void;
   'session:ended': (message: SessionEndedMessage) => void;
+  presence: (message: PresenceMessage) => void;
 }
 interface ClientToServerEvents {
   'board:join': (
@@ -65,6 +70,27 @@ type GatewaySocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 let socket: GatewaySocket | undefined;
 let reauthTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * Boards this tab currently wants joined, keyed by boardId (§9, Wave 2).
+ *
+ * The server has no memory of a socket's rooms across a reconnect — a dropped
+ * connection means the gateway's OWN `disconnect` handler already ran and
+ * cleared its side of the membership (`gateway.ts`), so a reconnect that only
+ * re-authenticates and stops there would leave the client silently receiving
+ * nothing further for a board it still has open. This map is what `reconnect`
+ * (below) replays `board:join` from.
+ */
+const joinedBoards = new Map<string, string>();
+
+/**
+ * Notified after every RECONNECT (not the first connection) — never called
+ * directly by this module's own reconnect handling, only by
+ * `use-board-room.ts`, which is the one that knows which queries to
+ * invalidate for "ends up in the same state a hard refresh would have
+ * produced" (§9's reconnect-and-diff).
+ */
+const reconnectListeners = new Set<() => void>();
 
 /**
  * Schedules a proactive reconnect (§7.1) using the lead time the GATEWAY
@@ -133,6 +159,27 @@ function buildSocket(): GatewaySocket {
     disconnectSocket();
   });
 
+  /**
+   * `socket.io` is this socket's Manager — `reconnect` fires there, and only
+   * on an ACTUAL reconnect after a drop, never on the first connection. That
+   * distinction is why this is not just `created.on('connect', ...)`: the
+   * first connect has nothing to rejoin (there is no server-side membership
+   * yet to have lost) and nothing to diff against, so firing this there too
+   * would invalidate every board query on every page load for no reason.
+   */
+  created.io.on('reconnect', () => {
+    for (const [boardId, orgId] of joinedBoards) {
+      created.emit('board:join', { orgId, boardId: boardId as BoardId }, () => {
+        /* Best-effort. If access was revoked while disconnected, the ack says
+           so and there is nothing further to do — the same as an ordinary
+           refused join; there is no error path here a caller could act on
+           differently. */
+      });
+    }
+
+    for (const listener of reconnectListeners) listener();
+  });
+
   return created;
 }
 
@@ -156,13 +203,31 @@ export async function joinBoardRoom(orgId: string, boardId: BoardId): Promise<bo
 
   return new Promise((resolve) => {
     active.emit('board:join', { orgId, boardId }, (result) => {
+      // Recorded regardless of the ack, deliberately: a join that failed
+      // because the gateway was mid-disconnect when this fired should still
+      // be retried by the NEXT reconnect, and `joinedBoards` is "what this
+      // tab wants joined," not "what is currently granted."
+      joinedBoards.set(boardId, orgId);
       resolve(result.ok);
     });
   });
 }
 
 export function leaveBoardRoom(boardId: BoardId): void {
+  joinedBoards.delete(boardId);
   socket?.emit('board:leave', { boardId });
+}
+
+/**
+ * Runs `handler` after every reconnect (not the first connection) — see the
+ * `reconnect` listener in `buildSocket()`. Returns an unsubscribe function;
+ * `use-board-room.ts` calls it on unmount, the same lifecycle as
+ * `onBroadcast`/`onRoomClosed`.
+ */
+export function onReconnect(handler: () => void): () => void {
+  ensureSocket();
+  reconnectListeners.add(handler);
+  return () => reconnectListeners.delete(handler);
 }
 
 /**
@@ -183,6 +248,13 @@ export function onRoomClosed(handler: (message: RoomClosedMessage) => void): () 
   return () => active.off('room:closed', handler);
 }
 
+/** Who else has this board's room open right now (§9, Wave 2). Full list, not a delta. */
+export function onPresence(handler: (message: PresenceMessage) => void): () => void {
+  const active = ensureSocket();
+  active.on('presence', handler);
+  return () => active.off('presence', handler);
+}
+
 /**
  * Tears the connection down entirely. Called on sign-out — a socket that
  * outlived the session it authenticated with is exactly the stale-connection
@@ -190,8 +262,12 @@ export function onRoomClosed(handler: (message: RoomClosedMessage) => void): () 
  */
 export function disconnectSocket(): void {
   if (reauthTimer !== undefined) clearTimeout(reauthTimer);
+  // Nothing to rejoin for a session that is ending, and a stale entry here
+  // would otherwise survive into whoever signs in next on this tab.
+  joinedBoards.clear();
+  reconnectListeners.clear();
   socket?.disconnect();
   socket = undefined;
 }
 
-export type { BroadcastMessage, RoomClosedMessage };
+export type { BroadcastMessage, PresenceMessage, RoomClosedMessage };
