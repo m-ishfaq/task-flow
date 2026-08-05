@@ -133,7 +133,7 @@ export async function createChecklist(
     await outboxWriter.append(tx, [
       createEvent(
         checklistCreated,
-        { checklistId, cardId: input.cardId, name: input.name },
+        { checklistId, cardId: input.cardId, boardId: card.boardId, name: input.name },
         envelopeOf(actor),
       ),
     ]);
@@ -181,6 +181,7 @@ export async function deleteChecklist(
         {
           checklistId: input.checklistId,
           cardId: checklist.cardId,
+          boardId: card.boardId,
           name: checklist.name,
           itemCount: items.length,
         },
@@ -237,6 +238,7 @@ export async function addItem(
           itemId,
           checklistId: input.checklistId,
           cardId: checklist.cardId,
+          boardId: card.boardId,
           text: input.text,
         },
         envelopeOf(actor),
@@ -289,6 +291,7 @@ export async function updateItem(
           itemId: input.itemId,
           checklistId: item.checklistId,
           cardId: item.cardId,
+          boardId: card.boardId,
           before: { text: item.text, done: item.done },
           after: { text: input.text, done: input.done },
         },
@@ -321,6 +324,7 @@ export async function deleteItem(
           itemId: input.itemId,
           checklistId: item.checklistId,
           cardId: item.cardId,
+          boardId: card.boardId,
           text: item.text,
         },
         envelopeOf(actor),

@@ -27,6 +27,10 @@ export {
   initializeAuditDatabase,
   withAuditScope,
   hasAuditDatabase,
+  initializeRealtimeDatabase,
+  withRealtimeScope,
+  hasRealtimeDatabase,
+  createRealtimeAdapterPool,
   type OrgId,
   type UserId,
   type DbConfig,
@@ -38,10 +42,12 @@ export {
   appendToOutbox,
   outboxWriter,
   claimPending,
-  markPublished,
+  markDispatched,
   recordFailure,
   type OutboxRow,
 } from './outbox.js';
+
+export { listenForOutboxAppends, type OutboxListener, type ListenOptions } from './notify.js';
 
 export {
   readAuditEntries,

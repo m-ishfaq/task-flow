@@ -11,7 +11,7 @@ import {
   withOrgScope,
   type OrgId,
 } from './client.js';
-import { appendToOutbox, claimPending, markPublished, recordFailure } from './outbox.js';
+import { appendToOutbox, claimPending, markDispatched, recordFailure } from './outbox.js';
 import { readAuditChain, readAuditEntries } from './audit-log.js';
 import { up } from './migrate/runner.js';
 import type { DomainEvent } from '@taskflow/events';
@@ -48,6 +48,30 @@ const ORG_B = '0195bb00-0000-7000-8000-00000000000b' as OrgId;
 const ACTOR = '0195bb00-0000-7000-8000-000000000001';
 
 const ORG_IDS = [ORG_A, ORG_B];
+
+/**
+ * Narrows a claim to the events THIS suite wrote.
+ *
+ * `platform.outbox` is one global queue by design — a consumer drains every org,
+ * which is the property `claims pending events across every org` below exists to
+ * prove — so `claimPending` legitimately returns rows belonging to whatever else
+ * has touched the test database. `apps/api`'s suites leave `org.created`,
+ * `project.created` and `board.created` events behind that nothing dispatches to
+ * 'audit', and `turbo` runs package tasks in PARALLEL against the one
+ * `taskflow_test` database, so those rows can also appear mid-run.
+ *
+ * Unscoped, the assertions here fail with `expected 6 to be 1`, which reads as a
+ * fan-out bug in `outbox_dispatch` rather than as a foreign fixture — and it
+ * fails only sometimes, so the natural response is a re-run rather than an
+ * investigation. Filtering by org keeps every property intact ("MY event is
+ * still owed to realtime", "MY event kept its own attempt count") while making
+ * them independent of what else is in the table. The alternative — emptying the
+ * outbox here — would delete other suites' fixtures mid-assertion, which is the
+ * hazard `apps/api/vitest.config.ts` documents.
+ */
+function ours<T extends { readonly orgId: string }>(rows: readonly T[]): readonly T[] {
+  return rows.filter((row) => ORG_IDS.includes(row.orgId as OrgId));
+}
 
 /** SQLSTATE for "new row violates row-level security policy". */
 const RLS_VIOLATION = '42501';
@@ -200,22 +224,27 @@ describe('outbox — draining side', () => {
     await withOrgScope(ORG_A, async (tx) => appendToOutbox(tx, [eventFor(ORG_A)]));
     await withOrgScope(ORG_B, async (tx) => appendToOutbox(tx, [eventFor(ORG_B)]));
 
-    const claimed = await withAuditScope(async (tx) => claimPending(tx));
-    expect(claimed.map((row) => row.orgId).sort()).toEqual([ORG_A, ORG_B].sort());
+    const claimed = await withAuditScope(async (tx) => claimPending(tx, 'audit'));
+    expect(
+      ours(claimed)
+        .map((row) => row.orgId)
+        .sort(),
+    ).toEqual([ORG_A, ORG_B].sort());
   });
 
-  it('does not re-claim what it has marked published', async () => {
+  it('does not re-claim what it has marked dispatched', async () => {
     await withOrgScope(ORG_A, async (tx) => appendToOutbox(tx, [eventFor(ORG_A)]));
 
     await withAuditScope(async (tx) => {
-      const claimed = await claimPending(tx);
-      await markPublished(
+      const claimed = await claimPending(tx, 'audit');
+      await markDispatched(
         tx,
+        'audit',
         claimed.map((row) => row.id),
       );
     });
 
-    const second = await withAuditScope(async (tx) => claimPending(tx));
+    const second = await withAuditScope(async (tx) => claimPending(tx, 'audit'));
     expect(second).toEqual([]);
   });
 
@@ -223,12 +252,12 @@ describe('outbox — draining side', () => {
     await withOrgScope(ORG_A, async (tx) => appendToOutbox(tx, [eventFor(ORG_A)]));
 
     await withAuditScope(async (tx) => {
-      const [claimed] = await claimPending(tx);
+      const [claimed] = await claimPending(tx, 'audit');
       if (!claimed) throw new Error('expected a claimed event');
-      await recordFailure(tx, claimed.id, 'consumer exploded');
+      await recordFailure(tx, 'audit', claimed.id, 'consumer exploded');
     });
 
-    const retry = await withAuditScope(async (tx) => claimPending(tx));
+    const retry = ours(await withAuditScope(async (tx) => claimPending(tx, 'audit')));
     expect(retry).toHaveLength(1);
     expect(retry[0]?.attempts).toBe(1);
   });
@@ -242,6 +271,60 @@ describe('outbox — draining side', () => {
       tx.execute(sql`SELECT count(*)::int AS n FROM platform.outbox`),
     );
     expect(rows.rows).toEqual([{ n: 0 }]);
+  });
+
+  /**
+   * The property this whole migration exists for (0015). Before it, a single
+   * `published_at` meant whichever consumer marked an event first made it
+   * vanish from every consumer's scan — a realtime broadcaster standing up
+   * after audit had already drained the backlog would find nothing to send.
+   * `withAuditScope` stands in for a second consumer's role here since
+   * `apps/realtime` does not exist yet; what is under test is that the TABLE
+   * no longer conflates them, not which role reads it.
+   */
+  describe('fan-out: two consumers over the same event', () => {
+    it('one consumer marking dispatched does not hide the event from another', async () => {
+      await withOrgScope(ORG_A, async (tx) => appendToOutbox(tx, [eventFor(ORG_A)]));
+
+      await withAuditScope(async (tx) => {
+        const claimed = await claimPending(tx, 'audit');
+        await markDispatched(
+          tx,
+          'audit',
+          claimed.map((row) => row.id),
+        );
+      });
+
+      // 'audit' is done with this event. A second consumer asking for its OWN
+      // backlog must still see it — the old single-flag design would not.
+      const forRealtime = ours(await withAuditScope(async (tx) => claimPending(tx, 'realtime')));
+      expect(forRealtime).toHaveLength(1);
+
+      // And 'audit' really is done — this is not a fluke of never having
+      // filtered anything out.
+      const forAuditAgain = await withAuditScope(async (tx) => claimPending(tx, 'audit'));
+      expect(forAuditAgain).toEqual([]);
+    });
+
+    it('tracks attempts and failures independently per consumer', async () => {
+      await withOrgScope(ORG_A, async (tx) => appendToOutbox(tx, [eventFor(ORG_A)]));
+
+      await withAuditScope(async (tx) => {
+        const [claimed] = await claimPending(tx, 'audit');
+        if (!claimed) throw new Error('expected a claimed event');
+        await recordFailure(tx, 'audit', claimed.id, 'audit exploded');
+      });
+
+      // realtime never attempted this event, so it is unaffected by audit's
+      // failure — a shared attempts counter would have poisoned it too.
+      const forRealtime = ours(await withAuditScope(async (tx) => claimPending(tx, 'realtime')));
+      expect(forRealtime).toHaveLength(1);
+      expect(forRealtime[0]?.attempts).toBe(0);
+
+      const auditRetry = ours(await withAuditScope(async (tx) => claimPending(tx, 'audit')));
+      expect(auditRetry).toHaveLength(1);
+      expect(auditRetry[0]?.attempts).toBe(1);
+    });
   });
 });
 

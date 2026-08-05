@@ -8,6 +8,7 @@ import { Skeleton } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { useMembers } from '../org/use-members.js';
 import { cardsQuery, listsQuery, statusesQuery } from './api.js';
+import { useBoardRoom } from './use-board-room.js';
 import { BoardView } from './board-view.js';
 import { TableView } from './table-view.js';
 import { ListView } from './list-view.js';
@@ -61,6 +62,7 @@ export function BoardPage() {
   const search = useSearch({ from: '/boards/$boardId' });
   const navigate = useNavigate({ from: '/boards/$boardId' });
   const orgId = useSession((state) => state.orgId) ?? '';
+  const selfId = useSession((state) => state.userId);
 
   const filter: FilterNode | null = search.filter ?? null;
   const view = search.view ?? 'board';
@@ -70,8 +72,20 @@ export function BoardPage() {
 
   const lists = useQuery(listsQuery(orgId, boardId));
   const cards = useQuery(cardsQuery(orgId, boardId, filter));
+
+  /* Realtime spine (ai/phase-4-realtime.md §5, §9): joins this board's room
+     and patches/invalidates the queries above live as the full Wave 2 event
+     catalog arrives from other clients, and reports who else has this room
+     open. Called unconditionally, before either loading state below can
+     return early — Rules of Hooks — which is also correct for what it does:
+     a board still loading its OWN queries can still join the room that will
+     patch them the moment they land. */
+  const { presence } = useBoardRoom(orgId, boardId);
   const { people: members, peopleOf } = useMembers();
   const people = peopleOf(members.map((member) => member.userId));
+  /* Excludes the viewer themself — "who else is here" (§9), not a roster the
+     viewer is already part of. */
+  const othersPresent = peopleOf(presence.filter((userId) => userId !== selfId));
   /* Loading is not gated on this — a board grouped by status while the
      vocabulary is still in flight just shows the "No status" bucket for a
      moment, which is the same graceful-degradation `useMembers` already
@@ -200,6 +214,27 @@ export function BoardPage() {
             {cards.data.length} {cards.data.length === 1 ? 'card' : 'cards'}
             {filter !== null && ' matching'}
           </span>
+
+          {othersPresent.length > 0 && (
+            <div
+              className="flex items-center -space-x-1.5"
+              title={othersPresent.map((person) => person.label).join(', ')}
+            >
+              {othersPresent.slice(0, 5).map((person) => (
+                <span
+                  key={person.userId}
+                  className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-accent text-[10px] font-medium text-accent-ink"
+                >
+                  {person.label.slice(0, 2).toUpperCase()}
+                </span>
+              ))}
+              {othersPresent.length > 5 && (
+                <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-surface-sunken text-[10px] font-medium text-ink-muted">
+                  +{othersPresent.length - 5}
+                </span>
+              )}
+            </div>
+          )}
 
           <ArchivedCardsDialog orgId={orgId} boardId={boardId} />
           <ShareBoardDialog orgId={orgId} boardId={boardId} />
