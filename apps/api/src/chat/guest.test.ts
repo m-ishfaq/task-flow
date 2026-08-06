@@ -319,6 +319,73 @@ describe('a guest granted one channel', () => {
   });
 });
 
+describe('listChannelGuests — the invite panel roster', () => {
+  it('lists a granted guest, with their expiry', async () => {
+    const { owner, refreshOwner } = await scaffold('guest-list-granted');
+    const channel = await channels.createChannel(owner, { type: 'private', name: 'project-x' });
+    const expiresAt = new Date(Date.now() + 60_000 * 60 * 24);
+
+    await compliance.setGuestAccess(await refreshOwner(), {
+      channelId: channel.channelId,
+      userId: GUEST,
+      granted: true,
+      expiresAt,
+    });
+
+    const rows = await compliance.listChannelGuests(await refreshOwner(), {
+      channelId: channel.channelId,
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.userId).toBe(GUEST);
+    expect(rows[0]?.expiresAt?.getTime()).toBe(expiresAt.getTime());
+  });
+
+  it('does not list an ordinary member alongside a guest', async () => {
+    /* `is_guest` is the whole filter — a `member` tuple written by the everyday
+       `addChannelMember` path (never `is_guest`) must not appear in a roster
+       whose entire purpose is "who here is external". */
+    const { owner, refreshOwner } = await scaffold('guest-list-excludes-member');
+    const channel = await channels.createChannel(owner, { type: 'private', name: 'project-x' });
+
+    await channels.addChannelMember(owner, { channelId: channel.channelId, userId: MEMBER });
+    await compliance.setGuestAccess(await refreshOwner(), {
+      channelId: channel.channelId,
+      userId: GUEST,
+      granted: true,
+      expiresAt: null,
+    });
+
+    const rows = await compliance.listChannelGuests(await refreshOwner(), {
+      channelId: channel.channelId,
+    });
+
+    expect(rows.map((row) => row.userId)).toEqual([GUEST]);
+  });
+
+  it('no longer lists a guest once access is revoked', async () => {
+    const { owner, refreshOwner } = await scaffold('guest-list-revoked');
+    const channel = await channels.createChannel(owner, { type: 'private', name: 'project-x' });
+
+    await compliance.setGuestAccess(await refreshOwner(), {
+      channelId: channel.channelId,
+      userId: GUEST,
+      granted: true,
+      expiresAt: null,
+    });
+    await compliance.setGuestAccess(await refreshOwner(), {
+      channelId: channel.channelId,
+      userId: GUEST,
+      granted: false,
+      expiresAt: null,
+    });
+
+    expect(
+      await compliance.listChannelGuests(await refreshOwner(), { channelId: channel.channelId }),
+    ).toEqual([]);
+  });
+});
+
 describe('where a guest cannot be invited', () => {
   it('cannot be invited to a direct message (§7.4)', async () => {
     const { owner, refreshOwner } = await scaffold('guest-no-dm');

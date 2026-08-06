@@ -287,6 +287,83 @@ describe('pins', () => {
   });
 });
 
+describe('listAllPinned — the sidebar surface, across every channel', () => {
+  it('aggregates pins from more than one channel, with channel info and an excerpt', async () => {
+    const { alice } = await scaffold('pin-all-aggregate');
+    const general = await channels.createChannel(alice, { type: 'public', name: 'general' });
+    const random = await channels.createChannel(alice, { type: 'private', name: 'random' });
+
+    const first = await messages.sendMessage(alice, {
+      channelId: general.channelId,
+      body: body('hello from general'),
+    });
+    const second = await messages.sendMessage(alice, {
+      channelId: random.channelId,
+      body: body('hello from random'),
+    });
+
+    await pins.pinMessage(alice, { channelId: general.channelId, messageId: first.messageId });
+    await pins.pinMessage(alice, { channelId: random.channelId, messageId: second.messageId });
+
+    const all = await pins.listAllPinned(alice);
+    const byId = new Map(all.map((row) => [row.messageId, row]));
+
+    expect(all).toHaveLength(2);
+    expect(byId.get(first.messageId)).toMatchObject({
+      channelId: general.channelId,
+      channelName: 'general',
+      channelType: 'public',
+      excerpt: 'hello from general',
+    });
+    expect(byId.get(second.messageId)).toMatchObject({
+      channelId: random.channelId,
+      channelName: 'random',
+      channelType: 'private',
+      excerpt: 'hello from random',
+    });
+  });
+
+  it('stops resolving a pin in a channel the caller has since lost access to', async () => {
+    const { orgId, alice } = await scaffold('pin-all-lost-access');
+
+    const priv = await channels.createChannel(alice, { type: 'private', name: 'secret' });
+    await channels.addChannelMember(alice, { channelId: priv.channelId, userId: BOB });
+
+    const bob = await actorFor(orgId, BOB, 'member');
+    const sent = await messages.sendMessage(bob, {
+      channelId: priv.channelId,
+      body: body('careful now'),
+    });
+    await pins.pinMessage(bob, { channelId: priv.channelId, messageId: sent.messageId });
+
+    expect((await pins.listAllPinned(bob)).map((row) => row.messageId)).toEqual([sent.messageId]);
+
+    // Alice still holds channel:manage on the channel Bob is being removed from.
+    await channels.removeChannelMember(alice, { channelId: priv.channelId, userId: BOB });
+
+    // Bob's own pin row is untouched, but his access is gone — the pin must
+    // stop resolving rather than re-disclosing a channel he was removed from.
+    const bobAfterRemoval = await actorFor(orgId, BOB, 'member');
+    expect(await pins.listAllPinned(bobAfterRemoval)).toEqual([]);
+  });
+
+  it('reports a deleted message as gone rather than re-showing its content', async () => {
+    const { alice } = await scaffold('pin-all-deleted');
+    const channel = await channels.createChannel(alice, { type: 'public', name: 'general' });
+    const sent = await messages.sendMessage(alice, {
+      channelId: channel.channelId,
+      body: body('temporary'),
+    });
+    await pins.pinMessage(alice, { channelId: channel.channelId, messageId: sent.messageId });
+
+    await messages.deleteMessage(alice, { messageId: sent.messageId });
+
+    const all = await pins.listAllPinned(alice);
+    expect(all).toHaveLength(1);
+    expect(all[0]?.excerpt).toBeNull();
+  });
+});
+
 describe('read cursors', () => {
   it('advances the cursor and reports zero unread once caught up', async () => {
     const { orgId, alice } = await scaffold('read-advance');
