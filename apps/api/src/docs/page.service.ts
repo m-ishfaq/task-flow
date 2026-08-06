@@ -94,7 +94,7 @@ interface PageSummary {
 export async function createPage(
   actor: DocsActor,
   input: { readonly spaceId: SpaceId; readonly parentPageId: PageId | null; readonly title: string },
-): Promise<{ readonly pageId: string }> {
+): Promise<{ readonly pageId: PageId }> {
   const pageId = newId<'PageId'>();
   const orgId = orgOf(actor);
 

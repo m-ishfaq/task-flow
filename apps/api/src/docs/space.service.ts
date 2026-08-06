@@ -36,7 +36,7 @@ export async function listSpaces(
 export async function createSpace(
   actor: DocsActor,
   input: { readonly name: string },
-): Promise<{ readonly spaceId: string }> {
+): Promise<{ readonly spaceId: SpaceId }> {
   const spaceId = newId<'SpaceId'>();
   const orgId = orgOf(actor);
   const userId = actor.subject.userId;

@@ -59,6 +59,8 @@ AI may write anything, but changes to these need the author to read every line b
 (PLAN.md §2.2):
 
 `packages/policy` · `packages/db` · `packages/security` · `apps/api/src/identity` ·
+`apps/collab/src/auth.ts` and `authorize.ts` (Phase 6 — the collab gateway's own handshake and
+tree-permission resolution, the same severity as `apps/realtime/src/auth.ts`/`rooms.ts`) ·
 any webhook signature verification · any file upload/download path · any code touching
 telephony spend.
 
@@ -69,16 +71,30 @@ For these, a second adversarial AI pass in a fresh context is expected, not opti
 ## Layout
 
 ```
-apps/       api                              (arriving: collab, worker)
+apps/       api                              (arriving: worker)
               src/identity   ⚠ auth, tokens, sessions, passkeys
               src/tenancy      orgs, memberships, teams, grants, audit projection
               src/work         projects, boards, lists, cards, ranking, rich text,
                                labels, checklists, custom fields, comments,
                                ⚠ attachments, filter wiring
+              src/chat         channels, DMs, messages, threads, reactions
+              src/docs         spaces, page tree, inherited-permission Target
+                               building (Phase 6, Wave 1 — no body content yet)
             realtime           Socket.io gateway — broadcast only, never writes
               src/auth.ts    ⚠ handshake: token, origin, socket.data.identity
               src/rooms.ts   ⚠ room join = a fresh can() check
               src/relay.ts     the 'realtime' outbox consumer
+            collab             Hocuspocus gateway (Phase 6) — the one process
+                               allowed to write from a socket handler, and only
+                               to docs.yjs_updates/docs.page_versions (Wave 2;
+                               Wave 1 ships the auth spine with no writes at all)
+              src/auth.ts    ⚠ handshake, adapted from realtime's to
+                               onAuthenticate — verifyAccessToken directly, not
+                               apps/api's authenticate() (see ai/phase-6-docs.md
+                               §3.3's correction on approval)
+              src/authorize.ts ⚠ page-tree permission resolution: loadPage's
+                               ancestorIds -> pageTarget -> can(), the harder
+                               version of rooms.ts's room-join check
             web                React 19 + Vite
               src/lib          tRPC client, session, query client, wire types
               src/components   primitives + app shell
@@ -111,6 +127,7 @@ pnpm --filter @taskflow/db migrate:verify           # up -> down -> up, on taskf
 
 pnpm --filter @taskflow/api dev                     # API on :3000
 pnpm --filter @taskflow/realtime dev                # socket gateway on :3001
+pnpm --filter @taskflow/collab dev                  # Hocuspocus gateway on :3002 (Phase 6)
 pnpm --filter @taskflow/web dev                     # app on :5173, proxies /trpc + /socket.io
 ```
 
@@ -207,6 +224,22 @@ Not every one of the nine has a test that fails without the fix; the newest thre
 got built, a seed script drifted from the schema it seeds) had no test at all, which is why they
 survived past a header that already claimed the phase done. A green `pnpm verify` is not the same
 claim as "this works when you click it."
+
+**Phase 6 (Docs) Wave 1 is COMPLETE; Waves 2–4 are NOT STARTED.** Spec in
+[ai/phase-6-docs.md](ai/phase-6-docs.md), approved 2026-08-06. Migration 0023 (`docs.spaces`,
+`docs.pages` — tree only, no body content), the inherited-permission `Target` resolver
+(`apps/api/src/docs/shared.ts`), space/page CRUD and `movePage`'s reparent-and-rank mechanics
+(`apps/api/src/docs`), and `apps/collab`'s authorization spine (`onAuthenticate` composing token
+verification with the same tree-permission resolution, §3.3–§3.4) all shipped, with an authz-matrix
+suite proving `packages/policy`'s `nearestApplicable()` at genuine multi-level depth for the first
+time in this codebase. `apps/collab` does not yet sync any content — no Yjs document, no
+`docs.yjs_updates`, no `taskflow_collab` role — that is Wave 2, and nothing here should be read as
+Docs being usable yet. Two corrections were made to the draft on approval, recorded in the spec's
+own header: §3.3's hook calls `verifyAccessToken` directly rather than `apps/api`'s `authenticate()`
+(mirroring what `apps/realtime/src/auth.ts` actually does), and §6.1's `taskflow_collab` role is
+deferred to Wave 2 rather than created in Wave 1's migration, since Wave 1's reads go over the
+ordinary `taskflow_app` connection — the identical split `apps/realtime`'s own dedicated role
+already established (outbox-only, no tenant-table grant).
 
 **Read a spec's own status header before trusting a phase marker anywhere else.** The §13 roadmap
 table and this section were both stale for the whole of Phase 3.5's Wave 1 and Wave 2, which is how
