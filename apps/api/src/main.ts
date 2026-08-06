@@ -3,6 +3,7 @@ import { createLogger } from '@taskflow/observability';
 import { loadEnv } from './config/env.js';
 import { buildServer } from './server.js';
 import { startAuditRelay } from './tenancy/relay.js';
+import { startRetentionSweep } from './chat/retention.scheduler.js';
 
 /**
  * Process entry point.
@@ -44,6 +45,17 @@ const relay = startAuditRelay({
   logger: createLogger({ name: 'audit-relay', level: env.LOG_LEVEL }),
 });
 
+/* Deletes chat messages past their channel's retention window (Wave 4, §3.7).
+   Same "belongs in apps/worker" caveat as the relay above, plus one the relay
+   does NOT have: this sweep has no `SKIP LOCKED` claim, so running it in two
+   instances at once double-counts deletions in the audit log. Off by default
+   for that reason — exactly one instance should set it. */
+const retention = env.RETENTION_SWEEP_ENABLED
+  ? startRetentionSweep({
+      logger: createLogger({ name: 'chat-retention', level: env.LOG_LEVEL }),
+    })
+  : null;
+
 await app.listen({ port: env.API_PORT, host: env.API_HOST });
 
 /**
@@ -59,6 +71,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
       // Relay first: stopping it before the pools close means an in-flight
       // drain finishes against a live connection rather than failing partway.
       relay.stop();
+      retention?.stop();
       await app.close();
       await closeDatabase();
       process.exit(0);

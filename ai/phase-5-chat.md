@@ -1,10 +1,58 @@
 # Phase 5 — Chat
 
-**Status: DRAFT — not yet approved.** Written to be reviewed and argued with, the same way
-`phase-4-realtime.md` was before its own approval, and for the same reason: §3 and §7 below name
-structural decisions and open questions that are expensive to unwind once channels hold real
-messages and cheap to argue about now. Nothing here should be built until Phase 4 has shipped its
-Wave 1 + Wave 2 acceptance criteria — see §8.
+**Status: IMPLEMENTED — all four waves shipped, 2026-08-06.** Phase 4's prerequisite (§8) was met
+by merging `development-phase4` into this branch before any chat code landed.
+
+Read this header before trusting a phase marker anywhere else — CLAUDE.md records that the §13
+roadmap table and its own "Current state" section were both stale through two previous phases.
+
+What shipped, by wave:
+
+| Wave | Scope                                                     | Where                                                |
+| ---- | --------------------------------------------------------- | ---------------------------------------------------- |
+| 1    | channels, DMs, messages, `/chat` namespace, live delivery | migration 0017, `apps/api/src/chat`, `apps/realtime` |
+| 2    | threads, reactions, pins, mentions, read cursors, typing  | migration 0018                                       |
+| 3    | file sharing, SSRF-safe link unfurls, slash commands      | migration 0020, `packages/security/outbound-url.ts`  |
+| 4    | retention, legal hold, guest access, compliance export    | migration 0021                                       |
+
+Also shipped, not in the original spec: **display names** (migration 0019). §3.1 assumes a DM can be
+labelled by its participants, and `identity.users` had only an email — so a DM was titled with an
+address, or with the same address twice. ⚠ `apps/api/src/identity` is a human-review surface.
+
+**The §7 open decisions, as resolved:**
+
+1. **Read cursors** (§3.6/§7.1) — own table, own event, excluded from the audit projection by an
+   explicit `NEVER_AUDITED` set rather than by omission.
+2. **Namespace multiplexing** (§7.2) — one connection, both namespaces. Reuses Phase 4's Manager,
+   backoff and join-replay rather than growing a second reconnect path to keep correct.
+3. **Guest data model** (§7.3) — a relation tuple, as §3.8 proposed. No new table; `is_guest` marks
+   the row for access review and changes nothing about how `can()` reads it.
+4. **Can a guest DM?** (§7.4) — **no.** Channel-scoped is the definition of a guest. Also refused on
+   public channels, which would be a private channel wearing a misleading label.
+5. **Legal hold granularity** (§7.5) — **both.** Per-message covers "preserve this statement";
+   per-channel covers "preserve this conversation", including messages written after the hold. A
+   hold may be placed on a message already past its window.
+6. **Unfurl timing** (§7.6) — **async**, with its own `message.unfurled` event and room-table entry.
+   A send never waits on a third-party host.
+7. **In-channel search** (§7.7) — deferred to Phase 8, as §2 anticipated. Slash commands needed
+   nothing beyond what the existing routes already do.
+
+**Three findings worth carrying forward** — each is a control that looked correct and was not:
+
+- **`closed` on the `can()` target is the whole chat authorization model.** `member` holds
+  `channel:read` from the role matrix, so a target built without it allows every private channel and
+  every DM in the organization, with a decision trace that reads as entirely correct. Nothing throws.
+  `packages/policy/src/decide.test.ts` and `apps/realtime/src/chat-rooms.test.ts` both fail without it.
+- **Channel visibility must be decided by `can()`, never by channel TYPE.** A "public, or I hold a
+  tuple" filter is right for a member and wrong for a guest, who holds no role grants at all — every
+  public channel appeared in an external collaborator's sidebar.
+- **The room-table attachment ban must match the resource segment, not a prefix.** Chat's events are
+  `message_attachment.*`; a `startsWith('attachment.')` check let every one of them through, and what
+  would then reach a channel room is a presigned download URL.
+
+Still open, deliberately: `apps/worker` does not exist, so the retention sweep runs on a timer in
+`apps/api` behind `RETENTION_SWEEP_ENABLED` — exactly one instance may set it, because the sweep has
+no `SKIP LOCKED` claim. See `retention.scheduler.ts`.
 
 Parent: [PLAN.md](../PLAN.md) §3.2 (Chat), §9 (Real-Time Architecture), §10.6 (Domain events),
 §13 (Roadmap). Sibling: [phase-4-realtime.md](phase-4-realtime.md) — Chat is the second channel in
@@ -25,7 +73,7 @@ shape, delivered live over the socket gateway Phase 4 already built for a differ
 
 The one genuinely new thing is **volume and shape of the write path**: Work generates a card
 mutation every few seconds per active user; a busy channel generates a message every few seconds
-*per channel*, sustained, from people who are typing, not dragging. §10.6's "one producer, five
+_per channel_, sustained, from people who are typing, not dragging. §10.6's "one producer, five
 consumers" model and the outbox still hold, but this is the first phase where the audit chain,
 the realtime relay, and the notification fanout all see traffic at a materially different rate
 than Phase 3 exercised them at — which is why the risk register (PLAN.md §15) already names "Chat
@@ -186,7 +234,7 @@ things make this a slice worth naming carefully rather than "a cron job that run
   separate read.** A message placed on hold between the retention job's "which messages are
   eligible" read and its DELETE is the race this design has to close by construction — the delete
   statement's WHERE clause carries the hold check directly (`WHERE occurred_at < :cutoff AND NOT
-  legal_hold`), not a two-step "check then delete."
+legal_hold`), not a two-step "check then delete."
 
 Retention deletions are still domain events (`message.deleted`, with a reason field distinguishing
 `user` from `retention_policy`) — the audit trail should show a message was removed by policy, not
@@ -349,8 +397,7 @@ Phase 3 `lib/wire.ts` notes. No new problem, same discipline.
 Beyond the acceptance criteria per wave: a room-join test proving `can()` is actually consulted for
 a DM channel specifically (not just a public one — §3.3's point is that DMs are not a shortcut
 around `can()`), a tenancy-fuzz entry (guardrail 8) for every new chat mutation the way
-`tenancy-fuzz.test.ts` names Work's 14 mutations explicitly, an authz-matrix extension (guardrail
-9) covering the guest role, and a retention-vs-legal-hold race test per Wave 4's acceptance
+`tenancy-fuzz.test.ts` names Work's 14 mutations explicitly, an authz-matrix extension (guardrail 9) covering the guest role, and a retention-vs-legal-hold race test per Wave 4's acceptance
 criterion.
 
 ### 6.5 Rate limiting

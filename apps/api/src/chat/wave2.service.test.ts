@@ -78,7 +78,10 @@ interface Fixture {
 }
 
 async function scaffold(slug: string): Promise<Fixture> {
-  const result = await orgs.createOrg({ name: `Wave2 ${slug}`, slug }, { userId: ALICE, requestId });
+  const result = await orgs.createOrg(
+    { name: `Wave2 ${slug}`, slug },
+    { userId: ALICE, requestId },
+  );
   created.push(result.orgId);
 
   const alice = await actorFor(result.orgId, ALICE, 'owner');
@@ -124,7 +127,10 @@ describe('reactions', () => {
   it('toggles a reaction on and off', async () => {
     const { orgId, alice } = await scaffold('react-toggle');
     const channel = await channels.createChannel(alice, { type: 'public', name: 'general' });
-    const sent = await messages.sendMessage(alice, { channelId: channel.channelId, body: body('hi') });
+    const sent = await messages.sendMessage(alice, {
+      channelId: channel.channelId,
+      body: body('hi'),
+    });
 
     const first = await reactions.toggleReaction(alice, {
       channelId: channel.channelId,
@@ -159,7 +165,10 @@ describe('reactions', () => {
     const { alice } = await scaffold('react-cross-channel');
     const channelA = await channels.createChannel(alice, { type: 'public', name: 'a' });
     const channelB = await channels.createChannel(alice, { type: 'public', name: 'b' });
-    const sent = await messages.sendMessage(alice, { channelId: channelA.channelId, body: body('hi') });
+    const sent = await messages.sendMessage(alice, {
+      channelId: channelA.channelId,
+      body: body('hi'),
+    });
 
     expect(
       await rejectionCode(() =>
@@ -175,7 +184,10 @@ describe('reactions', () => {
   it('refuses an oversized emoji string', async () => {
     const { alice } = await scaffold('react-oversized');
     const channel = await channels.createChannel(alice, { type: 'public', name: 'general' });
-    const sent = await messages.sendMessage(alice, { channelId: channel.channelId, body: body('hi') });
+    const sent = await messages.sendMessage(alice, {
+      channelId: channel.channelId,
+      body: body('hi'),
+    });
 
     expect(
       await rejectionCode(() =>
@@ -220,13 +232,22 @@ describe('pins', () => {
   it('pins and unpins a message, idempotently', async () => {
     const { alice } = await scaffold('pin-toggle');
     const channel = await channels.createChannel(alice, { type: 'public', name: 'general' });
-    const sent = await messages.sendMessage(alice, { channelId: channel.channelId, body: body('hi') });
+    const sent = await messages.sendMessage(alice, {
+      channelId: channel.channelId,
+      body: body('hi'),
+    });
 
-    const first = await pins.pinMessage(alice, { channelId: channel.channelId, messageId: sent.messageId });
+    const first = await pins.pinMessage(alice, {
+      channelId: channel.channelId,
+      messageId: sent.messageId,
+    });
     expect(first.pinned).toBe(true);
 
     // Pinning again is a no-op, not an error.
-    const again = await pins.pinMessage(alice, { channelId: channel.channelId, messageId: sent.messageId });
+    const again = await pins.pinMessage(alice, {
+      channelId: channel.channelId,
+      messageId: sent.messageId,
+    });
     expect(again.pinned).toBe(false);
 
     const listed = await pins.listPinnedMessages(alice, { channelId: channel.channelId });
@@ -253,7 +274,10 @@ describe('pins', () => {
     const { alice } = await scaffold('pin-cross-channel');
     const channelA = await channels.createChannel(alice, { type: 'public', name: 'a' });
     const channelB = await channels.createChannel(alice, { type: 'public', name: 'b' });
-    const sent = await messages.sendMessage(alice, { channelId: channelA.channelId, body: body('hi') });
+    const sent = await messages.sendMessage(alice, {
+      channelId: channelA.channelId,
+      body: body('hi'),
+    });
 
     expect(
       await rejectionCode(() =>
@@ -268,7 +292,10 @@ describe('read cursors', () => {
     const { orgId, alice } = await scaffold('read-advance');
     const channel = await channels.createChannel(alice, { type: 'public', name: 'general' });
     await messages.sendMessage(alice, { channelId: channel.channelId, body: body('one') });
-    const two = await messages.sendMessage(alice, { channelId: channel.channelId, body: body('two') });
+    const two = await messages.sendMessage(alice, {
+      channelId: channel.channelId,
+      body: body('two'),
+    });
     await messages.sendMessage(alice, { channelId: channel.channelId, body: body('three') });
 
     const beforeCounts = await readCursors.unreadCounts(alice, { channelIds: [channel.channelId] });
@@ -296,8 +323,14 @@ describe('read cursors', () => {
   it('refuses to move the cursor backward', async () => {
     const { alice } = await scaffold('read-no-rewind');
     const channel = await channels.createChannel(alice, { type: 'public', name: 'general' });
-    const one = await messages.sendMessage(alice, { channelId: channel.channelId, body: body('one') });
-    const two = await messages.sendMessage(alice, { channelId: channel.channelId, body: body('two') });
+    const one = await messages.sendMessage(alice, {
+      channelId: channel.channelId,
+      body: body('one'),
+    });
+    const two = await messages.sendMessage(alice, {
+      channelId: channel.channelId,
+      body: body('two'),
+    });
 
     await readCursors.markRead(alice, { channelId: channel.channelId, messageId: two.messageId });
 

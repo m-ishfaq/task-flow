@@ -1,13 +1,13 @@
 import { and, eq, gt, inArray, schema, withOrgScope, outboxWriter } from '@taskflow/db';
 import type { ChannelId, MessageId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
-import { enforce } from '@taskflow/policy';
+import { can, enforce } from '@taskflow/policy';
 import { channelReadAdvanced } from './events.js';
 import {
   assertMessageInChannel,
+  channelTarget,
   enforceOnChannel,
   envelopeOf,
-  isClosedChannel,
   loadChannel,
   orgOf,
   userOf,
@@ -121,11 +121,6 @@ export async function unreadCounts(
   enforce(actor.subject, 'channel:read');
 
   const userId = userOf(actor);
-  const memberChannelIds = new Set(
-    actor.subject.tuples
-      .filter((tuple) => tuple.object.type === 'channel')
-      .map((tuple) => tuple.object.id),
-  );
 
   return withOrgScope(orgOf(actor), async (tx) => {
     if (input.channelIds.length === 0) return [];
@@ -138,6 +133,8 @@ export async function unreadCounts(
         name: schema.channels.name,
         topic: schema.channels.topic,
         archivedAt: schema.channels.archivedAt,
+        retentionDays: schema.channels.retentionDays,
+        retentionHold: schema.channels.retentionHold,
       })
       .from(schema.channels)
       .where(inArray(schema.channels.id, input.channelIds));
@@ -145,8 +142,12 @@ export async function unreadCounts(
     /* Silently drops a channel the caller cannot read, exactly like
        `listChannels` does — an unread count for a channel invisible in the
        sidebar is not a partial answer worth erroring over. */
+    /* Same correction as `listChannels`: decided by `can()`, not by channel
+       type. A type-based filter reports unread counts for public channels to a
+       guest, who cannot open any of them — a badge for a conversation that 404s
+       when clicked. */
     const readable = channels.filter(
-      (channel) => !isClosedChannel(channel) || memberChannelIds.has(channel.id),
+      (channel) => can(actor.subject, 'channel:read', channelTarget(channel)).allowed,
     );
 
     const cursors = await tx

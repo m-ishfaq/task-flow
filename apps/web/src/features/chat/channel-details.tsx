@@ -4,17 +4,14 @@ import type { ChannelId, UserId } from '@taskflow/contracts';
 import { cn } from '../../lib/cn.js';
 import { useSession } from '../../lib/session.js';
 import { useToast } from '../../lib/toast-context.js';
-import {
-  Avatar,
-  Button,
-  ConfirmButton,
-  Empty,
-  Field,
-  Input,
-} from '../../components/primitives.js';
+import { Avatar, Button, ConfirmButton, Empty, Field, Input } from '../../components/primitives.js';
 import { useMembers, type Person } from '../org/use-members.js';
 import {
   addChannelMember,
+  exportChannel,
+  holdChannel,
+  setRetention,
+  type ChannelDetail,
   archiveChannel,
   channelQuery,
   invalidateChannel,
@@ -176,6 +173,10 @@ export function ChannelDetailsPanel({
           />
         )}
 
+        {!isDirect && data.capabilities.manage && (
+          <ComplianceSection orgId={orgId} channelId={channelId} channel={data} />
+        )}
+
         {!isDirect && (
           <section className="border-t border-line pt-3">
             <ConfirmButton
@@ -234,13 +235,7 @@ function PersonLine({
   );
 }
 
-function PanelHeader({
-  title,
-  onClose,
-}: {
-  readonly title: string;
-  readonly onClose: () => void;
-}) {
+function PanelHeader({ title, onClose }: { readonly title: string; readonly onClose: () => void }) {
   return (
     <header className="flex h-12 shrink-0 items-center justify-between border-b border-line px-4">
       <h2 className="text-sm font-medium text-ink">{title}</h2>
@@ -520,5 +515,179 @@ function ChannelSettingsForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+/**
+ * Retention, legal hold, guests and export (Wave 4, §3.7, §3.8).
+ *
+ * ## Rendered only when the server says `manage`
+ *
+ * This is the one place in the chat UI that hides a whole section rather than
+ * letting the server refuse, and the reason is not "these are dangerous". It is
+ * that `capabilities.manage` comes FROM the server, computed by the same `can()`
+ * that enforces — so hiding it is displaying the server's answer, not the
+ * client reaching its own. §8.2's rule is against a second authorization model;
+ * showing what the first one decided is the opposite of that.
+ *
+ * ## What each control actually does, and why the wording matters
+ *
+ * A retention window DELETES messages on a schedule, and shortening one takes
+ * effect on the next sweep with no further confirmation. A legal hold exempts
+ * messages from that. Both are stated in those terms rather than as "settings",
+ * because the failure mode of a vague label here is somebody discarding a
+ * year of a team's conversation while believing they adjusted a preference.
+ */
+function ComplianceSection({
+  orgId,
+  channelId,
+  channel,
+}: {
+  readonly orgId: string;
+  readonly channelId: ChannelId;
+  readonly channel: ChannelDetail;
+}) {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const [days, setDays] = useState(
+    channel.retentionDays === null ? '' : String(channel.retentionDays),
+  );
+
+  const refresh = (): void => {
+    invalidateChannel(queryClient, orgId, channelId);
+  };
+
+  const retention = useMutation({
+    mutationFn: () =>
+      setRetention({
+        channelId,
+        /* An empty box means KEEP FOREVER, which is null — never a default
+           number. A default retention window living in the client would start
+           deleting messages the day somebody changed the constant. */
+        retentionDays: days.trim() === '' ? null : Number.parseInt(days, 10),
+      }),
+    onSuccess: (result) => {
+      refresh();
+      toast.show(
+        result.retentionDays === null
+          ? 'Messages in this channel are kept indefinitely'
+          : `Messages older than ${String(result.retentionDays)} days will be deleted`,
+      );
+    },
+    onError: (error) => {
+      toast.failure('The retention policy was not saved', error);
+    },
+  });
+
+  const hold = useMutation({
+    mutationFn: (held: boolean) => holdChannel({ channelId, held }),
+    onSuccess: (result) => {
+      refresh();
+      toast.show(
+        result.held
+          ? 'Legal hold placed — retention will not delete anything here'
+          : 'Legal hold lifted — retention applies again',
+      );
+    },
+    onError: (error) => {
+      toast.failure('The legal hold was not changed', error);
+    },
+  });
+
+  const exportChannelMutation = useMutation({
+    mutationFn: () => exportChannel({ channelId, includeDeleted: true }),
+    onSuccess: (result) => {
+      /* Downloaded as a file the browser builds from the response, never a link
+         the server hands out: an export is the entire contents of a private
+         conversation, and a URL to it would be a second copy living somewhere
+         the audit trail says nothing about. `compliance.exported` has already
+         recorded that this happened. */
+      const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${result.channelName ?? 'channel'}-export.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+
+      toast.show(`Exported ${String(result.messages.length)} messages`);
+    },
+    onError: (error) => {
+      toast.failure('The export failed', error);
+    },
+  });
+
+  return (
+    <section className="flex flex-col gap-3 border-t border-line pt-3">
+      <h3 className="text-xs font-medium uppercase tracking-wide text-ink-faint">
+        Retention &amp; compliance
+      </h3>
+
+      <Field label="Delete messages older than (days)" htmlFor="retention-days">
+        <div className="flex gap-2">
+          <Input
+            id="retention-days"
+            inputMode="numeric"
+            value={days}
+            placeholder="Never"
+            onChange={(event) => {
+              setDays(event.target.value.replace(/[^0-9]/g, ''));
+            }}
+          />
+          <Button
+            size="sm"
+            disabled={retention.isPending}
+            onClick={() => {
+              retention.mutate();
+            }}
+          >
+            Save
+          </Button>
+        </div>
+      </Field>
+      <p className="text-xs text-ink-faint">
+        Leave blank to keep messages indefinitely. Deletions are recorded in the audit log.
+      </p>
+
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-col">
+          <span className="text-sm text-ink">Legal hold</span>
+          <span className="text-xs text-ink-faint">
+            {channel.retentionHold
+              ? 'On — nothing here will be deleted by retention'
+              : 'Off — the retention policy above applies'}
+          </span>
+        </div>
+        <Button
+          size="sm"
+          variant={channel.retentionHold ? 'primary' : 'ghost'}
+          disabled={hold.isPending}
+          onClick={() => {
+            hold.mutate(!channel.retentionHold);
+          }}
+        >
+          {channel.retentionHold ? 'Lift' : 'Place'}
+        </Button>
+      </div>
+
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-col">
+          <span className="text-sm text-ink">Export conversation</span>
+          <span className="text-xs text-ink-faint">
+            Every message, including deleted ones. This export is audited.
+          </span>
+        </div>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={exportChannelMutation.isPending}
+          onClick={() => {
+            exportChannelMutation.mutate();
+          }}
+        >
+          Export
+        </Button>
+      </div>
+    </section>
   );
 }

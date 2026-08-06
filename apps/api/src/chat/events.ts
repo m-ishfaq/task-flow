@@ -294,3 +294,248 @@ export const channelReadAdvanced = defineEvent(
     })
     .strict(),
 );
+
+/* -------------------------------------------------------------------------- *
+ * Message attachments (Wave 3, ai/phase-5-chat.md §3.10)
+ *
+ * Named `message_attachment.*` rather than reusing Work's `attachment.*`: an
+ * event name is unique across the whole registry (`defineEvent` throws on a
+ * duplicate), and Work's payloads require `cardId` and `boardId`, which a chat
+ * upload has neither of.
+ *
+ * ⚠ NONE of these may ever appear in `apps/realtime`'s event→room table. A
+ * presigned download URL is a bearer credential for the file it names, and a
+ * channel room's audience is everyone currently subscribed. Phase 4 §4 excludes
+ * `attachment.*` for exactly this reason and §3.10 says chat reuses that
+ * exclusion rather than needing its own. The boot-time assertion in
+ * `event-rooms.ts` matches the word "attachment" ANYWHERE in the resource
+ * segment specifically so this prefix is caught too — a check keyed on
+ * `startsWith('attachment.')` would have let these straight through.
+ *
+ * What a client gets instead: `message.sent` carries the attachment id, and the
+ * client asks for a URL over the normal authorized HTTP path.
+ * -------------------------------------------------------------------------- */
+
+const messageAttachmentRef = {
+  attachmentId: z.string(),
+  channelId: z.string(),
+  /** Null while the upload is still being attached to a draft message. */
+  messageId: z.string().nullable(),
+  filename: z.string(),
+};
+
+/**
+ * An upload URL was issued.
+ *
+ * Recorded for the same reason Work's is: a presigned PUT is a capability to
+ * place bytes in this org's bucket, valid for minutes and usable by whoever
+ * holds it. Auditing only successful uploads would leave the GRANT of that
+ * capability invisible, and a run of presigns with no matching verdict is
+ * either a broken client or someone probing the endpoint.
+ */
+export const messageAttachmentPresigned = defineEvent(
+  'message_attachment.presigned',
+  z
+    .object({
+      ...messageAttachmentRef,
+      contentType: z.string(),
+      declaredBytes: z.number().int().positive(),
+    })
+    .strict(),
+);
+
+/** Passed magic-byte verification and the virus scan. */
+export const messageAttachmentUploaded = defineEvent(
+  'message_attachment.uploaded',
+  z
+    .object({
+      ...messageAttachmentRef,
+      contentType: z.string(),
+      sizeBytes: z.number().int().nonnegative(),
+    })
+    .strict(),
+);
+
+/**
+ * Refused — infected, mistyped, or unscannable.
+ *
+ * All three, distinguished by `status`, because they are one thing to a user
+ * ("that file was not accepted") and three very different things to whoever
+ * reads the audit log. A run of `rejected` with a scan-failure reason is what a
+ * broken clamd looks like before anyone notices.
+ */
+export const messageAttachmentRejected = defineEvent(
+  'message_attachment.rejected',
+  z
+    .object({
+      ...messageAttachmentRef,
+      status: z.enum(['infected', 'rejected']),
+      reason: z.string(),
+    })
+    .strict(),
+);
+
+/**
+ * A download URL was issued.
+ *
+ * The event records the issuing of a capability, not its use: the fetch goes
+ * browser-to-storage and never touches the API, so a URL that was minted and
+ * never followed looks identical here.
+ */
+export const messageAttachmentDownloaded = defineEvent(
+  'message_attachment.downloaded',
+  z.object(messageAttachmentRef).strict(),
+);
+
+export const messageAttachmentDeleted = defineEvent(
+  'message_attachment.deleted',
+  z.object(messageAttachmentRef).strict(),
+);
+
+/* -------------------------------------------------------------------------- *
+ * Link previews (Wave 3, ai/phase-5-chat.md §7.6)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * A message's link previews finished being fetched.
+ *
+ * Its own event rather than a second `message.edited`, and the distinction
+ * matters to two consumers. `message.edited` means A PERSON changed what they
+ * wrote — it moves `editedAt`, it shows an "edited" marker, and a notification
+ * consumer may reasonably re-notify on it. An unfurl is none of those things:
+ * nobody edited anything, the text is identical, and re-notifying a channel
+ * because a preview card loaded would be absurd.
+ *
+ * Carries no preview CONTENT. The metadata came from a third-party server, it
+ * is unbounded, and an outbox row is replayed into an audit log that keeps
+ * whatever is put in it — so this says only "previews changed for this
+ * message", and the client refetches them through the normal authorized read.
+ * The same reasoning that keeps the filter tree out of `view.created`.
+ */
+export const messageUnfurled = defineEvent(
+  'message.unfurled',
+  z
+    .object({
+      messageId: z.string(),
+      channelId: z.string(),
+      /** How many previews resolved. Zero is a real outcome, not a failure. */
+      previewCount: z.number().int().nonnegative(),
+    })
+    .strict(),
+);
+
+/* -------------------------------------------------------------------------- *
+ * Retention, legal hold, and guests (Wave 4, ai/phase-5-chat.md §3.7, §3.8)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * A channel's retention window changed.
+ *
+ * Carries both sides because the interesting audit question is the DIRECTION:
+ * shortening a window is a decision to destroy data that would otherwise have
+ * been kept, and it takes effect on the next sweep with no further approval.
+ * An event recording only the new value cannot distinguish that from someone
+ * lengthening it.
+ *
+ * Null on either side means "keep forever" — a real value, and the default.
+ */
+export const channelRetentionChanged = defineEvent(
+  'channel.retention_changed',
+  z
+    .object({
+      channelId: z.string(),
+      before: z.number().int().nullable(),
+      after: z.number().int().nullable(),
+    })
+    .strict(),
+);
+
+/**
+ * A legal hold was placed or lifted.
+ *
+ * `scope` distinguishes a whole-channel hold from a single message, because
+ * they are answers to different questions — "preserve this conversation" versus
+ * "preserve this statement" — and an access review needs to tell them apart.
+ *
+ * LIFTING a hold is the entry that matters most here. Placing one is cautious;
+ * removing one makes messages eligible for deletion on the very next sweep, and
+ * "who un-held this, and when" is the question asked after data that should
+ * have been preserved is gone.
+ */
+export const legalHoldChanged = defineEvent(
+  'legal_hold.changed',
+  z
+    .object({
+      channelId: z.string(),
+      /** Null for a channel-wide hold. */
+      messageId: z.string().nullable(),
+      scope: z.enum(['channel', 'message']),
+      held: z.boolean(),
+    })
+    .strict(),
+);
+
+/**
+ * A compliance export was produced.
+ *
+ * The export itself is never in the payload — it is the entire contents of a
+ * channel, and an outbox row is replayed into an audit log that keeps whatever
+ * is put in it. What is recorded is that somebody took a copy, of what, and how
+ * much: exporting a private channel is one of the most sensitive operations in
+ * the product, and it is invisible unless this event exists.
+ */
+export const complianceExported = defineEvent(
+  'compliance.exported',
+  z
+    .object({
+      channelId: z.string(),
+      messageCount: z.number().int().nonnegative(),
+      includesDeleted: z.boolean(),
+    })
+    .strict(),
+);
+
+/** A guest was granted access to a channel, or had it revoked. */
+export const channelGuestChanged = defineEvent(
+  'channel.guest_changed',
+  z
+    .object({
+      channelId: z.string(),
+      userId: z.string(),
+      granted: z.boolean(),
+      /** ISO timestamp when the access lapses, or null for no expiry. */
+      expiresAt: z.string().nullable(),
+    })
+    .strict(),
+);
+
+/**
+ * A message's attachments changed — one arrived, or one was removed.
+ *
+ * ## Why this exists when `message_attachment.uploaded` already does
+ *
+ * `message_attachment.*` is banned from the realtime room table, and the ban is
+ * right: Phase 4 §4 and §3.10 exclude attachment events because a presigned
+ * download URL is a bearer credential and a room's audience is everyone
+ * subscribed. `event-rooms.ts` enforces it at boot on the word "attachment"
+ * anywhere in the resource segment.
+ *
+ * But the ban left a real hole. Nothing told the ROOM that a file had appeared,
+ * so the person who uploaded it saw their own attachment (their client
+ * invalidates locally) and nobody else did — a file shared into a channel was
+ * invisible to the channel until someone reloaded.
+ *
+ * So this is the signal, shaped to be safe to broadcast: it carries a channel
+ * and a message and NOTHING ELSE. No filename, no id, no size, no URL. A client
+ * that receives it refetches the attachment list through the normal authorized
+ * HTTP path, which is exactly what §3.10 prescribes — "the client re-requests a
+ * presigned URL through the normal authorized HTTP path".
+ *
+ * The same shape as `message.unfurled`, for the same reason: the interesting
+ * fact is "something about this message changed", and the content of the change
+ * is a read the recipient is authorized for, not a payload to push.
+ */
+export const messageAttachmentsChanged = defineEvent(
+  'message.attachments_changed',
+  z.object({ messageId: z.string(), channelId: z.string() }).strict(),
+);

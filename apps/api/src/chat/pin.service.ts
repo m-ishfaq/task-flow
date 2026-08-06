@@ -126,4 +126,3 @@ export async function listPinnedMessages(
       .orderBy(desc(schema.pinnedMessages.pinnedAt));
   });
 }
-

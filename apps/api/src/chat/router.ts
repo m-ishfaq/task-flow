@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { ChannelIdSchema, MessageIdSchema, UserIdSchema } from '@taskflow/contracts';
+import {
+  AttachmentIdSchema,
+  ChannelIdSchema,
+  MessageIdSchema,
+  UserIdSchema,
+} from '@taskflow/contracts';
 import { route, router } from '../trpc/builder.js';
 import { subjectOf } from '../trpc/context.js';
 import { RichTextDocument } from '../work/richtext.js';
@@ -9,6 +14,10 @@ import * as messages from './message.service.js';
 import * as reactions from './reaction.service.js';
 import * as pins from './pin.service.js';
 import * as readCursors from './read-cursor.service.js';
+import * as attachments from './attachment.service.js';
+import * as unfurls from './unfurl.service.js';
+import * as compliance from './compliance.service.js';
+import type { VerifyDeps } from '../attachments/verify.js';
 
 /**
  * Chat routes (PLAN.md §3.2, §13 phase 5).
@@ -72,7 +81,18 @@ const MessageOutput = z
   )
   .readonly();
 
-export function createChatRouter() {
+/**
+ * What Chat cannot construct for itself.
+ *
+ * Only file sharing needs anything: object storage and the virus scanner are
+ * external services with configuration and a lifecycle. They are the SAME
+ * dependencies Work uses — §3.10 is explicit that chat file sharing is the
+ * existing pipeline pointed at a channel, not a second one — so a test that
+ * supplies a scanner which always answers 'infected' covers both surfaces.
+ */
+export type ChatRouterDeps = VerifyDeps;
+
+export function createChatRouter(deps: ChatRouterDeps) {
   const actorOf = (ctx: {
     principal: Parameters<typeof subjectOf>[0];
     requestId: ChatActor['requestId'];
@@ -124,6 +144,8 @@ export function createChatRouter() {
               moderate: z.boolean(),
               post: z.boolean(),
             }),
+            retentionDays: z.number().int().nullable(),
+            retentionHold: z.boolean(),
           }),
         )
         .query(({ input, ctx }) => channels.getChannel(actorOf(ctx), input)),
@@ -155,11 +177,7 @@ export function createChatRouter() {
        * response says whether a conversation was created or reopened.
        */
       openDirect: route({ permission: 'channel:read' })
-        .input(
-          z
-            .object({ userIds: z.array(UserIdSchema).min(1).max(20).readonly() })
-            .strict(),
-        )
+        .input(z.object({ userIds: z.array(UserIdSchema).min(1).max(20).readonly() }).strict())
         .output(z.object({ channelId: z.string(), created: z.boolean() }))
         .mutation(({ input, ctx }) => channels.openDirectMessage(actorOf(ctx), input)),
 
@@ -215,7 +233,9 @@ export function createChatRouter() {
 
       /** Unread counts for the sidebar badge, across the named channels. */
       unreadCounts: route({ permission: 'channel:read' })
-        .input(z.object({ channelIds: z.array(ChannelIdSchema).min(1).max(200).readonly() }).strict())
+        .input(
+          z.object({ channelIds: z.array(ChannelIdSchema).min(1).max(200).readonly() }).strict(),
+        )
         .output(
           z
             .array(
@@ -317,9 +337,7 @@ export function createChatRouter() {
         )
         .output(
           z
-            .array(
-              z.object({ messageId: z.string(), userId: z.string(), emoji: z.string() }),
-            )
+            .array(z.object({ messageId: z.string(), userId: z.string(), emoji: z.string() }))
             .readonly(),
         )
         .query(({ input, ctx }) => reactions.listReactions(actorOf(ctx), input)),
@@ -350,6 +368,237 @@ export function createChatRouter() {
             .readonly(),
         )
         .query(({ input, ctx }) => pins.listPinnedMessages(actorOf(ctx), input)),
+    }),
+
+    /**
+     * File sharing (Wave 3, §3.10).
+     *
+     * Three calls, in order: presign against an EXISTING message, upload
+     * straight to storage, confirm. The message comes first because until it
+     * exists there is no channel to authorize against — see the service.
+     *
+     * `download` is a mutation rather than a query despite reading nothing,
+     * and that is deliberate: it MINTS a capability and writes an audit event.
+     * A query would be cached by the client, and a cached bearer URL is one
+     * that outlives the check that produced it.
+     */
+    attachments: router({
+      presign: route({ permission: 'attachment:upload' })
+        .input(
+          z
+            .object({
+              messageId: MessageIdSchema,
+              filename: z.string().trim().min(1).max(255),
+              contentType: z.string().trim().min(1).max(255),
+              sizeBytes: z.number().int().positive(),
+            })
+            .strict(),
+        )
+        .output(
+          z.object({
+            attachmentId: z.string(),
+            url: z.string(),
+            headers: z.record(z.string()),
+            expiresAt: z.date(),
+          }),
+        )
+        .mutation(({ input, ctx }) => attachments.presignUpload(actorOf(ctx), deps, input)),
+
+      confirm: route({ permission: 'attachment:upload' })
+        .input(z.object({ attachmentId: AttachmentIdSchema }).strict())
+        .output(
+          z.object({
+            status: z.enum(['clean', 'infected', 'rejected']),
+            reason: z.string().optional(),
+          }),
+        )
+        .mutation(({ input, ctx }) => attachments.confirmUpload(actorOf(ctx), deps, input)),
+
+      download: route({ permission: 'attachment:download' })
+        .input(z.object({ attachmentId: AttachmentIdSchema }).strict())
+        .output(
+          z.object({
+            url: z.string(),
+            filename: z.string(),
+            expiresInSeconds: z.number().int().positive(),
+          }),
+        )
+        .mutation(({ input, ctx }) => attachments.presignDownload(actorOf(ctx), deps, input)),
+
+      /** Every live attachment on a page of messages. */
+      list: route({ permission: 'message:read' })
+        .input(
+          z
+            .object({
+              channelId: ChannelIdSchema,
+              messageIds: z.array(MessageIdSchema).max(100).readonly(),
+            })
+            .strict(),
+        )
+        .output(
+          z
+            .array(
+              z.object({
+                attachmentId: z.string(),
+                messageId: z.string(),
+                filename: z.string(),
+                contentType: z.string(),
+                sizeBytes: z.number().int().nullable(),
+                status: z.string(),
+                uploadedBy: z.string().nullable(),
+                createdAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => attachments.listForMessages(actorOf(ctx), input)),
+
+      delete: route({ permission: 'message:update' })
+        .input(z.object({ attachmentId: AttachmentIdSchema }).strict())
+        .output(z.object({ deleted: z.literal(true) }))
+        .mutation(({ input, ctx }) => attachments.deleteAttachment(actorOf(ctx), deps, input)),
+    }),
+
+    /**
+     * Link previews (Wave 3, §7.6).
+     *
+     * Read-only. There is no route that TRIGGERS a fetch: previews are produced
+     * by `sendMessage` out of band, and an endpoint that let a caller name an
+     * arbitrary URL to fetch would be the SSRF hole `unfurl.ts` exists to
+     * close, exposed directly.
+     */
+    unfurls: router({
+      list: route({ permission: 'message:read' })
+        .input(
+          z
+            .object({
+              channelId: ChannelIdSchema,
+              messageIds: z.array(MessageIdSchema).max(100).readonly(),
+            })
+            .strict(),
+        )
+        .output(
+          z
+            .array(
+              z.object({
+                messageId: z.string(),
+                url: z.string(),
+                status: z.string(),
+                title: z.string().nullable(),
+                description: z.string().nullable(),
+                imageUrl: z.string().nullable(),
+                siteName: z.string().nullable(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => unfurls.previewsFor(actorOf(ctx), input)),
+    }),
+
+    /**
+     * Retention, legal hold, guests and export (Wave 4, §3.7, §3.8).
+     *
+     * Everything except `export` is `channel:manage` — the same permission that
+     * renames a channel, deliberately: a person trusted to decide who is in a
+     * channel is the person trusted to decide how long it is kept.
+     *
+     * `export` is `audit:export`, because taking a copy of an entire
+     * conversation is a compliance capability rather than a
+     * channel-administration one, and the people who run exports are not the
+     * people who run channels.
+     */
+    compliance: router({
+      setRetention: route({ permission: 'channel:manage' })
+        .input(
+          z
+            .object({
+              channelId: ChannelIdSchema,
+              /* Null means keep forever, and is the default. Never a fallback
+                 value — see migration 0021 on why a default retention window
+                 living in code is the most destructive thing here. */
+              retentionDays: z.number().int().min(1).max(3650).nullable(),
+            })
+            .strict(),
+        )
+        .output(z.object({ retentionDays: z.number().int().nullable() }))
+        .mutation(({ input, ctx }) => compliance.setRetention(actorOf(ctx), input)),
+
+      holdChannel: route({ permission: 'channel:manage' })
+        .input(z.object({ channelId: ChannelIdSchema, held: z.boolean() }).strict())
+        .output(z.object({ held: z.boolean() }))
+        .mutation(({ input, ctx }) => compliance.setChannelHold(actorOf(ctx), input)),
+
+      holdMessage: route({ permission: 'channel:manage' })
+        .input(z.object({ messageId: MessageIdSchema, held: z.boolean() }).strict())
+        /* `applied` is false when the message was already gone — a hold placed
+           just after a retention sweep removed it. Reported rather than
+           swallowed: telling someone evidence is preserved when it is not is
+           the worst thing this call could get wrong. */
+        .output(z.object({ held: z.boolean(), applied: z.boolean() }))
+        .mutation(({ input, ctx }) => compliance.setMessageHold(actorOf(ctx), input)),
+
+      /** Invite or revoke a guest on ONE private channel (§3.8, §7.4). */
+      setGuest: route({ permission: 'channel:manage' })
+        .input(
+          z
+            .object({
+              channelId: ChannelIdSchema,
+              userId: UserIdSchema,
+              granted: z.boolean(),
+              expiresAt: z
+                .string()
+                .datetime()
+                .transform((value) => new Date(value))
+                .nullable()
+                .default(null),
+            })
+            .strict(),
+        )
+        .output(z.object({ granted: z.boolean() }))
+        .mutation(({ input, ctx }) => compliance.setGuestAccess(actorOf(ctx), input)),
+
+      /**
+       * The full contents of a channel.
+       *
+       * A mutation, not a query, despite reading only: it emits an audit event
+       * and returns data nobody should be able to re-fetch from a cache. A
+       * query would be cached by the client, which would mean a second copy of
+       * a private conversation living somewhere the audit trail says nothing
+       * about.
+       */
+      export: route({ permission: 'audit:export' })
+        .input(
+          z
+            .object({
+              channelId: ChannelIdSchema,
+              /* Deleted messages are included by DEFAULT. The question a legal
+                 request asks is what was said, including what somebody later
+                 removed — see the service. */
+              includeDeleted: z.boolean().default(true),
+            })
+            .strict(),
+        )
+        .output(
+          z.object({
+            channelId: z.string(),
+            channelName: z.string().nullable(),
+            exportedAt: z.date(),
+            messages: z
+              .array(
+                z.object({
+                  messageId: z.string(),
+                  authorId: z.string().nullable(),
+                  bodyText: z.string(),
+                  createdAt: z.date(),
+                  editedAt: z.date().nullable(),
+                  deletedAt: z.date().nullable(),
+                  heldAt: z.date().nullable(),
+                }),
+              )
+              .readonly(),
+          }),
+        )
+        .mutation(({ input, ctx }) => compliance.exportChannel(actorOf(ctx), input)),
     }),
   });
 }

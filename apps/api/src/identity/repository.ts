@@ -456,7 +456,10 @@ export async function updateDisplayName(
   const value = trimmed === '' ? null : trimmed;
 
   await withGlobalScope(async (tx) =>
-    tx.update(schema.users).set({ displayName: value, updatedAt: new Date() }).where(eq(schema.users.id, userId)),
+    tx
+      .update(schema.users)
+      .set({ displayName: value, updatedAt: new Date() })
+      .where(eq(schema.users.id, userId)),
   );
 
   return value;

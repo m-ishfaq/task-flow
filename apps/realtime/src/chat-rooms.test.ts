@@ -61,15 +61,13 @@ const ALL_USER_IDS = [ALICE, BOB, CAROL, ADMIN, STRANGER];
 
 let admin: AdminConnection;
 
-async function addChannel(
-  channelId: ChannelId,
-  type: string,
-  name: string | null,
-): Promise<void> {
-  await admin.query(
-    `INSERT INTO chat.channels (id, org_id, type, name) VALUES ($1, $2, $3, $4)`,
-    [channelId, ORG, type, name],
-  );
+async function addChannel(channelId: ChannelId, type: string, name: string | null): Promise<void> {
+  await admin.query(`INSERT INTO chat.channels (id, org_id, type, name) VALUES ($1, $2, $3, $4)`, [
+    channelId,
+    ORG,
+    type,
+    name,
+  ]);
 }
 
 /**

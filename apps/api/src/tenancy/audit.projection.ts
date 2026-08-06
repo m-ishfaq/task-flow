@@ -131,6 +131,35 @@ const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>> = {
   'message.sent': { type: 'message', key: 'messageId' },
   'message.edited': { type: 'message', key: 'messageId' },
   'message.deleted': { type: 'message', key: 'messageId' },
+
+  /* Wave 3 — file sharing and link previews.
+
+     The attachment events resolve to the ATTACHMENT, not the message: "who
+     downloaded which file" is the question an incident asks, and attributing it
+     to the message would collapse every file in a thread into one resource id.
+     `message.unfurled` resolves to the message, because that is the thing that
+     changed. */
+  'message_attachment.presigned': { type: 'attachment', key: 'attachmentId' },
+  'message_attachment.uploaded': { type: 'attachment', key: 'attachmentId' },
+  'message_attachment.rejected': { type: 'attachment', key: 'attachmentId' },
+  'message_attachment.downloaded': { type: 'attachment', key: 'attachmentId' },
+  'message_attachment.deleted': { type: 'attachment', key: 'attachmentId' },
+  'message.unfurled': { type: 'message', key: 'messageId' },
+  'message.attachments_changed': { type: 'message', key: 'messageId' },
+
+  /* Wave 4 — retention, legal hold, guests, export.
+
+     All resolve to the CHANNEL rather than to the message or the person, and
+     for the reason the membership events above give: these are facts about a
+     space and its governance. "What was the retention history of this channel,
+     and who held or exported it" is one query against one resource id, which is
+     exactly what a compliance review needs. `legal_hold.changed` resolves to
+     the channel even when it names a single message, so a per-message hold and
+     a channel-wide one appear in the same history. */
+  'channel.retention_changed': { type: 'channel', key: 'channelId' },
+  'legal_hold.changed': { type: 'channel', key: 'channelId' },
+  'channel.guest_changed': { type: 'channel', key: 'channelId' },
+  'compliance.exported': { type: 'channel', key: 'channelId' },
   'message.reaction_added': { type: 'message', key: 'messageId' },
   'message.reaction_removed': { type: 'message', key: 'messageId' },
   'message.pinned': { type: 'message', key: 'messageId' },

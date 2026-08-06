@@ -68,13 +68,15 @@ export function createAppRouter(deps: AppRouterDeps) {
     /**
      * Chat — channels, direct messages, messages (Phase 5).
      *
-     * Dependency-free for the same reason as tenancy: the tenant-scoped
-     * database and the policy engine are module-level and stateless, and the
-     * rich-text validator is a pure schema. File sharing arrives in Wave 3 and
-     * reuses Work's attachment pipeline rather than growing a second one, so
-     * even that will not add a dependency here.
+     * Takes Work's attachment dependencies — the SAME storage provider and
+     * scanner, not a second pair. §3.10 is explicit that chat file sharing is
+     * the existing pipeline pointed at a channel, and sharing the object here
+     * is what makes that literally true rather than aspirational: a test that
+     * swaps in a scanner which always answers 'infected' covers both surfaces
+     * at once, and there is no configuration under which one is scanned and the
+     * other is not.
      */
-    chat: createChatRouter(),
+    chat: createChatRouter(deps.work.attachments),
   });
 }
 

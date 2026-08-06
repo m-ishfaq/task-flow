@@ -121,7 +121,10 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
    * reads `socket.request` and writes `socket.data`, both of which are identical
    * across namespaces.
    * -------------------------------------------------------------------- */
-  const authenticate = (socket: GatewaySocket | ChatSocket, next: (error?: Error) => void): void => {
+  const authenticate = (
+    socket: GatewaySocket | ChatSocket,
+    next: (error?: Error) => void,
+  ): void => {
     void (async () => {
       const address = clientAddress(socket.request, env.REALTIME_TRUST_PROXY);
 

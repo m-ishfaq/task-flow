@@ -1,5 +1,5 @@
 import { queryOptions, type QueryClient } from '@tanstack/react-query';
-import type { ChannelId, MessageId, UserId } from '@taskflow/contracts';
+import type { AttachmentId, ChannelId, MessageId, UserId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire, type Wire } from '../../lib/wire.js';
@@ -121,8 +121,7 @@ export function pinsQuery(orgId: string, channelId: ChannelId) {
 export function unreadCountsQuery(orgId: string, channelIds: readonly string[]) {
   return queryOptions({
     queryKey: [...keys.unreadCounts(orgId), channelIds] as const,
-    queryFn: async () =>
-      wire(await api.chat.channels.unreadCounts.query({ channelIds })),
+    queryFn: async () => wire(await api.chat.channels.unreadCounts.query({ channelIds })),
     enabled: channelIds.length > 0,
     refetchInterval: 15_000,
   });
@@ -186,11 +185,7 @@ export function openDirectMessage(userIds: readonly UserId[]) {
  * under an expectation of privacy; both are real decisions, and neither is a
  * field on an edit form. The service refuses it too.
  */
-export function updateChannel(input: {
-  channelId: ChannelId;
-  name: string;
-  topic: string | null;
-}) {
+export function updateChannel(input: { channelId: ChannelId; name: string; topic: string | null }) {
   return api.chat.channels.update.mutate(input);
 }
 
@@ -223,7 +218,11 @@ export function deleteMessage(messageId: MessageId) {
   return api.chat.messages.delete.mutate({ messageId });
 }
 
-export function toggleReaction(input: { channelId: ChannelId; messageId: MessageId; emoji: string }) {
+export function toggleReaction(input: {
+  channelId: ChannelId;
+  messageId: MessageId;
+  emoji: string;
+}) {
   return api.chat.messages.react.mutate(input);
 }
 
@@ -255,11 +254,7 @@ export function invalidateChannels(client: QueryClient, orgId: string): void {
  * channel changes both (the roster here, the "joined" flag there), so a
  * membership change calls both rather than this one standing in for the pair.
  */
-export function invalidateChannel(
-  client: QueryClient,
-  orgId: string,
-  channelId: string,
-): void {
+export function invalidateChannel(client: QueryClient, orgId: string, channelId: string): void {
   void client.invalidateQueries({ queryKey: keys.channel(orgId, channelId) });
 }
 
@@ -277,4 +272,146 @@ export function invalidatePins(client: QueryClient, orgId: string, channelId: st
 
 export function invalidateUnreadCounts(client: QueryClient, orgId: string): void {
   void client.invalidateQueries({ queryKey: keys.unreadCounts(orgId) });
+}
+
+/* -------------------------------------------------------------------------- *
+ * Wave 3 — attachments and link previews
+ * -------------------------------------------------------------------------- */
+
+export type MessageAttachment = Wire<
+  Awaited<ReturnType<typeof api.chat.attachments.list.query>>
+>[number];
+export type MessagePreview = Wire<Awaited<ReturnType<typeof api.chat.unfurls.list.query>>>[number];
+
+/**
+ * Attachments for the page of messages currently rendered.
+ *
+ * Bounded by `messageIds` the same way reactions are: files on messages that
+ * have scrolled out of the loaded page are not fetched. Disabled when the page
+ * is empty so a channel with no messages does not round-trip for nothing.
+ */
+export function messageAttachmentsQuery(
+  orgId: string,
+  channelId: ChannelId,
+  messageIds: readonly string[],
+) {
+  return queryOptions({
+    queryKey: [...keys.messages(orgId, channelId), 'attachments', messageIds] as const,
+    queryFn: async () =>
+      wire(
+        await api.chat.attachments.list.query({
+          channelId,
+          messageIds,
+        }),
+      ),
+    enabled: messageIds.length > 0,
+  });
+}
+
+export function messagePreviewsQuery(
+  orgId: string,
+  channelId: ChannelId,
+  messageIds: readonly string[],
+) {
+  return queryOptions({
+    queryKey: [...keys.messages(orgId, channelId), 'unfurls', messageIds] as const,
+    queryFn: async () =>
+      wire(
+        await api.chat.unfurls.list.query({
+          channelId,
+          messageIds,
+        }),
+      ),
+    enabled: messageIds.length > 0,
+  });
+}
+
+/**
+ * The three-step upload: presign, PUT to storage, confirm.
+ *
+ * Identical in shape to Work's `attachment-section.tsx`, and identical for a
+ * reason — it is the same pipeline pointed at a channel (§3.10). Two properties
+ * are worth not losing while reading it:
+ *
+ *   * The PUT does not go through our API. It is a signed URL to object storage,
+ *     and `presigned.headers` are sent VERBATIM because they are the headers
+ *     named in the signature. Altering or omitting one makes storage reject the
+ *     upload, which is the control working.
+ *   * A file is not uploaded until `confirm` says so. The PUT only means bytes
+ *     reached storage; the verdict comes from reading them back, checking the
+ *     magic bytes, and scanning them.
+ */
+export async function uploadMessageFile(
+  messageId: MessageId,
+  file: File,
+  onProgress?: (stage: string) => void,
+): Promise<{ status: 'clean' | 'infected' | 'rejected'; reason?: string }> {
+  onProgress?.('Requesting an upload URL…');
+  const presigned = await api.chat.attachments.presign.mutate({
+    messageId,
+    filename: file.name,
+    contentType: file.type,
+    sizeBytes: file.size,
+  });
+
+  onProgress?.('Uploading…');
+  const response = await fetch(presigned.url, {
+    method: 'PUT',
+    headers: presigned.headers,
+    body: file,
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Storage refused the upload (${String(response.status)}). The file may not match the type or size that was signed.`,
+    );
+  }
+
+  onProgress?.('Scanning…');
+  return api.chat.attachments.confirm.mutate({ attachmentId: presigned.attachmentId });
+}
+
+/**
+ * A short-lived download URL, minted after a fresh authorization check.
+ *
+ * Navigated to rather than fetched: the URL is single-use and short-lived, and
+ * `Content-Disposition` carries the real filename — set by the server from the
+ * database, because the storage key is server-generated and contains nothing a
+ * client chose.
+ */
+export function downloadMessageFile(attachmentId: AttachmentId) {
+  return api.chat.attachments.download.mutate({ attachmentId });
+}
+
+export function deleteMessageFile(attachmentId: AttachmentId) {
+  return api.chat.attachments.delete.mutate({ attachmentId });
+}
+
+/* -------------------------------------------------------------------------- *
+ * Wave 4 — retention, legal hold, guests, export
+ * -------------------------------------------------------------------------- */
+
+export function setRetention(input: { channelId: ChannelId; retentionDays: number | null }) {
+  return api.chat.compliance.setRetention.mutate(input);
+}
+
+export function holdChannel(input: { channelId: ChannelId; held: boolean }) {
+  return api.chat.compliance.holdChannel.mutate(input);
+}
+
+export function holdMessage(input: { messageId: MessageId; held: boolean }) {
+  return api.chat.compliance.holdMessage.mutate(input);
+}
+
+export function setGuestAccess(input: {
+  channelId: ChannelId;
+  userId: UserId;
+  granted: boolean;
+  expiresAt: string | null;
+}) {
+  return api.chat.compliance.setGuest.mutate(input);
+}
+
+export function exportChannel(input: { channelId: ChannelId; includeDeleted: boolean }) {
+  return api.chat.compliance.export.mutate(input);
 }

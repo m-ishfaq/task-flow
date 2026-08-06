@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   index,
+  integer,
   jsonb,
   pgSchema,
   primaryKey,
@@ -80,8 +81,14 @@ export const channels = chat.table(
 
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
 
-    /** Archive, not delete (§7.1). Retention is a separate Wave 4 decision. */
+    /** Archive, not delete (§7.1). Retention is separate — see below. */
     archivedAt: timestamp('archived_at', { withTimezone: true }),
+
+    /** Delete messages older than this many days. NULL means keep forever —
+        never a default, see migration 0021. */
+    retentionDays: integer('retention_days'),
+    /** Blanket legal hold: exempts every message here, including later ones. */
+    retentionHold: boolean('retention_hold').notNull().default(false),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -129,6 +136,12 @@ export const messages = chat.table(
     deletedByAuthor: boolean('deleted_by_author'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+
+    /** Legal hold. Null means not held; a timestamp answers "since when", which
+        is the first question asked about one. Checked INSIDE the retention
+        delete's WHERE clause, never as a read before it — see migration 0021. */
+    heldAt: timestamp('held_at', { withTimezone: true }),
+    heldBy: uuid('held_by').references(() => users.id, { onDelete: 'set null' }),
   },
   (table) => [
     uniqueIndex('messages_org_channel_id_key').on(table.orgId, table.channelId, table.id),
@@ -205,4 +218,36 @@ export const readCursors = chat.table(
     lastReadAt: timestamp('last_read_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.channelId, table.userId] })],
+);
+
+/**
+ * Link previews (migration 0020).
+ *
+ * Every value here except the ids came from a THIRD-PARTY SERVER, fetched
+ * because someone pasted a link. Rendered as text, never as markup, and
+ * `imageUrl` is re-checked against the outbound-URL rules before a browser is
+ * asked to load it. The migration argues both at length.
+ */
+export const messageUnfurls = chat.table(
+  'message_unfurls',
+  {
+    orgId: uuid('org_id').notNull(),
+    channelId: uuid('channel_id').notNull(),
+    messageId: uuid('message_id').notNull(),
+
+    url: text('url').notNull(),
+    /** 'ok' | 'refused' | 'failed' — see the migration. */
+    status: text('status').notNull(),
+
+    title: text('title'),
+    description: text('description'),
+    imageUrl: text('image_url'),
+    siteName: text('site_name'),
+
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.messageId, table.url] }),
+    index('message_unfurls_channel_idx').on(table.orgId, table.channelId, table.messageId),
+  ],
 );

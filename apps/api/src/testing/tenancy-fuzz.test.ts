@@ -357,6 +357,28 @@ describe('the application router', () => {
       'chat.messages.send',
       'chat.messages.edit',
       'chat.messages.delete',
+
+      /* Wave 3. `attachments.download` is the one that matters most here, for
+         the same reason Work's does: a leak hands org A a signed URL to org B's
+         file, and the fetch that follows never touches this server, so nothing
+         downstream could catch it. */
+      'chat.attachments.presign',
+      'chat.attachments.confirm',
+      'chat.attachments.download',
+      'chat.attachments.list',
+      'chat.attachments.delete',
+      'chat.unfurls.list',
+
+      /* Wave 4. Two of these are worse than a read leak if they cross a tenant.
+         `setGuest` writes a relationship TUPLE — granting somebody access, in
+         another organization, through the table the policy engine consults on
+         every request. `export` returns the entire contents of a channel, which
+         is the single largest disclosure this API can produce in one call. */
+      'chat.compliance.setRetention',
+      'chat.compliance.holdChannel',
+      'chat.compliance.holdMessage',
+      'chat.compliance.setGuest',
+      'chat.compliance.export',
     ]) {
       expect(byPath.get(path), `${path} was not enrolled by the fuzz harness`).toBe('denied');
     }

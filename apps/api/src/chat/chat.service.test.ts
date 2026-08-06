@@ -26,9 +26,28 @@ import type { ChatActor } from './shared.js';
  * that decides every assertion below.
  */
 
-const ALICE = unsafeAsId<'UserId'>('0195ee00-0000-7000-8000-000000000001');
-const BOB = unsafeAsId<'UserId'>('0195ee00-0000-7000-8000-000000000002');
-const CAROL = unsafeAsId<'UserId'>('0195ee00-0000-7000-8000-000000000003');
+/**
+ * Fixture ids, in a range no other suite uses.
+ *
+ * ⚠ The prefix is the isolation mechanism, and getting it wrong fails somewhere
+ * else. Every suite here deletes its own users in `beforeAll`/`afterAll`, scoped
+ * by id — and turbo runs packages in parallel against one `taskflow_test`, so
+ * two suites sharing a prefix delete each other's rows mid-run. The symptom is a
+ * foreign-key violation (`memberships_user_id_fkey`) in the OTHER file, which
+ * reads as a bug in that file's code and is not.
+ *
+ * This file originally shared `0195ee00` with `work.service.test.ts` and took 22
+ * of its tests down with it — intermittently, because it depends on scheduling.
+ *
+ *   0195ee00  work.service.test.ts
+ *   0195ee01  wave2.service.test.ts
+ *   0195ee02  this file
+ *   0195ee03  retention.test.ts
+ *   0195ee04  guest.test.ts
+ */
+const ALICE = unsafeAsId<'UserId'>('0195ee02-0000-7000-8000-000000000001');
+const BOB = unsafeAsId<'UserId'>('0195ee02-0000-7000-8000-000000000002');
+const CAROL = unsafeAsId<'UserId'>('0195ee02-0000-7000-8000-000000000003');
 
 const USERS: readonly [UserId, string][] = [
   [ALICE, 'alice@chat.test'],
@@ -36,7 +55,7 @@ const USERS: readonly [UserId, string][] = [
   [CAROL, 'carol@chat.test'],
 ];
 
-const requestId = unsafeAsId<'RequestId'>('0195ee00-0000-7000-8000-0000000000ff');
+const requestId = unsafeAsId<'RequestId'>('0195ee02-0000-7000-8000-0000000000ff');
 
 let admin: AdminConnection;
 const created: OrgId[] = [];
@@ -275,7 +294,7 @@ describe('direct messages', () => {
        can write authorization rows about people who have never heard of the org
        is not something to leave available. */
     const { alice } = await scaffold('dm-stranger');
-    const outsider = unsafeAsId<'UserId'>('0195ee00-0000-7000-8000-0000000000aa');
+    const outsider = unsafeAsId<'UserId'>('0195ee02-0000-7000-8000-0000000000aa');
 
     expect(
       await rejectionCode(() => channels.openDirectMessage(alice, { userIds: [outsider] })),

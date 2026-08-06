@@ -1,4 +1,4 @@
-import { index, pgSchema, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boolean, index, pgSchema, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { orgs } from './tenancy.js';
 import { users } from './identity.js';
 
@@ -40,6 +40,16 @@ export const relationshipTuples = authz.table(
     objectId: uuid('object_id').notNull(),
 
     grantedBy: uuid('granted_by').references(() => users.id, { onDelete: 'set null' }),
+
+    /**
+     * Whether this grant is GUEST access (migration 0021).
+     *
+     * Changes nothing about how the engine reads the tuple — a guest's row and
+     * a member's are identical to `can()`, which is the point of the design.
+     * It exists so an access review can ask "who here is external", which the
+     * tuple could not otherwise answer.
+     */
+    isGuest: boolean('is_guest').notNull().default(false),
 
     /** Null means no expiry. Enforced in the loader's WHERE, not by a sweep. */
     expiresAt: timestamp('expires_at', { withTimezone: true }),

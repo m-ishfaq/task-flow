@@ -146,6 +146,25 @@ export async function addChannelMemberTuple(
     readonly userId: UserId;
     /** Null when nobody granted it — a DM's participants, a self-join. */
     readonly grantedBy: UserId | null;
+    /**
+     * Marks this membership as GUEST access (Wave 4, §3.8).
+     *
+     * Changes nothing about how `can()` reads the row — a guest's tuple and a
+     * member's are the same relation on the same object, which is the whole
+     * point of §3.8's design and the reason no `if (isGuest)` branch exists
+     * anywhere. It is here so an access review can answer "who in this channel
+     * is external", which the tuple could not otherwise be asked.
+     */
+    readonly isGuest?: boolean;
+    /**
+     * When the access lapses. Null means it does not.
+     *
+     * Enforced in `loadTuples`' WHERE clause rather than by a cleanup job, so a
+     * contractor's access stops working at the moment it expires instead of
+     * whenever a sweep next runs — the difference between an access window and
+     * an access suggestion.
+     */
+    readonly expiresAt?: Date | null;
   },
 ): Promise<void> {
   await tx.insert(schema.relationshipTuples).values({
@@ -161,7 +180,8 @@ export async function addChannelMemberTuple(
     objectType: CHANNEL_OBJECT_TYPE,
     objectId: input.channelId,
     grantedBy: input.grantedBy,
-    expiresAt: null,
+    isGuest: input.isGuest ?? false,
+    expiresAt: input.expiresAt ?? null,
   });
 }
 

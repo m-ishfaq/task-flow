@@ -2,14 +2,9 @@ import { and, eq, isNull, schema, withOrgScope, outboxWriter } from '@taskflow/d
 import { errors, type AttachmentId, type CardId, type StorageProvider } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
-import {
-  MAGIC_BYTE_PREFIX_LENGTH,
-  isAcceptedContentType,
-  scanBuffer,
-  verifyMagicBytes,
-  type ScannerConfig,
-} from '@taskflow/security';
-import { isGeneratedKey, newStorageKey, readAll, readPrefix } from '@taskflow/storage';
+import { isAcceptedContentType, type ScannerConfig } from '@taskflow/security';
+import { newStorageKey } from '@taskflow/storage';
+import { verifyUpload } from '../attachments/verify.js';
 import {
   attachmentDeleted,
   attachmentRejected,
@@ -210,49 +205,24 @@ export async function confirmUpload(
     return { ...attachment, boardId: card.boardId };
   });
 
-  /* Backstop on a value that came from our own database. RLS already scoped the
-     read, so this can only fire if a key reached a row from somewhere it should
-     not have — which is exactly the case worth catching before handing it to
-     the storage client. */
-  if (!isGeneratedKey(row.storageKey)) {
-    return settle(actor, deps, row, 'rejected', 'Storage key is not one this system generated.');
-  }
+  /* The verdict — key shape, existence, size, magic bytes, virus scan, and the
+     fail-closed handling of a scanner that could not answer — lives in
+     `attachments/verify.ts` and is shared with chat's message attachments.
+     One copy on purpose: the failure mode of two is that a fix lands on one of
+     them, and the unfixed copy keeps working perfectly, because a scanner that
+     wrongly says "clean" looks exactly like a scanner that is right. */
+  const verdict = await verifyUpload(deps, {
+    storageKey: row.storageKey,
+    contentType: row.contentType,
+  });
 
-  const metadata = await deps.storage.head(row.storageKey);
-  if (!metadata) {
-    return settle(actor, deps, row, 'rejected', 'No object was uploaded.');
-  }
-  if (metadata.size === 0) {
-    return settle(actor, deps, row, 'rejected', 'The uploaded object is empty.');
-  }
-  if (metadata.size > deps.maxBytes) {
-    return settle(actor, deps, row, 'rejected', 'The uploaded object is larger than allowed.');
-  }
-
-  /* Magic bytes. The presigned URL pinned Content-Type into the signature, so
-     storage refused a body sent with a different HEADER — but that only proves
-     the client said `image/png` twice, not that the bytes are a PNG. This is
-     the step that closes that gap (§8.4). */
-  const prefix = await readPrefix(deps.storage, row.storageKey, MAGIC_BYTE_PREFIX_LENGTH);
-  const sniff = verifyMagicBytes(row.contentType, prefix);
-  if (!sniff.ok) {
-    return settle(actor, deps, row, 'rejected', sniff.reason ?? 'Contents do not match the type.');
-  }
-
-  const bytes = await readAll(deps.storage, row.storageKey, deps.maxBytes);
-  const scan = await scanBuffer(bytes, deps.scanner);
-
-  if (scan.verdict === 'infected') {
-    return settle(actor, deps, row, 'infected', scan.detail ?? 'Malware detected.');
-  }
-  if (scan.verdict === 'error') {
-    /* FAIL CLOSED. "We could not check" is not "clean" — treating it as clean
-       turns a scanner outage into a window where unscanned files are
-       downloadable, and nothing anywhere goes red. */
-    return settle(actor, deps, row, 'rejected', `Scan failed: ${scan.detail ?? 'unknown error'}`);
-  }
-
-  return settle(actor, deps, { ...row, sizeBytes: metadata.size }, 'clean');
+  return settle(
+    actor,
+    deps,
+    verdict.sizeBytes === undefined ? row : { ...row, sizeBytes: verdict.sizeBytes },
+    verdict.status,
+    verdict.reason,
+  );
 }
 
 /**

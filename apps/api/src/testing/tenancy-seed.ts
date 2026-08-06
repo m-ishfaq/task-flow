@@ -354,6 +354,14 @@ function fuzzOrgFor(tenant: Tenant, other: Tenant): FuzzOrg {
       messageId: other.messageId,
       userIds: [other.userId],
 
+      /* The ARRAY forms, for Wave 3's `attachments.list` and `unfurls.list`.
+         Without them those routes are refused on SHAPE — a BAD_REQUEST, which
+         this harness counts as a refusal — and would pass without the tenant
+         boundary ever being consulted. That is a false negative in the one
+         direction that matters, and it is the same trap `assigneeIds` and
+         `labelIds` were added for on the Work side. */
+      messageIds: [other.messageId],
+
       text: 'fuzz',
       name: 'fuzz',
       color: '#4f46e5',

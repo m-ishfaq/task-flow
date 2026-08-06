@@ -3,6 +3,7 @@ import { errors, type ChannelId, type MessageId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
 import { messageDeleted, messageEdited, messageSent } from './events.js';
+import { unfurlMessage } from './unfurl.service.js';
 import { flattenToText, type RichTextNode } from '../work/richtext.js';
 import {
   enforceOnChannel,
@@ -110,10 +111,7 @@ export async function listMessages(
       .where(
         olderThan === null
           ? eq(schema.messages.channelId, input.channelId)
-          : and(
-              eq(schema.messages.channelId, input.channelId),
-              lt(schema.messages.id, olderThan),
-            ),
+          : and(eq(schema.messages.channelId, input.channelId), lt(schema.messages.id, olderThan)),
       )
       .orderBy(desc(schema.messages.id))
       .limit(limit);
@@ -122,9 +120,7 @@ export async function listMessages(
        body of a deleted message would make "delete" mean "hide in the UI",
        which is not what the person clicking it believes — and the row is still
        returned so a threaded reply has a parent to point at. */
-    return rows.map((row) =>
-      row.deletedAt === null ? row : { ...row, body: null, bodyText: '' },
-    );
+    return rows.map((row) => (row.deletedAt === null ? row : { ...row, body: null, bodyText: '' }));
   });
 }
 
@@ -155,9 +151,7 @@ export async function listThread(
       .orderBy(asc(schema.messages.id))
       .limit(MAX_PAGE_SIZE);
 
-    return rows.map((row) =>
-      row.deletedAt === null ? row : { ...row, body: null, bodyText: '' },
-    );
+    return rows.map((row) => (row.deletedAt === null ? row : { ...row, body: null, bodyText: '' }));
   });
 }
 
@@ -180,7 +174,12 @@ export async function sendMessage(
   const messageId = newId<'MessageId'>();
   const orgId = orgOf(actor);
 
-  await withOrgScope(orgId, async (tx) => {
+  /* Returned FROM the transaction rather than assigned into an outer variable:
+     TypeScript cannot see an assignment made inside an async callback, so the
+     outer binding narrows to `never` and every read of it is an error. Returning
+     also makes the ordering explicit — the unfurl runs only on the value a
+     COMMITTED transaction produced. */
+  const sent = await withOrgScope(orgId, async (tx) => {
     const channel = await loadChannel(tx, input.channelId);
     enforceOnChannel(actor, 'message:create', channel);
 
@@ -235,7 +234,30 @@ export async function sendMessage(
         envelopeOf(actor),
       ),
     ]);
+
+    return { bodyText };
   });
+
+  /* Link previews, AFTER the transaction commits and deliberately not awaited
+     (§7.6). The message is already written and already broadcast; fetching a
+     third-party URL is a network round trip to a host we do not control, and
+     making the send wait on it turns one slow site into a hanging send button.
+     The preview arrives as its own `message.unfurled` event a moment later.
+
+     Errors are swallowed rather than surfaced: this runs after the caller has
+     been told the message was sent, so there is nowhere for a failure to go but
+     an unhandled rejection — and `unfurlMessage` already records a `failed` row
+     for anything it could not fetch. */
+  void unfurlMessage(
+    {
+      orgId,
+      channelId: input.channelId,
+      messageId,
+      actorId: userOf(actor),
+      requestId: actor.requestId,
+    },
+    sent.bodyText,
+  ).catch(() => undefined);
 
   return { messageId };
 }

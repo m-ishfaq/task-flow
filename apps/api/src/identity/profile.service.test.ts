@@ -197,9 +197,7 @@ describe('setting your own name', () => {
     const alice = await registeredUser(ALICE);
 
     expect(
-      await codeOfRejection(
-        profile.updateProfile(deps(), alice, { displayName: 'x'.repeat(81) }),
-      ),
+      await codeOfRejection(profile.updateProfile(deps(), alice, { displayName: 'x'.repeat(81) })),
     ).toBe('VALIDATION_FAILED');
   });
 

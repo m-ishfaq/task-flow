@@ -109,6 +109,27 @@ export const EnvSchema = z
     API_PORT: z.coerce.number().int().positive().max(65_535).default(3000),
     API_HOST: z.string().default('0.0.0.0'),
     API_TRUST_PROXY: TrustProxy,
+
+    /**
+     * Whether THIS instance runs the chat retention sweep (Wave 4, §3.7).
+     *
+     * Off by default, and the default is the safe one. The sweep has no
+     * SKIP-LOCKED claim, so two instances ticking together both issue the same
+     * DELETE — the second removes nothing but still emits a batch of
+     * `message.deleted` events, putting duplicate deletions in the compliance
+     * record. Exactly one instance should enable it, until pg-boss provides a
+     * schedule with a real lock.
+     *
+     * Parsed from the string 'true' rather than with `z.coerce.boolean()`,
+     * which is a trap here: it treats EVERY non-empty string as true, so
+     * `RETENTION_SWEEP_ENABLED=false` would enable the sweep. For a flag that
+     * gates deleting user data, that failure runs the wrong way.
+     */
+    RETENTION_SWEEP_ENABLED: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
+
     WEB_ORIGIN: z.string().url(),
   })
   /* NOT `.strict()`, unlike every other schema in this codebase.
@@ -174,6 +195,7 @@ const KNOWN_VARIABLES = new Set([
   'API_PORT',
   'API_HOST',
   'API_TRUST_PROXY',
+  'RETENTION_SWEEP_ENABLED',
   'WEB_ORIGIN',
   /* Read by apps/web's vite.config.ts, never by a server — but they carry the
      `WEB_` prefix, so `assertNoMisspelledVariables` treats them as ours and

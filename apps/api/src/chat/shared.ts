@@ -65,6 +65,10 @@ export interface ChannelRow {
   readonly name: string | null;
   readonly topic: string | null;
   readonly archivedAt: Date | null;
+  /** Days after which messages are deleted. Null means keep forever. */
+  readonly retentionDays: number | null;
+  /** Blanket legal hold — exempts everything here from the retention sweep. */
+  readonly retentionHold: boolean;
 }
 
 /**
@@ -188,6 +192,8 @@ export async function loadChannel(tx: ChatTx, channelId: ChannelId): Promise<Cha
       name: schema.channels.name,
       topic: schema.channels.topic,
       archivedAt: schema.channels.archivedAt,
+      retentionDays: schema.channels.retentionDays,
+      retentionHold: schema.channels.retentionHold,
     })
     .from(schema.channels)
     .where(eq(schema.channels.id, channelId))
@@ -226,3 +232,39 @@ export async function assertMessageInChannel(
 /* Membership lives in `membership.ts` — it is a repository, and keeping the
    tuple writes out of a `*.service.ts` file is what guardrail 11's scope means
    by "repositories mutate by design". See that file's header. */
+
+/** The message fields the attachment path needs to authorize against. */
+export interface MessageRow {
+  readonly id: string;
+  readonly orgId: string;
+  readonly channelId: string;
+  readonly authorId: string | null;
+  readonly deletedAt: Date | null;
+}
+
+/**
+ * Loads a message, or throws NOT_FOUND.
+ *
+ * Returns the CHANNEL id because that is what every authorization decision
+ * about a message actually consults — a message has no independent
+ * authorization, it is readable exactly when its channel is. Callers that skip
+ * the channel and enforce on the message would be asking `can()` about a
+ * resource no tuple ever points at, which answers from the org role alone.
+ */
+export async function loadMessageRow(tx: ChatTx, messageId: MessageId): Promise<MessageRow> {
+  const rows = await tx
+    .select({
+      id: schema.messages.id,
+      orgId: schema.messages.orgId,
+      channelId: schema.messages.channelId,
+      authorId: schema.messages.authorId,
+      deletedAt: schema.messages.deletedAt,
+    })
+    .from(schema.messages)
+    .where(eq(schema.messages.id, messageId))
+    .limit(1);
+
+  const message = rows[0];
+  if (!message) throw errors.notFound();
+  return message;
+}

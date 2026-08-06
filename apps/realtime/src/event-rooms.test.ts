@@ -158,6 +158,16 @@ describe('roomChannelIdOf', () => {
     }
   });
 
+  it('routes the attachment-changed signal, which names no file', () => {
+    /* The event that exists BECAUSE the attachment ban left the room with no
+       signal at all — a file was visible only to whoever uploaded it. It is
+       safe to broadcast precisely because its payload is a channel and a
+       message and nothing else; the guard below proves the banned ones still
+       cannot join it. */
+    expect(chatBroadcastEventNames()).toContain('message.attachments_changed');
+    expect(roomChannelIdOf('message.attachments_changed', { channelId: CHANNEL })).toBe(CHANNEL);
+  });
+
   it('never maps an attachment.* event', () => {
     // §3.10: chat file sharing reuses Work's pipeline, and reuses its exclusion.
     // A presigned URL in a channel room is a bearer credential handed to

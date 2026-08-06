@@ -30,6 +30,7 @@ import {
   invalidatePins,
   invalidateReactions,
   invalidateUnreadCounts,
+  invalidateChannel,
   markChannelRead,
   messagesQuery,
   openDirectMessage,
@@ -39,16 +40,25 @@ import {
   sendMessage,
   threadQuery,
   toggleReaction,
+  removeChannelMember,
   unpinMessage,
   unreadCountsQuery,
+  updateChannel,
   entryCursorQuery,
+  messageAttachmentsQuery,
+  messagePreviewsQuery,
+  uploadMessageFile,
   type ChannelDetail,
+  type MessageAttachment,
+  type MessagePreview,
   type ChannelSummary,
   type Message,
   type PinnedMessageRow,
   type ReactionRow,
 } from './api.js';
 import { ChannelDetailsPanel } from './channel-details.js';
+import { MessageAttachments, MessagePreviews } from './message-extras.js';
+import { matchingCommands, messageTextFor, parseCommand } from './slash-commands.js';
 import { useChannelRoom } from './use-channel-room.js';
 import { groupMessages, type MessageGroup } from './grouping.js';
 
@@ -123,7 +133,9 @@ function ChannelListPanel({
     ),
     enabled: orgId !== '' && list.length > 0,
   });
-  const unreadByChannel = new Map((unread.data ?? []).map((row) => [row.channelId, row.unreadCount]));
+  const unreadByChannel = new Map(
+    (unread.data ?? []).map((row) => [row.channelId, row.unreadCount]),
+  );
 
   const rooms = list.filter((channel) => channel.type === 'public' || channel.type === 'private');
   const directs = list.filter((channel) => channel.type === 'dm' || channel.type === 'group_dm');
@@ -463,11 +475,22 @@ function ChannelPanel({
   const [draft, setDraft] = useState<DocumentNode>(EMPTY_DOCUMENT);
   const [pinsOpen, setPinsOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  /** What the upload is doing right now — presign, PUT, or scan. */
+  const [uploadStage, setUploadStage] = useState<string | null>(null);
   const [openThreadId, setOpenThreadId] = useState<string | null>(null);
 
   const allMessageIds = (messages.data ?? []).map((message) => message.messageId);
   const reactions = useQuery(reactionsQuery(orgId, channelId, allMessageIds));
   const reactionsByMessage = groupReactions(reactions.data ?? []);
+
+  /* Files and link previews for the loaded page, bounded by the same id list
+     reactions use. A message with neither costs nothing: both queries are
+     disabled while the page is empty and return [] for messages that have
+     no rows. */
+  const attachments = useQuery(messageAttachmentsQuery(orgId, channelId, allMessageIds));
+  const attachmentsByMessage = groupByMessage(attachments.data ?? []);
+  const previews = useQuery(messagePreviewsQuery(orgId, channelId, allMessageIds));
+  const previewsByMessage = groupByMessage(previews.data ?? []);
 
   const pins = useQuery(pinsQuery(orgId, channelId));
   const pinnedIds = new Set((pins.data ?? []).map((row) => row.messageId));
@@ -558,13 +581,116 @@ function ChannelPanel({
     },
   });
 
+  const canPost = channel.data?.capabilities.post ?? false;
+
+  /**
+   * Uploads a file against the LAST message this person sent.
+   *
+   * An attachment hangs off a message, and until a message exists there is no
+   * channel to authorize the upload against (`attachment.service.ts`). So the
+   * flow is: if the composer has text, send it and attach to that; otherwise
+   * post a short message naming the file and attach to it. Either way the
+   * ordering is message-then-file, which is what makes the authorization
+   * answerable rather than a UX preference.
+   */
+  const attach = useMutation({
+    mutationFn: async (file: File) => {
+      const carrier = isEmptyDocument(draft)
+        ? await sendMessage({ channelId, body: textDocument(`Shared **${file.name}**`) })
+        : await sendMessage({ channelId, body: draft });
+
+      setDraft(EMPTY_DOCUMENT);
+      stopTyping(channelId);
+
+      return uploadMessageFile(carrier.messageId as MessageId, file, setUploadStage);
+    },
+    onSuccess: (result) => {
+      if (result.status === 'clean') {
+        toast.show('File uploaded');
+      } else {
+        /* `infected` and `rejected` are NOT errors — the pipeline worked and
+           refused the file. Reporting them as failures would suggest retrying,
+           which cannot help. */
+        toast.failure(
+          result.status === 'infected'
+            ? 'That file was rejected: malware detected'
+            : `That file was rejected: ${result.reason ?? 'it did not pass verification'}`,
+          null,
+        );
+      }
+    },
+    onError: (error) => {
+      toast.failure('The file was not uploaded', error);
+    },
+    onSettled: () => {
+      setUploadStage(null);
+      invalidateMessages(queryClient, orgId, channelId);
+    },
+  });
+
   const submit = (): void => {
     if (isEmptyDocument(draft)) return;
+
+    /* Slash commands are interpreted HERE, in the client, and each one resolves
+       to an ordinary tRPC call that enforces its own permission (see
+       `slash-commands.ts` on why there is no `commands.run` endpoint). A
+       message that merely starts with a slash — "/etc/passwd is broken" — is
+       not a command and is sent unchanged. */
+    const parsed = parseCommand(flattenDocument(draft));
+
+    if (parsed.kind === 'unknown') {
+      toast.failure(`There is no /${parsed.name} command`, null);
+      return;
+    }
+
+    if (parsed.kind === 'command') {
+      const replacement = messageTextFor(parsed);
+
+      if (replacement !== null) {
+        setDraft(EMPTY_DOCUMENT);
+        stopTyping(channelId);
+        send.mutate(textDocument(replacement));
+        return;
+      }
+
+      setDraft(EMPTY_DOCUMENT);
+      stopTyping(channelId);
+      runCommand.mutate(parsed);
+      return;
+    }
+
     const body = draft;
     setDraft(EMPTY_DOCUMENT);
     stopTyping(channelId);
     send.mutate(body);
   };
+
+  /** The commands that ACT rather than say something. */
+  const runCommand = useMutation({
+    mutationFn: async (parsed: ReturnType<typeof parseCommand>) => {
+      if (parsed.kind !== 'command') return;
+
+      if (parsed.command.name === 'topic') {
+        await updateChannel({
+          channelId,
+          name: channel.data?.name ?? '',
+          topic: parsed.argument === '' ? null : parsed.argument,
+        });
+        return;
+      }
+
+      if (parsed.command.name === 'leave' && viewerId !== null) {
+        await removeChannelMember(channelId, viewerId as UserId);
+      }
+    },
+    onSuccess: () => {
+      invalidateChannel(queryClient, orgId, channelId);
+      invalidateChannels(queryClient, orgId);
+    },
+    onError: (error) => {
+      toast.failure('That command did not run', error);
+    },
+  });
 
   /* `messages.list` orders newest-first (`message.service.ts`'s own
      `before`-cursor pagination needs the most recent page, not the oldest),
@@ -715,7 +841,9 @@ function ChannelPanel({
         {pinsOpen && (
           <PinnedPanel
             pins={pins.data ?? []}
-            messagesById={new Map((messages.data ?? []).map((message) => [message.messageId, message]))}
+            messagesById={
+              new Map((messages.data ?? []).map((message) => [message.messageId, message]))
+            }
             personOf={personOf}
             onUnpin={(messageId) => {
               togglePin.mutate({ messageId: messageId as MessageId, pinned: true });
@@ -751,35 +879,37 @@ function ChannelPanel({
                         <span className="h-px flex-1 bg-danger/40" />
                       </div>
                     )}
-                <MessageGroupView
-                  group={group}
-                  canModerate={channel.data?.capabilities.moderate ?? false}
-                  viewerId={viewerId}
-                  authorLabel={group.authorId === null ? null : personOf(group.authorId).label}
-                  editingId={editing}
-                  onStartEdit={setEditing}
-                  onCancelEdit={() => {
-                    setEditing(null);
-                  }}
-                  onSaveEdit={(messageId, body) => {
-                    edit.mutate({ messageId: messageId as MessageId, body });
-                  }}
-                  editPending={edit.isPending}
-                  onDelete={(messageId) => {
-                    remove.mutate(messageId as MessageId);
-                  }}
-                  reactionsByMessage={reactionsByMessage}
-                  personOf={personOf}
-                  onToggleReaction={(messageId, emoji) => {
-                    react.mutate({ messageId: messageId as MessageId, emoji });
-                  }}
-                  pinnedIds={pinnedIds}
-                  onTogglePin={(messageId, pinned) => {
-                    togglePin.mutate({ messageId: messageId as MessageId, pinned });
-                  }}
-                  replyCounts={replyCounts}
-                  onOpenThread={setOpenThreadId}
-                />
+                  <MessageGroupView
+                    group={group}
+                    canModerate={channel.data?.capabilities.moderate ?? false}
+                    viewerId={viewerId}
+                    authorLabel={group.authorId === null ? null : personOf(group.authorId).label}
+                    editingId={editing}
+                    onStartEdit={setEditing}
+                    onCancelEdit={() => {
+                      setEditing(null);
+                    }}
+                    onSaveEdit={(messageId, body) => {
+                      edit.mutate({ messageId: messageId as MessageId, body });
+                    }}
+                    editPending={edit.isPending}
+                    onDelete={(messageId) => {
+                      remove.mutate(messageId as MessageId);
+                    }}
+                    reactionsByMessage={reactionsByMessage}
+                    attachmentsByMessage={attachmentsByMessage}
+                    previewsByMessage={previewsByMessage}
+                    personOf={personOf}
+                    onToggleReaction={(messageId, emoji) => {
+                      react.mutate({ messageId: messageId as MessageId, emoji });
+                    }}
+                    pinnedIds={pinnedIds}
+                    onTogglePin={(messageId, pinned) => {
+                      togglePin.mutate({ messageId: messageId as MessageId, pinned });
+                    }}
+                    replyCounts={replyCounts}
+                    onOpenThread={setOpenThreadId}
+                  />
                 </Fragment>
               ))}
             </div>
@@ -802,34 +932,45 @@ function ChannelPanel({
               : 'You have read-only access to this conversation.'}
           </div>
         ) : (
-        <div className="shrink-0 border-t border-line px-4 py-3">
-          <RichTextEditor
-            value={draft}
-            placeholder="Message… (Enter to send, Shift+Enter for a new line)"
-            onChange={(next) => {
-              setDraft(next);
-              startTyping(channelId);
-            }}
-            onSubmit={submit}
-            footer={
-              <div className="flex items-center gap-1">
-                <EmojiPickerButton
-                  onPick={(emoji) => {
-                    setDraft((current) => appendText(current, emoji));
-                  }}
-                />
-                <Button
-                  size="sm"
-                  variant="primary"
-                  disabled={isEmptyDocument(draft) || send.isPending}
-                  onClick={submit}
-                >
-                  Send
-                </Button>
-              </div>
-            }
-          />
-        </div>
+          <div className="shrink-0 border-t border-line px-4 py-3">
+            {/* Named stages rather than a spinner: "Scanning…" is the one that
+              takes a noticeable moment, and saying so is the difference between
+              a slow upload and a stuck one. */}
+            {uploadStage !== null && <p className="mb-1 text-xs text-ink-faint">{uploadStage}</p>}
+            <SlashCommandMenu draft={draft} />
+            <RichTextEditor
+              value={draft}
+              placeholder="Message… (Enter to send, Shift+Enter for a new line)"
+              onChange={(next) => {
+                setDraft(next);
+                startTyping(channelId);
+              }}
+              onSubmit={submit}
+              footer={
+                <div className="flex items-center gap-1">
+                  <EmojiPickerButton
+                    onPick={(emoji) => {
+                      setDraft((current) => appendText(current, emoji));
+                    }}
+                  />
+                  <AttachFileButton
+                    disabled={!canPost || attach.isPending}
+                    onPick={(file) => {
+                      attach.mutate(file);
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={isEmptyDocument(draft) || send.isPending}
+                    onClick={submit}
+                  >
+                    Send
+                  </Button>
+                </div>
+              }
+            />
+          </div>
         )}
       </div>
 
@@ -1046,7 +1187,9 @@ function useTypingUsers(channelId: ChannelId, viewerId: string | null): readonly
         return;
       }
 
-      setTyping((current) => (current.includes(message.userId) ? current : [...current, message.userId]));
+      setTyping((current) =>
+        current.includes(message.userId) ? current : [...current, message.userId],
+      );
       timers.set(
         message.userId,
         setTimeout(() => {
@@ -1194,12 +1337,7 @@ function ThreadPanel({
           )}
         >
           <RichTextView value={message.body} bare />
-          <div
-            className={cn(
-              'text-[10px]',
-              isOwn ? 'text-accent-ink/70' : 'text-ink-faint',
-            )}
-          >
+          <div className={cn('text-[10px]', isOwn ? 'text-accent-ink/70' : 'text-ink-faint')}>
             {formatTime(message.createdAt)}
             {message.editedAt !== null && ' · edited'}
           </div>
@@ -1281,6 +1419,8 @@ function MessageGroupView({
   editPending,
   onDelete,
   reactionsByMessage,
+  attachmentsByMessage,
+  previewsByMessage,
   personOf,
   onToggleReaction,
   pinnedIds,
@@ -1300,6 +1440,8 @@ function MessageGroupView({
   readonly editPending: boolean;
   readonly onDelete: (messageId: string) => void;
   readonly reactionsByMessage: Map<string, Map<string, string[]>>;
+  readonly attachmentsByMessage: ReadonlyMap<string, readonly MessageAttachment[]>;
+  readonly previewsByMessage: ReadonlyMap<string, readonly MessagePreview[]>;
   readonly personOf: (userId: string) => { readonly label: string };
   readonly onToggleReaction: (messageId: string, emoji: string) => void;
   readonly pinnedIds: Set<string>;
@@ -1351,6 +1493,8 @@ function MessageGroupView({
               onDelete(message.messageId);
             }}
             reactions={reactionsByMessage.get(message.messageId) ?? new Map()}
+            attachments={attachmentsByMessage.get(message.messageId) ?? []}
+            previews={previewsByMessage.get(message.messageId) ?? []}
             viewerId={viewerId}
             personOf={personOf}
             onToggleReaction={(emoji) => {
@@ -1384,6 +1528,8 @@ function MessageBubble({
   editPending,
   onDelete,
   reactions,
+  attachments,
+  previews,
   viewerId,
   personOf,
   onToggleReaction,
@@ -1404,6 +1550,8 @@ function MessageBubble({
   readonly editPending: boolean;
   readonly onDelete: () => void;
   readonly reactions: Map<string, string[]>;
+  readonly attachments: readonly MessageAttachment[];
+  readonly previews: readonly MessagePreview[];
   readonly viewerId: string | null;
   readonly personOf: (userId: string) => { readonly label: string };
   readonly onToggleReaction: (emoji: string) => void;
@@ -1505,7 +1653,12 @@ function MessageBubble({
           {/* Editing is AUTHORSHIP, which the client knows for certain — there
               is no permission that overrides it, so no server answer is needed. */}
           {isOwn && (
-            <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onStartEdit}>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-5 px-1 text-[11px]"
+              onClick={onStartEdit}
+            >
               Edit
             </Button>
           )}
@@ -1520,6 +1673,13 @@ function MessageBubble({
           )}
         </div>
       </div>
+
+      {/* Files and link previews sit BELOW the bubble rather than inside it:
+          a preview card is about something the message points at, not part of
+          what was written, and putting it inside would make an edit look like
+          it changed the card too. */}
+      <MessageAttachments attachments={attachments} />
+      <MessagePreviews previews={previews} />
 
       {reactions.size > 0 && (
         <ReactionBar
@@ -1652,5 +1812,109 @@ function EditMessage({
         </>
       }
     />
+  );
+}
+
+/**
+ * Groups rows that carry a `messageId` by that id.
+ *
+ * Shared by attachments and previews, which are the same shape of problem: a
+ * flat list keyed to the page of messages being rendered, looked up per bubble.
+ */
+function groupByMessage<T extends { readonly messageId: string }>(
+  rows: readonly T[],
+): ReadonlyMap<string, readonly T[]> {
+  const byMessage = new Map<string, T[]>();
+  for (const row of rows) {
+    byMessage.set(row.messageId, [...(byMessage.get(row.messageId) ?? []), row]);
+  }
+  return byMessage;
+}
+
+/** A one-paragraph document, for text this app composes rather than a person. */
+function textDocument(text: string): DocumentNode {
+  return { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] };
+}
+
+/**
+ * The plain text of a document, for slash-command parsing.
+ *
+ * Commands are decided on TEXT, never on the node tree: `/topic` typed into a
+ * rich editor may arrive as several text nodes if the person paused, and a
+ * parser reading only the first would see `/top`.
+ */
+function flattenDocument(node: DocumentNode): string {
+  if (typeof node.text === 'string') return node.text;
+  return (node.content ?? []).map(flattenDocument).join('');
+}
+
+/**
+ * The paperclip.
+ *
+ * A hidden `<input type="file">` driven by a button, which is the standard way
+ * to get a styled control — the native one cannot be styled and reads as a
+ * foreign object in the composer. The input is reset after every pick so
+ * choosing the SAME file twice fires `change` both times.
+ */
+function AttachFileButton({
+  disabled,
+  onPick,
+}: {
+  readonly disabled: boolean;
+  readonly onPick: (file: File) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file !== undefined) onPick(file);
+          event.target.value = '';
+        }}
+      />
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={disabled}
+        aria-label="Attach a file"
+        onClick={() => {
+          inputRef.current?.click();
+        }}
+      >
+        📎
+      </Button>
+    </>
+  );
+}
+
+/**
+ * The slash-command menu.
+ *
+ * Shown only while the draft is a bare command word — the moment an argument is
+ * typed the list stops being useful and starts covering the composer. Purely an
+ * affordance: typing the command by hand works identically, because `submit`
+ * parses the text rather than reading a selection made here.
+ */
+function SlashCommandMenu({ draft }: { readonly draft: DocumentNode }) {
+  const text = flattenDocument(draft);
+  if (!text.startsWith('/') || text.includes(' ')) return null;
+
+  const matches = matchingCommands(text);
+  if (matches.length === 0) return null;
+
+  return (
+    <ul className="mb-1 overflow-hidden rounded border border-line bg-surface-raised text-xs shadow-sm">
+      {matches.map((command) => (
+        <li key={command.name} className="flex gap-2 px-2 py-1">
+          <span className="font-mono text-ink">{command.hint}</span>
+          <span className="text-ink-faint">{command.description}</span>
+        </li>
+      ))}
+    </ul>
   );
 }

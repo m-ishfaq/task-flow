@@ -291,8 +291,9 @@ export interface TypingRequest {
   readonly channelId: ChannelId;
 }
 
-export const TypingRequestSchema: z.ZodType<TypingRequest, z.ZodTypeDef, { channelId: string }> =
-  z.object({ channelId: ChannelIdSchema }).strict();
+export const TypingRequestSchema: z.ZodType<TypingRequest, z.ZodTypeDef, { channelId: string }> = z
+  .object({ channelId: ChannelIdSchema })
+  .strict();
 
 /**
  * Relayed to everyone else in the room. `userId` is filled in by the gateway

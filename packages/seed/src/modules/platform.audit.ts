@@ -4,6 +4,7 @@ import { drainOutboxFully } from '@taskflow/api/audit';
 import { defineSeedModule } from '../registry.js';
 import { attachmentsModule } from './platform.attachments.js';
 import { tuplesModule } from './authz.tuples.js';
+import { viewsModule } from './work.views.js';
 
 /**
  * The outbox, and the real hash-chained audit log it drains into.
@@ -30,7 +31,11 @@ export interface AuditOutput {
 
 export const auditModule = defineSeedModule({
   name: 'platform.audit',
-  requires: [attachmentsModule, tuplesModule],
+  /* Nothing reads `work.views`' output, so it is named here rather than
+     somewhere more meaningful — this module's `requires` is what pulls the
+     whole graph in, and a module no other module depends on has to be reached
+     from the root or it silently never runs. */
+  requires: [attachmentsModule, tuplesModule, viewsModule],
   tables: ['platform.outbox'],
 
   async seed(ctx): Promise<AuditOutput> {
@@ -85,7 +90,26 @@ export const auditModule = defineSeedModule({
       return { outboxCount: events.length, auditProcessed: 0 };
     }
 
-    const result = await drainOutboxFully();
+    /**
+     * Sized to what this run actually wrote, not left at the default.
+     *
+     * `drainOutboxFully`'s defaults are 100 × 50 batches — a ceiling of 5,000,
+     * and deliberately bounded, because in the API it is a scheduled tick and
+     * "an unbounded drain competing with live traffic is a job that never
+     * returns". A seed run is the opposite situation: it knows exactly how many
+     * events it just buffered, there is no live traffic to yield to, and it is
+     * finished the moment the backlog is clear.
+     *
+     * Leaving the default here would silently truncate. Adding Chat took the
+     * demo profile past five thousand events, and the symptom was not an error
+     * but a smaller number in the line below — a hash-chained log missing its
+     * last few dozen entries, reported as success. The loop still exits early
+     * on the first short batch, so the extra allowance costs one empty claim.
+     */
+    const batchSize = 100;
+    const batches = Math.ceil(events.length / batchSize) + 1;
+
+    const result = await drainOutboxFully(batchSize, batches);
     ctx.log(
       `platform.audit: drained ${String(result.processed)} entries into the hash-chained log`,
     );

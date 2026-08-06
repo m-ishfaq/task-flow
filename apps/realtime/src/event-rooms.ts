@@ -119,6 +119,20 @@ const CHANNEL_KEY_OF: Readonly<Record<string, string>> = {
   'message.pinned': 'channelId',
   'message.unpinned': 'channelId',
 
+  /* Link previews finished loading (Wave 3, §7.6's async call). Its own event
+     rather than a second `message.edited`, because nobody edited anything —
+     see the definition. Carries a count, never the preview content: a room
+     broadcast is not the place for metadata a third-party server chose. */
+  'message.unfurled': 'channelId',
+
+  /* A file arrived on a message, or was removed. Carries a channel and a
+     message and NOTHING else — no filename, no attachment id, no URL — which
+     is what makes it safe to broadcast where `message_attachment.*` is banned.
+     A client refetches the attachment list over authorized HTTP, exactly as
+     §3.10 prescribes. Without this the uploader saw their own file and nobody
+     else did, because the ban left the room with no signal at all. */
+  'message.attachments_changed': 'channelId',
+
   /* `channel.read_advanced` is deliberately ABSENT. A read cursor is personal
      state — nobody else viewing the channel needs to learn where ONE person
      has scrolled to, and broadcasting it would turn the highest-frequency
@@ -139,6 +153,27 @@ const CHANNEL_KEY_OF: Readonly<Record<string, string>> = {
  * contributor filling in the Wave 2 catalog from the §4 list.
  */
 const NEVER_BROADCAST_PREFIX = 'attachment.';
+
+/**
+ * Any event whose RESOURCE names an attachment, however it is prefixed.
+ *
+ * `NEVER_BROADCAST_PREFIX` above catches Work's `attachment.*`. It does not
+ * catch chat's, which are `message_attachment.*` — a name chosen because event
+ * names are unique across the whole registry and `attachment.uploaded` was
+ * already taken. A `startsWith('attachment.')` check would have let every one
+ * of them through, and the thing that would then be broadcast to a channel room
+ * is a presigned download URL: a bearer credential handed to everyone currently
+ * subscribed.
+ *
+ * So the test is on the resource segment rather than the start of the string.
+ * Written as a rule about what the event IS, not about how it happens to be
+ * spelled today, because the next attachment-adjacent slice (Docs page
+ * attachments, §3.3) will pick a third prefix.
+ */
+function namesAnAttachment(name: string): boolean {
+  const resource = name.slice(0, name.indexOf('.'));
+  return resource.split('_').includes('attachment');
+}
 
 /**
  * Also deliberately absent, for two DIFFERENT reasons than the attachment ban
@@ -210,7 +245,7 @@ const DUAL_ROOM_REASON =
  */
 export function assertRoomTableIsSafe(): void {
   for (const name of Object.keys(BOARD_KEY_OF)) {
-    if (name.startsWith(NEVER_BROADCAST_PREFIX)) {
+    if (name.startsWith(NEVER_BROADCAST_PREFIX) || namesAnAttachment(name)) {
       throw new UnsafeRoomMappingError(name, ATTACHMENT_REASON);
     }
     if (PROJECT_SCOPED_PREFIXES.some((prefix) => name.startsWith(prefix))) {
@@ -226,7 +261,7 @@ export function assertRoomTableIsSafe(): void {
        reuses the existing pipeline, so `attachment.uploaded` is exactly as much
        of a bearer credential in a channel as it is on a card — and a channel
        room is a larger audience. */
-    if (name.startsWith(NEVER_BROADCAST_PREFIX)) {
+    if (name.startsWith(NEVER_BROADCAST_PREFIX) || namesAnAttachment(name)) {
       throw new UnsafeRoomMappingError(name, ATTACHMENT_REASON);
     }
     if (name === 'channel.created') {

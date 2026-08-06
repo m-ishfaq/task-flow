@@ -300,11 +300,7 @@ export async function applyChatRevocation(
  * one definition of who may be in a channel room, and a future change to the
  * rules cannot apply to joins but not to re-checks.
  */
-async function recheckChannels(
-  socket: ChatSocket,
-  orgId: string,
-  logger: Logger,
-): Promise<void> {
+async function recheckChannels(socket: ChatSocket, orgId: string, logger: Logger): Promise<void> {
   for (const [channelId, roomOrgId] of [...socket.data.rooms]) {
     if (roomOrgId !== orgId) continue;
 
@@ -320,9 +316,8 @@ async function recheckChannels(
 
     let allowed = false;
     try {
-      allowed = (
-        await authorizeChannelJoin(socket.data.identity.userId, org.data, channel.data)
-      ).allowed;
+      allowed = (await authorizeChannelJoin(socket.data.identity.userId, org.data, channel.data))
+        .allowed;
     } catch (error) {
       /* Fails CLOSED, same as the board re-check. A database blip must not leave
          someone in a channel a revocation was trying to remove them from — the

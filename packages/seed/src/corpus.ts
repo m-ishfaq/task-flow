@@ -481,6 +481,269 @@ export function descriptionDocument(rng: Rng): RichTextNode {
   return { type: 'doc', content };
 }
 
+/* -------------------------------------------------------------------------- *
+ * Chat vocabulary (Phase 5)
+ *
+ * Kept apart from the Work sections above rather than sharing their pools. A
+ * chat message does not read like a card comment — it is shorter, it addresses
+ * someone, and it is often a fragment — and pooling the two would make both
+ * surfaces look subtly wrong in a way nobody could point at.
+ * -------------------------------------------------------------------------- */
+
+const CHANNEL_TOPICS = [
+  'Anything and everything. Keep it kind.',
+  'Deploys, incidents, and the postmortems that follow them.',
+  'Design critique — drop a screenshot and say what you are unsure about.',
+  'Whatever is on fire right now. Paged? Start the thread here.',
+  'Release coordination for the current milestone.',
+  'Questions about the API. No question is too small.',
+  'Read-only announcements. Discussion happens in the linked thread.',
+  'Vendor and contractor coordination.',
+  'Weekly planning and anything that needs a decision.',
+  'Security review requests and their outcomes.',
+] as const;
+
+export function channelTopic(rng: Rng): string {
+  return rng.pick(CHANNEL_TOPICS);
+}
+
+const MESSAGE_LINES = [
+  'Morning — anyone looked at the overnight run yet?',
+  'That one is mine, I broke it yesterday. Fix is up.',
+  'Can we get a second pair of eyes on this before it goes out?',
+  'Deploy is green.',
+  'Rolled back. Same failure as last week, so it is not a fluke.',
+  'I think this is the same root cause as the ticket from Tuesday.',
+  'Do we have a runbook for this, or is it folklore?',
+  'Ha, I had exactly the same thought about ten minutes ago.',
+  'Slow day on staging — is someone running a load test?',
+  'Pushed a branch, nothing controversial in it.',
+  'Confirmed on my machine too.',
+  'Not urgent, but it has been bugging me for a while.',
+  'Where did we land on the naming for this?',
+  'Numbers are in the doc, they are not great.',
+  'Taking a look now.',
+  'Sorry, missed this — catching up on the thread.',
+  'Agreed. Let us not overthink it.',
+  'That would explain a lot, actually.',
+  'Anyone around who knows how the old importer worked?',
+  'Merged. Thanks for the quick review.',
+  'This has been flaky for two days and I finally have a reproduction.',
+  'I will write it up properly tomorrow, short version is that it works.',
+  'Heads up: I am touching shared config, shout if that is a problem.',
+  'Confirming we are still on for the review this afternoon.',
+  'Nice, that is much cleaner than what I had.',
+  'Parking this one, it is not blocking anything.',
+  'Can someone sanity-check my reading of the spec here?',
+  'Done and verified against a second tenant.',
+] as const;
+
+/**
+ * Reaction emoji.
+ *
+ * Every entry is one to 32 characters, matching `message_reactions_emoji_length`
+ * — the constraint counts CHARACTERS, and a multi-codepoint emoji (a skin-tone
+ * modifier, a ZWJ sequence) costs several. Kept to single-codepoint symbols so
+ * the length is obvious by inspection rather than something a reader has to
+ * count.
+ */
+export const EMOJI_PALETTE = ['👍', '🎉', '👀', '🚀', '❤️', '😄', '🙏', '🔥', '✅', '🤔'] as const;
+
+/**
+ * Link previews, as the unfurl job would have recorded them.
+ *
+ * `status` is the attempt, not just its success (migration 0020), and all three
+ * outcomes are represented on purpose:
+ *
+ *   `ok`      — fetched and parsed, carries metadata.
+ *   `refused` — the SSRF control said no. The URL here is the cloud metadata
+ *               endpoint, which is precisely what `packages/security/outbound-url.ts`
+ *               exists to reject; a seeded database where nobody ever pasted one
+ *               leaves the "operator can notice this" argument untested.
+ *   `failed`  — timeout, DNS, 5xx.
+ *
+ * Only `ok` carries title/description/image/site: `message_unfurls_metadata_matches_status`
+ * refuses anything else, so the shape of this table is what keeps a caller from
+ * expressing the state where a refused fetch somehow produced a title.
+ */
+export interface UnfurlFixture {
+  readonly url: string;
+  readonly status: 'ok' | 'refused' | 'failed';
+  readonly title: string | null;
+  readonly description: string | null;
+  readonly imageUrl: string | null;
+  readonly siteName: string | null;
+}
+
+export const UNFURL_FIXTURES: readonly UnfurlFixture[] = [
+  {
+    url: 'https://example.com/blog/rank-strings-that-do-not-grow',
+    status: 'ok',
+    title: 'Rank strings that do not grow',
+    description:
+      'Why bisecting a fraction is correct and unusable, and what to do instead when cards are appended ten thousand times.',
+    imageUrl: 'https://example.com/images/ranks.png',
+    siteName: 'Example Engineering',
+  },
+  {
+    url: 'https://example.com/docs/row-level-security',
+    status: 'ok',
+    title: 'Row-Level Security — the parts that fail silently',
+    description:
+      'A locking select needs an UPDATE policy, and Postgres excludes the row rather than erroring.',
+    imageUrl: null,
+    siteName: 'Example Docs',
+  },
+  {
+    url: 'https://status.example.com/incidents/2026-07-11',
+    status: 'ok',
+    title: 'Elevated error rates — resolved',
+    description: 'Between 09:12 and 10:40 UTC a subset of requests returned 503.',
+    imageUrl: 'https://status.example.com/og/incident.png',
+    siteName: 'Example Status',
+  },
+  {
+    url: 'https://example.org/papers/uuidv7',
+    status: 'ok',
+    title: 'UUIDv7 and why the cursor is an id',
+    description: 'Creation-ordered and unique, which is what makes the paging order total.',
+    imageUrl: null,
+    siteName: null,
+  },
+  {
+    /* The link-local metadata address. A preview fetched from here would be the
+       SSRF the unfurl fetcher exists to refuse, so the row records the refusal
+       and nothing else — no title, by constraint. */
+    url: 'http://169.254.169.254/latest/meta-data/iam/security-credentials/',
+    status: 'refused',
+    title: null,
+    description: null,
+    imageUrl: null,
+    siteName: null,
+  },
+  {
+    url: 'https://unreachable.example.net/dashboards/throughput',
+    status: 'failed',
+    title: null,
+    description: null,
+    imageUrl: null,
+    siteName: null,
+  },
+];
+
+/** Someone who can be `@`-mentioned. Ids are real seeded user ids. */
+export interface Mentionable {
+  readonly id: string;
+  readonly name: string;
+}
+
+/**
+ * A generated message, with the two things the caller would otherwise have to
+ * re-derive by walking the document it just handed them.
+ *
+ * `mentionedUserIds` is reported rather than re-parsed on purpose. The API
+ * extracts mentions at write time (`message.service.ts`) precisely so the rules
+ * live in one place; a seeder that walked its own output would be a SECOND
+ * parser with no test on it, which is the thing that comment warns against.
+ * Here the information is not parsed at all — it is what the generator chose,
+ * which cannot disagree with what it wrote.
+ */
+export interface MessageContent {
+  readonly document: RichTextNode;
+  readonly mentionedUserIds: readonly string[];
+  /** URLs that literally appear in the body — the only ones an unfurl may name. */
+  readonly urls: readonly string[];
+}
+
+export interface MessageOptions {
+  /** People to `@`. Empty means no mention; the caller decides the rate. */
+  readonly mentions: readonly Mentionable[];
+  /** URLs to embed as link marks. Empty means no link. */
+  readonly links: readonly string[];
+}
+
+/**
+ * A chat message.
+ *
+ * Shorter and flatter than a card description: no headings, no blockquotes,
+ * occasionally a code span or a bullet list, and — unlike anything else in this
+ * corpus — `mention` nodes.
+ *
+ * The one rule that is not stylistic: **a message always carries words**, even
+ * when it carries a mention. `sendMessage` refuses a document that flattens to
+ * nothing, and while a mention-only message does flatten to `@Name` (the
+ * flattener contributes `attrs.label`), a seeded row that only just clears a
+ * check the live service applies is a fixture inviting the next person to make
+ * it not clear it at all.
+ */
+export function messageDocument(rng: Rng, options: MessageOptions): MessageContent {
+  const content: RichTextNode[] = [];
+  const mentionedUserIds: string[] = [];
+  const urls: string[] = [];
+
+  const opening: RichTextNode[] = [];
+
+  for (const person of options.mentions) {
+    opening.push({ type: 'mention', attrs: { userId: person.id, label: person.name } });
+    opening.push({ type: 'text', text: ' ' });
+    mentionedUserIds.push(person.id);
+  }
+
+  const line = rng.pick(MESSAGE_LINES);
+
+  if (rng.chance(0.18)) {
+    // An inline mark — the message list renders `bold` and `code` and would
+    // otherwise never be handed either.
+    const mark = rng.chance(0.5) ? 'bold' : 'code';
+    const [head, ...rest] = line.split(' ');
+    opening.push(
+      { type: 'text', text: `${head ?? line} ` },
+      { type: 'text', text: rest.join(' '), marks: [{ type: mark }] },
+    );
+  } else {
+    opening.push({ type: 'text', text: line });
+  }
+
+  content.push({ type: 'paragraph', content: opening });
+
+  for (const url of options.links) {
+    urls.push(url);
+    content.push({
+      type: 'paragraph',
+      content: [
+        { type: 'text', text: rng.chance(0.5) ? 'Context: ' : 'This one — ' },
+        {
+          type: 'text',
+          text: url,
+          /* `href` only, exactly as `descriptionDocument` does. `rel` and
+             `class` are refused by the mark schema so a document cannot opt
+             itself out of noopener. */
+          marks: [{ type: 'link', attrs: { href: url } }],
+        },
+      ],
+    });
+  }
+
+  if (rng.chance(0.15)) {
+    content.push({ type: 'paragraph', content: [{ type: 'text', text: rng.pick(MESSAGE_LINES) }] });
+  }
+
+  if (rng.chance(0.08)) {
+    const items = rng.int(2, 3);
+    content.push({
+      type: 'bulletList',
+      content: Array.from({ length: items }, () => ({
+        type: 'listItem',
+        content: [
+          { type: 'paragraph', content: [{ type: 'text', text: rng.pick(MESSAGE_LINES) }] },
+        ],
+      })),
+    });
+  }
+
+  return { document: { type: 'doc', content }, mentionedUserIds, urls };
+}
+
 /** A comment body — shorter, and occasionally carrying an inline mark. */
 export function commentDocument(rng: Rng): RichTextNode {
   const text = rng.pick(COMMENTS);

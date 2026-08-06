@@ -126,3 +126,12 @@ export {
   type ScanVerdict,
   type ScannerConfig,
 } from './virus-scan.js';
+
+/**
+ * Outbound URL safety (§8.7) — the SSRF control behind link unfurls.
+ *
+ * Here rather than in the API for the same reason the crypto ban exists: one
+ * file per security concern, on the human-review list, instead of a private-IP
+ * regex in whatever service happened to need one.
+ */
+export { isAllowedUrl, isBlockedAddress, isIpAddress, type UrlVerdict } from './outbound-url.js';

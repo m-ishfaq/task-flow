@@ -112,6 +112,21 @@ function applyBroadcast(
       actions.invalidateThisChannel();
       return;
 
+    /* Link previews and files both arrive AFTER the message they belong to,
+       and both were silently dropped here before: they fell through to
+       `default` and nothing refetched. The preview sat in the database and the
+       file was visible only to whoever uploaded it, whose own client had
+       invalidated locally — so a file shared into a channel was invisible to
+       the channel until somebody reloaded.
+
+       `invalidateThisChannel` covers both: the attachment and unfurl queries
+       are keyed as extensions of `keys.messages`, so react-query's prefix match
+       already reaches them without a second invalidation call. */
+    case 'message.unfurled':
+    case 'message.attachments_changed':
+      actions.invalidateThisChannel();
+      return;
+
     case 'channel.member_added':
     case 'channel.member_removed':
     case 'channel.updated':

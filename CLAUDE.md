@@ -190,6 +190,16 @@ authorization, the `'realtime'` outbox consumer) and Wave 2 (the full event cata
 reconnect-and-diff) both shipped. Wave 3 — a persisted activity stream — is explicitly NOT in this
 phase; §2 and §7.4 argue why, and it is a follow-up rather than an omission.
 
+**Phase 5 (Chat) is COMPLETE** — spec in [ai/phase-5-chat.md](ai/phase-5-chat.md), all four waves.
+Channels, DMs, threads, reactions, pins, read cursors, typing, file sharing, link unfurls, slash
+commands, retention, legal hold, guest access and compliance export. Migrations 0017–0021, plus
+0019 for display names, which §3.1 needed and did not have.
+
+Three things in that phase are controls that looked correct and were not, and each has a test that
+fails without it — they are written up in the spec's status header, and the first is the one to
+read before touching chat authorization: **`closed` on a channel's `can()` target is the entire
+model.** Without it every member reads every DM, and the decision trace says nothing is wrong.
+
 **Read a spec's own status header before trusting a phase marker anywhere else.** The §13 roadmap
 table and this section were both stale for the whole of Phase 3.5's Wave 1 and Wave 2, which is how
 an agent asked to find "what's next" confidently answered Phase 4 while Wave 3 was still open. The

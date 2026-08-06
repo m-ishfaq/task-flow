@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNull, schema, withOrgScope, outboxWriter } from '@taskflow/db';
 import { errors, type ChannelId, type UserId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
-import { enforce } from '@taskflow/policy';
+import { can, enforce } from '@taskflow/policy';
 import { newId } from '@taskflow/security';
 import {
   channelArchived,
@@ -12,6 +12,7 @@ import {
 } from './events.js';
 import {
   capabilitiesFor,
+  channelTarget,
   enforceOnChannel,
   envelopeOf,
   isClosedChannel,
@@ -111,14 +112,25 @@ export async function listChannels(actor: ChatActor): Promise<readonly ChannelSu
     .map((tuple) => tuple.object.id);
 
   return withOrgScope(orgOf(actor), async (tx) => {
+    /* Selected as `id`, not aliased to `channelId`, so the row IS a
+       `ChannelRow` and can be handed to `channelTarget` directly.
+
+       This was a real bug for about an hour: the alias meant `channelTarget`
+       read `row.id` as `undefined`, every tuple comparison missed, and every
+       private channel vanished from every sidebar — including its own members'.
+       The compiler did not object because the aliased object still satisfied
+       enough of the shape. Keeping the column names identical to `ChannelRow`
+       is what makes the mismatch impossible rather than merely unlikely. */
     const rows = await tx
       .select({
-        channelId: schema.channels.id,
+        id: schema.channels.id,
         orgId: schema.channels.orgId,
         type: schema.channels.type,
         name: schema.channels.name,
         topic: schema.channels.topic,
         archivedAt: schema.channels.archivedAt,
+        retentionDays: schema.channels.retentionDays,
+        retentionHold: schema.channels.retentionHold,
         createdAt: schema.channels.createdAt,
       })
       .from(schema.channels)
@@ -127,12 +139,22 @@ export async function listChannels(actor: ChatActor): Promise<readonly ChannelSu
 
     const joinedIds = new Set(memberChannelIds);
 
-    /* Filtered here rather than in the WHERE clause because the predicate is
-       "public OR I hold a tuple", and the tuple half lives in memory. The set
-       of live channels in one org is small enough that this is not the query to
-       optimize; a channel a caller cannot see is never returned either way. */
+    /* Filtered by `can()` itself, not by a rule about channel types.
+
+       This used to be "public, or I hold a tuple", which is right for a MEMBER
+       and wrong for a guest: a guest holds no role grants at all (`GUEST` is an
+       empty permission list), so `channel:read` on a public channel is denied —
+       but a type-based filter never asks, and every public channel appeared in
+       an external collaborator's sidebar. The list and the individual read then
+       disagreed, which is the exact drift §8.2 warns about, in the direction
+       that discloses.
+
+       Asking the engine costs nothing here: `can()` is pure, the tuples are
+       already on the subject, and the set of live channels in one org is small.
+       A channel a caller cannot open is now, by construction, a channel that
+       cannot appear in their list. */
     const visible = rows.filter(
-      (row) => !isClosedChannel(row) || joinedIds.has(row.channelId),
+      (row) => can(actor.subject, 'channel:read', channelTarget(row)).allowed,
     );
 
     /* Rosters for the DMs only, in ONE query rather than per channel. A named
@@ -140,22 +162,20 @@ export async function listChannels(actor: ChatActor): Promise<readonly ChannelSu
        nothing for an org that uses no direct messages. */
     const directIds = visible
       .filter((row) => row.type === 'dm' || row.type === 'group_dm')
-      .map((row) => row.channelId);
+      .map((row) => row.id);
     const membersByChannel = await membersOfChannels(tx, directIds);
 
     const self = userOf(actor);
 
     return visible.map((row) => ({
-      channelId: row.channelId,
+      channelId: row.id,
       type: row.type,
       name: row.name,
       topic: row.topic,
       archivedAt: row.archivedAt,
       createdAt: row.createdAt,
-      joined: joinedIds.has(row.channelId),
-      participantIds: [...(membersByChannel.get(row.channelId) ?? [])].filter(
-        (userId) => userId !== self,
-      ),
+      joined: joinedIds.has(row.id),
+      participantIds: [...(membersByChannel.get(row.id) ?? [])].filter((userId) => userId !== self),
     }));
   });
 }
@@ -172,6 +192,8 @@ export async function getChannel(
   readonly archivedAt: Date | null;
   readonly memberIds: readonly string[];
   readonly capabilities: ChannelCapabilities;
+  readonly retentionDays: number | null;
+  readonly retentionHold: boolean;
 }> {
   return withOrgScope(orgOf(actor), async (tx) => {
     const channel = await loadChannel(tx, input.channelId);
@@ -190,6 +212,11 @@ export async function getChannel(
          client is told the server's decision rather than reaching its own —
          see `capabilitiesFor`. */
       capabilities: capabilitiesFor(actor, channel),
+      /* Configuration, not content: shown in the details panel so whoever holds
+         `channel:manage` can see what the policy currently is before changing
+         it. Harmless to everyone else, who cannot act on it. */
+      retentionDays: channel.retentionDays,
+      retentionHold: channel.retentionHold,
     };
   });
 }
@@ -256,11 +283,7 @@ export async function createChannel(
         { channelId, type: input.type, name: input.name, memberCount: 1 },
         envelopeOf(actor),
       ),
-      createEvent(
-        channelMemberAdded,
-        { channelId, userId, addedBy: userId },
-        envelopeOf(actor),
-      ),
+      createEvent(channelMemberAdded, { channelId, userId, addedBy: userId }, envelopeOf(actor)),
     ]);
   });
 
@@ -529,10 +552,7 @@ export async function addChannelMember(
       .select({ userId: schema.memberships.userId })
       .from(schema.memberships)
       .where(
-        and(
-          eq(schema.memberships.userId, input.userId),
-          eq(schema.memberships.status, 'active'),
-        ),
+        and(eq(schema.memberships.userId, input.userId), eq(schema.memberships.status, 'active')),
       )
       .limit(1);
 
