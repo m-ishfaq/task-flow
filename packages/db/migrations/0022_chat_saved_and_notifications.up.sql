@@ -168,6 +168,38 @@ GRANT SELECT, INSERT, UPDATE ON platform.notifications TO taskflow_audit;
 -- ...and a policy that applies to that role. `taskflow_audit` sets no
 -- `app.org_id`, so the tenant policy above matches nothing for it; this one
 -- lets the projection write the org named on the row it is projecting.
+--
+-- 0015's closing comment says exactly what a new consumer costs: "grant that
+-- role SELECT/INSERT/UPDATE on platform.outbox_dispatch and its own three
+-- policies scoped to its own consumer name." `taskflow_audit` already holds
+-- the table-level GRANT (0015) — shared across every consumer that role ever
+-- serves — but 0015's own outbox_dispatch_audit_read/insert/update policies
+-- are `USING/WITH CHECK (consumer = 'audit')`, which does not cover this
+-- projection claiming and marking rows under `consumer = 'notifications'`.
+-- Without these three, `markDispatched` for this consumer is refused by RLS
+-- ("new row violates row-level security policy for table outbox_dispatch"),
+-- inside the SAME transaction that already inserted the notification rows —
+-- so the whole tick rolls back, the notification never exists, and
+-- `claimPending` reclaims the identical batch every 5s forever, since RLS
+-- silently hides the fact those rows were ever attempted rather than erroring
+-- on the claim itself. Mirrors 0016's outbox_dispatch_realtime_* exactly,
+-- just against the audit role rather than a dedicated one.
+DROP POLICY IF EXISTS outbox_dispatch_notifications_read ON platform.outbox_dispatch;
+CREATE POLICY outbox_dispatch_notifications_read ON platform.outbox_dispatch
+  FOR SELECT TO taskflow_audit
+  USING (consumer = 'notifications');
+
+DROP POLICY IF EXISTS outbox_dispatch_notifications_insert ON platform.outbox_dispatch;
+CREATE POLICY outbox_dispatch_notifications_insert ON platform.outbox_dispatch
+  FOR INSERT TO taskflow_audit
+  WITH CHECK (consumer = 'notifications');
+
+DROP POLICY IF EXISTS outbox_dispatch_notifications_update ON platform.outbox_dispatch;
+CREATE POLICY outbox_dispatch_notifications_update ON platform.outbox_dispatch
+  FOR UPDATE TO taskflow_audit
+  USING (consumer = 'notifications')
+  WITH CHECK (consumer = 'notifications');
+
 DROP POLICY IF EXISTS notifications_projection_write ON platform.notifications;
 CREATE POLICY notifications_projection_write ON platform.notifications
   TO taskflow_audit
