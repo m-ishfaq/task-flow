@@ -185,9 +185,7 @@ describe('malformed and unrelated input', () => {
     const planned = planNotifications(row({ ...base, mentionedUserIds: [BOB] }));
     expect(planned[0]?.channelId).toBe(base.channelId);
 
-    const sparse = planNotifications(
-      row({ messageId: base.messageId, mentionedUserIds: [BOB] }),
-    );
+    const sparse = planNotifications(row({ messageId: base.messageId, mentionedUserIds: [BOB] }));
     expect(sparse[0]?.channelId).toBeNull();
   });
 });

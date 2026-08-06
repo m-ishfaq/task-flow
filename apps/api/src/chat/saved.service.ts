@@ -213,7 +213,10 @@ export async function listSaved(actor: ChatActor): Promise<readonly SavedMessage
       );
 
     const excerptById = new Map(
-      messageRows.map((row) => [row.id, row.deletedAt === null ? row.bodyText.slice(0, 280) : null]),
+      messageRows.map((row) => [
+        row.id,
+        row.deletedAt === null ? row.bodyText.slice(0, 280) : null,
+      ]),
     );
 
     return visible.map((row) => {

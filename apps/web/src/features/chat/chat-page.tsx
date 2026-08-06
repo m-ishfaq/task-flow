@@ -307,7 +307,9 @@ function PinnedMessagesButton({
       <Popover.Trigger asChild>
         <button
           type="button"
-          aria-label={list.length > 0 ? `Pinned messages, ${String(list.length)}` : 'Pinned messages'}
+          aria-label={
+            list.length > 0 ? `Pinned messages, ${String(list.length)}` : 'Pinned messages'
+          }
           className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm text-ink-muted hover:bg-surface-hover hover:text-ink"
         >
           <span className="flex items-center gap-1.5">
@@ -335,7 +337,10 @@ function PinnedMessagesButton({
           <div className="max-h-96 overflow-y-auto">
             {list.length === 0 ? (
               <div className="p-3">
-                <Empty title="Nothing pinned yet" description="Pin a message to find it here later." />
+                <Empty
+                  title="Nothing pinned yet"
+                  description="Pin a message to find it here later."
+                />
               </div>
             ) : (
               <ul>

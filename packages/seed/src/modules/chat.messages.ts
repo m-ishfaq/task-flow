@@ -365,7 +365,8 @@ export const messagesModule = defineSeedModule({
                 excerpt: draft.bodyText.slice(0, 280),
                 mentionedUserIds: draft.mentionedUserIds,
                 channelName: channel.name,
-                parentAuthorId: draft.parentId === null ? null : (authorByMessageId.get(draft.parentId) ?? null),
+                parentAuthorId:
+                  draft.parentId === null ? null : (authorByMessageId.get(draft.parentId) ?? null),
                 directRecipientIds: directRecipientIds.filter((id) => id !== draft.author.user.id),
               },
               envelopeFor(orgId, draft.author.user.id, draft.createdAt),

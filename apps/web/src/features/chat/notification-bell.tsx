@@ -171,7 +171,11 @@ function NotificationRow({
         notification.readAt === null && 'bg-accent/5',
       )}
     >
-      <button type="button" onClick={onOpen} className="flex w-full flex-col gap-0.5 px-3 py-2 text-left">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex w-full flex-col gap-0.5 px-3 py-2 text-left"
+      >
         <span className="flex items-center gap-1.5">
           <span aria-hidden>{iconFor(notification.kind)}</span>
           <span className="min-w-0 flex-1 truncate text-xs font-medium text-ink">
