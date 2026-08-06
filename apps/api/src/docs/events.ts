@@ -136,3 +136,66 @@ export const pageVersionRestored = defineEvent(
   'page.version_restored',
   z.object({ pageId: z.string(), versionId: z.string() }).strict(),
 );
+
+/**
+ * The debounced save-boundary event §4 names as `PageUpdated`, emitted by
+ * the backlinks relay (`apps/api/src/docs/backlinks.relay.ts`, Wave 3) —
+ * never `page.updated` itself, which Wave 1 already claimed for a
+ * title-shaped rename payload (this file's own note on `pageVersionSaved`
+ * says so explicitly). A consumer that wants "this page's content changed,
+ * go re-read it" subscribes to this event, not the title one.
+ */
+export const pageContentUpdated = defineEvent(
+  'page.content_updated',
+  z.object({ pageId: z.string() }).strict(),
+);
+
+/* -------------------------------------------------------------------------- *
+ * Comments and suggestions — Wave 3 (§3.6). Named `page.comment_*` /
+ * `page.suggestion_*` rather than the bare `comment.*` Work's card comments
+ * already claim (`apps/api/src/work/events.ts`) — `defineEvent` throws at
+ * import time on a second registration under one name, and Work's
+ * `comment.created`/`comment.updated`/`comment.deleted` carry a
+ * card/board-shaped payload that has no `pageId`. Reusing the name would
+ * not merely be confusing, it would crash `apps/api`'s boot the moment both
+ * routers are wired into the same process, which they already are.
+ * -------------------------------------------------------------------------- */
+
+export const pageCommentCreated = defineEvent(
+  'page.comment_created',
+  z.object({ commentId: z.string(), pageId: z.string() }).strict(),
+);
+
+/** Covers both resolve and reopen, with a `resolved` boolean — the identical shape `page.archived` uses for archive/restore. */
+export const pageCommentResolved = defineEvent(
+  'page.comment_resolved',
+  z.object({ commentId: z.string(), pageId: z.string(), resolved: z.boolean() }).strict(),
+);
+
+export const pageCommentDeleted = defineEvent(
+  'page.comment_deleted',
+  z.object({ commentId: z.string(), pageId: z.string() }).strict(),
+);
+
+export const pageSuggestionCreated = defineEvent(
+  'page.suggestion_created',
+  z.object({ suggestionId: z.string(), pageId: z.string() }).strict(),
+);
+
+/**
+ * Covers both accept and reject, with a `status` field — the two are one
+ * transition (a pending suggestion decided) for the same reason `resolved`
+ * on `page.comment_resolved` is a boolean rather than two events: a
+ * consumer cares which way the decision went, not that two unrelated things
+ * happened.
+ */
+export const pageSuggestionDecided = defineEvent(
+  'page.suggestion_decided',
+  z
+    .object({
+      suggestionId: z.string(),
+      pageId: z.string(),
+      status: z.enum(['accepted', 'rejected']),
+    })
+    .strict(),
+);

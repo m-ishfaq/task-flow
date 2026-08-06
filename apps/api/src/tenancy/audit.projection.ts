@@ -191,7 +191,18 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
      `page.version_saved` and `page.version_restored` resolve to the page, not
      to the version: a version is not independently grantable, so it has no
      resource type, and `versionId` travels in the payload where a reader can
-     still see which save point was involved. */
+     still see which save point was involved.
+
+     `page.suggestion_created`/`page.suggestion_decided` resolve to the PAGE,
+     not to a `suggestion` type — mirroring `page.version_saved` above,
+     there is no independently grantable `suggestion` resource in
+     `RESOURCE_TYPES` (§8.2's precedent: "no list resource type,
+     deliberately" — a suggestion is not independently shareable either),
+     and `suggestionId` is still in the payload for a reader to see. Comments
+     DO resolve to `comment` — Work's `comment.*` already established that
+     type for card comments, and Docs' comments are the same kind of
+     resource under a different container. `page.content_updated` has no
+     entry here at all — see `NEVER_AUDITED` below. */
   'space.created': { type: 'space', key: 'spaceId' },
   'space.archived': { type: 'space', key: 'spaceId' },
   'page.created': { type: 'page', key: 'pageId' },
@@ -201,6 +212,11 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'page.siblings_rebalanced': { type: 'space', key: 'spaceId' },
   'page.version_saved': { type: 'page', key: 'pageId' },
   'page.version_restored': { type: 'page', key: 'pageId' },
+  'page.comment_created': { type: 'comment', key: 'commentId' },
+  'page.comment_resolved': { type: 'comment', key: 'commentId' },
+  'page.comment_deleted': { type: 'comment', key: 'commentId' },
+  'page.suggestion_created': { type: 'page', key: 'pageId' },
+  'page.suggestion_decided': { type: 'page', key: 'pageId' },
 };
 
 /**
@@ -215,8 +231,20 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
  * state-mutating service method still emits a typed event, so the outbox
  * still drives unread-badge sync and any future consumer) while keeping the
  * append-only, hash-chained log free of a write nobody will ever audit.
+ *
+ * `page.content_updated` (Wave 3) is the identical shape: it fires from the
+ * backlinks relay every time it folds a NEW `docs.page_versions` row —
+ * including compaction's own periodic 'autosave' rows — into
+ * `docs.backlinks`, which is exactly as frequent as live editing itself.
+ * "This page's content changed, again" is not a compliance-relevant fact at
+ * that volume, and the two events that ARE (`page.updated` for a title
+ * rename, `page.version_saved` for an explicit on-demand save) already have
+ * their own real `RESOURCE_OF` entries above.
  */
-export const NEVER_AUDITED: ReadonlySet<string> = new Set(['channel.read_advanced']);
+export const NEVER_AUDITED: ReadonlySet<string> = new Set([
+  'channel.read_advanced',
+  'page.content_updated',
+]);
 
 interface Resource {
   readonly type: string | null;
