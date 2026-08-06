@@ -50,6 +50,68 @@ address, or with the same address twice. ⚠ `apps/api/src/identity` is a human-
   `message_attachment.*`; a `startsWith('attachment.')` check let every one of them through, and what
   would then reach a channel room is a presigned download URL.
 
+**Six more findings, found the same day this header first said "shipped."** All six were caught by
+manual testing against a running instance after this header already claimed IMPLEMENTED — none had
+a failing automated test, which is the point of writing them down here rather than trusting the
+header above to stay honest on its own (§13's own history is exactly this failure mode, twice).
+
+- **The route-level permission gate answers from ROLE ALONE, and a guest's role grants nothing by
+  design.** `apps/api/src/trpc/builder.ts`'s `route()` ran `can(subject, permission)` with NO
+  target — a coarse pre-check, before any resource is loaded — and `can()` with no target
+  (`packages/policy/src/decide.ts`) answers strictly from `roleGrants`. `GUEST` is an empty
+  permission list on purpose (§3.8: access comes entirely from a channel tuple), so this refused a
+  guest on EVERY chat route before the handler ever loaded the one channel their tuple actually
+  granted them — layer 2's real, tuple-aware `enforce()` never ran. A guest added to a channel
+  through the ordinary "Add people" control (not even `setGuestAccess`) saw nothing in their
+  sidebar, ever, with no error to explain why. Invisible to `guest.test.ts` because every test
+  there calls the service functions directly, bypassing this middleware entirely — the service
+  logic was always correct; the route in front of it was not. Fixed by
+  `packages/policy/src/decide.ts`'s new `couldGrant(subject, permission)`: true if the role grants
+  it OR the subject holds ANY tuple whose relation covers it, on any object — deliberately coarse,
+  because layer 2 is still what makes the real decision once it has a resource. Covered by
+  `decide.test.ts`'s `couldGrant` suite; still wants a test that goes through the actual tRPC
+  router for a guest, which is the specific gap that let this hide.
+- **The notification projection could never actually write a row.** Migration 0022 granted
+  `taskflow_audit` table-level access to `platform.outbox_dispatch` (already true, shared with the
+  `audit` consumer) but never added the three consumer-scoped RLS policies migration 0015's own
+  closing comment says a new consumer needs (`outbox_dispatch_<name>_read/insert/update`, `USING
+(consumer = '<name>')`) — 0016 did this correctly for `realtime`; 0022 did not for
+  `notifications`. Every write attempt failed RLS, inside the SAME transaction that had already
+  inserted the notification row, so the whole batch rolled back — nothing was ever written, and
+  `claimPending` reclaimed the identical backlog forever (visible as the same event ids retried
+  every 5 seconds, log-flooding `audit relay tick failed`). Fixed in migration 0022 directly
+  (unmerged at the time, so editing in place rather than adding a new one was correct) by adding
+  the three missing policies, mirroring 0016 exactly.
+- **Three features had a complete backend and no UI at all**, discovered by trying to use them: saved
+  messages (`chat.saved.list` existed, nothing rendered it), chat presence (the gateway broadcast
+  who was in a room; nothing in `apps/web` ever listened for it — `use-board-room.ts` has this for
+  boards, `use-channel-room.ts` never grew the equivalent), and guest invitations
+  (`chat.compliance.setGuest` was fully built and tested, and no button anywhere called it — an
+  admin's only way to add someone to a channel was the ordinary member-add control, which does not
+  set `is_guest` and does not refuse public channels the way guest access is supposed to). All
+  three are now built: a "Saved messages" and "Pinned messages" panel in the sidebar (org-wide,
+  aggregating across every channel the caller can still read, click-to-open), an "active now" avatar
+  stack in the channel header, and a "Guest access" section in channel details restricted to private
+  channels (`setGuestAccess` refuses everything else).
+- **Notifications had no click-through and only the badge count polled.** `notificationsQuery` (the
+  panel's actual contents) had no `refetchInterval`, unlike `notificationCountQuery` — so the badge
+  could climb while the open panel kept showing what it fetched on first mount. Clicking a row did
+  nothing, because nothing on the notification row stored which channel it was about. Fixed by
+  polling both queries on the same interval, and by adding a nullable `channel_id` to
+  `platform.notifications` (populated from `message.sent`'s own `channelId` at projection time) plus
+  a per-notification `markRead` so opening one mention does not silently clear the other nine.
+- **Opening an inaccessible channel by URL just hung.** The server has always answered correctly
+  (`NOT_FOUND` — §8.7's reasoning: 403 would confirm the channel exists across a boundary that is
+  supposed to be invisible), but `ChannelPanel` had no `isError` branch, so the header sat at "…"
+  forever with an empty message list — indistinguishable from slow loading. Now renders an explicit,
+  deliberately non-disclosing "This conversation isn't available" state.
+- **The seed script silently drifted from the event schema it seeds.** `message.sent` gained three
+  required fields for the notification projection (`channelName`, `parentAuthorId`,
+  `directRecipientIds`) and `packages/seed/src/modules/chat.messages.ts` was never updated —
+  `createEvent()` runs a strict Zod parse at call time, so seeding chat messages would throw at
+  runtime, not just fail `tsc`. `pnpm verify` catches this now; it would not have caught the
+  notifications RLS bug above, which only a running instance surfaced.
+
 Still open, deliberately: `apps/worker` does not exist, so the retention sweep runs on a timer in
 `apps/api` behind `RETENTION_SWEEP_ENABLED` — exactly one instance may set it, because the sweep has
 no `SKIP LOCKED` claim. See `retention.scheduler.ts`.

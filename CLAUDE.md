@@ -195,10 +195,18 @@ Channels, DMs, threads, reactions, pins, read cursors, typing, file sharing, lin
 commands, retention, legal hold, guest access and compliance export. Migrations 0017–0021, plus
 0019 for display names, which §3.1 needed and did not have.
 
-Three things in that phase are controls that looked correct and were not, and each has a test that
-fails without it — they are written up in the spec's status header, and the first is the one to
-read before touching chat authorization: **`closed` on a channel's `can()` target is the entire
-model.** Without it every member reads every DM, and the decision trace says nothing is wrong.
+Nine things in that phase are controls that looked correct and were not — three found before the
+header first said COMPLETE, six more found the same day, by manual testing against a running
+instance, after it did. All nine are written up in the spec's status header. The first is the one
+to read before touching chat authorization: **`closed` on a channel's `can()` target is the entire
+model.** Without it every member reads every DM, and the decision trace says nothing is wrong. The
+next one to read before touching the route-level permission gate: **`can()` with no target answers
+from ROLE ALONE**, which silently refused every `guest` on every chat route — a role that grants
+nothing by design — before the resource-aware check that would have consulted their tuple ever ran.
+Not every one of the nine has a test that fails without the fix; the newest three (a UI that never
+got built, a seed script drifted from the schema it seeds) had no test at all, which is why they
+survived past a header that already claimed the phase done. A green `pnpm verify` is not the same
+claim as "this works when you click it."
 
 **Read a spec's own status header before trusting a phase marker anywhere else.** The §13 roadmap
 table and this section were both stale for the whole of Phase 3.5's Wave 1 and Wave 2, which is how
