@@ -1,4 +1,4 @@
-import { and, desc, eq, schema, withOrgScope, outboxWriter } from '@taskflow/db';
+import { and, desc, eq, inArray, schema, withOrgScope, outboxWriter } from '@taskflow/db';
 import type { ChannelId, MessageId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { messagePinned, messageUnpinned } from './events.js';
@@ -124,5 +124,103 @@ export async function listPinnedMessages(
       .from(schema.pinnedMessages)
       .where(eq(schema.pinnedMessages.channelId, input.channelId))
       .orderBy(desc(schema.pinnedMessages.pinnedAt));
+  });
+}
+
+export interface PinnedMessageSummary {
+  readonly messageId: string;
+  readonly channelId: string;
+  readonly channelName: string | null;
+  readonly channelType: string;
+  readonly excerpt: string | null;
+  readonly pinnedBy: string | null;
+  readonly pinnedAt: Date;
+}
+
+/**
+ * Every pin the caller can still see, across every channel — the sidebar's
+ * "Pinned messages" surface, same shape as `saved.service.ts`'s `listSaved`
+ * and for the same reasons: one query across channels rather than a panel
+ * that only ever showed the ONE channel currently open, re-checked per
+ * DISTINCT channel (`message:read`, matching `listPinnedMessages`'s own
+ * permission) so a pin in a channel the caller has since lost access to
+ * simply stops resolving rather than re-disclosing it, and an excerpt read
+ * in one batch rather than one query per row.
+ */
+export async function listAllPinned(actor: ChatActor): Promise<readonly PinnedMessageSummary[]> {
+  return withOrgScope(orgOf(actor), async (tx) => {
+    const rows = await tx
+      .select({
+        messageId: schema.pinnedMessages.messageId,
+        channelId: schema.pinnedMessages.channelId,
+        pinnedBy: schema.pinnedMessages.pinnedBy,
+        pinnedAt: schema.pinnedMessages.pinnedAt,
+      })
+      .from(schema.pinnedMessages)
+      .orderBy(desc(schema.pinnedMessages.pinnedAt));
+
+    if (rows.length === 0) return [];
+
+    const channelInfo = new Map<
+      string,
+      { readonly name: string | null; readonly type: string } | null
+    >();
+
+    const visible: {
+      readonly messageId: string;
+      readonly channelId: string;
+      readonly pinnedBy: string | null;
+      readonly pinnedAt: Date;
+    }[] = [];
+
+    for (const row of rows) {
+      let info = channelInfo.get(row.channelId);
+
+      if (info === undefined) {
+        try {
+          const channel = await loadChannel(tx, row.channelId as ChannelId);
+          enforceOnChannel(actor, 'message:read', channel);
+          info = { name: channel.name, type: channel.type };
+        } catch {
+          info = null;
+        }
+        channelInfo.set(row.channelId, info);
+      }
+
+      if (info !== null) visible.push(row);
+    }
+
+    if (visible.length === 0) return [];
+
+    const messageRows = await tx
+      .select({
+        id: schema.messages.id,
+        bodyText: schema.messages.bodyText,
+        deletedAt: schema.messages.deletedAt,
+      })
+      .from(schema.messages)
+      .where(
+        inArray(
+          schema.messages.id,
+          visible.map((row) => row.messageId),
+        ),
+      );
+
+    const excerptById = new Map(
+      messageRows.map((row) => [row.id, row.deletedAt === null ? row.bodyText.slice(0, 280) : null]),
+    );
+
+    return visible.map((row) => {
+      const info = channelInfo.get(row.channelId);
+      return {
+        messageId: row.messageId,
+        channelId: row.channelId,
+        channelName: info?.name ?? null,
+        channelType: info?.type ?? 'public',
+        excerpt: excerptById.get(row.messageId) ?? null,
+        pinnedBy: row.pinnedBy,
+        pinnedAt: row.pinnedAt,
+      };
+    });
   });
 }

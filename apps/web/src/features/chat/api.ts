@@ -28,6 +28,9 @@ export type ChannelDetail = Wire<Outputs['channel']>;
 export type Message = Wire<Outputs['messages']>[number];
 export type ReactionRow = Wire<Outputs['reactions']>[number];
 export type PinnedMessageRow = Wire<Outputs['pins']>[number];
+export type PinnedMessageSummary = Wire<
+  Awaited<ReturnType<typeof api.chat.messages.allPins.query>>
+>[number];
 export type UnreadCount = Wire<Outputs['unreadCounts']>[number];
 
 /* -------------------------------------------------------------------------- *
@@ -105,6 +108,14 @@ export function pinsQuery(orgId: string, channelId: ChannelId) {
   return queryOptions({
     queryKey: keys.pins(orgId, channelId),
     queryFn: async () => wire(await api.chat.messages.pins.query({ channelId })),
+  });
+}
+
+/** Every pin the caller can see, across every channel — the sidebar panel. */
+export function allPinsQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.allPins(orgId),
+    queryFn: async () => wire(await api.chat.messages.allPins.query()),
   });
 }
 
@@ -268,6 +279,10 @@ export function invalidateReactions(client: QueryClient, orgId: string, channelI
 
 export function invalidatePins(client: QueryClient, orgId: string, channelId: string): void {
   void client.invalidateQueries({ queryKey: keys.pins(orgId, channelId) });
+}
+
+export function invalidateAllPins(client: QueryClient, orgId: string): void {
+  void client.invalidateQueries({ queryKey: keys.allPins(orgId) });
 }
 
 export function invalidateUnreadCounts(client: QueryClient, orgId: string): void {

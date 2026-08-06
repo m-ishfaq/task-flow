@@ -418,6 +418,10 @@ describe('the application router', () => {
          the harness would otherwise report as a leak, permanently. RLS's own
          tests and `chat-rooms.test.ts` cover it instead. */
       'chat.channels.list',
+      /* Same shape as `chat.saved.list` below — every pin the caller can
+         still see, across every channel, re-checked per channel inside the
+         service rather than by an id this technique could substitute. */
+      'chat.messages.allPins',
       /* Three more that read the CALLER's own rows and take no id — the scope is
          entirely the principal's, so there is nothing for this technique to
          substitute. Covered by the RLS tests and by their own suites. */

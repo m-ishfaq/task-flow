@@ -370,6 +370,29 @@ export function createChatRouter(deps: ChatRouterDeps) {
             .readonly(),
         )
         .query(({ input, ctx }) => pins.listPinnedMessages(actorOf(ctx), input)),
+
+      /**
+       * Every pin the caller can see, across every channel — the sidebar
+       * surface, next to `chat.saved.list`. Takes no input, same reasoning as
+       * `chat.saved.list`: the scope is entirely the caller's own tuples.
+       */
+      allPins: route({ permission: 'message:read' })
+        .output(
+          z
+            .array(
+              z.object({
+                messageId: z.string(),
+                channelId: z.string(),
+                channelName: z.string().nullable(),
+                channelType: z.string(),
+                excerpt: z.string().nullable(),
+                pinnedBy: z.string().nullable(),
+                pinnedAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ ctx }) => pins.listAllPinned(actorOf(ctx))),
     }),
 
     /**

@@ -20,11 +20,13 @@ import { RichTextEditor, RichTextView } from '../work/detail/rich-text-editor.js
 import { EMPTY_DOCUMENT, isEmptyDocument, type DocumentNode } from '../work/detail/rich-text.js';
 import { onTyping, startTyping, stopTyping } from '../../lib/chat-socket.js';
 import {
+  allPinsQuery,
   channelQuery,
   channelsQuery,
   createChannel,
   deleteMessage,
   editMessage,
+  invalidateAllPins,
   invalidateChannels,
   invalidateMessages,
   invalidatePins,
@@ -57,7 +59,7 @@ import {
   type MessagePreview,
   type ChannelSummary,
   type Message,
-  type PinnedMessageRow,
+  type PinnedMessageSummary,
   type ReactionRow,
   type SavedMessage,
 } from './api.js';
@@ -150,7 +152,8 @@ function ChannelListPanel({
       aria-label="Conversations"
       className="flex w-64 shrink-0 flex-col overflow-y-auto border-r border-line bg-surface-raised"
     >
-      <div className="border-b border-line px-1.5 py-1.5">
+      <div className="flex flex-col gap-0.5 border-b border-line px-1.5 py-1.5">
+        <PinnedMessagesButton orgId={orgId} onOpenChannel={onSelect} />
         <SavedMessagesButton orgId={orgId} onOpenChannel={onSelect} />
       </div>
 
@@ -255,6 +258,144 @@ function ChannelRow({
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
+      </button>
+    </li>
+  );
+}
+
+/**
+ * Pinned messages — ORG-wide, next to Saved (§5).
+ *
+ * Used to be a per-channel panel behind a "📌 count" button in the channel
+ * header, which meant it could only ever show the ONE conversation already
+ * open — not useful for finding a pin you remembered was in some OTHER
+ * channel. Moved here for the same reason Saved lives here: `chat.messages
+ * .allPins` is one query across every channel the caller can still read
+ * (`pin.service.ts`'s `listAllPinned`, same re-check-on-read as saved
+ * messages), so this is the other place in the sidebar that is not a
+ * channel or a DM.
+ *
+ * The per-message Pin/Unpin toggle on a message itself is unaffected — it
+ * still reads the current channel's own `chat.messages.pins`, which this
+ * panel's Unpin action also invalidates so the two never disagree.
+ */
+function PinnedMessagesButton({
+  orgId,
+  onOpenChannel,
+}: {
+  readonly orgId: string;
+  readonly onOpenChannel: (channelId: ChannelId) => void;
+}) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const pins = useQuery({ ...allPinsQuery(orgId), enabled: orgId !== '' });
+  const list = pins.data ?? [];
+
+  const unpin = useMutation({
+    mutationFn: (input: { channelId: ChannelId; messageId: MessageId }) => unpinMessage(input),
+    onSuccess: (_result, input) => {
+      invalidateAllPins(queryClient, orgId);
+      invalidatePins(queryClient, orgId, input.channelId);
+    },
+    onError: (error) => {
+      toast.failure('That could not be unpinned', error);
+    },
+  });
+
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <button
+          type="button"
+          aria-label={list.length > 0 ? `Pinned messages, ${String(list.length)}` : 'Pinned messages'}
+          className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm text-ink-muted hover:bg-surface-hover hover:text-ink"
+        >
+          <span className="flex items-center gap-1.5">
+            <span aria-hidden>📌</span>
+            Pinned messages
+          </span>
+          {list.length > 0 && (
+            <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-surface-hover px-1 text-[10px] font-semibold text-ink-muted">
+              {list.length > 99 ? '99+' : list.length}
+            </span>
+          )}
+        </button>
+      </Popover.Trigger>
+
+      <Popover.Portal>
+        <Popover.Content
+          align="start"
+          sideOffset={6}
+          className="z-50 w-80 overflow-hidden rounded-md border border-line bg-surface shadow-lg"
+        >
+          <header className="border-b border-line px-3 py-2">
+            <h2 className="text-sm font-medium text-ink">Pinned messages</h2>
+          </header>
+
+          <div className="max-h-96 overflow-y-auto">
+            {list.length === 0 ? (
+              <div className="p-3">
+                <Empty title="Nothing pinned yet" description="Pin a message to find it here later." />
+              </div>
+            ) : (
+              <ul>
+                {list.map((row) => (
+                  <PinnedMessageSidebarRow
+                    key={row.messageId}
+                    row={row}
+                    pending={unpin.isPending}
+                    onOpen={() => {
+                      onOpenChannel(row.channelId as ChannelId);
+                    }}
+                    onUnpin={() => {
+                      unpin.mutate({
+                        channelId: row.channelId as ChannelId,
+                        messageId: row.messageId as MessageId,
+                      });
+                    }}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+function PinnedMessageSidebarRow({
+  row,
+  pending,
+  onOpen,
+  onUnpin,
+}: {
+  readonly row: PinnedMessageSummary;
+  readonly pending: boolean;
+  readonly onOpen: () => void;
+  readonly onUnpin: () => void;
+}) {
+  return (
+    <li className="border-b border-line px-3 py-2 last:border-b-0">
+      <button type="button" onClick={onOpen} className="flex w-full flex-col gap-0.5 text-left">
+        <span className="truncate text-xs font-medium text-ink">
+          {row.channelType === 'public' ? '# ' : row.channelType === 'private' ? '🔒 ' : ''}
+          {row.channelName ?? 'Direct message'}
+        </span>
+        <span className="line-clamp-2 text-xs text-ink-muted">
+          {row.excerpt ?? '(message deleted)'}
+        </span>
+        <span className="text-[11px] text-ink-faint">
+          Pinned {new Date(row.pinnedAt).toLocaleString()}
+        </span>
+      </button>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={onUnpin}
+        className="mt-1 text-[11px] text-ink-faint hover:text-ink"
+      >
+        Unpin
       </button>
     </li>
   );
@@ -620,7 +761,6 @@ function ChannelPanel({
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<DocumentNode>(EMPTY_DOCUMENT);
-  const [pinsOpen, setPinsOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   /** What the upload is doing right now — presign, PUT, or scan. */
   const [uploadStage, setUploadStage] = useState<string | null>(null);
@@ -744,6 +884,7 @@ function ChannelPanel({
     },
     onSuccess: () => {
       invalidatePins(queryClient, orgId, channelId);
+      invalidateAllPins(queryClient, orgId);
     },
     onError: (error) => {
       toast.failure('The pin was not saved', error);
@@ -1046,34 +1187,7 @@ function ChannelPanel({
           >
             👥 {channel.data?.memberIds.length ?? 0}
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setPinsOpen((open) => !open);
-            }}
-            className={cn(
-              'flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs',
-              pinsOpen
-                ? 'bg-accent text-accent-ink'
-                : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-            )}
-          >
-            📌 {pins.data?.length ?? 0}
-          </button>
         </header>
-
-        {pinsOpen && (
-          <PinnedPanel
-            pins={pins.data ?? []}
-            messagesById={
-              new Map((messages.data ?? []).map((message) => [message.messageId, message]))
-            }
-            personOf={personOf}
-            onUnpin={(messageId) => {
-              togglePin.mutate({ messageId: messageId as MessageId, pinned: true });
-            }}
-          />
-        )}
 
         <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
           {messages.isLoading ? (
@@ -1447,51 +1561,6 @@ function describeTyping(
   if (second === undefined) return `${first} is typing…`;
   if (names.length === 2) return `${first} and ${second} are typing…`;
   return `${String(names.length)} people are typing…`;
-}
-
-function PinnedPanel({
-  pins,
-  messagesById,
-  personOf,
-  onUnpin,
-}: {
-  readonly pins: readonly PinnedMessageRow[];
-  readonly messagesById: Map<string, Message>;
-  readonly personOf: (userId: string) => { readonly label: string };
-  readonly onUnpin: (messageId: string) => void;
-}) {
-  return (
-    <div className="max-h-40 shrink-0 overflow-y-auto border-b border-line bg-surface-raised px-4 py-2">
-      {pins.length === 0 ? (
-        <p className="text-xs text-ink-faint">No pinned messages yet.</p>
-      ) : (
-        <ul className="space-y-1.5">
-          {pins.map((pin) => {
-            const message = messagesById.get(pin.messageId);
-            return (
-              <li key={pin.messageId} className="flex items-start justify-between gap-2 text-xs">
-                <div className="min-w-0">
-                  <p className="truncate text-ink">{message?.bodyText ?? '(message not loaded)'}</p>
-                  <p className="text-ink-faint">
-                    {pin.pinnedBy === null ? 'Pinned' : `Pinned by ${personOf(pin.pinnedBy).label}`}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onUnpin(pin.messageId);
-                  }}
-                  className="shrink-0 text-ink-faint hover:text-ink"
-                >
-                  Unpin
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
 }
 
 /**
