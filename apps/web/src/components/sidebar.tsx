@@ -85,6 +85,14 @@ export function Sidebar() {
             My tasks
           </Link>
 
+          <Link
+            to="/chat"
+            className="mb-2 block rounded px-1 py-1 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
+            activeProps={{ className: 'bg-surface-hover text-ink' }}
+          >
+            Chat
+          </Link>
+
           <PinnedBoards />
 
           <p className="px-1 pt-2 pb-1 text-[10px] font-semibold tracking-wide text-ink-faint uppercase">

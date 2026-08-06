@@ -1,7 +1,7 @@
 import { TRPCError, initTRPC } from '@trpc/server';
 import { ZodError } from 'zod';
 import { AppError, isAppError, type ApiError } from '@taskflow/contracts';
-import { can, type Permission } from '@taskflow/policy';
+import { couldGrant, type Permission } from '@taskflow/policy';
 import {
   subjectOf,
   type AuthenticatedContext,
@@ -303,21 +303,33 @@ const STEP_UP_MAX_AGE_MS = 5 * 60 * 1000;
 /**
  * Authenticated route requiring `permission`.
  *
- * The check here is the ORG-LEVEL capability gate — "may a member of this role
- * do this kind of thing at all". It runs before the handler and therefore before
- * any row is loaded, which is exactly why it cannot be the whole story:
- * per-resource authorization needs the resource, so a handler that touches one
- * calls `enforce()` from @taskflow/policy once it has loaded the row. Layer 1
- * narrows; layer 2 decides.
+ * The check here is a COARSE capability gate — "could a principal like this
+ * one ever do this kind of thing at all". It runs before the handler and
+ * therefore before any row is loaded, which is exactly why it cannot be the
+ * whole story: per-resource authorization needs the resource, so a handler
+ * that touches one calls `enforce()` from @taskflow/policy once it has
+ * loaded the row. Layer 1 narrows; layer 2 decides.
+ *
+ * `couldGrant`, not `can(...).allowed` with no target. `can()` with no
+ * target answers from ROLE alone — correct for every role except `guest`,
+ * which grants nothing by itself and gains access entirely through a tuple
+ * on one specific channel (`packages/policy/src/roles.ts`). Asking `can()`
+ * here refused every guest on every chat route before the handler ever
+ * loaded the channel that would have granted them the permission through
+ * that tuple — layer 2 never got a chance to run. `couldGrant` accounts for
+ * "or holds a tuple that could grant it, on SOMETHING" — coarser than a real
+ * decision, which is fine, because layer 2 is what actually decides once it
+ * has the resource. See `couldGrant`'s own comment for why widening layer 1
+ * this way costs nothing.
  */
 export function route(meta: { permission: Permission; stepUp?: boolean }) {
   return procedure.meta(meta).use(async ({ ctx, next, meta: routeMeta }) => {
     const scoped = requireOrg(requireAuth(ctx, routeMeta));
 
-    const decision = can(subjectOf(scoped.principal), meta.permission);
-    if (!decision.allowed) {
-      // The trace goes on the audit entry, never to the client — telling a
-      // caller which rule denied them is a map of the permission model.
+    if (!couldGrant(subjectOf(scoped.principal), meta.permission)) {
+      // No decision trace in the message — telling a caller which rule
+      // denied them is a map of the permission model. `enforce()` at layer
+      // 2, once it has a resource, is what a decision trace belongs to.
       throw new TRPCError({
         code: 'FORBIDDEN',
         cause: new AppError('FORBIDDEN', 'You do not have permission to perform this action.'),

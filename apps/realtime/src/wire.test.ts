@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { boardIdOfRoom, boardRoom, JoinRequestSchema, LeaveRequestSchema } from './wire.js';
+import {
+  boardIdOfRoom,
+  boardRoom,
+  ChannelJoinRequestSchema,
+  channelIdOfRoom,
+  channelRoom,
+  JoinRequestSchema,
+  LeaveRequestSchema,
+} from './wire.js';
 
 /**
  * The wire contract's security property (ai/phase-4-realtime.md §3.7, §6.4).
@@ -108,5 +116,68 @@ describe('room naming', () => {
     // that answered for every room would silently mis-route the first one.
     expect(boardIdOfRoom('user:123')).toBeNull();
     expect(boardIdOfRoom('')).toBeNull();
+  });
+});
+
+/**
+ * The same property, on the chat namespace (ai/phase-5-chat.md §3.2, §3.7).
+ *
+ * Asserted separately rather than by parameterising the block above, because the
+ * point is not "both schemas happen to be strict" — it is that the DM join path
+ * has no field for a subject either. A `userId` on THIS schema would be worse
+ * than on the board one: "subscribe me to this conversation as this person" is
+ * the whole vulnerability in a single JSON field, and the room it names may hold
+ * exactly two people.
+ */
+describe('ChannelJoinRequestSchema — no identity on the DM path either (§3.3)', () => {
+  const CHANNEL = '0195ff00-0000-7000-8000-000000000c12';
+
+  it('accepts a well-formed request naming only a scope and a channel', () => {
+    const parsed = ChannelJoinRequestSchema.safeParse({ orgId: ORG, channelId: CHANNEL });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('REFUSES a request carrying a userId rather than ignoring it', () => {
+    /* Refused, not stripped. A silently dropped field reads as harmless to the
+       next person and invites a handler that reads it; a hard rejection is what
+       makes adding one a visible decision. */
+    const parsed = ChannelJoinRequestSchema.safeParse({
+      orgId: ORG,
+      channelId: CHANNEL,
+      userId: OTHER_USER,
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it('REFUSES any unknown field at all', () => {
+    const parsed = ChannelJoinRequestSchema.safeParse({
+      orgId: ORG,
+      channelId: CHANNEL,
+      asUser: OTHER_USER,
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it('refuses a channel id that is not a uuid', () => {
+    expect(ChannelJoinRequestSchema.safeParse({ orgId: ORG, channelId: 'all' }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe('channel room names', () => {
+  it('round-trips', () => {
+    const CHANNEL = '0195ff00-0000-7000-8000-000000000c12';
+    expect(channelIdOfRoom(channelRoom(CHANNEL))).toBe(CHANNEL);
+  });
+
+  it('does not mistake a board room for a channel room', () => {
+    /* The two namespaces are separate, but the room-name helpers are not — a
+       prefix collision would let a board id resolve as a channel id and route a
+       broadcast to a room whose membership was decided by a different can(). */
+    expect(channelIdOfRoom(boardRoom(BOARD))).toBeNull();
+    expect(boardIdOfRoom(channelRoom(BOARD))).toBeNull();
   });
 });

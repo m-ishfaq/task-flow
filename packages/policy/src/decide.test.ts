@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isAppError, unsafeAsId, type OrgId, type UserId } from '@taskflow/contracts';
-import { can, formatTrace, allowed, type Subject, type Target } from './decide.js';
+import { can, couldGrant, formatTrace, allowed, type Subject, type Target } from './decide.js';
 import { enforce } from './enforce.js';
 import type { RelationshipTuple } from './tuples.js';
 import type { Role } from './roles.js';
@@ -43,6 +43,98 @@ describe('org-level capabilities', () => {
     // org-level check would mean owning a board could delete the organization.
     const withOwnership = subject('member', [tuple('owner', BOARD)]);
     expect(can(withOwnership, 'org:delete').allowed).toBe(false);
+  });
+});
+
+describe('couldGrant — the route-level pre-check', () => {
+  /* apps/api/src/trpc/builder.ts's `route()` runs this, with no resource
+     loaded yet, before every handler behind `permission`. The regression this
+     guards: it used to call `can(subject, permission)` with no target, which
+     answers from ROLE ALONE (see the no-target branch in `can` above) — right
+     for every role except `guest`, which grants nothing by itself. That
+     refused a guest on every chat route before the handler ever loaded the
+     one channel their TUPLE would have granted them — layer 2 never ran. */
+
+  it('grants what the role grants, same as before', () => {
+    expect(couldGrant(subject('owner'), 'org:delete')).toBe(true);
+    expect(couldGrant(subject('admin'), 'org:delete')).toBe(false);
+  });
+
+  it('a guest with a channel tuple passes the pre-check for channel:read', () => {
+    const channel = { type: 'channel', id: 'chan_1' } as const;
+    const guest = subject('guest', [tuple('member', channel)]);
+
+    // The role alone still grants nothing — this is not a role change.
+    expect(couldGrant(subject('guest'), 'channel:read')).toBe(false);
+    // But a guest who holds ANY tuple whose relation covers the permission
+    // must pass the coarse pre-check, or the handler that would consult
+    // their tuple on the SPECIFIC channel never runs at all.
+    expect(couldGrant(guest, 'channel:read')).toBe(true);
+  });
+
+  it('a guest with no tuples at all still fails the pre-check', () => {
+    // Not a regression to relax: someone who holds nothing, by role or by
+    // tuple, cannot pass this on any object, and layer 2 would only confirm
+    // that at the cost of a wasted round trip.
+    expect(couldGrant(subject('guest'), 'channel:read')).toBe(false);
+  });
+
+  it('an unrecognized role denies, the same as can() does', () => {
+    expect(couldGrant(subject('temp-worker' as Role), 'channel:read')).toBe(false);
+  });
+
+  it('a channel tuple grants the OTHER permissions a channel member actually needs', () => {
+    // `message:create` and `attachment:download` do not have "channel" in
+    // their own name, but `enforceOnChannel` checks them against the CHANNEL
+    // as its target regardless — so a channel tuple must widen these too, or
+    // the very case `couldGrant` exists for (a guest posting in the one
+    // channel they were invited to) breaks again. `guest`, so the role
+    // contributes nothing to either assertion.
+    const channel = { type: 'channel', id: 'chan_1' } as const;
+    const guestInChannel = subject('guest', [tuple('member', channel)]);
+
+    expect(couldGrant(guestInChannel, 'message:create')).toBe(true);
+    expect(couldGrant(guestInChannel, 'attachment:download')).toBe(true);
+  });
+
+  it('a channel tuple does not widen a permission with no layer 2 at all', () => {
+    /* The vulnerability an adversarial review caught before merge: `member`'s
+       grant set is derived from an ACTION SUFFIX (`read`/`download`), matched
+       against every permission ending in `:read` — including `audit:read`,
+       `member:read`, `team:read`, `org:read`, none of which have anything to
+       do with a channel. `tenancy.audit.list`, `tenancy.members.list` and
+       `tenancy.teams.list` have NO layer 2 anywhere — an org-level capability
+       has no per-resource grant to consult, so `route()`'s pre-check IS their
+       entire authorization decision, for every tuple a subject could ever
+       hold. `isOrgLevel` is what closes it. `guest`, so the role itself
+       contributes nothing to any assertion below — any `true` could only have
+       come from the tuple. */
+    const channel = { type: 'channel', id: 'chan_1' } as const;
+    const guestInChannel = subject('guest', [tuple('member', channel)]);
+
+    expect(couldGrant(guestInChannel, 'audit:read')).toBe(false);
+    expect(couldGrant(guestInChannel, 'member:read')).toBe(false);
+    expect(couldGrant(guestInChannel, 'team:read')).toBe(false);
+    expect(couldGrant(guestInChannel, 'org:read')).toBe(false);
+
+    // The channel tuple still does its actual job.
+    expect(couldGrant(guestInChannel, 'channel:read')).toBe(true);
+  });
+
+  it('no tuple at any relation reaches an org-level permission, not even the broadest one', () => {
+    // `owner` is the widest relation there is — every action, on any object.
+    // If anything could smuggle a tuple past `isOrgLevel`, this would be it.
+    const anyObject = { type: 'card', id: 'card_1' } as const;
+    const withOwnerTuple = subject('guest', [tuple('owner', anyObject)]);
+
+    expect(couldGrant(withOwnerTuple, 'audit:read')).toBe(false);
+    expect(couldGrant(withOwnerTuple, 'org:update')).toBe(false);
+    expect(couldGrant(withOwnerTuple, 'member:manage')).toBe(false);
+    expect(couldGrant(withOwnerTuple, 'team:manage')).toBe(false);
+    expect(couldGrant(withOwnerTuple, 'apiToken:create')).toBe(false);
+
+    // The same tuple still does its actual, resource-scoped job.
+    expect(couldGrant(withOwnerTuple, 'card:update')).toBe(true);
   });
 });
 
@@ -188,6 +280,78 @@ describe('fail-closed behaviour', () => {
   it('denies an unknown role rather than treating it as a member', () => {
     const decision = can(subject('superuser' as never), 'card:read', cardTarget());
     expect(decision.allowed).toBe(false);
+  });
+});
+
+/**
+ * Closed resources — a private channel or a DM (ai/phase-5-chat.md §3.3).
+ *
+ * Every assertion here is about the same failure, approached from a different
+ * angle: `member` holds `channel:read` from the role matrix, so a channel target
+ * built WITHOUT `closed` is allowed for everyone in the organization. Nothing
+ * throws and the decision trace reads as correct — the role really does grant
+ * the permission and there really is no tuple to weigh against it — so the only
+ * thing standing between a private conversation and every colleague is the flag
+ * these tests pin down.
+ */
+describe('closed resources', () => {
+  const CHANNEL = { type: 'channel', id: 'chan_5a1' } as const;
+
+  const openChannel: Target = { orgId: ORG_A, resource: CHANNEL, ancestors: [] };
+  const closedChannel: Target = { ...openChannel, closed: true };
+
+  it('lets the role reach an OPEN channel — the public case', () => {
+    expect(can(subject('member'), 'channel:read', openChannel).allowed).toBe(true);
+  });
+
+  it('denies a closed channel to a member holding no relation on it', () => {
+    // The whole point. Without `closed`, this is `true`.
+    expect(can(subject('member'), 'channel:read', closedChannel).allowed).toBe(false);
+  });
+
+  it('allows a closed channel to someone holding a member tuple on it', () => {
+    const insider = subject('member', [tuple('member', CHANNEL)]);
+    expect(can(insider, 'channel:read', closedChannel).allowed).toBe(true);
+    expect(can(insider, 'message:create', closedChannel).allowed).toBe(true);
+  });
+
+  it('does NOT let an owner or admin bypass it', () => {
+    /* `bypassesRestrictions` lets an administrator through a restrictive CAP,
+       because they could delete the tuple anyway. That reasoning does not extend
+       to a resource they hold nothing on, and the difference is visibility:
+       adding yourself to a private channel is an act its members can see, and
+       for a DM there is no membership to grant yourself at all. The audited path
+       to someone else's conversation is compliance export. */
+    expect(can(subject('owner'), 'channel:read', closedChannel).allowed).toBe(false);
+    expect(can(subject('admin'), 'channel:read', closedChannel).allowed).toBe(false);
+  });
+
+  it('still honours a grant on the resource for an admin', () => {
+    const admin = subject('admin', [tuple('member', CHANNEL)]);
+    expect(can(admin, 'channel:read', closedChannel).allowed).toBe(true);
+  });
+
+  it('says why, rather than denying silently', () => {
+    const decision = can(subject('member'), 'channel:read', closedChannel);
+    const denial = decision.trace.find((step) => step.outcome === 'deny');
+
+    expect(denial?.rule).toContain('closed');
+    expect(decision.reason).toContain('not a member');
+  });
+
+  it('answers 404 through enforce, not 403', () => {
+    /* A non-member must not learn that a private channel exists. `enforce`
+       derives this from `channel:read` also failing, so it falls out of the
+       closed check rather than needing its own branch. */
+    expect(thrownCode(() => enforce(subject('member'), 'message:create', closedChannel))).toBe(
+      'NOT_FOUND',
+    );
+  });
+
+  it('leaves every open resource unaffected', () => {
+    // The flag is opt-in. Work has no closed resources and must not acquire one
+    // by accident, so the default is checked explicitly.
+    expect(can(subject('member'), 'card:read', cardTarget()).allowed).toBe(true);
   });
 });
 

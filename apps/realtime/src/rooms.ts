@@ -1,8 +1,15 @@
 import { withOrgScope } from '@taskflow/db';
 import { can, type Decision } from '@taskflow/policy';
-import { OrgIdSchema, type BoardId, type OrgId, type UserId } from '@taskflow/contracts';
+import {
+  OrgIdSchema,
+  type BoardId,
+  type ChannelId,
+  type OrgId,
+  type UserId,
+} from '@taskflow/contracts';
 import { resolveOrgMembership } from '@taskflow/api/tenancy/resolve';
 import { loadBoard } from '@taskflow/api/work/board';
+import { channelTarget, loadChannel } from '@taskflow/api/chat/channel';
 
 /**
  * Room authorization (ai/phase-4-realtime.md §3.3, §6.2).
@@ -43,7 +50,7 @@ export interface JoinAuthorization {
    */
   readonly decision?: Decision;
   /** Coarse reason, for logs. Never sent to the client — see `JoinRefusal`. */
-  readonly reason: 'granted' | 'not_a_member' | 'no_such_board' | 'denied';
+  readonly reason: 'granted' | 'not_a_member' | 'no_such_board' | 'no_such_channel' | 'denied';
 }
 
 /**
@@ -110,6 +117,69 @@ export async function authorizeJoin(
          silently refuse anyone whose access came from a project-level tuple. */
       ancestors: [{ type: 'project', id: board.projectId }],
     },
+  );
+
+  return decision.allowed
+    ? { allowed: true, decision, reason: 'granted' }
+    : { allowed: false, decision, reason: 'denied' };
+}
+
+/**
+ * Decides whether `userId` may join `channel:{channelId}` in `orgId`
+ * (ai/phase-5-chat.md §3.3).
+ *
+ * ## This is not a special case for DMs, and that is the entire point
+ *
+ * A DM is a `channels` row like any other. It authorizes through the same
+ * `loadChannel`, the same `channelTarget`, the same `can()` — there is no
+ * `participantIds.includes(userId)` anywhere on this path, and there must never
+ * be one. §3.3 singles this out because a DM is the surface where an inline
+ * membership shortcut would be both most tempting (the participant list is right
+ * there on the row... except it is not, see below) and most damaging to get
+ * wrong.
+ *
+ * Membership is a relationship TUPLE, already resolved onto the subject by
+ * `resolveOrgMembership`. So the decision below consults exactly the same inputs
+ * the HTTP path does, and there is no second query that could disagree with it.
+ *
+ * ## `channelTarget` carries `closed`, and omitting it would be silent
+ *
+ * `member` holds `channel:read` from the role matrix — for PUBLIC channels. A
+ * target built without `closed` therefore grants every org member access to
+ * every private channel and every DM, with a decision trace that reads as
+ * entirely correct. That is why the target is built by a shared helper in
+ * `apps/api` rather than assembled here: the gateway cannot construct a channel
+ * target that forgets the flag, because it does not construct one at all.
+ */
+export async function authorizeChannelJoin(
+  userId: UserId,
+  orgId: OrgId,
+  channelId: ChannelId,
+): Promise<JoinAuthorization> {
+  const membership = await resolveOrgMembership(userId, orgId);
+  if (membership === null) return { allowed: false, reason: 'not_a_member' };
+
+  const channel = await withOrgScope(orgId, async (tx) => {
+    try {
+      return await loadChannel(tx, channelId);
+    } catch {
+      /* `loadChannel` throws a tRPC NOT_FOUND. There is no HTTP response to
+         shape here, and RLS has already erased the difference between "no such
+         channel" and "a channel in another tenant". */
+      return null;
+    }
+  });
+
+  if (channel === null) return { allowed: false, reason: 'no_such_channel' };
+
+  const decision = can(
+    { orgId: membership.orgId, userId, role: membership.role, tuples: membership.tuples },
+    'channel:read',
+    /* Re-parsed rather than cast: `ChannelRow.orgId` comes straight off the
+       Drizzle row, and this module is the trust boundary where it becomes a
+       branded id. The helper's own `orgId` is already typed `OrgId`, so this
+       narrows the row's value before it gets there. */
+    channelTarget({ ...channel, orgId: OrgIdSchema.parse(channel.orgId) }),
   );
 
   return decision.allowed

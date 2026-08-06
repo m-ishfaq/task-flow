@@ -1,6 +1,7 @@
 import { hasAuditDatabase } from '@taskflow/db';
 import type { Logger } from '@taskflow/observability';
 import { drainOutboxFully } from './audit.projection.js';
+import { drainNotificationsFully } from '../chat/notification.projection.js';
 
 /**
  * Drives the outbox relay on a timer (PLAN.md §10.6).
@@ -78,6 +79,20 @@ export function startAuditRelay(options: StartRelayOptions): RelayHandle {
       const result = await drainOutboxFully();
       if (result.processed > 0) {
         options.logger.debug({ processed: result.processed }, 'audit relay drained outbox');
+      }
+
+      /* The notification projection rides the same tick but claims under its
+         OWN consumer name (migration 0015), so it drains the same rows
+         independently — one falling behind or erroring never starves the
+         other, and neither marks the other's rows done.
+
+         Awaited AFTER audit rather than in parallel: audit is the compliance
+         record and gets the database first if they contend. A notification
+         arriving a tick late is not a defect; an audit entry doing so is the
+         thing this relay exists to prevent. */
+      const notified = await drainNotificationsFully();
+      if (notified.written > 0) {
+        options.logger.debug({ written: notified.written }, 'notification projection wrote rows');
       }
     } catch (error) {
       /* Logged, never rethrown. An unhandled rejection inside a timer takes the

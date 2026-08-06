@@ -17,6 +17,7 @@
     "@taskflow/contracts": "workspace:*",
     "@taskflow/db": "workspace:*",
     "@taskflow/events": "workspace:*",
+    "@taskflow/filter": "workspace:*",
     "@taskflow/policy": "workspace:*",
     "@taskflow/security": "workspace:*",
     "@taskflow/storage": "workspace:*"

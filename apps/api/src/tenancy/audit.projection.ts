@@ -49,6 +49,12 @@ import {
  * is worse than one that attributes it to nothing.
  */
 const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>> = {
+  /* A person renaming themselves. Resolves to `member` keyed on `userId`,
+     matching `member.role_changed` above: the subject of the entry is the
+     account, and "what has this account been called" is the question a reader
+     of an old entry has when a name no longer matches anyone. */
+  'user.display_name_changed': { type: 'member', key: 'userId' },
+
   'org.created': { type: 'org', key: 'orgId' },
   'org.updated': { type: 'org', key: 'orgId' },
   'member.added': { type: 'member', key: 'userId' },
@@ -103,7 +109,82 @@ const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>> = {
   'comment.created': { type: 'comment', key: 'commentId' },
   'comment.updated': { type: 'comment', key: 'commentId' },
   'comment.deleted': { type: 'comment', key: 'commentId' },
+
+  /* Chat (Phase 5). Membership changes resolve to the CHANNEL rather than to
+     the member, which is the opposite of what `member.added` does one section
+     up — and the difference is what a reader of the audit log is looking for.
+     An org membership change is a fact about a PERSON ("what happened to this
+     account?"); a channel membership change is a fact about a private space
+     ("who has had access to this conversation, and when?"). Resolving these to
+     the user would scatter one channel's access history across as many resource
+     ids as it has members, which is precisely the query an access review needs
+     to be able to run.
+
+     Messages resolve to the message, not the channel, for the ordinary reason
+     `card.moved` resolves to the card: the compliance record should name the
+     thing that changed. */
+  'channel.created': { type: 'channel', key: 'channelId' },
+  'channel.updated': { type: 'channel', key: 'channelId' },
+  'channel.archived': { type: 'channel', key: 'channelId' },
+  'channel.member_added': { type: 'channel', key: 'channelId' },
+  'channel.member_removed': { type: 'channel', key: 'channelId' },
+  'message.sent': { type: 'message', key: 'messageId' },
+  'message.edited': { type: 'message', key: 'messageId' },
+  'message.deleted': { type: 'message', key: 'messageId' },
+
+  /* Wave 3 — file sharing and link previews.
+
+     The attachment events resolve to the ATTACHMENT, not the message: "who
+     downloaded which file" is the question an incident asks, and attributing it
+     to the message would collapse every file in a thread into one resource id.
+     `message.unfurled` resolves to the message, because that is the thing that
+     changed. */
+  'message_attachment.presigned': { type: 'attachment', key: 'attachmentId' },
+  'message_attachment.uploaded': { type: 'attachment', key: 'attachmentId' },
+  'message_attachment.rejected': { type: 'attachment', key: 'attachmentId' },
+  'message_attachment.downloaded': { type: 'attachment', key: 'attachmentId' },
+  'message_attachment.deleted': { type: 'attachment', key: 'attachmentId' },
+  'message.unfurled': { type: 'message', key: 'messageId' },
+  'message.attachments_changed': { type: 'message', key: 'messageId' },
+
+  /* Wave 4 — retention, legal hold, guests, export.
+
+     All resolve to the CHANNEL rather than to the message or the person, and
+     for the reason the membership events above give: these are facts about a
+     space and its governance. "What was the retention history of this channel,
+     and who held or exported it" is one query against one resource id, which is
+     exactly what a compliance review needs. `legal_hold.changed` resolves to
+     the channel even when it names a single message, so a per-message hold and
+     a channel-wide one appear in the same history. */
+  'channel.retention_changed': { type: 'channel', key: 'channelId' },
+  'legal_hold.changed': { type: 'channel', key: 'channelId' },
+  'channel.guest_changed': { type: 'channel', key: 'channelId' },
+  'compliance.exported': { type: 'channel', key: 'channelId' },
+  'message.reaction_added': { type: 'message', key: 'messageId' },
+  'message.reaction_removed': { type: 'message', key: 'messageId' },
+  'message.pinned': { type: 'message', key: 'messageId' },
+  'message.unpinned': { type: 'message', key: 'messageId' },
+
+  /* `channel.read_advanced` is deliberately ABSENT from this table. It is
+     never looked up here because it never reaches `insertAuditEntry` at all
+     — see `NEVER_AUDITED` below, which is where the exclusion actually
+     happens. */
 };
+
+/**
+ * Events that reach this consumer and are claimed/marked exactly like any
+ * other, but must never become an `audit.audit_log` row (ai/phase-5-chat.md
+ * §3.6; migration 0018's header comment).
+ *
+ * `channel.read_advanced` fires on ordinary scrolling — the highest-frequency
+ * write this phase introduces — and "user read up to message X" is not a
+ * compliance-relevant fact at the volume it will actually see. Excluding it
+ * here rather than not emitting it at all keeps guardrail 11 satisfied (every
+ * state-mutating service method still emits a typed event, so the outbox
+ * still drives unread-badge sync and any future consumer) while keeping the
+ * append-only, hash-chained log free of a write nobody will ever audit.
+ */
+const NEVER_AUDITED: ReadonlySet<string> = new Set(['channel.read_advanced']);
 
 interface Resource {
   readonly type: string | null;
@@ -151,6 +232,8 @@ export async function drainOutbox(limit = 100): Promise<DrainResult> {
     if (pending.length === 0) return { processed: 0 };
 
     for (const row of pending) {
+      if (NEVER_AUDITED.has(row.name)) continue;
+
       const resource = resourceOf(row);
 
       /* `id` is the EVENT's id, reused as the audit entry's id. One event

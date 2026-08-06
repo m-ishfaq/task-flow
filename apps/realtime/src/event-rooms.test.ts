@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { assertRoomTableIsSafe, broadcastEventNames, roomBoardIdOf } from './event-rooms.js';
+import {
+  assertRoomTableIsSafe,
+  broadcastEventNames,
+  chatBroadcastEventNames,
+  roomBoardIdOf,
+  roomChannelIdOf,
+} from './event-rooms.js';
 
 /**
  * The event→room table (ai/phase-4-realtime.md §3.4, §4, Wave 2).
@@ -110,6 +116,81 @@ describe('assertRoomTableIsSafe', () => {
         projectScopedPrefixes.some((prefix) => name.startsWith(prefix)),
         name,
       ).toBe(false);
+    }
+  });
+});
+
+/**
+ * The chat half of the table (ai/phase-5-chat.md §3.4).
+ *
+ * Same mechanism, second table. These assertions are the reason the two are
+ * separate maps rather than one with a discriminator: every property below is
+ * about a chat event NOT being routed somewhere, and a merged table would make
+ * "which room" a judgment call at broadcast time, which is exactly what §3.4
+ * rules out.
+ */
+describe('roomChannelIdOf', () => {
+  const CHANNEL = '0195ff00-0000-7000-8000-000000000c12';
+
+  it('resolves a message event to its channel', () => {
+    expect(roomChannelIdOf('message.sent', { channelId: CHANNEL })).toBe(CHANNEL);
+  });
+
+  it('returns null for an event with no channel mapping', () => {
+    expect(roomChannelIdOf('card.moved', { boardId: CHANNEL })).toBeNull();
+  });
+
+  it('returns null when the payload lacks the key the table expects', () => {
+    // A malformed payload is not a reason to guess at an audience — and on this
+    // table the audience may be a two-person conversation.
+    expect(roomChannelIdOf('message.sent', { messageId: CHANNEL })).toBeNull();
+    expect(roomChannelIdOf('message.sent', null)).toBeNull();
+  });
+
+  it('does not resolve board events, and roomBoardIdOf does not resolve chat ones', () => {
+    /* The two tables must stay disjoint. An event in both would be delivered to
+       two rooms on two namespaces whose membership was decided by two different
+       `can()` calls, and a mistake in either is invisible from inside the
+       other. `assertRoomTableIsSafe` fails the boot on this; here it is checked
+       as a property of the current tables. */
+    for (const name of chatBroadcastEventNames()) {
+      expect(broadcastEventNames(), name).not.toContain(name);
+    }
+  });
+
+  it('routes the attachment-changed signal, which names no file', () => {
+    /* The event that exists BECAUSE the attachment ban left the room with no
+       signal at all — a file was visible only to whoever uploaded it. It is
+       safe to broadcast precisely because its payload is a channel and a
+       message and nothing else; the guard below proves the banned ones still
+       cannot join it. */
+    expect(chatBroadcastEventNames()).toContain('message.attachments_changed');
+    expect(roomChannelIdOf('message.attachments_changed', { channelId: CHANNEL })).toBe(CHANNEL);
+  });
+
+  it('never maps an attachment.* event', () => {
+    // §3.10: chat file sharing reuses Work's pipeline, and reuses its exclusion.
+    // A presigned URL in a channel room is a bearer credential handed to
+    // everyone subscribed.
+    for (const name of chatBroadcastEventNames()) {
+      expect(name.startsWith('attachment.')).toBe(false);
+    }
+  });
+
+  it('never maps channel.created or a membership change', () => {
+    /* `channel.created` names a channel nobody can have joined — a broadcast
+       with zero possible subscribers, which looks like a working feature under
+       any test that does not check who received it.
+
+       `channel.member_removed` is the subtler one: the socket that must act on
+       a removal belongs to the person removed, who is by definition no longer
+       entitled to the room the message would go to. Eviction is
+       `revocation.ts`'s job, and a room mapping here would make it look as
+       though the broadcast were doing the work. */
+    for (const name of chatBroadcastEventNames()) {
+      expect(name).not.toBe('channel.created');
+      expect(name).not.toBe('channel.member_added');
+      expect(name).not.toBe('channel.member_removed');
     }
   });
 });

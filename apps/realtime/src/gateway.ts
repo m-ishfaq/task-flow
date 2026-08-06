@@ -5,14 +5,24 @@ import { createRealtimeAdapterPool, type OutboxRow } from '@taskflow/db';
 import type { Logger } from '@taskflow/observability';
 import { clientAddress, HandshakeError, verifyHandshake } from './auth.js';
 import { allowedOrigins, type Env } from './config/env.js';
-import { assertRoomTableIsSafe, roomBoardIdOf } from './event-rooms.js';
-import { broadcastPresence } from './presence.js';
+import { assertRoomTableIsSafe, roomBoardIdOf, roomChannelIdOf } from './event-rooms.js';
+import { broadcastChannelPresence, broadcastPresence } from './presence.js';
 import { FixedWindowLimiter } from './rate-limit.js';
-import { authorizeJoin } from './rooms.js';
-import { applyRevocation, revocationOf } from './revocation.js';
+import { authorizeChannelJoin, authorizeJoin } from './rooms.js';
+import { applyChatRevocation, applyRevocation, revocationOf } from './revocation.js';
 import { startRealtimeRelay, type RelayHandle } from './relay.js';
-import type { GatewayServer, GatewaySocket } from './socket-data.js';
-import { boardRoom, JoinRequestSchema, LeaveRequestSchema, type JoinAck } from './wire.js';
+import type { ChatNamespace, ChatSocket, GatewayServer, GatewaySocket } from './socket-data.js';
+import {
+  boardRoom,
+  channelRoom,
+  ChannelJoinRequestSchema,
+  ChannelLeaveRequestSchema,
+  CHAT_NAMESPACE,
+  JoinRequestSchema,
+  LeaveRequestSchema,
+  TypingRequestSchema,
+  type JoinAck,
+} from './wire.js';
 
 /**
  * The Socket.io gateway (ai/phase-4-realtime.md §3, §5 Wave 1).
@@ -99,8 +109,22 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
 
   /* -------------------------------------------------------------------- *
    * The handshake (§3.2, §3.8)
+   *
+   * ONE middleware, applied to both namespaces (ai/phase-5-chat.md §3.2). Chat
+   * adds a namespace and room names; it adds no authentication code. Writing a
+   * second copy of this for `/chat` is the specific thing §3.2 rules out — two
+   * handshakes drift, and the one that drifts is the one guarding direct
+   * messages.
+   *
+   * Typed against the board socket's shape and reused for the chat socket: the
+   * two differ only in their event maps, and this function touches neither. It
+   * reads `socket.request` and writes `socket.data`, both of which are identical
+   * across namespaces.
    * -------------------------------------------------------------------- */
-  io.use((socket, next) => {
+  const authenticate = (
+    socket: GatewaySocket | ChatSocket,
+    next: (error?: Error) => void,
+  ): void => {
     void (async () => {
       const address = clientAddress(socket.request, env.REALTIME_TRUST_PROXY);
 
@@ -134,7 +158,12 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
         next(error instanceof HandshakeError ? error : new HandshakeError('invalid_token'));
       }
     })();
-  });
+  };
+
+  io.use(authenticate);
+
+  const chat: ChatNamespace = io.of(CHAT_NAMESPACE);
+  chat.use(authenticate);
 
   /* -------------------------------------------------------------------- *
    * Connection lifecycle
@@ -233,6 +262,152 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
     });
   });
 
+  /* -------------------------------------------------------------------- *
+   * The /chat namespace (ai/phase-5-chat.md §3.1, §3.2, §3.3)
+   *
+   * Structurally the board handler with a different room name and a different
+   * `can()` question. It is written out rather than factored into a generic
+   * "join a room of kind K" helper on purpose: the two differ in the one place
+   * that matters — which authorization function runs — and a generic version
+   * would take that as a parameter, which is exactly the shape where passing
+   * the wrong one compiles.
+   *
+   * ## Presence, on every channel type including DMs
+   *
+   * §2 puts presence in scope "reusing Phase 4's", and this is that reuse:
+   * `presenceMembersOf` asks `fetchSockets()` who is in the room and broadcasts
+   * the list. In-process, ephemeral, cleared on disconnect, never persisted, not
+   * a domain event — the same properties Phase 4 §9 argues for.
+   *
+   * It applies to direct messages too, which is a deliberate product call rather
+   * than an oversight. It means the other person can see when you have their
+   * conversation open, which is the "active now" behaviour every chat product
+   * has trained people to expect — and it is a DISCLOSURE, so it is worth being
+   * able to find: the data never leaves people already authorized for the room
+   * (`authorizeChannelJoin` gated the join), but within that room it tells one
+   * specific person when you are reading them. If that is ever revisited, this
+   * paragraph is the decision to revisit, not a bug to fix.
+   * -------------------------------------------------------------------- */
+  chat.on('connection', (socket: ChatSocket) => {
+    const { userId } = socket.data.identity;
+    logger.debug({ userId }, 'chat socket connected');
+
+    socket.emit('ready', { reauthLeadSeconds: env.REALTIME_REAUTH_LEAD_SECONDS });
+
+    socket.on('channel:join', (request: unknown, ack?: (result: JoinAck) => void) => {
+      void (async () => {
+        const respond = (result: JoinAck): void => ack?.(result);
+
+        if (!joinsPerSocket.hit(socket.id)) {
+          logger.warn({ userId }, 'channel join refused: too many joins on this socket');
+          respond({ ok: false, reason: 'rate_limited' });
+          return;
+        }
+
+        const parsed = ChannelJoinRequestSchema.safeParse(request);
+        if (!parsed.success) {
+          countChatRefusal(socket, 'invalid');
+          respond({ ok: false, reason: 'invalid' });
+          return;
+        }
+
+        const { orgId, channelId } = parsed.data;
+
+        /* userId from socket.data — NEVER from `parsed.data`, which has no field
+           for it and must never gain one (§3.7). On this namespace that rule is
+           load-bearing in the most direct way available: the room being asked
+           for may be a two-person conversation. */
+        const outcome = await authorizeChannelJoin(userId, orgId, channelId);
+
+        if (!outcome.allowed) {
+          logger.warn(
+            { userId, orgId, channelId, reason: outcome.reason },
+            'channel join refused by authorization',
+          );
+          countChatRefusal(socket, 'denied');
+          /* One reason for every refusal. "Not a member", "no such channel" and
+             "denied" are indistinguishable to the caller — a refusal that told
+             them apart would let someone enumerate which private channels
+             exist, and confirming the existence of a DM is itself a disclosure
+             about two people. */
+          respond({ ok: false, reason: 'denied' });
+          return;
+        }
+
+        await socket.join(channelRoom(channelId));
+        socket.data.rooms.set(channelId, orgId);
+        logger.debug({ userId, channelId }, 'socket joined channel room');
+        respond({ ok: true });
+
+        /* After the join actually took effect, not before — a client reading
+           its own ack alongside the first presence broadcast must find itself
+           already in the list. */
+        void broadcastChannelPresence(chat, channelId);
+      })();
+    });
+
+    socket.on('channel:leave', (request: unknown) => {
+      const parsed = ChannelLeaveRequestSchema.safeParse(request);
+      if (!parsed.success) return;
+
+      const { channelId } = parsed.data;
+      socket.data.rooms.delete(channelId);
+
+      void (async () => {
+        await socket.leave(channelRoom(channelId));
+        await broadcastChannelPresence(chat, channelId);
+      })();
+    });
+
+    /* Typing indicators (ai/phase-5-chat.md §5) — relayed in-process, never a
+       domain event (see `events.ts`'s header on why). `socket.to(...)` rather
+       than `chat.to(...)` so the sender never receives its own typing state
+       back, and only sockets that already hold the room — meaning they passed
+       `authorizeChannelJoin` — ever receive it. A channel named here that this
+       socket never joined is silently ignored rather than relayed: there is no
+       ack on this event for a refusal to answer through. */
+    const relayTyping = (request: unknown, typing: boolean): void => {
+      const parsed = TypingRequestSchema.safeParse(request);
+      if (!parsed.success) return;
+
+      const { channelId } = parsed.data;
+      if (!socket.data.rooms.has(channelId)) return;
+
+      socket.to(channelRoom(channelId)).emit('typing', { channelId, userId, typing });
+    };
+
+    socket.on('typing:start', (request: unknown) => {
+      relayTyping(request, true);
+    });
+    socket.on('typing:stop', (request: unknown) => {
+      relayTyping(request, false);
+    });
+
+    socket.on('disconnect', () => {
+      joinsPerSocket.forget(socket.id);
+      refusedJoinsPerSocket.forget(socket.id);
+      logger.debug({ userId }, 'chat socket disconnected');
+
+      /* Socket.io has already removed this socket from every room by now —
+          is this module's own tracking, not Socket.io's, and
+         is what still remembers which channels to tell. */
+      for (const channelId of socket.data.rooms.keys()) {
+        void broadcastChannelPresence(chat, channelId);
+      }
+    });
+  });
+
+  /** The chat namespace's copy of `countRefusal` — same reasoning, same limits. */
+  function countChatRefusal(socket: ChatSocket, kind: string): void {
+    if (refusedJoinsPerSocket.hit(socket.id)) return;
+
+    logger.warn(
+      { userId: socket.data.identity.userId, address: socket.data.address, kind },
+      'disconnecting chat socket: sustained refused joins look like room enumeration',
+    );
+    socket.disconnect(true);
+  }
+
   /**
    * Counts a refused join and disconnects a socket that keeps refusing (§7.5).
    *
@@ -260,6 +435,11 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
      the one holding the affected socket. */
   io.on('revocation', (message) => {
     void applyRevocation(io, message, logger);
+    /* The chat namespace holds its own sockets with their own room sets, so a
+       revocation that only swept the default namespace would leave a removed
+       member subscribed to the channel they were just removed from — the exact
+       failure §3.3 names, on the surface where it matters most. */
+    void applyChatRevocation(chat, message, logger);
   });
 
   const dispatch = async (row: OutboxRow): Promise<void> => {
@@ -267,9 +447,24 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
     if (revocation !== null) {
       io.serverSideEmit('revocation', revocation);
       await applyRevocation(io, revocation, logger);
+      await applyChatRevocation(chat, revocation, logger);
       /* Falls through deliberately: a revocation event may ALSO have a room
          mapping in a later wave, and returning early here would make adding one
          silently do nothing. */
+    }
+
+    const channelId = roomChannelIdOf(row.name, row.payload);
+    if (channelId !== null) {
+      chat.to(channelRoom(channelId)).emit('broadcast', {
+        name: row.name,
+        version: row.version,
+        orgId: row.orgId,
+        channelId,
+        actorId: row.actorId,
+        mutationId: row.requestId,
+        occurredAt: row.occurredAt.toISOString(),
+        payload: row.payload,
+      });
     }
 
     const boardId = roomBoardIdOf(row.name, row.payload);

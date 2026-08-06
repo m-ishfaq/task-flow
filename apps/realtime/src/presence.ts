@@ -1,5 +1,5 @@
-import type { GatewayServer } from './socket-data.js';
-import { boardRoom } from './wire.js';
+import type { ChatNamespace, GatewayServer } from './socket-data.js';
+import { boardRoom, channelRoom } from './wire.js';
 
 /**
  * Presence (ai/phase-4-realtime.md §5 Wave 2, §9).
@@ -47,4 +47,45 @@ export async function presenceMembersOf(
 export async function broadcastPresence(io: GatewayServer, boardId: string): Promise<void> {
   const userIds = await presenceMembersOf(io, boardId);
   io.to(boardRoom(boardId)).emit('presence', { boardId, userIds });
+}
+
+/* -------------------------------------------------------------------------- *
+ * Chat (ai/phase-5-chat.md §2)
+ * -------------------------------------------------------------------------- */
+
+/** Distinct user ids currently in `channel:{channelId}`, in no particular order. */
+export async function channelPresenceMembersOf(
+  namespace: ChatNamespace,
+  channelId: string,
+): Promise<readonly string[]> {
+  /* `fetchSockets()` on the NAMESPACE, for the same reason the board version
+     uses it on the server: it is adapter-aware, so it asks every gateway
+     instance and answers as one cluster. Reading
+     `namespace.adapter.rooms` directly would see only sockets connected to THIS
+     process — correct today, silently reporting a subset the day a second
+     instance starts. */
+  const sockets = await namespace.in(channelRoom(channelId)).fetchSockets();
+  const userIds = new Set(sockets.map((socket) => socket.data.identity.userId));
+  return [...userIds];
+}
+
+/**
+ * Tells everyone in a channel who is currently in it.
+ *
+ * Called after every join, leave and disconnect — every moment the membership
+ * could have changed. The full list rather than a delta, so a client that
+ * missed one broadcast is correct again on the next one with nothing to
+ * reconcile.
+ *
+ * This fires for DIRECT MESSAGES as well as named channels, which is a
+ * deliberate product decision recorded in `gateway.ts`: it is what makes
+ * "active now" work, and it does mean the other person can see when you have
+ * their conversation open.
+ */
+export async function broadcastChannelPresence(
+  namespace: ChatNamespace,
+  channelId: string,
+): Promise<void> {
+  const userIds = await channelPresenceMembersOf(namespace, channelId);
+  namespace.to(channelRoom(channelId)).emit('presence', { channelId, userIds });
 }

@@ -29,6 +29,7 @@ export {
   DEFAULT_PROFILE,
   findProfile,
   plannedCardCount,
+  plannedMessageCount,
   LIST_NAMES,
   WIP_LIMITED_LIST,
   WIP_LIMIT,
@@ -36,7 +37,9 @@ export {
   type OrgPlan,
   type ProjectPlan,
   type BoardPlan,
+  type ChannelPlan,
   type CardMix,
+  type MessageMix,
 } from './profiles.js';
 export { reset, type ResetOptions, type ResetResult } from './reset.js';
 
@@ -46,5 +49,8 @@ export { tuplesModule } from './modules/authz.tuples.js';
 export { projectsModule } from './modules/work.projects.js';
 export { boardsModule } from './modules/work.boards.js';
 export { cardsModule } from './modules/work.cards.js';
+export { viewsModule } from './modules/work.views.js';
+export { channelsModule, type SeededChannel } from './modules/chat.channels.js';
+export { messagesModule, type SeededMessageRef } from './modules/chat.messages.js';
 export { attachmentsModule } from './modules/platform.attachments.js';
 export { auditModule } from './modules/platform.audit.js';

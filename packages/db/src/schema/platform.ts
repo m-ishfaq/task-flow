@@ -171,3 +171,78 @@ export const attachments = platform.table(
       .where(sql`deleted_at IS NULL`),
   ],
 );
+
+/**
+ * In-app notifications (migration 0022).
+ *
+ * ## Deliberately smaller than the Phase 9 system
+ *
+ * PLAN.md puts digests, per-channel preferences, and email/push delivery in a
+ * later phase. This is the narrow thing chat cannot work without: a record that
+ * somebody was mentioned or sent a direct message, so they can find out without
+ * opening every channel. Phase 9 is expected to ADD to this table rather than
+ * replace it.
+ *
+ * ## One row per RECIPIENT
+ *
+ * A message naming three people writes three rows. A single row with a
+ * recipients array would make "mark as read" a rewrite of a row two people
+ * share, and "my unread count" a query that cannot use an index.
+ *
+ * ## `subject_id` has no foreign key, on purpose
+ *
+ * A notification about a message must survive that message being deleted —
+ * otherwise a retention sweep silently erases the record that somebody was
+ * told something, which is the opposite of what a notification is for. The
+ * `title`/`excerpt` snapshot exists for the same reason, and for a second one:
+ * rendering the list must not re-read a channel the person has since been
+ * removed from.
+ */
+export const notifications = platform.table(
+  'notifications',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id').notNull(),
+    userId: uuid('user_id').notNull(),
+
+    /** 'chat.mention' | 'chat.direct' | 'chat.thread_reply' — a CHECK, not an enum. */
+    kind: text('kind').notNull(),
+
+    /** Polymorphic, like `attachments`. No FK — see the note above. */
+    subjectType: text('subject_type').notNull(),
+    subjectId: uuid('subject_id').notNull(),
+
+    /**
+     * Where clicking this notification should navigate. No FK, for the same
+     * reason `subjectId` has none — a channel can be archived or the message
+     * retained-away without erasing the record that someone was told
+     * something. Null for a notification kind that has no single channel
+     * (none exist yet; every current kind is chat-originated).
+     */
+    channelId: uuid('channel_id'),
+
+    /** A snapshot of what the recipient was entitled to see when they were told. */
+    title: text('title').notNull(),
+    excerpt: text('excerpt'),
+
+    actorId: uuid('actor_id'),
+
+    readAt: timestamp('read_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('notifications_user_idx').on(table.orgId, table.userId, table.createdAt),
+    index('notifications_unread_idx')
+      .on(table.orgId, table.userId)
+      .where(sql`read_at IS NULL`),
+    /* One per person per event. The projection is an at-least-once consumer and
+       CAN redeliver a batch after a crash; this is what makes that harmless
+       rather than duplicating somebody's bell. */
+    uniqueIndex('notifications_event_user_key').on(
+      table.orgId,
+      table.subjectId,
+      table.userId,
+      table.kind,
+    ),
+  ],
+);

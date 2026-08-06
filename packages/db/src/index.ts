@@ -119,3 +119,12 @@ export {
 export type { SQL } from 'drizzle-orm';
 
 export { increment, decrement, coalesce, compiledPredicate } from './expressions.js';
+
+/**
+ * Enumerating tenants, for background jobs that visit every organization.
+ *
+ * Confined here because `withGlobalScope` is banned outside this package —
+ * see `tenants.ts` on why the escape hatch is one function returning ids
+ * rather than a scope a job holds open.
+ */
+export { listOrgIds } from './tenants.js';

@@ -204,12 +204,12 @@ describe('startRealtimeRelay', () => {
       appendToOutbox(tx, [eventFor('card.moved'), eventFor('card.created')]),
     );
 
-    // Scoped to THIS suite's org, deliberately — the outbox is a global queue
+    // Scoped to THIS suite's own org, deliberately — the outbox is a global queue
     // (§3.5) that other suites' concurrently-running fixtures write to, and a
     // throw keyed on NAME ALONE would fire for their 'card.moved' events too,
     // corrupting a dispatch row this test does not own with an attempt it
-    // never made. `calls`/`delivered` below are filtered through `ours()` for
-    // the same reason `dispatch` itself now checks `orgId` before throwing.
+    // never made. `calls` below is filtered through `ours()` for the same
+    // reason `dispatch` itself now checks `orgId` before throwing.
     const dispatch = vi.fn((row: OutboxRow) => {
       if (row.orgId === ORG && row.name === 'card.moved') throw new Error('dispatch exploded');
     });

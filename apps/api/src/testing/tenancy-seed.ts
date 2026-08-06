@@ -47,6 +47,14 @@ interface Tenant {
   readonly fieldId: string;
   readonly commentId: string;
   readonly attachmentId: string;
+
+  /* Chat (Phase 5). A PRIVATE channel deliberately: a public one is readable by
+     every member of its own org, so a cross-tenant refusal on it would be
+     indistinguishable from the closed-channel check doing the work. Private
+     means the ONLY thing between the attacker and this row is the org boundary,
+     which is the property under test. */
+  readonly channelId: string;
+  readonly messageId: string;
 }
 
 /* Fixed ids in a distinct range from the other suites', so a failing run is
@@ -67,6 +75,8 @@ const ATTACKER: Tenant = {
   fieldId: '0195cc00-0000-7000-8000-000000000a0b',
   commentId: '0195cc00-0000-7000-8000-000000000a0c',
   attachmentId: '0195cc00-0000-7000-8000-000000000a0d',
+  channelId: '0195cc00-0000-7000-8000-000000000a0f',
+  messageId: '0195cc00-0000-7000-8000-000000000a10',
 };
 
 const VICTIM: Tenant = {
@@ -85,6 +95,8 @@ const VICTIM: Tenant = {
   fieldId: '0195cc00-0000-7000-8000-000000000b0b',
   commentId: '0195cc00-0000-7000-8000-000000000b0c',
   attachmentId: '0195cc00-0000-7000-8000-000000000b0d',
+  channelId: '0195cc00-0000-7000-8000-000000000b0f',
+  messageId: '0195cc00-0000-7000-8000-000000000b10',
 };
 
 const BOARD = '0195cc00-0000-7000-8000-0000000000cc';
@@ -199,6 +211,41 @@ async function seedTenant(admin: AdminConnection, tenant: Tenant, label: string)
     ],
   );
 
+  /* Chat (Phase 5, migration 0017).
+     The channel is PRIVATE and the tenant's owner holds a `member` tuple on it,
+     which makes the fixture a fair test: within its own org this channel is
+     fully readable by this user, so when org A's owner is refused it, the
+     refusal came from the tenant boundary and not from the closed-channel check
+     that would have refused them anyway. A public channel here would prove
+     nothing — and a private one with no member would prove the wrong thing. */
+  await admin.query(
+    `INSERT INTO chat.channels (id, org_id, type, name, created_by)
+     VALUES ($1, $2, 'private', 'fuzz-private', $3)`,
+    [tenant.channelId, tenant.orgId, tenant.userId],
+  );
+
+  await admin.query(
+    `INSERT INTO authz.relationship_tuples
+       (id, org_id, subject_type, subject_id, relation, object_type, object_id)
+     VALUES (gen_random_uuid(), $1, 'user', $2, 'member', 'channel', $3)`,
+    [tenant.orgId, tenant.userId, tenant.channelId],
+  );
+
+  await admin.query(
+    `INSERT INTO chat.messages (id, org_id, channel_id, author_id, body, body_text)
+     VALUES ($1, $2, $3, $4, $5::jsonb, 'Fuzz message')`,
+    [
+      tenant.messageId,
+      tenant.orgId,
+      tenant.channelId,
+      tenant.userId,
+      JSON.stringify({
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Fuzz message' }] }],
+      }),
+    ],
+  );
+
   /* Seeded as 'clean' on purpose. A pending attachment would be refused by the
      download route's status check before the tenant boundary was ever
      consulted, so the refusal would prove nothing about isolation. */
@@ -223,6 +270,8 @@ async function clearTenant(admin: AdminConnection, tenant: Tenant): Promise<void
   await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [tenant.orgId]);
   // Children first — the composite foreign keys make the order mandatory.
   await admin.query(`DELETE FROM platform.attachments WHERE org_id = $1`, [tenant.orgId]);
+  await admin.query(`DELETE FROM chat.messages WHERE org_id = $1`, [tenant.orgId]);
+  await admin.query(`DELETE FROM chat.channels WHERE org_id = $1`, [tenant.orgId]);
   await admin.query(`DELETE FROM work.card_comments WHERE org_id = $1`, [tenant.orgId]);
   await admin.query(`DELETE FROM work.custom_field_values WHERE org_id = $1`, [tenant.orgId]);
   await admin.query(`DELETE FROM work.custom_field_defs WHERE org_id = $1`, [tenant.orgId]);
@@ -295,6 +344,24 @@ function fuzzOrgFor(tenant: Tenant, other: Tenant): FuzzOrg {
       fieldId: other.fieldId,
       commentId: other.commentId,
       attachmentId: other.attachmentId,
+
+      /* Chat (Phase 5). `userIds` serves `channels.openDirect` — a route that
+         would otherwise open a direct message with a person from another
+         tenant, writing a membership tuple about a stranger. It is an array
+         because the route takes one, and a bare string would be refused on
+         shape before the boundary was consulted. */
+      channelId: other.channelId,
+      messageId: other.messageId,
+      userIds: [other.userId],
+
+      /* The ARRAY forms, for Wave 3's `attachments.list` and `unfurls.list`.
+         Without them those routes are refused on SHAPE — a BAD_REQUEST, which
+         this harness counts as a refusal — and would pass without the tenant
+         boundary ever being consulted. That is a false negative in the one
+         direction that matters, and it is the same trap `assigneeIds` and
+         `labelIds` were added for on the Work side. */
+      messageIds: [other.messageId],
+
       text: 'fuzz',
       name: 'fuzz',
       color: '#4f46e5',

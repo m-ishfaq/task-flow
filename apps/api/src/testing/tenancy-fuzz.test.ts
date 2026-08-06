@@ -319,6 +319,82 @@ describe('the application router', () => {
     }
   });
 
+  /**
+   * The Chat routes (Phase 5, ai/phase-5-chat.md §6.4).
+   *
+   * Named explicitly for the same reason Work's are: a route whose input schema
+   * stops matching the seeded bag silently drops to `not-applicable` and takes
+   * its coverage with it.
+   *
+   * Two of these are worth more than the rest. `channels.addMember` writes a
+   * relationship TUPLE, so a cross-tenant leak there is not a data read — it is
+   * granting somebody access, in another organization, permanently, through a
+   * table the policy engine consults on every request. And `channels.openDirect`
+   * takes a user id rather than a channel id, so it is the one route here that
+   * could name a person in another tenant rather than a resource; a leak would
+   * write a membership row about someone who has never heard of this org.
+   */
+  it('enrols the Chat routes and denies every one of them', async () => {
+    const results = await runTenancyFuzz({
+      router: appRouter,
+      attacker: seeded.attacker,
+      victim: seeded.victim,
+      callerFor: (context) => callerFor(context, appRouter),
+    });
+
+    const byPath = new Map(results.map((result) => [result.path, result.outcome]));
+
+    for (const path of [
+      'chat.channels.get',
+      'chat.channels.create',
+      'chat.channels.openDirect',
+      'chat.channels.update',
+      'chat.channels.archive',
+      'chat.channels.addMember',
+      'chat.channels.removeMember',
+      'chat.messages.list',
+      'chat.messages.thread',
+      'chat.messages.send',
+      'chat.messages.edit',
+      'chat.messages.delete',
+
+      /* Wave 3. `attachments.download` is the one that matters most here, for
+         the same reason Work's does: a leak hands org A a signed URL to org B's
+         file, and the fetch that follows never touches this server, so nothing
+         downstream could catch it. */
+      'chat.attachments.presign',
+      'chat.attachments.confirm',
+      'chat.attachments.download',
+      'chat.attachments.list',
+      'chat.attachments.delete',
+      'chat.unfurls.list',
+
+      /* Wave 4. Two of these are worse than a read leak if they cross a tenant.
+         `setGuest` writes a relationship TUPLE — granting somebody access, in
+         another organization, through the table the policy engine consults on
+         every request. `export` returns the entire contents of a channel, which
+         is the single largest disclosure this API can produce in one call. */
+      'chat.compliance.setRetention',
+      'chat.compliance.holdChannel',
+      'chat.compliance.holdMessage',
+      'chat.compliance.listGuests',
+      'chat.compliance.setGuest',
+      'chat.compliance.export',
+
+      /* Saved messages and notifications. `saved.save` is the interesting one:
+         it writes a row naming a message, so a cross-tenant leak would bookmark
+         another organization's conversation into this one's sidebar. */
+      'chat.saved.save',
+      'chat.saved.unsave',
+      /* Takes a notificationId, unlike listMine/markAllRead/unreadCount below —
+         `markRead` names a specific row, so a cross-tenant substitution would
+         let one org silence (mark read) another org's notification. */
+      'chat.notifications.markRead',
+    ]) {
+      expect(byPath.get(path), `${path} was not enrolled by the fuzz harness`).toBe('denied');
+    }
+  });
+
   it('marks input-less routes not-applicable rather than silently passing them', async () => {
     /* These four read their org from the principal and accept no identifier, so
        there is nothing for this technique to substitute. Naming them here keeps
@@ -337,6 +413,23 @@ describe('the application router', () => {
       .sort();
 
     expect(exempt).toEqual([
+      /* `chat.channels.list` reads the caller's own tuples and their org's
+         public channels. There is no id to substitute, so calling it with the
+         victim's bag returns the ATTACKER's own channels and succeeds — which
+         the harness would otherwise report as a leak, permanently. RLS's own
+         tests and `chat-rooms.test.ts` cover it instead. */
+      'chat.channels.list',
+      /* Same shape as `chat.saved.list` below — every pin the caller can
+         still see, across every channel, re-checked per channel inside the
+         service rather than by an id this technique could substitute. */
+      'chat.messages.allPins',
+      /* Three more that read the CALLER's own rows and take no id — the scope is
+         entirely the principal's, so there is nothing for this technique to
+         substitute. Covered by the RLS tests and by their own suites. */
+      'chat.notifications.listMine',
+      'chat.notifications.markAllRead',
+      'chat.notifications.unreadCount',
+      'chat.saved.list',
       'tenancy.audit.verify',
       'tenancy.members.list',
       'tenancy.orgs.get',

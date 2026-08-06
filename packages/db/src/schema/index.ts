@@ -8,6 +8,7 @@
  *   Phase 2  identity  — orgs, memberships, teams;  authz — relationship tuples ✅
  *   Phase 2  platform  — transactional outbox;  audit — hash-chained log      ✅
  *   Phase 3  work      — projects, boards, lists, cards                       ✅
+ *   Phase 5  chat      — channels, channel members, messages                  ✅
  */
 
 export * from './identity.js';
@@ -17,3 +18,4 @@ export * from './authz.js';
 export * from './platform.js';
 export * from './audit.js';
 export * from './work.js';
+export * from './chat.js';

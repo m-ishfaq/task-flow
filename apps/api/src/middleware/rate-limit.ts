@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { errors } from '@taskflow/contracts';
+import { hashToken } from '@taskflow/security';
 import { SlidingWindowLimiter, type RateLimitRule } from './sliding-window.js';
 
 /**
@@ -62,6 +63,33 @@ const OPERATION_RULES: Readonly<Record<string, RateLimitRule>> = {
      no account is named and a shared address must not throttle a whole office
      out of their sessions — reuse detection is the real control here. */
   'auth.refresh': { limit: 240, windowMs: 60 * 60_000 },
+
+  /* Chat (ai/phase-5-chat.md §6.5, which names this obligation explicitly:
+     "message-send rate per user per channel (spam)").
+
+     Sixty a minute is well above what a person types and well below what a
+     script sends. The number is chosen against the worst realistic HUMAN case —
+     somebody pasting a stack trace as eight consecutive messages, or a fast
+     back-and-forth during an incident — rather than a comfortable average,
+     because a limit that throttles a real conversation is one that gets raised
+     until it stops protecting anything.
+
+     Per ACCOUNT, not per channel, despite §6.5's wording. Per-channel is the
+     weaker control for the abuse that matters: someone flooding an
+     organization posts across many channels, and a per-channel budget grants
+     them the full rate in each. `accountOf` already keys on the caller for
+     `auth.login`, so this reuses a mechanism rather than adding a second one. */
+  'chat.messages.send': { limit: 60, windowMs: 60_000 },
+
+  /* An upload is a presigned PUT — a capability to place bytes in this org's
+     bucket — and each one costs a scan. Tighter than sending, because nobody
+     attaches thirty files a minute by hand. */
+  'chat.attachments.presign': { limit: 30, windowMs: 60_000 },
+
+  /* Opening a DM writes membership tuples. Bounded so that enumerating the
+     member directory by opening a conversation with everybody is slow enough
+     to notice. */
+  'chat.channels.openDirect': { limit: 30, windowMs: 60_000 },
 };
 
 export interface RateLimitOptions {
@@ -195,7 +223,7 @@ export function registerRateLimit(app: FastifyInstance, options: RateLimitOption
          than joining it. Otherwise an attacker guessing one account from a
          thousand addresses gets a thousand separate budgets, which is the
          distributed case this is supposed to cover. */
-      const scope = account ?? `ip:${clientKey(request)}`;
+      const scope = account ?? bearerScope(request) ?? `ip:${clientKey(request)}`;
       const verdict = limiter.check(`op:${procedure}:${scope}`, rule);
 
       if (!verdict.allowed) return refuse(request, reply, verdict.retryAfterSeconds);
@@ -214,6 +242,40 @@ export function registerRateLimit(app: FastifyInstance, options: RateLimitOption
  */
 function clientKey(request: FastifyRequest): string {
   return request.ip.length > 0 ? request.ip : 'unknown';
+}
+
+/**
+ * A per-CALLER key for authenticated operations, from the bearer token.
+ *
+ * ## Why not the address, and why not the account
+ *
+ * `accountOf` reads an email out of the body, which only the auth routes send.
+ * Every other operation would therefore fall back to the ADDRESS — and an
+ * office behind one NAT would share a single sixty-messages-a-minute budget,
+ * which throttles a real conversation. A limit that does that gets raised until
+ * it stops protecting anything, which is worse than not having it.
+ *
+ * ## This is NOT an authentication decision
+ *
+ * The token is not verified here and nothing is trusted from it. It is an
+ * opaque bucket key: two requests carrying the same token share a budget, and
+ * that is the entire claim. A forged token gets its own bucket and is then
+ * rejected by the real authentication a layer later — which is the right
+ * outcome, because it means an attacker cannot present somebody else's token to
+ * consume THEIR budget, only their own.
+ *
+ * ## Hashed rather than used raw
+ *
+ * Through `@taskflow/security`, because a bearer token should not sit in a
+ * long-lived in-process map even one that never leaves the process: the next
+ * person to add a debug log over these keys would be printing credentials.
+ */
+function bearerScope(request: FastifyRequest): string | null {
+  const header = request.headers.authorization;
+  if (typeof header !== 'string') return null;
+
+  const token = header.startsWith('Bearer ') ? header.slice('Bearer '.length).trim() : '';
+  return token.length === 0 ? null : `tok:${hashToken(token)}`;
 }
 
 /**

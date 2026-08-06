@@ -1,10 +1,16 @@
 import type { Logger } from '@taskflow/observability';
-import { OrgIdSchema, BoardIdSchema } from '@taskflow/contracts';
+import { OrgIdSchema, BoardIdSchema, ChannelIdSchema } from '@taskflow/contracts';
 import type { OutboxRow } from '@taskflow/db';
 import { broadcastPresence } from './presence.js';
-import { authorizeJoin } from './rooms.js';
-import { boardRoom } from './wire.js';
-import type { GatewayServer, GatewaySocket, RevocationMessage } from './socket-data.js';
+import { authorizeChannelJoin, authorizeJoin } from './rooms.js';
+import { boardRoom, channelRoom } from './wire.js';
+import type {
+  ChatNamespace,
+  ChatSocket,
+  GatewayServer,
+  GatewaySocket,
+  RevocationMessage,
+} from './socket-data.js';
 
 /**
  * Keeping a long-lived connection honest (§3.3, §7.2).
@@ -215,4 +221,127 @@ async function leaveRoom(
   // After the leave actually took effect — a presence broadcast made before
   // this resolved would still count the departing socket as present (§9).
   await broadcastPresence(io, boardId);
+}
+
+/* -------------------------------------------------------------------------- *
+ * Chat (ai/phase-5-chat.md §3.3)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * The same sweep, over the `/chat` namespace's sockets.
+ *
+ * ## Why this is a second function and not a parameter
+ *
+ * The two namespaces hold different `Socket` objects, whose `rooms` maps hold
+ * different populations (board ids there, channel ids here) and whose
+ * authorization is answered by different functions. A single generic version
+ * would take "which authorizer" and "which room-name builder" as arguments, and
+ * the failure mode of passing the board pair while sweeping chat sockets is that
+ * every re-check answers `no_such_board` — which fails CLOSED and therefore
+ * force-leaves everyone from every channel, on every role change in the org.
+ * That is an outage that looks like a working security control.
+ *
+ * ## Why chat force-leaves matter more than board ones
+ *
+ * On a board, a stale room means seeing card moves you should not. In a private
+ * channel it means continuing to receive a conversation you were removed from,
+ * live, for as long as the tab stays open — and channel membership changes far
+ * more often than board grants do (§3.3). Removing someone writes a tuple
+ * deletion, which emits `grant.revoked`, which lands here.
+ */
+export async function applyChatRevocation(
+  namespace: ChatNamespace,
+  message: RevocationMessage,
+  logger: Logger,
+): Promise<void> {
+  const sockets = [...namespace.sockets.values()] as ChatSocket[];
+
+  for (const socket of sockets) {
+    switch (message.kind) {
+      case 'session': {
+        if (socket.data.identity.sessionId !== message.sessionId) break;
+        socket.emit('session:ended', { reason: message.reason });
+        logger.info(
+          { userId: socket.data.identity.userId, reason: message.reason },
+          'closing chat socket: credential revoked',
+        );
+        socket.disconnect(true);
+        break;
+      }
+
+      case 'member_removed': {
+        if (socket.data.identity.userId !== message.userId) break;
+        for (const [channelId, orgId] of [...socket.data.rooms]) {
+          if (orgId === message.orgId) {
+            await leaveChannel(socket, channelId, logger, 'member removed from org');
+          }
+        }
+        break;
+      }
+
+      case 'recheck_user': {
+        if (socket.data.identity.userId !== message.userId) break;
+        await recheckChannels(socket, message.orgId, logger);
+        break;
+      }
+
+      case 'recheck_org': {
+        await recheckChannels(socket, message.orgId, logger);
+        break;
+      }
+    }
+  }
+}
+
+/**
+ * Re-runs the channel join decision for every room this socket holds in `orgId`.
+ *
+ * Calls `authorizeChannelJoin` — the same function the join ran — so there is
+ * one definition of who may be in a channel room, and a future change to the
+ * rules cannot apply to joins but not to re-checks.
+ */
+async function recheckChannels(socket: ChatSocket, orgId: string, logger: Logger): Promise<void> {
+  for (const [channelId, roomOrgId] of [...socket.data.rooms]) {
+    if (roomOrgId !== orgId) continue;
+
+    /* Re-parsed rather than cast, for the reason the board version gives:
+       `authorizeChannelJoin` takes branded ids precisely so an unvalidated
+       string cannot reach it. */
+    const org = OrgIdSchema.safeParse(roomOrgId);
+    const channel = ChannelIdSchema.safeParse(channelId);
+    if (!org.success || !channel.success) {
+      await leaveChannel(socket, channelId, logger, 'unparseable room key');
+      continue;
+    }
+
+    let allowed = false;
+    try {
+      allowed = (await authorizeChannelJoin(socket.data.identity.userId, org.data, channel.data))
+        .allowed;
+    } catch (error) {
+      /* Fails CLOSED, same as the board re-check. A database blip must not leave
+         someone in a channel a revocation was trying to remove them from — the
+         cost of being wrong this way is a client that falls back to polling, and
+         the cost the other way is the control not working on exactly the
+         occasions something else is already going wrong. */
+      logger.error({ err: error, channelId }, 'channel re-check failed; leaving the room');
+    }
+
+    if (!allowed) await leaveChannel(socket, channelId, logger, 'authorization re-check failed');
+  }
+}
+
+async function leaveChannel(
+  socket: ChatSocket,
+  channelId: string,
+  logger: Logger,
+  reason: string,
+): Promise<void> {
+  socket.data.rooms.delete(channelId);
+  await socket.leave(channelRoom(channelId));
+  socket.emit('channel:closed', { channelId });
+  logger.info(
+    { userId: socket.data.identity.userId, channelId, reason },
+    'socket left channel room',
+  );
 }

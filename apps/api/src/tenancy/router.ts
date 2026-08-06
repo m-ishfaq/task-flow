@@ -95,6 +95,7 @@ export function createTenancyRouter() {
               z.object({
                 userId: z.string(),
                 email: z.string(),
+                displayName: z.string().nullable(),
                 role: z.string(),
                 status: z.string(),
                 joinedAt: z.date(),

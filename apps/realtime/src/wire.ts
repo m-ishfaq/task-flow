@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { BoardIdSchema, OrgIdSchema, type BoardId, type OrgId } from '@taskflow/contracts';
+import {
+  BoardIdSchema,
+  ChannelIdSchema,
+  OrgIdSchema,
+  type BoardId,
+  type ChannelId,
+  type OrgId,
+} from '@taskflow/contracts';
 
 /**
  * The socket wire contract (ai/phase-4-realtime.md §3.6, §3.7, §6.3).
@@ -217,3 +224,151 @@ export function boardRoom(boardId: string): string {
 export function boardIdOfRoom(room: string): string | null {
   return room.startsWith('board:') ? room.slice('board:'.length) : null;
 }
+
+/* -------------------------------------------------------------------------- *
+ * Chat (ai/phase-5-chat.md §3.1, §3.2)
+ *
+ * Chat lives on its own Socket.io NAMESPACE (`/chat`) on this same process, and
+ * therefore gets its own event maps rather than extending the two above. That is
+ * a deliberate choice with a specific failure in mind: `BroadcastMessage` names
+ * the room it was delivered on, and widening it to `boardId | channelId` would
+ * make every existing consumer in `apps/web` accept a message it has no handler
+ * for, silently, with the compiler agreeing. Two maps mean a chat broadcast
+ * cannot be delivered to a board listener even by mistake.
+ *
+ * Everything ELSE is shared: the same handshake, the same `verifyHandshake`, the
+ * same origin check, the same `socket.data.identity`. §3.2 is explicit that this
+ * phase adds zero new authentication code.
+ * -------------------------------------------------------------------------- */
+
+/**
+ * "Let me into this channel's room."
+ *
+ * The same two fields as `JoinRequest` and the same reasoning applies to both —
+ * `channelId` is a REQUEST that `can()` adjudicates, `orgId` is a scope selector
+ * used only as a WHERE filter inside `withUserScope(verifiedUserId)`.
+ *
+ * And the same thing is absent: there is no subject. A DM is the most private
+ * surface in this product, so if a `userId` field were ever going to be added to
+ * a join request "for convenience", this is the one where it would do the most
+ * damage — "subscribe me to this conversation as this person" is the entire
+ * vulnerability in a single JSON field. `.strict()` refuses it rather than
+ * ignoring it, because a silently dropped field invites a handler that reads it.
+ */
+export interface ChannelJoinRequest {
+  readonly orgId: OrgId;
+  readonly channelId: ChannelId;
+}
+
+/** Annotated rather than inferred — see the note on `JoinRequestSchema`. */
+export const ChannelJoinRequestSchema: z.ZodType<
+  ChannelJoinRequest,
+  z.ZodTypeDef,
+  { orgId: string; channelId: string }
+> = z.object({ orgId: OrgIdSchema, channelId: ChannelIdSchema }).strict();
+
+export interface ChannelLeaveRequest {
+  readonly channelId: ChannelId;
+}
+
+export const ChannelLeaveRequestSchema: z.ZodType<
+  ChannelLeaveRequest,
+  z.ZodTypeDef,
+  { channelId: string }
+> = z.object({ channelId: ChannelIdSchema }).strict();
+
+/**
+ * "I am typing in this channel" / "I stopped."
+ *
+ * Never a domain event (`apps/api/src/chat/events.ts`'s header names this
+ * exact exclusion) — there is no persisted state for guardrail 11 to require
+ * an event for, so it is relayed in-process on the already-joined room and
+ * dies with the connection. The same no-identity rule as `ChannelJoinRequest`
+ * applies for the same reason: this carries only the channel, never a userId,
+ * because the gateway already knows who sent it from `socket.data.identity`.
+ */
+export interface TypingRequest {
+  readonly channelId: ChannelId;
+}
+
+export const TypingRequestSchema: z.ZodType<TypingRequest, z.ZodTypeDef, { channelId: string }> = z
+  .object({ channelId: ChannelIdSchema })
+  .strict();
+
+/**
+ * Relayed to everyone else in the room. `userId` is filled in by the gateway
+ * from the sender's own `socket.data.identity`, never from the client's
+ * request — the same reason a join request carries no subject. `typing`
+ * distinguishes a start from a stop on the one event name, rather than two
+ * message shapes a listener would need to tell apart by which handler fired.
+ */
+export interface TypingMessage {
+  readonly channelId: string;
+  readonly userId: string;
+  readonly typing: boolean;
+}
+
+/**
+ * One broadcast chat event.
+ *
+ * Structurally the board version with `channelId` in place of `boardId`, and
+ * kept as its own type for the reason given at the top of this section.
+ *
+ * `payload` is the domain event's payload verbatim — `message.sent` carries an
+ * excerpt and the mentioned user ids, never the full document, and never a
+ * presigned URL. The attachment exclusion Phase 4 §4 enforces applies here
+ * unchanged: a file message broadcasts an `attachmentId`, and the client asks
+ * for a URL over authorized HTTP.
+ */
+export interface ChatBroadcastMessage {
+  readonly name: string;
+  readonly version: number;
+  readonly orgId: string;
+  /** The room this was delivered on — `channel:{channelId}`'s subject. */
+  readonly channelId: string;
+  readonly actorId: string | null;
+  readonly mutationId: string | null;
+  /** ISO 8601. A string on the wire; see the note at the top of this file. */
+  readonly occurredAt: string;
+  readonly payload: unknown;
+}
+
+/** The gateway removed this socket from a channel room it had joined. */
+export interface ChannelClosedMessage {
+  readonly channelId: string;
+}
+
+/** Who currently has this conversation open. See `gateway.ts` on DMs. */
+export interface ChannelPresenceMessage {
+  readonly channelId: string;
+  readonly userIds: readonly string[];
+}
+
+export interface ChatServerToClientEvents {
+  ready: (message: ReadyMessage) => void;
+  presence: (message: ChannelPresenceMessage) => void;
+  broadcast: (message: ChatBroadcastMessage) => void;
+  'channel:closed': (message: ChannelClosedMessage) => void;
+  'session:ended': (message: SessionEndedMessage) => void;
+  typing: (message: TypingMessage) => void;
+}
+
+export interface ChatClientToServerEvents {
+  'channel:join': (request: ChannelJoinRequest, ack: (result: JoinAck) => void) => void;
+  'channel:leave': (request: ChannelLeaveRequest) => void;
+  'typing:start': (request: TypingRequest) => void;
+  'typing:stop': (request: TypingRequest) => void;
+}
+
+/** The Socket.io room name for a channel. One definition, used on both sides. */
+export function channelRoom(channelId: string): string {
+  return `channel:${channelId}`;
+}
+
+/** The inverse of `channelRoom`, or null if the room is not a channel room. */
+export function channelIdOfRoom(room: string): string | null {
+  return room.startsWith('channel:') ? room.slice('channel:'.length) : null;
+}
+
+/** The namespace chat is served on. One definition, used by both sides. */
+export const CHAT_NAMESPACE = '/chat';

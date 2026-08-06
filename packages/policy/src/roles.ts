@@ -98,7 +98,21 @@ const MEMBER: readonly Permission[] = [
   'message:read',
   'message:create',
   'message:update',
-  'message:delete',
+  /* No `message:delete`. Deliberately removed in Phase 5, and the asymmetry with
+     `message:update` above is the point.
+
+     Deleting your OWN message does not need this permission — `deleteMessage`
+     asks for `message:create` when the caller is the author, exactly as
+     `deleteComment` does. `message:delete` is the MODERATION capability: it is
+     what lets someone remove another person's words. Granting that to every
+     member made any colleague able to erase any message in any channel they
+     could read, which is not what "member" means anywhere else in this matrix —
+     `comment:delete` is admin-and-owner only for the identical reason.
+
+     This was a Phase 2 entry written before Chat existed, when nothing consumed
+     it. It is listed here rather than silently dropped because a permission
+     disappearing from a role is the kind of change that looks like an accident
+     six months later. */
 
   'space:read',
   'page:read',

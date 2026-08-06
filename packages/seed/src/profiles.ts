@@ -1,4 +1,5 @@
 import type { Role } from '@taskflow/policy';
+import type { schema } from '@taskflow/db';
 
 /**
  * What each profile produces, written out rather than generated.
@@ -25,6 +26,21 @@ export interface BoardPlan {
   readonly lists: number;
   /** Live cards. Archived and soft-deleted extras are added on top by the mix. */
   readonly cards: number;
+  /**
+   * Saved views, taken in order from `VIEW_TEMPLATES` (`modules/work.views.ts`).
+   *
+   * Same arrangement as `lists` taking the first N of `LIST_NAMES`: the
+   * templates are ORDERED so that a board taking more of them picks up
+   * progressively rarer states — the `@me` filter, then the negated label
+   * filter, then a private view, then a private one colliding by name with a
+   * shared one. Omitted means none, and one board per run leaves it omitted so
+   * the empty view-tab strip is reachable.
+   *
+   * A private template produces one row per author rather than one row, which
+   * is why the seeded view COUNT is higher than this number on boards that
+   * reach them.
+   */
+  readonly views?: number;
 }
 
 export interface ProjectPlan {
@@ -49,6 +65,51 @@ export interface ProjectPlan {
   readonly customFields: 'standard' | 'all-types';
 }
 
+/**
+ * One chat channel, declared rather than generated — same argument as `BoardPlan`.
+ *
+ * The states worth having are the ones a uniform range never rolls: an ARCHIVED
+ * channel that still holds its history, a channel with NO messages at all, a
+ * private channel whose roster includes a GUEST, and a tenant with no DMs
+ * because it has only one member. Each of those is a line below rather than an
+ * outcome somebody hopes for.
+ */
+export interface ChannelPlan {
+  /**
+   * Null for `dm` and `group_dm`.
+   *
+   * Not a stylistic choice: `channels_name_matches_type` (migration 0017) is one
+   * CHECK over both branches, so a named DM is not merely unusual, it is a row
+   * the database refuses. A DM carrying a name is exactly the row that would let
+   * a private conversation appear in a channel browser.
+   */
+  readonly name: string | null;
+  readonly type: schema.ChannelType;
+  /**
+   * How many people hold a membership tuple on it.
+   *
+   * For a public channel this is who JOINED, not who may read — every org member
+   * can read a public channel through their role. The distinction is visible in
+   * the product: `listChannels` derives `joined` from the tuples, so a public
+   * channel with a partial roster is a channel most people have to opt into.
+   *
+   * For `dm` this must be 2 and for `group_dm` 3 or more; the seeder refuses
+   * anything else rather than writing a conversation the product could not open.
+   */
+  readonly members: number;
+  /** Top-level messages. Threaded replies are added on top by the mix. */
+  readonly messages: number;
+  readonly topic?: boolean;
+  /** Archived channels keep every message and accept no new ones (§7.1). */
+  readonly archived?: boolean;
+  /**
+   * Force the org's first guest into the roster — §3.9's channel-scoped guest
+   * access. A guest grants NOTHING from their role, so this tuple is the only
+   * thing in the entire database that makes chat reachable for them.
+   */
+  readonly withGuest?: boolean;
+}
+
 export interface OrgPlan {
   readonly name: string;
   readonly slug: string;
@@ -65,6 +126,7 @@ export interface OrgPlan {
   readonly projects: readonly ProjectPlan[];
   /** Relationship tuples — per-resource grants on top of the role. */
   readonly grants: number;
+  readonly channels: readonly ChannelPlan[];
 }
 
 /**
@@ -97,12 +159,48 @@ export interface CardMix {
   readonly attachmentRate: number;
 }
 
+/**
+ * How one message is filled in. `CardMix`'s counterpart, and ranges belong here
+ * for the same reason.
+ *
+ * The rates are chosen so the states that break a message list are common enough
+ * to hit by scrolling: roughly one message in twenty-five is a tombstone, one in
+ * eight grows a thread, and most channels carry at least one pin.
+ */
+export interface MessageMix {
+  /** Messages that grow a thread. */
+  readonly threadedRate: number;
+  readonly replies: readonly [number, number];
+  readonly editedRate: number;
+  readonly deletedRate: number;
+  /**
+   * Share of deletions that are a MODERATOR removing someone else's message
+   * rather than an author withdrawing their own.
+   *
+   * The two are different rows (`deleted_by_author`) and different audit
+   * entries, and the message list branches on them — a moderator removal says so
+   * where a self-withdrawal does not.
+   */
+  readonly moderatorShare: number;
+  readonly mentionRate: number;
+  readonly linkRate: number;
+  readonly reactedRate: number;
+  readonly reactions: readonly [number, number];
+  readonly pinnedPerChannel: readonly [number, number];
+  /** Share of a channel's members carrying a read cursor in it. */
+  readonly readCursorRate: number;
+  /** Share of link-carrying messages that got a preview row. */
+  readonly unfurlRate: number;
+  readonly attachmentRate: number;
+}
+
 export interface Profile {
   readonly name: string;
   /** Size of the shared user pool. Org plans index into it. */
   readonly users: number;
   readonly orgs: readonly OrgPlan[];
   readonly card: CardMix;
+  readonly message: MessageMix;
   /**
    * Share of cards that contribute lifecycle events to the outbox.
    *
@@ -113,6 +211,17 @@ export interface Profile {
    * chatter is sampled.
    */
   readonly cardEventSampleRate: number;
+  /**
+   * The same sampling, for chat.
+   *
+   * Its own number rather than reusing `cardEventSampleRate` because the volumes
+   * are not comparable: a demo run writes a few thousand messages against about
+   * thirteen hundred cards, and every message event takes the per-org audit
+   * chain-head lock on its way through. Channel STRUCTURE — created, member
+   * added, archived — is always emitted, exactly as org and board structure is;
+   * it is the per-message chatter that is sampled.
+   */
+  readonly messageEventSampleRate: number;
   /** Whether to upload real objects and write attachment rows. */
   readonly attachments: boolean;
 }
@@ -153,15 +262,34 @@ const DEMO_MIX: CardMix = {
   attachmentRate: 0.08,
 };
 
+const DEMO_MESSAGE_MIX: MessageMix = {
+  threadedRate: 0.12,
+  replies: [1, 4],
+  editedRate: 0.06,
+  deletedRate: 0.04,
+  moderatorShare: 0.3,
+  mentionRate: 0.18,
+  linkRate: 0.1,
+  reactedRate: 0.22,
+  reactions: [1, 3],
+  pinnedPerChannel: [0, 3],
+  readCursorRate: 0.7,
+  unfurlRate: 0.8,
+  attachmentRate: 0.05,
+};
+
 /**
- * The default. Three tenants, ~1,350 live cards, every Phase 3 surface populated.
+ * The default. Three tenants, ~1,350 live cards, ~2,500 messages, every Phase 3
+ * and Phase 5 surface populated.
  */
 const DEMO: Profile = {
   name: 'demo',
   users: 24,
   cardEventSampleRate: 0.35,
+  messageEventSampleRate: 0.2,
   attachments: true,
   card: DEMO_MIX,
+  message: DEMO_MESSAGE_MIX,
   orgs: [
     {
       name: 'Acme Corp',
@@ -177,6 +305,44 @@ const DEMO: Profile = {
         { user: 16, role: 'guest' },
         { user: 17, role: 'guest' },
       ],
+      channels: [
+        /* Everyone is in #general, and it is the one channel large enough for a
+           three-digit unread badge and for the id cursor to page more than
+           twice. */
+        { name: 'general', type: 'public', members: 18, messages: 320, topic: true },
+        { name: 'engineering', type: 'public', members: 11, messages: 260, topic: true },
+        { name: 'design', type: 'public', members: 7, messages: 140, topic: true },
+        /* Thread-heavy by content rather than by plan: an incident channel is
+           where the "N replies" affordance actually has to hold up. */
+        { name: 'incidents', type: 'public', members: 9, messages: 90, topic: true },
+        { name: 'random', type: 'public', members: 13, messages: 180 },
+        { name: 'announcements', type: 'public', members: 18, messages: 40, topic: true },
+        /* A channel with NO messages. The message list, the composer and the
+           unread badge each have an empty state that only this row exercises. */
+        { name: 'watercooler', type: 'public', members: 4, messages: 0, topic: true },
+        { name: 'leadership', type: 'private', members: 4, messages: 120, topic: true },
+        { name: 'security-review', type: 'private', members: 5, messages: 80, topic: true },
+        /* The guest's one channel. Signing in as them must reach exactly this
+           and nothing else — the §3.9 case, and the only place in the seeded
+           database where an empty role grant set is the whole authorization. */
+        {
+          name: 'vendor-portal',
+          type: 'private',
+          members: 4,
+          messages: 45,
+          topic: true,
+          withGuest: true,
+        },
+        /* Archived, and populated rather than empty: "show archived" has to
+           reveal a conversation that really happened, not a channel nobody
+           used. */
+        { name: 'old-migration', type: 'public', members: 6, messages: 60, archived: true },
+        { name: null, type: 'dm', members: 2, messages: 90 },
+        { name: null, type: 'dm', members: 2, messages: 55 },
+        { name: null, type: 'dm', members: 2, messages: 30 },
+        { name: null, type: 'dm', members: 2, messages: 12 },
+        { name: null, type: 'group_dm', members: 4, messages: 70 },
+      ],
       projects: [
         {
           name: 'Web Platform',
@@ -187,9 +353,9 @@ const DEMO: Profile = {
             /* The one board large enough to mean something. Table-view
                virtualization, rank length after hundreds of appends, and the
                filter compiler's index use are all invisible at fifty cards. */
-            { name: 'Delivery', lists: 6, cards: 380 },
-            { name: 'Design Review', lists: 4, cards: 85 },
-            { name: 'Bug Triage', lists: 5, cards: 150 },
+            { name: 'Delivery', lists: 6, cards: 380, views: 9 },
+            { name: 'Design Review', lists: 4, cards: 85, views: 2 },
+            { name: 'Bug Triage', lists: 5, cards: 150, views: 6 },
           ],
         },
         {
@@ -198,8 +364,8 @@ const DEMO: Profile = {
           labels: 8,
           customFields: 'standard',
           boards: [
-            { name: 'Roadmap', lists: 5, cards: 160 },
-            { name: 'Incidents', lists: 4, cards: 60 },
+            { name: 'Roadmap', lists: 5, cards: 160, views: 4 },
+            { name: 'Incidents', lists: 4, cards: 60, views: 2 },
           ],
         },
         {
@@ -207,7 +373,7 @@ const DEMO: Profile = {
           key: 'MOB',
           labels: 7,
           customFields: 'standard',
-          boards: [{ name: 'Release 4.2', lists: 5, cards: 150 }],
+          boards: [{ name: 'Release 4.2', lists: 5, cards: 150, views: 3 }],
         },
         {
           name: 'Operations',
@@ -219,7 +385,7 @@ const DEMO: Profile = {
              real content rather than a folder that was never used. */
           archived: true,
           boards: [
-            { name: 'Runbook Tasks', lists: 4, cards: 110 },
+            { name: 'Runbook Tasks', lists: 4, cards: 110, views: 2 },
             { name: 'Vendor Reviews', lists: 4, cards: 40 },
           ],
         },
@@ -243,13 +409,25 @@ const DEMO: Profile = {
         { user: 4, role: 'guest' },
         { user: 22, role: 'guest' },
       ],
+      /* The second tenant exists so the two-org users see chat in both places —
+         switching orgs must swap the whole channel list, and a bug that leaks
+         one tenant's channels into another is only visible when both have
+         some. */
+      channels: [
+        { name: 'general', type: 'public', members: 7, messages: 130, topic: true },
+        { name: 'revenue', type: 'public', members: 5, messages: 80, topic: true },
+        { name: 'compliance', type: 'private', members: 4, messages: 60, topic: true },
+        { name: 'archived-q1', type: 'public', members: 4, messages: 35, archived: true },
+        { name: null, type: 'dm', members: 2, messages: 40 },
+        { name: null, type: 'dm', members: 2, messages: 18 },
+      ],
       projects: [
         {
           name: 'Compliance',
           key: 'GXC',
           labels: 6,
           customFields: 'standard',
-          boards: [{ name: 'Audit 2026', lists: 5, cards: 110 }],
+          boards: [{ name: 'Audit 2026', lists: 5, cards: 110, views: 3 }],
         },
         {
           name: 'Sales Ops',
@@ -257,9 +435,9 @@ const DEMO: Profile = {
           labels: 6,
           customFields: 'standard',
           boards: [
-            { name: 'Pipeline', lists: 4, cards: 75 },
+            { name: 'Pipeline', lists: 4, cards: 75, views: 2 },
             /* A board with no cards at all — every column empty. */
-            { name: 'Next Quarter', lists: 3, cards: 0 },
+            { name: 'Next Quarter', lists: 3, cards: 0, views: 1 },
           ],
         },
       ],
@@ -272,13 +450,17 @@ const DEMO: Profile = {
       grants: 2,
       teams: [],
       members: [{ user: 23, role: 'owner' }],
+      /* One channel and NO direct messages — a DM needs two participants, so
+         this is the one tenant where "you are the only person here" is a real
+         state rather than something to mock up. */
+      channels: [{ name: 'general', type: 'public', members: 1, messages: 25, topic: true }],
       projects: [
         {
           name: 'Side Project',
           key: 'SIDE',
           labels: 5,
           customFields: 'standard',
-          boards: [{ name: 'Everything', lists: 4, cards: 28 }],
+          boards: [{ name: 'Everything', lists: 4, cards: 28, views: 2 }],
         },
       ],
     },
@@ -290,8 +472,10 @@ const MINIMAL: Profile = {
   name: 'minimal',
   users: 4,
   cardEventSampleRate: 1,
+  messageEventSampleRate: 1,
   attachments: false,
   card: { ...DEMO_MIX, archivedRate: 0, deletedRate: 0, attachmentRate: 0 },
+  message: { ...DEMO_MESSAGE_MIX, deletedRate: 0, unfurlRate: 0, attachmentRate: 0 },
   orgs: [
     {
       name: 'Test Org',
@@ -304,13 +488,18 @@ const MINIMAL: Profile = {
         { user: 2, role: 'member' },
         { user: 3, role: 'guest' },
       ],
+      channels: [
+        { name: 'general', type: 'public', members: 4, messages: 40, topic: true },
+        { name: 'private-notes', type: 'private', members: 2, messages: 15, withGuest: true },
+        { name: null, type: 'dm', members: 2, messages: 20 },
+      ],
       projects: [
         {
           name: 'First Project',
           key: 'FIRST',
           labels: 4,
           customFields: 'all-types',
-          boards: [{ name: 'Main', lists: 4, cards: 12 }],
+          boards: [{ name: 'Main', lists: 4, cards: 12, views: 2 }],
         },
       ],
     },
@@ -329,7 +518,26 @@ const LARGE: Profile = {
   name: 'large',
   users: 60,
   cardEventSampleRate: 0.01,
+  messageEventSampleRate: 0.01,
   attachments: false,
+  /* Message CHILDREN are switched off for the same reason card children are:
+     this profile answers "does a 20,000-message channel still page", and
+     seeding a hundred thousand reactions to ask it would measure the seeder. */
+  message: {
+    ...DEMO_MESSAGE_MIX,
+    threadedRate: 0,
+    replies: [0, 0],
+    editedRate: 0.02,
+    deletedRate: 0.01,
+    mentionRate: 0.02,
+    linkRate: 0,
+    reactedRate: 0,
+    reactions: [0, 0],
+    pinnedPerChannel: [0, 0],
+    readCursorRate: 0.1,
+    unfurlRate: 0,
+    attachmentRate: 0,
+  },
   card: {
     ...DEMO_MIX,
     describedRate: 0.15,
@@ -352,6 +560,10 @@ const LARGE: Profile = {
         user: i,
         role: i === 0 ? 'owner' : i < 4 ? 'admin' : 'member',
       })),
+      channels: [
+        { name: 'firehose', type: 'public', members: 60, messages: 20_000 },
+        { name: 'secondary', type: 'public', members: 20, messages: 5_000 },
+      ],
       projects: [
         {
           name: 'Firehose',
@@ -359,7 +571,7 @@ const LARGE: Profile = {
           labels: 12,
           customFields: 'standard',
           boards: [
-            { name: 'Everything', lists: 4, cards: 24_000 },
+            { name: 'Everything', lists: 4, cards: 24_000, views: 2 },
             { name: 'Secondary', lists: 6, cards: 6_000 },
           ],
         },
@@ -398,6 +610,21 @@ export function findProfile(name: string): Profile {
     );
   }
   return profile;
+}
+
+/**
+ * Top-level messages across every org — for the plan the CLI prints.
+ *
+ * Deliberately excludes threaded replies. They are a function of the mix rather
+ * than of the plan, so counting them here would mean reproducing the generator's
+ * own random draws, and a printed estimate that disagrees with the run is worse
+ * than one that is honestly a floor.
+ */
+export function plannedMessageCount(profile: Profile): number {
+  return profile.orgs.reduce(
+    (total, org) => total + org.channels.reduce((perOrg, channel) => perOrg + channel.messages, 0),
+    0,
+  );
 }
 
 /** Live cards across every org — for the plan the CLI prints before writing. */

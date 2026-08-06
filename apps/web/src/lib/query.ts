@@ -211,6 +211,22 @@ export const keys = {
 
   members: (orgId: string) => ['org', orgId, 'members'] as const,
   explain: (orgId: string, input: string) => ['org', orgId, 'authz', 'explain', input] as const,
+
+  /** Every channel the caller may see (Phase 5, chat/api.ts) — public, private, and DMs alike. */
+  channels: (orgId: string) => ['org', orgId, 'channels'] as const,
+  channel: (orgId: string, channelId: string) => ['org', orgId, 'channel', channelId] as const,
+  messages: (orgId: string, channelId: string) =>
+    ['org', orgId, 'channel', channelId, 'messages'] as const,
+  reactions: (orgId: string, channelId: string) =>
+    ['org', orgId, 'channel', channelId, 'reactions'] as const,
+  pins: (orgId: string, channelId: string) => ['org', orgId, 'channel', channelId, 'pins'] as const,
+  /** Every pin the caller can see, across every channel — the sidebar panel. */
+  allPins: (orgId: string) => ['org', orgId, 'chat', 'pins'] as const,
+  /** Who currently holds guest access to one channel. */
+  channelGuests: (orgId: string, channelId: string) =>
+    ['org', orgId, 'channel', channelId, 'guests'] as const,
+  /** Unread counts for the sidebar badge — one query across every channel id given. */
+  unreadCounts: (orgId: string) => ['org', orgId, 'channels', 'unread'] as const,
 } as const;
 
 /** The org id every key needs, or a placeholder that matches nothing. */

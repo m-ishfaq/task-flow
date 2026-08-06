@@ -23,6 +23,8 @@ import {
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
 import { useStepUp } from '../auth/use-step-up.js';
+import { useToast } from '../../lib/toast-context.js';
+import { useMembers } from '../org/use-members.js';
 import { membersQuery } from '../org/api.js';
 
 /**
@@ -66,6 +68,7 @@ export function SettingsPage() {
         </Link>
       </div>
 
+      <ProfileSection />
       <OrgSection orgId={orgId} />
       <MemberSection orgId={orgId} />
       <TeamSection orgId={orgId} />
@@ -602,4 +605,93 @@ function slugify(value: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 40);
+}
+
+/* -------------------------------------------------------------------------- *
+ * Your own profile (migration 0019)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * Setting your own display name.
+ *
+ * Lives on the ORGANIZATION settings page, which is not where it belongs — a
+ * name is an account-level fact and follows a person between organizations,
+ * whereas everything else on this page is scoped to one. It is here because
+ * this is the only settings surface that exists, and a column nobody can write
+ * to is a column that stays null. The right home is a `/account` route when
+ * §3.6's People surface is built.
+ *
+ * `auth.updateProfile` is a `selfRoute`: no org permission gates it, so this
+ * section renders for every role including a guest, which is deliberate — the
+ * people with the least access are otherwise the ones stuck being shown as an
+ * email address forever.
+ */
+function ProfileSection() {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const orgId = useSession((state) => state.orgId) ?? '';
+  const viewerId = useSession((state) => state.userId);
+  const { personOf } = useMembers();
+
+  const current = viewerId === null ? null : personOf(viewerId);
+  const [draft, setDraft] = useState<string | null>(null);
+
+  /* `null` means "not edited yet", so the field shows the stored name until
+     someone types. Initialising state from `current` directly would freeze it
+     at whatever the member list held on first render — before it loaded, that
+     is an empty box that silently overwrites a real name on save. */
+  const value = draft ?? (current?.named === true ? current.label : '');
+
+  const save = useMutation({
+    mutationFn: (displayName: string | null) => api.auth.updateProfile.mutate({ displayName }),
+    onSuccess: () => {
+      /* The member list is what every avatar and message author reads from, so
+         it is the thing that has to change — not this form. */
+      void queryClient.invalidateQueries({ queryKey: keys.members(orgId) });
+      toast.show('Name saved');
+    },
+    onError: (error) => {
+      toast.failure('Your name was not saved', error);
+    },
+  });
+
+  return (
+    <Section title="Your profile" description="How your name appears to everyone else.">
+      <form
+        className="flex flex-col gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          // An empty box clears the name, which is a real operation: it goes
+          // back to showing the address. Not the same as "leave it alone".
+          save.mutate(value.trim() === '' ? null : value.trim());
+        }}
+      >
+        <Field
+          label="Display name"
+          htmlFor="display-name"
+          hint={
+            current?.email === null || current?.email === undefined
+              ? undefined
+              : `Shown instead of ${current.email}. Leave empty to use your email address.`
+          }
+        >
+          <Input
+            id="display-name"
+            value={value}
+            maxLength={80}
+            placeholder="Your name"
+            onChange={(event) => {
+              setDraft(event.target.value);
+            }}
+          />
+        </Field>
+
+        <div>
+          <Button type="submit" size="sm" disabled={save.isPending}>
+            Save
+          </Button>
+        </div>
+      </form>
+    </Section>
+  );
 }

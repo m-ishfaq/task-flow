@@ -30,8 +30,19 @@ import { membersQuery, type Member } from './api.js';
 
 export interface Person {
   readonly userId: string;
-  /** Email today. Becomes a display name when there is a profile surface. */
+  /**
+   * What to show. The display name when there is one, the email otherwise.
+   *
+   * The fallback lives HERE rather than in a backfill (migration 0019): a name
+   * guessed from the local part of an address gets written into a column that
+   * looks authored, after which nobody can tell an entered name from an
+   * inferred one and the inferred ones never get corrected.
+   */
   readonly label: string;
+  /** The address, always. Rendered UNDER the label where both fit. */
+  readonly email: string | null;
+  /** True when `label` is a real name rather than the address standing in. */
+  readonly named: boolean;
 }
 
 export interface MemberLookup {
@@ -54,10 +65,21 @@ export function useMembers(): MemberLookup {
 
   const byId = new Map((members.data ?? []).map((member) => [member.userId, member]));
 
-  const personOf = (userId: string): Person => ({
-    userId,
-    label: byId.get(userId)?.email ?? userId,
-  });
+  const personOf = (userId: string): Person => {
+    const member = byId.get(userId);
+    const name = member?.displayName ?? null;
+
+    return {
+      userId,
+      /* Falls all the way back to the raw id when the member is unknown — a
+         person who left the org, or a caller without `member:read`. Ugly, and
+         deliberately so: hiding them would silently misreport a message as
+         having no author. */
+      label: name ?? member?.email ?? userId,
+      email: member?.email ?? null,
+      named: name !== null,
+    };
+  };
 
   return {
     people: members.data ?? [],

@@ -37,6 +37,15 @@ import type { Actor } from './org.service.js';
 export interface MemberSummary {
   readonly userId: string;
   readonly email: string;
+  /**
+   * What to call this person, or null if they have not set a name.
+   *
+   * Sent as null rather than falling back to the email HERE, so a caller can
+   * tell "has no name" from "is called the same thing as their address" — a
+   * profile form has to render an empty field for the first and the text for
+   * the second. The display fallback belongs at the render site.
+   */
+  readonly displayName: string | null;
   readonly role: string;
   readonly status: string;
   readonly joinedAt: Date;
@@ -48,6 +57,7 @@ export async function listMembers(orgId: OrgId): Promise<readonly MemberSummary[
       .select({
         userId: schema.memberships.userId,
         email: schema.users.email,
+        displayName: schema.users.displayName,
         role: schema.memberships.role,
         status: schema.memberships.status,
         joinedAt: schema.memberships.joinedAt,

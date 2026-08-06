@@ -3,6 +3,7 @@ import { publicRoute, router } from './trpc/builder.js';
 import { createIdentityRouter, type IdentityRouterDeps } from './identity/router.js';
 import { createTenancyRouter } from './tenancy/router.js';
 import { createWorkRouter, type WorkRouterDeps } from './work/router.js';
+import { createChatRouter } from './chat/router.js';
 
 /**
  * The root router.
@@ -63,6 +64,19 @@ export function createAppRouter(deps: AppRouterDeps) {
      * services with configuration and a lifecycle.
      */
     work: createWorkRouter(deps.work),
+
+    /**
+     * Chat — channels, direct messages, messages (Phase 5).
+     *
+     * Takes Work's attachment dependencies — the SAME storage provider and
+     * scanner, not a second pair. §3.10 is explicit that chat file sharing is
+     * the existing pipeline pointed at a channel, and sharing the object here
+     * is what makes that literally true rather than aspirational: a test that
+     * swaps in a scanner which always answers 'infected' covers both surfaces
+     * at once, and there is no configuration under which one is scanned and the
+     * other is not.
+     */
+    chat: createChatRouter(deps.work.attachments),
   });
 }
 

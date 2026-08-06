@@ -7,7 +7,7 @@ import { S3StorageProvider } from '@taskflow/storage';
 import type { StorageProvider } from '@taskflow/contracts';
 import { createSeedContext } from './context.js';
 import { createRng } from './rng.js';
-import { DEFAULT_PROFILE, findProfile, plannedCardCount } from './profiles.js';
+import { DEFAULT_PROFILE, findProfile, plannedCardCount, plannedMessageCount } from './profiles.js';
 import { resolveModules } from './registry.js';
 import { reset } from './reset.js';
 import { usersModule } from './modules/identity.users.js';
@@ -217,7 +217,10 @@ async function main(): Promise<void> {
 
     console.warn(
       `Seeding profile "${profile.name}" — ${String(profile.orgs.length)} org(s), ` +
-        `~${String(plannedCardCount(profile))} live card(s). Seed: ${args.seed}${
+        `~${String(plannedCardCount(profile))} live card(s), ` +
+        // A floor, not an estimate: threaded replies are a function of the mix
+        // rather than of the plan (see `plannedMessageCount`).
+        `${String(plannedMessageCount(profile))}+ message(s). Seed: ${args.seed}${
           args.chaos ? ' (chaos)' : ''
         }`,
     );

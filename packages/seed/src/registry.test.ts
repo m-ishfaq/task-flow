@@ -5,6 +5,7 @@ import {
   tablesInTeardownOrder,
   type SeedModule,
 } from './registry.js';
+import { auditModule } from './modules/platform.audit.js';
 
 /** A no-op module, for graph shape tests that never actually run `seed`. */
 function stub(
@@ -125,5 +126,91 @@ describe('tablesInTeardownOrder', () => {
   it('produces an empty list for a graph with no tables', () => {
     const empty = stub('empty', [], []);
     expect(tablesInTeardownOrder(resolveModules([empty]))).toEqual([]);
+  });
+});
+
+/**
+ * The REAL graph, not stubs.
+ *
+ * Everything above proves the resolver works on shapes invented for it. This
+ * proves the shape the CLI actually seeds, which is the thing that breaks when
+ * a module is added: `cli.ts` passes `auditModule` as its only root and reaches
+ * every other module through `requires`, so a module whose dependency edge was
+ * forgotten does not fail — it silently never runs, and its tables stay empty
+ * while the run reports success.
+ */
+describe('the registered module graph', () => {
+  const ordered = resolveModules([auditModule]);
+  const names = ordered.map((module) => module.name);
+  const tables = tablesInTeardownOrder(ordered);
+
+  it('reaches every module from the audit root alone', () => {
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'identity.users',
+        'tenancy.orgs',
+        'work.projects',
+        'work.boards',
+        'work.cards',
+        'work.views',
+        'chat.channels',
+        'chat.messages',
+        'platform.attachments',
+        'authz.tuples',
+        'platform.audit',
+      ]),
+    );
+  });
+
+  it('runs chat.channels before chat.messages, and both before the audit drain', () => {
+    // A message needs a channel to reference — the composite FK on
+    // (org_id, channel_id) makes the reverse order a foreign key violation
+    // rather than a subtle wrongness.
+    expect(names.indexOf('chat.channels')).toBeLessThan(names.indexOf('chat.messages'));
+    expect(names.indexOf('chat.messages')).toBeLessThan(names.indexOf('platform.audit'));
+  });
+
+  it('runs chat.messages before platform.attachments', () => {
+    // Message attachments hang off `messageRefs`, which only exists once the
+    // messages module has run.
+    expect(names.indexOf('chat.messages')).toBeLessThan(names.indexOf('platform.attachments'));
+  });
+
+  it('runs platform.audit last, so it sees every buffered event', () => {
+    expect(names[names.length - 1]).toBe('platform.audit');
+  });
+
+  it('reaches work.views, which nothing else depends on', () => {
+    /* No module reads its output, so the only thing keeping it in the graph is
+       the entry in `platform.audit`'s `requires`. Drop that and the module does
+       not fail — it silently never runs, and `work.views` stays empty while the
+       run reports success. */
+    expect(names).toContain('work.views');
+    expect(names.indexOf('work.boards')).toBeLessThan(names.indexOf('work.views'));
+    expect(tables).toContain('work.views');
+  });
+
+  it('clears every chat child table before chat.channels', () => {
+    /* Teardown is the run order reversed, derived rather than written — the
+       hand-maintained DELETE list is the thing that rots. This asserts the
+       derivation actually lands the chat tables children-first. */
+    for (const table of [
+      'chat.messages',
+      'chat.message_reactions',
+      'chat.pinned_messages',
+      'chat.read_cursors',
+      'chat.message_unfurls',
+    ]) {
+      expect(tables.indexOf(table), table).toBeGreaterThanOrEqual(0);
+      expect(tables.indexOf(table), table).toBeLessThan(tables.indexOf('chat.channels'));
+    }
+  });
+
+  it('lists authz.relationship_tuples exactly once despite two modules writing it', () => {
+    // `chat.channels` writes channel membership there and `authz.tuples` writes
+    // board grants. A table cleared twice is harmless; a table cleared at the
+    // wrong position is not, and the de-duplication keeping the LAST occurrence
+    // is what decides where.
+    expect(tables.filter((table) => table === 'authz.relationship_tuples')).toHaveLength(1);
   });
 });

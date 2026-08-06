@@ -96,7 +96,11 @@ const EXPECTED: Readonly<Record<Role, readonly Permission[]>> = {
     'message:read',
     'message:create',
     'message:update',
-    'message:delete',
+    /* No `message:delete`, matching `comment:delete`'s absence below.
+       `message:delete` is the MODERATION capability — removing someone else's
+       words. Deleting your OWN message does not need it: the service asks for
+       `message:create` when the caller is the author, exactly as comment
+       deletion does. See the note in roles.ts. */
     'space:read',
     'page:read',
     'page:create',

@@ -602,6 +602,9 @@ importers:
       '@taskflow/events':
         specifier: workspace:*
         version: link:../events
+      '@taskflow/filter':
+        specifier: workspace:*
+        version: link:../filter
       '@taskflow/policy':
         specifier: workspace:*
         version: link:../policy
