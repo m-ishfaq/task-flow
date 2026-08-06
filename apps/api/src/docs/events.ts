@@ -108,3 +108,31 @@ export const pageSiblingsRebalanced = defineEvent(
     })
     .strict(),
 );
+
+/* -------------------------------------------------------------------------- *
+ * Page content — Wave 2 (§3.7's third recovery path: docs.page_versions)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * An on-demand "save a version", through the ordinary API path.
+ *
+ * Not `page.updated` restated: that event's payload is title-shaped
+ * (Wave 1's rename), and a content version has no honest before/after text
+ * diff to carry — the state is a materialized Yjs snapshot, not a string.
+ * Compaction's own periodic 'autosave' writes do NOT emit this — see
+ * `apps/collab/src/compaction.ts`'s header on why it is exempt from
+ * guardrail 11 the same way `work/rebalance.ts` is, and why wiring
+ * `page.updated` out of autosave (for Phase 8's search index, per this
+ * phase's own §2) is a named, deliberate gap rather than built speculatively
+ * ahead of the phase that consumes it.
+ */
+export const pageVersionSaved = defineEvent(
+  'page.version_saved',
+  z.object({ pageId: z.string(), versionId: z.string() }).strict(),
+);
+
+/** A page's live content was reset to an earlier saved version. */
+export const pageVersionRestored = defineEvent(
+  'page.version_restored',
+  z.object({ pageId: z.string(), versionId: z.string() }).strict(),
+);

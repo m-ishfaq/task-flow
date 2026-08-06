@@ -5,13 +5,16 @@ import { subjectOf } from '../trpc/context.js';
 import type { DocsActor } from './shared.js';
 import * as spaces from './space.service.js';
 import * as pages from './page.service.js';
+import * as pageVersions from './page-version.service.js';
 
 /**
- * Docs routes — spaces and the page tree (ai/phase-6-docs.md §5, Wave 1).
+ * Docs routes — spaces, the page tree, and page versions (ai/phase-6-docs.md
+ * §5, Wave 1 + Wave 2).
  *
  * No live content collaboration here — that is `apps/collab`, a separate
- * process by design (§3.2). Everything below is tree position and metadata,
- * on the ordinary API path, exactly like Work and Chat.
+ * process by design (§3.2). Everything below is tree position, metadata, and
+ * (Wave 2) version save/restore, all on the ordinary API path, exactly like
+ * Work and Chat.
  *
  * `route({ permission })` is layer 1, same caveat chat/router.ts states for
  * itself: for a page it barely narrows anything, because `MEMBER` holds
@@ -105,6 +108,34 @@ export function createDocsRouter() {
         .input(z.object({ pageId: PageIdSchema, restore: z.boolean() }).strict())
         .output(z.void())
         .mutation(({ input, ctx }) => pages.archivePage(actorOf(ctx), input)),
+    }),
+
+    pageVersions: router({
+      list: route({ permission: 'page:read' })
+        .input(z.object({ pageId: PageIdSchema }).strict())
+        .output(
+          z
+            .array(
+              z.object({
+                versionId: z.string(),
+                kind: z.string(),
+                createdBy: z.string().nullable(),
+                createdAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => pageVersions.listPageVersions(actorOf(ctx), input)),
+
+      save: route({ permission: 'page:update' })
+        .input(z.object({ pageId: PageIdSchema }).strict())
+        .output(z.object({ versionId: z.string() }))
+        .mutation(({ input, ctx }) => pageVersions.savePageVersion(actorOf(ctx), input)),
+
+      restore: route({ permission: 'page:update' })
+        .input(z.object({ pageId: PageIdSchema, versionId: z.string() }).strict())
+        .output(z.void())
+        .mutation(({ input, ctx }) => pageVersions.restorePageVersion(actorOf(ctx), input)),
     }),
   });
 }

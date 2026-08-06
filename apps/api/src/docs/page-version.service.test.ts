@@ -1,0 +1,388 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import * as Y from 'yjs';
+import { unsafeAsId, type OrgId, type PageId, type SpaceId, type UserId } from '@taskflow/contracts';
+import { closeDatabase, initializeDatabase } from '@taskflow/db';
+import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
+import type { Subject } from '@taskflow/policy';
+import { TEST_ENV } from '../testing/fixtures.js';
+import * as orgs from '../tenancy/org.service.js';
+import * as members from '../tenancy/member.service.js';
+import * as grants from '../tenancy/grant.service.js';
+import { loadTuples } from '../tenancy/resolve.js';
+import * as spaces from './space.service.js';
+import * as pages from './page.service.js';
+import * as pageVersions from './page-version.service.js';
+import type { DocsActor } from './shared.js';
+
+/**
+ * Page versions, Wave 2's ordinary-API-path half (ai/phase-6-docs.md §3.7),
+ * against real Postgres.
+ *
+ * What this suite does NOT cover: the cross-process property that
+ * `apps/collab`'s `replayPage` actually picks up a restore on a fresh load.
+ * That belongs with task #17's integration tests, which drive both apps —
+ * asserting it here would mean either duplicating `apps/collab`'s replay
+ * logic or importing from it, and this file only has `apps/api` in scope.
+ * What IS in scope, and what "a slice with untested authorization is not
+ * done" requires of this file specifically: that `savePageVersion` writes a
+ * real snapshot of whatever is materialized from the WAL, that
+ * `restorePageVersion` round-trips through the same tables `apps/collab`
+ * reads (a WAL row plus a new snapshot row), and that both routes enforce
+ * `page:update` — not just `page:read` — since a version write is content,
+ * not metadata.
+ */
+
+const OWNER = unsafeAsId<'UserId'>('0195ee10-0000-7000-8000-000000000101');
+const MEMBER = unsafeAsId<'UserId'>('0195ee10-0000-7000-8000-000000000102');
+
+const USERS: readonly [UserId, string][] = [
+  [OWNER, 'owner@pageversions.test'],
+  [MEMBER, 'member@pageversions.test'],
+];
+
+const requestId = unsafeAsId<'RequestId'>('0195ee10-0000-7000-8000-0000000001ff');
+
+let admin: AdminConnection;
+let created: OrgId[] = [];
+
+async function actorFor(orgId: OrgId, userId: UserId, role: Subject['role']): Promise<DocsActor> {
+  const tuples = await loadTuples(orgId, userId);
+  return { subject: { orgId, userId, role, tuples }, requestId };
+}
+
+async function newOrg(slug: string): Promise<OrgId> {
+  const result = await orgs.createOrg({ name: `Org ${slug}`, slug }, { userId: OWNER, requestId });
+  created.push(result.orgId);
+  return result.orgId;
+}
+
+async function removeOrg(orgId: string): Promise<void> {
+  await admin.setOrg(orgId);
+  await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [orgId]);
+  await admin.query(`DELETE FROM docs.page_versions WHERE org_id = $1`, [orgId]);
+  await admin.query(`DELETE FROM docs.yjs_updates WHERE org_id = $1`, [orgId]);
+  await admin.query(`DELETE FROM docs.pages WHERE org_id = $1`, [orgId]);
+  await admin.query(`DELETE FROM docs.spaces WHERE org_id = $1`, [orgId]);
+  await admin.query(`DELETE FROM authz.relationship_tuples WHERE org_id = $1`, [orgId]);
+  await admin.query(`DELETE FROM identity.memberships WHERE org_id = $1`, [orgId]);
+  await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [orgId]);
+  await admin.setOrg(null);
+}
+
+interface Fixture {
+  readonly orgId: OrgId;
+  readonly owner: DocsActor;
+  readonly spaceId: SpaceId;
+  readonly pageId: PageId;
+}
+
+async function scaffold(slug: string): Promise<Fixture> {
+  const orgId = await newOrg(slug);
+  const owner = await actorFor(orgId, OWNER, 'owner');
+  const space = await spaces.createSpace(owner, { name: 'Handbook' });
+  const page = await pages.createPage(owner, {
+    spaceId: space.spaceId,
+    parentPageId: null,
+    title: 'Runbook',
+  });
+  return { orgId, owner, spaceId: space.spaceId, pageId: page.pageId };
+}
+
+/** A minimal encoded Yjs update carrying one text run, for content-bearing tests. */
+function encodedUpdateWithText(text: string): Uint8Array {
+  const doc = new Y.Doc();
+  doc.getXmlFragment('content').insert(0, [new Y.XmlText(text)]);
+  return Y.encodeStateAsUpdate(doc);
+}
+
+async function appendWalRow(orgId: OrgId, pageId: PageId, data: Uint8Array): Promise<void> {
+  await admin.setOrg(orgId);
+  await admin.query(
+    `INSERT INTO docs.yjs_updates (id, org_id, page_id, data) VALUES (gen_random_uuid(), $1, $2, $3)`,
+    [orgId, pageId, Buffer.from(data)],
+  );
+  await admin.setOrg(null);
+}
+
+beforeAll(async () => {
+  await applyMigrations();
+  admin = await connectAsMigrator();
+
+  await admin.setOrg(null);
+  await admin.query(`DELETE FROM identity.users WHERE id = ANY($1::uuid[])`, [
+    USERS.map(([id]) => id),
+  ]);
+  for (const [id, email] of USERS) {
+    await admin.query(
+      `INSERT INTO identity.users (id, email, email_normalized, email_verified_at)
+       VALUES ($1, $2, $2, now())`,
+      [id, email],
+    );
+  }
+
+  initializeDatabase({ url: TEST_ENV.DATABASE_URL, applicationName: 'taskflow-docs-pageversion-test' });
+});
+
+beforeEach(async () => {
+  for (const orgId of created) await removeOrg(orgId);
+  created = [];
+});
+
+afterAll(async () => {
+  for (const orgId of created) await removeOrg(orgId);
+  await closeDatabase();
+  await admin.setOrg(null);
+  await admin.query(`DELETE FROM identity.users WHERE id = ANY($1::uuid[])`, [
+    USERS.map(([id]) => id),
+  ]);
+  await admin.end();
+});
+
+describe('savePageVersion', () => {
+  it('materializes the WAL into a manual snapshot, attributed to the actor, and emits page.version_saved', async () => {
+    const fixture = await scaffold('save-basic');
+    await appendWalRow(fixture.orgId, fixture.pageId, encodedUpdateWithText('hello'));
+
+    const { versionId } = await pageVersions.savePageVersion(fixture.owner, {
+      pageId: fixture.pageId,
+    });
+
+    const list = await pageVersions.listPageVersions(fixture.owner, { pageId: fixture.pageId });
+    expect(list).toHaveLength(1);
+    expect(list[0]?.versionId).toBe(versionId);
+    expect(list[0]?.kind).toBe('manual');
+    expect(list[0]?.createdBy).toBe(fixture.owner.subject.userId);
+
+    await admin.setOrg(fixture.orgId);
+    const { rows } = await admin.query(
+      `SELECT state FROM docs.page_versions WHERE id = $1`,
+      [versionId],
+    );
+    await admin.setOrg(null);
+    const state = (rows[0] as { state: Buffer }).state;
+
+    const replay = new Y.Doc();
+    Y.applyUpdate(replay, new Uint8Array(state));
+    const text = replay.getXmlFragment('content').get(0) as Y.XmlText;
+    expect(text.toString()).toBe('hello');
+
+    await admin.setOrg(fixture.orgId);
+    const outbox = await admin.query(
+      `SELECT name, payload FROM platform.outbox WHERE org_id = $1 AND name = 'page.version_saved'`,
+      [fixture.orgId],
+    );
+    await admin.setOrg(null);
+    expect(outbox.rows).toHaveLength(1);
+    expect((outbox.rows[0]?.['payload'] as { versionId?: string }).versionId).toBe(versionId);
+  });
+
+  it('with no WAL rows and no prior snapshot, saves an empty-document snapshot rather than failing', async () => {
+    const fixture = await scaffold('save-empty');
+
+    const { versionId } = await pageVersions.savePageVersion(fixture.owner, {
+      pageId: fixture.pageId,
+    });
+
+    const list = await pageVersions.listPageVersions(fixture.owner, { pageId: fixture.pageId });
+    expect(list).toHaveLength(1);
+    expect(list[0]?.versionId).toBe(versionId);
+  });
+
+  it('refuses a guest holding only a viewer tuple — visible but not writable, so FORBIDDEN not NOT_FOUND', async () => {
+    const fixture = await scaffold('save-forbidden');
+    await members.addMember(
+      fixture.orgId,
+      { email: 'member@pageversions.test', role: 'guest' },
+      { userId: OWNER, requestId },
+    );
+    await grants.grant(
+      fixture.orgId,
+      {
+        subjectType: 'user',
+        subjectId: MEMBER,
+        relation: 'viewer',
+        objectType: 'page',
+        objectId: fixture.pageId,
+        expiresAt: null,
+      },
+      { userId: OWNER, requestId },
+    );
+    const guest = await actorFor(fixture.orgId, MEMBER, 'guest');
+
+    await expect(
+      pageVersions.savePageVersion(guest, { pageId: fixture.pageId }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('a guest with no tuple anywhere in the chain gets NOT_FOUND, not FORBIDDEN — the page is invisible to them', async () => {
+    const fixture = await scaffold('save-invisible');
+    await members.addMember(
+      fixture.orgId,
+      { email: 'member@pageversions.test', role: 'guest' },
+      { userId: OWNER, requestId },
+    );
+    const guest = await actorFor(fixture.orgId, MEMBER, 'guest');
+
+    await expect(
+      pageVersions.savePageVersion(guest, { pageId: fixture.pageId }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+});
+
+describe('listPageVersions', () => {
+  it('lists newest first', async () => {
+    const fixture = await scaffold('list-order');
+    const first = await pageVersions.savePageVersion(fixture.owner, { pageId: fixture.pageId });
+    const second = await pageVersions.savePageVersion(fixture.owner, { pageId: fixture.pageId });
+
+    const list = await pageVersions.listPageVersions(fixture.owner, { pageId: fixture.pageId });
+    expect(list.map((v) => v.versionId)).toEqual([second.versionId, first.versionId]);
+  });
+
+  it('is readable with page:read alone — a member with no update grant can still list', async () => {
+    const fixture = await scaffold('list-read-only');
+    await pageVersions.savePageVersion(fixture.owner, { pageId: fixture.pageId });
+    await members.addMember(
+      fixture.orgId,
+      { email: 'member@pageversions.test', role: 'member' },
+      { userId: OWNER, requestId },
+    );
+    const member = await actorFor(fixture.orgId, MEMBER, 'member');
+
+    await expect(
+      pageVersions.listPageVersions(member, { pageId: fixture.pageId }),
+    ).resolves.toHaveLength(1);
+  });
+});
+
+describe('restorePageVersion', () => {
+  it('appends the restored state as a new WAL row and a new manual snapshot, and emits page.version_restored', async () => {
+    const fixture = await scaffold('restore-basic');
+    await appendWalRow(fixture.orgId, fixture.pageId, encodedUpdateWithText('original'));
+    const saved = await pageVersions.savePageVersion(fixture.owner, { pageId: fixture.pageId });
+
+    // Content moves on after the save the restore will target.
+    await appendWalRow(fixture.orgId, fixture.pageId, encodedUpdateWithText(' edited'));
+
+    await admin.setOrg(fixture.orgId);
+    const before = await admin.query(`SELECT id FROM docs.yjs_updates WHERE page_id = $1`, [
+      fixture.pageId,
+    ]);
+    await admin.setOrg(null);
+    expect(before.rows).toHaveLength(2);
+
+    await pageVersions.restorePageVersion(fixture.owner, {
+      pageId: fixture.pageId,
+      versionId: saved.versionId,
+    });
+
+    await admin.setOrg(fixture.orgId);
+    const after = await admin.query(`SELECT id FROM docs.yjs_updates WHERE page_id = $1`, [
+      fixture.pageId,
+    ]);
+    await admin.setOrg(null);
+    // The restore APPENDS — it does not touch the pre-existing rows.
+    expect(after.rows).toHaveLength(3);
+
+    const list = await pageVersions.listPageVersions(fixture.owner, { pageId: fixture.pageId });
+    expect(list).toHaveLength(2);
+    expect(list[0]?.kind).toBe('manual');
+    expect(list[0]?.versionId).not.toBe(saved.versionId);
+
+    await admin.setOrg(fixture.orgId);
+    const outbox = await admin.query(
+      `SELECT payload FROM platform.outbox WHERE org_id = $1 AND name = 'page.version_restored'`,
+      [fixture.orgId],
+    );
+    await admin.setOrg(null);
+    expect(outbox.rows).toHaveLength(1);
+    expect((outbox.rows[0]?.['payload'] as { versionId?: string }).versionId).toBe(
+      saved.versionId,
+    );
+  });
+
+  it('the restored snapshot replays to the pre-edit content, not the content at restore time', async () => {
+    const fixture = await scaffold('restore-content');
+    await appendWalRow(fixture.orgId, fixture.pageId, encodedUpdateWithText('v1'));
+    const saved = await pageVersions.savePageVersion(fixture.owner, { pageId: fixture.pageId });
+    await appendWalRow(fixture.orgId, fixture.pageId, encodedUpdateWithText('v2-only'));
+
+    await pageVersions.restorePageVersion(fixture.owner, {
+      pageId: fixture.pageId,
+      versionId: saved.versionId,
+    });
+
+    const list = await pageVersions.listPageVersions(fixture.owner, { pageId: fixture.pageId });
+    const restoredVersionId = list[0]?.versionId;
+
+    await admin.setOrg(fixture.orgId);
+    const { rows } = await admin.query(`SELECT state FROM docs.page_versions WHERE id = $1`, [
+      restoredVersionId,
+    ]);
+    await admin.setOrg(null);
+    const state = (rows[0] as { state: Buffer }).state;
+
+    const replay = new Y.Doc();
+    Y.applyUpdate(replay, new Uint8Array(state));
+    const text = replay.getXmlFragment('content').get(0) as Y.XmlText;
+    expect(text.toString()).toBe('v1');
+  });
+
+  it('throws NOT_FOUND for a version id that does not exist', async () => {
+    const fixture = await scaffold('restore-missing');
+
+    await expect(
+      pageVersions.restorePageVersion(fixture.owner, {
+        pageId: fixture.pageId,
+        versionId: crypto.randomUUID(),
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('throws NOT_FOUND for a version id that belongs to a different page', async () => {
+    const fixture = await scaffold('restore-cross-page');
+    const otherPage = await pages.createPage(fixture.owner, {
+      spaceId: fixture.spaceId,
+      parentPageId: null,
+      title: 'Other',
+    });
+    const saved = await pageVersions.savePageVersion(fixture.owner, { pageId: otherPage.pageId });
+
+    await expect(
+      pageVersions.restorePageVersion(fixture.owner, {
+        pageId: fixture.pageId,
+        versionId: saved.versionId,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('refuses a guest holding only a viewer tuple — visible but not writable, so FORBIDDEN not NOT_FOUND', async () => {
+    const fixture = await scaffold('restore-forbidden');
+    const saved = await pageVersions.savePageVersion(fixture.owner, { pageId: fixture.pageId });
+    await members.addMember(
+      fixture.orgId,
+      { email: 'member@pageversions.test', role: 'guest' },
+      { userId: OWNER, requestId },
+    );
+    await grants.grant(
+      fixture.orgId,
+      {
+        subjectType: 'user',
+        subjectId: MEMBER,
+        relation: 'viewer',
+        objectType: 'page',
+        objectId: fixture.pageId,
+        expiresAt: null,
+      },
+      { userId: OWNER, requestId },
+    );
+    const guest = await actorFor(fixture.orgId, MEMBER, 'guest');
+
+    await expect(
+      pageVersions.restorePageVersion(guest, {
+        pageId: fixture.pageId,
+        versionId: saved.versionId,
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});
