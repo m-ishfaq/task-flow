@@ -1,14 +1,22 @@
 # Phase 6 — Docs
 
-**Status: APPROVED 2026-08-06; Waves 1-3 SHIPPED same day.** §3 stands as written.
-Of the six open questions in §7: §7.2 and §7.6 were decided on approval (Wave 1's migration and
-process layout depended on them); §7.4 was settled at the start of Wave 2 by reading the installed
-`@hocuspocus/server`'s own protocol handling (read-only IS server-enforced); §7.3 was decided at the
-same point (strip disallowed content silently, from the live `Y.Doc`, not just the snapshot). All
-four are recorded in place with their reasoning. §7.1 (whether the tree resolver generalizes) and
-§7.5 (trash semantics) remain open, deferred as originally scoped — neither blocks Wave 2. Phase 4's
-Wave 1 + Wave 2 acceptance criteria are met on `main` — Docs' one write-exception socket server is a
-second, harder version of the room-authorization problem Phase 4 solved once.
+**Status: APPROVED 2026-08-06; Waves 1-3 SHIPPED same day. All six of §7's open questions are now
+decided** — §7.2 and §7.6 on approval (Wave 1's migration and process layout depended on them);
+§7.4 at the start of Wave 2 by reading the installed `@hocuspocus/server`'s own protocol handling
+(read-only IS server-enforced); §7.3 at the same point (strip disallowed content silently, from the
+live `Y.Doc`, not just the snapshot); §7.1 and §7.5 after Wave 3 shipped, once nothing else was left
+blocking on them. §7.1 stays Docs-specific — no second hierarchical resource has shown up to justify
+generalizing the ancestor-grant resolver, per PLAN.md §16's own bias against building ahead of three
+callers. §7.5 resolved to "archive is enough, no separate trash tier" — and NOT because that mirrors
+an existing Work pattern, which was the draft's original framing: checking the running code first
+found that `work.projects`/`boards`/`lists`/`cards`' own `deleted_at` column is written by nothing.
+Every actual delete anywhere in Work is `archived_at`; the only two places `deletedAt` is ever SET
+are `attachment.service.ts` and `comment.service.ts`'s tombstone, neither a hierarchical resource.
+Copying a column that has no working service or retention sweep behind it would have been inventing
+the exact "parallel mechanism" §7.5 said to avoid, just with extra steps. Docs pages stay
+archive/restore only, the same as they've had since Wave 1. Phase 4's Wave 1 + Wave 2 acceptance
+criteria are met on `main` — Docs' one write-exception socket server is a second, harder version of
+the room-authorization problem Phase 4 solved once.
 
 **Two bugs Wave 2's own unit suites could not have caught, found only once a real end-to-end test
 drove a real `apps/collab` gateway with the real `@hocuspocus/provider` client.** Every other Wave 2
@@ -484,12 +492,17 @@ process note, not a design one: whichever phase's PR lands second rebases past a
 literal enum/union addition, which is mechanical, not structural — flagged here only so it isn't
 mistaken for a real coupling when it happens.
 
-## 7. Open decisions — need a call before or during Wave 1/2
+## 7. Open decisions — need a call before or during Wave 1/2 (all six now decided; see the status
+## header for when and why)
 
 1. **Does the "nearest ancestor grant" resolver in §3.4 become a general `packages/policy`
-   mechanism, or stay Docs-specific?** No second caller exists yet (Work's grants are flat). Build
-   it scoped to Docs' tree now; revisit generalizing only if a third hierarchical resource shows
-   up, per PLAN.md §16's own stated bias against building abstractions ahead of three callers.
+   mechanism, or stay Docs-specific? DECIDED after Wave 3: stays Docs-specific.** No second caller
+   exists yet (Work's grants are flat). Built scoped to Docs' tree in Wave 1
+   (`apps/api/src/docs/shared.ts`'s `pageTarget`, over `packages/policy`'s resource-agnostic
+   `nearestApplicable()`); revisit generalizing only if a third hierarchical resource shows up, per
+   PLAN.md §16's own stated bias against building abstractions ahead of three callers. Wave 3 added
+   comments and suggestions — both flat, attached to a page, not a second tree — so the caller count
+   is still one.
 2. **Materialized path: `ltree` extension vs. a plain `uuid[]` ancestor-array column. DECIDED on
    approval: `uuid[]`.** No extension to enable on the managed free-tier instance; the migration
    for §3.5's tree column defines an ancestor-array with a GIN index and manual prefix-match
@@ -516,9 +529,21 @@ mistaken for a real coupling when it happens.
    propagated to other connections. `apps/collab`'s Wave 1 `onAuthenticate` already sets
    `data.connectionConfig.readOnly` correctly; Wave 2 needs no additional enforcement code in the
    hook itself — the library's own protocol handling is the enforcement.
-5. **Trash / soft delete semantics** — confirm this reuses Work's `deleted_at` pattern directly
-   (a page moves to trash, is excluded from the tree and from search, and is purged or restorable
-   for some retention window) rather than inventing a parallel mechanism.
+5. **Trash / soft delete semantics. DECIDED after Wave 3: archive is enough — no separate trash
+   tier, zero new code.** The premise this item was written under — that Work already has a
+   working `deleted_at` trash pattern to reuse — turned out to be false: grepping
+   `apps/api/src/work/*.service.ts` shows `deletedAt` is written only by
+   `attachment.service.ts` and `comment.service.ts`, as an author/moderator tombstone on a single
+   row, and by nothing that exercises it for a hierarchical resource with children, a tree
+   position, or a restore flow. There is no list-view exclusion, no purge job, no restore route —
+   the column exists in the schema and nothing reads it as a state machine. Copying it for Docs
+   pages would not have been reusing an established pattern; it would have been inventing the
+   first one and backdating it onto Work's unused column. Wave 1 already ships `page.archived`
+   (excluded from the tree and from search, restorable with no retention window) via `can()`'s
+   ordinary `page:update`/`page:read` checks — no new resource state, no purge job, no second
+   deletion tier. If a real trash-with-retention requirement shows up later (for Docs or for
+   Work), it gets designed then, against an actual product need, not inferred from a column that
+   was never built out.
 6. **Whether `apps/collab` is worth standing up as a genuinely separate deployable now. DECIDED on
    approval: yes, in Wave 1.** §3.2's isolation argument — the write-exception stays contained to
    one small, reviewable process instead of making CLAUDE.md rule 8 false for the whole of
