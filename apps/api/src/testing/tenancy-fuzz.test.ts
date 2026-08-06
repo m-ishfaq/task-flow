@@ -395,6 +395,44 @@ describe('the application router', () => {
     }
   });
 
+  it('enrols the Docs mutations and denies every one of them', async () => {
+    const results = await runTenancyFuzz({
+      router: appRouter,
+      attacker: seeded.attacker,
+      victim: seeded.victim,
+      callerFor: (context) => callerFor(context, appRouter),
+    });
+
+    const byPath = new Map(results.map((result) => [result.path, result.outcome]));
+
+    for (const path of [
+      // Waves 1-2. `pages.move` reparents/reorders — a cross-tenant hit would
+      // relocate another org's page. `pageVersions.restore` overwrites live
+      // content from a snapshot, the single most destructive Docs mutation.
+      'docs.spaces.create',
+      'docs.spaces.archive',
+      'docs.pages.create',
+      'docs.pages.update',
+      'docs.pages.move',
+      'docs.pages.archive',
+      'docs.pageVersions.save',
+      'docs.pageVersions.restore',
+
+      // Wave 3. `comments.create`/`suggestions.create` are the two that
+      // matter most here: each takes a `pageId` naming WHOSE page to attach
+      // to, so a cross-tenant hit would write this attacker's words, or a
+      // proposed edit, into another organization's document.
+      'docs.comments.create',
+      'docs.comments.update',
+      'docs.comments.resolve',
+      'docs.comments.delete',
+      'docs.suggestions.create',
+      'docs.suggestions.decide',
+    ]) {
+      expect(byPath.get(path), `${path} was not enrolled by the fuzz harness`).toBe('denied');
+    }
+  });
+
   it('marks input-less routes not-applicable rather than silently passing them', async () => {
     /* These four read their org from the principal and accept no identifier, so
        there is nothing for this technique to substitute. Naming them here keeps

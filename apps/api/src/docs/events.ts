@@ -166,6 +166,12 @@ export const pageCommentCreated = defineEvent(
   z.object({ commentId: z.string(), pageId: z.string() }).strict(),
 );
 
+/** Not in §4's own event list, added because guardrail 11 requires it — `updateComment` mutates state and Work's identical `comment.updated` sets the precedent. */
+export const pageCommentUpdated = defineEvent(
+  'page.comment_updated',
+  z.object({ commentId: z.string(), pageId: z.string() }).strict(),
+);
+
 /** Covers both resolve and reopen, with a `resolved` boolean — the identical shape `page.archived` uses for archive/restore. */
 export const pageCommentResolved = defineEvent(
   'page.comment_resolved',

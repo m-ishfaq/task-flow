@@ -1,5 +1,7 @@
+import * as Y from 'yjs';
 import { unsafeAsId } from '@taskflow/contracts';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
+import { encodeAnchor } from '../docs/anchor.js';
 import type { FuzzOrg } from './tenancy-fuzz.js';
 
 /**
@@ -55,6 +57,15 @@ interface Tenant {
      which is the property under test. */
   readonly channelId: string;
   readonly messageId: string;
+
+  /* Docs (Phase 6). Without these, `docs.pages.*` and `docs.comments.*`/
+     `docs.suggestions.*` all take a `pageId` (or `spaceId`) none of the bag's
+     other fields can satisfy, so every one of them answers BAD_REQUEST before
+     `enforceOnPage` is ever reached — a refusal that proves nothing about the
+     tenant boundary these routes exist to protect, the identical trap this
+     file's own header describes for the Work hierarchy above. */
+  readonly spaceId: string;
+  readonly pageId: string;
 }
 
 /* Fixed ids in a distinct range from the other suites', so a failing run is
@@ -77,6 +88,8 @@ const ATTACKER: Tenant = {
   attachmentId: '0195cc00-0000-7000-8000-000000000a0d',
   channelId: '0195cc00-0000-7000-8000-000000000a0f',
   messageId: '0195cc00-0000-7000-8000-000000000a10',
+  spaceId: '0195cc00-0000-7000-8000-000000000a11',
+  pageId: '0195cc00-0000-7000-8000-000000000a12',
 };
 
 const VICTIM: Tenant = {
@@ -97,9 +110,26 @@ const VICTIM: Tenant = {
   attachmentId: '0195cc00-0000-7000-8000-000000000b0d',
   channelId: '0195cc00-0000-7000-8000-000000000b0f',
   messageId: '0195cc00-0000-7000-8000-000000000b10',
+  spaceId: '0195cc00-0000-7000-8000-000000000b11',
+  pageId: '0195cc00-0000-7000-8000-000000000b12',
 };
 
 const BOARD = '0195cc00-0000-7000-8000-0000000000cc';
+
+/**
+ * A structurally valid anchor, for `docs.comments.create`/`docs.suggestions.
+ * create`. Not attached to either tenant's actual page content — `anchor.ts`
+ * only ever checks the SHAPE of an anchor (§3.6's own trust boundary), so an
+ * anchor into a throwaway, unrelated `Y.Doc` satisfies that check exactly as
+ * well as a real one would, without needing this file to construct a live
+ * document just to decorate a fuzz fixture.
+ */
+const FUZZ_ANCHOR = (() => {
+  const doc = new Y.Doc();
+  const text = doc.getText('t');
+  text.insert(0, 'fuzz');
+  return encodeAnchor(Buffer.from(Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(text, 0))));
+})();
 
 async function seedTenant(admin: AdminConnection, tenant: Tenant, label: string): Promise<void> {
   await admin.setOrg(tenant.orgId);
@@ -261,6 +291,20 @@ async function seedTenant(admin: AdminConnection, tenant: Tenant, label: string)
       `org/${tenant.orgId}/2026/07/${tenant.attachmentId}`,
     ],
   );
+
+  /* Docs (Phase 6). A root page — no ancestors to seed, since none of the
+     fuzzed routes below need an inherited grant to resolve, only a page that
+     genuinely belongs to the OTHER org. */
+  await admin.query(`INSERT INTO docs.spaces (id, org_id, name) VALUES ($1, $2, 'Fuzz Space')`, [
+    tenant.spaceId,
+    tenant.orgId,
+  ]);
+
+  await admin.query(
+    `INSERT INTO docs.pages (id, org_id, space_id, parent_page_id, title, rank, ancestor_ids)
+     VALUES ($1, $2, $3, NULL, 'Fuzz Page', 'a0', '{}')`,
+    [tenant.pageId, tenant.orgId, tenant.spaceId],
+  );
 }
 
 async function clearTenant(admin: AdminConnection, tenant: Tenant): Promise<void> {
@@ -272,6 +316,8 @@ async function clearTenant(admin: AdminConnection, tenant: Tenant): Promise<void
   await admin.query(`DELETE FROM platform.attachments WHERE org_id = $1`, [tenant.orgId]);
   await admin.query(`DELETE FROM chat.messages WHERE org_id = $1`, [tenant.orgId]);
   await admin.query(`DELETE FROM chat.channels WHERE org_id = $1`, [tenant.orgId]);
+  await admin.query(`DELETE FROM docs.pages WHERE org_id = $1`, [tenant.orgId]);
+  await admin.query(`DELETE FROM docs.spaces WHERE org_id = $1`, [tenant.orgId]);
   await admin.query(`DELETE FROM work.card_comments WHERE org_id = $1`, [tenant.orgId]);
   await admin.query(`DELETE FROM work.custom_field_values WHERE org_id = $1`, [tenant.orgId]);
   await admin.query(`DELETE FROM work.custom_field_defs WHERE org_id = $1`, [tenant.orgId]);
@@ -370,6 +416,25 @@ function fuzzOrgFor(tenant: Tenant, other: Tenant): FuzzOrg {
         type: 'doc',
         content: [{ type: 'paragraph', content: [{ type: 'text', text: 'fuzz' }] }],
       },
+
+      /* Docs (Phase 6, Wave 1-3). `spaceId`/`pageId` belong to the OTHER
+         tenant, same as every other id above; `anchorFrom`/`anchorTo` do not
+         need to (see FUZZ_ANCHOR's own note) — they only have to be
+         well-formed enough that `docs.comments.create`/`docs.suggestions.
+         create` get past shape validation and actually reach `enforceOnPage`
+         against the other tenant's page. `proposedContent` reuses the same
+         valid TipTap document as `body` above, for the identical reason. */
+      spaceId: other.spaceId,
+      pageId: other.pageId,
+      anchorFrom: FUZZ_ANCHOR,
+      anchorTo: FUZZ_ANCHOR,
+      kind: 'insert',
+      proposedContent: {
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'fuzz' }] }],
+      },
+      resolved: true,
+      status: 'accepted',
     },
   };
 }

@@ -1,11 +1,15 @@
 import { z } from 'zod';
-import { PageIdSchema, SpaceIdSchema } from '@taskflow/contracts';
+import { CommentIdSchema, PageIdSchema, SpaceIdSchema, SuggestionIdSchema } from '@taskflow/contracts';
 import { route, router } from '../trpc/builder.js';
 import { subjectOf } from '../trpc/context.js';
+import { RichTextDocument } from '../work/richtext.js';
 import type { DocsActor } from './shared.js';
+import { AnchorSchema } from './anchor.js';
 import * as spaces from './space.service.js';
 import * as pages from './page.service.js';
 import * as pageVersions from './page-version.service.js';
+import * as comments from './comment.service.js';
+import * as suggestions from './suggestion.service.js';
 
 /**
  * Docs routes — spaces, the page tree, and page versions (ai/phase-6-docs.md
@@ -136,6 +140,118 @@ export function createDocsRouter() {
         .input(z.object({ pageId: PageIdSchema, versionId: z.string() }).strict())
         .output(z.void())
         .mutation(({ input, ctx }) => pageVersions.restorePageVersion(actorOf(ctx), input)),
+    }),
+
+    comments: router({
+      list: route({ permission: 'page:read' })
+        .input(z.object({ pageId: PageIdSchema }).strict())
+        .output(
+          z
+            .array(
+              z.object({
+                commentId: z.string(),
+                pageId: z.string(),
+                anchorFrom: z.string(),
+                anchorTo: z.string(),
+                authorId: z.string().nullable(),
+                body: z.unknown(),
+                bodyText: z.string(),
+                resolvedAt: z.date().nullable(),
+                resolvedBy: z.string().nullable(),
+                editedAt: z.date().nullable(),
+                deletedAt: z.date().nullable(),
+                createdAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => comments.listComments(actorOf(ctx), input)),
+
+      /** `comment:create` — same floor Work's card comments use, for the identical reason (§3.6). */
+      create: route({ permission: 'comment:create' })
+        .input(
+          z
+            .object({
+              pageId: PageIdSchema,
+              anchorFrom: AnchorSchema,
+              anchorTo: AnchorSchema,
+              body: RichTextDocument,
+            })
+            .strict(),
+        )
+        .output(z.object({ commentId: z.string() }))
+        .mutation(({ input, ctx }) => comments.createComment(actorOf(ctx), input)),
+
+      /** Author only, enforced in the service — no permission overrides it. */
+      update: route({ permission: 'comment:create' })
+        .input(z.object({ commentId: CommentIdSchema, body: RichTextDocument }).strict())
+        .output(z.object({ edited: z.literal(true) }))
+        .mutation(({ input, ctx }) => comments.updateComment(actorOf(ctx), input)),
+
+      /** Anyone who can comment can resolve — see comment.service.ts's own header. */
+      resolve: route({ permission: 'comment:create' })
+        .input(z.object({ commentId: CommentIdSchema, resolved: z.boolean() }).strict())
+        .output(z.object({ resolved: z.boolean() }))
+        .mutation(({ input, ctx }) => comments.resolveComment(actorOf(ctx), input)),
+
+      /** Declared `comment:create` — the floor. The service escalates to `comment:delete` when the caller is not the author. */
+      delete: route({ permission: 'comment:create' })
+        .input(z.object({ commentId: CommentIdSchema }).strict())
+        .output(z.object({ deleted: z.literal(true) }))
+        .mutation(({ input, ctx }) => comments.deleteComment(actorOf(ctx), input)),
+    }),
+
+    suggestions: router({
+      list: route({ permission: 'page:read' })
+        .input(z.object({ pageId: PageIdSchema }).strict())
+        .output(
+          z
+            .array(
+              z.object({
+                suggestionId: z.string(),
+                pageId: z.string(),
+                anchorFrom: z.string(),
+                anchorTo: z.string(),
+                kind: z.string(),
+                proposedContent: z.unknown(),
+                status: z.string(),
+                authorId: z.string().nullable(),
+                decidedBy: z.string().nullable(),
+                decidedAt: z.date().nullable(),
+                createdAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => suggestions.listSuggestions(actorOf(ctx), input)),
+
+      /** `comment:create` — proposing a change needs no edit right. See suggestion.service.ts's header. */
+      create: route({ permission: 'comment:create' })
+        .input(
+          z
+            .object({
+              pageId: PageIdSchema,
+              anchorFrom: AnchorSchema,
+              anchorTo: AnchorSchema,
+              kind: z.enum(['insert', 'delete', 'replace']),
+              proposedContent: RichTextDocument.nullable().default(null),
+            })
+            .strict(),
+        )
+        .output(z.object({ suggestionId: z.string() }))
+        .mutation(({ input, ctx }) => suggestions.createSuggestion(actorOf(ctx), input)),
+
+      /**
+       * Declared `comment:create` — the floor. The service escalates to
+       * `page:update` unless this is the author withdrawing (rejecting) their
+       * own still-pending suggestion, which needs no editing right either.
+       */
+      decide: route({ permission: 'comment:create' })
+        .input(
+          z.object({ suggestionId: SuggestionIdSchema, status: z.enum(['accepted', 'rejected']) }).strict(),
+        )
+        .output(z.object({ status: z.enum(['accepted', 'rejected']) }))
+        .mutation(({ input, ctx }) => suggestions.decideSuggestion(actorOf(ctx), input)),
     }),
   });
 }

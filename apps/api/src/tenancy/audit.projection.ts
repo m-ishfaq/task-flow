@@ -213,6 +213,7 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'page.version_saved': { type: 'page', key: 'pageId' },
   'page.version_restored': { type: 'page', key: 'pageId' },
   'page.comment_created': { type: 'comment', key: 'commentId' },
+  'page.comment_updated': { type: 'comment', key: 'commentId' },
   'page.comment_resolved': { type: 'comment', key: 'commentId' },
   'page.comment_deleted': { type: 'comment', key: 'commentId' },
   'page.suggestion_created': { type: 'page', key: 'pageId' },
