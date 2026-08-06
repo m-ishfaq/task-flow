@@ -379,6 +379,12 @@ describe('the application router', () => {
       'chat.compliance.holdMessage',
       'chat.compliance.setGuest',
       'chat.compliance.export',
+
+      /* Saved messages and notifications. `saved.save` is the interesting one:
+         it writes a row naming a message, so a cross-tenant leak would bookmark
+         another organization's conversation into this one's sidebar. */
+      'chat.saved.save',
+      'chat.saved.unsave',
     ]) {
       expect(byPath.get(path), `${path} was not enrolled by the fuzz harness`).toBe('denied');
     }
@@ -408,6 +414,13 @@ describe('the application router', () => {
          the harness would otherwise report as a leak, permanently. RLS's own
          tests and `chat-rooms.test.ts` cover it instead. */
       'chat.channels.list',
+      /* Three more that read the CALLER's own rows and take no id — the scope is
+         entirely the principal's, so there is nothing for this technique to
+         substitute. Covered by the RLS tests and by their own suites. */
+      'chat.notifications.listMine',
+      'chat.notifications.markAllRead',
+      'chat.notifications.unreadCount',
+      'chat.saved.list',
       'tenancy.audit.verify',
       'tenancy.members.list',
       'tenancy.orgs.get',

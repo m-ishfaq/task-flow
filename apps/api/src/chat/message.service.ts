@@ -4,6 +4,7 @@ import { createEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
 import { messageDeleted, messageEdited, messageSent } from './events.js';
 import { unfurlMessage } from './unfurl.service.js';
+import { channelMemberIds } from './membership.js';
 import { flattenToText, type RichTextNode } from '../work/richtext.js';
 import {
   enforceOnChannel,
@@ -193,6 +194,10 @@ export async function sendMessage(
        division 0013 draws for comment replies. A parent that is itself a reply,
        belongs to another channel, or was deleted all answer the same way: this
        cannot be replied to. */
+    /* Captured for the notification payload as well as validated: the parent
+       is already being read, and its author is who a thread reply notifies. */
+    let parentAuthorId: string | null = null;
+
     if (input.parentMessageId != null) {
       const parent = await loadMessage(tx, input.parentMessageId);
       if (parent.channelId !== input.channelId) throw errors.notFound();
@@ -200,7 +205,17 @@ export async function sendMessage(
       if (parent.parentMessageId !== null) {
         throw errors.validation({ parentMessageId: 'Replies cannot themselves be replied to.' });
       }
+      parentAuthorId = parent.authorId;
     }
+
+    /* A DM notifies its participants whether or not anybody was @mentioned —
+       that is what makes it direct. A NAMED channel does not: the same rule
+       there would notify every member of every message, which is how a bell
+       becomes something people turn off. */
+    const directRecipientIds =
+      channel.type === 'dm' || channel.type === 'group_dm'
+        ? (await channelMemberIds(tx, input.channelId)).filter((id) => id !== userOf(actor))
+        : [];
 
     const bodyText = flattenToText(input.body);
     if (bodyText.length === 0) {
@@ -230,6 +245,14 @@ export async function sendMessage(
           // Words, not a document: a notification cannot render TipTap JSON.
           excerpt: bodyText.slice(0, 280),
           mentionedUserIds: mentionedUserIds(input.body),
+
+          /* Read here, in the transaction that already holds the channel and
+             the parent, so the notification consumer does not have to make two
+             queries per message at chat write rates against rows that may have
+             changed since. */
+          channelName: channel.name,
+          parentAuthorId: parentAuthorId,
+          directRecipientIds: directRecipientIds,
         },
         envelopeOf(actor),
       ),

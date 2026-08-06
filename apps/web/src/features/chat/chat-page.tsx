@@ -42,6 +42,10 @@ import {
   toggleReaction,
   removeChannelMember,
   unpinMessage,
+  savedQuery,
+  saveMessage,
+  unsaveMessage,
+  invalidateSaved,
   unreadCountsQuery,
   updateChannel,
   entryCursorQuery,
@@ -493,6 +497,12 @@ function ChannelPanel({
   const previewsByMessage = groupByMessage(previews.data ?? []);
 
   const pins = useQuery(pinsQuery(orgId, channelId));
+
+  /* Saved messages are ORG-wide, not per channel, so this is one query for the
+     whole sidebar rather than one per conversation. The set is small by nature
+     — a bookmark list nobody prunes is still tens of rows, not thousands. */
+  const savedList = useQuery({ ...savedQuery(orgId), enabled: orgId !== '' });
+  const savedIds = new Set((savedList.data ?? []).map((row) => row.messageId));
   const pinnedIds = new Set((pins.data ?? []).map((row) => row.messageId));
 
   /**
@@ -551,6 +561,22 @@ function ChannelPanel({
     },
     onError: (error) => {
       toast.failure('The message was not deleted', error);
+    },
+  });
+
+  const toggleSave = useMutation({
+    /* Annotated, because the two branches return `{ saved: true }` and
+       `{ saved: false }` and TypeScript unifies them to the first one it saw. */
+    mutationFn: async (input: {
+      messageId: MessageId;
+      saved: boolean;
+    }): Promise<{ saved: boolean }> =>
+      input.saved ? unsaveMessage(input.messageId) : saveMessage(input.messageId),
+    onSuccess: () => {
+      invalidateSaved(queryClient, orgId);
+    },
+    onError: (error) => {
+      toast.failure('That was not saved', error);
     },
   });
 
@@ -898,6 +924,10 @@ function ChannelPanel({
                     }}
                     reactionsByMessage={reactionsByMessage}
                     attachmentsByMessage={attachmentsByMessage}
+                    savedIds={savedIds}
+                    onToggleSave={(messageId, saved) => {
+                      toggleSave.mutate({ messageId: messageId as MessageId, saved });
+                    }}
                     previewsByMessage={previewsByMessage}
                     personOf={personOf}
                     onToggleReaction={(messageId, emoji) => {
@@ -1421,6 +1451,8 @@ function MessageGroupView({
   reactionsByMessage,
   attachmentsByMessage,
   previewsByMessage,
+  savedIds,
+  onToggleSave,
   personOf,
   onToggleReaction,
   pinnedIds,
@@ -1441,6 +1473,8 @@ function MessageGroupView({
   readonly onDelete: (messageId: string) => void;
   readonly reactionsByMessage: Map<string, Map<string, string[]>>;
   readonly attachmentsByMessage: ReadonlyMap<string, readonly MessageAttachment[]>;
+  readonly savedIds: ReadonlySet<string>;
+  readonly onToggleSave: (messageId: string, saved: boolean) => void;
   readonly previewsByMessage: ReadonlyMap<string, readonly MessagePreview[]>;
   readonly personOf: (userId: string) => { readonly label: string };
   readonly onToggleReaction: (messageId: string, emoji: string) => void;
@@ -1494,6 +1528,10 @@ function MessageGroupView({
             }}
             reactions={reactionsByMessage.get(message.messageId) ?? new Map()}
             attachments={attachmentsByMessage.get(message.messageId) ?? []}
+            isSaved={savedIds.has(message.messageId)}
+            onToggleSave={(saved) => {
+              onToggleSave(message.messageId, saved);
+            }}
             previews={previewsByMessage.get(message.messageId) ?? []}
             viewerId={viewerId}
             personOf={personOf}
@@ -1530,6 +1568,8 @@ function MessageBubble({
   reactions,
   attachments,
   previews,
+  isSaved,
+  onToggleSave,
   viewerId,
   personOf,
   onToggleReaction,
@@ -1551,6 +1591,8 @@ function MessageBubble({
   readonly onDelete: () => void;
   readonly reactions: Map<string, string[]>;
   readonly attachments: readonly MessageAttachment[];
+  readonly isSaved: boolean;
+  readonly onToggleSave: (saved: boolean) => void;
   readonly previews: readonly MessagePreview[];
   readonly viewerId: string | null;
   readonly personOf: (userId: string) => { readonly label: string };
@@ -1649,6 +1691,16 @@ function MessageBubble({
             }}
           >
             {pinned ? 'Unpin' : 'Pin'}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-5 px-1 text-[11px]"
+            onClick={() => {
+              onToggleSave(isSaved);
+            }}
+          >
+            {isSaved ? 'Unsave' : 'Save'}
           </Button>
           {/* Editing is AUTHORSHIP, which the client knows for certain — there
               is no permission that overrides it, so no server answer is needed. */}

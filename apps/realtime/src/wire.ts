@@ -338,8 +338,15 @@ export interface ChannelClosedMessage {
   readonly channelId: string;
 }
 
+/** Who currently has this conversation open. See `gateway.ts` on DMs. */
+export interface ChannelPresenceMessage {
+  readonly channelId: string;
+  readonly userIds: readonly string[];
+}
+
 export interface ChatServerToClientEvents {
   ready: (message: ReadyMessage) => void;
+  presence: (message: ChannelPresenceMessage) => void;
   broadcast: (message: ChatBroadcastMessage) => void;
   'channel:closed': (message: ChannelClosedMessage) => void;
   'session:ended': (message: SessionEndedMessage) => void;

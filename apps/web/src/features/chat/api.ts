@@ -415,3 +415,64 @@ export function setGuestAccess(input: {
 export function exportChannel(input: { channelId: ChannelId; includeDeleted: boolean }) {
   return api.chat.compliance.export.mutate(input);
 }
+
+/* -------------------------------------------------------------------------- *
+ * Saved messages and notifications
+ * -------------------------------------------------------------------------- */
+
+export type SavedMessage = Wire<Awaited<ReturnType<typeof api.chat.saved.list.query>>>[number];
+export type ChatNotification = Wire<
+  Awaited<ReturnType<typeof api.chat.notifications.listMine.query>>
+>[number];
+
+export function savedQuery(orgId: string) {
+  return queryOptions({
+    queryKey: ['org', orgId, 'chat', 'saved'] as const,
+    queryFn: async () => wire(await api.chat.saved.list.query()),
+  });
+}
+
+export function saveMessage(messageId: MessageId) {
+  return api.chat.saved.save.mutate({ messageId });
+}
+
+export function unsaveMessage(messageId: MessageId) {
+  return api.chat.saved.unsave.mutate({ messageId });
+}
+
+/**
+ * The notification list, and the badge count as its own query.
+ *
+ * Two queries rather than deriving the count from the list: the badge renders
+ * on every page load and the list only when the bell is opened, so counting a
+ * page of fifty would read every excerpt in order to throw them away.
+ *
+ * Polled, for the same reason unread counts are: a notification arrives from a
+ * channel this tab has not joined, so there is no live signal to ride on.
+ */
+export function notificationsQuery(orgId: string) {
+  return queryOptions({
+    queryKey: ['org', orgId, 'chat', 'notifications'] as const,
+    queryFn: async () => wire(await api.chat.notifications.listMine.query()),
+  });
+}
+
+export function notificationCountQuery(orgId: string) {
+  return queryOptions({
+    queryKey: ['org', orgId, 'chat', 'notifications', 'count'] as const,
+    queryFn: () => api.chat.notifications.unreadCount.query(),
+    refetchInterval: 20_000,
+  });
+}
+
+export function markNotificationsRead() {
+  return api.chat.notifications.markAllRead.mutate();
+}
+
+export function invalidateSaved(client: QueryClient, orgId: string): void {
+  void client.invalidateQueries({ queryKey: ['org', orgId, 'chat', 'saved'] });
+}
+
+export function invalidateNotifications(client: QueryClient, orgId: string): void {
+  void client.invalidateQueries({ queryKey: ['org', orgId, 'chat', 'notifications'] });
+}

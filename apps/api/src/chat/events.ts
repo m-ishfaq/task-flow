@@ -179,6 +179,29 @@ export const messageSent = defineEvent(
       parentMessageId: z.string().nullable(),
       excerpt: z.string(),
       mentionedUserIds: z.array(z.string()).readonly(),
+
+      /* The three fields below exist for ONE consumer — the notification
+         projection — and they are on the event rather than looked up by it
+         deliberately. A consumer that re-read the channel and the parent
+         message would be doing two queries per message at chat's write rate,
+         and would be reading rows that may have changed or been deleted since.
+         §10.6's whole argument for fat payloads: "deriving those later would
+         mean reading the card, which is exactly the database round-trip the
+         event exists to avoid."
+
+         `channelName` is null for a DM, which has no name by construction. */
+      channelName: z.string().nullable(),
+      /** Who wrote the message being replied to. Null unless this is a reply. */
+      parentAuthorId: z.string().nullable(),
+      /**
+       * The OTHER participants, for a DM or group DM. Empty for a channel.
+       *
+       * A direct message notifies its recipients whether or not anyone was
+       * @mentioned — that is what makes it direct. In a named channel the same
+       * rule would notify every member of every message, which is why this is
+       * empty there rather than "everyone in the room".
+       */
+      directRecipientIds: z.array(z.string()).readonly(),
     })
     .strict(),
 );
@@ -538,4 +561,17 @@ export const channelGuestChanged = defineEvent(
 export const messageAttachmentsChanged = defineEvent(
   'message.attachments_changed',
   z.object({ messageId: z.string(), channelId: z.string() }).strict(),
+);
+
+/**
+ * Somebody saved or unsaved a message.
+ *
+ * PERSONAL state, so it is deliberately absent from the realtime room table:
+ * broadcasting it would tell a whole channel what one person bookmarked, which
+ * is exactly the disclosure a private save is not supposed to make. The event
+ * exists for guardrail 11 and for the audit trail, not for a room.
+ */
+export const messageSaved = defineEvent(
+  'message.saved',
+  z.object({ messageId: z.string(), channelId: z.string(), saved: z.boolean() }).strict(),
 );

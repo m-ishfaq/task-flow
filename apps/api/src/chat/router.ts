@@ -17,6 +17,8 @@ import * as readCursors from './read-cursor.service.js';
 import * as attachments from './attachment.service.js';
 import * as unfurls from './unfurl.service.js';
 import * as compliance from './compliance.service.js';
+import * as saved from './saved.service.js';
+import * as notifications from './notifications.js';
 import type { VerifyDeps } from '../attachments/verify.js';
 
 /**
@@ -493,6 +495,82 @@ export function createChatRouter(deps: ChatRouterDeps) {
             .readonly(),
         )
         .query(({ input, ctx }) => unfurls.previewsFor(actorOf(ctx), input)),
+    }),
+
+    /**
+     * Saved messages — personal bookmarks (§2, Wave 2).
+     *
+     * `channel:read` throughout: you may bookmark anything you can read,
+     * including in a channel where a `viewer` tuple gives you no voice at all.
+     * Requiring the ability to POST would stop a read-only participant keeping
+     * a reference to something they were shown.
+     */
+    saved: router({
+      list: route({ permission: 'channel:read' })
+        .output(
+          z
+            .array(
+              z.object({
+                messageId: z.string(),
+                channelId: z.string(),
+                savedAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ ctx }) => saved.listSaved(actorOf(ctx))),
+
+      save: route({ permission: 'channel:read' })
+        .input(z.object({ messageId: MessageIdSchema }).strict())
+        .output(z.object({ saved: z.literal(true) }))
+        .mutation(({ input, ctx }) => saved.saveMessage(actorOf(ctx), input)),
+
+      unsave: route({ permission: 'channel:read' })
+        .input(z.object({ messageId: MessageIdSchema }).strict())
+        .output(z.object({ saved: z.literal(false) }))
+        .mutation(({ input, ctx }) => saved.unsaveMessage(actorOf(ctx), input)),
+    }),
+
+    /**
+     * In-app notifications for chat.
+     *
+     * Every route is scoped to the CALLER — `listMine`, `unreadCount` and
+     * `markAllRead` take the user from the verified principal, and no input
+     * schema here has a field naming one. That is the same structural refusal
+     * §3.7 uses for socket joins: not a check that could be forgotten, but no
+     * place to put the value.
+     *
+     * `channel:read` because a notification is about a chat message. Someone
+     * who cannot read any channel has none.
+     */
+    notifications: router({
+      listMine: route({ permission: 'channel:read' })
+        .output(
+          z
+            .array(
+              z.object({
+                notificationId: z.string(),
+                kind: z.string(),
+                subjectType: z.string(),
+                subjectId: z.string(),
+                title: z.string(),
+                excerpt: z.string().nullable(),
+                actorId: z.string().nullable(),
+                readAt: z.date().nullable(),
+                createdAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ ctx }) => notifications.listMine(actorOf(ctx))),
+
+      unreadCount: route({ permission: 'channel:read' })
+        .output(z.object({ unread: z.number().int().nonnegative() }))
+        .query(({ ctx }) => notifications.unreadCount(actorOf(ctx))),
+
+      markAllRead: route({ permission: 'channel:read' })
+        .output(z.object({ marked: z.number().int().nonnegative() }))
+        .mutation(({ ctx }) => notifications.markAllRead(actorOf(ctx))),
     }),
 
     /**

@@ -6,7 +6,7 @@ import type { Logger } from '@taskflow/observability';
 import { clientAddress, HandshakeError, verifyHandshake } from './auth.js';
 import { allowedOrigins, type Env } from './config/env.js';
 import { assertRoomTableIsSafe, roomBoardIdOf, roomChannelIdOf } from './event-rooms.js';
-import { broadcastPresence } from './presence.js';
+import { broadcastChannelPresence, broadcastPresence } from './presence.js';
 import { FixedWindowLimiter } from './rate-limit.js';
 import { authorizeChannelJoin, authorizeJoin } from './rooms.js';
 import { applyChatRevocation, applyRevocation, revocationOf } from './revocation.js';
@@ -272,10 +272,21 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
    * would take that as a parameter, which is exactly the shape where passing
    * the wrong one compiles.
    *
-   * There is no presence broadcast here. Presence is a Wave 2 surface for chat
-   * (§5), and the board version is not reused blindly: "who has this board open"
-   * is a useful signal on a kanban board and a very different thing to publish
-   * about a direct message.
+   * ## Presence, on every channel type including DMs
+   *
+   * §2 puts presence in scope "reusing Phase 4's", and this is that reuse:
+   * `presenceMembersOf` asks `fetchSockets()` who is in the room and broadcasts
+   * the list. In-process, ephemeral, cleared on disconnect, never persisted, not
+   * a domain event — the same properties Phase 4 §9 argues for.
+   *
+   * It applies to direct messages too, which is a deliberate product call rather
+   * than an oversight. It means the other person can see when you have their
+   * conversation open, which is the "active now" behaviour every chat product
+   * has trained people to expect — and it is a DISCLOSURE, so it is worth being
+   * able to find: the data never leaves people already authorized for the room
+   * (`authorizeChannelJoin` gated the join), but within that room it tells one
+   * specific person when you are reading them. If that is ever revisited, this
+   * paragraph is the decision to revisit, not a bug to fix.
    * -------------------------------------------------------------------- */
   chat.on('connection', (socket: ChatSocket) => {
     const { userId } = socket.data.identity;
@@ -327,6 +338,11 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
         socket.data.rooms.set(channelId, orgId);
         logger.debug({ userId, channelId }, 'socket joined channel room');
         respond({ ok: true });
+
+        /* After the join actually took effect, not before — a client reading
+           its own ack alongside the first presence broadcast must find itself
+           already in the list. */
+        void broadcastChannelPresence(chat, channelId);
       })();
     });
 
@@ -336,7 +352,11 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
 
       const { channelId } = parsed.data;
       socket.data.rooms.delete(channelId);
-      void socket.leave(channelRoom(channelId));
+
+      void (async () => {
+        await socket.leave(channelRoom(channelId));
+        await broadcastChannelPresence(chat, channelId);
+      })();
     });
 
     /* Typing indicators (ai/phase-5-chat.md §5) — relayed in-process, never a
@@ -367,6 +387,13 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
       joinsPerSocket.forget(socket.id);
       refusedJoinsPerSocket.forget(socket.id);
       logger.debug({ userId }, 'chat socket disconnected');
+
+      /* Socket.io has already removed this socket from every room by now —
+          is this module's own tracking, not Socket.io's, and
+         is what still remembers which channels to tell. */
+      for (const channelId of socket.data.rooms.keys()) {
+        void broadcastChannelPresence(chat, channelId);
+      }
     });
   });
 

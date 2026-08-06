@@ -251,3 +251,27 @@ export const messageUnfurls = chat.table(
     index('message_unfurls_channel_idx').on(table.orgId, table.channelId, table.messageId),
   ],
 );
+
+/**
+ * Saved messages (migration 0022) — personal, invisible to everyone else.
+ *
+ * Not a pin: a pin is CHANNEL state the whole channel sees. Separate tables
+ * because merging them would mean one row whose audience depends on a column,
+ * and every read path would have to filter on it correctly every time.
+ */
+export const savedMessages = chat.table(
+  'saved_messages',
+  {
+    orgId: uuid('org_id').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    channelId: uuid('channel_id').notNull(),
+    messageId: uuid('message_id').notNull(),
+    savedAt: timestamp('saved_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.userId, table.messageId] }),
+    index('saved_messages_user_idx').on(table.orgId, table.userId, table.savedAt),
+  ],
+);
