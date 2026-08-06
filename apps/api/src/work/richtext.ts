@@ -28,6 +28,18 @@ import { isValidId } from '@taskflow/contracts';
  * this JSON — that is what keeps the Phase 8 index from depending on the
  * document schema, and what makes the GIN index in migration 0008 indexable at
  * all.
+ *
+ * ## Reused by Docs, not copied (Phase 6)
+ *
+ * `NODE_ATTRIBUTES`, `NODE_TYPES` and `MarkSchema` are exported so
+ * `apps/collab/src/content-guard.ts` can validate the SAME whitelist against a
+ * live `Y.XmlFragment` instead of maintaining a second copy that could drift —
+ * ai/phase-6-docs.md §3.8 is explicit that Docs' TipTap schema is meant to be
+ * identical to Work's, just CRDT-backed. The enforcement POINT differs (a
+ * save-boundary pass that strips, not a reject-before-write Zod parse — see
+ * that file's own header), but the RULES — which node types exist, which
+ * attributes they take, which URL schemes a link may use — are one
+ * definition, exported via `@taskflow/api`'s `./richtext` entry.
  */
 
 /**
@@ -37,7 +49,7 @@ import { isValidId } from '@taskflow/contracts';
  * rejected, which is why the list and the attribute map are one structure
  * rather than two that could disagree.
  */
-const NODE_ATTRIBUTES = {
+export const NODE_ATTRIBUTES = {
   doc: z.object({}).strict(),
   paragraph: z.object({}).strict(),
   text: z.object({}).strict(),
@@ -73,9 +85,9 @@ const NODE_ATTRIBUTES = {
     .strict(),
 } as const;
 
-type NodeType = keyof typeof NODE_ATTRIBUTES;
+export type NodeType = keyof typeof NODE_ATTRIBUTES;
 
-const NODE_TYPES = Object.keys(NODE_ATTRIBUTES) as readonly NodeType[];
+export const NODE_TYPES = Object.keys(NODE_ATTRIBUTES) as readonly NodeType[];
 
 /**
  * URL schemes a link may use.
@@ -113,7 +125,7 @@ const SafeUrl = z
  * which would defeat the point of the union being the thing that decides what a
  * mark may carry. Five lines of repetition buys a schema the compiler checks.
  */
-const MarkSchema = z.discriminatedUnion('type', [
+export const MarkSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('bold') }).strict(),
   z.object({ type: z.literal('italic') }).strict(),
   z.object({ type: z.literal('strike') }).strict(),
