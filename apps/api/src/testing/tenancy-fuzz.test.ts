@@ -377,6 +377,7 @@ describe('the application router', () => {
       'chat.compliance.setRetention',
       'chat.compliance.holdChannel',
       'chat.compliance.holdMessage',
+      'chat.compliance.listGuests',
       'chat.compliance.setGuest',
       'chat.compliance.export',
 

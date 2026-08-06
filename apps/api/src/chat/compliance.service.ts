@@ -17,7 +17,12 @@ import {
   userOf,
   type ChatActor,
 } from './shared.js';
-import { addChannelMemberTuple, removeChannelMemberTuple } from './membership.js';
+import {
+  addChannelMemberTuple,
+  removeChannelMemberTuple,
+  CHANNEL_MEMBER_RELATION,
+  CHANNEL_OBJECT_TYPE,
+} from './membership.js';
 
 /**
  * Retention policy, legal hold, guest access and compliance export
@@ -179,6 +184,47 @@ export async function setMessageHold(
 /* -------------------------------------------------------------------------- *
  * Guest access (§3.8)
  * -------------------------------------------------------------------------- */
+
+export interface ChannelGuestRow {
+  readonly userId: string;
+  readonly expiresAt: Date | null;
+}
+
+/**
+ * Everyone currently holding GUEST access to this channel — the invite
+ * panel's own roster, separate from `channelMemberIds`'s full list because
+ * that one does not carry `is_guest` and mixing the two questions ("who is
+ * in this channel" vs "who is in this channel as a guest, and until when")
+ * into one query would make the panel guess which rows to highlight.
+ *
+ * `channel:manage`, same as `setGuestAccess` itself — deciding who to revoke
+ * needs the same trust as deciding who to invite.
+ */
+export async function listChannelGuests(
+  actor: ChatActor,
+  input: { readonly channelId: ChannelId },
+): Promise<readonly ChannelGuestRow[]> {
+  return withOrgScope(orgOf(actor), async (tx) => {
+    const channel = await loadChannel(tx, input.channelId);
+    enforceOnChannel(actor, 'channel:manage', channel);
+
+    return tx
+      .select({
+        userId: schema.relationshipTuples.subjectId,
+        expiresAt: schema.relationshipTuples.expiresAt,
+      })
+      .from(schema.relationshipTuples)
+      .where(
+        and(
+          eq(schema.relationshipTuples.subjectType, 'user'),
+          eq(schema.relationshipTuples.relation, CHANNEL_MEMBER_RELATION),
+          eq(schema.relationshipTuples.objectType, CHANNEL_OBJECT_TYPE),
+          eq(schema.relationshipTuples.objectId, input.channelId),
+          eq(schema.relationshipTuples.isGuest, true),
+        ),
+      );
+  });
+}
 
 /**
  * Grants or revokes a guest's access to ONE channel.

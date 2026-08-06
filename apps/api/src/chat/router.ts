@@ -651,6 +651,14 @@ export function createChatRouter(deps: ChatRouterDeps) {
         .output(z.object({ held: z.boolean(), applied: z.boolean() }))
         .mutation(({ input, ctx }) => compliance.setMessageHold(actorOf(ctx), input)),
 
+      /** Who currently holds guest access to this channel, and until when. */
+      listGuests: route({ permission: 'channel:manage' })
+        .input(z.object({ channelId: ChannelIdSchema }).strict())
+        .output(
+          z.array(z.object({ userId: z.string(), expiresAt: z.date().nullable() })).readonly(),
+        )
+        .query(({ input, ctx }) => compliance.listChannelGuests(actorOf(ctx), input)),
+
       /** Invite or revoke a guest on ONE private channel (§3.8, §7.4). */
       setGuest: route({ permission: 'channel:manage' })
         .input(

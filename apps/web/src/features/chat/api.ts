@@ -285,6 +285,14 @@ export function invalidateAllPins(client: QueryClient, orgId: string): void {
   void client.invalidateQueries({ queryKey: keys.allPins(orgId) });
 }
 
+export function invalidateChannelGuests(
+  client: QueryClient,
+  orgId: string,
+  channelId: string,
+): void {
+  void client.invalidateQueries({ queryKey: keys.channelGuests(orgId, channelId) });
+}
+
 export function invalidateUnreadCounts(client: QueryClient, orgId: string): void {
   void client.invalidateQueries({ queryKey: keys.unreadCounts(orgId) });
 }
@@ -416,6 +424,17 @@ export function holdChannel(input: { channelId: ChannelId; held: boolean }) {
 
 export function holdMessage(input: { messageId: MessageId; held: boolean }) {
   return api.chat.compliance.holdMessage.mutate(input);
+}
+
+export type ChannelGuestRow = Wire<
+  Awaited<ReturnType<typeof api.chat.compliance.listGuests.query>>
+>[number];
+
+export function guestsQuery(orgId: string, channelId: ChannelId) {
+  return queryOptions({
+    queryKey: keys.channelGuests(orgId, channelId),
+    queryFn: async () => wire(await api.chat.compliance.listGuests.query({ channelId })),
+  });
 }
 
 export function setGuestAccess(input: {

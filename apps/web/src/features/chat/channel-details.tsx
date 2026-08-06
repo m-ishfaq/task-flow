@@ -9,9 +9,13 @@ import { useMembers, type Person } from '../org/use-members.js';
 import {
   addChannelMember,
   exportChannel,
+  guestsQuery,
   holdChannel,
+  invalidateChannelGuests,
+  setGuestAccess,
   setRetention,
   type ChannelDetail,
+  type ChannelGuestRow,
   archiveChannel,
   channelQuery,
   invalidateChannel,
@@ -174,7 +178,7 @@ export function ChannelDetailsPanel({
         )}
 
         {!isDirect && data.capabilities.manage && (
-          <ComplianceSection orgId={orgId} channelId={channelId} channel={data} />
+          <ComplianceAndGuests orgId={orgId} channelId={channelId} channel={data} />
         )}
 
         {!isDirect && (
@@ -429,6 +433,185 @@ function AddMemberControl({
         </ul>
       )}
     </section>
+  );
+}
+
+/**
+ * Invite or revoke a GUEST on this one channel (§3.8, §7.4).
+ *
+ * A guest is not a member: `setGuestAccess` marks the tuple `is_guest` for
+ * access review and the server refuses it outright on anything that is not a
+ * private channel (a guest in a public channel is a contradiction — public
+ * already means readable by the org — and a guest can never reach a DM).
+ * `ComplianceSection` only renders this for `channel.type === 'private'`,
+ * for the same reason the roster hides Add/Remove on a DM: offering a
+ * control whose only possible outcome is an error is worse than not
+ * offering it.
+ *
+ * The candidate list is the same `tenancy.members.list` roster
+ * `AddMemberControl` searches — a guest invite targets an existing account,
+ * same as an ordinary member add; what makes it a GUEST grant is the
+ * `is_guest` flag `setGuestAccess` sets, not who can be named.
+ */
+function GuestAccessSection({
+  orgId,
+  channelId,
+}: {
+  readonly orgId: string;
+  readonly channelId: ChannelId;
+}) {
+  const { people, personOf } = useMembers();
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const guests = useQuery(guestsQuery(orgId, channelId));
+  const [query, setQuery] = useState('');
+  const [days, setDays] = useState('');
+
+  const refresh = (): void => {
+    invalidateChannelGuests(queryClient, orgId, channelId);
+  };
+
+  const invite = useMutation({
+    mutationFn: (userId: UserId) =>
+      setGuestAccess({
+        channelId,
+        userId,
+        granted: true,
+        /* Blank means no expiry — the server's own `expiresAt: null` default,
+           never a client-chosen window a guest could outlive without anyone
+           deciding that on purpose. */
+        expiresAt:
+          days.trim() === ''
+            ? null
+            : new Date(Date.now() + Number.parseInt(days, 10) * 86_400_000).toISOString(),
+      }),
+    onSuccess: () => {
+      setQuery('');
+      refresh();
+    },
+    onError: (error) => {
+      toast.failure('They were not invited', error);
+    },
+  });
+
+  const revoke = useMutation({
+    mutationFn: (userId: UserId) =>
+      setGuestAccess({ channelId, userId, granted: false, expiresAt: null }),
+    onSuccess: refresh,
+    onError: (error) => {
+      toast.failure('Access was not revoked', error);
+    },
+  });
+
+  const guestIds = new Set((guests.data ?? []).map((row) => row.userId));
+  const needle = query.trim().toLowerCase();
+  const candidates = people
+    .filter((member) => !guestIds.has(member.userId))
+    .filter((member) => needle === '' || member.email.toLowerCase().includes(needle))
+    .slice(0, 8);
+
+  return (
+    <section className="flex flex-col gap-2 border-t border-line pt-3">
+      <h3 className="text-xs font-medium uppercase tracking-wide text-ink-faint">Guest access</h3>
+      <p className="text-xs text-ink-faint">
+        A guest can read and post in this one channel — nothing else in the organization.
+      </p>
+
+      {(guests.data ?? []).length > 0 && (
+        <ul className="flex flex-col gap-1">
+          {guests.data?.map((row) => (
+            <GuestRow
+              key={row.userId}
+              row={row}
+              personOf={personOf}
+              pending={revoke.isPending}
+              onRevoke={() => {
+                revoke.mutate(row.userId as UserId);
+              }}
+            />
+          ))}
+        </ul>
+      )}
+
+      <Field label="Invite by email" htmlFor={`guest-invite-${channelId}`}>
+        <Input
+          id={`guest-invite-${channelId}`}
+          value={query}
+          placeholder="name@example.com"
+          onChange={(event) => {
+            setQuery(event.target.value);
+          }}
+        />
+      </Field>
+
+      {needle !== '' &&
+        (candidates.length === 0 ? (
+          <p className="text-xs text-ink-faint">No match.</p>
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {candidates.map((member) => (
+              <li key={member.userId}>
+                <button
+                  type="button"
+                  disabled={invite.isPending}
+                  onClick={() => {
+                    invite.mutate(member.userId as UserId);
+                  }}
+                  className="flex w-full items-center gap-2 rounded px-1 py-1 text-left hover:bg-surface-hover disabled:opacity-50"
+                >
+                  <PersonLine
+                    person={{
+                      userId: member.userId,
+                      label: member.displayName ?? member.email,
+                      email: member.email,
+                      named: member.displayName !== null,
+                    }}
+                  />
+                  <span className="shrink-0 text-xs text-ink-faint">Invite</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ))}
+
+      <Field label="Access expires after (days, optional)" htmlFor={`guest-expiry-${channelId}`}>
+        <Input
+          id={`guest-expiry-${channelId}`}
+          inputMode="numeric"
+          value={days}
+          placeholder="Never"
+          onChange={(event) => {
+            setDays(event.target.value.replace(/[^0-9]/g, ''));
+          }}
+        />
+      </Field>
+    </section>
+  );
+}
+
+function GuestRow({
+  row,
+  personOf,
+  pending,
+  onRevoke,
+}: {
+  readonly row: ChannelGuestRow;
+  readonly personOf: (userId: string) => Person;
+  readonly pending: boolean;
+  readonly onRevoke: () => void;
+}) {
+  return (
+    <li className="flex items-center justify-between gap-2">
+      <PersonLine
+        person={personOf(row.userId)}
+        suffix={
+          row.expiresAt === null ? null : ` — until ${new Date(row.expiresAt).toLocaleDateString()}`
+        }
+      />
+      <Button size="sm" variant="ghost" disabled={pending} onClick={onRevoke}>
+        Revoke
+      </Button>
+    </li>
   );
 }
 
@@ -689,5 +872,31 @@ function ComplianceSection({
         </Button>
       </div>
     </section>
+  );
+}
+
+/**
+ * `ComplianceSection` renders retention/hold/export for every non-DM channel
+ * `capabilities.manage` allows — but a guest can only ever be invited to a
+ * PRIVATE one (`setGuestAccess` refuses `public`, `dm` and `group_dm`
+ * outright). The type check here is the same "do not offer a button whose
+ * only possible outcome is an error" rule `ChannelDetailsPanel` already
+ * applies to Add/Remove on a DM — a product fact about channel shape, not a
+ * permission this component is re-deriving.
+ */
+function ComplianceAndGuests({
+  orgId,
+  channelId,
+  channel,
+}: {
+  readonly orgId: string;
+  readonly channelId: ChannelId;
+  readonly channel: ChannelDetail;
+}) {
+  return (
+    <>
+      <ComplianceSection orgId={orgId} channelId={channelId} channel={channel} />
+      {channel.type === 'private' && <GuestAccessSection orgId={orgId} channelId={channelId} />}
+    </>
   );
 }
