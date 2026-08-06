@@ -1,11 +1,21 @@
 import { sql } from 'drizzle-orm';
-import { check, index, pgSchema, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  check,
+  customType,
+  index,
+  pgSchema,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { users } from './identity.js';
 import { orgs } from './tenancy.js';
 
 /**
- * Docs tables — spaces and the page tree (migration 0023, PLAN.md §3.3, §7.2;
- * ai/phase-6-docs.md §3.1, §3.4, §3.5, Wave 1).
+ * Docs tables — spaces, the page tree, and (as of migration 0024) the Yjs
+ * write-ahead log and page versions (PLAN.md §3.3, §7.2; ai/phase-6-docs.md
+ * §3.1, §3.4, §3.5, §3.7, Wave 1 + Wave 2).
  *
  * As with the other schema files, this is the TypeScript MIRROR of the
  * migration and not its source. If the two disagree, the migration wins and
@@ -23,13 +33,16 @@ import { orgs } from './tenancy.js';
  * `ancestorIds` is nearest-first — `[immediate parent, grandparent, ..., root]`
  * — matching `packages/policy`'s `Target.ancestors` convention exactly, so a
  * page's row is passed straight into a permission check with no reversal.
- *
- * No `docs.yjs_updates` or `docs.page_versions` here yet — those are Wave 2's
- * migration, once live collaborative editing needs them. A page in this file
- * is tree position and metadata only.
  */
 
 const docs = pgSchema('docs');
+
+/** `bytea` — Drizzle has no built-in Postgres binary column type. */
+const bytea = customType<{ data: Buffer }>({
+  dataType() {
+    return 'bytea';
+  },
+});
 
 /**
  * A space — the unit a page tree lives inside, and the fallback when no page
@@ -108,5 +121,56 @@ export const pages = docs.table(
     // expression-index builder for `USING gin`, and a half-declared index
     // here would suggest this list is complete — see work.ts's identical note
     // on cards_assignees_idx.
+  ],
+);
+
+/**
+ * The write-ahead log (migration 0024, §3.7). `data` is an opaque raw
+ * y-protocols/sync sub-message (syncStep2 or update), not a bare Yjs update —
+ * see `apps/collab/src/persist.ts` for what writes here and why. `pageId` has
+ * no `references()` for the same reason `pages.parentPageId` doesn't: the
+ * migration's real constraint is composite, `(org_id, page_id) -> pages
+ * (org_id, id)`.
+ */
+export const yjsUpdates = docs.table(
+  'yjs_updates',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id').notNull(),
+    pageId: uuid('page_id').notNull(),
+
+    data: bytea('data').notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('yjs_updates_page_order_idx').on(table.orgId, table.pageId, table.createdAt, table.id),
+  ],
+);
+
+/**
+ * Explicit save points, plus the periodic compacted state that doubles as an
+ * autosave (§3.7). `state` is a full materialized `Y.encodeStateAsUpdate`
+ * snapshot, not a delta — restoring a version is a single row read.
+ */
+export const pageVersions = docs.table(
+  'page_versions',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id').notNull(),
+    pageId: uuid('page_id').notNull(),
+
+    /** 'autosave' (written by compaction) or 'manual' (on-demand save). No 'publish' yet — Wave 4's migration adds it. */
+    kind: text('kind').notNull(),
+
+    state: bytea('state').notNull(),
+
+    /** Null for 'autosave' — compaction is not an act any user performed. */
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('page_versions_page_idx').on(table.orgId, table.pageId, table.createdAt),
+    check('page_versions_kind_valid', sql`${table.kind} IN ('autosave', 'manual')`),
   ],
 );

@@ -58,6 +58,24 @@ CREATE ROLE taskflow_audit WITH LOGIN PASSWORD 'audit-dev-secret' NOSUPERUSER NO
 CREATE ROLE taskflow_realtime WITH LOGIN PASSWORD 'realtime-dev-secret' NOSUPERUSER NOCREATEDB
   NOCREATEROLE NOBYPASSRLS;
 
+-- ---------------------------------------------------------------------------
+-- taskflow_collab — apps/collab's write-exception role (Phase 6 Wave 2,
+-- ai/phase-6-docs.md §6.1).
+--
+-- The ONE role in this system granted write access from inside a socket
+-- handler, and scoped as narrowly as that sentence demands: INSERT/SELECT on
+-- docs.yjs_updates, INSERT/SELECT on docs.page_versions, DELETE on
+-- docs.yjs_updates (compaction's pruning, ai/phase-6-docs.md §3.7) — nothing
+-- else. It holds no grant on docs.pages, docs.spaces, or any other tenant
+-- table; apps/collab's `onAuthenticate` hook reads those over the ORDINARY
+-- taskflow_app connection, exactly as it did in Wave 1 (§6.1's own
+-- correction) and exactly as apps/realtime's rooms.ts does for boards. A
+-- compromised apps/collab process under this role can reach the CRDT log it
+-- owns and nothing else in the tenant's data.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_collab WITH LOGIN PASSWORD 'collab-dev-secret' NOSUPERUSER NOCREATEDB
+  NOCREATEROLE NOBYPASSRLS;
+
 -- Baseline grants live in 03-grants.sql, NOT here.
 --
 -- Roles are cluster-wide; grants are per-database. This file creates the roles
