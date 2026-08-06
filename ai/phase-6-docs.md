@@ -8,6 +8,15 @@ still open and, as originally scoped, need a call during Wave 1/2 rather than be
 Phase 4's Wave 1 + Wave 2 acceptance criteria are met on `main` — Docs' one write-exception socket
 server is a second, harder version of the room-authorization problem Phase 4 solved once.
 
+**Where the draft turned out to be wrong**, checked against `apps/realtime`'s actual code rather
+than left as the draft's paraphrase of it: §3.3 said `onAuthenticate` calls `apps/api`'s
+`authenticate()` — it calls `verifyAccessToken` directly, same as `apps/realtime/src/auth.ts`
+does, because `authenticate()` expects an HTTP header a socket handshake doesn't carry. §6.1 said
+`taskflow_collab` arrives with Wave 1's first migration — `apps/realtime`'s own dedicated role
+holds no tenant-table grant at all and exists solely for outbox consumption, so Wave 1's read-only
+`onAuthenticate` hook uses the ordinary `taskflow_app` connection via `withOrgScope`, identical to
+`rooms.ts`; `taskflow_collab` is deferred to Wave 2, where `apps/collab` first needs to WRITE.
+
 Parent: [PLAN.md](../PLAN.md) §3.3 (Docs), §7.2 (`docs.yjs_updates` / `docs.page_versions`), §9
 (Real-Time Architecture — the CRDT write exception), §10.6 (Domain events), §13 (Roadmap).
 Sibling: [phase-4-realtime.md](phase-4-realtime.md) (room authorization, the pattern this phase's
@@ -132,8 +141,17 @@ protocol to assert an identity" note) is that a socket's identity is set exactly
 handshake, from a verified token, and every subsequent decision reads from there — never from a
 client-asserted field. Hocuspocus's `onAuthenticate(data)` hook is that same handshake moment: it
 receives the requested document name and a token, and must (1) verify the token through the exact
-same `authenticate()` Phase 1 built — no separate verification path — and (2) resolve `page:read`
-or `page:update` through `can()` before the connection is allowed to sync at all. The document
+same primitive `apps/realtime/src/auth.ts` already uses for its own handshake — `verifyAccessToken`
+from `@taskflow/security`, not a second crypto path — and (2) resolve `page:read` or `page:update`
+through `can()` before the connection is allowed to sync at all.
+
+**Correction on approval:** the draft originally said this hook calls `apps/api`'s `authenticate()`
+directly. `apps/realtime/src/auth.ts` was checked against that claim and does not do that —
+`authenticate()` expects an `Authorization: Bearer <token>` header string, which a socket handshake
+does not carry, so the gateway calls `verifyAccessToken` on the raw token instead and builds its own
+`SocketIdentity`. `apps/collab`'s hook follows the actual precedent, not the draft's paraphrase of
+it: same underlying verification primitive as every other entry point, reached through the same
+shape `apps/realtime` already uses, not literally the same function signature. The document
 name is client-supplied (it has to be — the client is asking to open a specific page) and is
 treated exactly like the `x-taskflow-org` header and Phase 4's join-request board id: a lookup key
 into an authorization check, never a value trusted on its own. Naming a page you have no grant on
@@ -340,13 +358,26 @@ content" concept rather than new machinery).
 
 ## 6. Cross-cutting obligations
 
-**6.1 `apps/collab` gets its own database role, the moment it exists — not before.** Exactly the
-pattern the Phase 4 PR (#15) followed for `apps/realtime`: "no `taskflow_realtime` role yet — that
-belongs with `apps/realtime` itself, not with an unused credential sitting in the database ahead
-of the app that uses it." `taskflow_collab` arrives with this phase's first migration, scoped to
-exactly what `docs.yjs_updates`, `docs.page_versions`, and whatever `docs.pages` access the
-gateway itself needs (page metadata reads for the auth hook) — RLS policies mirroring the
-`outbox_dispatch`-per-consumer pattern already established.
+**6.1 `apps/collab` gets its own database role when it starts WRITING — not before, and not for
+its reads.** Checked against what `apps/realtime` actually does, not the draft's first guess:
+`taskflow_realtime` holds no grant on any tenant table at all — 03-grants.sql's comment on it is
+explicit ("the gateway resolves membership and tuples over the ORDINARY `taskflow_app` connection,
+under RLS, exactly as the API does"), and `rooms.ts` calls `withOrgScope` from `@taskflow/db`
+directly, the identical entry point every service uses. `taskflow_realtime` exists solely to
+consume `platform.outbox` — a role scoped to the ONE thing `apps/realtime` does that the API's role
+has no reason to do. The same split applies here: **Wave 1's `onAuthenticate` hook reads page and
+space metadata over the ordinary `taskflow_app` connection via `withOrgScope`, identical to how
+`rooms.ts` loads a board.** There is nothing in Wave 1 for a dedicated role to make safer — reads
+under RLS are already scoped to the caller's org regardless of which role runs them, and standing up
+`taskflow_collab` now would be "an unused credential sitting in the database ahead of the app that
+uses it," the exact anti-pattern this section's own Phase 4 citation warns against.
+
+`taskflow_collab` arrives with Wave 2's first migration instead, when `apps/collab` needs to persist
+something no other role should be able to: `INSERT` on `docs.yjs_updates` and
+`docs.page_versions`. That is the actual write-exception surface guardrail 8's "sockets never write"
+carve-out is about, and scoping a role to exactly those two tables — nothing else, no broader tenant
+access than the reads it already gets for free over `taskflow_app` — is what makes a compromised
+`apps/collab` process unable to reach anything beyond the CRDT log it owns.
 
 **6.2 `apps/collab/src/auth.ts` (or wherever the hook lives) joins CLAUDE.md's human-review
 surface list the moment it's written**, alongside `apps/realtime/src/auth.ts` and `rooms.ts` — §3.3
