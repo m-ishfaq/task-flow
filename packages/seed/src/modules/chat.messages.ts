@@ -146,6 +146,20 @@ export const messagesModule = defineSeedModule({
           return true;
         });
 
+        /* Author lookup for `parentAuthorId` below — the same information
+           `message.service.ts` gets by reading the parent row inside its own
+           transaction, available here for free since every draft in the
+           channel is already in memory. */
+        const authorByMessageId = new Map(drafts.map((draft) => [draft.id, draft.author.user.id]));
+
+        /* Mirrors `sendMessage`'s rule in `message.service.ts`: a DM or group DM
+           notifies its other participants whether or not anyone was @mentioned;
+           a named channel does not. */
+        const directRecipientIds =
+          channel.type === 'dm' || channel.type === 'group_dm'
+            ? channel.members.map((member) => member.user.id)
+            : [];
+
         for (const draft of drafts) {
           messageRows.push([
             draft.id,
@@ -350,6 +364,9 @@ export const messagesModule = defineSeedModule({
                 // JSON. Same slice the service takes.
                 excerpt: draft.bodyText.slice(0, 280),
                 mentionedUserIds: draft.mentionedUserIds,
+                channelName: channel.name,
+                parentAuthorId: draft.parentId === null ? null : (authorByMessageId.get(draft.parentId) ?? null),
+                directRecipientIds: directRecipientIds.filter((id) => id !== draft.author.user.id),
               },
               envelopeFor(orgId, draft.author.user.id, draft.createdAt),
             ),

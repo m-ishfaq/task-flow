@@ -59,6 +59,7 @@ import {
   type Message,
   type PinnedMessageRow,
   type ReactionRow,
+  type SavedMessage,
 } from './api.js';
 import { ChannelDetailsPanel } from './channel-details.js';
 import { MessageAttachments, MessagePreviews } from './message-extras.js';
@@ -149,6 +150,10 @@ function ChannelListPanel({
       aria-label="Conversations"
       className="flex w-64 shrink-0 flex-col overflow-y-auto border-r border-line bg-surface-raised"
     >
+      <div className="border-b border-line px-1.5 py-1.5">
+        <SavedMessagesButton orgId={orgId} onOpenChannel={onSelect} />
+      </div>
+
       <div className="flex items-center justify-between px-3 pt-3 pb-1">
         <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Channels</h2>
         <NewChannelPopover orgId={orgId} onCreated={onSelect} />
@@ -250,6 +255,140 @@ function ChannelRow({
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
+      </button>
+    </li>
+  );
+}
+
+/**
+ * Saved messages — the personal bookmark list, ORG-wide (§2, Wave 2).
+ *
+ * Lives above the channel list rather than inside one, because a save is not
+ * scoped to the channel it was made in: `chat.saved.list` is one query across
+ * every channel the caller can still read (`saved.service.ts`'s re-check on
+ * read), so this is the one place in the sidebar that is not a channel or a
+ * DM.
+ *
+ * Shares the `['org', orgId, 'chat', 'saved']` query key with the per-message
+ * Save/Unsave toggle in `MessageBubble` — toggling one updates the other
+ * without a second fetch.
+ */
+function SavedMessagesButton({
+  orgId,
+  onOpenChannel,
+}: {
+  readonly orgId: string;
+  readonly onOpenChannel: (channelId: ChannelId) => void;
+}) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const saved = useQuery({ ...savedQuery(orgId), enabled: orgId !== '' });
+  const list = saved.data ?? [];
+
+  const unsave = useMutation({
+    mutationFn: (messageId: MessageId) => unsaveMessage(messageId),
+    onSuccess: () => {
+      invalidateSaved(queryClient, orgId);
+    },
+    onError: (error) => {
+      toast.failure('That could not be removed', error);
+    },
+  });
+
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <button
+          type="button"
+          aria-label={list.length > 0 ? `Saved messages, ${String(list.length)}` : 'Saved messages'}
+          className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm text-ink-muted hover:bg-surface-hover hover:text-ink"
+        >
+          <span className="flex items-center gap-1.5">
+            <span aria-hidden>🔖</span>
+            Saved messages
+          </span>
+          {list.length > 0 && (
+            <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-surface-hover px-1 text-[10px] font-semibold text-ink-muted">
+              {list.length > 99 ? '99+' : list.length}
+            </span>
+          )}
+        </button>
+      </Popover.Trigger>
+
+      <Popover.Portal>
+        <Popover.Content
+          align="start"
+          sideOffset={6}
+          className="z-50 w-80 overflow-hidden rounded-md border border-line bg-surface shadow-lg"
+        >
+          <header className="border-b border-line px-3 py-2">
+            <h2 className="text-sm font-medium text-ink">Saved messages</h2>
+          </header>
+
+          <div className="max-h-96 overflow-y-auto">
+            {list.length === 0 ? (
+              <div className="p-3">
+                <Empty
+                  title="Nothing saved yet"
+                  description="Save a message from its menu to find it here later."
+                />
+              </div>
+            ) : (
+              <ul>
+                {list.map((row) => (
+                  <SavedMessageRow
+                    key={row.messageId}
+                    row={row}
+                    pending={unsave.isPending}
+                    onOpen={() => {
+                      onOpenChannel(row.channelId as ChannelId);
+                    }}
+                    onUnsave={() => {
+                      unsave.mutate(row.messageId as MessageId);
+                    }}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+function SavedMessageRow({
+  row,
+  pending,
+  onOpen,
+  onUnsave,
+}: {
+  readonly row: SavedMessage;
+  readonly pending: boolean;
+  readonly onOpen: () => void;
+  readonly onUnsave: () => void;
+}) {
+  return (
+    <li className="border-b border-line px-3 py-2 last:border-b-0">
+      <button type="button" onClick={onOpen} className="flex w-full flex-col gap-0.5 text-left">
+        <span className="truncate text-xs font-medium text-ink">
+          {row.channelType === 'public' ? '# ' : row.channelType === 'private' ? '🔒 ' : ''}
+          {row.channelName ?? 'Direct message'}
+        </span>
+        <span className="line-clamp-2 text-xs text-ink-muted">
+          {row.excerpt ?? '(message deleted)'}
+        </span>
+        <span className="text-[11px] text-ink-faint">
+          Saved {new Date(row.savedAt).toLocaleString()}
+        </span>
+      </button>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={onUnsave}
+        className="mt-1 text-[11px] text-ink-faint hover:text-ink"
+      >
+        Unsave
       </button>
     </li>
   );

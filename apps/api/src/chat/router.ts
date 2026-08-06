@@ -513,6 +513,9 @@ export function createChatRouter(deps: ChatRouterDeps) {
               z.object({
                 messageId: z.string(),
                 channelId: z.string(),
+                channelName: z.string().nullable(),
+                channelType: z.string(),
+                excerpt: z.string().nullable(),
                 savedAt: z.date(),
               }),
             )

@@ -454,6 +454,12 @@ export function notificationsQuery(orgId: string) {
   return queryOptions({
     queryKey: ['org', orgId, 'chat', 'notifications'] as const,
     queryFn: async () => wire(await api.chat.notifications.listMine.query()),
+    /* Without this, the badge above ticks up every 20s while the panel behind
+       it — mounted once in the shell and never unmounted — kept showing
+       whatever it fetched on first load until a window refocus happened to
+       trigger a refetch. Matches the count query's interval so the two never
+       visibly disagree. */
+    refetchInterval: 20_000,
   });
 }
 

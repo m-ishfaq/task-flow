@@ -1,4 +1,4 @@
-import { and, desc, eq, schema, withOrgScope, outboxWriter } from '@taskflow/db';
+import { and, desc, eq, inArray, schema, withOrgScope, outboxWriter } from '@taskflow/db';
 import { errors, type ChannelId, type MessageId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { messageSaved } from './events.js';
@@ -44,6 +44,13 @@ import {
 export interface SavedMessage {
   readonly messageId: string;
   readonly channelId: string;
+  /** Null for a DM, which has no name by construction — same as `channelName`
+      on the `message.sent` event payload. */
+  readonly channelName: string | null;
+  readonly channelType: string;
+  /** Null when the message was since deleted. The bookmark still resolves —
+      it names a channel the caller can read — there is just nothing to show. */
+  readonly excerpt: string | null;
   readonly savedAt: Date;
 }
 
@@ -125,6 +132,15 @@ export async function unsaveMessage(
  * read dropped.
  *
  * The re-check is the interesting part — see the note at the top of the file.
+ *
+ * ## Why this carries an excerpt and a channel name at all
+ *
+ * The row itself is just `(messageId, channelId, savedAt)` — enough to satisfy
+ * the primary key, nothing to look at. A list of bare ids is not a feature; the
+ * whole point of "save this for later" is finding it later, so this reads the
+ * same two things the notification projection snapshots for the same reason:
+ * something to show without a second round trip per row from whatever renders
+ * the list.
  */
 export async function listSaved(actor: ChatActor): Promise<readonly SavedMessage[]> {
   return withOrgScope(orgOf(actor), async (tx) => {
@@ -138,32 +154,78 @@ export async function listSaved(actor: ChatActor): Promise<readonly SavedMessage
       .where(eq(schema.savedMessages.userId, userOf(actor)))
       .orderBy(desc(schema.savedMessages.savedAt));
 
-    const visible: SavedMessage[] = [];
+    if (rows.length === 0) return [];
 
     /* One `can()` per DISTINCT channel, not per saved message — a person with
        forty saves in one channel asks once. `can()` is pure, so the only cost
-       being avoided is the channel read. */
-    const decided = new Map<string, boolean>();
+       being avoided is the channel read. `null` means "removed, or the channel
+       is gone" and drops every save pointing at it; anything else carries the
+       name and type along for rendering. */
+    const channelInfo = new Map<
+      string,
+      { readonly name: string | null; readonly type: string } | null
+    >();
+
+    const visible: {
+      readonly messageId: string;
+      readonly channelId: string;
+      readonly savedAt: Date;
+    }[] = [];
 
     for (const row of rows) {
-      let allowed = decided.get(row.channelId);
+      let info = channelInfo.get(row.channelId);
 
-      if (allowed === undefined) {
+      if (info === undefined) {
         try {
           const channel = await loadChannel(tx, row.channelId as ChannelId);
           enforceOnChannel(actor, 'channel:read', channel);
-          allowed = true;
+          info = { name: channel.name, type: channel.type };
         } catch {
           /* Removed from the channel, or the channel is gone. The bookmark
              stays in the table — it is theirs — and simply stops resolving. */
-          allowed = false;
+          info = null;
         }
-        decided.set(row.channelId, allowed);
+        channelInfo.set(row.channelId, info);
       }
 
-      if (allowed) visible.push(row);
+      if (info !== null) visible.push(row);
     }
 
-    return visible;
+    if (visible.length === 0) return [];
+
+    /* One batch read for every excerpt rather than one query per row — the
+       same reasoning as the channel dedupe above, at chat's write rate this
+       list can hold dozens of rows. A message deleted since it was saved is
+       not an error: the bookmark still names a real channel, there is simply
+       nothing left to preview. */
+    const messageRows = await tx
+      .select({
+        id: schema.messages.id,
+        bodyText: schema.messages.bodyText,
+        deletedAt: schema.messages.deletedAt,
+      })
+      .from(schema.messages)
+      .where(
+        inArray(
+          schema.messages.id,
+          visible.map((row) => row.messageId),
+        ),
+      );
+
+    const excerptById = new Map(
+      messageRows.map((row) => [row.id, row.deletedAt === null ? row.bodyText.slice(0, 280) : null]),
+    );
+
+    return visible.map((row) => {
+      const info = channelInfo.get(row.channelId);
+      return {
+        messageId: row.messageId,
+        channelId: row.channelId,
+        channelName: info?.name ?? null,
+        channelType: info?.type ?? 'public',
+        excerpt: excerptById.get(row.messageId) ?? null,
+        savedAt: row.savedAt,
+      };
+    });
   });
 }
