@@ -2,6 +2,7 @@ import { Server } from '@hocuspocus/server';
 import type { OrgId, PageId, UserId } from '@taskflow/contracts';
 import type { Logger } from '@taskflow/observability';
 import { CollabAuthError, authenticateConnection } from './auth.js';
+import { compactPage } from './compaction.js';
 import { allowedOrigins, type Env } from './config/env.js';
 import { appendUpdate, extractUpdateBytes } from './persist.js';
 import { replayPage } from './replay.js';
@@ -9,16 +10,15 @@ import { replayPage } from './replay.js';
 /**
  * The collab gateway (ai/phase-6-docs.md §3.2, §3.3, §3.7, Wave 1 + Wave 2).
  *
- * Wave 1 shipped the authorization spine only. Wave 2 adds the write and
- * read-back paths this whole process exists for: `beforeHandleMessage`
- * durably appends every incoming Yjs update to `docs.yjs_updates` BEFORE
- * Hocuspocus applies it or acknowledges it to the client (see `persist.ts`'s
- * header for why that hook and not the more obvious `onChange`), and
- * `onLoadDocument` reconstructs a page's state from the last snapshot plus
- * the WAL tail the first time anyone opens it (`replay.ts`). Periodic
- * compaction is a separate concern, wired in `main.ts`/`compaction.ts` — this
- * file's job is the connection and document lifecycle: who may connect, what
- * happens to what they send, and what a freshly loaded document starts from.
+ * Wave 1 shipped the authorization spine only. Wave 2 adds every write and
+ * read-back path this process exists for: `beforeHandleMessage` durably
+ * appends every incoming Yjs update to `docs.yjs_updates` BEFORE Hocuspocus
+ * applies it or acknowledges it to the client (see `persist.ts`'s header for
+ * why that hook and not the more obvious `onChange`); `onLoadDocument`
+ * reconstructs a page's state from the last snapshot plus the WAL tail the
+ * first time anyone opens it (`replay.ts`); `onStoreDocument` — Hocuspocus's
+ * own debounced save-boundary hook — strips disallowed content from the LIVE
+ * document and compacts the WAL into a fresh snapshot (`compaction.ts`).
  */
 
 /** Carried on every connection from `onAuthenticate` onward — resolved once, read everywhere. */
@@ -132,6 +132,29 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
      */
     async onLoadDocument(data) {
       await replayPage(data.document, data.context.orgId, data.context.pageId);
+    },
+
+    /**
+     * Hocuspocus's own save-boundary hook, debounced at the library's
+     * default (`debounce: 2000ms`, `maxDebounce: 10000ms` — a burst of
+     * keystrokes settles 2s after the last one, or every 10s under
+     * continuous typing, whichever comes first). `compactPage`'s own header
+     * explains why this — not a standalone job — is where compaction runs:
+     * `data.document` is the LIVE document, the only place the §7.3
+     * content-strip can reach every currently connected client.
+     */
+    async onStoreDocument(data) {
+      const result = await compactPage(data.document, data.lastContext.orgId, data.lastContext.pageId);
+      if (result.strippedNodes > 0 || result.strippedTextRuns > 0) {
+        logger.warn(
+          {
+            pageId: data.lastContext.pageId,
+            strippedNodes: result.strippedNodes,
+            strippedTextRuns: result.strippedTextRuns,
+          },
+          'collab content guard stripped disallowed content from a live document',
+        );
+      }
     },
   });
 

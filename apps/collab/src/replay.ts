@@ -12,22 +12,25 @@ import { latestVersion } from './versions.js';
  * A page nobody has ever opened has no snapshot and no WAL rows, and this
  * is correctly a no-op for it: a fresh `Y.Doc` IS the right starting state.
  *
- * `origin: 'replay'` on every applied update, not `undefined` — Hocuspocus's
- * own `onChange`/`onStoreDocument` hooks fire on ANY applied update
- * regardless of origin (there is no origin-based skip for load-time
- * replay), so tagging these lets a future hook distinguish "this update
- * came from reconstructing history" from "this update just arrived over
- * the wire" if that distinction is ever needed — cheap to add now, real
- * work to retrofit once something depends on updates being untagged.
+ * Every applied update carries `{ source: 'local', skipStoreHooks: true }`
+ * as its transaction origin — Hocuspocus's own `LocalTransactionOrigin`
+ * shape, checked via its exported `shouldSkipStoreHooks`. Without this,
+ * reconstructing a page on load would itself trigger `onStoreDocument`
+ * (compaction.ts's hook) immediately afterward: a redundant snapshot of
+ * state that is, by construction, already exactly what the snapshot it was
+ * just built from plus the WAL tail already represent, and a wasted prune
+ * pass over WAL rows this same function just finished reading.
  */
 export async function replayPage(document: Y.Doc, orgId: OrgId, pageId: PageId): Promise<void> {
+  const origin = { source: 'local' as const, skipStoreHooks: true };
+
   const snapshot = await latestVersion(orgId, pageId);
   if (snapshot !== null) {
-    Y.applyUpdate(document, snapshot.state, 'replay');
+    Y.applyUpdate(document, snapshot.state, origin);
   }
 
   const updates = await readUpdatesSince(orgId, pageId, snapshot?.createdAt ?? null);
   for (const row of updates) {
-    Y.applyUpdate(document, row.data, 'replay');
+    Y.applyUpdate(document, row.data, origin);
   }
 }

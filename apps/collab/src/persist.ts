@@ -1,7 +1,7 @@
 import { IncomingMessage } from '@hocuspocus/server';
 import * as decoding from 'lib0/decoding';
 import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from 'y-protocols/sync';
-import { and, asc, eq, gt, schema, withCollabScope } from '@taskflow/db';
+import { and, asc, eq, gt, inArray, schema, withCollabScope } from '@taskflow/db';
 import { uuidv7 } from '@taskflow/security';
 import type { OrgId, PageId } from '@taskflow/contracts';
 
@@ -134,5 +134,27 @@ export async function readUpdatesSince(
         ),
       )
       .orderBy(asc(schema.yjsUpdates.createdAt), asc(schema.yjsUpdates.id));
+  });
+}
+
+/**
+ * Deletes exactly the WAL rows named by `ids` — compaction's pruning step,
+ * once their combined effect is captured in a new `page_versions` snapshot.
+ *
+ * Takes an explicit id list rather than a `createdAt` cutoff deliberately:
+ * `readUpdatesSince`'s own doc comment explains why a JS `Date` boundary is
+ * imprecise for a READ (safe there, since re-reading a row is harmless).
+ * Pruning is a DELETE, where the unsafe direction is removing a row that
+ * was never actually folded into the snapshot — data loss, not redundant
+ * work — so this deletes precisely the rows the caller already read and
+ * incorporated, never a timestamp range that could include one it didn't.
+ */
+export async function pruneUpdates(orgId: OrgId, pageId: PageId, ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) return;
+
+  await withCollabScope(orgId, async (tx) => {
+    await tx
+      .delete(schema.yjsUpdates)
+      .where(and(eq(schema.yjsUpdates.pageId, pageId), inArray(schema.yjsUpdates.id, ids)));
   });
 }
