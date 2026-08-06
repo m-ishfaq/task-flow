@@ -66,44 +66,71 @@ header above to stay honest on its own (§13's own history is exactly this failu
   sidebar, ever, with no error to explain why. Invisible to `guest.test.ts` because every test
   there calls the service functions directly, bypassing this middleware entirely — the service
   logic was always correct; the route in front of it was not. Fixed by
-  `packages/policy/src/decide.ts`'s new `couldGrant(subject, permission)`: true if the role grants
-  it OR the subject holds a tuple, on an object of the SAME RESOURCE TYPE the permission acts on,
-  whose relation covers it — coarse only within that type, because layer 2 is still what makes the
-  real per-object decision once it has a resource. Covered by `decide.test.ts`'s `couldGrant`
-  suite, and now also by `guest.test.ts`'s "through the real tRPC router" describe block — the
-  specific gap that let this hide, since every other guest test calls the service directly and
-  never touches `route()`'s middleware. It covers all three shapes: a granted guest reaching their
-  channel through `createCallerFactory` (the exact case that used to fail), a guest with no tuple
-  anywhere still refused, and containment — a guest whose coarse layer-1 pass (on one channel's
-  tuple) still cannot reach a second channel through the route. See the next finding for why "on an
-  object of the same resource type" is load-bearing rather than decorative.
-- **The first fix for the finding above was itself a vulnerability, caught by the adversarial
-  review this file's own working agreement requires before a `packages/policy` change merges — not
-  by a test.** The first `couldGrant` matched a tuple purely by relation, with no check on what the
-  tuple's OBJECT actually was: `relationGrants` matches a permission by its ACTION SUFFIX
-  (`tuples.ts`'s `grantSet`), so the `member` relation's grant set — `read`/`download` plus a short
-  extra list — contains every permission in the whole catalog ending in `:read`, including
-  `audit:read`, `member:read`, `team:read`, `org:read`, none of which have anything to do with a
-  channel. `tenancy.audit.list` and `tenancy.authz.explain` (Owner/Admin only, by design —
-  `authz.service.ts`'s own comment: exposing another user's permission trace is "exactly the
-  information an attacker would want before choosing a target") have NO layer 2: an org-level
-  capability has no per-resource grant to consult, so neither `audit.service.ts` nor
-  `authz.service.ts` ever calls `enforce()`/`can()` again with a target — `route()`'s pre-check
-  _is_ their entire authorization decision. Every ORDINARY member holds a `member`-relation tuple on
-  any channel they have joined, not only a guest (`channel.service.ts` writes one on join same as
-  it does for a guest) — so before this second fix, any member of any channel could have read the
-  whole org audit log and any other user's permission decision trace through routes that were
-  supposedly Owner/Admin-only. `resourceOf(permission)` closes it: a permission's resource type is
-  its own prefix, so `audit:read` only ever matches a tuple whose object is type `'audit'`, and no
-  such tuple is ever written — audit logs are not a tuple-bearing resource. Covered by two new
-  `decide.test.ts` cases (a channel tuple must not widen `audit:read`/`member:read`/`team:read`;
-  a `card` tuple must not widen a `channel:*` permission either) and a router-level case in
-  `guest.test.ts` proving a guest with a real, granted channel tuple still cannot reach
-  `tenancy.audit.list` or `tenancy.authz.explain` through the real caller. Left here as the
-  sharpest illustration this phase has of why §2.2's second-pass requirement exists: the first fix
-  read as obviously correct, compiled, and had its own passing test suite — the flaw was in what
-  the fix did NOT check, which a test written by the same reasoning that produced the fix was never
-  going to think to assert.
+  `packages/policy/src/decide.ts`'s new `couldGrant(subject, permission)` — the mechanism took two
+  more attempts to get right after this one, and the next finding is the full account of both.
+  Covered by `decide.test.ts`'s `couldGrant` suite, and now also by `guest.test.ts`'s "through the
+  real tRPC router" describe block — the specific gap that let this hide, since every other guest
+  test calls the service directly and never touches `route()`'s middleware. It covers a granted
+  guest reaching their channel through `createCallerFactory` (the exact case that used to fail), a
+  guest with no tuple anywhere still refused, and containment — a guest whose coarse layer-1 pass
+  (on one channel's tuple) still cannot reach a second channel through the route.
+- **The first fix for the finding above was itself a vulnerability — caught by the adversarial
+  review this file's own working agreement requires before a `packages/policy` change merges, not
+  by a test — and the fix FOR that vulnerability was wrong too, on the first attempt.** Three
+  versions of `couldGrant` in one sitting, which is exactly the shape of change this phase's §2.2
+  human-review requirement exists for.
+  1. The first `couldGrant` matched a tuple purely by relation, with no check on what the tuple's
+     OBJECT actually was: `relationGrants` matches a permission by its ACTION SUFFIX (`tuples.ts`'s
+     `grantSet`), so the `member` relation's grant set — `read`/`download` plus a short extra list —
+     contains every permission in the whole catalog ending in `:read`, including `audit:read`,
+     `member:read`, `team:read`, `org:read`, none of which have anything to do with a channel.
+     `tenancy.audit.list` and `tenancy.authz.explain` (Owner/Admin only by design —
+     `authz.service.ts`'s own comment: exposing another user's permission trace is "exactly the
+     information an attacker would want before choosing a target") have NO layer 2 anywhere:
+     `audit.service.ts` and `authz.service.ts` never call `enforce()`/`can()` again with a target —
+     `route()`'s pre-check _is_ their entire authorization decision. Every ORDINARY member holds a
+     `member`-relation tuple on any channel they have joined, not only a guest
+     (`channel.service.ts` writes one on join same as it does for a guest) — so any member of any
+     channel could have read the whole org audit log and any other user's permission decision trace
+     through routes that were supposedly Owner/Admin-only. Found by the adversarial review.
+  2. The fix for that — matching a tuple only when its OBJECT TYPE equalled the permission's own
+     resource-type prefix (`resourceOf(permission)`) — was ALSO wrong, and this one I caught myself,
+     verifying the review's finding before pushing rather than trusting either pass blindly. It
+     silently broke the exact case `couldGrant` exists for in the other direction: `message:create`
+     and `attachment:download` do not have "channel" anywhere in their own name, but a channel
+     `member` tuple is SUPPOSED to widen them, because `channelTarget()` always builds a `'channel'`
+     target regardless of which chat permission is being asked about — a guest's channel tuple was
+     never meant to match its OWN resource-type prefix, it was meant to match whatever `enforce()`
+     will actually check it against downstream. Requiring type equality broke every guest's ability
+     to post or read attachments in the one channel they were granted, which a scratch reproduction
+     confirmed (`couldGrant` returning `false` for a guest with a real channel tuple asking about
+     `message:create`) before it ever reached a test file.
+  3. The fix that shipped is `isOrgLevel` (`packages/policy/src/permissions.ts`): an explicit,
+     hand-curated, documented set of exactly the permissions confirmed — by reading every
+     `enforce()`/`can()` call site in `apps/api/src`, not by inferring from naming — to have NO
+     second check of any kind behind `route()`, in any form: `org:read`, `org:update`, `org:delete`,
+     `org:billing`, `member:read`, `member:invite`, `member:manage`, `member:remove`, `team:read`,
+     `team:manage`, `audit:read`, `apiToken:create`, `apiToken:revoke`. (`audit:export` is NOT on
+     the list — `compliance.service.ts` checks it with a real channel target, unlike `audit:read`.)
+     `couldGrant` refuses the tuple fallback outright for exactly this set and keeps the ORIGINAL,
+     unrestricted relation match for everything else — because for everything else, a real
+     per-resource layer 2 (or, for the handful of routes with no parent to load, a second role-only
+     `enforce()` call that denies a false positive independently) was always the actual protection,
+     never this function.
+
+  Covered by `decide.test.ts`: a channel tuple correctly still widens `message:create` and
+  `attachment:download` (the regression the second attempt introduced), a channel tuple does not
+  widen `audit:read`/`member:read`/`team:read`/`org:read` (the original vulnerability), and even the
+  broadest possible tuple — an `owner` relation, every action, on any object — cannot reach
+  `audit:read`, `org:update`, `member:manage`, `team:manage`, or `apiToken:create`. Plus two
+  router-level cases in `guest.test.ts`: a guest with a real, granted channel tuple CAN send a
+  message through the actual `createCallerFactory` caller (proving attempt 2's regression is gone),
+  and the same guest CANNOT reach `tenancy.audit.list` or `tenancy.authz.explain` through it (proving
+  attempt 1's vulnerability is gone). Left here in this much detail because the lesson is not "the
+  first fix was wrong" — it is that the SECOND one, written specifically to correct a vulnerability,
+  was _also_ wrong, in the opposite direction, and read just as obviously correct as the first one
+  did until it was run against the exact scenario it was supposed to preserve.
+
 - **The notification projection could never actually write a row.** Migration 0022 granted
   `taskflow_audit` table-level access to `platform.outbox_dispatch` (already true, shared with the
   `audit` consumer) but never added the three consumer-scoped RLS policies migration 0015's own

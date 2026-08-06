@@ -518,6 +518,40 @@ describe('through the real tRPC router — the layer the service tests bypass', 
     await expect(caller.chat.channels.get({ channelId: other.channelId })).rejects.toThrow();
   });
 
+  it('can post in the channel it was granted, through the route', async () => {
+    /* `message:create` is granted to the `member` relation through the
+       "extra" list in `tuples.ts` (`grantSet`), not the action-suffix match —
+       it has nothing in its own name that says "channel". The second
+       `couldGrant` fix (`isOrgLevel`) must not have collaterally broken this:
+       a channel tuple has to keep authorizing everything `enforceOnChannel`
+       will actually check against that same channel, or the guest-posting
+       case `couldGrant` exists for breaks again in the opposite direction. */
+    const { orgId, owner, refreshOwner } = await scaffold('guest-router-can-post');
+    const channel = await channels.createChannel(owner, { type: 'private', name: 'project-x' });
+
+    await compliance.setGuestAccess(await refreshOwner(), {
+      channelId: channel.channelId,
+      userId: GUEST,
+      granted: true,
+      expiresAt: null,
+    });
+
+    const tuples = await loadTuples(orgId, GUEST);
+    const caller = callerFactory(
+      testContext({
+        principal: testPrincipal('guest', { userId: GUEST, org: { orgId, role: 'guest', tuples } }),
+      }),
+    );
+
+    const sent = await caller.chat.messages.send({
+      channelId: channel.channelId,
+      body: body('hello from the router'),
+      parentMessageId: null,
+    });
+
+    expect(sent.messageId).toBeDefined();
+  });
+
   it('a channel tuple does not unlock the org audit log or another user’s permission trace', async () => {
     /* The vulnerability an adversarial review caught before merge: `couldGrant`
        used to match a tuple's relation with no check on what the tuple's

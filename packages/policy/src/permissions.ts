@@ -124,6 +124,59 @@ export type Permission = (typeof PERMISSIONS)[number];
 
 const PERMISSION_SET: ReadonlySet<string> = new Set<string>(PERMISSIONS);
 
+/**
+ * Permissions with no per-resource concept at all: the capability acts on
+ * "the org" or "membership" itself, never on a row a tuple could point at, and
+ * — verified against every `enforce()`/`can()` call site in `apps/api/src` —
+ * no service behind any of these ever calls either again, in ANY form, once
+ * `route()`'s pre-check has passed. That absence is exactly what makes them
+ * different from the rest of the catalog.
+ *
+ * `decide.ts`'s `couldGrant` is the reason this list exists. For every OTHER
+ * permission, a coarse layer-1 pass granted by an unrelated tuple is safe: a
+ * real per-resource layer 2 always runs afterward and narrows it back down —
+ * `enforceOnChannel`/`enforceOn` with the loaded row's own target, or, for a
+ * handful of routes with no parent resource to load (`channel:create`), a
+ * SECOND role-only `enforce()` call that would deny a false positive on its
+ * own terms regardless of what layer 1 said. These permissions have neither:
+ * `org.service.ts`, `member.service.ts`, `team.service.ts`, and
+ * `audit.service.ts`'s `listAuditEntries` never call `enforce`/`can` a second
+ * time, so `route()`'s pre-check IS the entire authorization decision — and
+ * letting a tuple satisfy it here was a real vulnerability (any member of any
+ * channel could read the whole org audit log through it; see
+ * `ai/phase-5-chat.md`'s findings on `couldGrant`).
+ *
+ * `org:delete`, `org:billing`, `apiToken:create` and `apiToken:revoke` are not
+ * reachable through any route today, but are included on the same reasoning
+ * ahead of the day one is added — deleting or billing the org, or minting
+ * your own API credentials, will never be something a resource tuple grants.
+ *
+ * Telephony and platform permissions (`phoneNumber:*`, `automation:manage`,
+ * ...) are deliberately NOT here: those phases have not shipped, and whether
+ * a future phone number or automation becomes independently tuple-shareable
+ * is a decision for whoever builds it, not one to guess at now.
+ */
+const ORG_LEVEL_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
+  'org:read',
+  'org:update',
+  'org:delete',
+  'org:billing',
+  'member:read',
+  'member:invite',
+  'member:manage',
+  'member:remove',
+  'team:read',
+  'team:manage',
+  'audit:read',
+  'apiToken:create',
+  'apiToken:revoke',
+]);
+
+/** True when `permission` has no per-resource concept — see `ORG_LEVEL_PERMISSIONS`. */
+export function isOrgLevel(permission: Permission): boolean {
+  return ORG_LEVEL_PERMISSIONS.has(permission);
+}
+
 /** Narrows an arbitrary string to a known permission. Used at trust boundaries. */
 export function isPermission(value: string): value is Permission {
   return PERMISSION_SET.has(value);
