@@ -1,11 +1,11 @@
 # Phase 6 — Docs
 
-**Status: DRAFT — not yet approved.** Written to be reviewed and argued with, the same way
-`phase-4-realtime.md` and `phase-5-chat.md` were before their own approvals, and for the same
-reason: §3 names structural decisions that are expensive to unwind once spaces hold real pages
-with real permission grants on them, and §7 lists the calls that need to be made before Wave 1
-starts rather than defaulted into. Nothing here should be built until Phase 4 has shipped its
-Wave 1 + Wave 2 acceptance criteria (already true on `main`) — Docs' one write-exception socket
+**Status: APPROVED 2026-08-06.** §3 stands as written. Of the six open questions in §7, the two
+that block Wave 1's migration and process layout were decided on approval and are recorded in
+place with the reasoning (§7.2: `uuid[]` ancestor array, not `ltree`; §7.6: stand up `apps/collab`
+as a separate deployable in Wave 1, not deferred). The remaining four (§7.1, §7.3, §7.4, §7.5) are
+still open and, as originally scoped, need a call during Wave 1/2 rather than before either starts.
+Phase 4's Wave 1 + Wave 2 acceptance criteria are met on `main` — Docs' one write-exception socket
 server is a second, harder version of the room-authorization problem Phase 4 solved once.
 
 Parent: [PLAN.md](../PLAN.md) §3.3 (Docs), §7.2 (`docs.yjs_updates` / `docs.page_versions`), §9
@@ -381,11 +381,11 @@ mistaken for a real coupling when it happens.
    mechanism, or stay Docs-specific?** No second caller exists yet (Work's grants are flat). Build
    it scoped to Docs' tree now; revisit generalizing only if a third hierarchical resource shows
    up, per PLAN.md §16's own stated bias against building abstractions ahead of three callers.
-2. **Materialized path: `ltree` extension vs. a plain `uuid[]` ancestor-array column.** `ltree`
-   gives native containment/ancestor operators but is a Postgres extension to enable and reason
-   about on the managed free-tier instance; a plain array needs manual prefix-match queries but no
-   extension dependency. Leaning array, to avoid an extension-enablement question on infrastructure
-   this project doesn't control outright — needs a firm answer before §3.5's migration is written.
+2. **Materialized path: `ltree` extension vs. a plain `uuid[]` ancestor-array column. DECIDED on
+   approval: `uuid[]`.** No extension to enable on the managed free-tier instance; the migration
+   for §3.5's tree column defines an ancestor-array with a GIN index and manual prefix-match
+   queries (`ancestor_ids @> ARRAY[:pageId]` for "is under," `ancestor_ids[1:n]` slicing for
+   nearest-grant walk) rather than `ltree`'s native operators.
 3. **The exact mechanism for §3.8's save-boundary content whitelist pass.** Confirmed to be
    necessary and confirmed to be weaker than Work's reject-before-write guarantee; not yet decided
    whether the pass strips disallowed nodes silently, rejects the whole save, or flags the page for
@@ -399,11 +399,11 @@ mistaken for a real coupling when it happens.
 5. **Trash / soft delete semantics** — confirm this reuses Work's `deleted_at` pattern directly
    (a page moves to trash, is excluded from the tree and from search, and is purged or restorable
    for some retention window) rather than inventing a parallel mechanism.
-6. **Whether `apps/collab` is worth standing up as a genuinely separate deployable now**, given
-   PLAN.md §15's "component sprawl = attack surface" risk line names exactly this kind of new
-   network-listening process as the thing to be deliberate about adding. §3.2 argues the isolation
-   benefit outweighs it; worth one explicit sign-off given the risk register calls the general
-   pattern out by name, rather than treating §3.2's argument as sufficient by default.
+6. **Whether `apps/collab` is worth standing up as a genuinely separate deployable now. DECIDED on
+   approval: yes, in Wave 1.** §3.2's isolation argument — the write-exception stays contained to
+   one small, reviewable process instead of making CLAUDE.md rule 8 false for the whole of
+   `apps/realtime` — was weighed explicitly against PLAN.md §15's component-sprawl risk line and
+   judged to outweigh it, on the same terms `apps/realtime` itself was approved under in Phase 4.
 
 ## 8. Sequencing and cost
 
