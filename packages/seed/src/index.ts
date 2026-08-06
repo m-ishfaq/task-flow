@@ -30,6 +30,7 @@ export {
   findProfile,
   plannedCardCount,
   plannedMessageCount,
+  plannedPageCount,
   LIST_NAMES,
   WIP_LIMITED_LIST,
   WIP_LIMIT,
@@ -38,8 +39,10 @@ export {
   type ProjectPlan,
   type BoardPlan,
   type ChannelPlan,
+  type SpacePlan,
   type CardMix,
   type MessageMix,
+  type PageMix,
 } from './profiles.js';
 export { reset, type ResetOptions, type ResetResult } from './reset.js';
 
@@ -52,5 +55,7 @@ export { cardsModule } from './modules/work.cards.js';
 export { viewsModule } from './modules/work.views.js';
 export { channelsModule, type SeededChannel } from './modules/chat.channels.js';
 export { messagesModule, type SeededMessageRef } from './modules/chat.messages.js';
+export { spacesModule, type SeededSpace, type SeededPage } from './modules/docs.spaces.js';
+export { contentModule, editDocument } from './modules/docs.content.js';
 export { attachmentsModule } from './modules/platform.attachments.js';
 export { auditModule } from './modules/platform.audit.js';

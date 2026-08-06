@@ -20,9 +20,11 @@
     "@taskflow/filter": "workspace:*",
     "@taskflow/policy": "workspace:*",
     "@taskflow/security": "workspace:*",
-    "@taskflow/storage": "workspace:*"
+    "@taskflow/storage": "workspace:*",
+    "yjs": "^13.6.32"
   },
   "devDependencies": {
+    "@taskflow/collab": "workspace:*",
     "@taskflow/config": "workspace:*",
     "@types/node": "^22.10.2",
     "eslint": "^9.17.0",

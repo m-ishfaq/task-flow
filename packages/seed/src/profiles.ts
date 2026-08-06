@@ -110,6 +110,54 @@ export interface ChannelPlan {
   readonly withGuest?: boolean;
 }
 
+/**
+ * One Docs space and the shape of the tree inside it (Phase 6).
+ *
+ * The declared/generated split is drawn one level lower than `BoardPlan`'s,
+ * because the states worth having in a TREE are not counts — they are shapes,
+ * and a random tree of the right size produces none of them reliably. So the
+ * three that matter are guaranteed by construction and the rest of the tree is
+ * filled in around them:
+ *
+ *   - `depth` builds one root-to-leaf SPINE of exactly that length, first. The
+ *     nearest-ancestor grant walk (§3.4) and the `ancestor_ids` prefix match
+ *     are what this phase's authorization spine rests on, and a tree that
+ *     happened to come out three deep exercises neither.
+ *   - `wide` gives one parent exactly that many children — sibling ranks, the
+ *     `(rank, id)` ordering, and a tree render that has to hold up past a
+ *     screenful.
+ *   - `archivedSubtree` archives one whole branch of a LIVE space, which is a
+ *     different state from an archived space and hides a different bug: a
+ *     tree query that filters `archived_at IS NULL` on the page but forgets its
+ *     ancestors shows orphaned children hanging off nothing.
+ */
+export interface SpacePlan {
+  readonly name: string;
+  /** Pages in total, spine and wide set included. Zero is a real state. */
+  readonly pages: number;
+  /** Length of the one guaranteed root-to-leaf chain. 1 means a flat space. */
+  readonly depth: number;
+  /** One parent given exactly this many children. Omitted means none. */
+  readonly wide?: number;
+  /** An archived space keeps its whole tree, exactly as an archived project does. */
+  readonly archived?: boolean;
+  /** Archive one whole subtree inside a live space. See the note above. */
+  readonly archivedSubtree?: boolean;
+  /** Grants on pages and on the space itself — per-resource, on top of the role. */
+  readonly grants: number;
+  /**
+   * Give the org's first guest a tuple on ONE subtree and nothing else.
+   *
+   * The §3.3 case in fixture form: a guest's role grants nothing at all, so
+   * this tuple is the entire authorization deciding whether `apps/collab`'s
+   * `onAuthenticate` opens a document for them — and the pages it must NOT open
+   * are the ones in the same space one level up.
+   */
+  readonly withGuest?: boolean;
+  /** Seed real Yjs bodies — WAL rows and snapshots — for pages in this space. */
+  readonly content?: boolean;
+}
+
 export interface OrgPlan {
   readonly name: string;
   readonly slug: string;
@@ -127,6 +175,7 @@ export interface OrgPlan {
   /** Relationship tuples — per-resource grants on top of the role. */
   readonly grants: number;
   readonly channels: readonly ChannelPlan[];
+  readonly spaces: readonly SpacePlan[];
 }
 
 /**
@@ -194,6 +243,47 @@ export interface MessageMix {
   readonly attachmentRate: number;
 }
 
+/**
+ * How one page is filled in. `CardMix` and `MessageMix`'s counterpart.
+ *
+ * The rates here describe two different things and it is worth knowing which is
+ * which: `archivedRate`, `bodyRate` and the two history rates shape what the
+ * PRODUCT looks like, while `snapshotRate`, `prunedShare` and `tailRate` shape
+ * what the RECOVERY PATHS look like — which combination of `docs.page_versions`
+ * snapshot and `docs.yjs_updates` tail a page's content is spread across. All
+ * four combinations occur in a seeded database on purpose:
+ *
+ *   - no snapshot, WAL only            — a page opened once and never compacted
+ *   - snapshot + tail, WAL kept        — compaction ran, then editing continued
+ *   - snapshot + tail, WAL pruned      — the ordinary steady state
+ *   - snapshot, no tail                — compacted and untouched since
+ *
+ * `replayPage` (apps/collab) reconstructs all four the same way, and a bug in
+ * the boundary arithmetic shows up in exactly one of them. A fixture carrying
+ * only the easy case would let that ship.
+ */
+export interface PageMix {
+  /** Pages archived individually, outside a plan's `archivedSubtree`. */
+  readonly archivedRate: number;
+  /** Live pages that have any body content at all. */
+  readonly bodyRate: number;
+  readonly blocks: readonly [number, number];
+  /** WAL rows per page with a body — one per editing transaction. */
+  readonly updates: readonly [number, number];
+  /** Pages with a body that also have a `page_versions` row. */
+  readonly snapshotRate: number;
+  /** Share of those snapshots that are `manual` rather than `autosave`. */
+  readonly manualShare: number;
+  /** Share of snapshotted pages whose pre-snapshot WAL rows were pruned. */
+  readonly prunedShare: number;
+  /** Share of snapshotted pages with WAL rows written AFTER the snapshot. */
+  readonly tailRate: number;
+  /** Pages that emit a `page.updated` rename in their history. */
+  readonly renamedRate: number;
+  /** Pages that emit a `page.moved` in their history. */
+  readonly movedRate: number;
+}
+
 export interface Profile {
   readonly name: string;
   /** Size of the shared user pool. Org plans index into it. */
@@ -201,6 +291,7 @@ export interface Profile {
   readonly orgs: readonly OrgPlan[];
   readonly card: CardMix;
   readonly message: MessageMix;
+  readonly page: PageMix;
   /**
    * Share of cards that contribute lifecycle events to the outbox.
    *
@@ -222,6 +313,15 @@ export interface Profile {
    * it is the per-message chatter that is sampled.
    */
   readonly messageEventSampleRate: number;
+  /**
+   * The same sampling, for docs.
+   *
+   * SPACE structure is always emitted, as org and channel structure is. Page
+   * lifecycle is sampled for the reason cards are — and rather more so at
+   * volume, since `large` plans a tree an order of magnitude bigger than its
+   * board.
+   */
+  readonly docEventSampleRate: number;
   /** Whether to upload real objects and write attachment rows. */
   readonly attachments: boolean;
 }
@@ -278,18 +378,33 @@ const DEMO_MESSAGE_MIX: MessageMix = {
   attachmentRate: 0.05,
 };
 
+const DEMO_PAGE_MIX: PageMix = {
+  archivedRate: 0.08,
+  bodyRate: 0.75,
+  blocks: [3, 9],
+  updates: [2, 6],
+  snapshotRate: 0.55,
+  manualShare: 0.35,
+  prunedShare: 0.5,
+  tailRate: 0.7,
+  renamedRate: 0.15,
+  movedRate: 0.2,
+};
+
 /**
- * The default. Three tenants, ~1,350 live cards, ~2,500 messages, every Phase 3
- * and Phase 5 surface populated.
+ * The default. Three tenants, ~1,350 live cards, ~2,500 messages, ~150 pages,
+ * every Phase 3, Phase 5 and Phase 6 (Waves 1–2) surface populated.
  */
 const DEMO: Profile = {
   name: 'demo',
   users: 24,
   cardEventSampleRate: 0.35,
   messageEventSampleRate: 0.2,
+  docEventSampleRate: 0.4,
   attachments: true,
   card: DEMO_MIX,
   message: DEMO_MESSAGE_MIX,
+  page: DEMO_PAGE_MIX,
   orgs: [
     {
       name: 'Acme Corp',
@@ -342,6 +457,39 @@ const DEMO: Profile = {
         { name: null, type: 'dm', members: 2, messages: 30 },
         { name: null, type: 'dm', members: 2, messages: 12 },
         { name: null, type: 'group_dm', members: 4, messages: 70 },
+      ],
+      spaces: [
+        /* The one space that is actually a TREE: six levels deep, and one
+           parent with two dozen children. Everything the §3.4 resolver and the
+           `ancestor_ids` prefix match are for is only visible here. */
+        {
+          name: 'Engineering Handbook',
+          pages: 46,
+          depth: 6,
+          wide: 24,
+          grants: 5,
+          content: true,
+        },
+        /* A live space with one archived BRANCH — see `SpacePlan`'s note on why
+           that is a different state from an archived space. */
+        {
+          name: 'Product',
+          pages: 30,
+          depth: 3,
+          grants: 3,
+          archivedSubtree: true,
+          content: true,
+        },
+        /* The guest's one subtree. Signing in as them must reach exactly this
+           and nothing else — the §3.3 case, and the only place in the seeded
+           database where a page opens on a tuple alone. */
+        { name: 'Runbooks', pages: 18, depth: 2, grants: 2, withGuest: true, content: true },
+        /* Archived, and populated: "show archived" has to reveal a space that
+           was really used, exactly as the archived project does. */
+        { name: 'Onboarding', pages: 12, depth: 3, grants: 1, archived: true },
+        /* A space with NO pages. The tree, the breadcrumb and the page picker
+           each have an empty state that only this row exercises. */
+        { name: 'Customer Research', pages: 0, depth: 1, grants: 0 },
       ],
       projects: [
         {
@@ -421,6 +569,15 @@ const DEMO: Profile = {
         { name: null, type: 'dm', members: 2, messages: 40 },
         { name: null, type: 'dm', members: 2, messages: 18 },
       ],
+      /* The second tenant has docs for the same reason it has chat: the two-org
+         users must see the whole tree swap when they switch, and a leak between
+         tenants is only visible when both sides have something to leak. */
+      spaces: [
+        { name: 'Architecture Decisions', pages: 22, depth: 4, grants: 2, content: true },
+        /* Flat — every page a root. A tree renderer that assumes nesting and a
+           breadcrumb that assumes an ancestor both meet this space first. */
+        { name: 'Meeting Notes', pages: 14, depth: 1, grants: 1, content: true },
+      ],
       projects: [
         {
           name: 'Compliance',
@@ -454,6 +611,10 @@ const DEMO: Profile = {
          this is the one tenant where "you are the only person here" is a real
          state rather than something to mock up. */
       channels: [{ name: 'general', type: 'public', members: 1, messages: 25, topic: true }],
+      /* One person, so no grants at all: every page here is reachable through
+         the owner's role alone. The tuple-free path is worth having a fixture
+         for — it is what most pages in most tenants will actually be. */
+      spaces: [{ name: 'Side Notes', pages: 8, depth: 2, grants: 0, content: true }],
       projects: [
         {
           name: 'Side Project',
@@ -473,9 +634,14 @@ const MINIMAL: Profile = {
   users: 4,
   cardEventSampleRate: 1,
   messageEventSampleRate: 1,
+  docEventSampleRate: 1,
   attachments: false,
   card: { ...DEMO_MIX, archivedRate: 0, deletedRate: 0, attachmentRate: 0 },
   message: { ...DEMO_MESSAGE_MIX, deletedRate: 0, unfurlRate: 0, attachmentRate: 0 },
+  /* Content stays ON at this size. The recovery paths (§3.7) are the part of
+     Phase 6 most worth being able to check in seconds, and six pages of it cost
+     nothing — it is the TREE that gets small here, not the mechanism. */
+  page: { ...DEMO_PAGE_MIX, archivedRate: 0, bodyRate: 1, blocks: [2, 4], updates: [2, 4] },
   orgs: [
     {
       name: 'Test Org',
@@ -493,6 +659,7 @@ const MINIMAL: Profile = {
         { name: 'private-notes', type: 'private', members: 2, messages: 15, withGuest: true },
         { name: null, type: 'dm', members: 2, messages: 20 },
       ],
+      spaces: [{ name: 'Handbook', pages: 6, depth: 3, grants: 1, withGuest: true, content: true }],
       projects: [
         {
           name: 'First Project',
@@ -519,7 +686,28 @@ const LARGE: Profile = {
   users: 60,
   cardEventSampleRate: 0.01,
   messageEventSampleRate: 0.01,
+  docEventSampleRate: 0.01,
   attachments: false,
+  /**
+   * Page CONTENT is switched off here, and that is a different decision from
+   * switching card children off.
+   *
+   * The question this profile answers for Docs is whether the TREE holds up:
+   * whether `ancestor_ids @> ARRAY[:pageId]` stays an index scan at eight
+   * thousand pages and whether the nearest-ancestor walk is still cheap at
+   * depth ten. Bodies would answer none of that and would write hundreds of
+   * megabytes of `bytea` to ask it — the WAL and snapshot mechanisms are
+   * proven by `minimal` in seconds, and their cost here is measured in how
+   * long the seeder takes rather than in anything about the product.
+   */
+  page: {
+    ...DEMO_PAGE_MIX,
+    bodyRate: 0,
+    snapshotRate: 0,
+    updates: [0, 0],
+    renamedRate: 0.02,
+    movedRate: 0.02,
+  },
   /* Message CHILDREN are switched off for the same reason card children are:
      this profile answers "does a 20,000-message channel still page", and
      seeding a hundred thousand reactions to ask it would measure the seeder. */
@@ -563,6 +751,10 @@ const LARGE: Profile = {
       channels: [
         { name: 'firehose', type: 'public', members: 60, messages: 20_000 },
         { name: 'secondary', type: 'public', members: 20, messages: 5_000 },
+      ],
+      spaces: [
+        { name: 'Everything', pages: 8_000, depth: 10, wide: 400, grants: 12 },
+        { name: 'Secondary', pages: 2_000, depth: 4, grants: 4 },
       ],
       projects: [
         {
@@ -623,6 +815,22 @@ export function findProfile(name: string): Profile {
 export function plannedMessageCount(profile: Profile): number {
   return profile.orgs.reduce(
     (total, org) => total + org.channels.reduce((perOrg, channel) => perOrg + channel.messages, 0),
+    0,
+  );
+}
+
+/**
+ * Live pages across every org — for the plan the CLI prints.
+ *
+ * A ceiling rather than a floor, unlike `plannedMessageCount`: `pages` is the
+ * total a space generates, and the mix then archives a share of them, so the
+ * LIVE count comes out slightly under this. Stated as planned rather than
+ * predicted, for the same reason that function gives — an estimate reproducing
+ * the generator's own draws is one more thing that can disagree with the run.
+ */
+export function plannedPageCount(profile: Profile): number {
+  return profile.orgs.reduce(
+    (total, org) => total + org.spaces.reduce((perOrg, space) => perOrg + space.pages, 0),
     0,
   );
 }

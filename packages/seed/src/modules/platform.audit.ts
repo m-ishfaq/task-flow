@@ -5,6 +5,7 @@ import { defineSeedModule } from '../registry.js';
 import { attachmentsModule } from './platform.attachments.js';
 import { tuplesModule } from './authz.tuples.js';
 import { viewsModule } from './work.views.js';
+import { contentModule } from './docs.content.js';
 
 /**
  * The outbox, and the real hash-chained audit log it drains into.
@@ -31,11 +32,12 @@ export interface AuditOutput {
 
 export const auditModule = defineSeedModule({
   name: 'platform.audit',
-  /* Nothing reads `work.views`' output, so it is named here rather than
-     somewhere more meaningful — this module's `requires` is what pulls the
-     whole graph in, and a module no other module depends on has to be reached
-     from the root or it silently never runs. */
-  requires: [attachmentsModule, tuplesModule, viewsModule],
+  /* Nothing reads `work.views`' or `docs.content`'s output, so they are named
+     here rather than somewhere more meaningful — this module's `requires` is
+     what pulls the whole graph in, and a module no other module depends on has
+     to be reached from the root or it silently never runs. `docs.content`
+     reaches `docs.spaces` through its own `requires`. */
+  requires: [attachmentsModule, tuplesModule, viewsModule, contentModule],
   tables: ['platform.outbox'],
 
   async seed(ctx): Promise<AuditOutput> {

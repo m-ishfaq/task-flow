@@ -47,8 +47,13 @@ import {
  * ones where it does not — `member.added` carries both a membershipId and a
  * userId, and an audit trail that attributes a role change to the wrong subject
  * is worse than one that attributes it to nothing.
+ *
+ * Exported, with `NEVER_AUDITED`, for `audit.projection.test.ts` alone. A phase
+ * that registers an event and forgets this table writes audit entries with no
+ * subject at all, and nothing fails to say so — which is what happened to all
+ * nine Docs events, and to the twenty-five that test's `UNMAPPED` records.
  */
-const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>> = {
+export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>> = {
   /* A person renaming themselves. Resolves to `member` keyed on `userId`,
      matching `member.role_changed` above: the subject of the entry is the
      account, and "what has this account been called" is the question a reader
@@ -169,6 +174,33 @@ const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>> = {
      never looked up here because it never reaches `insertAuditEntry` at all
      — see `NEVER_AUDITED` below, which is where the exclusion actually
      happens. */
+
+  /* Docs (Phase 6). Pages resolve to the PAGE and spaces to the SPACE, which is
+     the ordinary "name the thing that changed" rule — and both are real entries
+     in `RESOURCE_TYPES`, so a tuple can point at either and the permission debug
+     endpoint reads the same vocabulary back.
+
+     `page.siblings_rebalanced` is the one that does not follow it, for the
+     reason `list.rebalanced` resolves to its board rather than to a card: the
+     event is a fact about a CONTAINER whose children were rewritten, and it
+     carries no single page id to name. It resolves to the space rather than to
+     the parent page because `parentPageId` is null for a rebalance among a
+     space's root pages — keying on it would drop `resource_id` to null for
+     exactly the rows at the top of the tree, where the blast radius is largest.
+
+     `page.version_saved` and `page.version_restored` resolve to the page, not
+     to the version: a version is not independently grantable, so it has no
+     resource type, and `versionId` travels in the payload where a reader can
+     still see which save point was involved. */
+  'space.created': { type: 'space', key: 'spaceId' },
+  'space.archived': { type: 'space', key: 'spaceId' },
+  'page.created': { type: 'page', key: 'pageId' },
+  'page.moved': { type: 'page', key: 'pageId' },
+  'page.updated': { type: 'page', key: 'pageId' },
+  'page.archived': { type: 'page', key: 'pageId' },
+  'page.siblings_rebalanced': { type: 'space', key: 'spaceId' },
+  'page.version_saved': { type: 'page', key: 'pageId' },
+  'page.version_restored': { type: 'page', key: 'pageId' },
 };
 
 /**
@@ -184,7 +216,7 @@ const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>> = {
  * still drives unread-badge sync and any future consumer) while keeping the
  * append-only, hash-chained log free of a write nobody will ever audit.
  */
-const NEVER_AUDITED: ReadonlySet<string> = new Set(['channel.read_advanced']);
+export const NEVER_AUDITED: ReadonlySet<string> = new Set(['channel.read_advanced']);
 
 interface Resource {
   readonly type: string | null;
