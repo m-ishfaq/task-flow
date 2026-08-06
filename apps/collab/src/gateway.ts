@@ -4,18 +4,21 @@ import type { Logger } from '@taskflow/observability';
 import { CollabAuthError, authenticateConnection } from './auth.js';
 import { allowedOrigins, type Env } from './config/env.js';
 import { appendUpdate, extractUpdateBytes } from './persist.js';
+import { replayPage } from './replay.js';
 
 /**
  * The collab gateway (ai/phase-6-docs.md §3.2, §3.3, §3.7, Wave 1 + Wave 2).
  *
- * Wave 1 shipped the authorization spine only. Wave 2 adds the one write
- * path this whole process exists for: `beforeHandleMessage` durably appends
- * every incoming Yjs update to `docs.yjs_updates` BEFORE Hocuspocus applies
- * it or acknowledges it to the client — see `persist.ts`'s header for why
- * that hook and not the more obvious `onChange`. Document loading/replay
- * (`onLoadDocument`) and periodic compaction are separate concerns, wired in
- * `main.ts` and `compaction.ts` respectively — this file's only job is the
- * connection lifecycle: who may connect, and what happens to what they send.
+ * Wave 1 shipped the authorization spine only. Wave 2 adds the write and
+ * read-back paths this whole process exists for: `beforeHandleMessage`
+ * durably appends every incoming Yjs update to `docs.yjs_updates` BEFORE
+ * Hocuspocus applies it or acknowledges it to the client (see `persist.ts`'s
+ * header for why that hook and not the more obvious `onChange`), and
+ * `onLoadDocument` reconstructs a page's state from the last snapshot plus
+ * the WAL tail the first time anyone opens it (`replay.ts`). Periodic
+ * compaction is a separate concern, wired in `main.ts`/`compaction.ts` — this
+ * file's job is the connection and document lifecycle: who may connect, what
+ * happens to what they send, and what a freshly loaded document starts from.
  */
 
 /** Carried on every connection from `onAuthenticate` onward — resolved once, read everywhere. */
@@ -115,6 +118,20 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
       if (update === null) return;
 
       await appendUpdate(data.context.orgId, data.context.pageId, update);
+    },
+
+    /**
+     * Runs once per document, the first time any connection requests it —
+     * Hocuspocus caches the loaded `Y.Doc` in memory afterward, so this is
+     * NOT called again per connection. `data.context` is populated by this
+     * point regardless of which connection triggered the load: `onAuthenticate`
+     * completes (and sets `hookPayload.context`) before `setUpNewConnection`
+     * ever calls into document creation — confirmed directly in
+     * @hocuspocus/server@4.5.0's own source, not assumed from the hook name
+     * ordering alone.
+     */
+    async onLoadDocument(data) {
+      await replayPage(data.document, data.context.orgId, data.context.pageId);
     },
   });
 
