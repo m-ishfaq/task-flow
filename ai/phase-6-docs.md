@@ -1,12 +1,14 @@
 # Phase 6 — Docs
 
-**Status: APPROVED 2026-08-06.** §3 stands as written. Of the six open questions in §7, the two
-that block Wave 1's migration and process layout were decided on approval and are recorded in
-place with the reasoning (§7.2: `uuid[]` ancestor array, not `ltree`; §7.6: stand up `apps/collab`
-as a separate deployable in Wave 1, not deferred). The remaining four (§7.1, §7.3, §7.4, §7.5) are
-still open and, as originally scoped, need a call during Wave 1/2 rather than before either starts.
-Phase 4's Wave 1 + Wave 2 acceptance criteria are met on `main` — Docs' one write-exception socket
-server is a second, harder version of the room-authorization problem Phase 4 solved once.
+**Status: APPROVED 2026-08-06; Wave 1 SHIPPED same day; Wave 2 in progress.** §3 stands as written.
+Of the six open questions in §7: §7.2 and §7.6 were decided on approval (Wave 1's migration and
+process layout depended on them); §7.4 was settled at the start of Wave 2 by reading the installed
+`@hocuspocus/server`'s own protocol handling (read-only IS server-enforced); §7.3 was decided at the
+same point (strip disallowed content silently, from the live `Y.Doc`, not just the snapshot). All
+four are recorded in place with their reasoning. §7.1 (whether the tree resolver generalizes) and
+§7.5 (trash semantics) remain open, deferred as originally scoped — neither blocks Wave 2. Phase 4's
+Wave 1 + Wave 2 acceptance criteria are met on `main` — Docs' one write-exception socket server is a
+second, harder version of the room-authorization problem Phase 4 solved once.
 
 **Where the draft turned out to be wrong**, checked against `apps/realtime`'s actual code rather
 than left as the draft's paraphrase of it: §3.3 said `onAuthenticate` calls `apps/api`'s
@@ -417,16 +419,27 @@ mistaken for a real coupling when it happens.
    for §3.5's tree column defines an ancestor-array with a GIN index and manual prefix-match
    queries (`ancestor_ids @> ARRAY[:pageId]` for "is under," `ancestor_ids[1:n]` slicing for
    nearest-grant walk) rather than `ltree`'s native operators.
-3. **The exact mechanism for §3.8's save-boundary content whitelist pass.** Confirmed to be
-   necessary and confirmed to be weaker than Work's reject-before-write guarantee; not yet decided
-   whether the pass strips disallowed nodes silently, rejects the whole save, or flags the page for
-   review. Needs an answer before Wave 2, since it's the one guardrail-4-adjacent mechanism in the
-   phase and the three options have materially different user-facing behavior.
+3. **The exact mechanism for §3.8's save-boundary content whitelist pass. DECIDED at Wave 2 start:
+   strip silently.** The pass runs the whitelist over the materialized document at the
+   compaction/snapshot boundary and, on finding a disallowed node or attribute, removes it from the
+   live `Y.Doc` itself via a transaction — not merely from the snapshot being written — so the
+   sanitized state is what every currently-connected client converges to as well, not just what
+   gets persisted. Chosen over "reject the whole save" (would block the update log from ever
+   compacting, and blocks every OTHER collaborator's legitimate concurrent edits from being
+   persisted along with the one bad node) and "flag for review" (leaves the dangerous content live
+   — e.g. a `javascript:` URL stays clickable — until a human notices, which is exactly the kind of
+   vigilance-dependent control this codebase's whole architecture exists to avoid). Consistent with
+   CLAUDE.md's own framing: guardrails fail automatically, never by relying on someone noticing a
+   flag.
 4. **Whether Hocuspocus's read-only connection mode is a server-enforced write rejection or an
-   advisory client hint.** §3.3 flags this as unverified against the library's actual behavior. If
-   advisory only, the auth hook itself must drop writes from read-only-marked connections rather
-   than relying on the library — buildable either way, but changes where the enforcement code
-   lives.
+   advisory client hint. DECIDED on Wave 2 start: server-enforced.** Read directly from the
+   installed `@hocuspocus/server@4.5.0`'s `readSyncMessage` (`hocuspocus-server.esm.js`): for both
+   `messageYjsUpdate` and `messageYjsSyncStep2`, a connection with `readOnly` true never reaches
+   `readUpdate`/`readSyncStep2` — the branch acks `writeSyncStatus(false)` and returns without
+   calling `Y.applyUpdate` at all. The update is neither applied to the shared document nor
+   propagated to other connections. `apps/collab`'s Wave 1 `onAuthenticate` already sets
+   `data.connectionConfig.readOnly` correctly; Wave 2 needs no additional enforcement code in the
+   hook itself — the library's own protocol handling is the enforcement.
 5. **Trash / soft delete semantics** — confirm this reuses Work's `deleted_at` pattern directly
    (a page moves to trash, is excluded from the tree and from search, and is purged or restorable
    for some retention window) rather than inventing a parallel mechanism.
