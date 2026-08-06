@@ -69,8 +69,12 @@ header above to stay honest on its own (§13's own history is exactly this failu
   `packages/policy/src/decide.ts`'s new `couldGrant(subject, permission)`: true if the role grants
   it OR the subject holds ANY tuple whose relation covers it, on any object — deliberately coarse,
   because layer 2 is still what makes the real decision once it has a resource. Covered by
-  `decide.test.ts`'s `couldGrant` suite; still wants a test that goes through the actual tRPC
-  router for a guest, which is the specific gap that let this hide.
+  `decide.test.ts`'s `couldGrant` suite, and now also by `guest.test.ts`'s "through the real tRPC
+  router" describe block — the specific gap that let this hide, since every other guest test calls
+  the service directly and never touches `route()`'s middleware. It covers all three shapes: a
+  granted guest reaching their channel through `createCallerFactory` (the exact case that used to
+  fail), a guest with no tuple anywhere still refused, and containment — a guest whose coarse
+  layer-1 pass (on one channel's tuple) still cannot reach a second channel through the route.
 - **The notification projection could never actually write a row.** Migration 0022 granted
   `taskflow_audit` table-level access to `platform.outbox_dispatch` (already true, shared with the
   `audit` consumer) but never added the three consumer-scoped RLS policies migration 0015's own

@@ -3,7 +3,8 @@ import { isAppError, unsafeAsId, type OrgId, type UserId } from '@taskflow/contr
 import { closeDatabase, initializeDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import type { Subject } from '@taskflow/policy';
-import { TEST_ENV } from '../testing/fixtures.js';
+import { TEST_ENV, testAppRouter, testContext, testPrincipal } from '../testing/fixtures.js';
+import { createCallerFactory } from '../trpc/builder.js';
 import * as orgs from '../tenancy/org.service.js';
 import * as members from '../tenancy/member.service.js';
 import { loadTuples } from '../tenancy/resolve.js';
@@ -53,6 +54,11 @@ const USERS: readonly [UserId, string][] = [
 ];
 
 const requestId = unsafeAsId<'RequestId'>('0195ee04-0000-7000-8000-0000000000ff');
+
+/* Wired once, at module scope: this only assembles the router structure and
+   touches no connection, so it is safe before `beforeAll` opens the pool. */
+const { router: chatAppRouter } = testAppRouter();
+const callerFactory = createCallerFactory(chatAppRouter);
 
 let admin: AdminConnection;
 const created: OrgId[] = [];
@@ -424,6 +430,92 @@ describe('where a guest cannot be invited', () => {
         }),
       ),
     ).toBe('VALIDATION_FAILED');
+  });
+});
+
+/**
+ * Through the real tRPC router — the layer every test above bypasses.
+ *
+ * `channels.getChannel(guest, ...)` above calls the service directly, which is
+ * exactly how the route-level bug (ai/phase-5-chat.md's "six more findings",
+ * item 1) stayed invisible: `builder.ts`'s `route()` middleware sits in front
+ * of the service and was never exercised by a test that skips it. Before
+ * `couldGrant`, `route()` answered `can(subject, permission)` with no target —
+ * role alone — and `GUEST` grants nothing from its role by design, so it
+ * refused a guest on every chat route before the tuple-aware service check
+ * below it ever ran. These three go through `createCallerFactory`, the same
+ * entry point a browser's tRPC client uses.
+ */
+describe('through the real tRPC router — the layer the service tests bypass', () => {
+  it('reaches the channel it was granted, through the route', async () => {
+    // The exact case that used to fail: a guest with a real tuple on this
+    // channel, refused before the fix by the layer-1 role check alone.
+    const { orgId, owner, refreshOwner } = await scaffold('guest-router-granted');
+    const channel = await channels.createChannel(owner, { type: 'private', name: 'project-x' });
+
+    await compliance.setGuestAccess(await refreshOwner(), {
+      channelId: channel.channelId,
+      userId: GUEST,
+      granted: true,
+      expiresAt: null,
+    });
+
+    const tuples = await loadTuples(orgId, GUEST);
+    const caller = callerFactory(
+      testContext({
+        principal: testPrincipal('guest', { userId: GUEST, org: { orgId, role: 'guest', tuples } }),
+      }),
+    );
+
+    const seen = await caller.chat.channels.get({ channelId: channel.channelId });
+    expect(seen.name).toBe('project-x');
+  });
+
+  it('is refused by the route with no grant at all', async () => {
+    // A guest holding no tuple anywhere is refused before AND after the fix —
+    // `couldGrant` still requires the role OR some tuple to cover the
+    // permission, and an empty tuple set satisfies neither. Distinguishing
+    // this from the case above is the point: the fix narrows who is refused,
+    // it does not remove the refusal.
+    const { orgId } = await scaffold('guest-router-none');
+
+    const tuples = await loadTuples(orgId, GUEST);
+    expect(tuples).toEqual([]);
+
+    const caller = callerFactory(
+      testContext({
+        principal: testPrincipal('guest', { userId: GUEST, org: { orgId, role: 'guest', tuples } }),
+      }),
+    );
+
+    await expect(caller.chat.channels.list()).rejects.toThrow();
+  });
+
+  it('cannot reach a second channel it holds no tuple on, through the route', async () => {
+    // The containment property, through the router this time: `couldGrant` is
+    // deliberately coarse (true if ANY tuple covers the permission, on any
+    // object), so this proves layer 2's `enforceOnChannel` is still what makes
+    // the real per-resource decision once the coarse layer-1 check has passed
+    // on the strength of the OTHER channel's tuple.
+    const { orgId, owner, refreshOwner } = await scaffold('guest-router-contained');
+    const invited = await channels.createChannel(owner, { type: 'private', name: 'project-x' });
+    const other = await channels.createChannel(owner, { type: 'private', name: 'leadership' });
+
+    await compliance.setGuestAccess(await refreshOwner(), {
+      channelId: invited.channelId,
+      userId: GUEST,
+      granted: true,
+      expiresAt: null,
+    });
+
+    const tuples = await loadTuples(orgId, GUEST);
+    const caller = callerFactory(
+      testContext({
+        principal: testPrincipal('guest', { userId: GUEST, org: { orgId, role: 'guest', tuples } }),
+      }),
+    );
+
+    await expect(caller.chat.channels.get({ channelId: other.channelId })).rejects.toThrow();
   });
 });
 
