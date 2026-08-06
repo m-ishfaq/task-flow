@@ -556,6 +556,7 @@ export function createChatRouter(deps: ChatRouterDeps) {
                 kind: z.string(),
                 subjectType: z.string(),
                 subjectId: z.string(),
+                channelId: z.string().nullable(),
                 title: z.string(),
                 excerpt: z.string().nullable(),
                 actorId: z.string().nullable(),
@@ -570,6 +571,15 @@ export function createChatRouter(deps: ChatRouterDeps) {
       unreadCount: route({ permission: 'channel:read' })
         .output(z.object({ unread: z.number().int().nonnegative() }))
         .query(({ ctx }) => notifications.unreadCount(actorOf(ctx))),
+
+      /* Marks the ONE notification the caller opened, not everything —
+         `markAllRead` stays for the bulk "clear the bell" action. Takes no
+         `userId`: the row is scoped to the caller inside the repository, the
+         same structural refusal every other self-scoped route here uses. */
+      markRead: route({ permission: 'channel:read' })
+        .input(z.object({ notificationId: z.string() }).strict())
+        .output(z.object({ marked: z.number().int().nonnegative() }))
+        .mutation(({ input, ctx }) => notifications.markRead(actorOf(ctx), input)),
 
       markAllRead: route({ permission: 'channel:read' })
         .output(z.object({ marked: z.number().int().nonnegative() }))

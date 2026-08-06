@@ -58,6 +58,10 @@ interface TypingMessage {
   readonly userId: string;
   readonly typing: boolean;
 }
+interface ChatPresenceMessage {
+  readonly channelId: string;
+  readonly userIds: readonly string[];
+}
 
 interface ServerToClientEvents {
   ready: (message: ReadyMessage) => void;
@@ -65,6 +69,7 @@ interface ServerToClientEvents {
   'channel:closed': (message: ChannelClosedMessage) => void;
   'session:ended': (message: SessionEndedMessage) => void;
   typing: (message: TypingMessage) => void;
+  presence: (message: ChatPresenceMessage) => void;
 }
 interface ClientToServerEvents {
   'channel:join': (
@@ -184,6 +189,19 @@ export function onTyping(handler: (message: TypingMessage) => void): () => void 
   return () => active.off('typing', handler);
 }
 
+/**
+ * Who else has this channel's room open right now — including DMs
+ * (`apps/realtime/src/gateway.ts`'s own note on that being a deliberate
+ * disclosure). Mirrors `socket.ts`'s `onPresence` for the board namespace;
+ * kept as a separate listener rather than merged with it for the same reason
+ * `ChatBroadcastMessage` stays its own type (this file's header).
+ */
+export function onChatPresence(handler: (message: ChatPresenceMessage) => void): () => void {
+  const active = ensureSocket();
+  active.on('presence', handler);
+  return () => active.off('presence', handler);
+}
+
 /** Torn down on sign-out, alongside the board socket (`shell.tsx`). */
 export function disconnectChatSocket(): void {
   joinedChannels.clear();
@@ -192,4 +210,4 @@ export function disconnectChatSocket(): void {
   socket = undefined;
 }
 
-export type { ChannelClosedMessage, ChatBroadcastMessage, TypingMessage };
+export type { ChannelClosedMessage, ChatBroadcastMessage, ChatPresenceMessage, TypingMessage };

@@ -78,7 +78,13 @@ describe('who is notified', () => {
     );
 
     expect(planned).toEqual([
-      { userId: BOB, kind: 'chat.direct', title: 'New direct message', excerpt: 'hello' },
+      {
+        userId: BOB,
+        kind: 'chat.direct',
+        title: 'New direct message',
+        excerpt: 'hello',
+        channelId: base.channelId,
+      },
     ]);
   });
 
@@ -91,6 +97,7 @@ describe('who is notified', () => {
         kind: 'chat.thread_reply',
         title: 'New reply to your message',
         excerpt: 'hello',
+        channelId: base.channelId,
       },
     ]);
   });
@@ -172,5 +179,15 @@ describe('malformed and unrelated input', () => {
     const planned = planNotifications(row({ ...base, channelName: null, mentionedUserIds: [BOB] }));
 
     expect(planned[0]?.title).toBe('You were mentioned');
+  });
+
+  it('carries the channel id through for click-to-open, and nulls it when absent', () => {
+    const planned = planNotifications(row({ ...base, mentionedUserIds: [BOB] }));
+    expect(planned[0]?.channelId).toBe(base.channelId);
+
+    const sparse = planNotifications(
+      row({ messageId: base.messageId, mentionedUserIds: [BOB] }),
+    );
+    expect(sparse[0]?.channelId).toBeNull();
   });
 });

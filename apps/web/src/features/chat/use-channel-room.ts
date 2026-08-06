@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ChannelId } from '@taskflow/contracts';
 import {
@@ -6,6 +6,7 @@ import {
   leaveChannelRoom,
   onChannelClosed,
   onChatBroadcast,
+  onChatPresence,
   onChatReconnect,
   type ChatBroadcastMessage,
 } from '../../lib/chat-socket.js';
@@ -37,14 +38,39 @@ import {
  * `message.deleted`/`channel.member_added`/`channel.member_removed` follow the
  * same reasoning as Work's structural events (`list.created` etc.): low
  * enough frequency, per channel, that a refetch is the whole cost.
+ *
+ * Also returns who else has this channel's room open — same shape as
+ * `use-board-room.ts`'s `presence`, backed by the same gateway mechanism
+ * (`apps/realtime/src/presence.ts`), including DMs (§2, deliberate — see
+ * `gateway.ts`'s own note on that disclosure).
  */
-export function useChannelRoom(orgId: string, channelId: ChannelId): void {
+export function useChannelRoom(
+  orgId: string,
+  channelId: ChannelId,
+): { readonly presence: readonly string[] } {
   const queryClient = useQueryClient();
+  const [presence, setPresence] = useState<readonly string[]>([]);
+
+  // Resets `presence` the moment the room identity changes, during render
+  // rather than in the effect below — same "adjusting state when a prop
+  // changes" pattern `use-board-room.ts` uses, for the same reason: a channel
+  // switch must not show the PREVIOUS channel's occupants for one frame.
+  const roomKey = `${orgId}:${channelId}`;
+  const [lastRoomKey, setLastRoomKey] = useState(roomKey);
+  if (roomKey !== lastRoomKey) {
+    setLastRoomKey(roomKey);
+    setPresence([]);
+  }
 
   useEffect(() => {
     if (orgId === '') return undefined;
 
     void joinChannelRoom(orgId, channelId);
+
+    const offPresence = onChatPresence((message) => {
+      if (message.channelId !== channelId) return;
+      setPresence(message.userIds);
+    });
 
     const offBroadcast = onChatBroadcast((message) => {
       if (message.channelId !== channelId) return;
@@ -82,6 +108,7 @@ export function useChannelRoom(orgId: string, channelId: ChannelId): void {
     });
 
     return () => {
+      offPresence();
       offBroadcast();
       offClosed();
       offReconnect();
@@ -89,6 +116,8 @@ export function useChannelRoom(orgId: string, channelId: ChannelId): void {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- queryClient is stable for the app's lifetime
   }, [orgId, channelId]);
+
+  return { presence };
 }
 
 function applyBroadcast(

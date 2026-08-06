@@ -606,12 +606,15 @@ function ChannelPanel({
   readonly orgId: string;
   readonly channelId: ChannelId;
 }) {
-  useChannelRoom(orgId, channelId);
+  const { presence } = useChannelRoom(orgId, channelId);
 
   const channel = useQuery(channelQuery(orgId, channelId));
   const messages = useQuery(messagesQuery(orgId, channelId));
   const viewerId = useSession((state) => state.userId);
-  const { personOf } = useMembers();
+  const { personOf, peopleOf } = useMembers();
+  /* "Who else is here" (§9), not a roster the viewer is already part of —
+     same exclusion `board-page.tsx` applies to its own presence list. */
+  const othersPresent = peopleOf(presence.filter((userId) => userId !== viewerId));
   const toast = useToast();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<string | null>(null);
@@ -973,6 +976,26 @@ function ChannelPanel({
               </p>
             )}
           </div>
+          {othersPresent.length > 0 && (
+            <div
+              className="flex items-center -space-x-1.5"
+              title={othersPresent.map((person) => person.label).join(', ')}
+            >
+              {othersPresent.slice(0, 5).map((person) => (
+                <span
+                  key={person.userId}
+                  className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-accent text-[10px] font-medium text-accent-ink"
+                >
+                  {person.label.slice(0, 2).toUpperCase()}
+                </span>
+              ))}
+              {othersPresent.length > 5 && (
+                <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-surface-sunken text-[10px] font-medium text-ink-muted">
+                  +{othersPresent.length - 5}
+                </span>
+              )}
+            </div>
+          )}
           <button
             type="button"
             onClick={() => {

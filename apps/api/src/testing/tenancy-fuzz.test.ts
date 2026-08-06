@@ -385,6 +385,10 @@ describe('the application router', () => {
          another organization's conversation into this one's sidebar. */
       'chat.saved.save',
       'chat.saved.unsave',
+      /* Takes a notificationId, unlike listMine/markAllRead/unreadCount below —
+         `markRead` names a specific row, so a cross-tenant substitution would
+         let one org silence (mark read) another org's notification. */
+      'chat.notifications.markRead',
     ]) {
       expect(byPath.get(path), `${path} was not enrolled by the fuzz harness`).toBe('denied');
     }

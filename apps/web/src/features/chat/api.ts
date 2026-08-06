@@ -475,6 +475,11 @@ export function markNotificationsRead() {
   return api.chat.notifications.markAllRead.mutate();
 }
 
+/** Marks the ONE notification just opened, without touching the rest of the bell. */
+export function markNotificationRead(notificationId: string) {
+  return api.chat.notifications.markRead.mutate({ notificationId });
+}
+
 export function invalidateSaved(client: QueryClient, orgId: string): void {
   void client.invalidateQueries({ queryKey: ['org', orgId, 'chat', 'saved'] });
 }

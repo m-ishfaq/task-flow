@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import * as Popover from '@radix-ui/react-popover';
 import { useSession } from '../../lib/session.js';
 import { cn } from '../../lib/cn.js';
@@ -7,9 +9,11 @@ import { Button, Empty } from '../../components/primitives.js';
 import { useMembers } from '../org/use-members.js';
 import {
   invalidateNotifications,
+  markNotificationRead,
   markNotificationsRead,
   notificationCountQuery,
   notificationsQuery,
+  type ChatNotification,
 } from './api.js';
 
 /**
@@ -30,17 +34,28 @@ import {
  * rather the point of it — so there is no room broadcast to ride on. The count
  * refetches on an interval; the same half-a-minute tradeoff the unread badges
  * already accept.
+ *
+ * ## Clicking a row marks ONLY that row read, and opens its channel
+ *
+ * `markAllRead` stays as the bulk "clear the bell" action, but reading one
+ * mention should not silently mark forty others read too — that is how a
+ * reply you never saw goes unanswered. Navigation is self-contained (this
+ * component owns its own `useNavigate` rather than taking a callback) because
+ * every notification here already carries the one thing needed to route it:
+ * `channelId`, snapshotted onto the row by the projection for exactly this.
  */
-export function NotificationBell({ onOpenChannel }: { readonly onOpenChannel?: () => void }) {
+export function NotificationBell() {
   const orgId = useSession((state) => state.orgId) ?? '';
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const toast = useToast();
   const { personOf } = useMembers();
+  const [open, setOpen] = useState(false);
 
   const count = useQuery({ ...notificationCountQuery(orgId), enabled: orgId !== '' });
   const list = useQuery({ ...notificationsQuery(orgId), enabled: orgId !== '' });
 
-  const markRead = useMutation({
+  const markAllRead = useMutation({
     mutationFn: () => markNotificationsRead(),
     onSuccess: () => {
       invalidateNotifications(queryClient, orgId);
@@ -50,10 +65,28 @@ export function NotificationBell({ onOpenChannel }: { readonly onOpenChannel?: (
     },
   });
 
+  const markOneRead = useMutation({
+    mutationFn: (notificationId: string) => markNotificationRead(notificationId),
+    onSuccess: () => {
+      invalidateNotifications(queryClient, orgId);
+    },
+    onError: (error) => {
+      toast.failure('That could not be marked read', error);
+    },
+  });
+
+  const openNotification = (notification: ChatNotification): void => {
+    if (notification.readAt === null) markOneRead.mutate(notification.notificationId);
+    setOpen(false);
+    if (notification.channelId !== null) {
+      void navigate({ to: '/chat', search: { channel: notification.channelId } });
+    }
+  };
+
   const unread = count.data?.unread ?? 0;
 
   return (
-    <Popover.Root>
+    <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
         <button
           type="button"
@@ -81,9 +114,9 @@ export function NotificationBell({ onOpenChannel }: { readonly onOpenChannel?: (
               <Button
                 size="sm"
                 variant="ghost"
-                disabled={markRead.isPending}
+                disabled={markAllRead.isPending}
                 onClick={() => {
-                  markRead.mutate();
+                  markAllRead.mutate();
                 }}
               >
                 Mark all read
@@ -102,41 +135,16 @@ export function NotificationBell({ onOpenChannel }: { readonly onOpenChannel?: (
             ) : (
               <ul>
                 {(list.data ?? []).map((notification) => (
-                  <li
+                  <NotificationRow
                     key={notification.notificationId}
-                    className={cn(
-                      'border-b border-line px-3 py-2 last:border-b-0',
-                      notification.readAt === null && 'bg-accent/5',
-                    )}
-                  >
-                    <button
-                      type="button"
-                      onClick={onOpenChannel}
-                      className="flex w-full flex-col gap-0.5 text-left"
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <span aria-hidden>{iconFor(notification.kind)}</span>
-                        <span className="min-w-0 flex-1 truncate text-xs font-medium text-ink">
-                          {notification.title}
-                        </span>
-                        {notification.readAt === null && (
-                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-                        )}
-                      </span>
-
-                      {notification.actorId !== null && (
-                        <span className="truncate text-[11px] text-ink-faint">
-                          {personOf(notification.actorId).label}
-                        </span>
-                      )}
-
-                      {notification.excerpt !== null && (
-                        <span className="line-clamp-2 text-xs text-ink-muted">
-                          {notification.excerpt}
-                        </span>
-                      )}
-                    </button>
-                  </li>
+                    notification={notification}
+                    actorLabel={
+                      notification.actorId === null ? null : personOf(notification.actorId).label
+                    }
+                    onOpen={() => {
+                      openNotification(notification);
+                    }}
+                  />
                 ))}
               </ul>
             )}
@@ -144,6 +152,45 @@ export function NotificationBell({ onOpenChannel }: { readonly onOpenChannel?: (
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
+  );
+}
+
+function NotificationRow({
+  notification,
+  actorLabel,
+  onOpen,
+}: {
+  readonly notification: ChatNotification;
+  readonly actorLabel: string | null;
+  readonly onOpen: () => void;
+}) {
+  return (
+    <li
+      className={cn(
+        'border-b border-line last:border-b-0',
+        notification.readAt === null && 'bg-accent/5',
+      )}
+    >
+      <button type="button" onClick={onOpen} className="flex w-full flex-col gap-0.5 px-3 py-2 text-left">
+        <span className="flex items-center gap-1.5">
+          <span aria-hidden>{iconFor(notification.kind)}</span>
+          <span className="min-w-0 flex-1 truncate text-xs font-medium text-ink">
+            {notification.title}
+          </span>
+          {notification.readAt === null && (
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+          )}
+        </span>
+
+        {actorLabel !== null && (
+          <span className="truncate text-[11px] text-ink-faint">{actorLabel}</span>
+        )}
+
+        {notification.excerpt !== null && (
+          <span className="line-clamp-2 text-xs text-ink-muted">{notification.excerpt}</span>
+        )}
+      </button>
+    </li>
   );
 }
 

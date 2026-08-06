@@ -61,6 +61,7 @@ interface PlannedNotification {
   readonly kind: 'chat.mention' | 'chat.direct' | 'chat.thread_reply';
   readonly title: string;
   readonly excerpt: string | null;
+  readonly channelId: string | null;
 }
 
 /**
@@ -77,6 +78,7 @@ export function planNotifications(row: OutboxRow): readonly PlannedNotification[
   if (typeof payload !== 'object' || payload === null) return [];
 
   const fields = payload as {
+    readonly channelId?: unknown;
     readonly mentionedUserIds?: unknown;
     readonly excerpt?: unknown;
     readonly channelName?: unknown;
@@ -86,6 +88,7 @@ export function planNotifications(row: OutboxRow): readonly PlannedNotification[
 
   const excerpt = typeof fields.excerpt === 'string' ? fields.excerpt : null;
   const channelName = typeof fields.channelName === 'string' ? fields.channelName : null;
+  const channelId = typeof fields.channelId === 'string' ? fields.channelId : null;
 
   /* Deduplicated ACROSS kinds, not just within one. Somebody mentioned in a
      reply to their own message in a DM would otherwise get three rows for one
@@ -101,7 +104,7 @@ export function planNotifications(row: OutboxRow): readonly PlannedNotification[
     if (userId === row.actorId) return;
     if (told.has(userId)) return;
     told.add(userId);
-    planned.push({ userId, kind, title, excerpt });
+    planned.push({ userId, kind, title, excerpt, channelId });
   };
 
   for (const userId of asIdList(fields.mentionedUserIds)) {
@@ -154,6 +157,7 @@ export async function drainNotifications(limit = 100): Promise<NotificationDrain
             kind: plan.kind,
             subjectType: 'message',
             subjectId: subjectIdOf(row) ?? row.id,
+            channelId: plan.channelId,
             title: plan.title,
             excerpt: plan.excerpt,
             actorId: row.actorId,

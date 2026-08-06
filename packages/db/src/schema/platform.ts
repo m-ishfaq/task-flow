@@ -212,6 +212,15 @@ export const notifications = platform.table(
     subjectType: text('subject_type').notNull(),
     subjectId: uuid('subject_id').notNull(),
 
+    /**
+     * Where clicking this notification should navigate. No FK, for the same
+     * reason `subjectId` has none — a channel can be archived or the message
+     * retained-away without erasing the record that someone was told
+     * something. Null for a notification kind that has no single channel
+     * (none exist yet; every current kind is chat-originated).
+     */
+    channelId: uuid('channel_id'),
+
     /** A snapshot of what the recipient was entitled to see when they were told. */
     title: text('title').notNull(),
     excerpt: text('excerpt'),

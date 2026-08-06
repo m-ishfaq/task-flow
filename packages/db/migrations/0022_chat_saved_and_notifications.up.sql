@@ -95,6 +95,13 @@ CREATE TABLE platform.notifications (
   subject_type  text        NOT NULL,
   subject_id    uuid        NOT NULL,
 
+  -- Where opening this notification navigates. No FK, same reasoning as
+  -- subject_id: a channel can be archived, or a message retained-away,
+  -- without erasing the record that someone was told something. Null for a
+  -- notification kind with no single channel — none exist yet; every kind
+  -- today is chat-originated.
+  channel_id    uuid,
+
   -- Enough to render the row without reading the subject. A notification list
   -- showing fifty items must not be fifty joins into channels and messages the
   -- reader may no longer have access to — and MUST NOT re-disclose content from

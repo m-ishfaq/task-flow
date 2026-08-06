@@ -39,6 +39,7 @@ export interface NotificationSummary {
   readonly kind: string;
   readonly subjectType: string;
   readonly subjectId: string;
+  readonly channelId: string | null;
   readonly title: string;
   readonly excerpt: string | null;
   readonly actorId: string | null;
@@ -57,6 +58,7 @@ export async function listMine(actor: ChatActor): Promise<readonly NotificationS
         kind: schema.notifications.kind,
         subjectType: schema.notifications.subjectType,
         subjectId: schema.notifications.subjectId,
+        channelId: schema.notifications.channelId,
         title: schema.notifications.title,
         excerpt: schema.notifications.excerpt,
         actorId: schema.notifications.actorId,
@@ -90,6 +92,36 @@ export async function unreadCount(actor: ChatActor): Promise<{ readonly unread: 
       );
 
     return { unread: rows.length };
+  });
+}
+
+/**
+ * Marks one of the caller's own notifications read — the "open it" path, when
+ * clicking a single row should not also silence every other unread one.
+ *
+ * `id = notificationId AND userId = caller` together, not id alone: RLS scopes
+ * to the ORG, and `platform.notifications` holds every member's rows, so id
+ * alone would let one person mark somebody ELSE's notification read by
+ * guessing or reusing an id.
+ */
+export async function markRead(
+  actor: ChatActor,
+  input: { readonly notificationId: string },
+): Promise<{ readonly marked: number }> {
+  return withOrgScope(orgOf(actor), async (tx) => {
+    const marked = await tx
+      .update(schema.notifications)
+      .set({ readAt: new Date() })
+      .where(
+        and(
+          eq(schema.notifications.id, input.notificationId),
+          eq(schema.notifications.userId, userOf(actor)),
+          isNull(schema.notifications.readAt),
+        ),
+      )
+      .returning({ id: schema.notifications.id });
+
+    return { marked: marked.length };
   });
 }
 
