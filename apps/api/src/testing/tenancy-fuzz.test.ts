@@ -430,6 +430,12 @@ describe('the application router', () => {
       'chat.notifications.markAllRead',
       'chat.notifications.unreadCount',
       'chat.saved.list',
+      /* Same shape as `chat.channels.list` above — every space in the
+         CALLER's org, filtered by RLS alone. There is no id to substitute;
+         calling it with the victim's bag returns the attacker's own org's
+         spaces and succeeds, which this technique cannot distinguish from a
+         leak. The RLS tests cover cross-tenant isolation instead. */
+      'docs.spaces.list',
       'tenancy.audit.verify',
       'tenancy.members.list',
       'tenancy.orgs.get',

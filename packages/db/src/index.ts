@@ -118,7 +118,13 @@ export {
  */
 export type { SQL } from 'drizzle-orm';
 
-export { increment, decrement, coalesce, compiledPredicate } from './expressions.js';
+export {
+  increment,
+  decrement,
+  coalesce,
+  compiledPredicate,
+  uuidArrayContains,
+} from './expressions.js';
 
 /**
  * Enumerating tenants, for background jobs that visit every organization.

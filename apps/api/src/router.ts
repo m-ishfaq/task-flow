@@ -4,6 +4,7 @@ import { createIdentityRouter, type IdentityRouterDeps } from './identity/router
 import { createTenancyRouter } from './tenancy/router.js';
 import { createWorkRouter, type WorkRouterDeps } from './work/router.js';
 import { createChatRouter } from './chat/router.js';
+import { createDocsRouter } from './docs/router.js';
 
 /**
  * The root router.
@@ -77,6 +78,16 @@ export function createAppRouter(deps: AppRouterDeps) {
      * other is not.
      */
     chat: createChatRouter(deps.work.attachments),
+
+    /**
+     * Docs — spaces and the page tree (Phase 6, Wave 1).
+     *
+     * No dependencies: like tenancy and Work's core, everything it needs is
+     * the tenant-scoped database and the policy engine, both module-level and
+     * stateless. Live collaborative editing is `apps/collab`, a separate
+     * process — nothing here talks to it.
+     */
+    docs: createDocsRouter(),
   });
 }
 

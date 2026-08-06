@@ -13,7 +13,8 @@
     "./tenancy/resolve": "./src/tenancy/resolve.ts",
     "./work/board": "./src/work/board.service.ts",
     "./events/chat": "./src/chat/events.ts",
-    "./chat/channel": "./src/chat/shared.ts"
+    "./chat/channel": "./src/chat/shared.ts",
+    "./docs/page": "./src/docs/shared.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",
