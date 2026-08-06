@@ -155,9 +155,16 @@ describe('save / unsave', () => {
 
 describe('listSaved — with channel info and an excerpt', () => {
   it('aggregates saves from more than one channel', async () => {
-    const { alice } = await scaffold('save-aggregate');
-    const general = await channels.createChannel(alice, { type: 'public', name: 'general' });
-    const secret = await channels.createChannel(alice, { type: 'private', name: 'secret' });
+    const { orgId, alice: creator } = await scaffold('save-aggregate');
+    const general = await channels.createChannel(creator, { type: 'public', name: 'general' });
+    const secret = await channels.createChannel(creator, { type: 'private', name: 'secret' });
+
+    /* `secret` is CLOSED (`decide.ts`'s `target.closed` bypasses role
+       entirely), so `creator`'s pre-existing snapshot — captured before
+       `secret` existed — does not carry the `member` tuple `createChannel`
+       just wrote for her on it. Same trap `wave2.service.test.ts`'s own
+       reaction suite already documents. */
+    const alice = await actorFor(orgId, ALICE, 'owner');
 
     const first = await messages.sendMessage(alice, {
       channelId: general.channelId,
@@ -190,9 +197,13 @@ describe('listSaved — with channel info and an excerpt', () => {
   });
 
   it('stops resolving a save in a channel the caller has since lost access to', async () => {
-    const { orgId, alice } = await scaffold('save-lost-access');
+    const { orgId, alice: preCreation } = await scaffold('save-lost-access');
 
-    const priv = await channels.createChannel(alice, { type: 'private', name: 'secret' });
+    const priv = await channels.createChannel(preCreation, { type: 'private', name: 'secret' });
+    // Refreshed: `preCreation` does not carry the tuple `createChannel` just
+    // wrote for her on `priv`, and `addChannelMember` needs `channel:manage`
+    // on it to add someone else.
+    const alice = await actorFor(orgId, ALICE, 'owner');
     await channels.addChannelMember(alice, { channelId: priv.channelId, userId: BOB });
 
     const bob = await actorFor(orgId, BOB, 'member');

@@ -348,7 +348,10 @@ describe('listChannelGuests — the invite panel roster', () => {
     const { owner, refreshOwner } = await scaffold('guest-list-excludes-member');
     const channel = await channels.createChannel(owner, { type: 'private', name: 'project-x' });
 
-    await channels.addChannelMember(owner, { channelId: channel.channelId, userId: MEMBER });
+    await channels.addChannelMember(await refreshOwner(), {
+      channelId: channel.channelId,
+      userId: MEMBER,
+    });
     await compliance.setGuestAccess(await refreshOwner(), {
       channelId: channel.channelId,
       userId: GUEST,

@@ -289,9 +289,16 @@ describe('pins', () => {
 
 describe('listAllPinned — the sidebar surface, across every channel', () => {
   it('aggregates pins from more than one channel, with channel info and an excerpt', async () => {
-    const { alice } = await scaffold('pin-all-aggregate');
-    const general = await channels.createChannel(alice, { type: 'public', name: 'general' });
-    const random = await channels.createChannel(alice, { type: 'private', name: 'random' });
+    const { orgId, alice: creator } = await scaffold('pin-all-aggregate');
+    const general = await channels.createChannel(creator, { type: 'public', name: 'general' });
+    const random = await channels.createChannel(creator, { type: 'private', name: 'random' });
+
+    /* `random` is CLOSED (`decide.ts`'s `target.closed` bypasses role entirely),
+       so `creator`'s pre-existing snapshot — captured before `random` existed —
+       does not carry the `member` tuple `createChannel` just wrote for her on
+       it. Same trap `wave2.service.test.ts`'s own reaction suite already
+       documents: an actor is only as current as the tuples it was built with. */
+    const alice = await actorFor(orgId, ALICE, 'owner');
 
     const first = await messages.sendMessage(alice, {
       channelId: general.channelId,
@@ -324,9 +331,13 @@ describe('listAllPinned — the sidebar surface, across every channel', () => {
   });
 
   it('stops resolving a pin in a channel the caller has since lost access to', async () => {
-    const { orgId, alice } = await scaffold('pin-all-lost-access');
+    const { orgId, alice: preCreation } = await scaffold('pin-all-lost-access');
 
-    const priv = await channels.createChannel(alice, { type: 'private', name: 'secret' });
+    const priv = await channels.createChannel(preCreation, { type: 'private', name: 'secret' });
+    // Refreshed: `preCreation` does not carry the tuple `createChannel` just
+    // wrote for her on `priv`, and `addChannelMember` needs `channel:manage`
+    // on it to add someone else.
+    const alice = await actorFor(orgId, ALICE, 'owner');
     await channels.addChannelMember(alice, { channelId: priv.channelId, userId: BOB });
 
     const bob = await actorFor(orgId, BOB, 'member');
