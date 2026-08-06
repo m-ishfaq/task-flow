@@ -3,7 +3,9 @@ import {
   check,
   customType,
   index,
+  jsonb,
   pgSchema,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -174,3 +176,118 @@ export const pageVersions = docs.table(
     check('page_versions_kind_valid', sql`${table.kind} IN ('autosave', 'manual')`),
   ],
 );
+
+/**
+ * Comments (Wave 3, §3.6). `anchorFrom`/`anchorTo` are opaque, serialized Yjs
+ * `RelativePosition`s — see the migration's own header for why: neither this
+ * schema nor any server process ever decodes what character they point at,
+ * only that they are structurally valid (`apps/api/src/docs/anchor.ts`).
+ */
+export const comments = docs.table(
+  'comments',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id').notNull(),
+    pageId: uuid('page_id').notNull(),
+
+    anchorFrom: bytea('anchor_from').notNull(),
+    anchorTo: bytea('anchor_to').notNull(),
+
+    body: jsonb('body').notNull(),
+    bodyText: text('body_text').notNull(),
+
+    /** A resolved comment stays in the thread — only hidden from the default view. */
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    resolvedBy: uuid('resolved_by').references(() => users.id, { onDelete: 'set null' }),
+
+    authorId: uuid('author_id').references(() => users.id, { onDelete: 'set null' }),
+    editedAt: timestamp('edited_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('comments_page_idx')
+      .on(table.orgId, table.pageId, table.createdAt)
+      .where(sql`deleted_at IS NULL`),
+  ],
+);
+
+/**
+ * Suggestions (Wave 3, §3.6) — a tracked-change-style proposed edit. Accept/
+ * reject is STATE only; applying an accepted suggestion to the live document
+ * is a client-side edit through the ordinary Yjs sync session (see the
+ * migration's own header — the same "known limitation, named rather than
+ * assumed away" shape `page-version.service.ts`'s restore already has).
+ */
+export const suggestions = docs.table(
+  'suggestions',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id').notNull(),
+    pageId: uuid('page_id').notNull(),
+
+    anchorFrom: bytea('anchor_from').notNull(),
+    anchorTo: bytea('anchor_to').notNull(),
+
+    /** 'insert' | 'delete' | 'replace'. */
+    kind: text('kind').notNull(),
+    /** Null for 'delete'. */
+    proposedContent: jsonb('proposed_content'),
+
+    /** 'pending' | 'accepted' | 'rejected'. */
+    status: text('status').notNull().default('pending'),
+    decidedBy: uuid('decided_by').references(() => users.id, { onDelete: 'set null' }),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+
+    authorId: uuid('author_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('suggestions_page_pending_idx')
+      .on(table.orgId, table.pageId, table.createdAt)
+      .where(sql`status = 'pending'`),
+    check('suggestions_kind_valid', sql`${table.kind} IN ('insert', 'delete', 'replace')`),
+    check('suggestions_status_valid', sql`${table.status} IN ('pending', 'accepted', 'rejected')`),
+  ],
+);
+
+/**
+ * Backlinks (Wave 3, §3.10) — "which pages link to this one". A plain edge
+ * list, wholesale-recomputed per source page by the backlinks relay, never
+ * patched incrementally — see `apps/api/src/docs/backlinks.ts`.
+ */
+export const backlinks = docs.table(
+  'backlinks',
+  {
+    orgId: uuid('org_id').notNull(),
+    sourcePageId: uuid('source_page_id').notNull(),
+    targetPageId: uuid('target_page_id').notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.orgId, table.sourcePageId, table.targetPageId] }),
+    index('backlinks_target_idx').on(table.orgId, table.targetPageId),
+  ],
+);
+
+/**
+ * The backlinks relay's dispatch bookkeeping (Wave 3, migration 0025's own
+ * header). A row here means PROCESSED — written by the consumer
+ * (`taskflow_backlinks`) after folding a `page_versions` row into
+ * `docs.backlinks`, never by whatever wrote that row in the first place.
+ * Absence is "not yet processed": an existence anti-join, not a position
+ * cursor (the same choice migration 0015 made for `outbox_dispatch`, for
+ * the same reason).
+ */
+export const backlinkDispatch = docs.table('backlink_dispatch', {
+  pageVersionId: uuid('page_version_id')
+    .primaryKey()
+    .references(() => pageVersions.id, { onDelete: 'cascade' }),
+  orgId: uuid('org_id')
+    .notNull()
+    .references(() => orgs.id, { onDelete: 'cascade' }),
+
+  processedAt: timestamp('processed_at', { withTimezone: true }).notNull().defaultNow(),
+});

@@ -76,6 +76,24 @@ CREATE ROLE taskflow_realtime WITH LOGIN PASSWORD 'realtime-dev-secret' NOSUPERU
 CREATE ROLE taskflow_collab WITH LOGIN PASSWORD 'collab-dev-secret' NOSUPERUSER NOCREATEDB
   NOCREATEROLE NOBYPASSRLS;
 
+-- ---------------------------------------------------------------------------
+-- taskflow_backlinks — the backlinks relay's outbox-style consumer (Phase 6
+-- Wave 3, ai/phase-6-docs.md §3.10, migration 0025's own header).
+--
+-- A FOURTH consumer role, mirroring taskflow_audit and taskflow_realtime:
+-- NOBYPASSRLS, reaching across every tenant only on the tables carrying an
+-- explicit `TO taskflow_backlinks` policy, for the identical "one relay
+-- drains one queue" reason neither of those two roles is tenant-scoped
+-- either. Narrower than both precedents in one respect: its claim-step
+-- grant on docs.page_versions is COLUMN-LEVEL and excludes `state` — this
+-- role can discover WHICH pages changed and never read what changed. The
+-- content read that actually extracts links happens afterward, per page,
+-- over the ordinary taskflow_app connection under ordinary org scoping —
+-- this role never touches docs.backlinks either.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_backlinks WITH LOGIN PASSWORD 'backlinks-dev-secret' NOSUPERUSER NOCREATEDB
+  NOCREATEROLE NOBYPASSRLS;
+
 -- Baseline grants live in 03-grants.sql, NOT here.
 --
 -- Roles are cluster-wide; grants are per-database. This file creates the roles
