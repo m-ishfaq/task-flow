@@ -275,6 +275,41 @@ export function allowed(subject: Subject, permission: Permission, target?: Targe
 }
 
 /**
+ * Whether `subject` could ever be granted `permission` — by role, or by
+ * holding ANY tuple whose relation covers it, on any object at all.
+ *
+ * ## What this answers, and what it deliberately does not
+ *
+ * `apps/api/src/trpc/builder.ts`'s `route()` runs a permission check BEFORE
+ * the handler loads a specific resource — "may a member of this role do this
+ * kind of thing at all", the route's own comment calls it. That question is
+ * `roleGrants(role, permission)` for every role except one: `guest` grants
+ * NOTHING from the role alone by design (`roles.ts`) — a guest's entire
+ * access is a tuple on the one channel they were invited to. `can()` called
+ * with no target answers strictly from the role (see the no-target branch
+ * above), so that pre-check refused every guest on every chat route before
+ * the handler ever loaded the channel that would have granted them the
+ * permission through their tuple. Layer 2 — `enforce()`, called once a
+ * specific resource is loaded — never got a chance to say otherwise.
+ *
+ * This function is the fix, and it is intentionally coarse: it does not know
+ * or care WHICH object a tuple points at, only that relations grant actions
+ * by suffix regardless of resource type (`relationGrants`) — the same
+ * looseness `nearestApplicable`'s per-resource matching already relies on to
+ * stay resource-agnostic. A guest holding a tuple on channel A passes this
+ * check when asking about channel B too; that is safe because this is ONLY
+ * the coarse pre-check ("could this principal EVER hold this permission"),
+ * and the specific answer for channel B is still `enforce()`'s alone to give
+ * once it loads that row. Widening layer 1 costs nothing here — the
+ * boundary this system actually depends on is layer 2, always has been.
+ */
+export function couldGrant(subject: Subject, permission: Permission): boolean {
+  if (!isRole(subject.role)) return false;
+  if (roleGrants(subject.role, permission)) return true;
+  return subject.tuples.some((tuple) => relationGrants(tuple.relation, permission));
+}
+
+/**
  * The tuples closest to the resource.
  *
  * Distance 0 is the resource itself, 1 its parent, and so on. Only the nearest

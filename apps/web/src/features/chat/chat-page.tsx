@@ -606,6 +606,7 @@ function ChannelPanel({
   readonly orgId: string;
   readonly channelId: ChannelId;
 }) {
+  const navigate = useNavigate();
   const { presence } = useChannelRoom(orgId, channelId);
 
   const channel = useQuery(channelQuery(orgId, channelId));
@@ -957,6 +958,41 @@ function ChannelPanel({
 
   const typingUsers = useTypingUsers(channelId, viewerId);
   const typingLabel = describeTyping(typingUsers, personOf);
+
+  /**
+   * A channel that does not exist and a channel this caller cannot read
+   * answer identically: NOT_FOUND (`packages/policy/src/enforce.ts` — 403
+   * would confirm the channel exists across a boundary that is supposed to
+   * be invisible). This is that answer's ONE consumer with a screen to
+   * render, so it has to make the same non-disclosure choice the server
+   * already made: never say "you don't have access" specifically, because
+   * that is exactly the confirmation NOT_FOUND was chosen to avoid handing
+   * back. Same reasoning as a pasted board/card link answering NOT_A_MEMBER
+   * with a redirect rather than an explanation (CLAUDE.md, Phase 3 web notes).
+   *
+   * Every hook above still runs unconditionally on every render — this is
+   * the trailing branch of the function body, not a conditional hook call.
+   */
+  if (channel.isError) {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center p-8">
+        <Empty
+          title="This conversation isn't available"
+          description="It may not exist, or you may not have access to it."
+          action={
+            <Button
+              variant="secondary"
+              onClick={() => {
+                void navigate({ to: '/chat', search: { channel: undefined } });
+              }}
+            >
+              Back to your conversations
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-0 flex-1">

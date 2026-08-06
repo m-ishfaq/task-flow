@@ -51,6 +51,7 @@ export {
 export {
   can,
   allowed,
+  couldGrant,
   formatTrace,
   type Decision,
   type PolicyLayer,

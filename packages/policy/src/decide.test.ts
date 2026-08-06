@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isAppError, unsafeAsId, type OrgId, type UserId } from '@taskflow/contracts';
-import { can, formatTrace, allowed, type Subject, type Target } from './decide.js';
+import { can, couldGrant, formatTrace, allowed, type Subject, type Target } from './decide.js';
 import { enforce } from './enforce.js';
 import type { RelationshipTuple } from './tuples.js';
 import type { Role } from './roles.js';
@@ -43,6 +43,44 @@ describe('org-level capabilities', () => {
     // org-level check would mean owning a board could delete the organization.
     const withOwnership = subject('member', [tuple('owner', BOARD)]);
     expect(can(withOwnership, 'org:delete').allowed).toBe(false);
+  });
+});
+
+describe('couldGrant — the route-level pre-check', () => {
+  /* apps/api/src/trpc/builder.ts's `route()` runs this, with no resource
+     loaded yet, before every handler behind `permission`. The regression this
+     guards: it used to call `can(subject, permission)` with no target, which
+     answers from ROLE ALONE (see the no-target branch in `can` above) — right
+     for every role except `guest`, which grants nothing by itself. That
+     refused a guest on every chat route before the handler ever loaded the
+     one channel their TUPLE would have granted them — layer 2 never ran. */
+
+  it('grants what the role grants, same as before', () => {
+    expect(couldGrant(subject('owner'), 'org:delete')).toBe(true);
+    expect(couldGrant(subject('admin'), 'org:delete')).toBe(false);
+  });
+
+  it('a guest with a channel tuple passes the pre-check for channel:read', () => {
+    const channel = { type: 'channel', id: 'chan_1' } as const;
+    const guest = subject('guest', [tuple('member', channel)]);
+
+    // The role alone still grants nothing — this is not a role change.
+    expect(couldGrant(subject('guest'), 'channel:read')).toBe(false);
+    // But a guest who holds ANY tuple whose relation covers the permission
+    // must pass the coarse pre-check, or the handler that would consult
+    // their tuple on the SPECIFIC channel never runs at all.
+    expect(couldGrant(guest, 'channel:read')).toBe(true);
+  });
+
+  it('a guest with no tuples at all still fails the pre-check', () => {
+    // Not a regression to relax: someone who holds nothing, by role or by
+    // tuple, cannot pass this on any object, and layer 2 would only confirm
+    // that at the cost of a wasted round trip.
+    expect(couldGrant(subject('guest'), 'channel:read')).toBe(false);
+  });
+
+  it('an unrecognized role denies, the same as can() does', () => {
+    expect(couldGrant(subject('temp-worker' as Role), 'channel:read')).toBe(false);
   });
 });
 
