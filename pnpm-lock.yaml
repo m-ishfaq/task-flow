@@ -152,6 +152,12 @@ importers:
       '@taskflow/security':
         specifier: workspace:*
         version: link:../../packages/security
+      lib0:
+        specifier: ^0.2.117
+        version: 0.2.117
+      y-protocols:
+        specifier: ^1.0.7
+        version: 1.0.7(yjs@13.6.32)
       yjs:
         specifier: ^13.6.32
         version: 13.6.32

@@ -363,6 +363,70 @@ export function createRealtimeAdapterPool(): pg.Pool {
   return adapterPool;
 }
 
+/* -------------------------------------------------------------------------- *
+ * The collab connection (ai/phase-6-docs.md §6.1, Phase 6 Wave 2)
+ * -------------------------------------------------------------------------- */
+
+let collabPool: pg.Pool | undefined;
+let collabDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes `apps/collab`'s write-exception pool, as `taskflow_collab`.
+ *
+ * Unlike `taskflow_realtime`, this role IS tenant-scoped ordinary data —
+ * `docs.yjs_updates` and `docs.page_versions` carry `org_id` under the same
+ * `tenant_isolation` RLS policy every other table gets, not a per-consumer
+ * one. `withCollabScope` below sets `app.org_id` exactly like `withOrgScope`
+ * does; the separate ROLE is what's narrow — INSERT/SELECT on those two
+ * tables and DELETE on the WAL, nothing else — not a separate scoping model.
+ */
+export function initializeCollabDatabase(config: DbConfig): void {
+  if (collabPool) {
+    throw new Error('Collab database already initialized. This is a boot-time call.');
+  }
+
+  collabPool = new Pool({
+    connectionString: config.url,
+    max: config.maxConnections ?? 10,
+    application_name: config.applicationName ?? 'taskflow-collab',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  collabDb = drizzle(collabPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_collab`, scoped to one organization.
+ *
+ * ⚠ HUMAN REVIEW SURFACE (§2.2) — the write path guardrail 8's "sockets
+ * never write" carve-out is about. `apps/collab`'s `onAuthenticate` hook
+ * still reads `docs.pages`/`docs.spaces` over the ORDINARY `withOrgScope`
+ * (the `taskflow_app` pool `initializeDatabase` sets up) — this connection
+ * exists for exactly one thing: persisting to `docs.yjs_updates` and
+ * `docs.page_versions`, the two tables `taskflow_collab` can reach.
+ */
+export async function withCollabScope<T>(orgId: OrgId, fn: (tx: TenantDb) => Promise<T>): Promise<T> {
+  if (!collabDb) {
+    throw new Error(
+      'Collab database not initialized. Call initializeCollabDatabase() during boot — ' +
+        'the WAL append must not fall back to the application role, which has no grant on ' +
+        'docs.yjs_updates or docs.page_versions and would fail closed on every write.',
+    );
+  }
+
+  return collabDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', ${orgId}, true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the collab pool has been initialized. */
+export function hasCollabDatabase(): boolean {
+  return collabDb !== undefined;
+}
+
 /** Closes every pool. Shutdown only. */
 export async function closeDatabase(): Promise<void> {
   await pool?.end();
@@ -380,6 +444,10 @@ export async function closeDatabase(): Promise<void> {
 
   await adapterPool?.end();
   adapterPool = undefined;
+
+  await collabPool?.end();
+  collabPool = undefined;
+  collabDb = undefined;
 }
 
 /** True when the pool is live and answering. Backs `/health/ready` (§14). */

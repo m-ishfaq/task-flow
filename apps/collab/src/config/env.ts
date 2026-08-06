@@ -7,16 +7,16 @@ import { z } from 'zod';
  * Validated environment for the collab gateway — guardrail 3.
  *
  * Deliberately its own schema, same reasoning `apps/realtime/src/config/env.ts`
- * gives for having its own rather than importing the API's: this process has no
- * mail, no storage, no ClamAV, and — for Wave 1 — no second database role
- * either. `DATABASE_URL` is the ONLY database variable this schema needs: the
- * `onAuthenticate` hook reads page and space metadata over the ordinary
- * `taskflow_app` connection via `withOrgScope`, identical to how
- * `apps/realtime`'s `rooms.ts` loads a board (ai/phase-6-docs.md §6.1,
- * corrected on approval). `DATABASE_COLLAB_URL` and a `taskflow_collab` role
- * arrive with Wave 2's first migration, when this process first needs to
- * WRITE — see that section before adding one here ahead of the app that would
- * use it.
+ * gives for having its own rather than importing the API's: this process has
+ * no mail, no storage, no ClamAV. TWO database variables, mirroring
+ * `apps/realtime`'s own split: `DATABASE_URL` is the ORDINARY application
+ * role — the `onAuthenticate` hook reads page and space metadata over it via
+ * `withOrgScope`, identical to how `apps/realtime`'s `rooms.ts` loads a board
+ * (ai/phase-6-docs.md §6.1, corrected on approval). `DATABASE_COLLAB_URL`
+ * arrived with Wave 2's first migration (0024) as `taskflow_collab` — the
+ * ONLY role with write access to `docs.yjs_updates` and `docs.page_versions`,
+ * and the whole reason guardrail 8's "sockets never write" carve-out is
+ * contained to this one small process.
  */
 
 const NonEmpty = z.string().min(1);
@@ -39,6 +39,11 @@ export const EnvSchema = z.object({
   /* The ORDINARY application role — see the file header. */
   DATABASE_URL: NonEmpty,
   DATABASE_POOL_MAX: z.coerce.number().int().positive().max(100).default(10),
+
+  /* taskflow_collab, migration 0024 — INSERT/SELECT on docs.yjs_updates
+     (plus DELETE for compaction's pruning) and INSERT/SELECT on
+     docs.page_versions. Nothing else. */
+  DATABASE_COLLAB_URL: NonEmpty,
 
   /* Same secret, issuer and audience the API signs with — this process is a
      second verifier of the same credential, not a third party, exactly as
