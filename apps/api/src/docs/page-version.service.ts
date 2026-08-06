@@ -30,18 +30,42 @@ import { enforceOnPage, envelopeOf, loadPage, orgOf, userOf, type DocsActor } fr
  * database before writing this file — `taskflow_collab`'s migration 0024
  * grant is narrower, not exclusive).
  *
+ * ## Why restore writes ONLY a new snapshot, never a WAL row
+ *
+ * The first version of this function also appended the restored state as a
+ * new `docs.yjs_updates` row, on the theory that "a full encoded Yjs state is
+ * a valid `Y.applyUpdate` input, so it converges correctly." That is false
+ * for what restore actually needs, and a real end-to-end test — driving a
+ * live `apps/collab` session, not just this function in isolation — caught
+ * it within one run. Yjs updates are additive CRDT operations, never
+ * subtractive: re-applying an OLD state as a new update merges its
+ * (already-known) operations back in as a no-op, it does not delete or
+ * supersede whatever was inserted AFTER that snapshot. A page saved as
+ * "original content", edited further to "edited, original content", then
+ * "restored" to the save point and replayed still came back as "edited,
+ * original content" — the append-only WAL row could not un-insert the later
+ * edit.
+ *
+ * The fix relies on a property `materializeCurrentState` below and
+ * `apps/collab/src/replay.ts`'s `replayPage` already both have: BOTH always
+ * start from the LATEST `page_versions` snapshot and replay only the WAL
+ * tail newer than it, never the full history from empty. So writing a new
+ * 'manual' snapshot whose `state` is the target version's own bytes is
+ * sufficient on its own — any future replay finds this row as "latest",
+ * applies it to a fresh `Y.Doc`, and reconstructs exactly the restored
+ * content, with nothing from the superseded edits surviving. No delete/
+ * insert diff needs computing, and no WAL row needs writing at all.
+ *
  * ## What "restore" does NOT do
  *
- * It appends the restored state as a new WAL row — a full encoded Yjs state
- * is a valid `Y.applyUpdate` input and converges correctly — and records a
- * new 'manual' snapshot at that point. A currently-open LIVE editing
- * session for this page will not see the restore until it reconnects:
- * propagating it into an already-loaded, in-memory `Y.Doc` would need
- * `apps/collab` to be notified (a `NOTIFY`/outbox-consumed signal telling it
- * to re-apply or reload), which is not built in this wave. Named here
- * explicitly as a known limitation rather than assumed away — the property
- * Wave 2's own acceptance criteria requires is that a restore round-trips
- * (a fresh load reflects it), which this satisfies.
+ * A currently-open LIVE editing session for this page will not see the
+ * restore until it reconnects: propagating it into an already-loaded,
+ * in-memory `Y.Doc` would need `apps/collab` to be notified (a
+ * `NOTIFY`/outbox-consumed signal telling it to re-apply or reload), which is
+ * not built in this wave. Named here explicitly as a known limitation rather
+ * than assumed away — the property Wave 2's own acceptance criteria requires
+ * is that a restore round-trips (a fresh load reflects it), which this
+ * satisfies.
  */
 
 export interface PageVersionSummary {
@@ -157,16 +181,10 @@ export async function restorePageVersion(
 
     const orgId = orgOf(actor);
 
-    // A full encoded Yjs state is a valid `Y.applyUpdate` input, so this
-    // converges correctly on replay without needing a diff against current
-    // content.
-    await tx.insert(schema.yjsUpdates).values({
-      id: uuidv7(),
-      orgId,
-      pageId: input.pageId,
-      data: version.state,
-    });
-
+    // Deliberately NOT a `docs.yjs_updates` row — see the file header on why
+    // reapplying an old state as a new WAL entry does not undo later edits.
+    // A fresh 'manual' snapshot is both necessary and sufficient: it becomes
+    // the new "latest", and every replay starts there.
     await tx.insert(schema.pageVersions).values({
       id: uuidv7(),
       orgId,

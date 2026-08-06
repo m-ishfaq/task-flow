@@ -77,13 +77,21 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
       // by reading @hocuspocus/server's readSyncMessage directly) — a
       // read-only connection's incoming update is never applied, so setting
       // this flag correctly IS the enforcement, not merely a hint toward it.
+      // `connectionConfig` is the SAME object every later hook reads through
+      // `hookPayload` — mutating a property on it here really does propagate.
       data.connectionConfig.readOnly = connection.readOnly;
 
-      // Carried to every later hook — beforeHandleMessage below, in
-      // particular — rather than re-derived, the same "resolved once, read
-      // everywhere" discipline `socket.data.identity` follows in
-      // apps/realtime.
-      data.context = {
+      // `data` itself is NOT that same object: `hooks()` builds it fresh as
+      // `{ ...hookPayload, ... }` for every hook, so assigning `data.context`
+      // replaces a property on a throwaway copy and is silently lost — the
+      // framework only threads context forward through this hook's RETURN
+      // value, which it merges into the real `hookPayload.context` itself
+      // (`onAuthenticatePayload.context` says `Promise<any>` for exactly this
+      // reason). Confirmed against @hocuspocus/server@4.5.0's own compiled
+      // `hooks()` after `onLoadDocument` observed an empty `context` here in
+      // a real end-to-end run — every page open failed with `app.org_id`
+      // unset, not merely a documentation gap the code happened to survive.
+      return {
         userId: connection.userId,
         orgId: connection.orgId,
         pageId: connection.pageId,

@@ -14,7 +14,8 @@
     "./work/board": "./src/work/board.service.ts",
     "./events/chat": "./src/chat/events.ts",
     "./chat/channel": "./src/chat/shared.ts",
-    "./docs/page": "./src/docs/shared.ts"
+    "./docs/page": "./src/docs/shared.ts",
+    "./docs/page-version": "./src/docs/page-version.service.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",

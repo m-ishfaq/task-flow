@@ -256,7 +256,7 @@ describe('listPageVersions', () => {
 });
 
 describe('restorePageVersion', () => {
-  it('appends the restored state as a new WAL row and a new manual snapshot, and emits page.version_restored', async () => {
+  it('writes a new manual snapshot and NO new WAL row, and emits page.version_restored', async () => {
     const fixture = await scaffold('restore-basic');
     await appendWalRow(fixture.orgId, fixture.pageId, encodedUpdateWithText('original'));
     const saved = await pageVersions.savePageVersion(fixture.owner, { pageId: fixture.pageId });
@@ -281,8 +281,10 @@ describe('restorePageVersion', () => {
       fixture.pageId,
     ]);
     await admin.setOrg(null);
-    // The restore APPENDS — it does not touch the pre-existing rows.
-    expect(after.rows).toHaveLength(3);
+    // Deliberately UNCHANGED — see page-version.service.ts's file header on
+    // why restore writes only a new snapshot, never a WAL row: reapplying an
+    // old state as a new update cannot un-insert what came after it.
+    expect(after.rows).toHaveLength(2);
 
     const list = await pageVersions.listPageVersions(fixture.owner, { pageId: fixture.pageId });
     expect(list).toHaveLength(2);
@@ -326,6 +328,43 @@ describe('restorePageVersion', () => {
     Y.applyUpdate(replay, new Uint8Array(state));
     const text = replay.getXmlFragment('content').get(0) as Y.XmlText;
     expect(text.toString()).toBe('v1');
+  });
+
+  it("materializeCurrentState (the same path a later save or apps/collab's replay uses) sees the restored content, not a CRDT union of it with the superseded edit", async () => {
+    // The property the original (buggy) WAL-append implementation got wrong:
+    // re-applying an old Yjs state as a new update MERGES it with whatever
+    // came after, it does not supersede it. This test reads back through
+    // `savePageVersion`'s own materialization — the identical code path
+    // `apps/collab`'s `replayPage` mirrors — rather than decoding the
+    // snapshot row directly, so it would have failed against the original
+    // implementation exactly as the real end-to-end gateway test did.
+    const fixture = await scaffold('restore-no-union');
+    await appendWalRow(fixture.orgId, fixture.pageId, encodedUpdateWithText('original'));
+    const saved = await pageVersions.savePageVersion(fixture.owner, { pageId: fixture.pageId });
+    await appendWalRow(fixture.orgId, fixture.pageId, encodedUpdateWithText(' edited'));
+
+    await pageVersions.restorePageVersion(fixture.owner, {
+      pageId: fixture.pageId,
+      versionId: saved.versionId,
+    });
+
+    const resaved = await pageVersions.savePageVersion(fixture.owner, { pageId: fixture.pageId });
+
+    await admin.setOrg(fixture.orgId);
+    const { rows } = await admin.query(`SELECT state FROM docs.page_versions WHERE id = $1`, [
+      resaved.versionId,
+    ]);
+    await admin.setOrg(null);
+    const state = (rows[0] as { state: Buffer }).state;
+
+    const replay = new Y.Doc();
+    Y.applyUpdate(replay, new Uint8Array(state));
+    // `YXmlFragment.prototype.toString` genuinely serializes at runtime, but
+    // its `.d.ts` declares no override — the same confirmed upstream types
+    // gap `apps/collab`'s `replay.test.ts` documents.
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string
+    const text: string = replay.getXmlFragment('content').toString();
+    expect(text).toBe('original');
   });
 
   it('throws NOT_FOUND for a version id that does not exist', async () => {

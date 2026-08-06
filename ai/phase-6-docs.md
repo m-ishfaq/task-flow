@@ -10,6 +10,44 @@ four are recorded in place with their reasoning. §7.1 (whether the tree resolve
 Wave 1 + Wave 2 acceptance criteria are met on `main` — Docs' one write-exception socket server is a
 second, harder version of the room-authorization problem Phase 4 solved once.
 
+**Two bugs Wave 2's own unit suites could not have caught, found only once a real end-to-end test
+drove a real `apps/collab` gateway with the real `@hocuspocus/provider` client.** Every other Wave 2
+suite — `persist.test.ts`, `replay.test.ts`, `compaction.test.ts` — calls its function directly; none
+of them go through `onAuthenticate` as the framework actually invokes it, or through two independent
+`apps/collab` processes. `gateway.integration.test.ts` does both, and found:
+
+1. **`gateway.ts`'s `onAuthenticate` set `data.context = {...}`, and every connection's context was
+   silently empty.** `@hocuspocus/server`'s `hooks()` runner builds a FRESH object — `{ ...hookPayload,
+   ... }` — for every hook call; assigning `data.context` replaces a property on that throwaway copy,
+   never the real `hookPayload.context` the rest of the pipeline reads. The framework only threads
+   context forward through the hook's RETURN value (`onAuthenticate?(data): Promise<any>` — the `any`
+   is exactly this). `data.connectionConfig.readOnly = ...` on the same line worked, and masked the
+   bug: `connectionConfig` is a nested object copied by REFERENCE, so mutating a property on it does
+   reach the original. Authentication itself succeeded (`scope: 'read-write'`) in every test run,
+   because it doesn't consult context — only `onLoadDocument` and `beforeHandleMessage` do, and both
+   received `{}`, so `withOrgScope(undefined, ...)` failed on literally the first real connection any
+   test attempted. `data.context = {...}` is now `return {...}`; the file header explains why.
+
+2. **`restorePageVersion` appended the restored state as a new WAL row, and a page edited after its
+   save point did not actually revert.** The reasoning — "a full encoded Yjs state is a valid
+   `Y.applyUpdate` input, so it converges correctly" — is true and irrelevant: Yjs updates are
+   additive CRDT operations, never subtractive, so re-applying an old state MERGES its own operations
+   back in (a no-op, since they're already known) without touching whatever was inserted afterward. A
+   page saved as "original content", edited further, then "restored", came back as the union of both,
+   not the restored text alone — caught because the integration test edits through a real live
+   session and reads back through a real second gateway process, where `packages/db`'s per-transaction
+   `now()` (same timestamp for a WAL row and the snapshot written right after it in the original,
+   buggy code) had been quietly hiding the same defect from `page-version.service.test.ts`'s original
+   assertions, which read the snapshot row directly rather than through `materializeCurrentState`. The
+   fix writes ONLY a new `page_versions` snapshot — sufficient on its own, since both
+   `materializeCurrentState` and `replayPage` always start from the latest snapshot and never look
+   further back. `page-version.service.ts`'s file header and `page-version.service.test.ts` both
+   record the corrected reasoning and a regression test that reads back through the real
+   materialization path rather than decoding the snapshot row directly.
+
+Neither bug had a failing unit test before this. Both are the kind CLAUDE.md's Phase 5 status header
+already warned about: "a green `pnpm verify` is not the same claim as 'this works when you click it.'"
+
 **Where the draft turned out to be wrong**, checked against `apps/realtime`'s actual code rather
 than left as the draft's paraphrase of it: §3.3 said `onAuthenticate` calls `apps/api`'s
 `authenticate()` — it calls `verifyAccessToken` directly, same as `apps/realtime/src/auth.ts`
