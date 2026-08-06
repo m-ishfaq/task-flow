@@ -82,6 +82,45 @@ describe('couldGrant — the route-level pre-check', () => {
   it('an unrecognized role denies, the same as can() does', () => {
     expect(couldGrant(subject('temp-worker' as Role), 'channel:read')).toBe(false);
   });
+
+  it('a channel tuple does not widen an unrelated, non-tuple-bearing permission', () => {
+    /* The vulnerability an adversarial review caught before merge: `member`'s
+       grant set is derived from an ACTION SUFFIX (`read`/`download`), matched
+       against every permission ending in `:read` — including `audit:read`,
+       `member:read`, `team:read`, `org:read`, none of which have anything to
+       do with a channel. `tenancy.audit.list` and `tenancy.authz.explain`
+       have no layer 2 — an org-level capability has no per-resource grant to
+       consult, so `route()`'s pre-check IS their entire authorization
+       decision. Matching a tuple's relation with no check on the tuple's
+       OBJECT TYPE meant any member of any channel — not just a guest — could
+       read the whole org audit log and any other user's permission trace.
+       `resourceOf(permission)` is what closes it: `audit:read`'s resource is
+       `'audit'`, and no tuple is ever written with that object type. */
+    // `guest`, not `member`: MEMBER's role already grants `member:read` and
+    // `team:read` directly (roles.ts), which would let those two pass on the
+    // role alone and defeat the point of this test — it has to isolate what
+    // the TUPLE contributes. `guest` grants nothing from the role, so any
+    // `true` below can only have come from the tuple.
+    const channel = { type: 'channel', id: 'chan_1' } as const;
+    const guestInChannel = subject('guest', [tuple('member', channel)]);
+
+    expect(couldGrant(guestInChannel, 'audit:read')).toBe(false);
+    expect(couldGrant(guestInChannel, 'member:read')).toBe(false);
+    expect(couldGrant(guestInChannel, 'team:read')).toBe(false);
+
+    // The channel tuple still does its actual job.
+    expect(couldGrant(guestInChannel, 'channel:read')).toBe(true);
+  });
+
+  it('a tuple only widens permissions on its own resource type', () => {
+    // A `card` tuple must not satisfy a `channel:*` permission either, even
+    // though both are ordinary, tuple-bearing resources — the fix is a type
+    // match, not a carve-out for org-level capabilities specifically. `guest`
+    // again, so the role itself contributes nothing to either assertion.
+    const withCardTuple = subject('guest', [tuple('editor', CARD)]);
+    expect(couldGrant(withCardTuple, 'channel:read')).toBe(false);
+    expect(couldGrant(withCardTuple, 'card:update')).toBe(true);
+  });
 });
 
 describe('tenancy', () => {

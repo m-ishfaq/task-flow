@@ -1,5 +1,5 @@
 import type { OrgId, UserId } from '@taskflow/contracts';
-import { isPermission, type Permission } from './permissions.js';
+import { isPermission, resourceOf, type Permission } from './permissions.js';
 import { bypassesRestrictions, isRole, roleGrants, type Role } from './roles.js';
 import {
   formatTuple,
@@ -276,7 +276,8 @@ export function allowed(subject: Subject, permission: Permission, target?: Targe
 
 /**
  * Whether `subject` could ever be granted `permission` — by role, or by
- * holding ANY tuple whose relation covers it, on any object at all.
+ * holding a tuple, ON AN OBJECT OF THE RIGHT RESOURCE TYPE, whose relation
+ * covers it.
  *
  * ## What this answers, and what it deliberately does not
  *
@@ -292,21 +293,55 @@ export function allowed(subject: Subject, permission: Permission, target?: Targe
  * permission through their tuple. Layer 2 — `enforce()`, called once a
  * specific resource is loaded — never got a chance to say otherwise.
  *
- * This function is the fix, and it is intentionally coarse: it does not know
- * or care WHICH object a tuple points at, only that relations grant actions
- * by suffix regardless of resource type (`relationGrants`) — the same
- * looseness `nearestApplicable`'s per-resource matching already relies on to
- * stay resource-agnostic. A guest holding a tuple on channel A passes this
- * check when asking about channel B too; that is safe because this is ONLY
- * the coarse pre-check ("could this principal EVER hold this permission"),
- * and the specific answer for channel B is still `enforce()`'s alone to give
- * once it loads that row. Widening layer 1 costs nothing here — the
- * boundary this system actually depends on is layer 2, always has been.
+ * This function is the fix, and it is coarse ONLY within a resource type: it
+ * does not know or care WHICH object of that type a tuple points at, only
+ * that relations grant actions by suffix regardless of the specific id
+ * (`relationGrants`) — the same looseness `nearestApplicable`'s per-resource
+ * matching already relies on to stay object-agnostic. A guest holding a tuple
+ * on channel A passes this check when asking about channel B too; that is
+ * safe because this is ONLY the coarse pre-check ("could this principal EVER
+ * hold this permission, on SOME object of the kind it applies to"), and the
+ * specific answer for channel B is still `enforce()`'s alone to give once it
+ * loads that row.
+ *
+ * ## Matching by relation alone, with no resource-type filter, was a real
+ * vulnerability — found by an adversarial review, not a test
+ *
+ * `member`'s grant set is derived from an action SUFFIX (`viewer`/`member`/
+ * `editor` grant `read` and `download`, matched against every permission
+ * ending in `:read` or `:download` — see `tuples.ts`'s `grantSet`). A route
+ * like `tenancy.audit.list` (`audit:read`) or `tenancy.authz.explain`
+ * (`audit:read`) has NO layer 2: `audit.service.ts` and `authz.service.ts`
+ * never call `enforce()`/`can()` again with a target, because there is no
+ * per-resource grant to consult for an org-level capability (`can()`'s own
+ * no-target branch above exists for exactly this class of route). For those
+ * routes, `route()`'s `couldGrant` check IS the entire authorization
+ * decision — there is no layer 2 left to narrow a coarse layer-1 pass back
+ * down. An earlier version of this function matched by relation alone, with
+ * no check on what the tuple's object actually was. Every ordinary member
+ * (not only a guest) holds a `member`-relation tuple on any channel they have
+ * joined — `channel.service.ts` writes one on join same as it does for a
+ * guest — and `member`'s grant set contains `audit:read` purely because
+ * `audit:read` ends in `:read`, with nothing checking that the tuple's object
+ * was a channel and not an audit log. The result: any member of any channel
+ * could read the ENTIRE ORG AUDIT LOG and any other user's permission
+ * decision trace through `tenancy.authz.explain` — an admin-and-owner-only
+ * surface by design (`authz.service.ts`'s own doc comment: "an information
+ * disclosure about another user's access... why it requires `audit:read`").
+ * `resourceOf(permission)` is what closes it: a permission's resource type
+ * is its own prefix, so `audit:read` only ever matches a tuple whose object
+ * is type `'audit'` — and no such tuple is ever written, because audit logs
+ * are not a tuple-bearing resource. A channel-membership tuple can widen
+ * `couldGrant` for `channel:*`/`message:*` and nothing else.
  */
 export function couldGrant(subject: Subject, permission: Permission): boolean {
   if (!isRole(subject.role)) return false;
   if (roleGrants(subject.role, permission)) return true;
-  return subject.tuples.some((tuple) => relationGrants(tuple.relation, permission));
+
+  const resource = resourceOf(permission);
+  return subject.tuples.some(
+    (tuple) => tuple.object.type === resource && relationGrants(tuple.relation, permission),
+  );
 }
 
 /**

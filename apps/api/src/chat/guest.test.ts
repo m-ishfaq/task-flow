@@ -517,6 +517,46 @@ describe('through the real tRPC router — the layer the service tests bypass', 
 
     await expect(caller.chat.channels.get({ channelId: other.channelId })).rejects.toThrow();
   });
+
+  it('a channel tuple does not unlock the org audit log or another user’s permission trace', async () => {
+    /* The vulnerability an adversarial review caught before merge: `couldGrant`
+       used to match a tuple's relation with no check on what the tuple's
+       OBJECT actually was, and `member`'s grant set covers every permission
+       ending in `:read` by suffix - including `audit:read`, which has nothing
+       to do with a channel. `tenancy.audit.list` and `tenancy.authz.explain`
+       have no layer 2 (`audit.service.ts` / `authz.service.ts` never call
+       `enforce()` again with a target - there is no per-resource grant for an
+       org-level capability), so `route()`'s pre-check is their ENTIRE
+       authorization decision. A guest holding one ordinary channel tuple must
+       not be able to read the org's audit log or any other user's decision
+       trace through it. */
+    const { orgId, owner, refreshOwner } = await scaffold('guest-router-no-audit-leak');
+    const channel = await channels.createChannel(owner, { type: 'private', name: 'project-x' });
+
+    await compliance.setGuestAccess(await refreshOwner(), {
+      channelId: channel.channelId,
+      userId: GUEST,
+      granted: true,
+      expiresAt: null,
+    });
+
+    const tuples = await loadTuples(orgId, GUEST);
+    const caller = callerFactory(
+      testContext({
+        principal: testPrincipal('guest', { userId: GUEST, org: { orgId, role: 'guest', tuples } }),
+      }),
+    );
+
+    await expect(caller.tenancy.audit.list({})).rejects.toThrow();
+    await expect(
+      caller.tenancy.authz.explain({
+        userId: OWNER,
+        permission: 'channel:manage',
+        resourceType: null,
+        resourceId: null,
+      }),
+    ).rejects.toThrow();
+  });
 });
 
 /**
