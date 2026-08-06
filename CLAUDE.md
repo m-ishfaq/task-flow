@@ -79,15 +79,14 @@ apps/       api                              (arriving: worker)
                                ⚠ attachments, filter wiring
               src/chat         channels, DMs, messages, threads, reactions
               src/docs         spaces, page tree, inherited-permission Target
-                               building (Phase 6, Wave 1 — no body content yet)
+                               building, page-version save/restore (Phase 6)
             realtime           Socket.io gateway — broadcast only, never writes
               src/auth.ts    ⚠ handshake: token, origin, socket.data.identity
               src/rooms.ts   ⚠ room join = a fresh can() check
               src/relay.ts     the 'realtime' outbox consumer
             collab             Hocuspocus gateway (Phase 6) — the one process
                                allowed to write from a socket handler, and only
-                               to docs.yjs_updates/docs.page_versions (Wave 2;
-                               Wave 1 ships the auth spine with no writes at all)
+                               to docs.yjs_updates/docs.page_versions
               src/auth.ts    ⚠ handshake, adapted from realtime's to
                                onAuthenticate — verifyAccessToken directly, not
                                apps/api's authenticate() (see ai/phase-6-docs.md
@@ -225,21 +224,34 @@ got built, a seed script drifted from the schema it seeds) had no test at all, w
 survived past a header that already claimed the phase done. A green `pnpm verify` is not the same
 claim as "this works when you click it."
 
-**Phase 6 (Docs) Wave 1 is COMPLETE; Waves 2–4 are NOT STARTED.** Spec in
-[ai/phase-6-docs.md](ai/phase-6-docs.md), approved 2026-08-06. Migration 0023 (`docs.spaces`,
-`docs.pages` — tree only, no body content), the inherited-permission `Target` resolver
-(`apps/api/src/docs/shared.ts`), space/page CRUD and `movePage`'s reparent-and-rank mechanics
-(`apps/api/src/docs`), and `apps/collab`'s authorization spine (`onAuthenticate` composing token
-verification with the same tree-permission resolution, §3.3–§3.4) all shipped, with an authz-matrix
-suite proving `packages/policy`'s `nearestApplicable()` at genuine multi-level depth for the first
-time in this codebase. `apps/collab` does not yet sync any content — no Yjs document, no
-`docs.yjs_updates`, no `taskflow_collab` role — that is Wave 2, and nothing here should be read as
-Docs being usable yet. Two corrections were made to the draft on approval, recorded in the spec's
-own header: §3.3's hook calls `verifyAccessToken` directly rather than `apps/api`'s `authenticate()`
-(mirroring what `apps/realtime/src/auth.ts` actually does), and §6.1's `taskflow_collab` role is
-deferred to Wave 2 rather than created in Wave 1's migration, since Wave 1's reads go over the
-ordinary `taskflow_app` connection — the identical split `apps/realtime`'s own dedicated role
-already established (outbox-only, no tenant-table grant).
+**Phase 6 (Docs) Wave 1 and Wave 2 are COMPLETE; Waves 3–4 are NOT STARTED.** Spec in
+[ai/phase-6-docs.md](ai/phase-6-docs.md), approved 2026-08-06. Wave 1 shipped migration 0023
+(`docs.spaces`, `docs.pages` — tree only, no body content), the inherited-permission `Target`
+resolver (`apps/api/src/docs/shared.ts`), space/page CRUD and `movePage`'s reparent-and-rank
+mechanics (`apps/api/src/docs`), and `apps/collab`'s authorization spine (`onAuthenticate` composing
+token verification with the same tree-permission resolution, §3.3–§3.4), with an authz-matrix suite
+proving `packages/policy`'s `nearestApplicable()` at genuine multi-level depth for the first time in
+this codebase. Wave 2 shipped everything `apps/collab` exists for: migration 0024
+(`docs.yjs_updates`, `docs.page_versions`, the `taskflow_collab` role), live Yjs sync over
+Hocuspocus with durable WAL persistence (`beforeHandleMessage`, before-ack — not `onChange`),
+snapshot-plus-tail replay on load (`onLoadDocument`), live-document content stripping via
+compaction (`onStoreDocument`), and `apps/api`'s on-demand save/restore routes.
+
+**Two bugs in Wave 2 had no failing unit test and were found only by a real end-to-end test** —
+`apps/collab/src/gateway.integration.test.ts`, which boots a real gateway and drives it with the
+official `@hocuspocus/provider` client over a real WebSocket, per this file's own standing lesson
+that a green `pnpm verify` is not the same claim as "this works when you click it." First:
+`onAuthenticate` set `data.context = {...}`, which `@hocuspocus/server`'s hook runner silently
+discards — it only threads a hook's RETURN value forward, since `data` is a fresh per-call copy of
+the real payload. Every real connection's `context` was empty, and every page open failed;
+authentication itself still reported success, because it doesn't consult context, masking the bug
+completely from anything short of an end-to-end run. Second: `restorePageVersion` originally
+appended the restored state as a new WAL row, on the reasoning that a full Yjs state is a valid
+`Y.applyUpdate` input — true, and irrelevant, since Yjs updates are additive CRDT operations and
+reapplying an old state cannot undo a later edit; a page edited after its save point and then
+"restored" came back as the union of both, not the restored text alone. Both are fixed and both
+are documented in `ai/phase-6-docs.md`'s status header and in the affected files' own comments —
+read those before touching `onAuthenticate`'s context handling or the restore path again.
 
 **Read a spec's own status header before trusting a phase marker anywhere else.** The §13 roadmap
 table and this section were both stale for the whole of Phase 3.5's Wave 1 and Wave 2, which is how

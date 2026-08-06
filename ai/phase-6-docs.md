@@ -1,6 +1,6 @@
 # Phase 6 — Docs
 
-**Status: APPROVED 2026-08-06; Wave 1 SHIPPED same day; Wave 2 in progress.** §3 stands as written.
+**Status: APPROVED 2026-08-06; Wave 1 and Wave 2 SHIPPED same day.** §3 stands as written.
 Of the six open questions in §7: §7.2 and §7.6 were decided on approval (Wave 1's migration and
 process layout depended on them); §7.4 was settled at the start of Wave 2 by reading the installed
 `@hocuspocus/server`'s own protocol handling (read-only IS server-enforced); §7.3 was decided at the
