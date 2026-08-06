@@ -105,8 +105,14 @@ export async function listPageVersions(
 
 type Tx = Parameters<Parameters<typeof withOrgScope>[1]>[0];
 
-/** The current materialized state: latest snapshot, if any, plus every WAL row since. */
-async function materializeCurrentState(tx: Tx, pageId: PageId): Promise<Uint8Array> {
+/**
+ * The current materialized state: latest snapshot, if any, plus every WAL
+ * row since. Exported for `backlinks.relay.ts` (Wave 3) — the identical
+ * "latest snapshot plus WAL tail" reconstruction this file's own header
+ * already argues is always accurate, reused rather than re-derived a third
+ * time (`apps/collab/src/replay.ts` is the second).
+ */
+export async function materializeCurrentState(tx: Tx, pageId: PageId): Promise<Uint8Array> {
   const snapshotRows = await tx
     .select({ state: schema.pageVersions.state, createdAt: schema.pageVersions.createdAt })
     .from(schema.pageVersions)

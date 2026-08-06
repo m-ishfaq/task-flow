@@ -56,6 +56,12 @@ export {
 export { listenForOutboxAppends, type OutboxListener, type ListenOptions } from './notify.js';
 
 export {
+  claimUnprocessedPageVersions,
+  markBacklinksProcessed,
+  type UnprocessedPageVersion,
+} from './docs-backlinks.js';
+
+export {
   readAuditEntries,
   readAuditChain,
   insertAuditEntry,

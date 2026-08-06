@@ -83,6 +83,32 @@ export const NODE_ATTRIBUTES = {
       label: z.string().trim().min(1).max(120),
     })
     .strict(),
+  /**
+   * `pageLink` — an atomic, inline reference to a Docs page (Phase 6, Wave 3,
+   * §3.10), the identical shape `mention` establishes for a person: `label`
+   * is the text as written, not re-derived from the target's current title,
+   * for the same reason `mention`'s own comment gives.
+   *
+   * Deliberately a NODE with a validated `pageId`, not a `link` mark with an
+   * `href` — `SafeUrl` above rejects relative URLs outright ("no meaning
+   * outside a browsing context this document does not have"), so a
+   * `/docs/{pageId}`-shaped href was never going to pass it, and widening
+   * the shared URL scheme policy to admit relative paths — for every rich
+   * text field in the system, Work's included — is a bigger and murkier
+   * change than the actual need: a page reference is a REFERENCE, not a
+   * browsable URL, exactly what `mention` already models for a person.
+   * `apps/api/src/docs/backlinks.ts` is the one reader that walks a
+   * document for this node type; `[[Page Name]]` wiki-link SYNTAX (§3.10's
+   * other named form, which needs name-to-id resolution against a live page
+   * tree and has no editor UI to produce it yet) is a named, deliberate gap,
+   * not built speculatively ahead of the surface that would create one.
+   */
+  pageLink: z
+    .object({
+      pageId: z.string().refine(isValidId, 'must be a page id'),
+      label: z.string().trim().min(1).max(500),
+    })
+    .strict(),
 } as const;
 
 export type NodeType = keyof typeof NODE_ATTRIBUTES;
