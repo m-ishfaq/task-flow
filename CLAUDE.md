@@ -79,7 +79,8 @@ apps/       api                              (arriving: worker)
                                ⚠ attachments, filter wiring
               src/chat         channels, DMs, messages, threads, reactions
               src/docs         spaces, page tree, inherited-permission Target
-                               building, page-version save/restore (Phase 6)
+                               building, page-version save/restore, comments,
+                               suggestions, the backlinks relay (Phase 6)
             realtime           Socket.io gateway — broadcast only, never writes
               src/auth.ts    ⚠ handshake: token, origin, socket.data.identity
               src/rooms.ts   ⚠ room join = a fresh can() check
@@ -224,7 +225,7 @@ got built, a seed script drifted from the schema it seeds) had no test at all, w
 survived past a header that already claimed the phase done. A green `pnpm verify` is not the same
 claim as "this works when you click it."
 
-**Phase 6 (Docs) Wave 1 and Wave 2 are COMPLETE; Waves 3–4 are NOT STARTED.** Spec in
+**Phase 6 (Docs) Waves 1–3 are COMPLETE; Wave 4 is NOT STARTED.** Spec in
 [ai/phase-6-docs.md](ai/phase-6-docs.md), approved 2026-08-06. Wave 1 shipped migration 0023
 (`docs.spaces`, `docs.pages` — tree only, no body content), the inherited-permission `Target`
 resolver (`apps/api/src/docs/shared.ts`), space/page CRUD and `movePage`'s reparent-and-rank
@@ -235,7 +236,13 @@ this codebase. Wave 2 shipped everything `apps/collab` exists for: migration 002
 (`docs.yjs_updates`, `docs.page_versions`, the `taskflow_collab` role), live Yjs sync over
 Hocuspocus with durable WAL persistence (`beforeHandleMessage`, before-ack — not `onChange`),
 snapshot-plus-tail replay on load (`onLoadDocument`), live-document content stripping via
-compaction (`onStoreDocument`), and `apps/api`'s on-demand save/restore routes.
+compaction (`onStoreDocument`), and `apps/api`'s on-demand save/restore routes. Wave 3 shipped
+comments and suggestions anchored via opaque, serialized Yjs `RelativePosition` bytes (migration
+0025: `docs.comments`, `docs.suggestions`), proved to survive a concurrent edit landing before the
+anchor rather than merely round-tripping unchanged, and backlinks — computed entirely by `apps/api`,
+never by `apps/collab`, over a new `taskflow_backlinks` role holding a COLUMN-LEVEL grant on
+`docs.page_versions` that excludes `state`, so the role that discovers which pages changed can never
+read what changed.
 
 **Two bugs in Wave 2 had no failing unit test and were found only by a real end-to-end test** —
 `apps/collab/src/gateway.integration.test.ts`, which boots a real gateway and drives it with the
@@ -252,6 +259,18 @@ reapplying an old state cannot undo a later edit; a page edited after its save p
 "restored" came back as the union of both, not the restored text alone. Both are fixed and both
 are documented in `ai/phase-6-docs.md`'s status header and in the affected files' own comments —
 read those before touching `onAuthenticate`'s context handling or the restore path again.
+
+**Wave 3's backlinks relay looked correct in the migration and passed both `tsc` and `eslint`, and
+still failed the first time it touched a real database as the real role.** The claim query used
+`FOR UPDATE OF pv SKIP LOCKED`, mirroring `claimPending`'s own outbox query — and Postgres refused
+it with `permission denied for table page_versions`, even though `taskflow_backlinks`' column-level
+grant (`id, org_id, page_id, created_at` — never `state`) was exactly what the migration intended.
+Row-locking clauses need SELECT on every column of a table, not just the ones a query projects; a
+migration review and a type checker both agree that looks fine, and only a real connection as the
+real role disproves it. Fixed by dropping `FOR UPDATE` rather than widening the grant to get the
+lock back — see `ai/phase-6-docs.md`'s status header and `packages/db/src/docs-backlinks.ts`'s own
+comment for the accepted trade (two racing relay instances can now redundantly, but never
+incorrectly, reprocess the same row).
 
 **Read a spec's own status header before trusting a phase marker anywhere else.** The §13 roadmap
 table and this section were both stale for the whole of Phase 3.5's Wave 1 and Wave 2, which is how

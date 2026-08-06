@@ -1,6 +1,6 @@
 # Phase 6 — Docs
 
-**Status: APPROVED 2026-08-06; Wave 1 and Wave 2 SHIPPED same day.** §3 stands as written.
+**Status: APPROVED 2026-08-06; Waves 1-3 SHIPPED same day.** §3 stands as written.
 Of the six open questions in §7: §7.2 and §7.6 were decided on approval (Wave 1's migration and
 process layout depended on them); §7.4 was settled at the start of Wave 2 by reading the installed
 `@hocuspocus/server`'s own protocol handling (read-only IS server-enforced); §7.3 was decided at the
@@ -47,6 +47,44 @@ of them go through `onAuthenticate` as the framework actually invokes it, or thr
 
 Neither bug had a failing unit test before this. Both are the kind CLAUDE.md's Phase 5 status header
 already warned about: "a green `pnpm verify` is not the same claim as 'this works when you click it.'"
+
+**Wave 3 (comments, suggestions, backlinks) shipped the same day, with two decisions that diverge
+from what §3.10 and §5 literally describe, and one bug real Postgres caught that the type checker
+and the migration review both missed.**
+
+1. **Backlinks are computed by `apps/api`, never by `apps/collab`, contrary to §3.10's own wording
+   ("at the same save-boundary validation pass `apps/collab` already performs").** Handing the one
+   write-exception socket process a THIRD table to write — for a feature with no latency
+   requirement — was reviewed and rejected before writing migration 0025. A new `taskflow_backlinks`
+   role instead claims unprocessed `docs.page_versions` rows across every tenant with a
+   COLUMN-LEVEL grant that excludes `state` entirely, so the role that discovers which pages
+   changed can never read what changed; the actual content read happens afterward, per page, over
+   the ordinary `withOrgScope` connection. `docs.backlink_dispatch` marks rows PROCESSED (written
+   by the consumer), never PENDING (which would need a producer-side write from `taskflow_collab`,
+   the exact widening this was built to avoid) — an existence anti-join, matching migration 0015's
+   own reasoning for `outbox_dispatch` over a position cursor.
+
+2. **Internal links are a `pageLink` NODE with a validated `pageId`, not a `link` MARK's `href`.**
+   `work/richtext.ts`'s `SafeUrl` already rejects relative URLs outright ("no meaning outside a
+   browsing context this document does not have"), so a `/docs/{pageId}`-shaped href was never
+   going to pass the shared whitelist, and widening that policy for every rich text field in the
+   system — Work's included — was a bigger and murkier change than the actual need. Mirrors the
+   `mention` node's own "label is content, not live-resolved" shape exactly. `[[Page Name]]`
+   wiki-link syntax — §3.10's other named form — needs name-to-id resolution against a live page
+   tree and has no editor UI to produce it yet; it is a named, deliberate gap, not built
+   speculatively ahead of the surface that would create one.
+
+3. **The claim query's first version used `FOR UPDATE OF pv SKIP LOCKED`, mirroring `claimPending`'s
+   own outbox query, and failed against a real database with `permission denied for table
+   page_versions`** — despite `taskflow_backlinks`' column-level grant being exactly right, and
+   despite `packages/db`'s own typecheck and lint passing clean. Postgres row-locking clauses
+   require SELECT on every column of a table, not just the ones a query projects; a migration
+   reviewer and a type checker both agree that looks correct, and only a real connection as the
+   real role disproves it. Fixed by dropping `FOR UPDATE` entirely rather than widening the grant
+   to get it back, accepting that two racing relay instances can now redundantly (never
+   incorrectly) reprocess the same row — `docs-backlinks.ts`'s own header has the full reasoning,
+   and `onConflictDoNothing` on the dispatch insert is what keeps that race from aborting a
+   transaction outright.
 
 **Where the draft turned out to be wrong**, checked against `apps/realtime`'s actual code rather
 than left as the draft's paraphrase of it: §3.3 said `onAuthenticate` calls `apps/api`'s
