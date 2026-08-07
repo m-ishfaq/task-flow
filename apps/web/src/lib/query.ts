@@ -166,6 +166,12 @@ export function dropOrgScopedQueries(client: QueryClient): void {
 export const keys = {
   orgs: () => ['orgs'] as const,
 
+  /** Personal, not org-scoped — a passkey signs into the account, not one org. */
+  passkeys: () => ['auth', 'passkeys'] as const,
+
+  /** The caller's own account (`/account`) — answers with no org selected. */
+  me: () => ['auth', 'me'] as const,
+
   org: (orgId: string) => ['org', orgId] as const,
 
   /**

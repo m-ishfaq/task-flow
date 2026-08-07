@@ -23,6 +23,7 @@ import { RegisterPage } from './features/auth/register-page.js';
 import { VerifyEmailPage } from './features/auth/verify-email-page.js';
 import { ResetPasswordPage } from './features/auth/reset-password-page.js';
 import { ForgotPasswordPage } from './features/auth/forgot-password-page.js';
+import { AccountPage } from './features/auth/account-page.js';
 import { OrgPickerPage } from './features/org/org-picker-page.js';
 import { ProjectsPage } from './features/work/projects-page.js';
 import { HomePage } from './features/work/home-page.js';
@@ -307,6 +308,22 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 });
 
+/**
+ * The personal account page (`ai/account-page.md`).
+ *
+ * `requireSession`, not `requireOrg` — deliberately. This is the fix for the
+ * bug that motivated it: passkeys need no org, but were reachable only through
+ * `/settings`, which does. Anyone signed in must reach this page, org selected
+ * or not, which is also why `Shell` renders the sidebar footer (and therefore
+ * the avatar menu this is reached from) even in the no-org state.
+ */
+const accountRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/account',
+  beforeLoad: () => requireSession('/account'),
+  component: AccountPage,
+});
+
 const auditRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/audit',
@@ -332,6 +349,7 @@ const routeTree = rootRoute.addChildren([
   settingsRoute,
   auditRoute,
   permissionsRoute,
+  accountRoute,
 ]);
 
 export function createAppRouter(queryClient: QueryClient) {
