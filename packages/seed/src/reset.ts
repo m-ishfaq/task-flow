@@ -33,6 +33,20 @@ import { resolveModules, tablesInTeardownOrder, type SeedModule } from './regist
  * both carry `FORCE ROW LEVEL SECURITY` with policies scoped `TO
  * taskflow_audit` only (migration 0007) — and that is not an oversight this
  * function works around. An audit trail a reset could edit would not be one.
+ *
+ * `docs.pages` and `docs.page_versions` are one case "children before
+ * parents" cannot express, and it is not a gap in `tablesInTeardownOrder` —
+ * it is a genuine cycle. Migration 0026's `pages_published_version_fk` makes
+ * `docs.pages` reference `docs.page_versions` (a published page points at
+ * its snapshot) at the same time `page_versions_page_fk` makes
+ * `docs.page_versions` reference `docs.pages` (a version belongs to its
+ * page, `ON DELETE CASCADE`) — two tables each depending on the other, which
+ * no linear reversed-run-order can resolve, however the module graph is
+ * declared. `published_version_id`/`published_at` are nulled out per org
+ * BEFORE the generic per-table loop below runs, breaking the cycle exactly
+ * the way `wave4.service.test.ts`'s and `tenancy-seed.ts`'s own teardowns
+ * already had to — see either file's comment on the identical foreign key
+ * refusing the delete in the other order.
  */
 
 export interface ResetOptions {
@@ -67,6 +81,16 @@ export async function reset(options: ResetOptions): Promise<ResetResult> {
 
   for (const orgId of orgIds) {
     await connection.setOrg(orgId);
+
+    // Break the docs.pages <-> docs.page_versions cycle before the generic
+    // loop below deletes either side of it — see the file header.
+    if (tables.includes('docs.pages') || tables.includes('docs.page_versions')) {
+      await connection.query(
+        'UPDATE docs.pages SET published_version_id = NULL, published_at = NULL WHERE org_id = $1',
+        [orgId],
+      );
+    }
+
     for (const table of tables) {
       if (table === 'identity.orgs') {
         await connection.query('DELETE FROM identity.orgs WHERE id = $1', [orgId]);
