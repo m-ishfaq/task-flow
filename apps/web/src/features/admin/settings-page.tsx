@@ -26,6 +26,7 @@ import { useStepUp } from '../auth/use-step-up.js';
 import { useToast } from '../../lib/toast-context.js';
 import { useMembers } from '../org/use-members.js';
 import { membersQuery } from '../org/api.js';
+import { PasskeySection } from '../auth/passkey-section.js';
 
 /**
  * Organization settings: the org itself, its members, its teams.
@@ -69,6 +70,7 @@ export function SettingsPage() {
       </div>
 
       <ProfileSection />
+      <PasskeySection />
       <OrgSection orgId={orgId} />
       <MemberSection orgId={orgId} />
       <TeamSection orgId={orgId} />

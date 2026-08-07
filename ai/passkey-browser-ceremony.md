@@ -1,7 +1,26 @@
 # Passkey browser ceremony — plan
 
-**Status: PROPOSED, not yet implemented.** This document is the plan; no application code changes
-ship in the commit that adds it.
+**Status: SHIPPED.** All three commits landed as planned: `apps/web/src/features/auth/passkey.ts`
+(the `@simplewebauthn/browser` wrapper and error translation), the login page wired to
+`signInWithPasskey`, and enrollment/listing/rename/removal split into its own
+`apps/web/src/features/auth/passkey-section.tsx` rather than living inside
+`admin/settings-page.tsx` as originally sketched — it depends on no org context, so extracting it
+kept `SettingsPage` from growing a fourth unrelated dependency graph and made the section testable
+on its own. Tests landed with each piece (`passkey.test.ts`, `login-page.test.tsx`,
+`passkey-section.test.tsx`), mirroring `verify-email-page.test.tsx`'s state-machine style. One
+behavioral change from the original sketch: `PasskeySection`'s mutations render failures with
+`ErrorText` only, never a toast — matching `MemberSection`/`TeamSection`, not `ProfileSection`,
+once it became clear a list-of-rows section already has a natural place for the error to live next
+to what caused it, and a toast on top would say the same thing twice.
+
+No changes to `apps/api/src/identity`, `packages/security`, or the schema, as scoped. Verified:
+`pnpm --filter @taskflow/web typecheck/lint/test` (263 tests, 31 new), the guardrail selftest, a
+production `vite build`, and a real headless Chromium session against the dev server — confirming
+`browserSupportsWebAuthn()` reports `true` on an actual browser engine (not just jsdom) and that
+clicking "Sign in with a passkey" with no backend running degrades to the ordinary `ErrorView`
+fallback rather than crashing. The full ceremony (enroll → sign out → sign in, against a real
+authenticator) was not exercised end-to-end — this environment has no Docker, so no API/Postgres —
+and is the one thing worth a manual click-through before merge.
 
 ## Why this exists
 
@@ -48,7 +67,7 @@ only, no server-side changes.
    - `enrollPasskey(name?)`: the same shape for `startRegistration`/`finishRegistration`.
    - Both wrap the browser call in a translator that turns `@simplewebauthn/browser`'s thrown
      `WebAuthnError` into a small closed set of UI-facing reasons (`'cancelled' | 'not_allowed' |
-     'unsupported' | 'unknown'`) rather than letting a raw `DOMException` reach a component — the
+'unsupported' | 'unknown'`) rather than letting a raw `DOMException` reach a component — the
      browser side gets the same "one shape of failure the UI understands" treatment
      `passkey.service.ts` already gives the server side.
 3. `login-page.tsx`'s passkey button becomes a real mutation using `useMutation` +
