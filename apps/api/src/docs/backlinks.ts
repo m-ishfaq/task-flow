@@ -1,5 +1,7 @@
 import * as Y from 'yjs';
+import { asc, eq, schema, withOrgScope } from '@taskflow/db';
 import { isValidId, unsafeAsId, type PageId } from '@taskflow/contracts';
+import { enforceOnPage, loadPage, orgOf, type DocsActor } from './shared.js';
 
 /**
  * Internal-link extraction (ai/phase-6-docs.md §3.10, Wave 3).
@@ -47,4 +49,45 @@ function walk(node: Y.XmlFragment | Y.XmlElement, found: Set<string>): void {
 
     walk(child, found);
   }
+}
+
+/* -------------------------------------------------------------------------- *
+ * Reading backlinks back out — "what links here" (Wave 4 UI)
+ * -------------------------------------------------------------------------- */
+
+export interface BacklinkSummary {
+  readonly sourcePageId: string;
+  readonly sourceTitle: string;
+  readonly sourceSpaceId: string;
+}
+
+/**
+ * Every page that links TO `pageId`, by title. A plain join over
+ * `docs.backlinks` (§3.10's edge list) and `docs.pages` — no per-row
+ * `enforceOnPage`, the same convention `listPages` documents for itself:
+ * Wave 1's baseline is org-role-open, capped by tuples rather than gated by
+ * them, so a source page's title is exactly as visible here as it is in the
+ * ordinary tree.
+ */
+export async function listBacklinks(
+  actor: DocsActor,
+  input: { readonly pageId: PageId },
+): Promise<readonly BacklinkSummary[]> {
+  return withOrgScope(orgOf(actor), async (tx) => {
+    const page = await loadPage(tx, input.pageId);
+    enforceOnPage(actor, 'page:read', page);
+
+    const rows = await tx
+      .select({
+        sourcePageId: schema.backlinks.sourcePageId,
+        sourceTitle: schema.pages.title,
+        sourceSpaceId: schema.pages.spaceId,
+      })
+      .from(schema.backlinks)
+      .innerJoin(schema.pages, eq(schema.pages.id, schema.backlinks.sourcePageId))
+      .where(eq(schema.backlinks.targetPageId, input.pageId))
+      .orderBy(asc(schema.pages.title));
+
+    return rows;
+  });
 }

@@ -241,6 +241,9 @@ export const keys = {
     ['org', orgId, 'page', pageId, 'suggestions'] as const,
   pageTemplates: (orgId: string, spaceId: string) =>
     ['org', orgId, 'space', spaceId, 'templates'] as const,
+  /** "What links here" for one page (Phase 6 Wave 4, docs/api.ts). */
+  pageBacklinks: (orgId: string, pageId: string) =>
+    ['org', orgId, 'page', pageId, 'backlinks'] as const,
 } as const;
 
 /** The org id every key needs, or a placeholder that matches nothing. */

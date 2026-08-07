@@ -10,6 +10,7 @@ import {
   BoardIdSchema,
   CardIdSchema,
   ChannelIdSchema,
+  OrgIdSchema,
   PageIdSchema,
   ProjectIdSchema,
   SpaceIdSchema,
@@ -28,6 +29,7 @@ import { HomePage } from './features/work/home-page.js';
 import { BoardPage } from './features/work/board-page.js';
 import { ChatPage } from './features/chat/chat-page.js';
 import { DocsPage } from './features/docs/docs-page.js';
+import { PublicPageView } from './features/docs/public-page.js';
 import { PermissionDebugPage } from './features/admin/permission-debug-page.js';
 import { SettingsPage } from './features/admin/settings-page.js';
 import { AuditPage } from './features/admin/audit-page.js';
@@ -259,6 +261,29 @@ const docsRoute = createRoute({
   component: DocsPage,
 });
 
+/**
+ * The public, no-session view of a published page (Phase 6 Wave 4, §3.9).
+ *
+ * No `beforeLoad` guard — the whole point is that it works with no session
+ * at all. `components/shell.tsx`'s `bare` rendering already covers a route
+ * hit while `status !== 'authenticated'`, which is the ordinary case for a
+ * link shared outside the app; a signed-in visitor sees the normal app
+ * chrome around it, which is harmless (the same content either way).
+ */
+const publicDocsPageRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/public/docs/$orgId/$pageId',
+  parseParams: (params) => ({
+    orgId: OrgIdSchema.parse(params.orgId),
+    pageId: PageIdSchema.parse(params.pageId),
+  }),
+  stringifyParams: (params) => ({ orgId: params.orgId, pageId: params.pageId }),
+  component: function PublicDocsRoute() {
+    const { orgId, pageId } = publicDocsPageRoute.useParams();
+    return <PublicPageView orgId={orgId} pageId={pageId} />;
+  },
+});
+
 const permissionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/admin/permissions',
@@ -303,6 +328,7 @@ const routeTree = rootRoute.addChildren([
   boardRoute,
   chatRoute,
   docsRoute,
+  publicDocsPageRoute,
   settingsRoute,
   auditRoute,
   permissionsRoute,

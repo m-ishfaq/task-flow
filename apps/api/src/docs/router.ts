@@ -21,6 +21,7 @@ import * as publish from './publish.service.js';
 import * as templates from './template.service.js';
 import { exportPagePdf } from './pdf-export.service.js';
 import { getPublishedPage } from './public.service.js';
+import { listBacklinks } from './backlinks.js';
 
 /**
  * Docs routes — spaces, the page tree, and page versions (ai/phase-6-docs.md
@@ -85,6 +86,7 @@ export function createDocsRouter() {
                 title: z.string(),
                 rank: z.string(),
                 archivedAt: z.date().nullable(),
+                publishedAt: z.date().nullable(),
               }),
             )
             .readonly(),
@@ -349,6 +351,29 @@ export function createDocsRouter() {
         )
         .output(z.object({ pageId: z.string() }))
         .mutation(({ input, ctx }) => templates.createPageFromTemplate(actorOf(ctx), input)),
+    }),
+
+    /**
+     * "What links here" (§3.10, Wave 3) — the read side of the backlinks
+     * relay, which until now only ever WROTE `docs.backlinks`
+     * (`backlinks.relay.ts`). See `backlinks.ts`'s own header on why there
+     * is no per-row `enforceOnPage`.
+     */
+    backlinks: router({
+      list: route({ permission: 'page:read' })
+        .input(z.object({ pageId: PageIdSchema }).strict())
+        .output(
+          z
+            .array(
+              z.object({
+                sourcePageId: z.string(),
+                sourceTitle: z.string(),
+                sourceSpaceId: z.string(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => listBacklinks(actorOf(ctx), input)),
     }),
 
     /**
