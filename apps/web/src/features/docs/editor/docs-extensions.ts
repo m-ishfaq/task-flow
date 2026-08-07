@@ -41,6 +41,15 @@ import { OrderedList } from '@tiptap/extension-list';
  *                        it), but still a silent reset of a custom start
  *                        number on the next compaction pass.
  *
+ *   underline (mark)     no override needed — `StarterKit` in TipTap v3
+ *                        includes it by default (unlike v2), and it emits
+ *                        only its own mark type with no attributes, which
+ *                        the server's mark union admits as-is. Recorded here
+ *                        because the toolbar's `U` button depends on it:
+ *                        if StarterKit's default set ever changes, that
+ *                        button silently loses its command with no other
+ *                        signal, so the dependency is part of this audit.
+ *
  * Every other default extension used here (paragraph, text, heading,
  * codeBlock, blockquote, bulletList, listItem, hardBreak, horizontalRule,
  * taskList, taskItem) was checked against the same two maps and emits

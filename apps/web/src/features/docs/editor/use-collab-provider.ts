@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { HocuspocusProvider, type WebSocketStatus } from '@hocuspocus/provider';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { HocuspocusProvider, WebSocketStatus } from '@hocuspocus/provider';
 import * as Y from 'yjs';
 import type { OrgId, PageId } from '@taskflow/contracts';
 import { accessToken } from '../../../lib/session.js';
@@ -24,12 +24,24 @@ import { collabWebsocketUrl, pageDocumentName } from './collab-url.js';
  * tab was idle is renewed transparently on reconnect rather than failing
  * the handshake with a stale one.
  *
- * `provider` is `null` for the one render between mount and the effect
- * below running — genuinely, not papered over with a cast — because the
- * `Y.Doc`/provider pair has to be constructed as an effect (it opens a
- * WebSocket, a side effect) rather than during render. `docs-editor.tsx`
- * renders a connecting state for that render instead of assuming a
- * provider always exists.
+ * ## Why `provider` is an external store, not a `useState`
+ *
+ * The provider opens a WebSocket, so it can only be constructed as an effect
+ * — never during render — and the effect body may not call setState
+ * synchronously (react-hooks/set-state-in-effect, the same rule that shapes
+ * `use-board-room.ts`). The React-sanctioned way to make a value created by
+ * a side effect observable to render is `useSyncExternalStore` over a
+ * one-slot store the effect writes to: `provider` is `null` for the one
+ * render between mount and the effect running, and the store notifies React
+ * the moment the effect has a provider to show. `docs-editor.tsx` renders a
+ * connecting state for that render instead of assuming a provider always
+ * exists.
+ *
+ * The store lives in a ref, not a `useState` object: the effect mutates it
+ * after mount, and `react-hooks/immutability` treats a value handed out by
+ * `useState` as owned by React. `react-hooks/refs` is satisfied because the
+ * only read happens inside `useSyncExternalStore`'s `getSnapshot` — the one
+ * place the React docs themselves sanction reading a ref during render.
  */
 
 export type CollabStatus = 'connecting' | 'connected' | 'disconnected';
@@ -40,15 +52,19 @@ export interface CollabConnection {
   readonly synced: boolean;
 }
 
+/** The one-slot store `useSyncExternalStore` reads the provider from. */
+interface ProviderStore {
+  provider: HocuspocusProvider | null;
+  listeners: Set<() => void>;
+}
+
 function toCollabStatus(status: WebSocketStatus): CollabStatus {
   switch (status) {
-    case 'connected':
+    case WebSocketStatus.Connected:
       return 'connected';
-    case 'connecting':
+    case WebSocketStatus.Connecting:
       return 'connecting';
-    case 'disconnected':
-      return 'disconnected';
-    default:
+    case WebSocketStatus.Disconnected:
       return 'disconnected';
   }
 }
@@ -56,11 +72,41 @@ function toCollabStatus(status: WebSocketStatus): CollabStatus {
 export function useCollabProvider(orgId: OrgId, pageId: PageId): CollabConnection {
   const [status, setStatus] = useState<CollabStatus>('connecting');
   const [synced, setSynced] = useState(false);
-  const [provider, setProvider] = useState<HocuspocusProvider | null>(null);
 
-  useEffect(() => {
+  /* The store object is created once per mount — held in a ref, mutated by
+     the effect below, and read by `useSyncExternalStore`'s `getSnapshot`,
+     the one ref read the compiler rules sanction during render. A lazy
+     `useState` initializer was the first draft and is exactly what
+     `react-hooks/immutability` forbids the effect to touch afterwards. */
+  const storeRef = useRef<ProviderStore>({ provider: null, listeners: new Set() });
+
+  const subscribe = useCallback((listener: () => void) => {
+    storeRef.current.listeners.add(listener);
+    return () => storeRef.current.listeners.delete(listener);
+  }, []);
+
+  const provider = useSyncExternalStore(subscribe, () => storeRef.current.provider);
+
+  /* Connection state resets when the page identity changes, during render
+     rather than in the effect below — the documented pattern for "clear
+     derived state when a prop changes", and the identical shape
+     `use-board-room.ts` and `use-channel-room.ts` use for their presence
+     reset. A fresh mount already starts with these defaults; this covers the
+     caller that does not remount us per page. */
+  const connectionKey = `${orgId}:${pageId}`;
+  const [lastConnectionKey, setLastConnectionKey] = useState(connectionKey);
+  if (connectionKey !== lastConnectionKey) {
+    setLastConnectionKey(connectionKey);
     setStatus('connecting');
     setSynced(false);
+  }
+
+  useEffect(() => {
+    /* Snapshot the store for the effect's whole lifetime — its identity is
+       stable for the mount, and reading `storeRef.current` inside the
+       cleanup would trip exhaustive-deps' "ref will have changed" warning.
+       The provider is what changes, never the store. */
+    const store = storeRef.current;
 
     const created = new HocuspocusProvider({
       url: collabWebsocketUrl(orgId),
@@ -75,12 +121,14 @@ export function useCollabProvider(orgId: OrgId, pageId: PageId): CollabConnectio
       },
     });
 
-    setProvider(created);
+    store.provider = created;
+    for (const listener of store.listeners) listener();
 
     return () => {
       created.destroy();
       created.document.destroy();
-      setProvider(null);
+      store.provider = null;
+      for (const listener of store.listeners) listener();
     };
   }, [orgId, pageId]);
 

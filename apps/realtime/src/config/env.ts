@@ -136,6 +136,13 @@ const KNOWN_VARIABLES = new Set([
   'DATABASE_MIGRATION_URL',
   'DATABASE_AUDIT_URL',
   'DATABASE_REALTIME_URL',
+  /* apps/collab's write-exception role (Phase 6 Wave 2, migration 0024) and
+     the backlinks relay's claim role (Wave 3, migration 0025) — both in
+     .env.example, neither read here, both claimed by the `DATABASE_` prefix.
+     Same failure as the API's own set: an unlisted one refuses to boot over
+     a correctly-spelled variable the moment it lands in a developer's .env. */
+  'DATABASE_COLLAB_URL',
+  'DATABASE_BACKLINKS_URL',
   'DATABASE_POOL_MAX',
   'STORAGE_ENDPOINT',
   'STORAGE_REGION',
@@ -164,6 +171,10 @@ const KNOWN_VARIABLES = new Set([
      not misspelled at all. */
   'WEB_API_ORIGIN',
   'WEB_REALTIME_ORIGIN',
+  /* apps/web's vite.config.ts /collab proxy target — same class as the two
+     above: `WEB_` prefix, no server reads it, must be listed or it is
+     rejected. */
+  'WEB_COLLAB_ORIGIN',
   'REALTIME_PORT',
   'REALTIME_HOST',
   'REALTIME_TRUST_PROXY',

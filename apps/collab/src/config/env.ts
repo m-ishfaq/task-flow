@@ -75,11 +75,25 @@ const KNOWN_VARIABLES = new Set([
   'DATABASE_MIGRATION_URL',
   'DATABASE_AUDIT_URL',
   'DATABASE_REALTIME_URL',
+  /* This process's OWN write-exception role (migration 0024) — and the
+     backlinks relay's claim role (migration 0025), which a developer's .env
+     carries without this process reading it. Both start with `DATABASE_`, so
+     the misspelling check claims them, and an unlisted one refuses to boot
+     over a variable that is spelled perfectly correctly — which is exactly
+     what happened to `DATABASE_COLLAB_URL` when it was added to the schema
+     and to .env.example without this set being updated alongside. */
+  'DATABASE_COLLAB_URL',
+  'DATABASE_BACKLINKS_URL',
   'DATABASE_POOL_MAX',
   'JWT_SECRET',
   'WEB_ORIGIN',
+  /* apps/web's vite.config.ts reads these; no server does. Same reasoning as
+     the API's identical note: the `WEB_` prefix makes the misspelling check
+     claim them, and an unlisted one stops this process booting over a
+     variable that is not misspelled at all. */
   'WEB_API_ORIGIN',
   'WEB_REALTIME_ORIGIN',
+  'WEB_COLLAB_ORIGIN',
   'COLLAB_PORT',
   'COLLAB_HOST',
 ]);

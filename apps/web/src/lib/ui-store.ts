@@ -73,6 +73,14 @@ export function pinnedProjectIds(pins: readonly string[]): readonly string[] {
 
 interface UiState {
   readonly sidebarOpen: boolean;
+  /**
+   * The Docs page's Spaces tree (docs-page.tsx), collapsed the same way the
+   * main sidebar is: a narrow rail holding the toggle and nothing else.
+   * Session-scoped like `sidebarOpen` — remembering it between visits is the
+   * same "tree that forgets what you collapsed" problem, but a per-reload
+   * default of open is also what the main sidebar already accepts.
+   */
+  readonly docsSpacesOpen: boolean;
   readonly viewMode: ViewMode;
   /**
    * Projects whose board list is folded away.
@@ -111,6 +119,7 @@ interface UiState {
 
 interface UiActions {
   readonly toggleSidebar: () => void;
+  readonly toggleDocsSpaces: () => void;
   readonly setViewMode: (mode: ViewMode) => void;
   readonly setDraggingCard: (cardId: string | null) => void;
   readonly toggleProject: (projectId: string) => void;
@@ -121,6 +130,7 @@ interface UiActions {
 
 export const useUi = create<UiState & UiActions>((set) => ({
   sidebarOpen: true,
+  docsSpacesOpen: true,
   viewMode: 'board',
   draggingCardId: null,
   collapsedProjects: readIds(COLLAPSED_KEY),
@@ -130,6 +140,9 @@ export const useUi = create<UiState & UiActions>((set) => ({
 
   toggleSidebar: () => {
     set((state) => ({ sidebarOpen: !state.sidebarOpen }));
+  },
+  toggleDocsSpaces: () => {
+    set((state) => ({ docsSpacesOpen: !state.docsSpacesOpen }));
   },
   setViewMode: (viewMode) => {
     set({ viewMode });

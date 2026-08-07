@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { PageId, SpaceId } from '@taskflow/contracts';
+import type { OrgId, PageId, SpaceId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
+import { useUi } from '../../lib/ui-store.js';
 import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
 import {
@@ -14,6 +15,7 @@ import {
   Skeleton,
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
+import { DocsEditor } from './editor/docs-editor.js';
 import {
   archivePage,
   archiveSpace,
@@ -43,12 +45,12 @@ import {
  * who cannot act gets the server's own FORBIDDEN rather than a hidden
  * control.
  *
- * **No editor yet.** Live collaborative editing goes through `apps/collab`'s
- * Hocuspocus gateway, a different protocol entirely from the tRPC calls
- * this file makes — that is Wave 2 of the UI (`ai/phase-6-docs.md`'s own
- * Wave 2 shipped the identical split on the backend: "no live content
- * collaboration yet ... proving the authorization spine before the CRDT
- * concurrency spine sits on top of it"). Reordering pages by drag is
+ * The live editor (`DocsEditor`) goes through `apps/collab`'s Hocuspocus
+ * gateway, a different protocol entirely from the tRPC calls this file
+ * makes — an `Y.Doc` over a WebSocket, wired in `editor/docs-editor.tsx`.
+ * It mounts per page via the `key={search.page}` remount below, so the
+ * editor's own connection lifecycle (open/close the Yjs doc) is handled
+ * correctly for free when switching pages. Reordering pages by drag is
  * likewise deferred — `pages.move` exists and is fully tested on the
  * backend, but nothing here calls it yet; Rename/Archive/Restore are the
  * Wave 1 surface.
@@ -105,27 +107,52 @@ function SpaceTreePanel({
   const [creatingSpace, setCreatingSpace] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
 
+  /* Minimizable exactly like the main sidebar: a `w-64` tree that collapses
+     to a `w-12` rail holding just the toggle. State lives in ui-store (the
+     same place `sidebarOpen` does) so the collapse survives navigation
+     within the session. */
+  const spacesOpen = useUi((state) => state.docsSpacesOpen);
+  const toggleSpaces = useUi((state) => state.toggleDocsSpaces);
+
   const list = spaces.data ?? [];
   const live = list.filter((space) => space.archivedAt === null);
   const archived = list.filter((space) => space.archivedAt !== null);
   const shown = showArchived ? list : live;
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-line bg-surface-raised">
-      <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2.5">
-        <h2 className="text-sm font-semibold text-ink">Spaces</h2>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            setCreatingSpace((open) => !open);
-          }}
-        >
-          {creatingSpace ? 'Cancel' : '+ Space'}
-        </Button>
+    <aside
+      className={cn(
+        'flex shrink-0 flex-col border-r border-line bg-surface-raised transition-[width]',
+        spacesOpen ? 'w-64' : 'w-12',
+      )}
+    >
+      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line px-2">
+        {spacesOpen && <h2 className="truncate px-1 text-sm font-semibold text-ink">Spaces</h2>}
+        <div className={cn('flex items-center gap-1', spacesOpen ? 'ml-auto' : 'mx-auto')}>
+          {spacesOpen && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setCreatingSpace((open) => !open);
+              }}
+            >
+              {creatingSpace ? 'Cancel' : '+ Space'}
+            </Button>
+          )}
+          <button
+            type="button"
+            onClick={toggleSpaces}
+            aria-label={spacesOpen ? 'Collapse spaces panel' : 'Expand spaces panel'}
+            aria-expanded={spacesOpen}
+            className="rounded px-1.5 py-1 text-xs text-ink-faint hover:bg-surface-hover hover:text-ink"
+          >
+            {spacesOpen ? '«' : '»'}
+          </button>
+        </div>
       </div>
 
-      {creatingSpace && (
+      {spacesOpen && creatingSpace && (
         <div className="border-b border-line p-2">
           <CreateSpaceForm
             orgId={orgId}
@@ -136,43 +163,45 @@ function SpaceTreePanel({
         </div>
       )}
 
-      <nav aria-label="Spaces" className="min-h-0 flex-1 overflow-y-auto p-2">
-        {spaces.isPending ? (
-          <div aria-busy="true" className="space-y-1.5 p-1">
-            <Skeleton className="h-5 w-4/5" />
-            <Skeleton className="h-5 w-3/5" />
-          </div>
-        ) : spaces.isError ? (
-          <ErrorView error={spaces.error} title="Could not load spaces" />
-        ) : live.length === 0 && !showArchived ? (
-          <p className="p-1 text-xs text-ink-faint">No spaces yet.</p>
-        ) : (
-          <ul className="space-y-1">
-            {shown.map((space) => (
-              <SpaceNode
-                key={space.spaceId}
-                orgId={orgId}
-                space={space}
-                selectedSpace={selectedSpace}
-                selectedPage={selectedPage}
-                onSelectPage={onSelectPage}
-              />
-            ))}
-          </ul>
-        )}
+      {spacesOpen && (
+        <nav aria-label="Spaces" className="min-h-0 flex-1 overflow-y-auto p-2">
+          {spaces.isPending ? (
+            <div aria-busy="true" className="space-y-1.5 p-1">
+              <Skeleton className="h-5 w-4/5" />
+              <Skeleton className="h-5 w-3/5" />
+            </div>
+          ) : spaces.isError ? (
+            <ErrorView error={spaces.error} title="Could not load spaces" />
+          ) : live.length === 0 && !showArchived ? (
+            <p className="p-1 text-xs text-ink-faint">No spaces yet.</p>
+          ) : (
+            <ul className="space-y-1">
+              {shown.map((space) => (
+                <SpaceNode
+                  key={space.spaceId}
+                  orgId={orgId}
+                  space={space}
+                  selectedSpace={selectedSpace}
+                  selectedPage={selectedPage}
+                  onSelectPage={onSelectPage}
+                />
+              ))}
+            </ul>
+          )}
 
-        {(archived.length > 0 || showArchived) && (
-          <button
-            type="button"
-            onClick={() => {
-              setShowArchived((value) => !value);
-            }}
-            className="mt-2 block px-1 text-[11px] text-ink-faint underline hover:text-ink-muted"
-          >
-            {showArchived ? 'Hide archived spaces' : `Show archived (${String(archived.length)})`}
-          </button>
-        )}
-      </nav>
+          {(archived.length > 0 || showArchived) && (
+            <button
+              type="button"
+              onClick={() => {
+                setShowArchived((value) => !value);
+              }}
+              className="mt-2 block px-1 text-[11px] text-ink-faint underline hover:text-ink-muted"
+            >
+              {showArchived ? 'Hide archived spaces' : `Show archived (${String(archived.length)})`}
+            </button>
+          )}
+        </nav>
+      )}
     </aside>
   );
 }
@@ -351,6 +380,7 @@ function SpaceNode({
                   onSelect={(pageId) => {
                     onSelectPage(spaceId, pageId);
                   }}
+                  depth={0}
                 />
               ))}
             </ul>
@@ -361,6 +391,20 @@ function SpaceNode({
   );
 }
 
+/* The tree's indent is the SUM of every ancestor ul's margin + padding —
+   nesting accumulates, so the first draft of this cap (one 24px step per
+   level, capped at 6) still grew without bound: 24 + 48 + 72 + ... left a
+   leaf six levels down ~500px right of the tree root in a 256px panel,
+   off-screen at real width and a staircase when widened. The fix is an
+   all-or-nothing contribution per level: levels 1..6 add one 16px step
+   each (12px margin + 4px padding), and every deeper level adds ZERO, so
+   the total is exactly `cap × 16px` no matter how deep the tree goes.
+   Deeper pages render at the same capped indent; the connector line keeps
+   marking where they sit. */
+const TREE_INDENT_MARGIN = 12;
+const TREE_INDENT_PADDING = 4;
+const MAX_TREE_INDENT_DEPTH = 6;
+
 function PageNode({
   orgId,
   spaceId,
@@ -368,6 +412,7 @@ function PageNode({
   byParent,
   selectedPage,
   onSelect,
+  depth,
 }: {
   readonly orgId: string;
   readonly spaceId: SpaceId;
@@ -375,12 +420,19 @@ function PageNode({
   readonly byParent: ReadonlyMap<string | null, readonly PageSummary[]>;
   readonly selectedPage: PageId | undefined;
   readonly onSelect: (pageId: PageId) => void;
+  /** How far from a space root this page sits. Root pages are 0. */
+  readonly depth: number;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [addingChild, setAddingChild] = useState(false);
   const pageId = page.pageId as PageId;
   const children = byParent.get(page.pageId) ?? [];
   const selected = pageId === selectedPage;
+
+  /* `depth + 1` because this ul holds THIS page's children — their level is
+     one past the page's own. All-or-nothing: levels within the cap add a
+     16px step, deeper levels add zero, so the TOTAL stays bounded. */
+  const withinIndentDepth = depth + 1 <= MAX_TREE_INDENT_DEPTH;
 
   return (
     <li>
@@ -433,7 +485,16 @@ function PageNode({
       </div>
 
       {(addingChild || (!collapsed && children.length > 0)) && (
-        <ul className="ml-4 border-l border-line pl-2">
+        <ul
+          className="border-l border-line"
+          style={{
+            /* BOTH the margin and the padding are the indent, and both must
+               stop past the cap — a level that kept padding would quietly
+               keep accumulating and bring the truncation back. */
+            marginLeft: withinIndentDepth ? `${String(TREE_INDENT_MARGIN)}px` : '0px',
+            paddingLeft: withinIndentDepth ? `${String(TREE_INDENT_PADDING)}px` : '0px',
+          }}
+        >
           {addingChild && (
             <li className="py-1">
               <CreatePageForm
@@ -456,6 +517,7 @@ function PageNode({
                 byParent={byParent}
                 selectedPage={selectedPage}
                 onSelect={onSelect}
+                depth={depth + 1}
               />
             ))}
         </ul>
@@ -675,13 +737,7 @@ function PagePanel({
         )}
       </div>
 
-      <div className="rounded border border-dashed border-line bg-surface-sunken/60 p-6 text-center">
-        <p className="text-sm text-ink-muted">Live collaborative editing is coming soon.</p>
-        <p className="mt-1 text-xs text-ink-faint">
-          This page exists and its position in the tree is real — the editor for its content is the
-          next piece of this feature.
-        </p>
-      </div>
+      <DocsEditor orgId={orgId as OrgId} pageId={pageId} />
     </div>
   );
 }
