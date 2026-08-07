@@ -42,6 +42,16 @@ const API_ORIGIN = process.env['WEB_API_ORIGIN'] ?? 'http://localhost:3000';
  */
 const REALTIME_ORIGIN = process.env['WEB_REALTIME_ORIGIN'] ?? 'http://localhost:3001';
 
+/**
+ * `apps/collab` (ai/phase-6-docs.md §3.2) — the Hocuspocus gateway, a third
+ * process on a third port, proxied for the identical reason `/socket.io` is:
+ * its handshake also checks `Origin` against `WEB_ORIGIN`
+ * (`apps/collab/src/auth.ts`'s `originAllowed`), so keeping the browser and
+ * the gateway on one origin in development is what makes that check see the
+ * same thing it sees in production.
+ */
+const COLLAB_ORIGIN = process.env['WEB_COLLAB_ORIGIN'] ?? 'http://localhost:3002';
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
 
@@ -62,6 +72,11 @@ export default defineConfig({
       },
       '/socket.io': {
         target: REALTIME_ORIGIN,
+        changeOrigin: false,
+        ws: true,
+      },
+      '/collab': {
+        target: COLLAB_ORIGIN,
         changeOrigin: false,
         ws: true,
       },
