@@ -128,7 +128,9 @@ const FUZZ_ANCHOR = (() => {
   const doc = new Y.Doc();
   const text = doc.getText('t');
   text.insert(0, 'fuzz');
-  return encodeAnchor(Buffer.from(Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(text, 0))));
+  return encodeAnchor(
+    Buffer.from(Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(text, 0))),
+  );
 })();
 
 async function seedTenant(admin: AdminConnection, tenant: Tenant, label: string): Promise<void> {

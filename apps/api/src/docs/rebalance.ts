@@ -64,7 +64,9 @@ export async function pageSiblingsNeedRebalance(
   const rows = await tx
     .select({ rank: schema.pages.rank })
     .from(schema.pages)
-    .where(and(eq(schema.pages.spaceId, spaceId), parentCondition, isNull(schema.pages.archivedAt)));
+    .where(
+      and(eq(schema.pages.spaceId, spaceId), parentCondition, isNull(schema.pages.archivedAt)),
+    );
 
   return needsRebalance(rows.map((row) => row.rank));
 }

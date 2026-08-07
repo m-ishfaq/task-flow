@@ -1,5 +1,11 @@
 import { InvalidTokenError, verifyAccessToken } from '@taskflow/security';
-import { OrgIdSchema, UserIdSchema, type OrgId, type PageId, type UserId } from '@taskflow/contracts';
+import {
+  OrgIdSchema,
+  UserIdSchema,
+  type OrgId,
+  type PageId,
+  type UserId,
+} from '@taskflow/contracts';
 import { authorizeConnect } from './authorize.js';
 import { parsePageDocumentName } from './document-name.js';
 

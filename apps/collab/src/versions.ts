@@ -22,7 +22,10 @@ export interface PageVersionState extends PageVersionSummary {
 }
 
 /** The most recent snapshot for a page, or null if none has been taken yet. */
-export async function latestVersion(orgId: OrgId, pageId: PageId): Promise<PageVersionState | null> {
+export async function latestVersion(
+  orgId: OrgId,
+  pageId: PageId,
+): Promise<PageVersionState | null> {
   return withCollabScope(orgId, async (tx) => {
     const rows = await tx
       .select({

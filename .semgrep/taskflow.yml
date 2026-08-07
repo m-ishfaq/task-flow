@@ -65,6 +65,12 @@ rules:
         - '/apps/api/src/identity/**'
         - '/packages/db/**'
         - '**/*.test.ts'
+        # Docs' public publish route (Phase 6 Wave 4, ai/phase-6-docs.md §3.9) —
+        # the second genuinely pre-tenant caller this message's own words
+        # already named: "reading a public share link". Scoped to the one file
+        # that calls it, mirroring the ESLint exemption in
+        # packages/config/eslint/security.js, not the whole docs/ module.
+        - '/apps/api/src/docs/public.routes.ts'
         # Deliberate violations, asserted by packages/guardrail-selftest.
         - '/packages/guardrail-selftest/**'
     pattern: withGlobalScope(...)

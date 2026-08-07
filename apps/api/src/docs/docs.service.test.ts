@@ -1,5 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { unsafeAsId, type OrgId, type PageId, type SpaceId, type UserId } from '@taskflow/contracts';
+import {
+  unsafeAsId,
+  type OrgId,
+  type PageId,
+  type SpaceId,
+  type UserId,
+} from '@taskflow/contracts';
 import { closeDatabase, initializeDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import type { Subject } from '@taskflow/policy';
@@ -129,7 +135,7 @@ describe('spaces', () => {
     expect(list[0]?.archivedAt).toBeNull();
   });
 
-  it("refuses a member the space:manage capability the matrix reserves", async () => {
+  it('refuses a member the space:manage capability the matrix reserves', async () => {
     const fixture = await scaffold('space-member-limits');
     await members.addMember(
       fixture.orgId,
@@ -438,7 +444,15 @@ describe('inherited permissions across the page tree', () => {
       { email: 'guest@docs.test', role: 'guest' },
       { userId: OWNER, requestId },
     );
-    return { orgId: fixture.orgId, owner: fixture.owner, spaceId: fixture.spaceId, a: a.pageId, b: b.pageId, c: c.pageId, d: d.pageId };
+    return {
+      orgId: fixture.orgId,
+      owner: fixture.owner,
+      spaceId: fixture.spaceId,
+      a: a.pageId,
+      b: b.pageId,
+      c: c.pageId,
+      d: d.pageId,
+    };
   }
 
   it('a guest holds nothing from the role, and cannot read a page with no tuple anywhere in its chain', async () => {
@@ -472,7 +486,9 @@ describe('inherited permissions across the page tree', () => {
     // `updatePage`, fail with a misleading NOT_FOUND that looks like a real
     // inheritance bug rather than a stale fixture).
     const guest = await actorFor(t.orgId, GUEST, 'guest');
-    await expect(pages.updatePage(guest, { pageId: t.c, title: 'Edited via A' })).resolves.toBeUndefined();
+    await expect(
+      pages.updatePage(guest, { pageId: t.c, title: 'Edited via A' }),
+    ).resolves.toBeUndefined();
   });
 
   it('a tuple on one subtree (A) does not reach an unrelated subtree (D)', async () => {
@@ -535,7 +551,9 @@ describe('inherited permissions across the page tree', () => {
     const freshMember = await actorFor(t.orgId, MEMBER, 'member');
 
     // C: nearest tuple is B's viewer cap — read allowed, write refused.
-    await expect(pages.updatePage(freshMember, { pageId: t.c, title: 'Blocked' })).rejects.toMatchObject({
+    await expect(
+      pages.updatePage(freshMember, { pageId: t.c, title: 'Blocked' }),
+    ).rejects.toMatchObject({
       code: 'FORBIDDEN',
     });
 
@@ -564,7 +582,11 @@ describe('inherited permissions across the page tree', () => {
     const guest = await actorFor(t.orgId, GUEST, 'guest');
 
     // A space-level grant reaches every page in it, root and nested alike.
-    await expect(pages.updatePage(guest, { pageId: t.a, title: 'Via space' })).resolves.toBeUndefined();
-    await expect(pages.updatePage(guest, { pageId: t.c, title: 'Via space too' })).resolves.toBeUndefined();
+    await expect(
+      pages.updatePage(guest, { pageId: t.a, title: 'Via space' }),
+    ).resolves.toBeUndefined();
+    await expect(
+      pages.updatePage(guest, { pageId: t.c, title: 'Via space too' }),
+    ).resolves.toBeUndefined();
   });
 });

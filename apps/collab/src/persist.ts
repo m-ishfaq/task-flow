@@ -125,7 +125,11 @@ export async function readUpdatesSince(
 ): Promise<readonly StoredUpdate[]> {
   return withCollabScope(orgId, async (tx) => {
     return tx
-      .select({ id: schema.yjsUpdates.id, data: schema.yjsUpdates.data, createdAt: schema.yjsUpdates.createdAt })
+      .select({
+        id: schema.yjsUpdates.id,
+        data: schema.yjsUpdates.data,
+        createdAt: schema.yjsUpdates.createdAt,
+      })
       .from(schema.yjsUpdates)
       .where(
         and(
@@ -149,7 +153,11 @@ export async function readUpdatesSince(
  * work — so this deletes precisely the rows the caller already read and
  * incorporated, never a timestamp range that could include one it didn't.
  */
-export async function pruneUpdates(orgId: OrgId, pageId: PageId, ids: readonly string[]): Promise<void> {
+export async function pruneUpdates(
+  orgId: OrgId,
+  pageId: PageId,
+  ids: readonly string[],
+): Promise<void> {
   if (ids.length === 0) return;
 
   await withCollabScope(orgId, async (tx) => {

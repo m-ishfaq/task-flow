@@ -20,7 +20,13 @@ import {
 import { createEvent, type DomainEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
 import { rebalancePageSiblings } from './rebalance.js';
-import { pageArchived, pageCreated, pageMoved, pageSiblingsRebalanced, pageUpdated } from './events.js';
+import {
+  pageArchived,
+  pageCreated,
+  pageMoved,
+  pageSiblingsRebalanced,
+  pageUpdated,
+} from './events.js';
 import {
   enforceOnPage,
   enforceOnSpace,
@@ -93,7 +99,11 @@ interface PageSummary {
 
 export async function createPage(
   actor: DocsActor,
-  input: { readonly spaceId: SpaceId; readonly parentPageId: PageId | null; readonly title: string },
+  input: {
+    readonly spaceId: SpaceId;
+    readonly parentPageId: PageId | null;
+    readonly title: string;
+  },
 ): Promise<{ readonly pageId: PageId }> {
   const pageId = newId<'PageId'>();
   const orgId = orgOf(actor);
@@ -189,7 +199,11 @@ export async function archivePage(
       .where(eq(schema.pages.id, input.pageId));
 
     await outboxWriter.append(tx, [
-      createEvent(pageArchived, { pageId: input.pageId, restored: input.restore }, envelopeOf(actor)),
+      createEvent(
+        pageArchived,
+        { pageId: input.pageId, restored: input.restore },
+        envelopeOf(actor),
+      ),
     ]);
   });
 }
@@ -251,7 +265,9 @@ export async function movePage(
       enforceOnSpace(actor, 'page:create', space);
     }
 
-    const newAncestorIds: readonly string[] = newParent ? [newParent.id, ...newParent.ancestorIds] : [];
+    const newAncestorIds: readonly string[] = newParent
+      ? [newParent.id, ...newParent.ancestorIds]
+      : [];
     const reparented = (page.parentPageId ?? null) !== (input.targetParentId ?? null);
 
     let rank: string;
@@ -285,13 +301,20 @@ export async function movePage(
         .select({ id: schema.pages.id, ancestorIds: schema.pages.ancestorIds })
         .from(schema.pages)
         .where(
-          and(eq(schema.pages.spaceId, spaceId), uuidArrayContains(schema.pages.ancestorIds, page.id)),
+          and(
+            eq(schema.pages.spaceId, spaceId),
+            uuidArrayContains(schema.pages.ancestorIds, page.id),
+          ),
         );
 
       for (const descendant of descendants) {
         const cutIndex = descendant.ancestorIds.indexOf(page.id);
         if (cutIndex === -1) continue;
-        const rewritten = [...descendant.ancestorIds.slice(0, cutIndex), page.id, ...newAncestorIds];
+        const rewritten = [
+          ...descendant.ancestorIds.slice(0, cutIndex),
+          page.id,
+          ...newAncestorIds,
+        ];
         await tx
           .update(schema.pages)
           .set({ ancestorIds: rewritten, updatedAt: new Date() })

@@ -103,7 +103,7 @@ describe('enforceContentWhitelist', () => {
     ]);
   });
 
-  it('strips an unknown mark type, matching y-prosemirror\'s overlapping-mark hash-suffix convention', () => {
+  it("strips an unknown mark type, matching y-prosemirror's overlapping-mark hash-suffix convention", () => {
     const { fragment } = docWithFragment();
 
     const paragraph = new Y.XmlElement('paragraph');
@@ -138,9 +138,9 @@ describe('enforceContentWhitelist', () => {
     const result = enforceContentWhitelist(fragment);
 
     expect(result.strippedNodes).toBe(1);
-    const survivingParagraph = (
-      (fragment.get(0) as Y.XmlElement).get(0) as Y.XmlElement
-    ).get(0) as Y.XmlElement;
+    const survivingParagraph = ((fragment.get(0) as Y.XmlElement).get(0) as Y.XmlElement).get(
+      0,
+    ) as Y.XmlElement;
     expect(survivingParagraph.toArray()).toHaveLength(0);
   });
 

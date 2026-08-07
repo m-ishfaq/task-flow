@@ -8,7 +8,13 @@ import {
   type SpaceId,
   type UserId,
 } from '@taskflow/contracts';
-import { enforce, type Permission, type ResourceRef, type Subject, type Target } from '@taskflow/policy';
+import {
+  enforce,
+  type Permission,
+  type ResourceRef,
+  type Subject,
+  type Target,
+} from '@taskflow/policy';
 
 /**
  * Shared plumbing for the Docs services (ai/phase-6-docs.md §3.1, §3.4, §3.5).

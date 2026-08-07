@@ -162,7 +162,11 @@ export async function updateComment(
       .where(eq(schema.comments.id, input.commentId));
 
     await outboxWriter.append(tx, [
-      createEvent(pageCommentUpdated, { commentId: input.commentId, pageId: comment.pageId }, envelopeOf(actor)),
+      createEvent(
+        pageCommentUpdated,
+        { commentId: input.commentId, pageId: comment.pageId },
+        envelopeOf(actor),
+      ),
     ]);
 
     return { edited: true as const };
@@ -234,7 +238,11 @@ export async function deleteComment(
       .where(eq(schema.comments.id, input.commentId));
 
     await outboxWriter.append(tx, [
-      createEvent(pageCommentDeleted, { commentId: input.commentId, pageId: comment.pageId }, envelopeOf(actor)),
+      createEvent(
+        pageCommentDeleted,
+        { commentId: input.commentId, pageId: comment.pageId },
+        envelopeOf(actor),
+      ),
     ]);
 
     return { deleted: true as const };

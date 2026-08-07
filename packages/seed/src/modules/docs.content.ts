@@ -149,7 +149,10 @@ function editDocument(rng: Rng, mix: PageMix, chaos: boolean): EditedDocument {
 
   const fragment = doc.getXmlFragment('content');
   const blocks = pageBody(rng, rng.int(mix.blocks[0], mix.blocks[1]));
-  const transactions = Math.max(1, Math.min(rng.int(mix.updates[0], mix.updates[1]), blocks.length));
+  const transactions = Math.max(
+    1,
+    Math.min(rng.int(mix.updates[0], mix.updates[1]), blocks.length),
+  );
   const perTransaction = Math.ceil(blocks.length / transactions);
 
   let snapshot: { after: number; state: Uint8Array } | null = null;

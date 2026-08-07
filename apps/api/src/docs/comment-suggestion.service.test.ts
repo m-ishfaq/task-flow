@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { unsafeAsId, type OrgId, type PageId, type SpaceId, type UserId } from '@taskflow/contracts';
+import {
+  unsafeAsId,
+  type OrgId,
+  type PageId,
+  type SpaceId,
+  type UserId,
+} from '@taskflow/contracts';
 import { closeDatabase, initializeDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import type { Subject } from '@taskflow/policy';
@@ -87,7 +93,9 @@ function anchor(at = 0): string {
   const doc = new Y.Doc();
   const text = doc.getText('t');
   text.insert(0, 'placeholder text');
-  return encodeAnchor(Buffer.from(Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(text, at))));
+  return encodeAnchor(
+    Buffer.from(Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(text, at))),
+  );
 }
 
 function body(text: string) {
@@ -237,7 +245,10 @@ describe('comments', () => {
     // — and is STILL refused, because editing is an identity check, not a
     // permission one.
     await expect(
-      comments.updateComment(fixture.owner, { commentId: comment.commentId, body: body('Hijacked') }),
+      comments.updateComment(fixture.owner, {
+        commentId: comment.commentId,
+        body: body('Hijacked'),
+      }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 
@@ -269,9 +280,9 @@ describe('comments', () => {
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
 
     // The owner (comment:delete, from the matrix) can.
-    await expect(comments.deleteComment(fixture.owner, { commentId: comment.commentId })).resolves.toEqual(
-      { deleted: true },
-    );
+    await expect(
+      comments.deleteComment(fixture.owner, { commentId: comment.commentId }),
+    ).resolves.toEqual({ deleted: true });
 
     const list = await comments.listComments(fixture.owner, { pageId: fixture.pageId });
     expect(list[0]?.deletedAt).not.toBeNull();
@@ -418,7 +429,10 @@ describe('suggestions', () => {
     // page:update has a page:read counterpart, and the commenter tuple
     // grants that — the page is visible, just not writable.
     await expect(
-      suggestions.decideSuggestion(commenter, { suggestionId: created_.suggestionId, status: 'accepted' }),
+      suggestions.decideSuggestion(commenter, {
+        suggestionId: created_.suggestionId,
+        status: 'accepted',
+      }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
 
     // The owner (page:update, from the matrix) can.
@@ -460,7 +474,10 @@ describe('suggestions', () => {
     });
 
     await expect(
-      suggestions.decideSuggestion(commenter, { suggestionId: created_.suggestionId, status: 'rejected' }),
+      suggestions.decideSuggestion(commenter, {
+        suggestionId: created_.suggestionId,
+        status: 'rejected',
+      }),
     ).resolves.toEqual({ status: 'rejected' });
   });
 

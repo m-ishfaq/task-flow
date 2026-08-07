@@ -159,7 +159,9 @@ function orgWith(spaces: readonly SpacePlan[]): SeededOrg {
     plan,
     owner: owner.user,
     memberships: MEMBERSHIPS,
-    teams: [{ id: id('7e', 1), name: 'Core', slug: 'core', members: MEMBERSHIPS.map((m) => m.user) }],
+    teams: [
+      { id: id('7e', 1), name: 'Core', slug: 'core', members: MEMBERSHIPS.map((m) => m.user) },
+    ],
     members: MEMBERSHIPS.map((m) => m.user),
     createdAt: new Date('2025-01-01T00:00:00.000Z'),
   };
@@ -535,9 +537,7 @@ describe('docs.content — the CRDT fixture', () => {
     expect(result.updateRows).toBeGreaterThan(0);
 
     const bodied = new Set(
-      spaces.pages
-        .filter((page) => page.space.plan.content === true)
-        .map((page) => page.id),
+      spaces.pages.filter((page) => page.space.plan.content === true).map((page) => page.id),
     );
     for (const row of harness.rowsOf('docs.yjs_updates')) {
       expect(bodied.has(String(row[2]))).toBe(true);

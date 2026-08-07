@@ -20,7 +20,10 @@ import { isValidId, unsafeAsId, type PageId } from '@taskflow/contracts';
  */
 
 /** Every distinct `pageId` a `pageLink` node in `fragment` names, self-references excluded. */
-export function extractInternalLinks(fragment: Y.XmlFragment, sourcePageId: PageId): readonly PageId[] {
+export function extractInternalLinks(
+  fragment: Y.XmlFragment,
+  sourcePageId: PageId,
+): readonly PageId[] {
   const found = new Set<string>();
   walk(fragment, found);
   found.delete(sourcePageId);
