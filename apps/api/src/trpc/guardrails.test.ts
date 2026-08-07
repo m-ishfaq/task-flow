@@ -307,6 +307,13 @@ describe('the real application router', () => {
 
     expect(paths).toEqual([
       'auth.logoutEverywhere',
+      /* The one account-level read that answers with no org selected
+         (`ai/account-page.md`). Self-scoped for the same reason
+         `updateProfile` is: there is no org permission that describes reading
+         your own account, and it must work before any org is chosen — that is
+         the entire reason `/account` exists as a route independent of
+         `/settings`. Not step-up: reading is not credential-adjacent. */
+      'auth.me',
       'auth.passkeys.finishRegistration',
       'auth.passkeys.list',
       'auth.passkeys.remove',
