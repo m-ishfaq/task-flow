@@ -800,6 +800,7 @@ function PagePanel({
       <DocsEditor
         key={editorGeneration}
         orgId={orgId as OrgId}
+        spaceId={spaceId}
         pageId={pageId}
         onReady={handleEditorReady}
       />

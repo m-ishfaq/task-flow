@@ -89,6 +89,23 @@ vi.mock('@hocuspocus/provider', () => ({
   HocuspocusProvider: hoisted.FakeHocuspocusProvider,
 }));
 
+/* `[[` (page-link) candidates come from `pagesQuery`, which otherwise hits
+   the real tRPC client — same reason `use-members.js` is mocked above. An
+   empty list is enough: this file pins the handshake/wiring contract, not
+   the suggestion popup's own behaviour. */
+vi.mock('../../../lib/trpc.js', () => ({
+  api: {
+    docs: {
+      pages: {
+        list: { query: () => Promise.resolve([]) },
+      },
+    },
+  },
+  apiErrorOf: () => null,
+  errorCodeOf: () => null,
+  isUnauthenticated: () => false,
+}));
+
 /* The editor resolves `@mention` candidates and the caret's display name
    through `useMembers`, which otherwise hits the real tRPC client. */
 vi.mock('../../org/use-members.js', () => ({
@@ -117,13 +134,14 @@ vi.mock('../../org/use-members.js', () => ({
 const { DocsEditor } = await import('./docs-editor.js');
 
 const ORG_ID = '019faee8-0000-7000-8000-0000000000f0';
+const SPACE_ID = '019faee8-0000-7000-8000-000000000001';
 const PAGE_ID = '019faee8-0000-7000-8000-000000000002';
 
 function renderEditor() {
   return render(
     <QueryClientProvider client={createQueryClient()}>
       <ToastProvider>
-        <DocsEditor orgId={ORG_ID as never} pageId={PAGE_ID as never} />
+        <DocsEditor orgId={ORG_ID as never} spaceId={SPACE_ID as never} pageId={PAGE_ID as never} />
       </ToastProvider>
     </QueryClientProvider>,
   );

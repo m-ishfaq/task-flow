@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import type { HocuspocusProvider } from '@hocuspocus/provider';
-import type { OrgId, PageId } from '@taskflow/contracts';
+import type { OrgId, PageId, SpaceId } from '@taskflow/contracts';
 import { useSession } from '../../../lib/session.js';
 import { cn } from '../../../lib/cn.js';
 import { Button } from '../../../components/primitives.js';
@@ -16,8 +17,14 @@ import {
   type MentionCandidate,
 } from '../../../lib/tiptap/mention-extension.js';
 import { SAFE_SCHEMES } from '../../work/detail/rich-text.js';
+import { pagesQuery } from '../api.js';
 import { useCollabProvider, type CollabStatus } from './use-collab-provider.js';
 import { DocsLink, DocsOrderedList } from './docs-extensions.js';
+import {
+  createPageLinkSuggestion,
+  PageLinkExtension,
+  type PageLinkCandidate,
+} from './page-link-extension.js';
 
 /**
  * The live collaborative editor (ai/phase-6-docs.md §3.2, Wave 2 of the UI).
@@ -62,10 +69,12 @@ export interface DocsEditorHandle {
 
 export function DocsEditor({
   orgId,
+  spaceId,
   pageId,
   onReady,
 }: {
   orgId: OrgId;
+  spaceId: SpaceId;
   pageId: PageId;
   /** Notified with a handle once the editor is live, and with `null` on disconnect/unmount. See `docs-page.tsx`'s `PagePanel` for the one caller. */
   onReady?: (handle: DocsEditorHandle | null) => void;
@@ -80,15 +89,31 @@ export function DocsEditor({
     );
   }
 
-  return <DocsEditorReady provider={provider} status={status} synced={synced} onReady={onReady} />;
+  return (
+    <DocsEditorReady
+      orgId={orgId}
+      spaceId={spaceId}
+      pageId={pageId}
+      provider={provider}
+      status={status}
+      synced={synced}
+      onReady={onReady}
+    />
+  );
 }
 
 function DocsEditorReady({
+  orgId,
+  spaceId,
+  pageId,
   provider,
   status,
   synced,
   onReady,
 }: {
+  readonly orgId: OrgId;
+  readonly spaceId: SpaceId;
+  readonly pageId: PageId;
   readonly provider: HocuspocusProvider;
   readonly status: CollabStatus;
   readonly synced: boolean;
@@ -97,6 +122,7 @@ function DocsEditorReady({
   const { people, personOf } = useMembers();
   const userId = useSession((state) => state.userId);
   const email = useSession((state) => state.email);
+  const pages = useQuery(pagesQuery(orgId, spaceId));
 
   /* `@mention` needs the org's member list, the same shape
      `rich-text-editor.tsx` builds. Rebuilt fresh every render — the editor
@@ -106,6 +132,15 @@ function DocsEditorReady({
     userId: member.userId,
     label: member.email,
   }));
+
+  /* `[[` needs this page's siblings-in-space, the same shape the tree panel
+     already loads (`docs-page.tsx`'s `pagesQuery`) — reused here rather than
+     a second query. Archived pages and the page being edited are both
+     excluded: an archived page is not a link worth creating, and a page
+     cannot usefully link to itself. */
+  const pageLinkCandidates: readonly PageLinkCandidate[] = (pages.data ?? [])
+    .filter((page) => page.archivedAt === null && page.pageId !== pageId)
+    .map((page) => ({ pageId: page.pageId, label: page.title }));
 
   /* The caret the other participants see. `personOf` resolves a display
      name when there is one, falling back to the email — the same lookup
@@ -145,6 +180,9 @@ function DocsEditorReady({
       TaskItem.configure({ nested: false }),
       MentionExtension.configure({
         suggestion: createMentionSuggestion(() => candidates),
+      }),
+      PageLinkExtension.configure({
+        suggestion: createPageLinkSuggestion(() => pageLinkCandidates),
       }),
       Collaboration.configure({
         /* MUST be the same `Y.Doc` the provider syncs, and the field MUST be
