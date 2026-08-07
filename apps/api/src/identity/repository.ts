@@ -36,6 +36,7 @@ export interface UserRow {
   status: string;
   failedLoginCount: number;
   lockedUntil: Date | null;
+  createdAt: Date;
 }
 
 /**
@@ -74,6 +75,7 @@ async function selectUser(
       status: schema.users.status,
       failedLoginCount: schema.users.failedLoginCount,
       lockedUntil: schema.users.lockedUntil,
+      createdAt: schema.users.createdAt,
     })
     .from(schema.users)
     .where(where)

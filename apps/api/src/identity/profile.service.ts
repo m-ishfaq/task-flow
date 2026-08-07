@@ -30,6 +30,41 @@ import { SYSTEM_ORG } from './identity.service.js';
  * this must not become the reason for the first one.
  */
 
+export interface ProfileView {
+  readonly email: string;
+  readonly displayName: string | null;
+  readonly createdAt: Date;
+  /**
+   * A boolean, not `emailVerifiedAt`. The UI needs "verified or not," never the
+   * exact instant, and the smaller response is the one that cannot leak
+   * something later — the same reasoning `passkey.service.ts`'s `listPasskeys`
+   * already gives for trimming what it returns.
+   */
+  readonly emailVerified: boolean;
+}
+
+/**
+ * The caller's own account, independent of any organization.
+ *
+ * Everything else that describes "who am I" on this codebase's client side —
+ * `ProfileSection`'s display name, before this — was read from the ORG member
+ * list (`tenancy.members.list`), which does not exist with no org selected.
+ * This is the one account-level read that works regardless: same shape as
+ * `updateProfile`, the subject comes from the verified principal at the route,
+ * never from an argument here.
+ */
+export async function getProfile(userId: UserId): Promise<ProfileView> {
+  const user = await repo.findUserById(userId);
+  if (user === undefined) throw errors.notFound();
+
+  return {
+    email: user.email,
+    displayName: user.displayName,
+    createdAt: user.createdAt,
+    emailVerified: user.emailVerifiedAt !== null,
+  };
+}
+
 export interface UpdateProfileInput {
   /**
    * The new name, or null to clear it.

@@ -151,6 +151,29 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
         profile.updateProfile(deps.identity, ctx.principal.userId, input),
       ),
 
+    /**
+     * The caller's own account, independent of any organization (`/account`).
+     *
+     * `selfRoute` for the same reason as `updateProfile`: there is no org
+     * permission that describes reading your own account, and it must answer
+     * with no org selected at all — that is the whole point of the page it
+     * backs (`ai/account-page.md`).
+     */
+    me: selfRoute({
+      selfReason: 'A user reading their own account. Answers with no org selected.',
+    })
+      .output(
+        z
+          .object({
+            email: z.string(),
+            displayName: z.string().nullable(),
+            createdAt: z.date(),
+            emailVerified: z.boolean(),
+          })
+          .strict(),
+      )
+      .query(({ ctx }) => profile.getProfile(ctx.principal.userId)),
+
     /** Nested rather than merged, so the manifest reads `auth.passkeys.*`. */
     passkeys: createPasskeyRouter({ passkeys: deps.passkeys }),
   });
