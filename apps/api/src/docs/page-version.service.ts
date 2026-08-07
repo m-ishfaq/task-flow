@@ -4,6 +4,7 @@ import { errors, type PageId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { uuidv7 } from '@taskflow/security';
 import { pageVersionRestored, pageVersionSaved } from './events.js';
+import { renderPagePdf } from './render.js';
 import { enforceOnPage, envelopeOf, loadPage, orgOf, userOf, type DocsActor } from './shared.js';
 
 /**
@@ -179,7 +180,12 @@ export async function restorePageVersion(
     const rows = await tx
       .select({ state: schema.pageVersions.state })
       .from(schema.pageVersions)
-      .where(and(eq(schema.pageVersions.id, input.versionId), eq(schema.pageVersions.pageId, input.pageId)))
+      .where(
+        and(
+          eq(schema.pageVersions.id, input.versionId),
+          eq(schema.pageVersions.pageId, input.pageId),
+        ),
+      )
       .limit(1);
 
     const version = rows[0];
@@ -207,5 +213,58 @@ export async function restorePageVersion(
         envelopeOf(actor),
       ),
     ]);
+  });
+}
+
+/**
+ * Renders a version to PDF, base64-encoded (§3.9, Wave 4).
+ *
+ * `versionId: null` exports the CURRENT materialized state — the same
+ * on-demand materialization `savePageVersion` performs, just not persisted
+ * as a new row. A named `versionId` exports exactly that snapshot, "never
+ * the live socket": both paths read a value already fixed in the database
+ * (or fixed the instant this function reads it, for the current-state case),
+ * never a document another editor could be mid-keystroke into.
+ *
+ * Returned as base64 in an ordinary tRPC response rather than a second
+ * binary HTTP route — see `router.ts`'s own note on why: a Docs page's
+ * rendered PDF is small (typography, not embedded media), and reusing the
+ * existing authenticated, `can()`-checked request path costs nothing here
+ * that a dedicated route would save, while a dedicated route would be a
+ * second place to get authentication right.
+ */
+export async function exportPageVersionPdf(
+  actor: DocsActor,
+  input: { readonly pageId: PageId; readonly versionId: string | null },
+): Promise<{ readonly filename: string; readonly base64: string }> {
+  return withOrgScope(orgOf(actor), async (tx) => {
+    const page = await loadPage(tx, input.pageId);
+    enforceOnPage(actor, 'page:read', page);
+
+    let state: Uint8Array;
+    if (input.versionId === null) {
+      state = await materializeCurrentState(tx, input.pageId);
+    } else {
+      const rows = await tx
+        .select({ state: schema.pageVersions.state })
+        .from(schema.pageVersions)
+        .where(
+          and(
+            eq(schema.pageVersions.id, input.versionId),
+            eq(schema.pageVersions.pageId, input.pageId),
+          ),
+        )
+        .limit(1);
+      const version = rows[0];
+      if (!version) throw errors.notFound();
+      state = version.state;
+    }
+
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, state);
+
+    const pdf = await renderPagePdf({ title: page.title, fragment: doc.getXmlFragment('content') });
+
+    return { filename: `${page.title || 'document'}.pdf`, base64: pdf.toString('base64') };
   });
 }

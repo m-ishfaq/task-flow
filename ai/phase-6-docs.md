@@ -1,7 +1,26 @@
 # Phase 6 — Docs
 
-**Status: APPROVED 2026-08-06; Waves 1-3 SHIPPED same day. All six of §7's open questions are now
-decided** — §7.2 and §7.6 on approval (Wave 1's migration and process layout depended on them);
+**Status: APPROVED 2026-08-06; Waves 1-4 SHIPPED — Wave 4 (publish, PDF export, templates) landed
+2026-08-07, closing out the phase's backend. `apps/web` carries ZERO Docs UI — every wave through
+this one shipped API/`apps/collab` only. That gap is real product surface, not a rounding error:
+nobody can create a space, open a page, or click "publish" today. It is called out here rather than
+folded into "done" for the same reason CLAUDE.md's Chat retrospective gives for its own missed UI —
+"a green `pnpm verify` is not the same claim as this works when you click it," and no amount of
+backend correctness changes that a phase with no UI is a phase nobody can use yet.**
+
+**Wave 4 in one paragraph:** `page:publish` (admin/owner only — packages/policy/src/roles.ts,
+mirroring `comment:delete`'s moderation-tier split) takes a materialized snapshot into a NEW
+`kind = 'publish'` `docs.page_versions` row and repoints `docs.pages.published_version_id`
+(migration 0026); unpublish clears the pointer and leaves the row as ordinary history. An
+unauthenticated `GET /public/docs/pages/:pageId` (`apps/api/src/docs/public.routes.ts`) serves it as
+self-contained HTML with no realtime dependency, and `GET .../export.pdf` renders the same content
+via `pdfkit`; both re-validate the whitelist `apps/collab/src/content-guard.ts` already enforces at
+the save boundary (`render.ts`'s own header — a debounced pass means "already clean" is never a safe
+assumption for a renderer). Templates (`docs.templates`, its own table, Wave 4's other new migration
+surface) are a DETACHED snapshot decoupled from their source page, not a `page_versions` row — those
+cascade-delete with their page, and a template must outlive it.
+
+**All six of §7's open questions are now decided** — §7.2 and §7.6 on approval (Wave 1's migration and process layout depended on them);
 §7.4 at the start of Wave 2 by reading the installed `@hocuspocus/server`'s own protocol handling
 (read-only IS server-enforced); §7.3 at the same point (strip disallowed content silently, from the
 live `Y.Doc`, not just the snapshot); §7.1 and §7.5 after Wave 3 shipped, once nothing else was left
@@ -26,7 +45,7 @@ of them go through `onAuthenticate` as the framework actually invokes it, or thr
 
 1. **`gateway.ts`'s `onAuthenticate` set `data.context = {...}`, and every connection's context was
    silently empty.** `@hocuspocus/server`'s `hooks()` runner builds a FRESH object — `{ ...hookPayload,
-   ... }` — for every hook call; assigning `data.context` replaces a property on that throwaway copy,
+... }` — for every hook call; assigning `data.context` replaces a property on that throwaway copy,
    never the real `hookPayload.context` the rest of the pipeline reads. The framework only threads
    context forward through the hook's RETURN value (`onAuthenticate?(data): Promise<any>` — the `any`
    is exactly this). `data.connectionConfig.readOnly = ...` on the same line worked, and masked the
@@ -84,7 +103,7 @@ and the migration review both missed.**
 
 3. **The claim query's first version used `FOR UPDATE OF pv SKIP LOCKED`, mirroring `claimPending`'s
    own outbox query, and failed against a real database with `permission denied for table
-   page_versions`** — despite `taskflow_backlinks`' column-level grant being exactly right, and
+page_versions`** — despite `taskflow_backlinks`' column-level grant being exactly right, and
    despite `packages/db`'s own typecheck and lint passing clean. Postgres row-locking clauses
    require SELECT on every column of a table, not just the ones a query projects; a migration
    reviewer and a type checker both agree that looks correct, and only a real connection as the
@@ -93,6 +112,59 @@ and the migration review both missed.**
    incorrectly) reprocess the same row — `docs-backlinks.ts`'s own header has the full reasoning,
    and `onConflictDoNothing` on the dispatch insert is what keeps that race from aborting a
    transaction outright.
+
+**Wave 4 (publish, PDF export, templates) shipped 2026-08-07, with one design decision that departs
+from §3.9's literal wording, one dependency this build did not have before, and one bug — this
+phase's fourth — that only a real database caught.**
+
+1. **No sixth database role.** §6.1's own pattern for every prior wave needing cross-tenant reach
+   (`taskflow_collab`, `taskflow_backlinks`) was a new role with its own pool. Publish is a
+   different shape: nobody's IDENTITY needs narrowing, because a public page has none — anyone with
+   the URL is meant to see it. That is exactly what `identity.orgs`'/`identity.memberships`'
+   `_self_read` policies already solved in migration 0004: a SECOND, permissive `FOR SELECT` policy
+   that only ever contributes a row when `app.org_id` is unset, which `withOrgScope` never leaves
+   it. The one caller that runs unscoped reuses `withGlobalScope` — whose own docstring named this
+   exact scenario, "reading a public share link," before Docs existed to need it — rather than a
+   sixth role. `packages/db/src/client.ts`'s docstring and `packages/config/eslint/security.js`'s
+   exemption list (scoped to the one file that calls it, `apps/api/src/docs/public.routes.ts`, not
+   the whole `docs/` module) both say so now.
+
+2. **`pdfkit` is a new runtime dependency** (`apps/api/package.json`), the first this phase has
+   added. Considered and rejected: shelling out to a headless browser for HTML→PDF, which would
+   mean a Chromium download on the $0/month Oracle free-tier target PLAN.md §14 commits to. `pdfkit`
+   is pure JS, draws directly from the same whitelisted node/mark tree `render.ts` already walks for
+   the public HTML route, and needed no native build step.
+
+3. **`render.ts` must not trust that content already passed `content-guard.ts`'s whitelist**, and a
+   test proved a real defect from assuming otherwise. `enforceContentWhitelist` runs on a debounce
+   (§3.8's own named limitation), so a materialized `Y.Doc` — what both the public route and PDF
+   export read — can carry content newer than the last pass. The renderer re-validates every node
+   type, attribute set, and mark against the exact same whitelist rather than assuming "already
+   clean," walking `Y.XmlElement`/`Y.XmlText` directly for the identical reason `content-guard.ts`
+   does (no DOM-dependent `y-prosemirror` on a server that never renders a live editor). Writing
+   `render.test.ts` against that assumption caught a real bug before any database was involved: an
+   out-of-range `heading` level (attrs failing `NODE_ATTRIBUTES.heading`'s schema, falling back to
+   `{}`) produced a literal `<hNaN>` tag — `Math.min(6, Math.max(1, undefined))` is `NaN`, not a
+   clamp — in both the HTML and PDF renderers. Fixed by defaulting the missing level to `2` rather
+   than letting `Math.min`/`Math.max` propagate the `undefined`.
+
+4. **The public-read RLS policies' first version broke every OTHER role that reads
+   `docs.page_versions`, and only `apps/collab`'s own end-to-end suite caught it.** Migration 0026's
+   `page_versions_public_read` policy joins back through `docs.pages` (`EXISTS (SELECT 1 FROM
+docs.pages p WHERE p.published_version_id = ...)`) to confirm a version is the CURRENTLY published
+   one, not merely `kind = 'publish'`-shaped history. Postgres checks table-level privileges for
+   every relation a policy's USING clause references at rewrite time — before the boolean logic
+   (including the `NULLIF(current_setting('app.org_id', true), '') IS NULL` guard that makes the
+   EXISTS clause unreachable for an ordinary org-scoped query) ever runs. `taskflow_collab` and
+   `taskflow_backlinks` hold no grant on `docs.pages` at all, by design (0023's and 0025's own
+   headers), so every read either role made of `docs.page_versions` — including ones that could
+   never have satisfied this policy — started failing `permission denied for table pages`.
+   `apps/collab/src/replay.test.ts` failed first; `gateway.integration.test.ts`'s real end-to-end
+   session is what confirmed the fix actually restored live editing rather than merely satisfying
+   the one suite that happened to run first. Fixed by adding `TO taskflow_app` to both new policies
+   — scoping them to the one role that ever calls `withGlobalScope` for Docs makes them invisible to
+   every other role, exactly as if they did not exist for it. Migration 0026's own header has the
+   full mechanism.
 
 **Where the draft turned out to be wrong**, checked against `apps/realtime`'s actual code rather
 than left as the draft's paraphrase of it: §3.3 said `onAuthenticate` calls `apps/api`'s
@@ -438,9 +510,13 @@ proving anchors survive a concurrent edit landing before them; suggestions as a 
 same anchoring with accept/reject state; backlink indexing (§3.10) on the save-boundary pass Wave
 2 already built.
 
-**Wave 4 — publish, PDF export, templates.** Public snapshot rendering (§3.9), PDF export off a
-version rather than live state, page templates (almost certainly a `page_versions`-shaped "seed
-content" concept rather than new machinery).
+**Wave 4 — publish, PDF export, templates. SHIPPED 2026-08-07.** Public snapshot rendering (§3.9)
+over a reused `withGlobalScope`, PDF export off a version rather than live state (`pdfkit`, this
+phase's first new runtime dependency), page templates as a `page_versions`-shaped but genuinely
+separate table (`docs.templates` — a detached snapshot, not a row that cascades with its source
+page). See the status header for the design decisions and the real-Postgres RLS bug this wave
+found. **`apps/web` ships no Docs UI for any wave through this one** — see the status header's
+opening paragraph.
 
 ## 6. Cross-cutting obligations
 
@@ -493,6 +569,7 @@ literal enum/union addition, which is mechanical, not structural — flagged her
 mistaken for a real coupling when it happens.
 
 ## 7. Open decisions — need a call before or during Wave 1/2 (all six now decided; see the status
+
 ## header for when and why)
 
 1. **Does the "nearest ancestor grant" resolver in §3.4 become a general `packages/policy`

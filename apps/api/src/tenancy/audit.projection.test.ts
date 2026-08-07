@@ -86,6 +86,17 @@ const UNMAPPED: ReadonlySet<string> = new Set([
   'view.deleted',
   // Chat (Phase 5)
   'message.saved',
+  // Docs (Phase 6 Wave 4) — templates are an org-wide reusable asset with no
+  // natural container: unlike `view.*`/`status.*` above, there is no board,
+  // project, space, or page a template belongs to (`sourcePageId` is
+  // informational only, per migration 0026's own header — a template
+  // deliberately outlives its source page). `RESOURCE_TYPES` has no
+  // `template` entry, on purpose (`template.service.ts`'s own header): a
+  // template is not independently grantable, so adding one would be a
+  // permission-catalog entry with nothing that can ever hold a tuple on it.
+  // `templateId` is still in the payload for a reader to see.
+  'docs.template_created',
+  'docs.template_archived',
 ]);
 
 /**

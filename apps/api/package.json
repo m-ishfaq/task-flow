@@ -39,12 +39,14 @@
     "@taskflow/storage": "workspace:*",
     "@trpc/server": "^11.18.0",
     "fastify": "^5.10.0",
+    "pdfkit": "^0.19.1",
     "yjs": "^13.6.32",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@taskflow/config": "workspace:*",
     "@types/node": "^22.10.2",
+    "@types/pdfkit": "^0.17.6",
     "eslint": "^9.17.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",

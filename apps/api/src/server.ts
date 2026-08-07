@@ -18,6 +18,7 @@ import { authenticate } from './identity/authenticate.js';
 import { createMailDelivery } from './identity/deliver.js';
 import { createLogger } from '@taskflow/observability';
 import { registerRateLimit } from './middleware/rate-limit.js';
+import { registerPublicDocsRoutes } from './docs/public.routes.js';
 import type { SlidingWindowLimiter } from './middleware/sliding-window.js';
 import type { Env } from './config/env.js';
 import type { EventBus } from '@taskflow/events';
@@ -127,6 +128,13 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
     const healthy = await isDatabaseHealthy();
     return healthy ? { status: 'ready' } : reply.status(503).send({ status: 'not-ready' });
   });
+
+  /* Unauthenticated, plain HTTP — no tRPC context, no principal. See
+     docs/public.routes.ts's own header (§2.2) on why visibility is the
+     database's decision, not a check made here. Registered after the rate
+     limiter above, so an anonymous request here is bounded by the same
+     GLOBAL per-address limit every other route gets. */
+  registerPublicDocsRoutes(app);
 
   await app.register(fastifyTRPCPlugin<AppRouter>, {
     prefix: '/trpc',

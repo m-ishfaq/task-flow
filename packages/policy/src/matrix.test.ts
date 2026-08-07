@@ -63,6 +63,7 @@ const EXPECTED: Readonly<Record<Role, readonly Permission[]>> = {
     'page:create',
     'page:update',
     'page:delete',
+    'page:publish',
     'comment:create',
     'comment:delete',
     'attachment:upload',

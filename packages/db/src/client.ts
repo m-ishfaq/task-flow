@@ -139,11 +139,20 @@ export async function withUserScope<T>(
  * where no organization is known yet, by definition.
  *
  * Rules:
- *   - Only tables WITHOUT tenant RLS may be queried here. A tenant table
- *     queried in this scope returns nothing, which is the correct failure.
+ *   - A tenant table queried here returns nothing UNLESS it carries an
+ *     explicit second policy that consults this unscoped state on its own
+ *     terms — `identity.orgs`/`identity.memberships`' `_self_read` policies
+ *     (via `app.user_id`, migration 0004) and `docs.pages`/`docs.page_versions`'
+ *     `*_public_read` policies (via "org_id is unset", migration 0026, Phase 6
+ *     Wave 4 — reading a published page has no session to scope to at all,
+ *     which is this function's own "public share link" case made real). Every
+ *     other tenant table has no such second policy, so this scope is still the
+ *     correct way to prove a query touches nothing it shouldn't: it fails
+ *     empty rather than fails closed.
  *   - Every call site needs a comment explaining why no org is known.
- *   - Restricted by lint to the identity module (Phase 1); adding a call site
- *     elsewhere is a change to a security-critical surface (§2.2).
+ *   - Restricted by lint to the identity module (Phase 1) and Docs' public
+ *     publish route (Phase 6 Wave 4); adding a call site elsewhere is a
+ *     change to a security-critical surface (§2.2).
  */
 export async function withGlobalScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
   return requireDb().transaction(async (tx) => {
@@ -406,7 +415,10 @@ export function initializeCollabDatabase(config: DbConfig): void {
  * exists for exactly one thing: persisting to `docs.yjs_updates` and
  * `docs.page_versions`, the two tables `taskflow_collab` can reach.
  */
-export async function withCollabScope<T>(orgId: OrgId, fn: (tx: TenantDb) => Promise<T>): Promise<T> {
+export async function withCollabScope<T>(
+  orgId: OrgId,
+  fn: (tx: TenantDb) => Promise<T>,
+): Promise<T> {
   if (!collabDb) {
     throw new Error(
       'Collab database not initialized. Call initializeCollabDatabase() during boot — ' +

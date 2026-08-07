@@ -124,24 +124,28 @@ export const NODE_TYPES = Object.keys(NODE_ATTRIBUTES) as readonly NodeType[];
  */
 const SAFE_SCHEMES = ['http:', 'https:', 'mailto:'] as const;
 
+/**
+ * Whether `value` is a link href this build allows to render — the same
+ * check `SafeUrl` runs at parse time, exported so a second renderer (Docs'
+ * `render.ts`, walking a live `Y.XmlFragment` rather than parsed JSON) can
+ * ask the identical question about content that never went through
+ * `RichTextDocument.safeParse` at all, rather than restating the scheme
+ * list a second time. One list to audit, per guardrail 5's own reasoning.
+ */
+export function isSafeLinkHref(value: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  return (SAFE_SCHEMES as readonly string[]).includes(parsed.protocol);
+}
+
 const SafeUrl = z
   .string()
   .max(2048)
-  .refine(
-    (value) => {
-      let parsed: URL;
-      try {
-        parsed = new URL(value);
-      } catch {
-        // Relative URLs have no scheme to abuse, but they also have no meaning
-        // outside a browsing context this document does not have. Rejecting them
-        // keeps "what can be in an href" answerable by reading SAFE_SCHEMES.
-        return false;
-      }
-      return (SAFE_SCHEMES as readonly string[]).includes(parsed.protocol);
-    },
-    `Links must use one of: ${SAFE_SCHEMES.join(', ')}`,
-  );
+  .refine(isSafeLinkHref, `Links must use one of: ${SAFE_SCHEMES.join(', ')}`);
 
 /**
  * Mark types, written out rather than generated from a map.

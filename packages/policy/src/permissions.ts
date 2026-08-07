@@ -89,6 +89,11 @@ export const PERMISSIONS = [
   'page:create',
   'page:update',
   'page:delete',
+  /* Admin/owner only — see roles.ts. Publishing exposes a page's current
+     content with no session required at all, which is a bigger unilateral
+     exposure decision than editing it, the same distinction that keeps
+     `message:delete`/`comment:delete` out of MEMBER's list. */
+  'page:publish',
 
   /* Cross-cutting collaboration */
   'comment:create',

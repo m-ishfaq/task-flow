@@ -96,7 +96,7 @@ const BANS = {
    */
   globalScope: {
     selector: "CallExpression[callee.name='withGlobalScope']",
-    message: `withGlobalScope has NO tenant context — every RLS policy filters to zero rows. It exists for pre-tenant operations only (login by email, invitation resolution) and is restricted to the identity module. Use withOrgScope. ${ref('§8.3')}`,
+    message: `withGlobalScope has NO tenant context — every RLS policy filters to zero rows. It exists for pre-tenant operations only (login by email, invitation resolution, reading a public share link) and is restricted to the identity module and Docs' public publish route. Use withOrgScope. ${ref('§8.3')}`,
   },
 
   rawSqlTag: {
@@ -322,6 +322,26 @@ export const security = [
     rules: {
       // Integration tests here read the database directly to assert on stored
       // state — that a token column holds a hash and not the token.
+      'no-restricted-syntax': restrictedSyntax('globalScope', ...SQL_BANS, ...TEST_BANS),
+      '@typescript-eslint/no-non-null-assertion': 'off',
+    },
+  },
+  /* Docs' public publish route (Phase 6 Wave 4, ai/phase-6-docs.md §3.9) is
+     the second consumer of withGlobalScope outside the data layer, and the
+     scenario its own docstring already named before Docs existed to need it:
+     "reading a public share link" — an unauthenticated request for a
+     published page, where no organization is known because none was ever
+     asserted. Scoped to the one file that needs it, not the whole docs
+     module, so every other Docs service still goes through withOrgScope. */
+  {
+    name: 'taskflow/guardrails/exempt-docs-public',
+    files: ['apps/api/src/docs/public.routes.ts'],
+    rules: { 'no-restricted-syntax': restrictedSyntax('globalScope') },
+  },
+  {
+    name: 'taskflow/guardrails/exempt-docs-public-tests',
+    files: ['apps/api/src/docs/public.routes.test.ts'],
+    rules: {
       'no-restricted-syntax': restrictedSyntax('globalScope', ...SQL_BANS, ...TEST_BANS),
       '@typescript-eslint/no-non-null-assertion': 'off',
     },

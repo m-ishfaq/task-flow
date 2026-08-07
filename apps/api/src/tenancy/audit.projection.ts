@@ -218,6 +218,16 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'page.comment_deleted': { type: 'comment', key: 'commentId' },
   'page.suggestion_created': { type: 'page', key: 'pageId' },
   'page.suggestion_decided': { type: 'page', key: 'pageId' },
+
+  /* Wave 4 — publish and templates. Publish events resolve to the PAGE, the
+     identical "name the thing that changed" rule every other page-shaped
+     event above already follows. Templates have no `RESOURCE_TYPES` entry —
+     mirroring `page.version_saved`'s own precedent, a template is not
+     independently grantable (no tuple can point at one; §8.2's "no list
+     resource type, deliberately" reasoning applies again), so these resolve
+     to `null`/`null` and carry their id in the payload for a reader to see. */
+  'page.published': { type: 'page', key: 'pageId' },
+  'page.unpublished': { type: 'page', key: 'pageId' },
 };
 
 /**

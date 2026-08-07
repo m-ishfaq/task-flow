@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { CommentIdSchema, PageIdSchema, SpaceIdSchema, SuggestionIdSchema } from '@taskflow/contracts';
+import {
+  CommentIdSchema,
+  PageIdSchema,
+  SpaceIdSchema,
+  SuggestionIdSchema,
+  TemplateIdSchema,
+} from '@taskflow/contracts';
 import { route, router } from '../trpc/builder.js';
 import { subjectOf } from '../trpc/context.js';
 import { RichTextDocument } from '../work/richtext.js';
@@ -10,6 +16,8 @@ import * as pages from './page.service.js';
 import * as pageVersions from './page-version.service.js';
 import * as comments from './comment.service.js';
 import * as suggestions from './suggestion.service.js';
+import * as publish from './publish.service.js';
+import * as templates from './template.service.js';
 
 /**
  * Docs routes — spaces, the page tree, and page versions (ai/phase-6-docs.md
@@ -83,7 +91,11 @@ export function createDocsRouter() {
       create: route({ permission: 'page:create' })
         .input(
           z
-            .object({ spaceId: SpaceIdSchema, parentPageId: PageIdSchema.nullable(), title: PageTitle })
+            .object({
+              spaceId: SpaceIdSchema,
+              parentPageId: PageIdSchema.nullable(),
+              title: PageTitle,
+            })
             .strict(),
         )
         .output(z.object({ pageId: z.string() }))
@@ -112,6 +124,31 @@ export function createDocsRouter() {
         .input(z.object({ pageId: PageIdSchema, restore: z.boolean() }).strict())
         .output(z.void())
         .mutation(({ input, ctx }) => pages.archivePage(actorOf(ctx), input)),
+
+      /** §3.9 — admin/owner only (packages/policy/src/roles.ts). */
+      publish: route({ permission: 'page:publish' })
+        .input(z.object({ pageId: PageIdSchema }).strict())
+        .output(z.object({ versionId: z.string() }))
+        .mutation(({ input, ctx }) => publish.publishPage(actorOf(ctx), input)),
+
+      unpublish: route({ permission: 'page:publish' })
+        .input(z.object({ pageId: PageIdSchema }).strict())
+        .output(z.void())
+        .mutation(({ input, ctx }) => publish.unpublishPage(actorOf(ctx), input)),
+
+      createFromTemplate: route({ permission: 'page:create' })
+        .input(
+          z
+            .object({
+              spaceId: SpaceIdSchema,
+              parentPageId: PageIdSchema.nullable(),
+              title: PageTitle,
+              templateId: TemplateIdSchema,
+            })
+            .strict(),
+        )
+        .output(z.object({ pageId: z.string() }))
+        .mutation(({ input, ctx }) => templates.createPageFromTemplate(actorOf(ctx), input)),
     }),
 
     pageVersions: router({
@@ -140,6 +177,56 @@ export function createDocsRouter() {
         .input(z.object({ pageId: PageIdSchema, versionId: z.string() }).strict())
         .output(z.void())
         .mutation(({ input, ctx }) => pageVersions.restorePageVersion(actorOf(ctx), input)),
+
+      /**
+       * Base64 in an ordinary tRPC response, not a second authenticated
+       * binary route — §3.9's own reasoning is in
+       * `page-version.service.ts#exportPageVersionPdf`'s header. `null`
+       * exports the current materialized state rather than a saved version.
+       */
+      exportPdf: route({ permission: 'page:read' })
+        .input(z.object({ pageId: PageIdSchema, versionId: z.string().nullable() }).strict())
+        .output(z.object({ filename: z.string(), base64: z.string() }))
+        .query(({ input, ctx }) => pageVersions.exportPageVersionPdf(actorOf(ctx), input)),
+    }),
+
+    templates: router({
+      list: route({ permission: 'page:read' })
+        .output(
+          z
+            .array(
+              z.object({
+                templateId: z.string(),
+                name: z.string(),
+                description: z.string().nullable(),
+                sourcePageId: z.string().nullable(),
+                createdBy: z.string().nullable(),
+                createdAt: z.date(),
+                archivedAt: z.date().nullable(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ ctx }) => templates.listTemplates(actorOf(ctx))),
+
+      create: route({ permission: 'page:create' })
+        .input(
+          z
+            .object({
+              name: z.string().trim().min(1).max(200),
+              description: z.string().trim().max(2000).nullable(),
+              sourcePageId: PageIdSchema,
+            })
+            .strict(),
+        )
+        .output(z.object({ templateId: z.string() }))
+        .mutation(({ input, ctx }) => templates.createTemplate(actorOf(ctx), input)),
+
+      /** Admin/owner only — see template.service.ts's own header on the moderation-tier split. */
+      archive: route({ permission: 'page:delete' })
+        .input(z.object({ templateId: TemplateIdSchema, restore: z.boolean() }).strict())
+        .output(z.void())
+        .mutation(({ input, ctx }) => templates.archiveTemplate(actorOf(ctx), input)),
     }),
 
     comments: router({
@@ -248,7 +335,9 @@ export function createDocsRouter() {
        */
       decide: route({ permission: 'comment:create' })
         .input(
-          z.object({ suggestionId: SuggestionIdSchema, status: z.enum(['accepted', 'rejected']) }).strict(),
+          z
+            .object({ suggestionId: SuggestionIdSchema, status: z.enum(['accepted', 'rejected']) })
+            .strict(),
         )
         .output(z.object({ status: z.enum(['accepted', 'rejected']) }))
         .mutation(({ input, ctx }) => suggestions.decideSuggestion(actorOf(ctx), input)),

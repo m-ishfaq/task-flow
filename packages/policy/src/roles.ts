@@ -59,6 +59,7 @@ const ADMIN: readonly Permission[] = [
   'page:create',
   'page:update',
   'page:delete',
+  'page:publish',
 
   'comment:create',
   'comment:delete',

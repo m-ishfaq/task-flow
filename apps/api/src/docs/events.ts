@@ -205,3 +205,35 @@ export const pageSuggestionDecided = defineEvent(
     })
     .strict(),
 );
+
+/* -------------------------------------------------------------------------- *
+ * Publish and templates — Wave 4 (§3.9, §5).
+ * -------------------------------------------------------------------------- */
+
+/** `versionId` names the new 'publish'-kind snapshot §3.9 requires re-publishing to create. */
+export const pagePublished = defineEvent(
+  'page.published',
+  z.object({ pageId: z.string(), versionId: z.string() }).strict(),
+);
+
+/**
+ * The pointer was cleared — NOT that the snapshot row was deleted. See
+ * migration 0026's own header: an old 'publish'-kind row is left alone as
+ * ordinary version history once this fires, it just stops being the one
+ * `pages_public_read`/`page_versions_public_read` can find.
+ */
+export const pageUnpublished = defineEvent(
+  'page.unpublished',
+  z.object({ pageId: z.string() }).strict(),
+);
+
+export const templateCreated = defineEvent(
+  'docs.template_created',
+  z.object({ templateId: z.string(), name: z.string() }).strict(),
+);
+
+/** Covers both archive and restore, the same `restored` boolean shape `page.archived` uses. */
+export const templateArchived = defineEvent(
+  'docs.template_archived',
+  z.object({ templateId: z.string(), restored: z.boolean() }).strict(),
+);

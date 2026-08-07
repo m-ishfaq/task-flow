@@ -428,6 +428,18 @@ describe('the application router', () => {
       'docs.comments.delete',
       'docs.suggestions.create',
       'docs.suggestions.decide',
+
+      // Wave 4. `pages.publish` is the one where a cross-tenant hit would be
+      // most damaging in a NEW way — not reading or corrupting another org's
+      // data, but making one of its pages world-readable with no session at
+      // all. `pages.createFromTemplate` takes both a `spaceId` and a
+      // `templateId`; either substituted from the victim plants a page (or
+      // reads a template's content) across the tenant boundary.
+      'docs.pages.publish',
+      'docs.pages.unpublish',
+      'docs.pages.createFromTemplate',
+      'docs.templates.create',
+      'docs.templates.archive',
     ]) {
       expect(byPath.get(path), `${path} was not enrolled by the fuzz harness`).toBe('denied');
     }
@@ -474,6 +486,10 @@ describe('the application router', () => {
          spaces and succeeds, which this technique cannot distinguish from a
          leak. The RLS tests cover cross-tenant isolation instead. */
       'docs.spaces.list',
+      /* Every template in the CALLER's org, org-wide by design (Wave 4) — no
+         per-template resource for an id to name, the same "no tuple, no id to
+         substitute" shape `docs.spaces.list` is exempted for just above. */
+      'docs.templates.list',
       'tenancy.audit.verify',
       'tenancy.members.list',
       'tenancy.orgs.get',

@@ -101,6 +101,18 @@ export const pages = docs.table(
 
     archivedAt: timestamp('archived_at', { withTimezone: true }),
 
+    /**
+     * Publish-to-public (Wave 4, §3.9). `publishedVersionId` names the
+     * `page_versions` row currently served to the public; NOT the same as
+     * "the latest 'publish'-kind row" — unpublishing clears both columns and
+     * leaves any past 'publish' row as ordinary version history. A simple
+     * FK, not composite — see migration 0026's own note on why.
+     */
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    publishedVersionId: uuid('published_version_id').references(() => pageVersions.id, {
+      onDelete: 'set null',
+    }),
+
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -162,7 +174,7 @@ export const pageVersions = docs.table(
     orgId: uuid('org_id').notNull(),
     pageId: uuid('page_id').notNull(),
 
-    /** 'autosave' (written by compaction) or 'manual' (on-demand save). No 'publish' yet — Wave 4's migration adds it. */
+    /** 'autosave' (compaction), 'manual' (on-demand save), or 'publish' (Wave 4, §3.9). */
     kind: text('kind').notNull(),
 
     state: bytea('state').notNull(),
@@ -173,7 +185,7 @@ export const pageVersions = docs.table(
   },
   (table) => [
     index('page_versions_page_idx').on(table.orgId, table.pageId, table.createdAt),
-    check('page_versions_kind_valid', sql`${table.kind} IN ('autosave', 'manual')`),
+    check('page_versions_kind_valid', sql`${table.kind} IN ('autosave', 'manual', 'publish')`),
   ],
 );
 
@@ -291,3 +303,38 @@ export const backlinkDispatch = docs.table('backlink_dispatch', {
 
   processedAt: timestamp('processed_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Page templates (Wave 4, §5, migration 0026's own header). `state` is a
+ * DETACHED copy of a source page's materialized content at the moment the
+ * template was created — not a live reference — so a template survives its
+ * source page being moved, edited, or deleted. `sourcePageId` is
+ * informational only and carries no foreign key.
+ */
+export const templates = docs.table(
+  'templates',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+
+    name: text('name').notNull(),
+    description: text('description'),
+
+    state: bytea('state').notNull(),
+    sourcePageId: uuid('source_page_id'),
+
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('templates_live_idx')
+      .on(table.orgId, table.name)
+      .where(sql`archived_at IS NULL`),
+    check('templates_name_present', sql`length(btrim(${table.name})) > 0`),
+    check('templates_name_length', sql`length(${table.name}) <= 200`),
+  ],
+);

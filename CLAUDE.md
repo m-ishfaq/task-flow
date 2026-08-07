@@ -225,8 +225,12 @@ got built, a seed script drifted from the schema it seeds) had no test at all, w
 survived past a header that already claimed the phase done. A green `pnpm verify` is not the same
 claim as "this works when you click it."
 
-**Phase 6 (Docs) Waves 1–3 are COMPLETE; Wave 4 is NOT STARTED.** Spec in
-[ai/phase-6-docs.md](ai/phase-6-docs.md), approved 2026-08-06. Wave 1 shipped migration 0023
+**Phase 6 (Docs) Waves 1–4 are COMPLETE on the backend. `apps/web` has ZERO Docs UI** — no space or
+page tree, no editor, nothing to click. Every wave through Wave 4 shipped API and `apps/collab`
+only; a person cannot create a space, open a page, or press "publish" today, regardless of what the
+backend correctly enforces. This is real, named scope left undone, not a rounding error — see
+`ai/phase-6-docs.md`'s status header for why it is called out rather than folded into "done."
+Spec in [ai/phase-6-docs.md](ai/phase-6-docs.md), approved 2026-08-06. Wave 1 shipped migration 0023
 (`docs.spaces`, `docs.pages` — tree only, no body content), the inherited-permission `Target`
 resolver (`apps/api/src/docs/shared.ts`), space/page CRUD and `movePage`'s reparent-and-rank
 mechanics (`apps/api/src/docs`), and `apps/collab`'s authorization spine (`onAuthenticate` composing
@@ -271,6 +275,26 @@ real role disproves it. Fixed by dropping `FOR UPDATE` rather than widening the 
 lock back — see `ai/phase-6-docs.md`'s status header and `packages/db/src/docs-backlinks.ts`'s own
 comment for the accepted trade (two racing relay instances can now redundantly, but never
 incorrectly, reprocess the same row).
+
+**Wave 4 (publish, PDF export, templates) shipped without a sixth database role, and its first RLS
+policy broke every OTHER role that reads `docs.page_versions`.** Publish reuses `withGlobalScope` —
+the same escape hatch `apps/api/src/identity` uses for pre-tenant reads, restricted by lint to that
+module until now — rather than a new role, because a public page's whole point is having no reader
+identity to narrow (§6.1's prior roles all existed to narrow WHO could read cross-tenant; nobody
+needs narrowing here). The lint exemption is scoped to the one file that calls it
+(`apps/api/src/docs/public.routes.ts`), not the whole `docs/` module. The bug: migration 0026's
+`page_versions_public_read` policy joins back through `docs.pages` to confirm a version is the
+CURRENTLY published one — and Postgres checks table-level privileges for every relation a policy's
+USING clause references at rewrite time, before the boolean logic (including the guard that makes
+the join unreachable for an ordinary org-scoped query) ever runs. `taskflow_collab` and
+`taskflow_backlinks` hold no grant on `docs.pages` by design, so every read either role made of
+`docs.page_versions` started failing `permission denied for table pages` — caught by
+`apps/collab/src/replay.test.ts`, confirmed fixed by the same suite's real end-to-end gateway test.
+Fixed by scoping both new policies `TO taskflow_app`, invisible to every other role exactly as if
+they did not exist for it. `render.ts`'s own header has a second, smaller bug the same "don't trust
+it's already clean" discipline caught before any database was involved: an out-of-range heading
+level produced a literal `<hNaN>` tag, from `Math.min`/`Math.max` propagating `undefined` as `NaN`
+instead of clamping it.
 
 **Read a spec's own status header before trusting a phase marker anywhere else.** The §13 roadmap
 table and this section were both stale for the whole of Phase 3.5's Wave 1 and Wave 2, which is how
