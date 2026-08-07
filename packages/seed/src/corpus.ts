@@ -909,3 +909,27 @@ export function pageBody(rng: Rng, blocks: number): readonly PageBlock[] {
 
   return body;
 }
+
+/**
+ * Names for a space's reusable page templates (Phase 6, Wave 4).
+ *
+ * Genuinely different names from `PAGE_TOPICS`, on purpose: a page is a real
+ * document about something, a template is a reusable SHAPE ("Meeting notes",
+ * "1:1"), and reusing the page-topic pool would produce a template that
+ * reads like a specific already-written page rather than a starting point
+ * for a new one.
+ */
+const TEMPLATE_NAMES = [
+  'Meeting notes',
+  'Project brief',
+  'Weekly 1:1',
+  'Runbook',
+  'Post-mortem',
+  'Design doc',
+  'Onboarding checklist',
+  'Decision record',
+] as const;
+
+export function pageTemplateName(rng: Rng): string {
+  return rng.pick(TEMPLATE_NAMES);
+}

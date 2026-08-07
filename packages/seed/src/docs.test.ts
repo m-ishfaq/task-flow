@@ -8,6 +8,7 @@ import { findProfile, PROFILES, type OrgPlan, type Profile, type SpacePlan } fro
 import { contentModule, editDocument } from './modules/docs.content.js';
 import { commentsModule } from './modules/docs.comments.js';
 import { suggestionsModule } from './modules/docs.suggestions.js';
+import { templatesModule } from './modules/docs.templates.js';
 import { spacesModule } from './modules/docs.spaces.js';
 import { orgsModule, type SeededMembership, type SeededOrg } from './modules/tenancy.orgs.js';
 import type { SeedContext, SeedDb } from './context.js';
@@ -46,9 +47,18 @@ interface CapturedInsert {
   readonly orgId: string | null;
 }
 
+/** A non-insert statement — `docs.content`'s publish UPDATE is the one
+ * producer of these today. */
+interface CapturedQuery {
+  readonly text: string;
+  readonly values: readonly unknown[];
+  readonly orgId: string | null;
+}
+
 interface Harness {
   readonly ctx: SeedContext;
   readonly inserts: CapturedInsert[];
+  readonly queries: CapturedQuery[];
   readonly events: DomainEvent[];
   rowsOf(table: string): readonly (readonly unknown[])[];
   columnsOf(table: string): readonly string[];
@@ -56,11 +66,15 @@ interface Harness {
 
 function harnessFor(profile: Profile, org: SeededOrg, seed = 'docs-test'): Harness {
   const inserts: CapturedInsert[] = [];
+  const queries: CapturedQuery[] = [];
   const events: DomainEvent[] = [];
   let currentOrg: string | null = null;
 
   const db: SeedDb = {
-    query: () => Promise.resolve([]),
+    query: (text, values = []) => {
+      queries.push({ text, values, orgId: currentOrg });
+      return Promise.resolve([]);
+    },
     insert: (table, columns, rows) => {
       inserts.push({ table, columns, rows, orgId: currentOrg });
       return Promise.resolve(rows.length);
@@ -98,6 +112,7 @@ function harnessFor(profile: Profile, org: SeededOrg, seed = 'docs-test'): Harne
   return {
     ctx,
     inserts,
+    queries,
     events,
     rowsOf: (table) => inserts.filter((i) => i.table === table).flatMap((i) => [...i.rows]),
     columnsOf: (table) => inserts.find((i) => i.table === table)?.columns ?? [],
@@ -571,7 +586,7 @@ describe('docs.content — the CRDT fixture', () => {
     expect(versions.length).toBeGreaterThan(0);
 
     for (const version of versions) {
-      expect(['autosave', 'manual']).toContain(version['kind']);
+      expect(['autosave', 'manual', 'publish']).toContain(version['kind']);
       if (version['kind'] === 'autosave') expect(version['created_by']).toBeNull();
       else expect(version['created_by']).not.toBeNull();
     }
@@ -581,7 +596,8 @@ describe('docs.content — the CRDT fixture', () => {
     // version is ALSO `kind: 'manual'` (see the "restore" describe block
     // below) but emits `page.version_restored` instead of `page.version_saved`
     // — so the manual COUNT no longer equals the SAVED-event count on its own;
-    // it equals saved + restored.
+    // it equals saved + restored. `publish` is its own kind, unaffected by
+    // either count — see the "publish" describe block below.
     const saved = harness.events.filter((event) => event.name === 'page.version_saved');
     const restored = harness.events.filter((event) => event.name === 'page.version_restored');
     expect(saved.length + restored.length).toBe(
@@ -935,6 +951,174 @@ describe('docs.suggestions', () => {
 });
 
 /* -------------------------------------------------------------------------- *
+ * Wave 4 — publish and templates.
+ * -------------------------------------------------------------------------- */
+
+describe('docs.content — Wave 4 (publish)', () => {
+  const plan: readonly SpacePlan[] = [
+    { name: 'Handbook', pages: 10, depth: 2, grants: 0, content: true },
+  ];
+
+  it('writes a publish-kind version and points docs.pages at it', async () => {
+    const { harness, contentOut } = await seedContent(plan, { bodyRate: 1, publishShare: 1 });
+    expect(contentOut.publishedPages).toBeGreaterThan(0);
+
+    const versions = asRecords(
+      harness.columnsOf('docs.page_versions'),
+      harness.rowsOf('docs.page_versions'),
+    );
+    const published = versions.filter((v) => v['kind'] === 'publish');
+    expect(published.length).toBe(contentOut.publishedPages);
+    for (const version of published) {
+      expect(version['created_by']).not.toBeNull();
+    }
+
+    // The UPDATE `docs.content` issues through `ctx.db.query` — the same
+    // escape hatch `work.cards`'s `next_card_number` update already uses.
+    const updates = harness.queries.filter((q) => q.text.includes('UPDATE docs.pages'));
+    expect(updates.length).toBe(contentOut.publishedPages);
+
+    const publishedVersionIds = new Set(published.map((v) => v['id']));
+    for (const update of updates) {
+      // $1 = published_version_id — must name a version row this same run
+      // actually wrote, never a fabricated id.
+      expect(publishedVersionIds.has(update.values[0])).toBe(true);
+      expect(update.orgId).not.toBeNull();
+    }
+  });
+
+  it('emits page.published with the version it just wrote', async () => {
+    const { harness, contentOut } = await seedContent(plan, { bodyRate: 1, publishShare: 1 });
+
+    const published = harness.events.filter((event) => event.name === 'page.published');
+    expect(published.length).toBe(contentOut.publishedPages);
+
+    const versions = asRecords(
+      harness.columnsOf('docs.page_versions'),
+      harness.rowsOf('docs.page_versions'),
+    );
+    const versionIds = new Set(versions.map((v) => v['id']));
+
+    for (const event of published) {
+      const payload = event.payload as {
+        readonly pageId: string;
+        readonly versionId: string | null;
+        readonly published: boolean;
+      };
+      expect(payload.published).toBe(true);
+      expect(payload.versionId).not.toBeNull();
+      expect(versionIds.has(payload.versionId)).toBe(true);
+    }
+  });
+
+  it('never publishes a page with no body — there is nothing to materialize', async () => {
+    const { harness, contentOut } = await seedContent(plan, { bodyRate: 0, publishShare: 1 });
+    expect(contentOut.publishedPages).toBe(0);
+    expect(harness.queries.filter((q) => q.text.includes('UPDATE docs.pages'))).toHaveLength(0);
+  });
+});
+
+describe('docs.templates', () => {
+  const withTemplates: SpacePlan = {
+    name: 'Handbook',
+    pages: 8,
+    depth: 2,
+    grants: 0,
+    templates: 3,
+  };
+  const withoutTemplates: SpacePlan = { name: 'Scratch', pages: 4, depth: 1, grants: 0 };
+
+  async function seedTemplates(spaces: readonly SpacePlan[], seed = 'docs-templates-test') {
+    const org = orgWith(spaces);
+    const harness = harnessFor(DEMO, org, seed);
+    const spacesOut = await spacesModule.seed(harness.ctx);
+
+    const outputs = new Map<SeedModule, unknown>([
+      [orgsModule, { orgs: [org] }],
+      [spacesModule, spacesOut],
+    ]);
+    const templatesCtx: SeedContext = {
+      ...harness.ctx,
+      use: <Out>(module: SeedModule<Out>): Out => outputs.get(module) as Out,
+    };
+    const templatesOut = await templatesModule.seed(templatesCtx);
+
+    return { harness, spacesOut, templatesOut };
+  }
+
+  it('writes exactly the planned number of templates, and none for a space asking for zero', async () => {
+    const { harness, spacesOut, templatesOut } = await seedTemplates([
+      withTemplates,
+      withoutTemplates,
+    ]);
+    expect(templatesOut.templateRows).toBe(3);
+
+    const rows = asRecords(
+      harness.columnsOf('docs.page_templates'),
+      harness.rowsOf('docs.page_templates'),
+    );
+    expect(rows).toHaveLength(3);
+
+    const handbook = spacesOut.spaces.find((space) => space.name === 'Handbook');
+    for (const row of rows) {
+      expect(row['space_id']).toBe(handbook?.id);
+    }
+  });
+
+  it('writes a real, decodable Yjs state — not a placeholder blob', async () => {
+    const { harness } = await seedTemplates([withTemplates]);
+    const rows = asRecords(
+      harness.columnsOf('docs.page_templates'),
+      harness.rowsOf('docs.page_templates'),
+    );
+    expect(rows.length).toBeGreaterThan(0);
+
+    for (const row of rows) {
+      const doc = new Y.Doc();
+      // Throws on malformed bytes — the identical proof `docs.content`'s own
+      // "produces documents the collab gateway leaves untouched" test uses.
+      expect(() => {
+        Y.applyUpdate(doc, row['state'] as Uint8Array);
+      }).not.toThrow();
+
+      const result = enforceContentWhitelist(doc.getXmlFragment('content'));
+      expect(result).toEqual({ strippedNodes: 0, strippedTextRuns: 0, changed: false });
+    }
+  });
+
+  it('gives every template a name and an author who actually holds space:manage', async () => {
+    const { harness } = await seedTemplates([withTemplates]);
+    const rows = asRecords(
+      harness.columnsOf('docs.page_templates'),
+      harness.rowsOf('docs.page_templates'),
+    );
+
+    const org = orgWith([withTemplates]);
+    const managers = new Set(
+      org.memberships.filter((m) => roleGrants(m.role, 'space:manage')).map((m) => m.user.id),
+    );
+
+    for (const row of rows) {
+      expect(typeof row['name']).toBe('string');
+      expect((row['name'] as string).length).toBeGreaterThan(0);
+      expect(managers.has(row['created_by'] as string)).toBe(true);
+    }
+  });
+
+  it('emits page.template_created for every row it writes', async () => {
+    const { harness, templatesOut } = await seedTemplates([withTemplates]);
+    const created = harness.events.filter((event) => event.name === 'page.template_created');
+    expect(created.length).toBe(templatesOut.templateRows);
+  });
+
+  it('writes nothing when no space in the org asks for a template', async () => {
+    const { harness, templatesOut } = await seedTemplates([withoutTemplates]);
+    expect(templatesOut.templateRows).toBe(0);
+    expect(harness.rowsOf('docs.page_templates')).toHaveLength(0);
+  });
+});
+
+/* -------------------------------------------------------------------------- *
  * Profiles
  * -------------------------------------------------------------------------- */
 
@@ -981,5 +1165,7 @@ describe('docs profiles', () => {
     expect(spaces.some((space) => space.archivedSubtree === true)).toBe(true);
     expect(spaces.some((space) => space.withGuest === true)).toBe(true);
     expect(spaces.some((space) => space.depth === 1)).toBe(true); // a flat space
+    expect(spaces.some((space) => (space.templates ?? 0) > 0)).toBe(true); // Wave 4 templates
+    expect(spaces.some((space) => (space.templates ?? 0) === 0)).toBe(true); // the common case
   });
 });

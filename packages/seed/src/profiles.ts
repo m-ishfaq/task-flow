@@ -156,6 +156,14 @@ export interface SpacePlan {
   readonly withGuest?: boolean;
   /** Seed real Yjs bodies — WAL rows and snapshots — for pages in this space. */
   readonly content?: boolean;
+  /**
+   * Reusable page templates for this space (Phase 6, Wave 4) — a count, not a
+   * rate: a template is a deliberate, named thing an admin set up, the same
+   * "declared shape" reasoning `grants` and `pages` already use, not
+   * something that happens to a random share of spaces. Omitted or zero means
+   * none, which is the common case — most spaces have no templates.
+   */
+  readonly templates?: number;
 }
 
 export interface OrgPlan {
@@ -315,6 +323,10 @@ export interface PageMix {
   readonly suggestionDecidedShare: number;
   /** Of the DECIDED suggestions, the share accepted rather than rejected. */
   readonly suggestionAcceptedShare: number;
+  /** Pages with a body that get published (Wave 4) — a fresh `page_versions`
+   * row of `kind = 'publish'` holding CURRENT content, with `docs.pages`'
+   * `published_version_id`/`published_at` pointed at it. */
+  readonly publishShare: number;
 }
 
 export interface Profile {
@@ -431,6 +443,7 @@ const DEMO_PAGE_MIX: PageMix = {
   suggestionsPerPage: [1, 3],
   suggestionDecidedShare: 0.6,
   suggestionAcceptedShare: 0.65,
+  publishShare: 0.15,
 };
 
 /**
@@ -511,6 +524,9 @@ const DEMO: Profile = {
           wide: 24,
           grants: 5,
           content: true,
+          // A space with several templates — the ordinary case for the one
+          // space in the fixture people actually create new pages in often.
+          templates: 3,
         },
         /* A live space with one archived BRANCH — see `SpacePlan`'s note on why
            that is a different state from an archived space. */
@@ -521,6 +537,7 @@ const DEMO: Profile = {
           grants: 3,
           archivedSubtree: true,
           content: true,
+          templates: 1,
         },
         /* The guest's one subtree. Signing in as them must reach exactly this
            and nothing else — the §3.3 case, and the only place in the seeded
@@ -701,7 +718,17 @@ const MINIMAL: Profile = {
         { name: 'private-notes', type: 'private', members: 2, messages: 15, withGuest: true },
         { name: null, type: 'dm', members: 2, messages: 20 },
       ],
-      spaces: [{ name: 'Handbook', pages: 6, depth: 3, grants: 1, withGuest: true, content: true }],
+      spaces: [
+        {
+          name: 'Handbook',
+          pages: 6,
+          depth: 3,
+          grants: 1,
+          withGuest: true,
+          content: true,
+          templates: 1,
+        },
+      ],
       projects: [
         {
           name: 'First Project',

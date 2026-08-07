@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 import { createEvent } from '@taskflow/events';
-import { pageVersionSaved, pageVersionRestored } from '@taskflow/api/events/docs';
+import { pageVersionSaved, pageVersionRestored, pagePublished } from '@taskflow/api/events/docs';
 import { extractInternalLinks } from '@taskflow/api/docs/backlinks';
 import { unsafeAsId } from '@taskflow/contracts';
 import { pageBody, type PageBlock } from '../corpus.js';
@@ -80,6 +80,22 @@ import { spacesModule, type SeededPage } from './docs.spaces.js';
  * updates are additive. The fix — and what this module's restore scenario
  * reproduces — is a fresh `page_versions` row carrying the EARLIER snapshot's
  * exact `state` bytes, never a `docs.yjs_updates` row.
+ *
+ * ## Publish (Wave 4) is one more `page_versions` kind, plus an UPDATE
+ *
+ * `publishPage` (`apps/api/src/docs/publish.service.ts`) materializes the
+ * page's CURRENT content — not the latest snapshot in isolation, snapshot
+ * plus WAL tail — into a fresh `kind = 'publish'` row, then points
+ * `docs.pages.published_version_id` at it. This module already holds the
+ * live `Y.Doc` with every edit (main content, an internal link, chaos)
+ * applied, so `Y.encodeStateAsUpdate(edited.doc)` at the end of
+ * `editDocument` IS that current state — no separate replay to reconstruct
+ * it. `docs.pages` rows already exist (written by `docs.spaces`, a
+ * dependency this module inherits transitively), so pointing one at a
+ * freshly-inserted version needs an UPDATE after the insert, issued through
+ * `ctx.db.query` — the same escape hatch `work.cards`'s
+ * `next_card_number` update already uses for a write no bulk `insert` call
+ * shapes.
  */
 
 export interface ContentOutput {
@@ -88,6 +104,7 @@ export interface ContentOutput {
   readonly versionRows: number;
   readonly backlinkRows: number;
   readonly restoredPages: number;
+  readonly publishedPages: number;
   /**
    * Per-page live state, keyed by page id — only pages that received a body.
    * `docs.comments` and `docs.suggestions` anchor against these rather than
@@ -331,6 +348,7 @@ export const contentModule = defineSeedModule({
     let versionRows = 0;
     let backlinkRows = 0;
     let restoredPages = 0;
+    let publishedPages = 0;
     const pageDocuments = new Map<string, SeededPageContent>();
     /* Chaos plants ONE bad document per run, not one per page: the strip path
        needs a fixture, and a database where every page trips it would make the
@@ -341,6 +359,11 @@ export const contentModule = defineSeedModule({
       const updateRowValues: unknown[][] = [];
       const versionRowValues: unknown[][] = [];
       const backlinkRowValues: unknown[][] = [];
+      const publishUpdates: {
+        readonly pageId: string;
+        readonly versionId: string;
+        readonly publishedAt: Date;
+      }[] = [];
       const allOrgPages = allPagesByOrg.get(orgId) ?? [];
 
       for (const page of orgPages) {
@@ -472,6 +495,36 @@ export const contentModule = defineSeedModule({
         for (const targetPageId of links) {
           backlinkRowValues.push([orgId, page.id, targetPageId, linkedAt]);
         }
+
+        /* Publish — see the file header. Independent of whether a snapshot or
+           a restore happened above: `publishPage` always materializes CURRENT
+           content, which `edited.doc` already reflects with every edit
+           applied, snapshot or not. */
+        if (rng.chance(mix.publishShare)) {
+          const publishedAt = minutesAfter(at(edited.updates.length - 1), rng.int(10, 300));
+          const publishVersionId = rng.uuid(publishedAt);
+
+          versionRowValues.push([
+            publishVersionId,
+            orgId,
+            page.id,
+            'publish',
+            Buffer.from(Y.encodeStateAsUpdate(edited.doc)),
+            page.author.user.id,
+            publishedAt,
+          ]);
+
+          publishUpdates.push({ pageId: page.id, versionId: publishVersionId, publishedAt });
+
+          ctx.emit(
+            createEvent(
+              pagePublished,
+              { pageId: page.id, versionId: publishVersionId, published: true },
+              envelopeFor(orgId, page.author.user.id, publishedAt),
+            ),
+          );
+          publishedPages += 1;
+        }
       }
 
       await ctx.orgScope(orgId, async () => {
@@ -490,6 +543,19 @@ export const contentModule = defineSeedModule({
           ['org_id', 'source_page_id', 'target_page_id', 'created_at'],
           backlinkRowValues,
         );
+
+        /* The published pointer, one UPDATE per page — `docs.pages` rows
+           already exist (written by `docs.spaces`), and the composite FK
+           (migration 0026) needs the `docs.page_versions` row inserted just
+           above to already be there, which is why this runs after it rather
+           than batched into the same statement. */
+        for (const update of publishUpdates) {
+          await ctx.db.query(
+            'UPDATE docs.pages SET published_version_id = $1, published_at = $2, updated_at = $2 ' +
+              'WHERE org_id = $3 AND id = $4',
+            [update.versionId, update.publishedAt, orgId, update.pageId],
+          );
+        }
       });
 
       updateRows += updateRowValues.length;
@@ -501,7 +567,8 @@ export const contentModule = defineSeedModule({
       ctx.log(
         `docs.content: ${String(pagesWithBody)} pages with a body — ` +
           `${String(updateRows)} WAL rows, ${String(versionRows)} snapshots, ` +
-          `${String(backlinkRows)} backlinks, ${String(restoredPages)} restored`,
+          `${String(backlinkRows)} backlinks, ${String(restoredPages)} restored, ` +
+          `${String(publishedPages)} published`,
       );
     }
 
@@ -511,10 +578,13 @@ export const contentModule = defineSeedModule({
       versionRows,
       backlinkRows,
       restoredPages,
+      publishedPages,
       pages: pageDocuments,
     };
   },
 });
 
-/** Exported so `docs.test.ts` can drive the generator without a database. */
-export { editDocument, collectTextNodes, pageLinkParagraph };
+/** Exported so `docs.test.ts` can drive the generator without a database, and
+ * so `docs.templates` can build a standalone document with the identical
+ * node-construction rules rather than a second copy of them. */
+export { editDocument, collectTextNodes, pageLinkParagraph, nodeFor };

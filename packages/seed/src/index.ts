@@ -61,10 +61,12 @@ export {
   editDocument,
   collectTextNodes,
   pageLinkParagraph,
+  nodeFor,
   type ContentOutput,
   type SeededPageContent,
 } from './modules/docs.content.js';
 export { commentsModule, type CommentOutput } from './modules/docs.comments.js';
 export { suggestionsModule, type SuggestionOutput } from './modules/docs.suggestions.js';
+export { templatesModule, type TemplateOutput } from './modules/docs.templates.js';
 export { attachmentsModule } from './modules/platform.attachments.js';
 export { auditModule } from './modules/platform.audit.js';

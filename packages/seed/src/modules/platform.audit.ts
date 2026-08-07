@@ -8,6 +8,7 @@ import { viewsModule } from './work.views.js';
 import { contentModule } from './docs.content.js';
 import { commentsModule } from './docs.comments.js';
 import { suggestionsModule } from './docs.suggestions.js';
+import { templatesModule } from './docs.templates.js';
 
 /**
  * The outbox, and the real hash-chained audit log it drains into.
@@ -34,13 +35,15 @@ export interface AuditOutput {
 
 export const auditModule = defineSeedModule({
   name: 'platform.audit',
-  /* Nothing reads `work.views`', `docs.content`'s, `docs.comments`' or
-     `docs.suggestions`' output, so they are named here rather than somewhere
-     more meaningful — this module's `requires` is what pulls the whole graph
-     in, and a module no other module depends on has to be reached from the
-     root or it silently never runs. `docs.content` reaches `docs.spaces`
-     through its own `requires`, and `docs.comments`/`docs.suggestions` each
-     reach both `docs.spaces` and `docs.content` through theirs. */
+  /* Nothing reads `work.views`', `docs.content`'s, `docs.comments`',
+     `docs.suggestions`' or `docs.templates`' output, so they are named here
+     rather than somewhere more meaningful — this module's `requires` is what
+     pulls the whole graph in, and a module no other module depends on has to
+     be reached from the root or it silently never runs. `docs.content`
+     reaches `docs.spaces` through its own `requires`, `docs.comments`/
+     `docs.suggestions` each reach both `docs.spaces` and `docs.content`
+     through theirs, and `docs.templates` reaches `docs.spaces` through its
+     own. */
   requires: [
     attachmentsModule,
     tuplesModule,
@@ -48,6 +51,7 @@ export const auditModule = defineSeedModule({
     contentModule,
     commentsModule,
     suggestionsModule,
+    templatesModule,
   ],
   tables: ['platform.outbox'],
 
