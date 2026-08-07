@@ -28,6 +28,18 @@ import { isValidId } from '@taskflow/contracts';
  * this JSON — that is what keeps the Phase 8 index from depending on the
  * document schema, and what makes the GIN index in migration 0008 indexable at
  * all.
+ *
+ * ## Reused by Docs, not copied (Phase 6)
+ *
+ * `NODE_ATTRIBUTES`, `NODE_TYPES` and `MarkSchema` are exported so
+ * `apps/collab/src/content-guard.ts` can validate the SAME whitelist against a
+ * live `Y.XmlFragment` instead of maintaining a second copy that could drift —
+ * ai/phase-6-docs.md §3.8 is explicit that Docs' TipTap schema is meant to be
+ * identical to Work's, just CRDT-backed. The enforcement POINT differs (a
+ * save-boundary pass that strips, not a reject-before-write Zod parse — see
+ * that file's own header), but the RULES — which node types exist, which
+ * attributes they take, which URL schemes a link may use — are one
+ * definition, exported via `@taskflow/api`'s `./richtext` entry.
  */
 
 /**
@@ -37,7 +49,7 @@ import { isValidId } from '@taskflow/contracts';
  * rejected, which is why the list and the attribute map are one structure
  * rather than two that could disagree.
  */
-const NODE_ATTRIBUTES = {
+export const NODE_ATTRIBUTES = {
   doc: z.object({}).strict(),
   paragraph: z.object({}).strict(),
   text: z.object({}).strict(),
@@ -71,11 +83,37 @@ const NODE_ATTRIBUTES = {
       label: z.string().trim().min(1).max(120),
     })
     .strict(),
+  /**
+   * `pageLink` — an atomic, inline reference to a Docs page (Phase 6, Wave 3,
+   * §3.10), the identical shape `mention` establishes for a person: `label`
+   * is the text as written, not re-derived from the target's current title,
+   * for the same reason `mention`'s own comment gives.
+   *
+   * Deliberately a NODE with a validated `pageId`, not a `link` mark with an
+   * `href` — `SafeUrl` above rejects relative URLs outright ("no meaning
+   * outside a browsing context this document does not have"), so a
+   * `/docs/{pageId}`-shaped href was never going to pass it, and widening
+   * the shared URL scheme policy to admit relative paths — for every rich
+   * text field in the system, Work's included — is a bigger and murkier
+   * change than the actual need: a page reference is a REFERENCE, not a
+   * browsable URL, exactly what `mention` already models for a person.
+   * `apps/api/src/docs/backlinks.ts` is the one reader that walks a
+   * document for this node type; `[[Page Name]]` wiki-link SYNTAX (§3.10's
+   * other named form, which needs name-to-id resolution against a live page
+   * tree and has no editor UI to produce it yet) is a named, deliberate gap,
+   * not built speculatively ahead of the surface that would create one.
+   */
+  pageLink: z
+    .object({
+      pageId: z.string().refine(isValidId, 'must be a page id'),
+      label: z.string().trim().min(1).max(500),
+    })
+    .strict(),
 } as const;
 
-type NodeType = keyof typeof NODE_ATTRIBUTES;
+export type NodeType = keyof typeof NODE_ATTRIBUTES;
 
-const NODE_TYPES = Object.keys(NODE_ATTRIBUTES) as readonly NodeType[];
+export const NODE_TYPES = Object.keys(NODE_ATTRIBUTES) as readonly NodeType[];
 
 /**
  * URL schemes a link may use.
@@ -113,7 +151,7 @@ const SafeUrl = z
  * which would defeat the point of the union being the thing that decides what a
  * mark may carry. Five lines of repetition buys a schema the compiler checks.
  */
-const MarkSchema = z.discriminatedUnion('type', [
+export const MarkSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('bold') }).strict(),
   z.object({ type: z.literal('italic') }).strict(),
   z.object({ type: z.literal('strike') }).strict(),

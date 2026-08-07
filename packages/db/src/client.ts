@@ -363,6 +363,138 @@ export function createRealtimeAdapterPool(): pg.Pool {
   return adapterPool;
 }
 
+/* -------------------------------------------------------------------------- *
+ * The collab connection (ai/phase-6-docs.md §6.1, Phase 6 Wave 2)
+ * -------------------------------------------------------------------------- */
+
+let collabPool: pg.Pool | undefined;
+let collabDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes `apps/collab`'s write-exception pool, as `taskflow_collab`.
+ *
+ * Unlike `taskflow_realtime`, this role IS tenant-scoped ordinary data —
+ * `docs.yjs_updates` and `docs.page_versions` carry `org_id` under the same
+ * `tenant_isolation` RLS policy every other table gets, not a per-consumer
+ * one. `withCollabScope` below sets `app.org_id` exactly like `withOrgScope`
+ * does; the separate ROLE is what's narrow — INSERT/SELECT on those two
+ * tables and DELETE on the WAL, nothing else — not a separate scoping model.
+ */
+export function initializeCollabDatabase(config: DbConfig): void {
+  if (collabPool) {
+    throw new Error('Collab database already initialized. This is a boot-time call.');
+  }
+
+  collabPool = new Pool({
+    connectionString: config.url,
+    max: config.maxConnections ?? 10,
+    application_name: config.applicationName ?? 'taskflow-collab',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  collabDb = drizzle(collabPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_collab`, scoped to one organization.
+ *
+ * ⚠ HUMAN REVIEW SURFACE (§2.2) — the write path guardrail 8's "sockets
+ * never write" carve-out is about. `apps/collab`'s `onAuthenticate` hook
+ * still reads `docs.pages`/`docs.spaces` over the ORDINARY `withOrgScope`
+ * (the `taskflow_app` pool `initializeDatabase` sets up) — this connection
+ * exists for exactly one thing: persisting to `docs.yjs_updates` and
+ * `docs.page_versions`, the two tables `taskflow_collab` can reach.
+ */
+export async function withCollabScope<T>(orgId: OrgId, fn: (tx: TenantDb) => Promise<T>): Promise<T> {
+  if (!collabDb) {
+    throw new Error(
+      'Collab database not initialized. Call initializeCollabDatabase() during boot — ' +
+        'the WAL append must not fall back to the application role, which has no grant on ' +
+        'docs.yjs_updates or docs.page_versions and would fail closed on every write.',
+    );
+  }
+
+  return collabDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', ${orgId}, true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the collab pool has been initialized. */
+export function hasCollabDatabase(): boolean {
+  return collabDb !== undefined;
+}
+
+/* -------------------------------------------------------------------------- *
+ * The backlinks connection (ai/phase-6-docs.md §3.10, Phase 6 Wave 3)
+ * -------------------------------------------------------------------------- */
+
+let backlinksPool: pg.Pool | undefined;
+let backlinksDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the backlinks relay's claim pool, as `taskflow_backlinks`.
+ *
+ * A FIFTH role rather than reusing `taskflow_app` for the claim step, for
+ * the same reason `taskflow_realtime` isn't `taskflow_audit`: the claim
+ * query has to see every tenant's `docs.page_versions` rows in one pass, and
+ * no ordinary org-scoped connection can do that. Migration 0025's own header
+ * has the column-level detail — this role's grant on `docs.page_versions` is
+ * `(id, org_id, page_id, created_at)` only, never `state`.
+ */
+export function initializeBacklinksDatabase(config: DbConfig): void {
+  if (backlinksPool) {
+    throw new Error('Backlinks database already initialized. This is a boot-time call.');
+  }
+
+  backlinksPool = new Pool({
+    connectionString: config.url,
+    // Small, matching taskflow_audit/taskflow_realtime: one relay drains one
+    // queue, and extra connections here buy nothing but ways to contend.
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-backlinks',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  backlinksDb = drizzle(backlinksPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_backlinks` — the role that may find out WHICH
+ * pages have a new `page_versions` row across every org, and mark it
+ * processed. It cannot read `state` (migration 0025) and holds nothing on
+ * `docs.backlinks`; the actual link extraction and backlinks write happen
+ * afterward, per claimed page, over the ordinary `withOrgScope` connection —
+ * see `apps/api/src/docs/backlinks.relay.ts`.
+ *
+ * NOT tenant-scoped, for the identical reason `withAuditScope` and
+ * `withRealtimeScope` are not: one relay tick claims across every tenant, so
+ * no single value of `app.org_id` is correct for it.
+ */
+export async function withBacklinksScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!backlinksDb) {
+    throw new Error(
+      'Backlinks database not initialized. Call initializeBacklinksDatabase() during boot — ' +
+        'the relay must not fall back to the application role, which cannot see docs.page_versions ' +
+        'across every org and would silently claim nothing.',
+    );
+  }
+
+  return backlinksDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the backlinks pool has been initialized. */
+export function hasBacklinksDatabase(): boolean {
+  return backlinksDb !== undefined;
+}
+
 /** Closes every pool. Shutdown only. */
 export async function closeDatabase(): Promise<void> {
   await pool?.end();
@@ -380,6 +512,14 @@ export async function closeDatabase(): Promise<void> {
 
   await adapterPool?.end();
   adapterPool = undefined;
+
+  await collabPool?.end();
+  collabPool = undefined;
+  collabDb = undefined;
+
+  await backlinksPool?.end();
+  backlinksPool = undefined;
+  backlinksDb = undefined;
 }
 
 /** True when the pool is live and answering. Backs `/health/ready` (§14). */

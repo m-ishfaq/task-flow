@@ -31,6 +31,12 @@ export {
   withRealtimeScope,
   hasRealtimeDatabase,
   createRealtimeAdapterPool,
+  initializeCollabDatabase,
+  withCollabScope,
+  hasCollabDatabase,
+  initializeBacklinksDatabase,
+  withBacklinksScope,
+  hasBacklinksDatabase,
   type OrgId,
   type UserId,
   type DbConfig,
@@ -48,6 +54,12 @@ export {
 } from './outbox.js';
 
 export { listenForOutboxAppends, type OutboxListener, type ListenOptions } from './notify.js';
+
+export {
+  claimUnprocessedPageVersions,
+  markBacklinksProcessed,
+  type UnprocessedPageVersion,
+} from './docs-backlinks.js';
 
 export {
   readAuditEntries,
@@ -118,7 +130,13 @@ export {
  */
 export type { SQL } from 'drizzle-orm';
 
-export { increment, decrement, coalesce, compiledPredicate } from './expressions.js';
+export {
+  increment,
+  decrement,
+  coalesce,
+  compiledPredicate,
+  uuidArrayContains,
+} from './expressions.js';
 
 /**
  * Enumerating tenants, for background jobs that visit every organization.

@@ -287,6 +287,11 @@ describe('the real application router', () => {
       'auth.requestPasswordReset',
       'auth.resetPassword',
       'auth.verifyEmail',
+      /* Publish-to-public (ai/phase-6-docs.md §3.9, Wave 4) — the one route
+         whose entire purpose is being reachable with no session, gated
+         entirely by the target page's own `published_version_id` rather
+         than by anything this layer checks. See public.service.ts. */
+      'docs.public.getPage',
       'health.live',
     ]);
   });

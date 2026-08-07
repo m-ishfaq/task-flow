@@ -781,3 +781,155 @@ export function commentDocument(rng: Rng): RichTextNode {
 export function flatten(document: RichTextNode): string {
   return flattenToText(document);
 }
+
+/* -------------------------------------------------------------------------- *
+ * Docs (Phase 6)
+ * -------------------------------------------------------------------------- */
+
+const PAGE_TOPICS = [
+  'Local development setup',
+  'Release checklist',
+  'Incident response',
+  'Code review expectations',
+  'Deploying to staging',
+  'Rotating credentials',
+  'On-call handover',
+  'Database migrations',
+  'Feature flag lifecycle',
+  'Support escalation paths',
+  'Accessibility standards',
+  'Naming conventions',
+  'Third-party integrations',
+  'Data retention policy',
+  'Interview loop',
+  'Quarterly planning',
+  'Postmortem template',
+  'Style guide',
+  'Backup and restore',
+  'Monitoring and alerts',
+] as const;
+
+const PAGE_QUALIFIERS = [
+  'overview',
+  'FAQ',
+  'draft',
+  'archive',
+  'for new joiners',
+  'v2',
+  'notes',
+  'checklist',
+] as const;
+
+/**
+ * A page title.
+ *
+ * Titles repeat across a tree ON PURPOSE — "Overview" under three different
+ * parents is the ordinary shape of a documentation space, and nothing in
+ * migration 0023 makes a title unique. A corpus that quietly guaranteed
+ * uniqueness would hide the one place it matters: a breadcrumb or a search
+ * result that shows only the title is ambiguous, and that is a real product
+ * problem to be able to see rather than one to seed around.
+ */
+export function pageTitle(rng: Rng): string {
+  const topic = rng.pick(PAGE_TOPICS);
+  return rng.chance(0.3) ? `${topic} — ${rng.pick(PAGE_QUALIFIERS)}` : topic;
+}
+
+/**
+ * One block of a page body, described in terms of the EDITOR's vocabulary
+ * rather than Yjs's.
+ *
+ * A page body is a `Y.XmlFragment`, not TipTap JSON like a card description
+ * (§3.1: only the body is a CRDT), so this returns a neutral description that
+ * `modules/docs.content.ts` turns into `Y.XmlElement`s. Keeping Yjs out of the
+ * corpus is the same separation the file header describes — this decides what a
+ * page says, the module decides how a page is stored.
+ *
+ * Every `kind` here maps to a node type on `@taskflow/api/richtext`'s
+ * whitelist, which is what makes a seeded document one the collab gateway's
+ * content guard leaves untouched. `docs.test.ts` asserts exactly that, against
+ * the guard's own code rather than against this list.
+ */
+export type PageBlock =
+  | { readonly kind: 'heading'; readonly level: number; readonly text: string }
+  | { readonly kind: 'paragraph'; readonly text: string }
+  | { readonly kind: 'bullets'; readonly items: readonly string[] }
+  | { readonly kind: 'quote'; readonly text: string }
+  | { readonly kind: 'code'; readonly language: string; readonly text: string };
+
+const CODE_SAMPLES: readonly (readonly [string, string])[] = [
+  ['bash', 'pnpm verify'],
+  ['bash', 'docker compose up -d'],
+  ['sql', 'SELECT count(*) FROM docs.pages WHERE archived_at IS NULL;'],
+  ['typescript', 'await withOrgScope(orgId, async (tx) => tx.select().from(pages));'],
+];
+
+/**
+ * A page body, as an ordered list of blocks.
+ *
+ * Always opens with a paragraph rather than a heading: a document whose first
+ * node is a heading hides the case where a body's first line is plain text,
+ * which is what most real pages start with.
+ */
+export function pageBody(rng: Rng, blocks: number): readonly PageBlock[] {
+  const body: PageBlock[] = [{ kind: 'paragraph', text: rng.pick(SENTENCES) }];
+
+  for (let i = 1; i < blocks; i += 1) {
+    const kind = rng.weighted([
+      ['paragraph', 6],
+      ['heading', 3],
+      ['bullets', 3],
+      ['quote', 1],
+      ['code', 1],
+    ] as const);
+
+    switch (kind) {
+      case 'heading':
+        body.push({ kind: 'heading', level: rng.int(2, 4), text: rng.pick(PAGE_TOPICS) });
+        break;
+      case 'bullets':
+        body.push({
+          kind: 'bullets',
+          items: rng.sample(CHECKLIST_ITEMS, rng.int(2, 4)),
+        });
+        break;
+      case 'quote':
+        body.push({ kind: 'quote', text: rng.pick(COMMENTS) });
+        break;
+      case 'code': {
+        const [language, text] = rng.pick(CODE_SAMPLES);
+        body.push({ kind: 'code', language, text });
+        break;
+      }
+      case 'paragraph':
+      default:
+        body.push({ kind: 'paragraph', text: rng.pick(SENTENCES) });
+    }
+  }
+
+  return body;
+}
+
+/**
+ * Names for a space's reusable page templates (Phase 6, Wave 4).
+ *
+ * Genuinely different names from `PAGE_TOPICS`, on purpose: a page is a real
+ * document about something, a template is a reusable SHAPE ("Meeting notes",
+ * "1:1"), and reusing the page-topic pool would produce a template that
+ * reads like a specific already-written page rather than a starting point
+ * for a new one.
+ */
+const TEMPLATE_NAMES = [
+  'Meeting notes',
+  'Project brief',
+  'Weekly 1:1',
+  'Runbook',
+  'Post-mortem',
+  'Design doc',
+  'Onboarding checklist',
+  'Decision record',
+] as const;
+
+export function pageTemplateName(rng: Rng): string {
+  return rng.pick(TEMPLATE_NAMES);
+}

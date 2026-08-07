@@ -59,6 +59,8 @@ AI may write anything, but changes to these need the author to read every line b
 (PLAN.md §2.2):
 
 `packages/policy` · `packages/db` · `packages/security` · `apps/api/src/identity` ·
+`apps/collab/src/auth.ts` and `authorize.ts` (Phase 6 — the collab gateway's own handshake and
+tree-permission resolution, the same severity as `apps/realtime/src/auth.ts`/`rooms.ts`) ·
 any webhook signature verification · any file upload/download path · any code touching
 telephony spend.
 
@@ -69,16 +71,31 @@ For these, a second adversarial AI pass in a fresh context is expected, not opti
 ## Layout
 
 ```
-apps/       api                              (arriving: collab, worker)
+apps/       api                              (arriving: worker)
               src/identity   ⚠ auth, tokens, sessions, passkeys
               src/tenancy      orgs, memberships, teams, grants, audit projection
               src/work         projects, boards, lists, cards, ranking, rich text,
                                labels, checklists, custom fields, comments,
                                ⚠ attachments, filter wiring
+              src/chat         channels, DMs, messages, threads, reactions
+              src/docs         spaces, page tree, inherited-permission Target
+                               building, page-version save/restore, comments,
+                               suggestions, the backlinks relay, publish-to-
+                               public, PDF export, page templates (Phase 6)
             realtime           Socket.io gateway — broadcast only, never writes
               src/auth.ts    ⚠ handshake: token, origin, socket.data.identity
               src/rooms.ts   ⚠ room join = a fresh can() check
               src/relay.ts     the 'realtime' outbox consumer
+            collab             Hocuspocus gateway (Phase 6) — the one process
+                               allowed to write from a socket handler, and only
+                               to docs.yjs_updates/docs.page_versions
+              src/auth.ts    ⚠ handshake, adapted from realtime's to
+                               onAuthenticate — verifyAccessToken directly, not
+                               apps/api's authenticate() (see ai/phase-6-docs.md
+                               §3.3's correction on approval)
+              src/authorize.ts ⚠ page-tree permission resolution: loadPage's
+                               ancestorIds -> pageTarget -> can(), the harder
+                               version of rooms.ts's room-join check
             web                React 19 + Vite
               src/lib          tRPC client, session, query client, wire types
               src/components   primitives + app shell
@@ -111,6 +128,7 @@ pnpm --filter @taskflow/db migrate:verify           # up -> down -> up, on taskf
 
 pnpm --filter @taskflow/api dev                     # API on :3000
 pnpm --filter @taskflow/realtime dev                # socket gateway on :3001
+pnpm --filter @taskflow/collab dev                  # Hocuspocus gateway on :3002 (Phase 6)
 pnpm --filter @taskflow/web dev                     # app on :5173, proxies /trpc + /socket.io
 ```
 
@@ -207,6 +225,74 @@ Not every one of the nine has a test that fails without the fix; the newest thre
 got built, a seed script drifted from the schema it seeds) had no test at all, which is why they
 survived past a header that already claimed the phase done. A green `pnpm verify` is not the same
 claim as "this works when you click it."
+
+**Phase 6 (Docs) is COMPLETE — all four waves shipped.** Spec in
+[ai/phase-6-docs.md](ai/phase-6-docs.md), approved 2026-08-06. Wave 1 shipped migration 0023
+(`docs.spaces`, `docs.pages` — tree only, no body content), the inherited-permission `Target`
+resolver (`apps/api/src/docs/shared.ts`), space/page CRUD and `movePage`'s reparent-and-rank
+mechanics (`apps/api/src/docs`), and `apps/collab`'s authorization spine (`onAuthenticate` composing
+token verification with the same tree-permission resolution, §3.3–§3.4), with an authz-matrix suite
+proving `packages/policy`'s `nearestApplicable()` at genuine multi-level depth for the first time in
+this codebase. Wave 2 shipped everything `apps/collab` exists for: migration 0024
+(`docs.yjs_updates`, `docs.page_versions`, the `taskflow_collab` role), live Yjs sync over
+Hocuspocus with durable WAL persistence (`beforeHandleMessage`, before-ack — not `onChange`),
+snapshot-plus-tail replay on load (`onLoadDocument`), live-document content stripping via
+compaction (`onStoreDocument`), and `apps/api`'s on-demand save/restore routes. Wave 3 shipped
+comments and suggestions anchored via opaque, serialized Yjs `RelativePosition` bytes (migration
+0025: `docs.comments`, `docs.suggestions`), proved to survive a concurrent edit landing before the
+anchor rather than merely round-tripping unchanged, and backlinks — computed entirely by `apps/api`,
+never by `apps/collab`, over a new `taskflow_backlinks` role holding a COLUMN-LEVEL grant on
+`docs.page_versions` that excludes `state`, so the role that discovers which pages changed can never
+read what changed. Wave 4 shipped publish-to-public, PDF export and page templates (migration 0026):
+a page's `published_version_id` is a COMPOSITE foreign key into `docs.page_versions` — org AND page,
+not just "some row exists" — so a published pointer can never name another page's or another
+tenant's content even if application code got it wrong; the public read route
+(`docs.public.getPage`) takes a plain, RLS-scoped `orgId` rather than a separate opaque token,
+because it already re-checks `published_version_id IS NOT NULL` on every request, unlike a presigned
+URL's independent capability; PDF export runs on `pdf-lib` (pure JS) rather than a headless browser,
+split into a pure, testable layout pass and a separate byte-rendering pass; and both the public
+route and PDF export independently re-validate `apps/collab`'s content whitelist rather than
+trusting it already ran, because they are the first two Docs surfaces to serve content to an
+audience with no authenticated session of its own to fall back on. Templates needed no new
+permission at all — `space:manage`/`space:read` (already in the catalog since Wave 1) cover the
+vocabulary, and using one is exactly `page:create`.
+
+**Two bugs in Wave 2 had no failing unit test and were found only by a real end-to-end test** —
+`apps/collab/src/gateway.integration.test.ts`, which boots a real gateway and drives it with the
+official `@hocuspocus/provider` client over a real WebSocket, per this file's own standing lesson
+that a green `pnpm verify` is not the same claim as "this works when you click it." First:
+`onAuthenticate` set `data.context = {...}`, which `@hocuspocus/server`'s hook runner silently
+discards — it only threads a hook's RETURN value forward, since `data` is a fresh per-call copy of
+the real payload. Every real connection's `context` was empty, and every page open failed;
+authentication itself still reported success, because it doesn't consult context, masking the bug
+completely from anything short of an end-to-end run. Second: `restorePageVersion` originally
+appended the restored state as a new WAL row, on the reasoning that a full Yjs state is a valid
+`Y.applyUpdate` input — true, and irrelevant, since Yjs updates are additive CRDT operations and
+reapplying an old state cannot undo a later edit; a page edited after its save point and then
+"restored" came back as the union of both, not the restored text alone. Both are fixed and both
+are documented in `ai/phase-6-docs.md`'s status header and in the affected files' own comments —
+read those before touching `onAuthenticate`'s context handling or the restore path again.
+
+**Wave 3's backlinks relay looked correct in the migration and passed both `tsc` and `eslint`, and
+still failed the first time it touched a real database as the real role.** The claim query used
+`FOR UPDATE OF pv SKIP LOCKED`, mirroring `claimPending`'s own outbox query — and Postgres refused
+it with `permission denied for table page_versions`, even though `taskflow_backlinks`' column-level
+grant (`id, org_id, page_id, created_at` — never `state`) was exactly what the migration intended.
+Row-locking clauses need SELECT on every column of a table, not just the ones a query projects; a
+migration review and a type checker both agree that looks fine, and only a real connection as the
+real role disproves it. Fixed by dropping `FOR UPDATE` rather than widening the grant to get the
+lock back — see `ai/phase-6-docs.md`'s status header and `packages/db/src/docs-backlinks.ts`'s own
+comment for the accepted trade (two racing relay instances can now redundantly, but never
+incorrectly, reprocess the same row).
+
+**Wave 4's composite FK on `pages.published_version_id` caught this session's own test, not a bug
+in the feature.** `wave4.service.test.ts`'s teardown originally deleted `docs.page_versions` rows
+before clearing a page's published pointer, and Postgres refused it —
+`update or delete on table "page_versions" violates foreign key constraint
+"pages_published_version_fk"`. That is the constraint doing exactly its job: a published page can
+never be left pointing at a version that no longer exists. Fixed in the test (clear the pointer
+first, delete the version rows after — "children before parents," the same ordering
+`tenancy-seed.ts`'s `clearTenant` already documents for Work), not in the schema.
 
 **Read a spec's own status header before trusting a phase marker anywhere else.** The §13 roadmap
 table and this section were both stale for the whole of Phase 3.5's Wave 1 and Wave 2, which is how

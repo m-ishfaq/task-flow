@@ -42,6 +42,25 @@ export function coalesce(column: Column, fallback: unknown): SQL {
 }
 
 /**
+ * `column @> ARRAY[value]::uuid[]` — does this `uuid[]` column contain `value`.
+ *
+ * Postgres's `@>` operator, not a JavaScript filter, because the caller wants
+ * an index scan (a GIN index on the column) rather than a sequential one that
+ * pulls every row into the app to check `.includes()`. Docs' subtree lookups
+ * and nearest-ancestor-grant walk (ai/phase-6-docs.md §3.4, §3.5) both use
+ * this against `docs.pages.ancestor_ids`.
+ *
+ * The `::uuid[]` cast is load-bearing, not decoration: a bound parameter
+ * inside `ARRAY[$1]` has no type of its own, and without the cast Postgres
+ * infers `text[]`, which has no `@>` operator against a `uuid[]` column —
+ * confirmed against real Postgres (`operator does not exist: uuid[] @>
+ * text[]`) before this cast was added.
+ */
+export function uuidArrayContains(column: Column, value: unknown): SQL {
+  return sql`${column} @> ARRAY[${value}]::uuid[]`;
+}
+
+/**
  * A predicate compiled elsewhere, converted into a Drizzle expression.
  *
  * The bridge between `@taskflow/filter`'s compiler and the tenant-scoped

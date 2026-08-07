@@ -62,6 +62,8 @@ export type SpaceId = Brand<string, 'SpaceId'>;
 export type PageId = Brand<string, 'PageId'>;
 
 export type CommentId = Brand<string, 'CommentId'>;
+export type SuggestionId = Brand<string, 'SuggestionId'>;
+export type PageTemplateId = Brand<string, 'PageTemplateId'>;
 export type AttachmentId = Brand<string, 'AttachmentId'>;
 export type ActivityId = Brand<string, 'ActivityId'>;
 export type NotificationId = Brand<string, 'NotificationId'>;
@@ -119,6 +121,8 @@ export const SpaceIdSchema = idSchema('SpaceId');
 export const PageIdSchema = idSchema('PageId');
 
 export const CommentIdSchema = idSchema('CommentId');
+export const SuggestionIdSchema = idSchema('SuggestionId');
+export const PageTemplateIdSchema = idSchema('PageTemplateId');
 export const AttachmentIdSchema = idSchema('AttachmentId');
 export const ActivityIdSchema = idSchema('ActivityId');
 export const NotificationIdSchema = idSchema('NotificationId');

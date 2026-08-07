@@ -395,6 +395,57 @@ describe('the application router', () => {
     }
   });
 
+  it('enrols the Docs mutations and denies every one of them', async () => {
+    const results = await runTenancyFuzz({
+      router: appRouter,
+      attacker: seeded.attacker,
+      victim: seeded.victim,
+      callerFor: (context) => callerFor(context, appRouter),
+    });
+
+    const byPath = new Map(results.map((result) => [result.path, result.outcome]));
+
+    for (const path of [
+      // Waves 1-2. `pages.move` reparents/reorders — a cross-tenant hit would
+      // relocate another org's page. `pageVersions.restore` overwrites live
+      // content from a snapshot, the single most destructive Docs mutation.
+      'docs.spaces.create',
+      'docs.spaces.archive',
+      'docs.pages.create',
+      'docs.pages.update',
+      'docs.pages.move',
+      'docs.pages.archive',
+      'docs.pageVersions.save',
+      'docs.pageVersions.restore',
+
+      // Wave 3. `comments.create`/`suggestions.create` are the two that
+      // matter most here: each takes a `pageId` naming WHOSE page to attach
+      // to, so a cross-tenant hit would write this attacker's words, or a
+      // proposed edit, into another organization's document.
+      'docs.comments.create',
+      'docs.comments.update',
+      'docs.comments.resolve',
+      'docs.comments.delete',
+      'docs.suggestions.create',
+      'docs.suggestions.decide',
+
+      // Wave 4 (§3.9, §5). `pages.publish` writes a new page_versions row
+      // AND repoints another org's page at it — one of the more consequential
+      // possible cross-tenant writes in this whole router. `templates.delete`
+      // and `templates.createPage` both take a `templateId` naming whose
+      // template to act on.
+      'docs.pages.publish',
+      'docs.pages.unpublish',
+      'docs.pages.exportPdf',
+      'docs.templates.list',
+      'docs.templates.create',
+      'docs.templates.delete',
+      'docs.templates.createPage',
+    ]) {
+      expect(byPath.get(path), `${path} was not enrolled by the fuzz harness`).toBe('denied');
+    }
+  });
+
   it('marks input-less routes not-applicable rather than silently passing them', async () => {
     /* These four read their org from the principal and accept no identifier, so
        there is nothing for this technique to substitute. Naming them here keeps
@@ -430,6 +481,12 @@ describe('the application router', () => {
       'chat.notifications.markAllRead',
       'chat.notifications.unreadCount',
       'chat.saved.list',
+      /* Same shape as `chat.channels.list` above — every space in the
+         CALLER's org, filtered by RLS alone. There is no id to substitute;
+         calling it with the victim's bag returns the attacker's own org's
+         spaces and succeeds, which this technique cannot distinguish from a
+         leak. The RLS tests cover cross-tenant isolation instead. */
+      'docs.spaces.list',
       'tenancy.audit.verify',
       'tenancy.members.list',
       'tenancy.orgs.get',

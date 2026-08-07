@@ -51,6 +51,19 @@ export const EnvSchema = z
        outbox relay does. */
     DATABASE_AUDIT_URL: NonEmpty.optional(),
 
+    /* A FIFTH role, for the backlinks relay (Phase 6 Wave 3, ai/phase-6-docs.md
+       §3.10; migration 0025's own header). taskflow_backlinks holds only a
+       COLUMN-LEVEL grant on docs.page_versions — id/org_id/page_id/created_at,
+       never state — so this role can discover which pages changed and can
+       never read a byte of what changed.
+
+       Optional, matching DATABASE_AUDIT_URL's own reasoning exactly: an API
+       instance that only serves requests does not need it; the one running
+       the relay does, and `withBacklinksScope` throws rather than silently
+       falling back to the application role, which cannot see across every
+       tenant's page_versions in one claim. */
+    DATABASE_BACKLINKS_URL: NonEmpty.optional(),
+
     MASTER_KEY_ID: NonEmpty,
     MASTER_KEY_BASE64: Base64Key,
     JWT_SECRET: Base64Key,
@@ -169,6 +182,7 @@ const KNOWN_VARIABLES = new Set([
   'DATABASE_URL',
   'DATABASE_MIGRATION_URL',
   'DATABASE_AUDIT_URL',
+  'DATABASE_BACKLINKS_URL',
   /* apps/realtime's own consumer role (Phase 4 §3.5). Listed here — as the
      comment above this set explains — because a developer's environment
      legitimately carries variables this app does not read, and the misspelling

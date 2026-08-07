@@ -1,9 +1,15 @@
-import { closeDatabase, initializeAuditDatabase, initializeDatabase } from '@taskflow/db';
+import {
+  closeDatabase,
+  initializeAuditDatabase,
+  initializeBacklinksDatabase,
+  initializeDatabase,
+} from '@taskflow/db';
 import { createLogger } from '@taskflow/observability';
 import { loadEnv } from './config/env.js';
 import { buildServer } from './server.js';
 import { startAuditRelay } from './tenancy/relay.js';
 import { startRetentionSweep } from './chat/retention.scheduler.js';
+import { startBacklinksRelay } from './docs/backlinks.relay.js';
 
 /**
  * Process entry point.
@@ -36,6 +42,20 @@ if (env.DATABASE_AUDIT_URL !== undefined) {
   initializeAuditDatabase({ url: env.DATABASE_AUDIT_URL, applicationName: 'taskflow-audit' });
 }
 
+/**
+ * The backlinks relay's claim connection, on its own role and pool (Phase 6
+ * Wave 3, §3.10). Same optionality reasoning as the audit pool above:
+ * `taskflow_backlinks` reads across every tenant's `docs.page_versions`
+ * metadata (never `state`) and nothing else, so an instance without this
+ * variable serves requests and lets another drain the backlog.
+ */
+if (env.DATABASE_BACKLINKS_URL !== undefined) {
+  initializeBacklinksDatabase({
+    url: env.DATABASE_BACKLINKS_URL,
+    applicationName: 'taskflow-backlinks',
+  });
+}
+
 const app = await buildServer({ env });
 
 /* Moves domain events from the outbox into the hash-chained audit log. Belongs
@@ -43,6 +63,13 @@ const app = await buildServer({ env });
    note in tenancy/relay.ts. */
 const relay = startAuditRelay({
   logger: createLogger({ name: 'audit-relay', level: env.LOG_LEVEL }),
+});
+
+/* Folds new docs.page_versions rows into docs.backlinks and emits
+   page.content_updated (Phase 6 Wave 3, §3.10). Same "belongs in
+   apps/worker" caveat as the audit relay above. */
+const backlinksRelay = startBacklinksRelay({
+  logger: createLogger({ name: 'backlinks-relay', level: env.LOG_LEVEL }),
 });
 
 /* Deletes chat messages past their channel's retention window (Wave 4, §3.7).
@@ -68,9 +95,11 @@ await app.listen({ port: env.API_PORT, host: env.API_HOST });
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.once(signal, () => {
     void (async () => {
-      // Relay first: stopping it before the pools close means an in-flight
-      // drain finishes against a live connection rather than failing partway.
+      // Relays first: stopping them before the pools close means an
+      // in-flight drain finishes against a live connection rather than
+      // failing partway.
       relay.stop();
+      backlinksRelay.stop();
       retention?.stop();
       await app.close();
       await closeDatabase();

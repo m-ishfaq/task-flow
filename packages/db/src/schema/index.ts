@@ -9,6 +9,7 @@
  *   Phase 2  platform  — transactional outbox;  audit — hash-chained log      ✅
  *   Phase 3  work      — projects, boards, lists, cards                       ✅
  *   Phase 5  chat      — channels, channel members, messages                  ✅
+ *   Phase 6  docs      — spaces, pages (Wave 1: tree only, no body yet)       ✅
  */
 
 export * from './identity.js';
@@ -19,3 +20,4 @@ export * from './platform.js';
 export * from './audit.js';
 export * from './work.js';
 export * from './chat.js';
+export * from './docs.js';
