@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { OrgId, PageId, SpaceId } from '@taskflow/contracts';
+import type { OrgId, PageId, PageTemplateId, SpaceId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { useUi } from '../../lib/ui-store.js';
 import { cn } from '../../lib/cn.js';
@@ -15,15 +15,22 @@ import {
   Skeleton,
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
-import { DocsEditor } from './editor/docs-editor.js';
+import { DocsEditor, type DocsEditorHandle } from './editor/docs-editor.js';
+import { PublishPanel } from './publish-panel.js';
+import { VersionHistoryPanel } from './version-history.js';
+import { CommentsSuggestionsPanel } from './comments-suggestions.js';
+import { TemplatesPanel } from './templates-panel.js';
+import { BacklinksPanel } from './backlinks-panel.js';
 import {
   archivePage,
   archiveSpace,
   createPage,
+  createPageFromTemplate,
   createSpace,
   invalidatePages,
   invalidateSpaces,
   pagesQuery,
+  pageTemplatesQuery,
   renamePage,
   spacesQuery,
   type PageSummary,
@@ -526,6 +533,13 @@ function PageNode({
   );
 }
 
+/**
+ * Also offers starting from one of the space's templates (Wave 4, §5) —
+ * `templates.createPage` is `pages.createPage` plus seeded content
+ * (`template.service.ts`'s own header: "using a template is exactly
+ * `pages.create`"), so this form picks which mutation to call rather than
+ * the template being a separate flow.
+ */
 function CreatePageForm({
   orgId,
   spaceId,
@@ -538,11 +552,21 @@ function CreatePageForm({
   readonly onDone: () => void;
 }) {
   const [title, setTitle] = useState('');
+  const [templateId, setTemplateId] = useState('');
   const queryClient = useQueryClient();
   const toast = useToast();
+  const templates = useQuery(pageTemplatesQuery(orgId, spaceId));
 
   const create = useMutation({
-    mutationFn: () => createPage({ spaceId, parentPageId, title }),
+    mutationFn: () =>
+      templateId === ''
+        ? createPage({ spaceId, parentPageId, title })
+        : createPageFromTemplate({
+            spaceId,
+            parentPageId,
+            title,
+            templateId: templateId as PageTemplateId,
+          }),
     onSuccess: () => {
       invalidatePages(queryClient, orgId, spaceId);
       onDone();
@@ -559,19 +583,43 @@ function CreatePageForm({
         if (title.trim().length === 0) return;
         create.mutate();
       }}
-      className="flex gap-1.5"
+      className="space-y-1.5"
     >
-      <FocusOnMountInput
-        value={title}
-        onChange={(event) => {
-          setTitle(event.target.value);
-        }}
-        placeholder="Page title"
-        className="h-7 flex-1 text-xs"
-      />
-      <Button type="submit" size="sm" variant="primary" disabled={create.isPending} className="h-7">
-        Add
-      </Button>
+      <div className="flex gap-1.5">
+        <FocusOnMountInput
+          value={title}
+          onChange={(event) => {
+            setTitle(event.target.value);
+          }}
+          placeholder="Page title"
+          className="h-7 flex-1 text-xs"
+        />
+        <Button
+          type="submit"
+          size="sm"
+          variant="primary"
+          disabled={create.isPending}
+          className="h-7"
+        >
+          Add
+        </Button>
+      </div>
+      {(templates.data ?? []).length > 0 && (
+        <select
+          value={templateId}
+          onChange={(event) => {
+            setTemplateId(event.target.value);
+          }}
+          className="h-7 w-full rounded border border-line bg-surface-raised px-1.5 text-xs text-ink-muted"
+        >
+          <option value="">Blank page</option>
+          {(templates.data ?? []).map((template) => (
+            <option key={template.templateId} value={template.templateId}>
+              {template.name}
+            </option>
+          ))}
+        </select>
+      )}
     </form>
   );
 }
@@ -603,11 +651,23 @@ function PagePanel({
   readonly spaceId: SpaceId;
   readonly pageId: PageId;
 }) {
+  const navigate = useNavigate();
   const pages = useQuery(pagesQuery(orgId, spaceId));
   const queryClient = useQueryClient();
   const toast = useToast();
   const [editingTitle, setEditingTitle] = useState(false);
   const [title, setTitle] = useState('');
+  const [editorHandle, setEditorHandle] = useState<DocsEditorHandle | null>(null);
+  /* Bumped after a version restore to force `DocsEditor` to remount with a
+     fresh Hocuspocus connection — `version-history.tsx`'s own header on why
+     a restore is otherwise invisible until the next reload. */
+  const [editorGeneration, setEditorGeneration] = useState(0);
+
+  /* Must be stable, or `docs-editor.tsx`'s `onReady` effect re-fires (and
+     re-notifies) on every render — see that file's own header. */
+  const handleEditorReady = useCallback((handle: DocsEditorHandle | null) => {
+    setEditorHandle(handle);
+  }, []);
 
   const page = (pages.data ?? []).find((row) => row.pageId === pageId);
 
@@ -737,7 +797,41 @@ function PagePanel({
         )}
       </div>
 
-      <DocsEditor orgId={orgId as OrgId} pageId={pageId} />
+      <DocsEditor
+        key={editorGeneration}
+        orgId={orgId as OrgId}
+        pageId={pageId}
+        onReady={handleEditorReady}
+      />
+
+      <div className="space-y-6 border-t border-line pt-4">
+        <PublishPanel
+          orgId={orgId}
+          spaceId={spaceId}
+          pageId={pageId}
+          publishedAt={page.publishedAt}
+        />
+
+        <VersionHistoryPanel
+          orgId={orgId}
+          pageId={pageId}
+          onRestored={() => {
+            setEditorGeneration((generation) => generation + 1);
+          }}
+        />
+
+        <CommentsSuggestionsPanel orgId={orgId} pageId={pageId} editorHandle={editorHandle} />
+
+        <TemplatesPanel orgId={orgId} spaceId={spaceId} pageId={pageId} />
+
+        <BacklinksPanel
+          orgId={orgId}
+          pageId={pageId}
+          onNavigate={(targetSpaceId, targetPageId) => {
+            void navigate({ to: '/docs', search: { space: targetSpaceId, page: targetPageId } });
+          }}
+        />
+      </div>
     </div>
   );
 }

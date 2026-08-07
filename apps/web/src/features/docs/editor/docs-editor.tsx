@@ -54,7 +54,22 @@ import { DocsLink, DocsOrderedList } from './docs-extensions.js';
  * reads.
  */
 
-export function DocsEditor({ orgId, pageId }: { orgId: OrgId; pageId: PageId }) {
+/** What `onReady` hands the page panel — everything `editor/anchor.ts` needs to build or resolve a comment/suggestion anchor. `null` while disconnected. */
+export interface DocsEditorHandle {
+  readonly editor: Editor;
+  readonly provider: HocuspocusProvider;
+}
+
+export function DocsEditor({
+  orgId,
+  pageId,
+  onReady,
+}: {
+  orgId: OrgId;
+  pageId: PageId;
+  /** Notified with a handle once the editor is live, and with `null` on disconnect/unmount. See `docs-page.tsx`'s `PagePanel` for the one caller. */
+  onReady?: (handle: DocsEditorHandle | null) => void;
+}) {
   const { provider, status, synced } = useCollabProvider(orgId, pageId);
 
   if (provider === null) {
@@ -65,17 +80,19 @@ export function DocsEditor({ orgId, pageId }: { orgId: OrgId; pageId: PageId }) 
     );
   }
 
-  return <DocsEditorReady provider={provider} status={status} synced={synced} />;
+  return <DocsEditorReady provider={provider} status={status} synced={synced} onReady={onReady} />;
 }
 
 function DocsEditorReady({
   provider,
   status,
   synced,
+  onReady,
 }: {
   readonly provider: HocuspocusProvider;
   readonly status: CollabStatus;
   readonly synced: boolean;
+  readonly onReady?: ((handle: DocsEditorHandle | null) => void) | undefined;
 }) {
   const { people, personOf } = useMembers();
   const userId = useSession((state) => state.userId);
@@ -154,6 +171,19 @@ function DocsEditorReady({
       editor.destroy();
     };
   }, [editor]);
+
+  /* Handed to the page panel so comments/suggestions can build and resolve
+     anchors against the SAME editor + provider this component owns —
+     `editor/anchor.ts`'s whole reason for needing both. `onReady` must be
+     stable (wrap it in `useCallback` at the call site) or this re-fires on
+     every render; the cleanup notifies `null` so the panel does not hold a
+     stale handle past unmount or a page switch. */
+  useEffect(() => {
+    onReady?.({ editor, provider });
+    return () => {
+      onReady?.(null);
+    };
+  }, [editor, provider, onReady]);
 
   return (
     <div className="overflow-hidden rounded border border-line bg-surface-sunken">

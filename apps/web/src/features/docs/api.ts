@@ -1,31 +1,50 @@
 import { queryOptions, type QueryClient } from '@tanstack/react-query';
-import type { PageId, SpaceId } from '@taskflow/contracts';
+import type {
+  CommentId,
+  OrgId,
+  PageId,
+  PageTemplateId,
+  SpaceId,
+  SuggestionId,
+} from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire, type Wire } from '../../lib/wire.js';
+import type { DocumentNode } from '../work/detail/rich-text.js';
 
 /**
- * Docs reads and writes (ai/phase-6-docs.md §5, Wave 1 of the UI — tree and
- * metadata only, no page body content). Same shape as `work/api.ts` and
- * `chat/api.ts`: `queryOptions` rather than hooks, `wire()` on every result
- * because `spaces.list`/`pages.list` both return `Date` fields the wire
- * carries as strings (`lib/wire.ts`).
+ * Docs reads and writes (ai/phase-6-docs.md §5). Same shape as `work/api.ts`
+ * and `chat/api.ts`: `queryOptions` rather than hooks, `wire()` on every
+ * result because several of these return `Date` fields the wire carries as
+ * strings (`lib/wire.ts`).
  *
- * Deliberately thin for Wave 1 — no `pageVersions`/`comments`/`suggestions`/
- * `publish`/`templates` functions yet, even though the API already has all
- * of them (ai/phase-6-docs.md's backend is fully shipped). Those land with
- * the UI waves that actually render them (§5's own Wave 2/3/4 split),
- * mirroring the backend's own precedent of not building a route ahead of
- * the surface that calls it.
+ * Wave 1 shipped `spaces`/`pages` only, on the stated principle of not
+ * building a route ahead of the surface that calls it. This file now also
+ * covers Wave 2 (`pageVersions`), Wave 3 (`comments`, `suggestions`,
+ * `backlinks`), and Wave 4 (`publish`/`unpublish`, `exportPdf`,
+ * `templates`, the public read path) — the UI waves that actually render
+ * them.
  */
 
 interface Outputs {
   spaces: Awaited<ReturnType<typeof api.docs.spaces.list.query>>;
   pages: Awaited<ReturnType<typeof api.docs.pages.list.query>>;
+  pageVersions: Awaited<ReturnType<typeof api.docs.pageVersions.list.query>>;
+  comments: Awaited<ReturnType<typeof api.docs.comments.list.query>>;
+  suggestions: Awaited<ReturnType<typeof api.docs.suggestions.list.query>>;
+  templates: Awaited<ReturnType<typeof api.docs.templates.list.query>>;
+  backlinks: Awaited<ReturnType<typeof api.docs.backlinks.list.query>>;
+  publicPage: Awaited<ReturnType<typeof api.docs.public.getPage.query>>;
 }
 
 export type SpaceSummary = Wire<Outputs['spaces']>[number];
 export type PageSummary = Wire<Outputs['pages']>[number];
+export type PageVersionSummary = Wire<Outputs['pageVersions']>[number];
+export type CommentSummary = Wire<Outputs['comments']>[number];
+export type SuggestionSummary = Wire<Outputs['suggestions']>[number];
+export type TemplateSummary = Wire<Outputs['templates']>[number];
+export type BacklinkSummary = Wire<Outputs['backlinks']>[number];
+export type PublicPage = Wire<Outputs['publicPage']>;
 
 /* -------------------------------------------------------------------------- *
  * Reads
@@ -91,6 +110,151 @@ export function archivePage(input: { pageId: PageId; restore: boolean }) {
 }
 
 /* -------------------------------------------------------------------------- *
+ * Page versions (Wave 2, §3.7)
+ * -------------------------------------------------------------------------- */
+
+export function pageVersionsQuery(orgId: string, pageId: PageId) {
+  return queryOptions({
+    queryKey: keys.pageVersions(orgId, pageId),
+    queryFn: async () => wire(await api.docs.pageVersions.list.query({ pageId })),
+  });
+}
+
+export function saveVersion(input: { pageId: PageId }) {
+  return api.docs.pageVersions.save.mutate(input);
+}
+
+export function restoreVersion(input: { pageId: PageId; versionId: string }) {
+  return api.docs.pageVersions.restore.mutate(input);
+}
+
+/* -------------------------------------------------------------------------- *
+ * Comments (Wave 3, §3.6)
+ * -------------------------------------------------------------------------- */
+
+export function pageCommentsQuery(orgId: string, pageId: PageId) {
+  return queryOptions({
+    queryKey: keys.pageComments(orgId, pageId),
+    queryFn: async () => wire(await api.docs.comments.list.query({ pageId })),
+  });
+}
+
+export function createComment(input: {
+  pageId: PageId;
+  anchorFrom: string;
+  anchorTo: string;
+  body: DocumentNode;
+}) {
+  return api.docs.comments.create.mutate(input);
+}
+
+export function updateComment(input: { commentId: CommentId; body: DocumentNode }) {
+  return api.docs.comments.update.mutate(input);
+}
+
+export function resolveComment(input: { commentId: CommentId; resolved: boolean }) {
+  return api.docs.comments.resolve.mutate(input);
+}
+
+export function deleteComment(input: { commentId: CommentId }) {
+  return api.docs.comments.delete.mutate(input);
+}
+
+/* -------------------------------------------------------------------------- *
+ * Suggestions (Wave 3, §3.6)
+ * -------------------------------------------------------------------------- */
+
+export function pageSuggestionsQuery(orgId: string, pageId: PageId) {
+  return queryOptions({
+    queryKey: keys.pageSuggestions(orgId, pageId),
+    queryFn: async () => wire(await api.docs.suggestions.list.query({ pageId })),
+  });
+}
+
+export function createSuggestion(input: {
+  pageId: PageId;
+  anchorFrom: string;
+  anchorTo: string;
+  kind: 'insert' | 'delete' | 'replace';
+  /** Required for 'insert'/'replace', omitted for 'delete' — see `suggestion.service.ts`'s own CHECK. */
+  proposedContent?: DocumentNode | null;
+}) {
+  return api.docs.suggestions.create.mutate(input);
+}
+
+export function decideSuggestion(input: {
+  suggestionId: SuggestionId;
+  status: 'accepted' | 'rejected';
+}) {
+  return api.docs.suggestions.decide.mutate(input);
+}
+
+/* -------------------------------------------------------------------------- *
+ * Backlinks (Wave 3, §3.10) — read-only, "what links here"
+ * -------------------------------------------------------------------------- */
+
+export function pageBacklinksQuery(orgId: string, pageId: PageId) {
+  return queryOptions({
+    queryKey: keys.pageBacklinks(orgId, pageId),
+    queryFn: async () => wire(await api.docs.backlinks.list.query({ pageId })),
+  });
+}
+
+/* -------------------------------------------------------------------------- *
+ * Publish / unpublish / PDF export (Wave 4, §3.9)
+ * -------------------------------------------------------------------------- */
+
+export function publishPage(input: { pageId: PageId }) {
+  return api.docs.pages.publish.mutate(input);
+}
+
+export function unpublishPage(input: { pageId: PageId }) {
+  return api.docs.pages.unpublish.mutate(input);
+}
+
+/** `versionId: null` means "the latest saved version" — see `pdf-export.service.ts`'s own header. */
+export function exportPagePdf(input: { pageId: PageId; versionId: string | null }) {
+  return api.docs.pages.exportPdf.mutate(input);
+}
+
+/** The public, no-session read path (§3.9). Same `api` client — `authHeaders()` already degrades gracefully with no session (`lib/session.ts`). */
+export function publicPageQuery(orgId: OrgId, pageId: PageId) {
+  return queryOptions({
+    queryKey: ['public', 'docs', orgId, pageId] as const,
+    queryFn: async () => wire(await api.docs.public.getPage.query({ orgId, pageId })),
+    retry: false,
+  });
+}
+
+/* -------------------------------------------------------------------------- *
+ * Templates (Wave 4, §5)
+ * -------------------------------------------------------------------------- */
+
+export function pageTemplatesQuery(orgId: string, spaceId: SpaceId) {
+  return queryOptions({
+    queryKey: keys.pageTemplates(orgId, spaceId),
+    queryFn: async () => wire(await api.docs.templates.list.query({ spaceId })),
+  });
+}
+
+export function createTemplate(input: { pageId: PageId; name: string }) {
+  return api.docs.templates.create.mutate(input);
+}
+
+export function deleteTemplate(input: { templateId: PageTemplateId }) {
+  return api.docs.templates.delete.mutate(input);
+}
+
+export function createPageFromTemplate(input: {
+  spaceId: SpaceId;
+  parentPageId: PageId | null;
+  title: string;
+  templateId: PageTemplateId;
+}) {
+  return api.docs.templates.createPage.mutate(input);
+}
+
+/* -------------------------------------------------------------------------- *
  * Cache edits — invalidate rather than patch, matching chat/work's own default
  * -------------------------------------------------------------------------- */
 
@@ -100,4 +264,28 @@ export function invalidateSpaces(client: QueryClient, orgId: string): void {
 
 export function invalidatePages(client: QueryClient, orgId: string, spaceId: string): void {
   void client.invalidateQueries({ queryKey: keys.pages(orgId, spaceId) });
+}
+
+export function invalidatePageVersions(client: QueryClient, orgId: string, pageId: string): void {
+  void client.invalidateQueries({ queryKey: keys.pageVersions(orgId, pageId) });
+}
+
+export function invalidatePageComments(client: QueryClient, orgId: string, pageId: string): void {
+  void client.invalidateQueries({ queryKey: keys.pageComments(orgId, pageId) });
+}
+
+export function invalidatePageSuggestions(
+  client: QueryClient,
+  orgId: string,
+  pageId: string,
+): void {
+  void client.invalidateQueries({ queryKey: keys.pageSuggestions(orgId, pageId) });
+}
+
+export function invalidatePageTemplates(client: QueryClient, orgId: string, spaceId: string): void {
+  void client.invalidateQueries({ queryKey: keys.pageTemplates(orgId, spaceId) });
+}
+
+export function invalidatePageBacklinks(client: QueryClient, orgId: string, pageId: string): void {
+  void client.invalidateQueries({ queryKey: keys.pageBacklinks(orgId, pageId) });
 }

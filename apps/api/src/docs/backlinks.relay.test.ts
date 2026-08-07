@@ -4,6 +4,8 @@ import { unsafeAsId, type OrgId, type PageId } from '@taskflow/contracts';
 import { closeDatabase, initializeBacklinksDatabase, initializeDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { drainBacklinks, drainBacklinksFully } from './backlinks.relay.js';
+import { listBacklinks } from './backlinks.js';
+import type { DocsActor } from './shared.js';
 
 /**
  * The backlinks relay (ai/phase-6-docs.md §3.10, migration 0025), against
@@ -58,6 +60,26 @@ async function scaffold(slug: string): Promise<Fixture> {
 
   const pageId = await addPage(`Page ${slug}`);
   return { orgId, spaceId, pageId, addPage };
+}
+
+const requestId = unsafeAsId<'RequestId'>('0195ee30-0000-7000-8000-0000000000ff');
+
+/**
+ * `listBacklinks` only reads `actor.subject` back off the object it is
+ * given — it never re-queries membership — so an `owner` role with no
+ * tuples is enough to exercise `page:read` here, the same shortcut
+ * `docs.service.test.ts`'s own `actorFor` documents for itself.
+ */
+function ownerActor(orgId: OrgId): DocsActor {
+  return {
+    subject: {
+      orgId,
+      userId: unsafeAsId<'UserId'>(crypto.randomUUID()),
+      role: 'owner',
+      tuples: [],
+    },
+    requestId,
+  };
 }
 
 async function removeOrg(orgId: string): Promise<void> {
@@ -227,5 +249,58 @@ describe('drainBacklinks', () => {
 
     expect(aRows.rows.map((r) => r['target_page_id'])).toEqual([orgATarget]);
     expect(bRows.rows.map((r) => r['target_page_id'])).toEqual([orgBTarget]);
+  });
+});
+
+describe('listBacklinks', () => {
+  it('is empty before the relay has run', async () => {
+    const fixture = await scaffold('read-empty');
+    const target = await fixture.addPage('Target');
+
+    expect(await listBacklinks(ownerActor(fixture.orgId), { pageId: target })).toEqual([]);
+  });
+
+  it('lists the pages that link TO the target, by title — not the other direction', async () => {
+    const fixture = await scaffold('read-basic');
+    const target = await fixture.addPage('Target');
+    await writeVersion(fixture.orgId, fixture.pageId, [target]);
+    await drainBacklinks();
+
+    const backward = await listBacklinks(ownerActor(fixture.orgId), { pageId: target });
+    expect(backward).toEqual([
+      {
+        sourcePageId: fixture.pageId,
+        sourceTitle: `Page read-basic`,
+        sourceSpaceId: fixture.spaceId,
+      },
+    ]);
+
+    // The source page itself has no incoming links.
+    expect(await listBacklinks(ownerActor(fixture.orgId), { pageId: fixture.pageId })).toEqual([]);
+  });
+
+  it("reflects a later edit that drops a link — matching the relay's wholesale replace", async () => {
+    const fixture = await scaffold('read-replace');
+    const targetA = await fixture.addPage('Target A');
+    const targetB = await fixture.addPage('Target B');
+
+    await writeVersion(fixture.orgId, fixture.pageId, [targetA]);
+    await drainBacklinks();
+    expect(await listBacklinks(ownerActor(fixture.orgId), { pageId: targetA })).toHaveLength(1);
+
+    await writeVersion(fixture.orgId, fixture.pageId, [targetB]);
+    await drainBacklinks();
+
+    expect(await listBacklinks(ownerActor(fixture.orgId), { pageId: targetA })).toEqual([]);
+    expect(await listBacklinks(ownerActor(fixture.orgId), { pageId: targetB })).toHaveLength(1);
+  });
+
+  it('rejects a page id from another org', async () => {
+    const fixtureA = await scaffold('read-cross-a');
+    const fixtureB = await scaffold('read-cross-b');
+
+    await expect(
+      listBacklinks(ownerActor(fixtureA.orgId), { pageId: fixtureB.pageId }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 });

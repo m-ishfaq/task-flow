@@ -35,6 +35,7 @@ interface PageListItem {
   title: string;
   rank: string;
   archivedAt: string | null;
+  publishedAt: string | null;
 }
 
 const listSpaces = vi.fn<() => Promise<SpaceListItem[]>>();
@@ -68,6 +69,52 @@ vi.mock('../../lib/trpc.js', () => ({
         archive: {
           mutate: (input: { pageId: string; restore: boolean }) => archivePageMutate(input),
         },
+        publish: { mutate: vi.fn() },
+        unpublish: { mutate: vi.fn() },
+        exportPdf: { mutate: vi.fn() },
+      },
+      /* PagePanel now also renders the Wave 2-4 tool panels below the
+         editor (`publish-panel.tsx`, `version-history.tsx`,
+         `comments-suggestions.tsx`, `templates-panel.tsx`,
+         `backlinks-panel.tsx`) — each fires its own list query on mount, so
+         every one of these needs a stub or the "archiving and restoring a
+         page" tests below fail on `Cannot read properties of undefined`
+         rather than on anything about archiving. Empty lists render each
+         panel's own `Empty` state, which is not asserted on here. */
+      pageVersions: {
+        list: { query: () => Promise.resolve([]) },
+        save: { mutate: vi.fn() },
+        restore: { mutate: vi.fn() },
+      },
+      comments: {
+        list: { query: () => Promise.resolve([]) },
+        create: { mutate: vi.fn() },
+        update: { mutate: vi.fn() },
+        resolve: { mutate: vi.fn() },
+        delete: { mutate: vi.fn() },
+      },
+      suggestions: {
+        list: { query: () => Promise.resolve([]) },
+        create: { mutate: vi.fn() },
+        decide: { mutate: vi.fn() },
+      },
+      templates: {
+        list: { query: () => Promise.resolve([]) },
+        create: { mutate: vi.fn() },
+        delete: { mutate: vi.fn() },
+        createPage: { mutate: vi.fn() },
+      },
+      backlinks: {
+        list: { query: () => Promise.resolve([]) },
+      },
+    },
+    /* `comments-suggestions.tsx` and `version-history.tsx` both resolve
+       author ids through `useMembers()`, which reads `tenancy.members.list`
+       — nothing to do with Docs, but still a real call this mock must
+       answer or the same panels crash on mount. */
+    tenancy: {
+      members: {
+        list: { query: () => Promise.resolve([]) },
       },
     },
   },
@@ -131,6 +178,7 @@ beforeEach(() => {
       title: 'Getting Started',
       rank: 'a0',
       archivedAt: null,
+      publishedAt: null,
     },
     {
       pageId: CHILD_PAGE_ID,
@@ -138,6 +186,7 @@ beforeEach(() => {
       title: 'Onboarding',
       rank: 'a0',
       archivedAt: null,
+      publishedAt: null,
     },
   ]);
 });
@@ -196,6 +245,7 @@ describe('the tree', () => {
         title: `Level ${String(level)}`,
         rank: 'a0',
         archivedAt: null,
+        publishedAt: null,
       });
       parent = pageId;
     }
@@ -270,6 +320,7 @@ describe('archiving and restoring a page', () => {
         title: 'Getting Started',
         rank: 'a0',
         archivedAt: '2026-08-01T00:00:00.000Z',
+        publishedAt: null,
       },
     ]);
     const user = userEvent.setup();
