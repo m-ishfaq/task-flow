@@ -117,7 +117,12 @@ function wrapRuns(
   let current: LayoutRun[] = [];
   let currentWidth = 0;
 
-  const pushWord = (word: string, variant: FontVariant, underline: boolean, strike: boolean): void => {
+  const pushWord = (
+    word: string,
+    variant: FontVariant,
+    underline: boolean,
+    strike: boolean,
+  ): void => {
     const wordWidth = widthOf(word, variant, size);
     if (current.length > 0 && currentWidth + wordWidth > maxWidth) {
       lines.push(current);
@@ -150,12 +155,20 @@ interface LayoutContext {
   readonly widthOf: (text: string, variant: FontVariant, size: number) => number;
 }
 
-function layoutBlock(node: RenderedNode, indent: number, ctx: LayoutContext, out: LayoutLine[]): void {
+function layoutBlock(
+  node: RenderedNode,
+  indent: number,
+  ctx: LayoutContext,
+  out: LayoutLine[],
+): void {
   switch (node.type) {
     case 'heading': {
       const level = typeof node.attrs?.['level'] === 'number' ? node.attrs['level'] : 1;
       const size = HEADING_SIZE[level] ?? BODY_SIZE;
-      const runs = inlineRunsOf(node).map((run) => ({ ...run, variant: run.variant === 'code' ? 'code' as const : 'bold' as const }));
+      const runs = inlineRunsOf(node).map((run) => ({
+        ...run,
+        variant: run.variant === 'code' ? ('code' as const) : ('bold' as const),
+      }));
       for (const line of wrapRuns(runs, size, CONTENT_WIDTH - indent, ctx.widthOf)) {
         out.push({ indent, runs: line, spaceAfter: 4 });
       }
@@ -176,7 +189,11 @@ function layoutBlock(node: RenderedNode, indent: number, ctx: LayoutContext, out
     case 'codeBlock': {
       const text = (node.content ?? []).map((child) => child.text ?? '').join('');
       for (const line of text.split('\n')) {
-        out.push({ indent: indent + 12, runs: [{ text: line, variant: 'code', size: BODY_SIZE, underline: false, strike: false }], spaceAfter: 0 });
+        out.push({
+          indent: indent + 12,
+          runs: [{ text: line, variant: 'code', size: BODY_SIZE, underline: false, strike: false }],
+          spaceAfter: 0,
+        });
       }
       out.push({ indent, runs: [], spaceAfter: 6 });
       return;
@@ -200,7 +217,19 @@ function layoutBlock(node: RenderedNode, indent: number, ctx: LayoutContext, out
       return;
     }
     case 'horizontalRule': {
-      out.push({ indent, runs: [{ text: '————————', variant: 'regular', size: BODY_SIZE, underline: false, strike: false }], spaceAfter: 8 });
+      out.push({
+        indent,
+        runs: [
+          {
+            text: '————————',
+            variant: 'regular',
+            size: BODY_SIZE,
+            underline: false,
+            strike: false,
+          },
+        ],
+        spaceAfter: 8,
+      });
       return;
     }
     case 'doc': {
@@ -225,9 +254,21 @@ function layoutListItem(
   for (const child of item.content ?? []) layoutBlock(child, indent + 16, ctx, out);
   const first = out[before];
   if (first) {
-    out[before] = { ...first, runs: [{ text: marker, variant: 'regular', size: BODY_SIZE, underline: false, strike: false }, ...first.runs] };
+    out[before] = {
+      ...first,
+      runs: [
+        { text: marker, variant: 'regular', size: BODY_SIZE, underline: false, strike: false },
+        ...first.runs,
+      ],
+    };
   } else {
-    out.push({ indent: indent + 16, runs: [{ text: marker, variant: 'regular', size: BODY_SIZE, underline: false, strike: false }], spaceAfter: 2 });
+    out.push({
+      indent: indent + 16,
+      runs: [
+        { text: marker, variant: 'regular', size: BODY_SIZE, underline: false, strike: false },
+      ],
+      spaceAfter: 2,
+    });
   }
 }
 

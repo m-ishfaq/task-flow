@@ -16,10 +16,16 @@ import { enforceOnSpace, envelopeOf, loadSpace, orgOf, type DocsActor } from './
 
 export async function listSpaces(
   actor: DocsActor,
-): Promise<readonly { readonly spaceId: string; readonly name: string; readonly archivedAt: Date | null }[]> {
+): Promise<
+  readonly { readonly spaceId: string; readonly name: string; readonly archivedAt: Date | null }[]
+> {
   return withOrgScope(orgOf(actor), async (tx) => {
     const rows = await tx
-      .select({ id: schema.spaces.id, name: schema.spaces.name, archivedAt: schema.spaces.archivedAt })
+      .select({
+        id: schema.spaces.id,
+        name: schema.spaces.name,
+        archivedAt: schema.spaces.archivedAt,
+      })
       .from(schema.spaces)
       .orderBy(asc(schema.spaces.name));
 
@@ -42,7 +48,9 @@ export async function createSpace(
   const userId = actor.subject.userId;
 
   await withOrgScope(orgId, async (tx) => {
-    await tx.insert(schema.spaces).values({ id: spaceId, orgId, name: input.name, createdBy: userId });
+    await tx
+      .insert(schema.spaces)
+      .values({ id: spaceId, orgId, name: input.name, createdBy: userId });
 
     await outboxWriter.append(tx, [
       createEvent(spaceCreated, { spaceId, name: input.name }, envelopeOf(actor)),

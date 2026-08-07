@@ -54,7 +54,11 @@ export interface CompactionResult {
   readonly strippedTextRuns: number;
 }
 
-export async function compactPage(document: Y.Doc, orgId: OrgId, pageId: PageId): Promise<CompactionResult> {
+export async function compactPage(
+  document: Y.Doc,
+  orgId: OrgId,
+  pageId: PageId,
+): Promise<CompactionResult> {
   const snapshot = await latestVersion(orgId, pageId);
   const rows = await readUpdatesSince(orgId, pageId, snapshot?.createdAt ?? null);
 

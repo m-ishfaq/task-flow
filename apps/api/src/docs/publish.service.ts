@@ -45,7 +45,10 @@ import { materializeCurrentState } from './page-version.service.js';
  * "never happened."
  */
 
-export async function publishPage(actor: DocsActor, input: { readonly pageId: PageId }): Promise<void> {
+export async function publishPage(
+  actor: DocsActor,
+  input: { readonly pageId: PageId },
+): Promise<void> {
   await withOrgScope(orgOf(actor), async (tx) => {
     const page = await loadPage(tx, input.pageId);
     enforceOnPage(actor, 'page:update', page);
@@ -69,7 +72,11 @@ export async function publishPage(actor: DocsActor, input: { readonly pageId: Pa
       .where(eq(schema.pages.id, input.pageId));
 
     await outboxWriter.append(tx, [
-      createEvent(pagePublished, { pageId: input.pageId, versionId, published: true }, envelopeOf(actor)),
+      createEvent(
+        pagePublished,
+        { pageId: input.pageId, versionId, published: true },
+        envelopeOf(actor),
+      ),
     ]);
   });
 }
@@ -90,7 +97,11 @@ export async function unpublishPage(
       .where(eq(schema.pages.id, input.pageId));
 
     await outboxWriter.append(tx, [
-      createEvent(pagePublished, { pageId: input.pageId, versionId: null, published: false }, envelopeOf(actor)),
+      createEvent(
+        pagePublished,
+        { pageId: input.pageId, versionId: null, published: false },
+        envelopeOf(actor),
+      ),
     ]);
   });
 }

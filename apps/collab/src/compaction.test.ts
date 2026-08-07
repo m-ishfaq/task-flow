@@ -91,7 +91,12 @@ describe('compactPage', () => {
 
     const result = await compactPage(doc, orgId, pageId);
 
-    expect(result).toEqual({ compacted: false, prunedCount: 0, strippedNodes: 0, strippedTextRuns: 0 });
+    expect(result).toEqual({
+      compacted: false,
+      prunedCount: 0,
+      strippedNodes: 0,
+      strippedTextRuns: 0,
+    });
     expect(await latestVersion(orgId, pageId)).toBeNull();
   });
 
@@ -118,7 +123,7 @@ describe('compactPage', () => {
     expect(after).toHaveLength(0);
   });
 
-  it("strips disallowed content from the LIVE document, not just the persisted snapshot", async () => {
+  it('strips disallowed content from the LIVE document, not just the persisted snapshot', async () => {
     const { orgId, pageId } = await scaffold('strip');
 
     const doc = new Y.Doc();
@@ -135,7 +140,9 @@ describe('compactPage', () => {
 
     // The LIVE document — the same object every connected client shares —
     // must reflect the strip, not only whatever got persisted.
-    const survivingText = (doc.getXmlFragment('content').get(0) as Y.XmlElement).get(0) as Y.XmlText;
+    const survivingText = (doc.getXmlFragment('content').get(0) as Y.XmlElement).get(
+      0,
+    ) as Y.XmlText;
     expect(survivingText.toDelta()).toEqual([{ insert: 'click me' }]);
 
     // And the persisted snapshot must agree: replaying it must not resurrect
@@ -143,7 +150,9 @@ describe('compactPage', () => {
     const version = await latestVersion(orgId, pageId);
     const replay = new Y.Doc();
     Y.applyUpdate(replay, version!.state);
-    const replayedText = (replay.getXmlFragment('content').get(0) as Y.XmlElement).get(0) as Y.XmlText;
+    const replayedText = (replay.getXmlFragment('content').get(0) as Y.XmlElement).get(
+      0,
+    ) as Y.XmlText;
     expect(replayedText.toDelta()).toEqual([{ insert: 'click me' }]);
   });
 

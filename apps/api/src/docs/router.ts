@@ -94,7 +94,11 @@ export function createDocsRouter() {
       create: route({ permission: 'page:create' })
         .input(
           z
-            .object({ spaceId: SpaceIdSchema, parentPageId: PageIdSchema.nullable(), title: PageTitle })
+            .object({
+              spaceId: SpaceIdSchema,
+              parentPageId: PageIdSchema.nullable(),
+              title: PageTitle,
+            })
             .strict(),
         )
         .output(z.object({ pageId: z.string() }))
@@ -145,7 +149,11 @@ export function createDocsRouter() {
        * — it is generated fresh, on demand, from a `page_versions` row.
        */
       exportPdf: route({ permission: 'page:read' })
-        .input(z.object({ pageId: PageIdSchema, versionId: z.string().nullable().default(null) }).strict())
+        .input(
+          z
+            .object({ pageId: PageIdSchema, versionId: z.string().nullable().default(null) })
+            .strict(),
+        )
         .output(z.object({ filename: z.string(), contentBase64: z.string() }))
         .mutation(async ({ input, ctx }) => {
           const { filename, bytes } = await exportPagePdf(actorOf(ctx), input);
@@ -287,7 +295,9 @@ export function createDocsRouter() {
        */
       decide: route({ permission: 'comment:create' })
         .input(
-          z.object({ suggestionId: SuggestionIdSchema, status: z.enum(['accepted', 'rejected']) }).strict(),
+          z
+            .object({ suggestionId: SuggestionIdSchema, status: z.enum(['accepted', 'rejected']) })
+            .strict(),
         )
         .output(z.object({ status: z.enum(['accepted', 'rejected']) }))
         .mutation(({ input, ctx }) => suggestions.decideSuggestion(actorOf(ctx), input)),

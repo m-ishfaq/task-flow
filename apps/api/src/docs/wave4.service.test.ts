@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { unsafeAsId, type OrgId, type PageId, type SpaceId, type UserId } from '@taskflow/contracts';
+import {
+  unsafeAsId,
+  type OrgId,
+  type PageId,
+  type SpaceId,
+  type UserId,
+} from '@taskflow/contracts';
 import { closeDatabase, initializeDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import type { Subject } from '@taskflow/policy';
@@ -56,9 +62,10 @@ async function removeOrg(orgId: string): Promise<void> {
   // deleted — migration 0026's composite FK (pages_published_version_fk)
   // refuses to let a page_versions row disappear out from under a page that
   // still points at it, exactly as intended.
-  await admin.query(`UPDATE docs.pages SET published_version_id = NULL, published_at = NULL WHERE org_id = $1`, [
-    orgId,
-  ]);
+  await admin.query(
+    `UPDATE docs.pages SET published_version_id = NULL, published_at = NULL WHERE org_id = $1`,
+    [orgId],
+  );
   await admin.query(`DELETE FROM docs.page_versions WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM docs.yjs_updates WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM docs.pages WHERE org_id = $1`, [orgId]);
@@ -142,7 +149,9 @@ beforeAll(async () => {
   admin = await connectAsMigrator();
 
   await admin.setOrg(null);
-  await admin.query(`DELETE FROM identity.users WHERE id = ANY($1::uuid[])`, [USERS.map(([id]) => id)]);
+  await admin.query(`DELETE FROM identity.users WHERE id = ANY($1::uuid[])`, [
+    USERS.map(([id]) => id),
+  ]);
   for (const [id, email] of USERS) {
     await admin.query(
       `INSERT INTO identity.users (id, email, email_normalized, email_verified_at)
@@ -163,7 +172,9 @@ afterAll(async () => {
   for (const orgId of created) await removeOrg(orgId);
   await closeDatabase();
   await admin.setOrg(null);
-  await admin.query(`DELETE FROM identity.users WHERE id = ANY($1::uuid[])`, [USERS.map(([id]) => id)]);
+  await admin.query(`DELETE FROM identity.users WHERE id = ANY($1::uuid[])`, [
+    USERS.map(([id]) => id),
+  ]);
   await admin.end();
 });
 
@@ -189,7 +200,10 @@ describe('publishPage', () => {
     );
     await admin.setOrg(null);
 
-    const row = pageRows.rows[0] as { published_version_id: string | null; published_at: Date | null };
+    const row = pageRows.rows[0] as {
+      published_version_id: string | null;
+      published_at: Date | null;
+    };
     expect(row.published_version_id).not.toBeNull();
     expect(row.published_at).not.toBeNull();
     expect(versionRows.rows.map((r) => r['kind'])).toEqual(['publish']);
@@ -225,7 +239,8 @@ describe('publishPage', () => {
       [fixture.pageId],
     );
     await admin.setOrg(null);
-    const secondVersionId = (second.rows[0] as { published_version_id: string }).published_version_id;
+    const secondVersionId = (second.rows[0] as { published_version_id: string })
+      .published_version_id;
 
     expect(secondVersionId).not.toBe(firstVersionId);
     expect(allVersions.rows.map((r) => r['id'])).toEqual(
@@ -277,7 +292,10 @@ describe('unpublishPage', () => {
     );
     await admin.setOrg(null);
 
-    const pageRow = row.rows[0] as { published_version_id: string | null; published_at: Date | null };
+    const pageRow = row.rows[0] as {
+      published_version_id: string | null;
+      published_at: Date | null;
+    };
     expect(pageRow.published_version_id).toBeNull();
     expect(pageRow.published_at).toBeNull();
     expect(outbox.rows).toHaveLength(2);
@@ -287,7 +305,9 @@ describe('unpublishPage', () => {
   it('unpublishing a page that was never published is NOT_FOUND', async () => {
     const fixture = await scaffold('unpublish-missing');
 
-    await expect(publish.unpublishPage(fixture.owner, { pageId: fixture.pageId })).rejects.toMatchObject({
+    await expect(
+      publish.unpublishPage(fixture.owner, { pageId: fixture.pageId }),
+    ).rejects.toMatchObject({
       code: 'NOT_FOUND',
     });
   });
@@ -379,7 +399,9 @@ describe('page templates', () => {
     await expect(
       templates.createTemplateFromPage(member, { pageId: fixture.pageId, name: 'x' }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
-    await expect(templates.listTemplates(member, { spaceId: fixture.spaceId })).resolves.toEqual([]);
+    await expect(templates.listTemplates(member, { spaceId: fixture.spaceId })).resolves.toEqual(
+      [],
+    );
   });
 
   it('deleteTemplate removes the row and emits page.template_deleted; deleting twice is NOT_FOUND', async () => {
@@ -389,11 +411,17 @@ describe('page templates', () => {
       name: 'to delete',
     });
 
-    await templates.deleteTemplate(fixture.owner, { templateId: unsafeAsId<'PageTemplateId'>(templateId) });
+    await templates.deleteTemplate(fixture.owner, {
+      templateId: unsafeAsId<'PageTemplateId'>(templateId),
+    });
 
-    await expect(templates.listTemplates(fixture.owner, { spaceId: fixture.spaceId })).resolves.toEqual([]);
     await expect(
-      templates.deleteTemplate(fixture.owner, { templateId: unsafeAsId<'PageTemplateId'>(templateId) }),
+      templates.listTemplates(fixture.owner, { spaceId: fixture.spaceId }),
+    ).resolves.toEqual([]);
+    await expect(
+      templates.deleteTemplate(fixture.owner, {
+        templateId: unsafeAsId<'PageTemplateId'>(templateId),
+      }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 

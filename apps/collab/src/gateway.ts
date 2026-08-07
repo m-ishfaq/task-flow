@@ -152,7 +152,11 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
      * content-strip can reach every currently connected client.
      */
     async onStoreDocument(data) {
-      const result = await compactPage(data.document, data.lastContext.orgId, data.lastContext.pageId);
+      const result = await compactPage(
+        data.document,
+        data.lastContext.orgId,
+        data.lastContext.pageId,
+      );
       if (result.strippedNodes > 0 || result.strippedTextRuns > 0) {
         logger.warn(
           {

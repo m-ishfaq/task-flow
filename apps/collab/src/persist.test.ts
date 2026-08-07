@@ -21,7 +21,10 @@ import { extractUpdateBytes } from './persist.js';
  * client and server exercise it.
  */
 
-function syncEnvelope(documentName: string, writeInner: (encoder: encoding.Encoder) => void): Uint8Array {
+function syncEnvelope(
+  documentName: string,
+  writeInner: (encoder: encoding.Encoder) => void,
+): Uint8Array {
   const encoder = encoding.createEncoder();
   encoding.writeVarString(encoder, documentName);
   encoding.writeVarUint(encoder, 0); // MessageType.Sync
@@ -32,7 +35,10 @@ function syncEnvelope(documentName: string, writeInner: (encoder: encoding.Encod
 describe('extractUpdateBytes', () => {
   it('extracts the update bytes from a real messageYjsUpdate message', () => {
     const update = Y.encodeStateAsUpdate(new Y.Doc());
-    const raw = new OutgoingMessage('page:test').createSyncMessage().writeUpdate(update).toUint8Array();
+    const raw = new OutgoingMessage('page:test')
+      .createSyncMessage()
+      .writeUpdate(update)
+      .toUint8Array();
 
     expect(extractUpdateBytes(raw)).toEqual(update);
   });
@@ -85,7 +91,10 @@ describe('extractUpdateBytes', () => {
     // real receiver decodes the SAME immutable bytes afterward and must see
     // them exactly as sent, unaffected by this function's own read.
     const update = Y.encodeStateAsUpdate(new Y.Doc());
-    const raw = new OutgoingMessage('page:test').createSyncMessage().writeUpdate(update).toUint8Array();
+    const raw = new OutgoingMessage('page:test')
+      .createSyncMessage()
+      .writeUpdate(update)
+      .toUint8Array();
 
     const first = extractUpdateBytes(raw);
     const second = extractUpdateBytes(raw);
