@@ -829,6 +829,12 @@ const PAGE_QUALIFIERS = [
  * uniqueness would hide the one place it matters: a breadcrumb or a search
  * result that shows only the title is ambiguous, and that is a real product
  * problem to be able to see rather than one to seed around.
+ *
+ * The repeat that ISN'T wanted — four identical SIBLINGS under one parent,
+ * which a 20-topic pool drawn 70% bare over a 46-page space produces by
+ * arithmetic — is the tree's job to avoid, not this function's: `docs.spaces`
+ * retries until a sibling group has unique titles, keeping the cross-parent
+ * ambiguity this comment defends while dropping the soup.
  */
 export function pageTitle(rng: Rng): string {
   const topic = rng.pick(PAGE_TOPICS);

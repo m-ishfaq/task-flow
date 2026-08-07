@@ -179,19 +179,21 @@ function Breadcrumbs() {
       ? 'My tasks'
       : pathname.startsWith('/chat')
         ? 'Chat'
-        : pathname.startsWith('/projects/')
-          ? 'Project'
-          : pathname.startsWith('/projects')
-            ? 'Projects'
-            : pathname.startsWith('/settings/audit')
-              ? 'Audit log'
-              : pathname.startsWith('/settings')
-                ? 'Settings'
-                : pathname.startsWith('/admin/permissions')
-                  ? 'Permissions'
-                  : pathname.startsWith('/orgs')
-                    ? 'Organizations'
-                    : 'TaskFlow';
+        : pathname.startsWith('/docs')
+          ? 'Docs'
+          : pathname.startsWith('/projects/')
+            ? 'Project'
+            : pathname.startsWith('/projects')
+              ? 'Projects'
+              : pathname.startsWith('/settings/audit')
+                ? 'Audit log'
+                : pathname.startsWith('/settings')
+                  ? 'Settings'
+                  : pathname.startsWith('/admin/permissions')
+                    ? 'Permissions'
+                    : pathname.startsWith('/orgs')
+                      ? 'Organizations'
+                      : 'TaskFlow';
 
   return <h1 className="truncate text-sm font-medium text-ink">{label}</h1>;
 }

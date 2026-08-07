@@ -188,6 +188,11 @@ const KNOWN_VARIABLES = new Set([
      legitimately carries variables this app does not read, and the misspelling
      check would otherwise reject a correct setup. */
   'DATABASE_REALTIME_URL',
+  /* apps/collab's write-exception role (Phase 6 Wave 2, migration 0024). Same
+     reasoning as DATABASE_REALTIME_URL: it is in .env.example, this app does
+     not read it, and an unlisted one makes the API refuse to boot over a
+     correctly-spelled variable the moment a developer copies the example. */
+  'DATABASE_COLLAB_URL',
   'DATABASE_POOL_MAX',
   'STORAGE_ENDPOINT',
   'STORAGE_REGION',
@@ -219,6 +224,10 @@ const KNOWN_VARIABLES = new Set([
      is spelled perfectly correctly. */
   'WEB_API_ORIGIN',
   'WEB_REALTIME_ORIGIN',
+  /* Read by apps/web's vite.config.ts for its /collab proxy target. Same
+     class as the two above: `WEB_` prefix, never read by a server, must be
+     listed or it is rejected. */
+  'WEB_COLLAB_ORIGIN',
   /* apps/realtime (Phase 4). Same reasoning as DATABASE_REALTIME_URL above —
      this set is every TaskFlow variable across ALL services, not the ones this
      app reads, so that a typo is caught wherever it is made. */

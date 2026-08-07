@@ -296,6 +296,32 @@ describe('docs.spaces — the tree', () => {
     }
   });
 
+  it('never gives two pages under the same parent the same title', async () => {
+    /* The seeder's own guard: `pageTitle` draws from a 20-entry topic pool and
+       returns a bare topic most of the time, so a 40-page space WOULD produce
+       four siblings named "Support escalation paths" without the per-parent
+       dedupe in buildTree — and the sidebar reads that as a bug even though
+       each title is a legitimate draw. Sibling-group uniqueness is the whole
+       point: repeats across DIFFERENT parents are still allowed, deliberately
+       (corpus.ts's "Overview under three different parents" ambiguity). */
+    const { pages } = await seedSpaces([plan]);
+    const titlesByParent = new Map<string, string[]>();
+
+    for (const page of pages) {
+      const parent = typeof page['parent_page_id'] === 'string' ? page['parent_page_id'] : 'root';
+      const title = String(page['title']);
+      const group = titlesByParent.get(parent) ?? [];
+      group.push(title);
+      titlesByParent.set(parent, group);
+    }
+
+    for (const [parent, titles] of titlesByParent) {
+      expect(new Set(titles).size, `titles under ${parent}: ${titles.join(', ')}`).toBe(
+        titles.length,
+      );
+    }
+  });
+
   it('never archives a page while leaving live children under it', async () => {
     /* The state a tree query filtering `archived_at` on the page but not on its
        ancestors renders as children hanging off nothing — and one the product

@@ -342,18 +342,43 @@ function buildTree(rng: Rng, now: Date, org: SeededOrg, space: SeededSpace): Dra
 
   const all: DraftPage[] = [];
 
+  /* Titles are unique per sibling group. `pageTitle` draws from a 20-entry
+     topic pool and returns a BARE topic 70% of the time, so without this a
+     46-page space lands four pages named "Support escalation paths" under the
+     same parent — which reads as a seeder bug even though each title is a
+     legitimate draw (it is exactly what a real wiki with a clichéd corpus
+     produces, and the sidebar showed it: repeated titles everywhere).
+
+     Repeats across DIFFERENT parents are still allowed, deliberately — that
+     is corpus.ts's own "Overview under three different parents" ambiguity a
+     breadcrumb has to be able to show. Bounded retries rather than a
+     guaranteed-unique contract: a sibling group larger than the 180-title
+     space would otherwise spin forever, and 40 draws from 180 possibilities
+     misses with probability that rounds to zero at the sizes profiles.ts
+     plans. */
+  const usedTitlesByParent = new Map<DraftPage | null, Set<string>>();
+
   const add = (parent: DraftPage | null): DraftPage => {
     const author = rng.pick(authors);
     /* A child can never predate its parent: the ancestors are what a reader
        reaches it through, so a page created before the page containing it is a
        row the product could not have produced. */
     const floor = parent?.createdAt ?? space.createdAt;
+
+    const usedTitles = usedTitlesByParent.get(parent) ?? new Set<string>();
+    let title = pageTitle(rng);
+    for (let attempt = 0; attempt < 40 && usedTitles.has(title); attempt += 1) {
+      title = pageTitle(rng);
+    }
+    usedTitles.add(title);
+    usedTitlesByParent.set(parent, usedTitles);
+
     const draft: DraftPage = {
       id: rng.uuid(now),
       parent,
       ancestorIds: parent === null ? [] : [parent.id, ...parent.ancestorIds],
       depth: (parent?.depth ?? 0) + 1,
-      title: pageTitle(rng),
+      title,
       author,
       createdAt: latest(floor, daysBefore(now, rng.int(1, 240))),
       archivedAt: null,
