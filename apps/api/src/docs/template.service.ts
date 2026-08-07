@@ -174,7 +174,10 @@ export async function createPageFromTemplate(
       .select({ state: schema.pageTemplates.state, spaceId: schema.pageTemplates.spaceId })
       .from(schema.pageTemplates)
       .where(
-        and(eq(schema.pageTemplates.id, input.templateId), eq(schema.pageTemplates.spaceId, input.spaceId)),
+        and(
+          eq(schema.pageTemplates.id, input.templateId),
+          eq(schema.pageTemplates.spaceId, input.spaceId),
+        ),
       )
       .limit(1);
 

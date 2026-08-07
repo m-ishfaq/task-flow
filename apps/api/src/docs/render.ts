@@ -65,7 +65,9 @@ interface DeltaSegment {
 }
 
 /** Marks on one delta segment that pass `MarkSchema`, in the wire's `{type, attrs?}` shape. */
-function marksOf(segment: DeltaSegment): readonly { type: string; attrs?: Record<string, unknown> }[] {
+function marksOf(
+  segment: DeltaSegment,
+): readonly { type: string; attrs?: Record<string, unknown> }[] {
   if (!segment.attributes) return [];
 
   const marks: { type: string; attrs?: Record<string, unknown> }[] = [];
@@ -88,7 +90,11 @@ function renderText(text: Y.XmlText): readonly RenderedNode[] {
   for (const segment of delta) {
     if (segment.insert.length === 0) continue;
     const marks = marksOf(segment);
-    nodes.push(marks.length > 0 ? { type: 'text', text: segment.insert, marks } : { type: 'text', text: segment.insert });
+    nodes.push(
+      marks.length > 0
+        ? { type: 'text', text: segment.insert, marks }
+        : { type: 'text', text: segment.insert },
+    );
   }
   return nodes;
 }

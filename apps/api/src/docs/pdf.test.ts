@@ -98,7 +98,9 @@ describe('layoutDocument', () => {
         {
           type: 'orderedList',
           attrs: { start: 3 },
-          content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [text('third')] }] }],
+          content: [
+            { type: 'listItem', content: [{ type: 'paragraph', content: [text('third')] }] },
+          ],
         },
       ],
     };
@@ -166,7 +168,9 @@ describe('renderPdf', () => {
   it('paginates when content overflows a single page', async () => {
     const paragraphs: RenderedNode[] = Array.from({ length: 200 }, (_, index) => ({
       type: 'paragraph',
-      content: [text(`Paragraph number ${String(index)} with enough text to take real vertical space.`)],
+      content: [
+        text(`Paragraph number ${String(index)} with enough text to take real vertical space.`),
+      ],
     }));
     const doc: RenderedNode = { type: 'doc', content: paragraphs };
 

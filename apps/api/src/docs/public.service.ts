@@ -67,7 +67,10 @@ export async function getPublishedPage(input: {
       .select({ state: schema.pageVersions.state })
       .from(schema.pageVersions)
       .where(
-        and(eq(schema.pageVersions.id, page.publishedVersionId), eq(schema.pageVersions.pageId, input.pageId)),
+        and(
+          eq(schema.pageVersions.id, page.publishedVersionId),
+          eq(schema.pageVersions.pageId, input.pageId),
+        ),
       )
       .limit(1);
 

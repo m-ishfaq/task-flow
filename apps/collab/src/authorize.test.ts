@@ -1,5 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { unsafeAsId, type OrgId, type PageId, type SpaceId, type UserId } from '@taskflow/contracts';
+import {
+  unsafeAsId,
+  type OrgId,
+  type PageId,
+  type SpaceId,
+  type UserId,
+} from '@taskflow/contracts';
 import { closeDatabase, initializeDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { signAccessToken } from '@taskflow/security';
@@ -51,7 +57,11 @@ let created: OrgId[] = [];
 
 async function token(userId: UserId): Promise<string> {
   return signAccessToken(
-    { userId, sessionId: '0195ff30-0000-7000-8000-000000000501', authenticatedAt: Math.floor(Date.now() / 1000) },
+    {
+      userId,
+      sessionId: '0195ff30-0000-7000-8000-000000000501',
+      authenticatedAt: Math.floor(Date.now() / 1000),
+    },
     { secret: SECRET },
   );
 }
@@ -93,12 +103,10 @@ async function scaffold(slug: string): Promise<Tree> {
     [crypto.randomUUID(), orgId, GUEST],
   );
 
-  await admin.query(`INSERT INTO docs.spaces (id, org_id, name, created_by) VALUES ($1, $2, $3, $4)`, [
-    spaceId,
-    orgId,
-    'Handbook',
-    OWNER,
-  ]);
+  await admin.query(
+    `INSERT INTO docs.spaces (id, org_id, name, created_by) VALUES ($1, $2, $3, $4)`,
+    [spaceId, orgId, 'Handbook', OWNER],
+  );
   await admin.query(
     `INSERT INTO docs.pages (id, org_id, space_id, parent_page_id, title, rank, ancestor_ids, created_by)
      VALUES ($1, $2, $3, NULL, $4, 'a0', '{}', $5)`,

@@ -143,7 +143,8 @@ export async function decideSuggestion(
     const suggestion = await loadSuggestion(tx, input.suggestionId);
     const page = await loadPage(tx, suggestion.pageId as PageId);
 
-    if (suggestion.status !== 'pending') throw errors.conflict('This suggestion was already decided.');
+    if (suggestion.status !== 'pending')
+      throw errors.conflict('This suggestion was already decided.');
 
     const byAuthor = suggestion.authorId === actor.subject.userId;
     const withdrawal = byAuthor && input.status === 'rejected';

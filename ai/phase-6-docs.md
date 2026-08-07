@@ -26,7 +26,7 @@ of them go through `onAuthenticate` as the framework actually invokes it, or thr
 
 1. **`gateway.ts`'s `onAuthenticate` set `data.context = {...}`, and every connection's context was
    silently empty.** `@hocuspocus/server`'s `hooks()` runner builds a FRESH object — `{ ...hookPayload,
-   ... }` — for every hook call; assigning `data.context` replaces a property on that throwaway copy,
+... }` — for every hook call; assigning `data.context` replaces a property on that throwaway copy,
    never the real `hookPayload.context` the rest of the pipeline reads. The framework only threads
    context forward through the hook's RETURN value (`onAuthenticate?(data): Promise<any>` — the `any`
    is exactly this). `data.connectionConfig.readOnly = ...` on the same line worked, and masked the
@@ -84,7 +84,7 @@ and the migration review both missed.**
 
 3. **The claim query's first version used `FOR UPDATE OF pv SKIP LOCKED`, mirroring `claimPending`'s
    own outbox query, and failed against a real database with `permission denied for table
-   page_versions`** — despite `taskflow_backlinks`' column-level grant being exactly right, and
+page_versions`** — despite `taskflow_backlinks`' column-level grant being exactly right, and
    despite `packages/db`'s own typecheck and lint passing clean. Postgres row-locking clauses
    require SELECT on every column of a table, not just the ones a query projects; a migration
    reviewer and a type checker both agree that looks correct, and only a real connection as the
@@ -141,7 +141,7 @@ decisions §3.9 and §5 leave open and one genuine finding a real database surfa
    of this file's own test teardown** — real, working proof the constraint does what it says. The
    teardown originally deleted `docs.page_versions` rows before clearing a page's published pointer,
    and Postgres refused it: `update or delete on table "page_versions" violates foreign key
-   constraint "pages_published_version_fk"`. That is `wave4.service.test.ts` accidentally exercising
+constraint "pages_published_version_fk"`. That is `wave4.service.test.ts` accidentally exercising
    exactly the property the composite FK exists to guarantee — a page's published pointer can never
    be left dangling at a version that no longer exists — from the wrong side. Fixed in the test, not
    the schema: clear `published_version_id`/`published_at` before deleting `page_versions` rows, the
@@ -547,6 +547,7 @@ literal enum/union addition, which is mechanical, not structural — flagged her
 mistaken for a real coupling when it happens.
 
 ## 7. Open decisions — need a call before or during Wave 1/2 (all six now decided; see the status
+
 ## header for when and why)
 
 1. **Does the "nearest ancestor grant" resolver in §3.4 become a general `packages/policy`

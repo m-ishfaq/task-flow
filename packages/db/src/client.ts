@@ -406,7 +406,10 @@ export function initializeCollabDatabase(config: DbConfig): void {
  * exists for exactly one thing: persisting to `docs.yjs_updates` and
  * `docs.page_versions`, the two tables `taskflow_collab` can reach.
  */
-export async function withCollabScope<T>(orgId: OrgId, fn: (tx: TenantDb) => Promise<T>): Promise<T> {
+export async function withCollabScope<T>(
+  orgId: OrgId,
+  fn: (tx: TenantDb) => Promise<T>,
+): Promise<T> {
   if (!collabDb) {
     throw new Error(
       'Collab database not initialized. Call initializeCollabDatabase() during boot — ' +

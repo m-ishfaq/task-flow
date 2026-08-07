@@ -1,11 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { unsafeAsId, type OrgId, type PageId } from '@taskflow/contracts';
-import {
-  closeDatabase,
-  initializeBacklinksDatabase,
-  initializeDatabase,
-} from '@taskflow/db';
+import { closeDatabase, initializeBacklinksDatabase, initializeDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { drainBacklinks, drainBacklinksFully } from './backlinks.relay.js';
 
@@ -92,7 +88,11 @@ function snapshotLinkingTo(targets: readonly PageId[]): Uint8Array {
   return Y.encodeStateAsUpdate(doc);
 }
 
-async function writeVersion(orgId: OrgId, pageId: PageId, targets: readonly PageId[]): Promise<void> {
+async function writeVersion(
+  orgId: OrgId,
+  pageId: PageId,
+  targets: readonly PageId[],
+): Promise<void> {
   await admin.setOrg(orgId);
   await admin.query(
     `INSERT INTO docs.page_versions (id, org_id, page_id, kind, state, created_by)
@@ -216,15 +216,13 @@ describe('drainBacklinks', () => {
     expect(result.pagesUpdated).toBeGreaterThanOrEqual(2);
 
     await admin.setOrg(orgA.orgId);
-    const aRows = await admin.query(
-      `SELECT target_page_id FROM docs.backlinks WHERE org_id = $1`,
-      [orgA.orgId],
-    );
+    const aRows = await admin.query(`SELECT target_page_id FROM docs.backlinks WHERE org_id = $1`, [
+      orgA.orgId,
+    ]);
     await admin.setOrg(orgB.orgId);
-    const bRows = await admin.query(
-      `SELECT target_page_id FROM docs.backlinks WHERE org_id = $1`,
-      [orgB.orgId],
-    );
+    const bRows = await admin.query(`SELECT target_page_id FROM docs.backlinks WHERE org_id = $1`, [
+      orgB.orgId,
+    ]);
     await admin.setOrg(null);
 
     expect(aRows.rows.map((r) => r['target_page_id'])).toEqual([orgATarget]);

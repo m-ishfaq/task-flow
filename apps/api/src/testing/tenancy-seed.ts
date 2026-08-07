@@ -132,7 +132,9 @@ const FUZZ_ANCHOR = (() => {
   const doc = new Y.Doc();
   const text = doc.getText('t');
   text.insert(0, 'fuzz');
-  return encodeAnchor(Buffer.from(Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(text, 0))));
+  return encodeAnchor(
+    Buffer.from(Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(text, 0))),
+  );
 })();
 
 async function seedTenant(admin: AdminConnection, tenant: Tenant, label: string): Promise<void> {
@@ -316,7 +318,12 @@ async function seedTenant(admin: AdminConnection, tenant: Tenant, label: string)
   await admin.query(
     `INSERT INTO docs.page_templates (id, org_id, space_id, name, state)
      VALUES ($1, $2, $3, 'Fuzz Template', $4)`,
-    [tenant.templateId, tenant.orgId, tenant.spaceId, Buffer.from(Y.encodeStateAsUpdate(new Y.Doc()))],
+    [
+      tenant.templateId,
+      tenant.orgId,
+      tenant.spaceId,
+      Buffer.from(Y.encodeStateAsUpdate(new Y.Doc())),
+    ],
   );
 }
 

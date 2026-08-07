@@ -113,7 +113,7 @@ describe('a comment anchor, under a concurrent edit', () => {
     expect(textOf(reader).slice(resolved?.index ?? 0)).toBe('Hello World, truly');
   });
 
-  it('a RANGE (anchor_from/anchor_to, matching docs.comments\' actual pair) shifts consistently at both ends', () => {
+  it("a RANGE (anchor_from/anchor_to, matching docs.comments' actual pair) shifts consistently at both ends", () => {
     const writer = docWithText('Hello brave new world');
     const reader = new Y.Doc();
     Y.applyUpdate(reader, Y.encodeStateAsUpdate(writer.doc));

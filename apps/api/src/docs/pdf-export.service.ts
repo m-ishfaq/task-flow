@@ -41,7 +41,10 @@ export async function exportPagePdf(
         .select({ state: schema.pageVersions.state })
         .from(schema.pageVersions)
         .where(
-          and(eq(schema.pageVersions.id, input.versionId), eq(schema.pageVersions.pageId, input.pageId)),
+          and(
+            eq(schema.pageVersions.id, input.versionId),
+            eq(schema.pageVersions.pageId, input.pageId),
+          ),
         )
         .limit(1);
       const version = rows[0];

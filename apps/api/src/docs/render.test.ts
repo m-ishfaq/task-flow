@@ -94,7 +94,10 @@ describe('renderFragment', () => {
     expect(renderFragment(root)).toEqual({
       type: 'doc',
       content: [
-        { type: 'pageLink', attrs: { pageId: '0195ee30-0000-7000-8000-000000000001', label: 'See also' } },
+        {
+          type: 'pageLink',
+          attrs: { pageId: '0195ee30-0000-7000-8000-000000000001', label: 'See also' },
+        },
       ],
     });
   });

@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { unsafeAsId, type OrgId, type PageId, type SpaceId, type UserId } from '@taskflow/contracts';
+import {
+  unsafeAsId,
+  type OrgId,
+  type PageId,
+  type SpaceId,
+  type UserId,
+} from '@taskflow/contracts';
 import { closeDatabase, initializeDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import type { Subject } from '@taskflow/policy';
@@ -120,7 +126,10 @@ beforeAll(async () => {
     );
   }
 
-  initializeDatabase({ url: TEST_ENV.DATABASE_URL, applicationName: 'taskflow-docs-pageversion-test' });
+  initializeDatabase({
+    url: TEST_ENV.DATABASE_URL,
+    applicationName: 'taskflow-docs-pageversion-test',
+  });
 });
 
 beforeEach(async () => {
@@ -154,10 +163,9 @@ describe('savePageVersion', () => {
     expect(list[0]?.createdBy).toBe(fixture.owner.subject.userId);
 
     await admin.setOrg(fixture.orgId);
-    const { rows } = await admin.query(
-      `SELECT state FROM docs.page_versions WHERE id = $1`,
-      [versionId],
-    );
+    const { rows } = await admin.query(`SELECT state FROM docs.page_versions WHERE id = $1`, [
+      versionId,
+    ]);
     await admin.setOrg(null);
     const state = (rows[0] as { state: Buffer }).state;
 
@@ -298,9 +306,7 @@ describe('restorePageVersion', () => {
     );
     await admin.setOrg(null);
     expect(outbox.rows).toHaveLength(1);
-    expect((outbox.rows[0]?.['payload'] as { versionId?: string }).versionId).toBe(
-      saved.versionId,
-    );
+    expect((outbox.rows[0]?.['payload'] as { versionId?: string }).versionId).toBe(saved.versionId);
   });
 
   it('the restored snapshot replays to the pre-edit content, not the content at restore time', async () => {
