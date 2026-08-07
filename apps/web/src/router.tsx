@@ -6,7 +6,14 @@ import {
 } from '@tanstack/react-router';
 import type { QueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
-import { BoardIdSchema, CardIdSchema, ChannelIdSchema, ProjectIdSchema } from '@taskflow/contracts';
+import {
+  BoardIdSchema,
+  CardIdSchema,
+  ChannelIdSchema,
+  PageIdSchema,
+  ProjectIdSchema,
+  SpaceIdSchema,
+} from '@taskflow/contracts';
 import { FilterTree } from '@taskflow/filter';
 import { useSession } from './lib/session.js';
 import { Shell } from './components/shell.js';
@@ -20,6 +27,7 @@ import { ProjectsPage } from './features/work/projects-page.js';
 import { HomePage } from './features/work/home-page.js';
 import { BoardPage } from './features/work/board-page.js';
 import { ChatPage } from './features/chat/chat-page.js';
+import { DocsPage } from './features/docs/docs-page.js';
 import { PermissionDebugPage } from './features/admin/permission-debug-page.js';
 import { SettingsPage } from './features/admin/settings-page.js';
 import { AuditPage } from './features/admin/audit-page.js';
@@ -232,6 +240,25 @@ const chatRoute = createRoute({
   component: ChatPage,
 });
 
+/**
+ * Spaces and pages (Phase 6, ai/phase-6-docs.md §5 Wave 1 of the UI).
+ *
+ * `space`/`page` are search params, not nested routes — the identical
+ * reasoning `chatRoute`'s `channel` gives: the tree must stay mounted and
+ * the open page must be deep-linkable and back-button correct, and a child
+ * route would unmount the tree on every switch.
+ */
+const docsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/docs',
+  validateSearch: z.object({
+    space: SpaceIdSchema.optional().catch(undefined),
+    page: PageIdSchema.optional().catch(undefined),
+  }),
+  beforeLoad: () => requireOrg('/docs'),
+  component: DocsPage,
+});
+
 const permissionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/admin/permissions',
@@ -275,6 +302,7 @@ const routeTree = rootRoute.addChildren([
   projectSettingsRoute,
   boardRoute,
   chatRoute,
+  docsRoute,
   settingsRoute,
   auditRoute,
   permissionsRoute,

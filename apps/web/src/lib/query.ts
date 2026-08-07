@@ -227,6 +227,20 @@ export const keys = {
     ['org', orgId, 'channel', channelId, 'guests'] as const,
   /** Unread counts for the sidebar badge — one query across every channel id given. */
   unreadCounts: (orgId: string) => ['org', orgId, 'channels', 'unread'] as const,
+
+  /** Every space the caller may see (Phase 6, docs/api.ts). */
+  spaces: (orgId: string) => ['org', orgId, 'spaces'] as const,
+  /** Every page in one space, flat — the client groups by `parentPageId` (docs.service.ts's own convention). */
+  pages: (orgId: string, spaceId: string) => ['org', orgId, 'space', spaceId, 'pages'] as const,
+  page: (orgId: string, pageId: string) => ['org', orgId, 'page', pageId] as const,
+  pageVersions: (orgId: string, pageId: string) =>
+    ['org', orgId, 'page', pageId, 'versions'] as const,
+  pageComments: (orgId: string, pageId: string) =>
+    ['org', orgId, 'page', pageId, 'comments'] as const,
+  pageSuggestions: (orgId: string, pageId: string) =>
+    ['org', orgId, 'page', pageId, 'suggestions'] as const,
+  pageTemplates: (orgId: string, spaceId: string) =>
+    ['org', orgId, 'space', spaceId, 'templates'] as const,
 } as const;
 
 /** The org id every key needs, or a placeholder that matches nothing. */
