@@ -282,6 +282,39 @@ export interface PageMix {
   readonly renamedRate: number;
   /** Pages that emit a `page.moved` in their history. */
   readonly movedRate: number;
+
+  /**
+   * Wave 3 additions — comments, suggestions, internal links, and the one
+   * scenario Wave 2's own second bug lived in (restore).
+   *
+   * All four read a page's body that `docs.content` already built rather than
+   * generating their own, for the reason `docs.content`'s own header gives for
+   * WAL bytes: a comment anchor or an internal link is only a real fixture if
+   * it points at real, structurally valid Yjs state. A page with no body
+   * cannot have any of the four — there is nothing yet to anchor, link, or
+   * restore.
+   */
+
+  /** Pages with a body that also get one internal `pageLink` to another page
+   * in the org — what `docs.backlinks` exists to answer "what links here" for. */
+  readonly pageLinkRate: number;
+  /** Share of SNAPSHOTTED pages, with a tail past that snapshot, that get a
+   * restore scenario: a further edit, then a version that reverts to the
+   * ORIGINAL snapshot's exact bytes — the precise shape Wave 2's second bug
+   * (ai/phase-6-docs.md's status header) got wrong the first time. */
+  readonly restoreShare: number;
+  /** Pages with a body that get any comments at all. */
+  readonly commentRate: number;
+  readonly commentsPerPage: readonly [number, number];
+  /** Share of comments that are resolved rather than left open. */
+  readonly resolvedShare: number;
+  /** Pages with a body that get any suggestions at all. */
+  readonly suggestionRate: number;
+  readonly suggestionsPerPage: readonly [number, number];
+  /** Share of suggestions that have been decided rather than left pending. */
+  readonly suggestionDecidedShare: number;
+  /** Of the DECIDED suggestions, the share accepted rather than rejected. */
+  readonly suggestionAcceptedShare: number;
 }
 
 export interface Profile {
@@ -389,11 +422,20 @@ const DEMO_PAGE_MIX: PageMix = {
   tailRate: 0.7,
   renamedRate: 0.15,
   movedRate: 0.2,
+  pageLinkRate: 0.3,
+  restoreShare: 0.25,
+  commentRate: 0.4,
+  commentsPerPage: [1, 4],
+  resolvedShare: 0.4,
+  suggestionRate: 0.25,
+  suggestionsPerPage: [1, 3],
+  suggestionDecidedShare: 0.6,
+  suggestionAcceptedShare: 0.65,
 };
 
 /**
  * The default. Three tenants, ~1,350 live cards, ~2,500 messages, ~150 pages,
- * every Phase 3, Phase 5 and Phase 6 (Waves 1–2) surface populated.
+ * every Phase 3, Phase 5 and Phase 6 (Waves 1–3) surface populated.
  */
 const DEMO: Profile = {
   name: 'demo',

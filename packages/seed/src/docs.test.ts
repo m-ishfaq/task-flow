@@ -6,6 +6,8 @@ import { roleGrants, type Role } from '@taskflow/policy';
 import { createRng } from './rng.js';
 import { findProfile, PROFILES, type OrgPlan, type Profile, type SpacePlan } from './profiles.js';
 import { contentModule, editDocument } from './modules/docs.content.js';
+import { commentsModule } from './modules/docs.comments.js';
+import { suggestionsModule } from './modules/docs.suggestions.js';
 import { spacesModule } from './modules/docs.spaces.js';
 import { orgsModule, type SeededMembership, type SeededOrg } from './modules/tenancy.orgs.js';
 import type { SeedContext, SeedDb } from './context.js';
@@ -159,7 +161,9 @@ function orgWith(spaces: readonly SpacePlan[]): SeededOrg {
     plan,
     owner: owner.user,
     memberships: MEMBERSHIPS,
-    teams: [{ id: id('7e', 1), name: 'Core', slug: 'core', members: MEMBERSHIPS.map((m) => m.user) }],
+    teams: [
+      { id: id('7e', 1), name: 'Core', slug: 'core', members: MEMBERSHIPS.map((m) => m.user) },
+    ],
     members: MEMBERSHIPS.map((m) => m.user),
     createdAt: new Date('2025-01-01T00:00:00.000Z'),
   };
@@ -435,7 +439,7 @@ describe('docs.content — the CRDT fixture', () => {
     const rng = createRng('content');
 
     for (let i = 0; i < 25; i += 1) {
-      const edited = editDocument(rng, { ...mix, snapshotRate: 1 }, false);
+      const edited = editDocument(rng, { ...mix, snapshotRate: 1 }, false, null);
       const doc = new Y.Doc();
       for (const update of edited.updates) Y.applyUpdate(doc, update);
 
@@ -459,7 +463,7 @@ describe('docs.content — the CRDT fixture', () => {
     const rng = createRng('replay');
 
     for (let i = 0; i < 25; i += 1) {
-      const edited = editDocument(rng, { ...mix, snapshotRate: 1, tailRate: 1 }, false);
+      const edited = editDocument(rng, { ...mix, snapshotRate: 1, tailRate: 1 }, false, null);
       const snapshot = edited.snapshot;
       if (snapshot === null) continue;
 
@@ -473,6 +477,7 @@ describe('docs.content — the CRDT fixture', () => {
       createRng('tail'),
       { ...mix, blocks: [8, 8], updates: [4, 4], snapshotRate: 1, tailRate: 1 },
       false,
+      null,
     );
     expect(edited.snapshot).not.toBeNull();
     expect(edited.snapshot?.after).toBeLessThan(edited.updates.length - 1);
@@ -482,8 +487,8 @@ describe('docs.content — the CRDT fixture', () => {
     /* The clientID line. Without it these documents converge to the same text
        while every `data` column differs, so this is the only assertion that
        fails when it regresses. */
-    const first = editDocument(createRng('same'), mix, false);
-    const second = editDocument(createRng('same'), mix, false);
+    const first = editDocument(createRng('same'), mix, false, null);
+    const second = editDocument(createRng('same'), mix, false, null);
 
     expect(first.updates.map((u) => Buffer.from(u).toString('base64'))).toEqual(
       second.updates.map((u) => Buffer.from(u).toString('base64')),
@@ -492,13 +497,13 @@ describe('docs.content — the CRDT fixture', () => {
   });
 
   it('differs between seeds', () => {
-    const first = editDocument(createRng('one'), mix, false);
-    const second = editDocument(createRng('two'), mix, false);
+    const first = editDocument(createRng('one'), mix, false, null);
+    const second = editDocument(createRng('two'), mix, false, null);
     expect(textOf(first.updates)).not.toBe(textOf(second.updates));
   });
 
   it('plants a document the guard has to strip under --chaos', () => {
-    const edited = editDocument(createRng('chaos'), mix, true);
+    const edited = editDocument(createRng('chaos'), mix, true, null);
     const doc = new Y.Doc();
     for (const update of edited.updates) Y.applyUpdate(doc, update);
 
@@ -535,9 +540,7 @@ describe('docs.content — the CRDT fixture', () => {
     expect(result.updateRows).toBeGreaterThan(0);
 
     const bodied = new Set(
-      spaces.pages
-        .filter((page) => page.space.plan.content === true)
-        .map((page) => page.id),
+      spaces.pages.filter((page) => page.space.plan.content === true).map((page) => page.id),
     );
     for (const row of harness.rowsOf('docs.yjs_updates')) {
       expect(bodied.has(String(row[2]))).toBe(true);
@@ -574,9 +577,360 @@ describe('docs.content — the CRDT fixture', () => {
     }
 
     // Only the manual save emits — compaction is exempt from guardrail 11 the
-    // same way `work/rebalance.ts` is (apps/api's docs/events.ts).
+    // same way `work/rebalance.ts` is (apps/api's docs/events.ts). A restored
+    // version is ALSO `kind: 'manual'` (see the "restore" describe block
+    // below) but emits `page.version_restored` instead of `page.version_saved`
+    // — so the manual COUNT no longer equals the SAVED-event count on its own;
+    // it equals saved + restored.
     const saved = harness.events.filter((event) => event.name === 'page.version_saved');
-    expect(saved).toHaveLength(versions.filter((v) => v['kind'] === 'manual').length);
+    const restored = harness.events.filter((event) => event.name === 'page.version_restored');
+    expect(saved.length + restored.length).toBe(
+      versions.filter((v) => v['kind'] === 'manual').length,
+    );
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * Wave 3 — internal links, backlinks, and restore.
+ * -------------------------------------------------------------------------- */
+
+/** Seeds spaces then content against one shared harness, chaining outputs the
+ * way `platform.audit`'s real `requires` graph does. */
+async function seedContent(
+  spaces: readonly SpacePlan[],
+  pageMix: Partial<Profile['page']> = {},
+  seed = 'docs-test',
+): Promise<{
+  harness: Harness;
+  spacesOut: Awaited<ReturnType<typeof spacesModule.seed>>;
+  contentOut: Awaited<ReturnType<typeof contentModule.seed>>;
+}> {
+  const profile: Profile = { ...DEMO, page: { ...DEMO.page, ...pageMix } };
+  const org = orgWith(spaces);
+  const harness = harnessFor(profile, org, seed);
+  const spacesOut = await spacesModule.seed(harness.ctx);
+
+  const outputs = new Map<SeedModule, unknown>([
+    [orgsModule, { orgs: [org] }],
+    [spacesModule, spacesOut],
+  ]);
+  const contentCtx: SeedContext = {
+    ...harness.ctx,
+    use: <Out>(module: SeedModule<Out>): Out => outputs.get(module) as Out,
+  };
+  const contentOut = await contentModule.seed(contentCtx);
+  outputs.set(contentModule, contentOut);
+
+  return { harness, spacesOut, contentOut };
+}
+
+describe('docs.content — Wave 3 (internal links and backlinks)', () => {
+  const twoSpaces: readonly SpacePlan[] = [
+    { name: 'Handbook', pages: 15, depth: 3, grants: 0, content: true },
+    { name: 'Product', pages: 10, depth: 2, grants: 0, content: true },
+  ];
+
+  it('writes a backlink for every pageLink it plants, and nothing else', async () => {
+    const { harness, spacesOut } = await seedContent(twoSpaces, { pageLinkRate: 1, bodyRate: 1 });
+
+    const backlinks = asRecords(
+      harness.columnsOf('docs.backlinks'),
+      harness.rowsOf('docs.backlinks'),
+    );
+    expect(backlinks.length).toBeGreaterThan(0);
+
+    const pageIds = new Set(spacesOut.pages.map((page) => page.id));
+    for (const row of backlinks) {
+      // Both ends are real pages in this org — never a dangling id, and never
+      // one from a different tenant (there is only one org in this fixture,
+      // but the FK this mirrors is (org_id, page_id), not page_id alone).
+      expect(pageIds.has(String(row['source_page_id']))).toBe(true);
+      expect(pageIds.has(String(row['target_page_id']))).toBe(true);
+      // `backlinks_not_self` — the migration's own CHECK constraint, mirrored
+      // here since this test runs with no database to enforce it.
+      expect(row['source_page_id']).not.toBe(row['target_page_id']);
+    }
+  });
+
+  it('writes no backlinks when no page ever gets a link', async () => {
+    const { harness } = await seedContent(twoSpaces, { pageLinkRate: 0, bodyRate: 1 });
+    expect(harness.rowsOf('docs.backlinks')).toHaveLength(0);
+  });
+
+  it('leaves docs.backlink_dispatch untouched — the relay has not run', async () => {
+    // See docs.content's own header: the seed computes backlinks directly,
+    // by design, and never marks a page_version PROCESSED — that bookkeeping
+    // belongs to the real relay alone.
+    const { harness } = await seedContent(twoSpaces, { pageLinkRate: 1, bodyRate: 1 });
+    expect(harness.rowsOf('docs.backlink_dispatch')).toHaveLength(0);
+  });
+});
+
+describe('docs.content — Wave 3 (restore)', () => {
+  const plan: readonly SpacePlan[] = [
+    { name: 'Handbook', pages: 12, depth: 3, grants: 0, content: true },
+  ];
+
+  it('restores as a NEW snapshot carrying the ORIGINAL bytes, never a WAL row', async () => {
+    const { harness, contentOut } = await seedContent(plan, {
+      bodyRate: 1,
+      snapshotRate: 1,
+      tailRate: 1,
+      restoreShare: 1,
+      blocks: [6, 6],
+      updates: [3, 3],
+    });
+
+    expect(contentOut.restoredPages).toBeGreaterThan(0);
+
+    const versions = asRecords(
+      harness.columnsOf('docs.page_versions'),
+      harness.rowsOf('docs.page_versions'),
+    );
+    const byPage = new Map<string, Record<string, unknown>[]>();
+    for (const version of versions) {
+      const list = byPage.get(String(version['page_id'])) ?? [];
+      list.push(version);
+      byPage.set(String(version['page_id']), list);
+    }
+
+    let sawRestoredPair = false;
+    for (const pageVersions of byPage.values()) {
+      if (pageVersions.length < 2) continue;
+      const [original, restored] = pageVersions;
+      if (original === undefined || restored === undefined) continue;
+
+      sawRestoredPair = true;
+      // The identical bytes, not a re-derivation — a restore is "make this
+      // the latest again".
+      expect(Buffer.compare(restored['state'] as Buffer, original['state'] as Buffer)).toBe(0);
+      // A distinct row, never the same primary key reused.
+      expect(restored['id']).not.toBe(original['id']);
+      expect(restored['kind']).toBe('manual');
+      expect(restored['created_by']).not.toBeNull();
+    }
+    expect(sawRestoredPair).toBe(true);
+
+    // No `docs.yjs_updates` row exists for the restore — see the file header
+    // on why an append would MERGE rather than undo (Wave 2's own bug).
+    // `updateRows` before this scenario and after are not directly
+    // observable here, but the WAL table is untouched by the restore branch
+    // by construction: only `versionRowValues` gains a row, `updateRowValues`
+    // does not.
+    const restoredEvents = harness.events.filter((event) => event.name === 'page.version_restored');
+    expect(restoredEvents.length).toBe(contentOut.restoredPages);
+
+    for (const event of restoredEvents) {
+      const payload = event.payload as { readonly pageId: string; readonly versionId: string };
+      const pageVersions = byPage.get(payload.pageId) ?? [];
+      const original = pageVersions[0];
+      // The event names the RESTORED-FROM version — `restorePageVersion`'s
+      // own `input.versionId`, never the fresh row's own id.
+      expect(payload.versionId).toBe(original?.['id']);
+    }
+  });
+
+  it('never restores a page with no tail past its snapshot', async () => {
+    // `tailRate: 0` — every snapshot lands on the last transaction, so there
+    // is nothing in the main content after it to undo. `pageLinkRate: 0` too:
+    // an internal-link paragraph is always added AFTER the snapshot when one
+    // is planted (see `editDocument`), which would otherwise supply a tail of
+    // its own and defeat the isolation this test wants. Restoring would be a
+    // save that reverts nothing, which is not the scenario this exists to
+    // cover.
+    const { contentOut } = await seedContent(plan, {
+      bodyRate: 1,
+      snapshotRate: 1,
+      tailRate: 0,
+      pageLinkRate: 0,
+      restoreShare: 1,
+    });
+    expect(contentOut.restoredPages).toBe(0);
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * Comments and suggestions
+ * -------------------------------------------------------------------------- */
+
+describe('docs.comments', () => {
+  const plan: readonly SpacePlan[] = [
+    { name: 'Handbook', pages: 10, depth: 2, grants: 0, content: true },
+  ];
+
+  async function seedComments(pageMix: Partial<Profile['page']> = {}) {
+    const { harness, spacesOut, contentOut } = await seedContent(plan, {
+      bodyRate: 1,
+      commentRate: 1,
+      commentsPerPage: [2, 2],
+      ...pageMix,
+    });
+
+    const outputs = new Map<SeedModule, unknown>([
+      [orgsModule, { orgs: [harness.ctx.use(orgsModule).orgs[0]] }],
+      [spacesModule, spacesOut],
+      [contentModule, contentOut],
+    ]);
+    const commentsCtx: SeedContext = {
+      ...harness.ctx,
+      use: <Out>(module: SeedModule<Out>): Out => outputs.get(module) as Out,
+    };
+    const commentsOut = await commentsModule.seed(commentsCtx);
+
+    return { harness, spacesOut, commentsOut };
+  }
+
+  it('writes anchors that are real, decodable RelativePositions', async () => {
+    const { harness, commentsOut } = await seedComments();
+    expect(commentsOut.commentRows).toBeGreaterThan(0);
+
+    const rows = asRecords(harness.columnsOf('docs.comments'), harness.rowsOf('docs.comments'));
+    expect(rows.length).toBe(commentsOut.commentRows);
+
+    for (const row of rows) {
+      // Structural validation only — the identical trust boundary
+      // `apps/api/src/docs/anchor.ts`'s `decodeAnchor` enforces on the real
+      // path. A comment anchored with bytes this throws on is a comment that
+      // 400s the moment a real client tries to open the page.
+      expect(() => Y.decodeRelativePosition(row['anchor_from'] as Uint8Array)).not.toThrow();
+      expect(() => Y.decodeRelativePosition(row['anchor_to'] as Uint8Array)).not.toThrow();
+    }
+  });
+
+  it('gives every comment an author who actually holds comment:create', async () => {
+    const { harness, commentsOut } = await seedComments();
+    expect(commentsOut.commentRows).toBeGreaterThan(0);
+
+    const rows = asRecords(harness.columnsOf('docs.comments'), harness.rowsOf('docs.comments'));
+    const org = orgWith(plan);
+    const grantHolders = new Set(
+      org.memberships.filter((m) => roleGrants(m.role, 'comment:create')).map((m) => m.user.id),
+    );
+
+    for (const row of rows) {
+      expect(grantHolders.has(row['author_id'] as string)).toBe(true);
+      if (row['resolved_by'] !== null) {
+        expect(grantHolders.has(row['resolved_by'] as string)).toBe(true);
+      }
+    }
+  });
+
+  it('pairs resolved_at and resolved_by, never one without the other', async () => {
+    const { harness } = await seedComments({ resolvedShare: 0.5 });
+    const rows = asRecords(harness.columnsOf('docs.comments'), harness.rowsOf('docs.comments'));
+
+    expect(rows.some((row) => row['resolved_at'] !== null)).toBe(true);
+    expect(rows.some((row) => row['resolved_at'] === null)).toBe(true);
+    for (const row of rows) {
+      expect(row['resolved_at'] === null).toBe(row['resolved_by'] === null);
+    }
+  });
+
+  it('stores body_text as the flattened copy of the same document it saves', async () => {
+    const { harness } = await seedComments();
+    const rows = asRecords(harness.columnsOf('docs.comments'), harness.rowsOf('docs.comments'));
+
+    for (const row of rows) {
+      expect(typeof row['body_text']).toBe('string');
+      expect((row['body_text'] as string).length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('docs.suggestions', () => {
+  const plan: readonly SpacePlan[] = [
+    { name: 'Handbook', pages: 10, depth: 2, grants: 0, content: true },
+  ];
+
+  async function seedSuggestions(pageMix: Partial<Profile['page']> = {}) {
+    const { harness, spacesOut, contentOut } = await seedContent(plan, {
+      bodyRate: 1,
+      suggestionRate: 1,
+      suggestionsPerPage: [3, 3],
+      ...pageMix,
+    });
+
+    const org = harness.ctx.use(orgsModule).orgs[0];
+    const outputs = new Map<SeedModule, unknown>([
+      [orgsModule, { orgs: [org] }],
+      [spacesModule, spacesOut],
+      [contentModule, contentOut],
+    ]);
+    const suggestionsCtx: SeedContext = {
+      ...harness.ctx,
+      use: <Out>(module: SeedModule<Out>): Out => outputs.get(module) as Out,
+    };
+    const suggestionsOut = await suggestionsModule.seed(suggestionsCtx);
+
+    return { harness, suggestionsOut };
+  }
+
+  it('matches proposed_content to kind — null for delete, present otherwise', async () => {
+    const { harness, suggestionsOut } = await seedSuggestions();
+    expect(suggestionsOut.suggestionRows).toBeGreaterThan(0);
+
+    const rows = asRecords(
+      harness.columnsOf('docs.suggestions'),
+      harness.rowsOf('docs.suggestions'),
+    );
+    expect(rows.some((row) => row['kind'] === 'delete')).toBe(true);
+    expect(rows.some((row) => row['kind'] !== 'delete')).toBe(true);
+
+    for (const row of rows) {
+      // `suggestions_content_matches_kind` — the migration's own CHECK,
+      // mirrored here since this test runs with no database to enforce it.
+      expect(row['proposed_content'] === null).toBe(row['kind'] === 'delete');
+    }
+  });
+
+  it('only ever lets a page:update holder decide, never the comment-tier author alone', async () => {
+    const { harness } = await seedSuggestions({ suggestionDecidedShare: 1 });
+    const rows = asRecords(
+      harness.columnsOf('docs.suggestions'),
+      harness.rowsOf('docs.suggestions'),
+    );
+    expect(rows.some((row) => row['status'] !== 'pending')).toBe(true);
+
+    const org = orgWith(plan);
+    const deciders = new Set(
+      org.memberships.filter((m) => roleGrants(m.role, 'page:update')).map((m) => m.user.id),
+    );
+
+    for (const row of rows) {
+      if (row['status'] === 'pending') continue;
+      expect(deciders.has(String(row['decided_by']))).toBe(true);
+    }
+  });
+
+  it('pairs status, decided_at and decided_by consistently', async () => {
+    const { harness } = await seedSuggestions({ suggestionDecidedShare: 0.5 });
+    const rows = asRecords(
+      harness.columnsOf('docs.suggestions'),
+      harness.rowsOf('docs.suggestions'),
+    );
+
+    expect(rows.some((row) => row['status'] === 'pending')).toBe(true);
+    expect(rows.some((row) => row['status'] !== 'pending')).toBe(true);
+
+    for (const row of rows) {
+      const pending = row['status'] === 'pending';
+      expect(row['decided_at'] === null).toBe(pending);
+      expect(row['decided_by'] === null).toBe(pending);
+    }
+  });
+
+  it('produces both outcomes for a decided suggestion — accepted and rejected', async () => {
+    const { harness } = await seedSuggestions({
+      suggestionDecidedShare: 1,
+      suggestionAcceptedShare: 0.5,
+    });
+    const rows = asRecords(
+      harness.columnsOf('docs.suggestions'),
+      harness.rowsOf('docs.suggestions'),
+    );
+
+    expect(rows.some((row) => row['status'] === 'accepted')).toBe(true);
+    expect(rows.some((row) => row['status'] === 'rejected')).toBe(true);
   });
 });
 

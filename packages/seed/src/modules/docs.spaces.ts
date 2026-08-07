@@ -296,12 +296,17 @@ export const spacesModule = defineSeedModule({
  * creation-style questions where a stable answer reads better in a fixture;
  * callers wanting variety draw from `membershipsWith` instead.
  */
-function pickBy(rng: Rng, org: SeededOrg, permission: Permission): SeededMembership | null {
+export function pickBy(rng: Rng, org: SeededOrg, permission: Permission): SeededMembership | null {
   const candidates = membershipsWith(org, permission);
   return candidates.length === 0 ? null : rng.pick(candidates);
 }
 
-function membershipsWith(org: SeededOrg, permission: Permission): readonly SeededMembership[] {
+/** Exported for `docs.comments`/`docs.suggestions` — same capability-not-role-name
+ * discipline this file's own header describes, for the identical reason. */
+export function membershipsWith(
+  org: SeededOrg,
+  permission: Permission,
+): readonly SeededMembership[] {
   return org.memberships.filter((membership) => roleGrants(membership.role, permission));
 }
 

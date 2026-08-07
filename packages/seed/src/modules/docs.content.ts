@@ -1,6 +1,8 @@
 import * as Y from 'yjs';
 import { createEvent } from '@taskflow/events';
-import { pageVersionSaved } from '@taskflow/api/events/docs';
+import { pageVersionSaved, pageVersionRestored } from '@taskflow/api/events/docs';
+import { extractInternalLinks } from '@taskflow/api/docs/backlinks';
+import { unsafeAsId } from '@taskflow/contracts';
 import { pageBody, type PageBlock } from '../corpus.js';
 import type { Rng } from '../rng.js';
 import type { PageMix } from '../profiles.js';
@@ -9,7 +11,8 @@ import { envelopeFor, minutesAfter } from '../support.js';
 import { spacesModule, type SeededPage } from './docs.spaces.js';
 
 /**
- * Page bodies — the CRDT write-ahead log and its snapshots (Phase 6, Wave 2).
+ * Page bodies — the CRDT write-ahead log and its snapshots (Phase 6, Wave 2),
+ * internal links and backlinks, and the restore scenario (Wave 3).
  *
  * ## This module writes real Yjs bytes, not a plausible-looking blob
  *
@@ -51,12 +54,61 @@ import { spacesModule, type SeededPage } from './docs.spaces.js';
  * document containing a node type nobody implemented, which is the only way to
  * exercise the strip path on demand rather than waiting for a real client to
  * misbehave.
+ *
+ * ## Backlinks are computed here, eagerly — not left for the real relay
+ *
+ * ai/phase-6-docs.md's Wave 3 status header: backlinks are computed by
+ * `apps/api`'s `taskflow_backlinks` relay in production, reading
+ * `docs.page_versions` asynchronously, deliberately kept OFF `apps/collab`'s
+ * write path. Nothing runs that relay during a seed — there is no live process
+ * to leave the edges for it to discover a few seconds later — so this module
+ * calls `extractInternalLinks` (`apps/api/src/docs/backlinks.ts`) directly on
+ * the same live `Y.XmlFragment` it just built, the IDENTICAL function the real
+ * relay calls after materializing a page, and writes `docs.backlinks` itself.
+ * `docs.backlink_dispatch` is deliberately left EMPTY: those rows mean "the
+ * relay has processed this page_version", and none has, which is the honest,
+ * unprocessed-backlog state a relay started against this database would find —
+ * recomputing the same edges this module already wrote is safe, since
+ * `docs.backlinks` is fully recomputed per source page on every pass (the
+ * migration's own note on why), never patched incrementally.
+ *
+ * ## Restore is a NEW snapshot with the OLD bytes, never a WAL append
+ *
+ * ai/phase-6-docs.md's Wave 2 status header records the bug this mirrors: an
+ * earlier `restorePageVersion` appended the restored state as a WAL row, which
+ * MERGES old operations back in rather than undoing newer ones, since Yjs
+ * updates are additive. The fix — and what this module's restore scenario
+ * reproduces — is a fresh `page_versions` row carrying the EARLIER snapshot's
+ * exact `state` bytes, never a `docs.yjs_updates` row.
  */
 
 export interface ContentOutput {
   readonly pagesWithBody: number;
   readonly updateRows: number;
   readonly versionRows: number;
+  readonly backlinkRows: number;
+  readonly restoredPages: number;
+  /**
+   * Per-page live state, keyed by page id — only pages that received a body.
+   * `docs.comments` and `docs.suggestions` anchor against these rather than
+   * rebuilding a document of their own, for the identical reason this module
+   * does not fabricate WAL bytes: an anchor is only a real fixture if
+   * `Y.createRelativePositionFromTypeIndex` built it against a `Y.AbstractType`
+   * that genuinely holds the text it claims to point into.
+   */
+  readonly pages: ReadonlyMap<string, SeededPageContent>;
+}
+
+/** What a downstream module needs to anchor a comment or suggestion for real. */
+export interface SeededPageContent {
+  readonly pageId: string;
+  /**
+   * Every text-bearing node the built document contains, in document order.
+   * `Y.XmlText` IS an `AbstractType`, so each is a valid, directly usable
+   * anchor target — no unwrapping, no separate "anchor points" concept to keep
+   * in sync with what `nodeFor` actually built.
+   */
+  readonly textNodes: readonly Y.XmlText[];
 }
 
 /**
@@ -80,6 +132,21 @@ function textElement(nodeName: string, text: string): Y.XmlElement {
   const element = new Y.XmlElement(nodeName);
   element.insert(0, [new Y.XmlText(text)]);
   return element;
+}
+
+/**
+ * A paragraph carrying an atomic `pageLink` node — the same "structured
+ * reference, not a `link` mark's `href`" shape `work/richtext.ts`'s own header
+ * describes, and what `apps/api/src/docs/backlinks.ts`'s `extractInternalLinks`
+ * walks the document looking for.
+ */
+function pageLinkParagraph(leadingText: string, targetPageId: string, label: string): Y.XmlElement {
+  const paragraph = new Y.XmlElement('paragraph');
+  const link = new Y.XmlElement('pageLink');
+  link.setAttribute('pageId', targetPageId);
+  link.setAttribute('label', label);
+  paragraph.insert(0, [new Y.XmlText(`${leadingText} `), link]);
+  return paragraph;
 }
 
 /** One corpus block as the nodes a TipTap-backed `Y.XmlFragment` would hold. */
@@ -118,7 +185,27 @@ function nodeFor(block: PageBlock): Y.XmlElement {
   }
 }
 
+/** Every `Y.XmlText` reachable from `fragment`, in document order. */
+function collectTextNodes(fragment: Y.XmlFragment): readonly Y.XmlText[] {
+  const found: Y.XmlText[] = [];
+
+  const walk = (parent: Y.XmlFragment | Y.XmlElement): void => {
+    for (const child of parent.toArray()) {
+      if (child instanceof Y.XmlText) {
+        found.push(child);
+      } else if (child instanceof Y.XmlElement) {
+        walk(child);
+      }
+    }
+  };
+
+  walk(fragment);
+  return found;
+}
+
 interface EditedDocument {
+  readonly doc: Y.Doc;
+  readonly fragment: Y.XmlFragment;
   /** One entry per transaction, in order — what the WAL would have recorded. */
   readonly updates: readonly Uint8Array[];
   /**
@@ -135,8 +222,17 @@ interface EditedDocument {
  * diffed afterwards, because that is literally what `beforeHandleMessage`
  * persists on a live connection: the incremental update a client sent, not a
  * recomputed delta.
+ *
+ * `linkTarget`, when given, is another page in the same org to reference with
+ * a `pageLink` — see the file header on why backlinks are computed from this
+ * same document rather than guessed at separately.
  */
-function editDocument(rng: Rng, mix: PageMix, chaos: boolean): EditedDocument {
+function editDocument(
+  rng: Rng,
+  mix: PageMix,
+  chaos: boolean,
+  linkTarget: { readonly id: string; readonly title: string } | null,
+): EditedDocument {
   const doc = new Y.Doc();
   // See the file header — the one line standing between `--seed` and a database
   // that differs on every run.
@@ -149,7 +245,10 @@ function editDocument(rng: Rng, mix: PageMix, chaos: boolean): EditedDocument {
 
   const fragment = doc.getXmlFragment('content');
   const blocks = pageBody(rng, rng.int(mix.blocks[0], mix.blocks[1]));
-  const transactions = Math.max(1, Math.min(rng.int(mix.updates[0], mix.updates[1]), blocks.length));
+  const transactions = Math.max(
+    1,
+    Math.min(rng.int(mix.updates[0], mix.updates[1]), blocks.length),
+  );
   const perTransaction = Math.ceil(blocks.length / transactions);
 
   let snapshot: { after: number; state: Uint8Array } | null = null;
@@ -177,6 +276,18 @@ function editDocument(rng: Rng, mix: PageMix, chaos: boolean): EditedDocument {
     }
   }
 
+  if (linkTarget !== null) {
+    /* Its own transaction, after the main body — an internal link added once
+       a page already has substance, which is the ordinary way one gets
+       written. Always lands in the WAL tail past any snapshot taken above
+       (its transaction index is `transactions`, never <= `snapshotAfter`),
+       so a pruned page still carries it — see the header on why that does
+       not affect backlink correctness either way. */
+    doc.transact(() => {
+      fragment.push([pageLinkParagraph('See also:', linkTarget.id, linkTarget.title)]);
+    });
+  }
+
   if (chaos) {
     /* A node type nobody implemented, in live CRDT state — §3.8's own scenario.
        The guard deletes it outright on the next save boundary (an unknown node
@@ -187,13 +298,13 @@ function editDocument(rng: Rng, mix: PageMix, chaos: boolean): EditedDocument {
     });
   }
 
-  return { updates, snapshot };
+  return { doc, fragment, updates, snapshot };
 }
 
 export const contentModule = defineSeedModule({
   name: 'docs.content',
   requires: [spacesModule],
-  tables: ['docs.yjs_updates', 'docs.page_versions'],
+  tables: ['docs.yjs_updates', 'docs.page_versions', 'docs.backlinks'],
 
   async seed(ctx): Promise<ContentOutput> {
     const rng = ctx.rng.fork('docs.content');
@@ -201,7 +312,14 @@ export const contentModule = defineSeedModule({
     const mix = ctx.profile.page;
 
     const byOrg = new Map<string, SeededPage[]>();
+    /** Every page in the org, content-eligible or not — a link target can be
+     * any real page, the same way a real editor lets you link to an empty one. */
+    const allPagesByOrg = new Map<string, SeededPage[]>();
     for (const page of pages) {
+      const all = allPagesByOrg.get(page.orgId) ?? [];
+      all.push(page);
+      allPagesByOrg.set(page.orgId, all);
+
       if (page.space.plan.content !== true) continue;
       const list = byOrg.get(page.orgId) ?? [];
       list.push(page);
@@ -211,6 +329,9 @@ export const contentModule = defineSeedModule({
     let pagesWithBody = 0;
     let updateRows = 0;
     let versionRows = 0;
+    let backlinkRows = 0;
+    let restoredPages = 0;
+    const pageDocuments = new Map<string, SeededPageContent>();
     /* Chaos plants ONE bad document per run, not one per page: the strip path
        needs a fixture, and a database where every page trips it would make the
        guard's own counters useless for telling whether it ran. */
@@ -219,6 +340,8 @@ export const contentModule = defineSeedModule({
     for (const [orgId, orgPages] of byOrg) {
       const updateRowValues: unknown[][] = [];
       const versionRowValues: unknown[][] = [];
+      const backlinkRowValues: unknown[][] = [];
+      const allOrgPages = allPagesByOrg.get(orgId) ?? [];
 
       for (const page of orgPages) {
         if (!rng.chance(mix.bodyRate)) continue;
@@ -226,9 +349,20 @@ export const contentModule = defineSeedModule({
         const chaos = chaosRemaining > 0;
         if (chaos) chaosRemaining -= 1;
 
-        const edited = editDocument(rng, mix, chaos);
+        const others = allOrgPages.filter((candidate) => candidate.id !== page.id);
+        const linkTarget =
+          others.length > 0 && rng.chance(mix.pageLinkRate)
+            ? { id: rng.pick(others).id, title: rng.pick(others).title }
+            : null;
+
+        const edited = editDocument(rng, mix, chaos, linkTarget);
         if (edited.updates.length === 0) continue;
         pagesWithBody += 1;
+
+        pageDocuments.set(page.id, {
+          pageId: page.id,
+          textNodes: collectTextNodes(edited.fragment),
+        });
 
         /* Editing starts after the page exists and each transaction lands a few
            minutes after the last. The gaps are what make the snapshot boundary
@@ -296,6 +430,47 @@ export const contentModule = defineSeedModule({
               ),
             );
           }
+
+          /* The restore scenario — see the file header on why this is a
+             SECOND snapshot with the FIRST one's exact bytes, never a WAL
+             row. Only when there is a real tail past the snapshot: restoring
+             a page nobody edited afterward would be a save that undoes
+             nothing, which is not the scenario Wave 2's bug lived in. */
+          const hasTail = edited.updates.length - 1 > snapshot.after;
+          if (hasTail && rng.chance(mix.restoreShare)) {
+            const restoredAt = minutesAfter(at(edited.updates.length - 1), rng.int(5, 120));
+            const restoredVersionId = rng.uuid(restoredAt);
+
+            versionRowValues.push([
+              restoredVersionId,
+              orgId,
+              page.id,
+              'manual',
+              // The ORIGINAL snapshot's bytes, verbatim — a restore is "make
+              // this the latest again", not a re-derivation of it.
+              Buffer.from(snapshot.state),
+              page.author.user.id,
+              restoredAt,
+            ]);
+
+            ctx.emit(
+              createEvent(
+                pageVersionRestored,
+                // The RESTORED-FROM version's id, matching
+                // `restorePageVersion`'s own event payload exactly —
+                // `input.versionId`, never the fresh row's own id.
+                { pageId: page.id, versionId },
+                envelopeFor(orgId, page.author.user.id, restoredAt),
+              ),
+            );
+            restoredPages += 1;
+          }
+        }
+
+        const links = extractInternalLinks(edited.fragment, unsafeAsId<'PageId'>(page.id));
+        const linkedAt = minutesAfter(at(edited.updates.length - 1), 1);
+        for (const targetPageId of links) {
+          backlinkRowValues.push([orgId, page.id, targetPageId, linkedAt]);
         }
       }
 
@@ -310,22 +485,36 @@ export const contentModule = defineSeedModule({
           ['id', 'org_id', 'page_id', 'kind', 'state', 'created_by', 'created_at'],
           versionRowValues,
         );
+        await ctx.db.insert(
+          'docs.backlinks',
+          ['org_id', 'source_page_id', 'target_page_id', 'created_at'],
+          backlinkRowValues,
+        );
       });
 
       updateRows += updateRowValues.length;
       versionRows += versionRowValues.length;
+      backlinkRows += backlinkRowValues.length;
     }
 
     if (pagesWithBody > 0) {
       ctx.log(
         `docs.content: ${String(pagesWithBody)} pages with a body — ` +
-          `${String(updateRows)} WAL rows, ${String(versionRows)} snapshots`,
+          `${String(updateRows)} WAL rows, ${String(versionRows)} snapshots, ` +
+          `${String(backlinkRows)} backlinks, ${String(restoredPages)} restored`,
       );
     }
 
-    return { pagesWithBody, updateRows, versionRows };
+    return {
+      pagesWithBody,
+      updateRows,
+      versionRows,
+      backlinkRows,
+      restoredPages,
+      pages: pageDocuments,
+    };
   },
 });
 
 /** Exported so `docs.test.ts` can drive the generator without a database. */
-export { editDocument };
+export { editDocument, collectTextNodes, pageLinkParagraph };

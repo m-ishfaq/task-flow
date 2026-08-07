@@ -56,6 +56,15 @@ export { viewsModule } from './modules/work.views.js';
 export { channelsModule, type SeededChannel } from './modules/chat.channels.js';
 export { messagesModule, type SeededMessageRef } from './modules/chat.messages.js';
 export { spacesModule, type SeededSpace, type SeededPage } from './modules/docs.spaces.js';
-export { contentModule, editDocument } from './modules/docs.content.js';
+export {
+  contentModule,
+  editDocument,
+  collectTextNodes,
+  pageLinkParagraph,
+  type ContentOutput,
+  type SeededPageContent,
+} from './modules/docs.content.js';
+export { commentsModule, type CommentOutput } from './modules/docs.comments.js';
+export { suggestionsModule, type SuggestionOutput } from './modules/docs.suggestions.js';
 export { attachmentsModule } from './modules/platform.attachments.js';
 export { auditModule } from './modules/platform.audit.js';
