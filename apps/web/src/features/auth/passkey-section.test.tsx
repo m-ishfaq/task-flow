@@ -170,7 +170,9 @@ describe('adding a passkey', () => {
 
 describe('renaming a passkey', () => {
   it('saves the trimmed name and refreshes', async () => {
-    list.mockResolvedValueOnce([PASSKEY_A]).mockResolvedValueOnce([{ ...PASSKEY_A, name: 'Yubikey' }]);
+    list
+      .mockResolvedValueOnce([PASSKEY_A])
+      .mockResolvedValueOnce([{ ...PASSKEY_A, name: 'Yubikey' }]);
     renameMutate.mockResolvedValue({ status: 'renamed' });
     renderSection();
 
@@ -206,7 +208,7 @@ describe('removing a passkey', () => {
     });
   });
 
-  it('routes a STEP_UP_REQUIRED failure to the step-up guard, and the guard\'s retry re-issues the same removal', async () => {
+  it("routes a STEP_UP_REQUIRED failure to the step-up guard, and the guard's retry re-issues the same removal", async () => {
     /* Whether the inline `ErrorText` also renders underneath is not asserted
        here — it does, exactly as it does in `MemberSection`/`TeamSection`
        today, and the `StepUpDialog`'s own modal overlay is what keeps it out

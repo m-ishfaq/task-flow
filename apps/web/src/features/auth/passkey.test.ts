@@ -53,12 +53,8 @@ vi.mock('../../lib/trpc.js', () => ({
   },
 }));
 
-const {
-  signInWithPasskey,
-  enrollPasskey,
-  passkeyCeremonyMessage,
-  PasskeyCeremonyError,
-} = await import('./passkey.js');
+const { signInWithPasskey, enrollPasskey, passkeyCeremonyMessage, PasskeyCeremonyError } =
+  await import('./passkey.js');
 
 const OPTIONS = { challenge: 'a-challenge' };
 const ASSERTION_RESPONSE = { id: 'cred-1', response: { clientDataJSON: 'x' } };

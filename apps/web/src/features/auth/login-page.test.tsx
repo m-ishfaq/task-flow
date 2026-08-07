@@ -146,7 +146,9 @@ describe('signing in with a passkey', () => {
     browserSupportsWebAuthn.mockReturnValue(false);
     renderPage();
 
-    expect(screen.queryByRole('button', { name: /sign in with a passkey/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /sign in with a passkey/i }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText(/does not support passkeys/i)).toBeInTheDocument();
   });
 });

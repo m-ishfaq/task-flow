@@ -15,7 +15,12 @@ import {
 } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { useStepUp } from './use-step-up.js';
-import { browserSupportsWebAuthn, enrollPasskey, passkeyCeremonyMessage, PasskeyCeremonyError } from './passkey.js';
+import {
+  browserSupportsWebAuthn,
+  enrollPasskey,
+  passkeyCeremonyMessage,
+  PasskeyCeremonyError,
+} from './passkey.js';
 
 /**
  * Passkey enrollment, listing, rename, and removal (PLAN.md §8.1).
