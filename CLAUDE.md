@@ -80,7 +80,8 @@ apps/       api                              (arriving: worker)
               src/chat         channels, DMs, messages, threads, reactions
               src/docs         spaces, page tree, inherited-permission Target
                                building, page-version save/restore, comments,
-                               suggestions, the backlinks relay (Phase 6)
+                               suggestions, the backlinks relay, publish-to-
+                               public, PDF export, page templates (Phase 6)
             realtime           Socket.io gateway — broadcast only, never writes
               src/auth.ts    ⚠ handshake: token, origin, socket.data.identity
               src/rooms.ts   ⚠ room join = a fresh can() check
@@ -225,7 +226,7 @@ got built, a seed script drifted from the schema it seeds) had no test at all, w
 survived past a header that already claimed the phase done. A green `pnpm verify` is not the same
 claim as "this works when you click it."
 
-**Phase 6 (Docs) Waves 1–3 are COMPLETE; Wave 4 is NOT STARTED.** Spec in
+**Phase 6 (Docs) is COMPLETE — all four waves shipped.** Spec in
 [ai/phase-6-docs.md](ai/phase-6-docs.md), approved 2026-08-06. Wave 1 shipped migration 0023
 (`docs.spaces`, `docs.pages` — tree only, no body content), the inherited-permission `Target`
 resolver (`apps/api/src/docs/shared.ts`), space/page CRUD and `movePage`'s reparent-and-rank
@@ -242,7 +243,19 @@ comments and suggestions anchored via opaque, serialized Yjs `RelativePosition` 
 anchor rather than merely round-tripping unchanged, and backlinks — computed entirely by `apps/api`,
 never by `apps/collab`, over a new `taskflow_backlinks` role holding a COLUMN-LEVEL grant on
 `docs.page_versions` that excludes `state`, so the role that discovers which pages changed can never
-read what changed.
+read what changed. Wave 4 shipped publish-to-public, PDF export and page templates (migration 0026):
+a page's `published_version_id` is a COMPOSITE foreign key into `docs.page_versions` — org AND page,
+not just "some row exists" — so a published pointer can never name another page's or another
+tenant's content even if application code got it wrong; the public read route
+(`docs.public.getPage`) takes a plain, RLS-scoped `orgId` rather than a separate opaque token,
+because it already re-checks `published_version_id IS NOT NULL` on every request, unlike a presigned
+URL's independent capability; PDF export runs on `pdf-lib` (pure JS) rather than a headless browser,
+split into a pure, testable layout pass and a separate byte-rendering pass; and both the public
+route and PDF export independently re-validate `apps/collab`'s content whitelist rather than
+trusting it already ran, because they are the first two Docs surfaces to serve content to an
+audience with no authenticated session of its own to fall back on. Templates needed no new
+permission at all — `space:manage`/`space:read` (already in the catalog since Wave 1) cover the
+vocabulary, and using one is exactly `page:create`.
 
 **Two bugs in Wave 2 had no failing unit test and were found only by a real end-to-end test** —
 `apps/collab/src/gateway.integration.test.ts`, which boots a real gateway and drives it with the
@@ -271,6 +284,15 @@ real role disproves it. Fixed by dropping `FOR UPDATE` rather than widening the 
 lock back — see `ai/phase-6-docs.md`'s status header and `packages/db/src/docs-backlinks.ts`'s own
 comment for the accepted trade (two racing relay instances can now redundantly, but never
 incorrectly, reprocess the same row).
+
+**Wave 4's composite FK on `pages.published_version_id` caught this session's own test, not a bug
+in the feature.** `wave4.service.test.ts`'s teardown originally deleted `docs.page_versions` rows
+before clearing a page's published pointer, and Postgres refused it —
+`update or delete on table "page_versions" violates foreign key constraint
+"pages_published_version_fk"`. That is the constraint doing exactly its job: a published page can
+never be left pointing at a version that no longer exists. Fixed in the test (clear the pointer
+first, delete the version rows after — "children before parents," the same ordering
+`tenancy-seed.ts`'s `clearTenant` already documents for Work), not in the schema.
 
 **Read a spec's own status header before trusting a phase marker anywhere else.** The §13 roadmap
 table and this section were both stale for the whole of Phase 3.5's Wave 1 and Wave 2, which is how

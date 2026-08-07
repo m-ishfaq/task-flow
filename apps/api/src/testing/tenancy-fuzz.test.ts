@@ -428,6 +428,19 @@ describe('the application router', () => {
       'docs.comments.delete',
       'docs.suggestions.create',
       'docs.suggestions.decide',
+
+      // Wave 4 (§3.9, §5). `pages.publish` writes a new page_versions row
+      // AND repoints another org's page at it — one of the more consequential
+      // possible cross-tenant writes in this whole router. `templates.delete`
+      // and `templates.createPage` both take a `templateId` naming whose
+      // template to act on.
+      'docs.pages.publish',
+      'docs.pages.unpublish',
+      'docs.pages.exportPdf',
+      'docs.templates.list',
+      'docs.templates.create',
+      'docs.templates.delete',
+      'docs.templates.createPage',
     ]) {
       expect(byPath.get(path), `${path} was not enrolled by the fuzz harness`).toBe('denied');
     }

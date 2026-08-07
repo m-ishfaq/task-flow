@@ -113,6 +113,9 @@ export interface PageRow {
   /** Nearest-first: `[immediate parent, grandparent, ..., root]`. */
   readonly ancestorIds: readonly string[];
   readonly archivedAt: Date | null;
+  /** Both null or both set (Wave 4, §3.9) — see migration 0026's `pages_published_pair`. */
+  readonly publishedVersionId: string | null;
+  readonly publishedAt: Date | null;
 }
 
 /**
@@ -145,6 +148,8 @@ export async function loadPage(tx: DocsTx, pageId: PageId): Promise<PageRow> {
       rank: schema.pages.rank,
       ancestorIds: schema.pages.ancestorIds,
       archivedAt: schema.pages.archivedAt,
+      publishedVersionId: schema.pages.publishedVersionId,
+      publishedAt: schema.pages.publishedAt,
     })
     .from(schema.pages)
     .where(eq(schema.pages.id, pageId))

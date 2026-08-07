@@ -1,7 +1,7 @@
 # Phase 6 — Docs
 
-**Status: APPROVED 2026-08-06; Waves 1-3 SHIPPED same day. All six of §7's open questions are now
-decided** — §7.2 and §7.6 on approval (Wave 1's migration and process layout depended on them);
+**Status: APPROVED 2026-08-06; Waves 1-4 SHIPPED same day. Phase 6 is COMPLETE.** All six of §7's
+open questions are decided — §7.2 and §7.6 on approval (Wave 1's migration and process layout depended on them);
 §7.4 at the start of Wave 2 by reading the installed `@hocuspocus/server`'s own protocol handling
 (read-only IS server-enforced); §7.3 at the same point (strip disallowed content silently, from the
 live `Y.Doc`, not just the snapshot); §7.1 and §7.5 after Wave 3 shipped, once nothing else was left
@@ -93,6 +93,60 @@ and the migration review both missed.**
    incorrectly) reprocess the same row — `docs-backlinks.ts`'s own header has the full reasoning,
    and `onConflictDoNothing` on the dispatch insert is what keeps that race from aborting a
    transaction outright.
+
+**Wave 4 (publish, PDF export, templates) shipped the same day, closing Phase 6, with three
+decisions §3.9 and §5 leave open and one genuine finding a real database surfaced during testing.**
+
+1. **The public read path takes `orgId` as a plain input, the same client-supplied-but-RLS-scoped
+   shape the realtime gateway's join already established (Phase 4's own §7.4), rather than a
+   separate opaque publish token.** A token was considered — it would decouple the public URL from
+   the page's internal id and make revocation not depend on unpublishing — and rejected because
+   `getPublishedPage` (`public.service.ts`) already re-checks `published_version_id IS NOT NULL` on
+   EVERY request, unlike a presigned S3 URL (`attachment.service.ts`'s own model), which is a
+   capability independent of any later authorization state. A second secret layer on top of a check
+   that already runs per-request would add revocation semantics (storage, uniqueness, rotation) for
+   a property the live check already provides for free. `orgId` is never written to `app.org_id` as
+   a membership claim and never derives a role — it is a WHERE filter under RLS, exactly like the
+   realtime join's org id — so naming a real org and a real, published page under the WRONG org
+   resolves to the identical NOT_FOUND as any other miss.
+
+2. **PDF export uses `pdf-lib`, not a headless browser.** §3.9 says "renders from a specific
+   version," not "pixel-identical to the live editor" — a headless-Chromium approach was considered
+   and rejected as this codebase's first dependency on a browser binary running inside `apps/api`
+   for a requirement `pdf-lib` (pure JS, no subprocess, no sandboxing surface) already satisfies.
+   `pdf.ts` is deliberately split into a pure `layoutDocument` (Yjs-rendered JSON in, positioned text
+   lines out, no `pdf-lib` types) and `renderPdf` (layout to bytes) — `pdf-lib` gives no way to ask a
+   finished `PDFDocument` what text it drew where, so the pure half is what `pdf.test.ts` actually
+   asserts against; the rendered half is only checked for "produces a well-formed, loadable PDF with
+   the right page count."
+
+3. **Both the public read path and PDF export re-validate the content whitelist a second time,
+   independent of `apps/collab`'s save-boundary pass (§3.8).** `content-guard.ts`'s own header
+   already names the gap: a disallowed node can live in uncommitted CRDT state until the next
+   validation pass. Every other content reader is an authenticated org member, covered by their own
+   session as this system's existing risk boundary. These two are not — one serves anyone with a
+   URL, the other produces a file meant to leave the org — so `render.ts` independently re-derives a
+   clean tree from whichever materialized state it is handed, dropping exactly what
+   `enforceContentWhitelist` would have stripped, rather than trusting that pass already ran.
+
+4. **Templates needed no new permission, no `packages/policy` change, and no `packages/policy`
+   matrix-test change at all.** A template is a space's reusable vocabulary — the identical
+   relationship a project's label set has to its cards — so `space:manage`/`space:read` (both
+   already in the catalog since Wave 1) cover create/delete and list; using a template is exactly
+   `pages.create`'s existing `page:create` check, since a template is only where the starting
+   content came from. The three-place change `permissions.ts`'s own header describes for a new
+   permission never triggered, because Wave 4 needed no fourth tier to begin with.
+
+5. **The composite FK on `pages.published_version_id` (migration 0026) rejected the FIRST version
+   of this file's own test teardown** — real, working proof the constraint does what it says. The
+   teardown originally deleted `docs.page_versions` rows before clearing a page's published pointer,
+   and Postgres refused it: `update or delete on table "page_versions" violates foreign key
+   constraint "pages_published_version_fk"`. That is `wave4.service.test.ts` accidentally exercising
+   exactly the property the composite FK exists to guarantee — a page's published pointer can never
+   be left dangling at a version that no longer exists — from the wrong side. Fixed in the test, not
+   the schema: clear `published_version_id`/`published_at` before deleting `page_versions` rows, the
+   same "children before parents" ordering `tenancy-seed.ts`'s own `clearTenant` already documents
+   for the Work hierarchy.
 
 **Where the draft turned out to be wrong**, checked against `apps/realtime`'s actual code rather
 than left as the draft's paraphrase of it: §3.3 said `onAuthenticate` calls `apps/api`'s

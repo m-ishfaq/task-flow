@@ -101,6 +101,17 @@ export const pages = docs.table(
 
     archivedAt: timestamp('archived_at', { withTimezone: true }),
 
+    /**
+     * Publish-to-public (Wave 4, §3.9). Both null or both set — enforced by
+     * `pages_published_pair` in the migration, not here (Drizzle has no
+     * multi-column CHECK builder that reads better than the raw SQL one).
+     * `publishedVersionId` is NOT a plain FK to `page_versions.id` — see
+     * migration 0026's own header on why the composite FK (org + THIS page)
+     * matters and where it actually lives.
+     */
+    publishedVersionId: uuid('published_version_id'),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -123,6 +134,10 @@ export const pages = docs.table(
     // expression-index builder for `USING gin`, and a half-declared index
     // here would suggest this list is complete — see work.ts's identical note
     // on cards_assignees_idx.
+    //
+    // Likewise `pages_published_version_fk` (the composite FK to
+    // page_versions) and `pages_published_idx` — the migration is the
+    // source, this is its mirror.
   ],
 );
 
@@ -291,3 +306,37 @@ export const backlinkDispatch = docs.table('backlink_dispatch', {
 
   processedAt: timestamp('processed_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Page templates (Wave 4, §5) — "page_versions-shaped seed content" scoped
+ * to a space, not a page: reusable starting content for creating new pages
+ * IN a space, the same relationship a project's label set or custom field
+ * definitions have to its cards (CLAUDE.md's "managing the project's
+ * vocabulary" distinction). `state` is captured once, at save time, by
+ * materializing whichever page it was copied from — it does not track that
+ * page afterward. See migration 0026's own header for the full reasoning,
+ * including why this needed no new permission.
+ */
+export const pageTemplates = docs.table(
+  'page_templates',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id').notNull(),
+    spaceId: uuid('space_id').notNull(),
+
+    name: text('name').notNull(),
+    state: bytea('state').notNull(),
+
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('page_templates_space_idx').on(table.orgId, table.spaceId, table.name),
+    check('page_templates_name_present', sql`length(btrim(${table.name})) > 0`),
+    check('page_templates_name_length', sql`length(${table.name}) <= 200`),
+    // The composite FK to docs.spaces (org_id, space_id) lives only in the
+    // migration, for the same reason `pages.parentPageId` and
+    // `backlinks_target_fk` do — Drizzle's `references()` is single-column.
+  ],
+);

@@ -218,6 +218,13 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'page.comment_deleted': { type: 'comment', key: 'commentId' },
   'page.suggestion_created': { type: 'page', key: 'pageId' },
   'page.suggestion_decided': { type: 'page', key: 'pageId' },
+  /* Wave 4. `page.template_created`/`page.template_deleted` resolve to the
+     SPACE, mirroring `page.siblings_rebalanced` above — a template is the
+     space's vocabulary, not an independently grantable resource, and
+     `templateId` stays in the payload for a reader to see. */
+  'page.published': { type: 'page', key: 'pageId' },
+  'page.template_created': { type: 'space', key: 'spaceId' },
+  'page.template_deleted': { type: 'space', key: 'spaceId' },
 };
 
 /**

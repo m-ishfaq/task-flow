@@ -66,6 +66,8 @@ interface Tenant {
      file's own header describes for the Work hierarchy above. */
   readonly spaceId: string;
   readonly pageId: string;
+  /** Wave 4 (§5) — `docs.templates.*` all take a `templateId`, same trap as `pageId`/`spaceId` above. */
+  readonly templateId: string;
 }
 
 /* Fixed ids in a distinct range from the other suites', so a failing run is
@@ -90,6 +92,7 @@ const ATTACKER: Tenant = {
   messageId: '0195cc00-0000-7000-8000-000000000a10',
   spaceId: '0195cc00-0000-7000-8000-000000000a11',
   pageId: '0195cc00-0000-7000-8000-000000000a12',
+  templateId: '0195cc00-0000-7000-8000-000000000a13',
 };
 
 const VICTIM: Tenant = {
@@ -112,6 +115,7 @@ const VICTIM: Tenant = {
   messageId: '0195cc00-0000-7000-8000-000000000b10',
   spaceId: '0195cc00-0000-7000-8000-000000000b11',
   pageId: '0195cc00-0000-7000-8000-000000000b12',
+  templateId: '0195cc00-0000-7000-8000-000000000b13',
 };
 
 const BOARD = '0195cc00-0000-7000-8000-0000000000cc';
@@ -305,6 +309,15 @@ async function seedTenant(admin: AdminConnection, tenant: Tenant, label: string)
      VALUES ($1, $2, $3, NULL, 'Fuzz Page', 'a0', '{}')`,
     [tenant.pageId, tenant.orgId, tenant.spaceId],
   );
+
+  /* Wave 4. An empty encoded Yjs state is a perfectly valid `page_templates.
+     state` — `docs.templates.createPage` only needs a real row to seed from,
+     not any particular content, to prove the tenant boundary. */
+  await admin.query(
+    `INSERT INTO docs.page_templates (id, org_id, space_id, name, state)
+     VALUES ($1, $2, $3, 'Fuzz Template', $4)`,
+    [tenant.templateId, tenant.orgId, tenant.spaceId, Buffer.from(Y.encodeStateAsUpdate(new Y.Doc()))],
+  );
 }
 
 async function clearTenant(admin: AdminConnection, tenant: Tenant): Promise<void> {
@@ -316,6 +329,12 @@ async function clearTenant(admin: AdminConnection, tenant: Tenant): Promise<void
   await admin.query(`DELETE FROM platform.attachments WHERE org_id = $1`, [tenant.orgId]);
   await admin.query(`DELETE FROM chat.messages WHERE org_id = $1`, [tenant.orgId]);
   await admin.query(`DELETE FROM chat.channels WHERE org_id = $1`, [tenant.orgId]);
+  await admin.query(`DELETE FROM docs.page_templates WHERE org_id = $1`, [tenant.orgId]);
+  await admin.query(
+    `UPDATE docs.pages SET published_version_id = NULL, published_at = NULL WHERE org_id = $1`,
+    [tenant.orgId],
+  );
+  await admin.query(`DELETE FROM docs.page_versions WHERE org_id = $1`, [tenant.orgId]);
   await admin.query(`DELETE FROM docs.pages WHERE org_id = $1`, [tenant.orgId]);
   await admin.query(`DELETE FROM docs.spaces WHERE org_id = $1`, [tenant.orgId]);
   await admin.query(`DELETE FROM work.card_comments WHERE org_id = $1`, [tenant.orgId]);
@@ -435,6 +454,19 @@ function fuzzOrgFor(tenant: Tenant, other: Tenant): FuzzOrg {
       },
       resolved: true,
       status: 'accepted',
+
+      /* Wave 4. `templateId` belongs to the OTHER tenant — `docs.templates.
+         delete`/`createPage` both take one, and without a real row here
+         they would be refused on SHAPE (a nonexistent id still parses as a
+         valid uuid, but the harness's own fixed value would not exist in
+         either org, so a NOT_FOUND from "no such row anywhere" would be
+         indistinguishable from a NOT_FOUND that proves the tenant boundary).
+         `versionId` is deliberately absent: `pages.exportPdf`'s own
+         `.nullable().default(null)` already means "resolve the latest
+         version", which is exactly the path that needs `pageId` (already
+         above) to prove the boundary — a specific version id would only
+         narrow which snapshot, not who owns it. */
+      templateId: other.templateId,
     },
   };
 }

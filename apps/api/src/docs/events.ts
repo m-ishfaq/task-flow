@@ -205,3 +205,29 @@ export const pageSuggestionDecided = defineEvent(
     })
     .strict(),
 );
+
+/* -------------------------------------------------------------------------- *
+ * Publish, and page templates — Wave 4 (§3.9, §5). `page.published` matches
+ * the exact name PLAN.md §10.6 already reserves. One event with a
+ * `published` boolean covers both publish and unpublish, the same
+ * `page.archived`/`space.archived` convention this file's header already
+ * argues for — a consumer cares about the TRANSITION, not that two
+ * unrelated things happened.
+ * -------------------------------------------------------------------------- */
+
+export const pagePublished = defineEvent(
+  'page.published',
+  z
+    .object({ pageId: z.string(), versionId: z.string().nullable(), published: z.boolean() })
+    .strict(),
+);
+
+export const pageTemplateCreated = defineEvent(
+  'page.template_created',
+  z.object({ templateId: z.string(), spaceId: z.string(), name: z.string() }).strict(),
+);
+
+export const pageTemplateDeleted = defineEvent(
+  'page.template_deleted',
+  z.object({ templateId: z.string(), spaceId: z.string() }).strict(),
+);

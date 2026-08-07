@@ -1,6 +1,13 @@
 import { z } from 'zod';
-import { CommentIdSchema, PageIdSchema, SpaceIdSchema, SuggestionIdSchema } from '@taskflow/contracts';
-import { route, router } from '../trpc/builder.js';
+import {
+  CommentIdSchema,
+  OrgIdSchema,
+  PageIdSchema,
+  PageTemplateIdSchema,
+  SpaceIdSchema,
+  SuggestionIdSchema,
+} from '@taskflow/contracts';
+import { route, router, publicRoute } from '../trpc/builder.js';
 import { subjectOf } from '../trpc/context.js';
 import { RichTextDocument } from '../work/richtext.js';
 import type { DocsActor } from './shared.js';
@@ -10,6 +17,10 @@ import * as pages from './page.service.js';
 import * as pageVersions from './page-version.service.js';
 import * as comments from './comment.service.js';
 import * as suggestions from './suggestion.service.js';
+import * as publish from './publish.service.js';
+import * as templates from './template.service.js';
+import { exportPagePdf } from './pdf-export.service.js';
+import { getPublishedPage } from './public.service.js';
 
 /**
  * Docs routes — spaces, the page tree, and page versions (ai/phase-6-docs.md
@@ -112,6 +123,34 @@ export function createDocsRouter() {
         .input(z.object({ pageId: PageIdSchema, restore: z.boolean() }).strict())
         .output(z.void())
         .mutation(({ input, ctx }) => pages.archivePage(actorOf(ctx), input)),
+
+      /** `page:update` — see publish.service.ts's own header on why publish reuses this tier. */
+      publish: route({ permission: 'page:update' })
+        .input(z.object({ pageId: PageIdSchema }).strict())
+        .output(z.void())
+        .mutation(({ input, ctx }) => publish.publishPage(actorOf(ctx), input)),
+
+      unpublish: route({ permission: 'page:update' })
+        .input(z.object({ pageId: PageIdSchema }).strict())
+        .output(z.void())
+        .mutation(({ input, ctx }) => publish.unpublishPage(actorOf(ctx), input)),
+
+      /**
+       * `page:read` — exporting is a read, the same tier `attachment:download`
+       * sits at. `versionId: null` means "the latest saved version" — see
+       * `pdf-export.service.ts`'s own header. Bytes travel as base64 because
+       * tRPC's wire format is JSON; there is no streaming response here the
+       * way there is for attachments (§8.4's presigned-URL download), because
+       * a rendered PDF has no independent object-storage identity to presign
+       * — it is generated fresh, on demand, from a `page_versions` row.
+       */
+      exportPdf: route({ permission: 'page:read' })
+        .input(z.object({ pageId: PageIdSchema, versionId: z.string().nullable().default(null) }).strict())
+        .output(z.object({ filename: z.string(), contentBase64: z.string() }))
+        .mutation(async ({ input, ctx }) => {
+          const { filename, bytes } = await exportPagePdf(actorOf(ctx), input);
+          return { filename, contentBase64: Buffer.from(bytes).toString('base64') };
+        }),
     }),
 
     pageVersions: router({
@@ -252,6 +291,75 @@ export function createDocsRouter() {
         )
         .output(z.object({ status: z.enum(['accepted', 'rejected']) }))
         .mutation(({ input, ctx }) => suggestions.decideSuggestion(actorOf(ctx), input)),
+    }),
+
+    /**
+     * Page templates (§5, Wave 4) — see template.service.ts's own header on
+     * why `space:read`/`space:manage` cover this with no new permission.
+     */
+    templates: router({
+      list: route({ permission: 'space:read' })
+        .input(z.object({ spaceId: SpaceIdSchema }).strict())
+        .output(
+          z
+            .array(
+              z.object({
+                templateId: z.string(),
+                spaceId: z.string(),
+                name: z.string(),
+                createdBy: z.string().nullable(),
+                createdAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => templates.listTemplates(actorOf(ctx), input)),
+
+      create: route({ permission: 'space:manage' })
+        .input(z.object({ pageId: PageIdSchema, name: z.string().trim().min(1).max(200) }).strict())
+        .output(z.object({ templateId: z.string() }))
+        .mutation(({ input, ctx }) => templates.createTemplateFromPage(actorOf(ctx), input)),
+
+      delete: route({ permission: 'space:manage' })
+        .input(z.object({ templateId: PageTemplateIdSchema }).strict())
+        .output(z.void())
+        .mutation(({ input, ctx }) => templates.deleteTemplate(actorOf(ctx), input)),
+
+      /** `page:create` — using a template is exactly `pages.create`, see template.service.ts's header. */
+      createPage: route({ permission: 'page:create' })
+        .input(
+          z
+            .object({
+              spaceId: SpaceIdSchema,
+              parentPageId: PageIdSchema.nullable(),
+              title: PageTitle,
+              templateId: PageTemplateIdSchema,
+            })
+            .strict(),
+        )
+        .output(z.object({ pageId: z.string() }))
+        .mutation(({ input, ctx }) => templates.createPageFromTemplate(actorOf(ctx), input)),
+    }),
+
+    /**
+     * The anonymous, no-session read path for a published page (§3.9,
+     * Wave 4). See public.service.ts's own header on why `orgId` is a plain
+     * input here rather than coming from a token — there is no token.
+     */
+    public: router({
+      getPage: publicRoute({
+        publicReason: 'This is how a published page is viewed by someone with no account at all.',
+      })
+        .input(z.object({ orgId: OrgIdSchema, pageId: PageIdSchema }).strict())
+        .output(
+          z.object({
+            pageId: z.string(),
+            title: z.string(),
+            publishedAt: z.string(),
+            content: z.unknown(),
+          }),
+        )
+        .query(({ input }) => getPublishedPage(input)),
     }),
   });
 }
