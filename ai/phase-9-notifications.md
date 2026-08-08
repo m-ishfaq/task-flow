@@ -30,11 +30,44 @@ emit `notification.created` as a second-order event, `apps/realtime` auto-joins 
 `apps/web`'s bell invalidates instantly when a socket happens to already be open, falling back to
 its existing poll otherwise — and the preferences page (`NotificationPreferencesSection` on
 `/account`, since `identity.notification_prefs` is global per user, the same "yours alone" shape
-the rest of that page already has). Email and push there are shown but push/SMS are disabled with a
-reason, honestly, since neither channel sends anything yet. **Still not built**: digests (§3.4),
-due-date reminders and `taskflow_notification_sweep` (§3.8), and web push itself —
-`platform.push_subscriptions`, a `PushProvider`, and the browser-side subscription flow (§3.7). All
-of Wave 2, in other words — Wave 1 as originally scoped is now complete.
+the rest of that page already has).
+
+**Wave 2 (digests, due reminders, web push) is COMPLETE — approved 2026-08-08, with the §7
+decisions confirmed: a dedicated `taskflow_notification_sweep` role (item 4 — not a widening of
+`taskflow_audit`), and push keys protected by RLS + session reachability only (item 3, the
+§7.3/§2.2-envelope-encryption call — see migration 0029's header for the argument as built).
+Migration 0029, `packages/security/web-push.ts`, the digest and due-reminder sweeps, the
+`PushProvider`/relay delivery, the push tRPC routes, the service worker, and the live push
+ceremony in the preferences page all shipped.** A few things this wave learned the hard way,
+worth reading before touching it:
+
+- **The column-level grant must cover WHERE clauses, not just the SELECT list.** Migration 0029
+  originally granted the sweep `(id, org_id, board_id, title, number, due_date, assignee_ids)` —
+  and the sweep's claim query filters on `archived_at`/`deleted_at` (the `cards_due_idx` partial
+  index is built that way), so the grant applied, migrated cleanly, and failed at the first real
+  sweep with `permission denied for table cards`. A migration review and a type checker both
+  agree that looks fine; only a real connection as the real role disproved it. Fixed by adding the
+  two columns, not by dropping the filter. Same lesson, one more time, as §3.8's `FOR UPDATE`
+  precedent in the Phase 4 notes: the migration is not done until the role can run its actual
+  query.
+- **RFC 8291's GCM tag is computed with an EMPTY AAD, not the aes128gcm header.** The stream
+  cipher's first 42 bytes match either way; only the tag distinguishes them, so a round-trip test
+  against your own decryptor passes with the wrong AAD — the RFC 8291 Appendix A vector is what
+  caught it. See `web-push.test.ts` and the comment at `encryptWithFixedInputs`.
+- **`notification_prefs` deliberately has no DELETE policy** (0027 grants SELECT/INSERT/UPDATE
+  only), so the sweep tests' teardown had to disable rows via the `self_update` policy instead of
+  deleting them — a delete silently matched zero rows and leaked the previous test's preference
+  into the next. That is the table's own design (a preference is set, never removed), not a test
+  artifact, but it is exactly the kind of quiet RLS behavior a test should trip over loudly.
+- **`fakeVerifyPassword`'s timing oracle test was flaking under full-suite parallel load** — a
+  single Argon2 sample under CPU contention can be an order of magnitude off, in either direction.
+  It now takes the minimum of five samples per side (contention only ever adds time, so the min is
+  the stable estimator), preserving the oracle-defeating assertion without the spurious failures.
+
+Still not built, deliberately and documented where: per-user digest cadence beyond daily (§7.2),
+quiet hours (§3.9), SMS sending (Phase 7 owns the provider), and a device-management UI (Phase 12
+reads the `push_subscriptions` table this wave shaped for it). Wave 1 and Wave 2 as scoped are
+both complete.
 
 Parent: [PLAN.md](../PLAN.md) §3.6 (Platform), §7 (`platform.notifications`,
 `notification_prefs`), §10.6 (Domain events), §13 (Roadmap, row 9).

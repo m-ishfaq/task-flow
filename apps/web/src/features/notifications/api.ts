@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query';
 import { api } from '../../lib/trpc.js';
+import { wire } from '../../lib/wire.js';
 
 /**
  * Notification preferences (Phase 9, ai/phase-9-notifications.md §3.3).
@@ -34,4 +35,32 @@ export function setNotificationPref(input: {
   readonly enabled: boolean;
 }) {
   return api.notifications.prefs.set.mutate(input);
+}
+
+/* -------------------------------------------------------------------------- *
+ * Web push (§3.7) — device registration lives beside the prefs it feeds.
+ * -------------------------------------------------------------------------- */
+
+/** The server's VAPID public key — null when push is not configured. */
+export function pushVapidKeyQuery() {
+  return queryOptions({
+    queryKey: ['notifications', 'push', 'vapid'] as const,
+    queryFn: () => api.notifications.push.vapidPublicKey.query(),
+  });
+}
+
+export type PushDeviceEntry = Awaited<
+  ReturnType<typeof api.notifications.push.list.query>
+>[number];
+
+/** The caller's registered devices, in wire form (createdAt/lastSeenAt are strings). */
+export function pushDevicesQuery() {
+  return queryOptions({
+    queryKey: ['notifications', 'push', 'devices'] as const,
+    queryFn: async () => wire(await api.notifications.push.list.query()),
+  });
+}
+
+export function unregisterPushDevice(subscriptionId: string) {
+  return api.notifications.push.unregister.mutate({ subscriptionId });
 }

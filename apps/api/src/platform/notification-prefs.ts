@@ -40,6 +40,18 @@ export function categoryOfKind(kind: string): NotificationCategory {
 }
 
 /**
+ * Every kind that belongs to the `activity` category, as a closed list.
+ *
+ * The digest sweep's query filters pending email deliveries on exactly these
+ * kinds — a `direct` mention must never sit in a digest waiting for the daily
+ * sweep (§3.4). Derived from the same table `categoryOfKind` reads, so a kind
+ * added to `activity` is picked up here without a second edit.
+ */
+export const ACTIVITY_KINDS: readonly string[] = Object.entries(CATEGORY_OF_KIND)
+  .filter(([, category]) => category === 'activity')
+  .map(([kind]) => kind);
+
+/**
  * Coded defaults, consulted when no explicit row exists — exactly like
  * `FLAGS`' `defaultValue` (`packages/feature-flags/src/flags.ts`). Nobody
  * backfills a row per user per category per channel on migration; absence

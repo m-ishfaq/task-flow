@@ -15,6 +15,7 @@ import { unsafeAsId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { notificationCreated } from './events.js';
 import { categoryOfKind, resolvePref, type ExplicitPref } from './notification-prefs.js';
+import { notificationPath } from './notification-paths.js';
 
 /**
  * Turning domain events into notifications (PLAN.md §10.6; Phase 5
@@ -84,8 +85,10 @@ export const NOTIFICATION_CONSUMER = 'notifications';
 export interface NotificationDrainResult {
   readonly processed: number;
   readonly written: number;
-  /** Emails this batch decided to send. The caller sends them; see the file header. */
+  /** Emails this batch decided to send NOW. The caller sends them; see the file header. */
   readonly pendingEmails: readonly PendingEmailSend[];
+  /** Push delivery rows written this batch, awaiting the relay's push send. */
+  readonly pendingPushes: readonly PendingPushSend[];
 }
 
 export interface PendingEmailSend {
@@ -93,7 +96,17 @@ export interface PendingEmailSend {
   readonly to: string;
   readonly title: string;
   readonly excerpt: string | null;
-  /** An absolute in-app path — see `notificationPath` below. */
+  /** An absolute in-app path — see `notification-paths.ts`. */
+  readonly path: string;
+}
+
+/** A push delivery the relay will send after the transaction commits. */
+export interface PendingPushSend {
+  readonly deliveryId: string;
+  readonly userId: string;
+  readonly title: string;
+  readonly excerpt: string | null;
+  /** An absolute in-app path — see `notification-paths.ts`. */
   readonly path: string;
 }
 
@@ -239,6 +252,82 @@ function planCardAssigned(row: OutboxRow): readonly PlannedNotification[] {
   return planned;
 }
 
+/**
+ * What one planned notification should do on each channel (Wave 2, §3.4,
+ * §3.7).
+ *
+ * Pure so the whole decision — the part with judgment in it — is testable
+ * without a database:
+ *
+ *   - `email` is `'immediate'` for `direct` kinds (a mention arriving in
+ *     tomorrow's digest instead of tonight defeats the point of mentioning
+ *     someone), `'digest'` for `activity` kinds (they batch for the daily
+ *     sweep, §3.4), and `'off'` when the preference says no.
+ *   - `push` is a boolean: enabled rows are written `pending` and the
+ *     relay's `deliverPendingPushes` sends them regardless of which writer
+ *     created them (the projection or the due-reminder sweep).
+ *   - `sms` is a boolean, but there is no provider yet: the row is written
+ *     `suppressed` with reason `no_provider` (§3.7, Wave 2).
+ *
+ * The default table says activity/email and activity/push are off, so for a
+ * user with no explicit rows this returns off across the board for activity
+ * kinds — absence of a row means the coded default, exactly as §3.3 says.
+ */
+export function planChannelDeliveries(
+  kind: string,
+  prefs: readonly ExplicitPref[],
+): { readonly email: 'immediate' | 'digest' | 'off'; readonly push: boolean; readonly sms: boolean } {
+  const category = categoryOfKind(kind);
+  const email = resolvePref(prefs, category, 'email');
+  const push = resolvePref(prefs, category, 'push');
+  const sms = resolvePref(prefs, category, 'sms');
+
+  return {
+    email: email ? (category === 'direct' ? 'immediate' : 'digest') : 'off',
+    push,
+    sms,
+  };
+}
+
+/**
+ * Whether a `card.updated` event changed the card's due date — the trigger
+ * for clearing an already-fired `card.due_soon` reminder (§3.8).
+ *
+ * The one gap the unique index does not close on its own: a reminder that
+ * already fired for a due date that was then pushed out and back in would
+ * keep matching `(org, subject, user, kind)` forever and no second reminder
+ * would ever fire. The projection deletes the existing rows when this fires,
+ * so the next sweep pass re-creates them against the new date. Deleting on
+ * ANY change (pushed out, pulled in, or cleared) is right: whatever the new
+ * date is, the old reminder no longer describes it.
+ *
+ * `changed` is the service's own field — it only lists fields that actually
+ * changed — and `before`/`after` carry the two due dates. Checking both is
+ * belt and braces: `changed` is derived from the same comparison, and if one
+ * were ever wrong the other still catches the change.
+ */
+export function dueDateChanged(row: OutboxRow): { readonly orgId: string; readonly cardId: string } | null {
+  if (row.name !== 'card.updated') return null;
+  const record = asRecord(row.payload);
+  if (record === null) return null;
+
+  const fields = record as {
+    readonly cardId?: unknown;
+    readonly changed?: unknown;
+    readonly before?: unknown;
+    readonly after?: unknown;
+  };
+  if (typeof fields.cardId !== 'string') return null;
+  if (!Array.isArray(fields.changed) || !fields.changed.includes('dueDate')) return null;
+
+  const before = asRecord(fields.before);
+  const after = asRecord(fields.after);
+  if (before === null || after === null) return null;
+  if (before['dueDate'] === after['dueDate']) return null;
+
+  return { orgId: row.orgId, cardId: fields.cardId };
+}
+
 /** Work's `comment.created` — a card comment `@mention`. */
 function planCardCommentMention(row: OutboxRow): readonly PlannedNotification[] {
   const record = asRecord(row.payload);
@@ -323,25 +412,8 @@ function asIdList(value: unknown): readonly string[] {
 }
 
 /**
- * Where clicking a notification navigates — see `apps/web/src/router.tsx`.
- * `null` for a shape this build does not know how to link (never happens for
- * a `subjectType` this file itself produces, but the return type keeps a
- * caller honest about the case).
- */
-function notificationPath(plan: PlannedNotification): string | null {
-  switch (plan.subjectType) {
-    case 'message':
-      return plan.channelId === null ? null : `/chat?channel=${plan.channelId}`;
-    case 'card':
-      return plan.boardId === null ? null : `/boards/${plan.boardId}?card=${plan.subjectId}`;
-    case 'page':
-      return `/docs?page=${plan.subjectId}`;
-  }
-}
-
-/**
  * Moves one batch of domain events into notifications, and decides (but does
- * not send) email.
+ * not send) delivery.
  *
  * Runs as `taskflow_audit` for the same reason the audit projection does: it
  * writes on behalf of the system rather than of a request, so it has no
@@ -353,7 +425,7 @@ function notificationPath(plan: PlannedNotification): string | null {
 export async function drainNotifications(limit = 100): Promise<NotificationDrainResult> {
   return withAuditScope(async (tx) => {
     const pending = await claimPending(tx, NOTIFICATION_CONSUMER, limit);
-    if (pending.length === 0) return { processed: 0, written: 0, pendingEmails: [] };
+    if (pending.length === 0) return { processed: 0, written: 0, pendingEmails: [], pendingPushes: [] };
 
     let written = 0;
     /* Recipients whose preferences and idempotent delivery insert both said
@@ -369,10 +441,33 @@ export async function drainNotifications(limit = 100): Promise<NotificationDrain
       readonly excerpt: string | null;
       readonly path: string;
     }[] = [];
+    const pendingPushes: PendingPushSend[] = [];
 
     for (const row of pending) {
       const plans = planNotifications(row);
-      if (plans.length === 0) continue;
+
+      if (plans.length === 0) {
+        /* Not every event produces a notification — but a `card.updated`
+           that moved a due date must CLEAR the reminder the last sweep pass
+           wrote, so the next pass re-fires against the new date (§3.8). The
+           delete is scoped to (org, card, kind): the unique index that makes
+           the sweep idempotent is exactly what would otherwise keep the old
+           reminder matching forever. Delivery rows for a deleted reminder
+           go with it — `notification_deliveries.notification_id` cascades. */
+        const changed = dueDateChanged(row);
+        if (changed !== null) {
+          await tx
+            .delete(schema.notifications)
+            .where(
+              and(
+                eq(schema.notifications.orgId, changed.orgId),
+                eq(schema.notifications.subjectId, changed.cardId),
+                eq(schema.notifications.kind, 'card.due_soon'),
+              ),
+            );
+        }
+        continue;
+      }
 
       // One preference read per recipient per row — this runs on a background
       // timer over batches of at most a few hundred rows, not a request path,
@@ -443,36 +538,91 @@ export async function drainNotifications(limit = 100): Promise<NotificationDrain
           ),
         ]);
 
-        const category = categoryOfKind(plan.kind);
-        const wantsEmail = resolvePref(prefsByUser.get(plan.userId) ?? [], category, 'email');
-        if (!wantsEmail) continue;
+        /* Wave 2: every channel's delivery is decided HERE, at write time, in
+           the same transaction as the notification row (§3.2's whole point —
+           a decision recorded, not silence). Email for `direct` kinds is sent
+           immediately by the relay; email for `activity` kinds is left
+           `pending` for the daily digest sweep to collect; push rows are left
+           `pending` for the relay's `deliverPendingPushes`; sms has no
+           provider and records `suppressed` with reason `no_provider`.
 
+           The in-app channel needs no delivery row — the notifications insert
+           itself IS that delivery, as it has been since 0022. */
+        const deliveries = planChannelDeliveries(plan.kind, prefsByUser.get(plan.userId) ?? []);
         const path = notificationPath(plan);
-        if (path === null) continue;
 
-        const deliveryId = newId<'NotificationDeliveryId'>();
-        const deliveryInserted = await tx
-          .insert(schema.notificationDeliveries)
-          .values({
-            id: deliveryId,
-            orgId: row.orgId,
-            userId: plan.userId,
-            notificationId,
-            channel: 'email',
-            status: 'pending',
-          })
-          .onConflictDoNothing()
-          .returning({ id: schema.notificationDeliveries.id });
+        if (deliveries.email !== 'off' && path !== null) {
+          const deliveryId = newId<'NotificationDeliveryId'>();
+          const deliveryInserted = await tx
+            .insert(schema.notificationDeliveries)
+            .values({
+              id: deliveryId,
+              orgId: row.orgId,
+              userId: plan.userId,
+              notificationId,
+              channel: 'email',
+              status: 'pending',
+            })
+            .onConflictDoNothing()
+            .returning({ id: schema.notificationDeliveries.id });
 
-        if (deliveryInserted.length === 0) continue; // Already queued — a redelivery.
+          if (deliveryInserted.length > 0 && deliveries.email === 'immediate') {
+            // Activity-email rows stay pending — the digest owns them.
+            emailCandidates.push({
+              userId: plan.userId,
+              deliveryId,
+              title: plan.title,
+              excerpt: plan.excerpt,
+              path,
+            });
+          }
+        }
 
-        emailCandidates.push({
-          userId: plan.userId,
-          deliveryId,
-          title: plan.title,
-          excerpt: plan.excerpt,
-          path,
-        });
+        if (deliveries.push && path !== null) {
+          const deliveryId = newId<'NotificationDeliveryId'>();
+          const pushInserted = await tx
+            .insert(schema.notificationDeliveries)
+            .values({
+              id: deliveryId,
+              orgId: row.orgId,
+              userId: plan.userId,
+              notificationId,
+              channel: 'push',
+              status: 'pending',
+            })
+            .onConflictDoNothing()
+            .returning({ id: schema.notificationDeliveries.id });
+
+          if (pushInserted.length > 0) {
+            pendingPushes.push({
+              deliveryId,
+              userId: plan.userId,
+              title: plan.title,
+              excerpt: plan.excerpt,
+              path,
+            });
+          }
+        }
+
+        if (deliveries.sms) {
+          /* The deliberately-unfinished half (§3.7): the channel exists in
+             the schema and the preference matrix, but sending needs Phase 7's
+             TelephonyProvider. A `suppressed` row with reason `no_provider`
+             is the honest record that a decision WAS made and the send was
+             not possible — not silence that reads as a bug. */
+          await tx
+            .insert(schema.notificationDeliveries)
+            .values({
+              id: newId<'NotificationDeliveryId'>(),
+              orgId: row.orgId,
+              userId: plan.userId,
+              notificationId,
+              channel: 'sms',
+              status: 'suppressed',
+              reason: 'no_provider',
+            })
+            .onConflictDoNothing();
+        }
       }
     }
 
@@ -485,7 +635,7 @@ export async function drainNotifications(limit = 100): Promise<NotificationDrain
     const pendingEmails =
       emailCandidates.length === 0 ? [] : await resolveEmailAddresses(tx, emailCandidates);
 
-    return { processed: pending.length, written, pendingEmails };
+    return { processed: pending.length, written, pendingEmails, pendingPushes };
   });
 }
 
@@ -536,16 +686,18 @@ export async function drainNotificationsFully(
   let processed = 0;
   let written = 0;
   const pendingEmails: PendingEmailSend[] = [];
+  const pendingPushes: PendingPushSend[] = [];
 
   for (let batch = 0; batch < maxBatches; batch += 1) {
     const result = await drainNotifications(batchSize);
     processed += result.processed;
     written += result.written;
     pendingEmails.push(...result.pendingEmails);
+    pendingPushes.push(...result.pendingPushes);
     if (result.processed < batchSize) break;
   }
 
-  return { processed, written, pendingEmails };
+  return { processed, written, pendingEmails, pendingPushes };
 }
 
 /**

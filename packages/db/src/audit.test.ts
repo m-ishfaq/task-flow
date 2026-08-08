@@ -245,14 +245,22 @@ describe('outbox — draining side', () => {
     });
 
     const second = await withAuditScope(async (tx) => claimPending(tx, 'audit'));
-    expect(second).toEqual([]);
+    // `ours()` for the identical reason the file header gives: other suites
+    // run in parallel against the same taskflow_test and leave THEIR orgs'
+    // events in the outbox, pending for a consumer they will never see drain.
+    // What is under test is that THIS event is not re-claimed.
+    expect(ours(second)).toEqual([]);
   });
 
   it('leaves a failed event claimable and counts the attempt', async () => {
     await withOrgScope(ORG_A, async (tx) => appendToOutbox(tx, [eventFor(ORG_A)]));
 
     await withAuditScope(async (tx) => {
-      const [claimed] = await claimPending(tx, 'audit');
+      /* `ours()` before the destructure — the same fix as the fan-out
+         test below, for the same reason: parallel suites' rows can precede
+         ours in the claim, and a failure recorded on THEIR row would leave
+         ours at attempts 0. */
+      const [claimed] = ours(await claimPending(tx, 'audit'));
       if (!claimed) throw new Error('expected a claimed event');
       await recordFailure(tx, 'audit', claimed.id, 'consumer exploded');
     });
@@ -303,14 +311,23 @@ describe('outbox — draining side', () => {
       // And 'audit' really is done — this is not a fluke of never having
       // filtered anything out.
       const forAuditAgain = await withAuditScope(async (tx) => claimPending(tx, 'audit'));
-      expect(forAuditAgain).toEqual([]);
+      // `ours()`, same as every other assertion in this file: a parallel suite's
+      // un-dispatched rows must not masquerade as audit re-claiming ours.
+      expect(ours(forAuditAgain)).toEqual([]);
     });
 
     it('tracks attempts and failures independently per consumer', async () => {
       await withOrgScope(ORG_A, async (tx) => appendToOutbox(tx, [eventFor(ORG_A)]));
 
       await withAuditScope(async (tx) => {
-        const [claimed] = await claimPending(tx, 'audit');
+        /* `ours()` BEFORE the destructure, not after: `claimPending` returns
+           rows from every suite running in parallel, ordered by occurred_at,
+           and the FIRST row may be someone else's event. Recording a failure
+           on that row would leave THIS suite's event untouched — and the
+           assertion below would fail with attempts 0, reading as a broken
+           counter rather than a foreign fixture. Same lesson as the file
+           header's `ours()` note, one level deeper. */
+        const [claimed] = ours(await claimPending(tx, 'audit'));
         if (!claimed) throw new Error('expected a claimed event');
         await recordFailure(tx, 'audit', claimed.id, 'audit exploded');
       });

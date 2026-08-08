@@ -6,6 +6,8 @@ import {
   markEmailDeliveries,
   type PendingEmailSend,
 } from '../platform/notification.projection.js';
+import { deliverPendingPushes } from '../platform/notification-push.js';
+import type { PushProvider } from '../platform/push-provider.js';
 
 /**
  * Drives the outbox relay on a timer (PLAN.md §10.6).
@@ -59,6 +61,15 @@ export interface StartRelayOptions {
    * configured; deliveries then stay `pending` rather than being guessed at.
    */
   readonly sendNotificationEmail?: (send: PendingEmailSend) => void;
+  /**
+   * The push provider (Phase 9 Wave 2, §3.7), when VAPID keys are
+   * configured. When present, every tick drains the pending push delivery
+   * rows — written by both the projection and the due-reminder sweep — via
+   * `deliverPendingPushes`. Omitted (and rows stay `pending`) when the
+   * server has no keys: push is genuinely off, and the preferences page says
+   * so.
+   */
+  readonly pushProvider?: PushProvider;
 }
 
 /**
@@ -122,6 +133,20 @@ export function startAuditRelay(options: StartRelayOptions): RelayHandle {
           sent.push(send.deliveryId);
         }
         await markEmailDeliveries(sent, 'sent');
+      }
+
+      /* Push rows written `pending` by either producer — the projection or
+         the due-reminder sweep — are sent here, on the same tick, whenever a
+         provider exists. At-least-once by design; see `notification-push.ts`
+         on the crash window and why the mark is conditional. */
+      if (options.pushProvider) {
+        const pushed = await deliverPendingPushes(options.pushProvider, options.logger);
+        if (pushed.attempted > 0) {
+          options.logger.debug(
+            { attempted: pushed.attempted, sent: pushed.sent, failed: pushed.failed, gone: pushed.gone },
+            'push relay delivered notifications',
+          );
+        }
       }
     } catch (error) {
       /* Logged, never rethrown. An unhandled rejection inside a timer takes the

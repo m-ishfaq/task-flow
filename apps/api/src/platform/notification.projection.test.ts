@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { OutboxRow } from '@taskflow/db';
-import { planNotifications } from './notification.projection.js';
+import { dueDateChanged, planChannelDeliveries, planNotifications } from './notification.projection.js';
 
 /**
  * Who gets told about an event (§4, §10.6; ai/phase-9-notifications.md §4).
@@ -297,5 +297,111 @@ describe('unrelated event names', () => {
   it('ignores events this projection does not consume', () => {
     expect(planNotifications(row('card.updated', { cardId: '1' }))).toEqual([]);
     expect(planNotifications(row('message.edited', { messageId: '1' }))).toEqual([]);
+  });
+});
+
+describe('planChannelDeliveries — Wave 2 delivery decisions (§3.4, §3.7)', () => {
+  /* Absence of a pref row means the coded default — the matrix says direct is
+     emailed immediately and pushed by default, activity is off across the
+     board until someone turns a channel on. */
+  it('defaults: direct emailed immediately, activity off, push on for direct', () => {
+    expect(planChannelDeliveries('chat.mention', [])).toEqual({
+      email: 'immediate',
+      push: true,
+      sms: false,
+    });
+    expect(planChannelDeliveries('card.due_soon', [])).toEqual({
+      email: 'off',
+      push: false,
+      sms: false,
+    });
+  });
+
+  it('batches ACTIVITY email into the digest, never sends it now', () => {
+    /* A due reminder arriving in tomorrow's digest is the point of a digest;
+       a mention arriving there instead of tonight defeats the point of the
+       mention. */
+    const prefs = [
+      { category: 'activity' as const, channel: 'email' as const, enabled: true },
+    ];
+    expect(planChannelDeliveries('card.due_soon', prefs)).toMatchObject({ email: 'digest' });
+    expect(planChannelDeliveries('chat.thread_reply', prefs)).toMatchObject({ email: 'digest' });
+  });
+
+  it('sends DIRECT email immediately, even with the same pref row shape', () => {
+    const prefs = [
+      { category: 'direct' as const, channel: 'email' as const, enabled: true },
+      { category: 'direct' as const, channel: 'push' as const, enabled: false },
+    ];
+    expect(planChannelDeliveries('chat.mention', prefs)).toEqual({
+      email: 'immediate',
+      push: false,
+      sms: false,
+    });
+  });
+
+  it('an explicit off beats the default', () => {
+    const prefs = [{ category: 'direct' as const, channel: 'email' as const, enabled: false }];
+    expect(planChannelDeliveries('chat.direct', prefs)).toMatchObject({ email: 'off' });
+  });
+
+  it('an unknown kind falls back to activity, the conservative default', () => {
+    expect(planChannelDeliveries('future.kind', [])).toEqual({
+      email: 'off',
+      push: false,
+      sms: false,
+    });
+  });
+});
+
+describe('dueDateChanged — the due-reminder refire trigger (§3.8)', () => {
+  const CARD = '0195ee05-0000-7000-8000-000000000030';
+  const ORG = '0195ee05-0000-7000-8000-00000000000a';
+
+  it('detects a card.updated whose due date changed', () => {
+    const changed = dueDateChanged(
+      row('card.updated', {
+        cardId: CARD,
+        changed: ['dueDate'],
+        before: { dueDate: '2026-08-10T00:00:00.000Z' },
+        after: { dueDate: '2026-08-12T00:00:00.000Z' },
+      }),
+    );
+    expect(changed).toEqual({ orgId: ORG, cardId: CARD });
+  });
+
+  it('ignores a card.updated that did not touch the due date', () => {
+    expect(
+      dueDateChanged(
+        row('card.updated', {
+          cardId: CARD,
+          changed: ['title'],
+          before: { dueDate: '2026-08-10T00:00:00.000Z' },
+          after: { dueDate: '2026-08-10T00:00:00.000Z' },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it('ignores a card.updated where the date did not actually move', () => {
+    /* `changed` is derived from the same comparison, but the delete must not
+       depend on it being right — belt and braces, per the function's doc. */
+    expect(
+      dueDateChanged(
+        row('card.updated', {
+          cardId: CARD,
+          changed: ['dueDate'],
+          before: { dueDate: '2026-08-10T00:00:00.000Z' },
+          after: { dueDate: '2026-08-10T00:00:00.000Z' },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it('ignores events that are not card.updated', () => {
+    expect(
+      dueDateChanged(row('card.assigned', { cardId: CARD, before: [], after: [BOB] })),
+    ).toBeNull();
+    expect(dueDateChanged(row('card.updated', {}))).toBeNull();
   });
 });

@@ -311,3 +311,54 @@ export const notificationDeliveries = platform.table(
     uniqueIndex('notification_deliveries_once').on(table.notificationId, table.channel),
   ],
 );
+
+/**
+ * Web-push device rows (migration 0029, ai/phase-9-notifications.md §3.7).
+ *
+ * Shaped as a DEVICE row, not a bare `(endpoint, keys)` credential, because
+ * PLAN.md §13's Phase 12 row names this table as a source for its
+ * device/session inventory screen — `userAgentLabel`, `createdAt` and
+ * `lastSeenAt` are what that screen reads, and shipping them now means Phase
+ * 12 starts from this table rather than building a parallel device concept.
+ *
+ * The key material (`endpoint`, `p256dh`, `auth`) is protected by RLS and by
+ * being unreachable without a valid session only — the §7.3 decision, made
+ * 2026-08-08: an attacker who can read these rows already holds the VAPID
+ * private key the server signs with, so envelope-encrypting them with the
+ * same server-held master key defends against a threat the system cannot
+ * survive anyway. See the migration's own header for the full argument.
+ *
+ * Global per user, like `identity.notification_prefs` — a subscription
+ * belongs to a person, not to an org, so the self-scoped RLS policies key on
+ * `app.user_id` (the `push_subscriptions_self_*` pair, mirroring 0027's
+ * prefs policies). `taskflow_audit` holds SELECT/UPDATE/DELETE here for the
+ * push relay: read endpoints to send, touch `lastSeenAt`, drop endpoints the
+ * push service reports gone. No INSERT — registering a device is always a
+ * person's own act through the application role.
+ */
+export const pushSubscriptions = platform.table(
+  'push_subscriptions',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+
+    /** The browser's subscription endpoint (e.g. an FCM or Mozilla push URL). */
+    endpoint: text('endpoint').notNull(),
+    /** base64url, 65 bytes — the P-256 public key in uncompressed point form. */
+    p256dh: text('p256dh').notNull(),
+    /** base64url, 16 bytes — the subscription's authentication secret. */
+    auth: text('auth').notNull(),
+
+    /** Parsed at registration into something a person recognizes, e.g. "Chrome on macOS". */
+    userAgentLabel: text('user_agent_label'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Touched on every successful push — Phase 12's "is this device alive" answer. */
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('push_subscriptions_user_endpoint_key').on(table.userId, table.endpoint),
+  ],
+);

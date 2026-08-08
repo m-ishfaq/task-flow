@@ -236,6 +236,66 @@ export function renderNotificationEmail(
   };
 }
 
+/**
+ * One digest covering several notifications (Phase 9 Wave 2,
+ * ai/phase-9-notifications.md §3.4).
+ *
+ * A digest is a batching of the EMAIL channel's delivery — the
+ * `platform.notifications` rows were written the moment they happened, and
+ * this is a single email that collects the ones that waited for it. Every
+ * item renders from the SNAPSHOT stored on the notification row at the time
+ * the recipient was told, for the identical reason `renderNotificationEmail`
+ * gives — a subject can be archived or a sender lose access without erasing
+ * the record that someone was notified.
+ *
+ * Each item carries its own `path` (an absolute in-app route, built by the
+ * caller — this function does not know three products' routing rules), and
+ * each is escaped the same way the single-notification email escapes its
+ * title and excerpt: they are content someone else wrote.
+ */
+export function renderNotificationDigest(
+  context: NotificationLinkContext & {
+    readonly items: readonly { readonly title: string; readonly excerpt: string | null; readonly path: string }[];
+  },
+): RenderedMail {
+  const origin = context.webOrigin.replace(/\/+$/, '');
+
+  const textLines: string[] = ['You have activity waiting in TaskFlow:', ''];
+  context.items.forEach((item, index) => {
+    textLines.push(`${String(index + 1)}. ${item.title}`);
+    if (item.excerpt !== null) textLines.push(`   "${item.excerpt}"`);
+    textLines.push(`   ${origin}${item.path}`);
+  });
+  textLines.push('', 'Turn these off or change how you get them in Notification settings.');
+
+  const itemsHtml = context.items
+    .map(
+      (item) =>
+        `<li style="margin-bottom:12px">` +
+        `<strong>${escapeHtml(item.title)}</strong>` +
+        (item.excerpt === null
+          ? ''
+          : `<br><span style="color:#444">${escapeHtml(item.excerpt)}</span>`) +
+        `<br><a href="${escapeHtml(`${origin}${item.path}`)}" style="color:#1a1a1a">Open in TaskFlow</a>` +
+        `</li>`,
+    )
+    .join('');
+
+  const countLabel = context.items.length === 1 ? '1 update' : `${String(context.items.length)} updates`;
+
+  return {
+    subject: `${countLabel} for you on TaskFlow`,
+    text: textDocument(textLines),
+    html: htmlDocument(
+      [
+        `<p><strong>${escapeHtml(countLabel)} for you on TaskFlow</strong></p>`,
+        `<ol style="padding-left:20px;margin:12px 0">${itemsHtml}</ol>`,
+        '<p style="font-size:13px;color:#666">Turn these off or change how you get them in Notification settings.</p>',
+      ].join('\n'),
+    ),
+  };
+}
+
 export function renderDuplicateRegistration(): RenderedMail {
   return {
     subject: 'Someone tried to sign up with your email address',

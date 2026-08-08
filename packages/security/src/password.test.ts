@@ -115,13 +115,29 @@ describe('fakeVerifyPassword', () => {
     const hash = await hashPassword('reference');
     await fakeVerifyPassword('warm-up'); // exclude first-call overhead from the comparison
 
-    const realStart = performance.now();
-    await verifyPassword('wrong-guess', hash);
-    const real = performance.now() - realStart;
+    // Several samples, minimum taken. `pnpm verify` runs every package's tests
+    // in parallel, and a single Argon2 sample under that CPU contention can be
+    // an order of magnitude off its uncontended cost in either direction — the
+    // original one-shot comparison failed spuriously on exactly that. Contention
+    // only ever ADDS time, so the minimum of a few samples is the stable
+    // estimator of each side's true cost, and the ratio of two minimums is what
+    // the oracle-defeating property is actually about.
+    const sample = async (run: () => Promise<void>): Promise<number> => {
+      let best = Number.POSITIVE_INFINITY;
+      for (let index = 0; index < 5; index += 1) {
+        const start = performance.now();
+        await run();
+        best = Math.min(best, performance.now() - start);
+      }
+      return best;
+    };
 
-    const fakeStart = performance.now();
-    await fakeVerifyPassword('wrong-guess');
-    const fake = performance.now() - fakeStart;
+    const real = await sample(async () => {
+      await verifyPassword('wrong-guess', hash);
+    });
+    const fake = await sample(async () => {
+      await fakeVerifyPassword('wrong-guess');
+    });
 
     // Generous bounds: this asserts "same order of magnitude", which is what
     // defeats the oracle. A tight ratio would be flaky on shared CI runners.

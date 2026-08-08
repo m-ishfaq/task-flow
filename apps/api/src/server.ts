@@ -78,6 +78,10 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
     identity: identityDeps,
     passkeys: buildPasskeyDeps(identityDeps, options.env),
     work: buildWorkDeps(options.env),
+    /* VAPID keys are optional (an instance without them is a valid deployment
+       that simply does not send push); null is the honest answer the
+       preferences page renders as "push unavailable on this server". */
+    platform: { vapidPublicKey: options.env.VAPID_PUBLIC_KEY ?? null },
   });
 
   /* Guardrail 4, second half. Before a single connection is accepted: if any

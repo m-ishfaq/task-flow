@@ -3,6 +3,7 @@ import { memberRoute, router, selfRoute } from '../trpc/builder.js';
 import { subjectOf } from '../trpc/context.js';
 import type { ChatActor } from '../chat/shared.js';
 import * as notifications from './notifications.js';
+import * as push from './push.js';
 import { NOTIFICATION_CATEGORIES, NOTIFICATION_CHANNELS } from './notification-prefs.js';
 
 /**
@@ -33,7 +34,12 @@ import { NOTIFICATION_CATEGORIES, NOTIFICATION_CHANNELS } from './notification-p
  * a Work-only guest, holding no chat permission at all, still gets a
  * `card.assigned` notification and still needs to be able to read it.
  */
-export function createPlatformRouter() {
+export interface PlatformRouterDeps {
+  /** The VAPID public key, or null when push is not configured on this server. */
+  readonly vapidPublicKey: string | null;
+}
+
+export function createPlatformRouter(deps: PlatformRouterDeps) {
   const actorOf = (ctx: {
     principal: Parameters<typeof subjectOf>[0];
     requestId: ChatActor['requestId'];
@@ -118,6 +124,69 @@ export function createPlatformRouter() {
             channel: input.channel as notifications.NotificationPrefEntry['channel'],
             enabled: input.enabled,
           }),
+        ),
+    }),
+
+    /**
+     * Web-push subscriptions (Phase 9 Wave 2, ai/phase-9-notifications.md §3.7).
+     *
+     * All four are `selfRoute`, for the identical reason `prefs` is: a
+     * subscription belongs to a PERSON, not to an org, so there is no org to
+     * resolve and no permission in the catalog that describes it — and a
+     * guest must be able to register their own devices. The subject is always
+     * `ctx.principal.userId`; nothing here accepts a user id as input.
+     *
+     * `vapidPublicKey` returns `null` when the server has no VAPID keys
+     * configured, and the preferences page reports that honestly instead of
+     * pretending push works. It is self-scoped rather than public because
+     * there is no pre-login caller that needs it — the ceremony only runs
+     * from the account page.
+     */
+    push: router({
+      vapidPublicKey: selfRoute({
+        selfReason: 'Your own push setup needs the server\u2019s public key.',
+      })
+        .output(z.object({ publicKey: z.string().nullable() }))
+        .query(() => ({ publicKey: deps.vapidPublicKey })),
+
+      register: selfRoute({
+        selfReason: 'Registering your own device for push notifications.',
+      })
+        .input(
+          z
+            .object({
+              endpoint: z.string().url(),
+              p256dh: z.string().min(1),
+              auth: z.string().min(1),
+            })
+            .strict(),
+        )
+        .output(z.object({ registered: z.literal(true) }))
+        .mutation(({ input, ctx }) =>
+          push.registerSubscription(ctx.principal.userId, input, ctx.userAgent),
+        ),
+
+      list: selfRoute({ selfReason: 'Listing your own push devices.' })
+        .output(
+          z
+            .array(
+              z.object({
+                subscriptionId: z.string(),
+                endpoint: z.string(),
+                userAgentLabel: z.string().nullable(),
+                createdAt: z.date(),
+                lastSeenAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ ctx }) => push.listSubscriptions(ctx.principal.userId)),
+
+      unregister: selfRoute({ selfReason: 'Removing your own push device.' })
+        .input(z.object({ subscriptionId: z.string() }).strict())
+        .output(z.object({ removed: z.number().int().nonnegative() }))
+        .mutation(({ input, ctx }) =>
+          push.unregisterSubscription(ctx.principal.userId, input.subscriptionId),
         ),
     }),
   });

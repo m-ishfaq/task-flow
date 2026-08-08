@@ -26,6 +26,8 @@ export interface AppRouterDeps extends IdentityRouterDeps {
    * map, without a container.
    */
   readonly work: WorkRouterDeps;
+  /** Notifications — the VAPID public key for the push ceremony (§3.7). */
+  readonly platform: { readonly vapidPublicKey: string | null };
 }
 
 export function createAppRouter(deps: AppRouterDeps) {
@@ -95,7 +97,7 @@ export function createAppRouter(deps: AppRouterDeps) {
      * (Phase 9). Moved out from under `chat` once Work and Docs became
      * producers too — see `platform/router.ts`'s own header.
      */
-    notifications: createPlatformRouter(),
+    notifications: createPlatformRouter(deps.platform),
   });
 }
 

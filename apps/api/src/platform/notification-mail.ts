@@ -1,6 +1,7 @@
-import { MailQueue, renderNotificationEmail, SmtpMailer, type Mailer } from '@taskflow/mail';
+import { MailQueue, renderNotificationDigest, renderNotificationEmail, SmtpMailer, type Mailer } from '@taskflow/mail';
 import type { Env } from '../config/env.js';
 import type { PendingEmailSend } from './notification.projection.js';
+import type { DigestBatch } from './digest.js';
 
 /**
  * Turns a decided notification into an outbound message (Phase 9,
@@ -25,6 +26,8 @@ export interface NotificationMailDeliveryOptions {
 export interface NotificationMailDelivery {
   /** Hand to `relay.ts`'s `sendNotificationEmail` option. Returns immediately — see `queue.ts`. */
   readonly send: (send: PendingEmailSend) => void;
+  /** Hand to the digest sweep. One email covering the batch's items (§3.4). */
+  readonly sendDigest: (batch: DigestBatch) => void;
   readonly queue: MailQueue;
 }
 
@@ -55,6 +58,17 @@ export function createNotificationMailDelivery(
         path: send.path,
       });
       queue.enqueue({ to: send.to, ...rendered });
+    },
+    sendDigest: (batch) => {
+      const rendered = renderNotificationDigest({
+        webOrigin: options.env.WEB_ORIGIN,
+        items: batch.items.map((item) => ({
+          title: item.title,
+          excerpt: item.excerpt,
+          path: item.path,
+        })),
+      });
+      queue.enqueue({ to: batch.to, ...rendered });
     },
   };
 }
