@@ -59,6 +59,13 @@ export interface RouteMeta {
    * public one, since both leave `permission` null.
    */
   readonly selfReason?: string;
+  /**
+   * Why this route needs an org resolved but no specific permission. Required
+   * by `memberRoute`. Distinguishes an any-member route from `self` (no org
+   * at all) and from `public` (no auth at all) — all three leave `permission`
+   * null, and the reason field is what tells them apart in the manifest.
+   */
+  readonly memberReason?: string;
   /** Requires a recent credential proof, e.g. role changes, recording export (§8.1). */
   readonly stepUp?: boolean;
 }
@@ -363,6 +370,46 @@ export function selfRoute(meta: { selfReason: string; stepUp?: boolean }) {
       ...(meta.stepUp === undefined ? {} : { stepUp: meta.stepUp }),
     })
     .use(async ({ ctx, next, meta: routeMeta }) => next({ ctx: requireAuth(ctx, routeMeta) }));
+}
+
+/**
+ * Authenticated route, org resolved, no permission beyond MEMBERSHIP (Phase 9,
+ * ai/phase-9-notifications.md).
+ *
+ * Neither `route({ permission })` nor `selfRoute` fits a route like "read your
+ * own notifications": the data is genuinely per-org (`platform.notifications`
+ * carries `org_id` and is read through `withOrgScope`, unlike `selfRoute`'s
+ * usual "answers with no org selected"), but no single `Permission` describes
+ * it either. Notifications span three products with three different
+ * catalogs — `channel:read`, `card:read`, `page:read` — and a member who
+ * holds only one of them (a Work-only guest, say) still has to be able to
+ * read a `card.assigned` notification sitting in their own bell.
+ * `couldGrant(subject, 'channel:read')` for that guest is `false`: it checks
+ * whether ANY tuple the subject holds could grant the named permission
+ * somewhere, and a guest with no chat tuple at all holds none that would.
+ * Picking any ONE of the three catalogs to gate on would refuse every member
+ * who only participates in the other two — this is `chat/router.ts`'s old
+ * `channel:read` mistake generalized across three products instead of
+ * within one, not a new kind of bug.
+ *
+ * So this checks membership only: `requireOrg` already answers "is this
+ * caller in the org named by the header", the same check `route()` performs
+ * before its own `couldGrant`. This route builder stops there.
+ */
+export function memberRoute(meta: { memberReason: string; stepUp?: boolean }) {
+  if (meta.memberReason.trim().length === 0) {
+    throw new Error('memberRoute requires a non-empty reason.');
+  }
+
+  return procedure
+    .meta({
+      permission: null,
+      memberReason: meta.memberReason,
+      ...(meta.stepUp === undefined ? {} : { stepUp: meta.stepUp }),
+    })
+    .use(async ({ ctx, next, meta: routeMeta }) =>
+      next({ ctx: requireOrg(requireAuth(ctx, routeMeta)) }),
+    );
 }
 
 /** Shared gate: authentication, then step-up freshness if the route asks for it. */

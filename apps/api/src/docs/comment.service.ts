@@ -9,7 +9,7 @@ import {
   pageCommentResolved,
   pageCommentUpdated,
 } from './events.js';
-import { flattenToText, type RichTextNode } from '../work/richtext.js';
+import { flattenToText, mentionedUserIds, type RichTextNode } from '../work/richtext.js';
 import { enforceOnPage, envelopeOf, loadPage, orgOf, type DocsActor } from './shared.js';
 
 /**
@@ -126,7 +126,18 @@ export async function createComment(
     });
 
     await outboxWriter.append(tx, [
-      createEvent(pageCommentCreated, { commentId, pageId: input.pageId }, envelopeOf(actor)),
+      createEvent(
+        pageCommentCreated,
+        {
+          commentId,
+          pageId: input.pageId,
+          // Words, not a document — the same reasoning Work's comment.created
+          // excerpt gives (Phase 9).
+          excerpt: bodyText.slice(0, 280),
+          mentionedUserIds: mentionedUserIds(input.body),
+        },
+        envelopeOf(actor),
+      ),
     ]);
   });
 

@@ -38,6 +38,7 @@ export interface RouteEntry {
   readonly permission: Permission | null | undefined;
   readonly publicReason?: string;
   readonly selfReason?: string;
+  readonly memberReason?: string;
   readonly stepUp: boolean;
   /**
    * Whether the route accepts caller-supplied input at all.
@@ -59,16 +60,21 @@ export interface RouteEntry {
 /**
  * How a route is reached.
  *
- * `self` is authenticated but carries no org permission — see `selfRoute`. It is
- * separated from `public` because the manifest is what answers "what is
- * reachable without credentials", and merging the two would make that answer
- * wrong in the direction that matters.
+ * `self` is authenticated but carries no org permission — see `selfRoute`.
+ * `member` is authenticated AND org-resolved but carries no specific
+ * permission — see `memberRoute`. Both are separated from `public` because
+ * the manifest is what answers "what is reachable without credentials", and
+ * merging any of them would make that answer wrong in the direction that
+ * matters. `member` is separated from `self` too, even though both leave
+ * `permission` null: only `member` touches org-scoped data, which is exactly
+ * why guardrail 8 (below, `protectedRoutes`) enrolls it and not `self`.
  */
-export type RouteAccess = 'public' | 'self' | 'permission' | 'undeclared';
+export type RouteAccess = 'public' | 'self' | 'member' | 'permission' | 'undeclared';
 
 export function accessOf(entry: RouteEntry): RouteAccess {
   if (entry.permission === undefined) return 'undeclared';
   if (typeof entry.permission === 'string') return 'permission';
+  if (entry.memberReason !== undefined) return 'member';
   return entry.selfReason === undefined ? 'public' : 'self';
 }
 
@@ -126,6 +132,7 @@ export function routeManifest(appRouter: AnyRouter): readonly RouteEntry[] {
           permission: meta === undefined ? undefined : meta.permission,
           ...(meta?.publicReason === undefined ? {} : { publicReason: meta.publicReason }),
           ...(meta?.selfReason === undefined ? {} : { selfReason: meta.selfReason }),
+          ...(meta?.memberReason === undefined ? {} : { memberReason: meta.memberReason }),
           stepUp: meta?.stepUp === true,
           acceptsInput: (value._def?.inputs?.length ?? 0) > 0,
         });
@@ -188,7 +195,20 @@ export function selfRoutes(entries: readonly RouteEntry[]): readonly RouteEntry[
   return entries.filter((entry) => accessOf(entry) === 'self');
 }
 
-/** Every route that requires authentication — what the fuzz test enrolls. */
+/** Authenticated, org-resolved routes that carry no specific permission. */
+export function memberRoutes(entries: readonly RouteEntry[]): readonly RouteEntry[] {
+  return entries.filter((entry) => accessOf(entry) === 'member');
+}
+
+/**
+ * Every route that touches org-scoped data — what the tenancy fuzz test
+ * (guardrail 8) enrolls. Both `permission`-bearing routes and `member`
+ * routes qualify: a `memberRoute` still resolves an org and still reads
+ * through `withOrgScope`, exactly the shape guardrail 8 exists to fuzz —
+ * only `self` (no org resolved at all) and `public` are exempt.
+ */
 export function protectedRoutes(entries: readonly RouteEntry[]): readonly RouteEntry[] {
-  return entries.filter((entry) => typeof entry.permission === 'string');
+  return entries.filter(
+    (entry) => typeof entry.permission === 'string' || accessOf(entry) === 'member',
+  );
 }

@@ -331,6 +331,23 @@ describe('the real application router', () => {
          id in its input — the subject comes from the verified principal — which
          is what keeps it "rename myself" rather than "rename anyone". */
       'auth.updateProfile',
+      /* Notification preferences (Phase 9) — global per user, not per org
+         (`identity.notification_prefs`; see that table's own comment in
+         `packages/db/src/schema/identity.ts`), so `selfRoute` for the same
+         reason `auth.me`/`auth.updateProfile` are. `listMine`/`markRead`/etc.
+         are deliberately NOT here — they read `platform.notifications`,
+         which IS per-org, through `memberRoute` instead; see
+         `trpc/builder.ts`'s own comment on that builder. */
+      'notifications.prefs.list',
+      'notifications.prefs.set',
+      /* Web-push subscriptions (Phase 9 Wave 2, §3.7) — a device belongs to a
+         PERSON, not an org, for the identical reason the prefs do: `selfRoute`
+         all four. `vapidPublicKey` is self-scoped rather than public because
+         the ceremony only ever runs from the account page, after sign-in. */
+      'notifications.push.list',
+      'notifications.push.register',
+      'notifications.push.unregister',
+      'notifications.push.vapidPublicKey',
       /* The two tenancy routes a caller with NO membership must still reach.
          Neither can be permission-bearing without a contradiction: a user who
          belongs to no organization has no role, so requiring an org permission

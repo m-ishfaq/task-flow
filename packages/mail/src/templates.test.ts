@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   escapeHtml,
   renderDuplicateRegistration,
+  renderNotificationDigest,
   renderPasswordReset,
   renderVerifyEmail,
 } from './templates.js';
@@ -104,6 +105,60 @@ describe('renderPasswordReset', () => {
   it('states the shorter expiry', () => {
     const mail = renderPasswordReset({ ...CONTEXT, expiresInMinutes: 60 });
     expect(mail.text).toMatch(/expires in 60 minutes/);
+  });
+});
+
+describe('renderNotificationDigest', () => {
+  const items = [
+    {
+      title: 'Mentioned in #general',
+      excerpt: 'ping @bob',
+      path: '/chat?channel=0195ee05-0000-7000-8000-000000000020',
+    },
+    {
+      title: 'Card due soon: Ship the launch page',
+      excerpt: null,
+      path: '/boards/0195ee05-0000-7000-8000-000000000031?card=0195ee05-0000-7000-8000-000000000030',
+    },
+  ];
+
+  it('names the count in the subject', () => {
+    expect(renderNotificationDigest({ webOrigin: 'http://localhost:5173', items }).subject).toBe(
+      '2 updates for you on TaskFlow',
+    );
+    expect(
+      renderNotificationDigest({
+        webOrigin: 'http://localhost:5173',
+        items: [items[0]!],
+      }).subject,
+    ).toBe('1 update for you on TaskFlow');
+  });
+
+  it('includes every item with its own link, in text and HTML', () => {
+    const mail = renderNotificationDigest({ webOrigin: 'http://localhost:5173', items });
+
+    expect(mail.text).toContain('1. Mentioned in #general');
+    expect(mail.text).toContain('http://localhost:5173/chat?channel=0195ee05');
+    expect(mail.text).toContain('2. Card due soon: Ship the launch page');
+    expect(mail.html).toContain('Mentioned in #general');
+    expect(mail.html).toContain('Open in TaskFlow');
+  });
+
+  it('escapes item content the same way the single email does', () => {
+    const mail = renderNotificationDigest({
+      webOrigin: 'http://localhost:5173',
+      items: [{ title: '<script>alert(1)</script>', excerpt: '" onmouseover="x', path: '/chat' }],
+    });
+
+    expect(mail.html).not.toContain('<script>alert');
+    // The quote is what breaks out of an attribute; escaped text containing the
+    // words is fine, an unescaped `onmouseover="` is not.
+    expect(mail.html).not.toContain('onmouseover="');
+  });
+
+  it('tolerates a trailing slash on the origin', () => {
+    const mail = renderNotificationDigest({ webOrigin: 'http://localhost:5173/', items });
+    expect(mail.text).not.toContain('5173//chat');
   });
 });
 

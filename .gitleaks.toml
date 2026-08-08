@@ -19,7 +19,7 @@
 useDefault = true
 
 [allowlist]
-description = "SHA-1 of the literal string 'password' — public test data, not a credential"
+description = "Published test vectors and example data — not credentials"
 
 # The full digest and the 35-character k-anonymity suffix of it.
 #
@@ -27,7 +27,21 @@ description = "SHA-1 of the literal string 'password' — public test data, not 
 # and the first entry in every breach corpus. It appears in the breach-check
 # test as the stub server's response. It is high-entropy hex, which is why
 # `generic-api-key` flags it, and it grants access to precisely nothing.
+#
+# The RFC 8291 Appendix A `authSecret`, from `packages/security/src/web-push.ts`'s
+# `RFC8291_VECTOR`.
+#
+# This is the IETF's own published Web Push encryption test vector — the one
+# fixed reference point that proves the ECDH/HKDF/AES-128-GCM composition
+# matches the spec rather than merely round-tripping against itself (see that
+# file's own comment on `encryptWithFixedInputs`). It cannot be derived at
+# runtime the way `breach.test.ts`'s hash was, because its entire value is
+# being a specific published constant, not a computation this code performs.
+# High-entropy base64url next to a field named `authSecret` is exactly what
+# `generic-api-key` is built to flag, and it authenticates nothing — RFC 8291
+# is a public standards document, not a secret.
 regexes = [
   '''5BAA61E4C9B93F3F0682250B6CF8331B7EE68FD8''',
   '''1E4C9B93F3F0682250B6CF8331B7EE68FD8''',
+  '''BTBZMqHH6r4Tts7J_aSIgg''',
 ]

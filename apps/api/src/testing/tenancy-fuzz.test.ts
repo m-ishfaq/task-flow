@@ -381,18 +381,36 @@ describe('the application router', () => {
       'chat.compliance.setGuest',
       'chat.compliance.export',
 
-      /* Saved messages and notifications. `saved.save` is the interesting one:
-         it writes a row naming a message, so a cross-tenant leak would bookmark
-         another organization's conversation into this one's sidebar. */
+      /* Saved messages. `saved.save` is the interesting one: it writes a row
+         naming a message, so a cross-tenant leak would bookmark another
+         organization's conversation into this one's sidebar. */
       'chat.saved.save',
       'chat.saved.unsave',
-      /* Takes a notificationId, unlike listMine/markAllRead/unreadCount below —
-         `markRead` names a specific row, so a cross-tenant substitution would
-         let one org silence (mark read) another org's notification. */
-      'chat.notifications.markRead',
     ]) {
       expect(byPath.get(path), `${path} was not enrolled by the fuzz harness`).toBe('denied');
     }
+  });
+
+  it('enrols notifications.markRead and denies it (Phase 9)', async () => {
+    /* No longer under `chat.*` — Work and Docs produce notifications too
+       (migration 0027), so this moved to its own top-level router
+       (`platform/router.ts`). Still a `memberRoute`, not a `selfRoute`, so it
+       is still enrolled: it reads `platform.notifications`, which is
+       genuinely per-org, through `withOrgScope` — see `memberRoute`'s own
+       comment in `trpc/builder.ts` for why no single `Permission` gates it.
+       Takes a `notificationId`, unlike listMine/markAllRead/unreadCount
+       below — `markRead` names a specific row, so a cross-tenant
+       substitution would let one org silence (mark read) another org's
+       notification. */
+    const results = await runTenancyFuzz({
+      router: appRouter,
+      attacker: seeded.attacker,
+      victim: seeded.victim,
+      callerFor: (context) => callerFor(context, appRouter),
+    });
+
+    const byPath = new Map(results.map((result) => [result.path, result.outcome]));
+    expect(byPath.get('notifications.markRead')).toBe('denied');
   });
 
   it('enrols the Docs mutations and denies every one of them', async () => {
@@ -474,12 +492,6 @@ describe('the application router', () => {
          still see, across every channel, re-checked per channel inside the
          service rather than by an id this technique could substitute. */
       'chat.messages.allPins',
-      /* Three more that read the CALLER's own rows and take no id — the scope is
-         entirely the principal's, so there is nothing for this technique to
-         substitute. Covered by the RLS tests and by their own suites. */
-      'chat.notifications.listMine',
-      'chat.notifications.markAllRead',
-      'chat.notifications.unreadCount',
       'chat.saved.list',
       /* Same shape as `chat.channels.list` above — every space in the
          CALLER's org, filtered by RLS alone. There is no id to substitute;
@@ -487,6 +499,16 @@ describe('the application router', () => {
          spaces and succeeds, which this technique cannot distinguish from a
          leak. The RLS tests cover cross-tenant isolation instead. */
       'docs.spaces.list',
+      /* Three that read the CALLER's own rows and take no id — the scope is
+         entirely the principal's, so there is nothing for this technique to
+         substitute. Covered by the RLS tests and by their own suites. No
+         longer under `chat.*` (Phase 9, migration 0027) — see the
+         `notifications.markRead` test above for why the move happened.
+         Sorted alongside `tenancy.*` below rather than where `chat.*` used
+         to put them: this array is asserted against `.sort()`ed output. */
+      'notifications.listMine',
+      'notifications.markAllRead',
+      'notifications.unreadCount',
       'tenancy.audit.verify',
       'tenancy.members.list',
       'tenancy.orgs.get',

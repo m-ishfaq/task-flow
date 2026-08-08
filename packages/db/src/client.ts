@@ -431,6 +431,77 @@ export function hasCollabDatabase(): boolean {
 }
 
 /* -------------------------------------------------------------------------- *
+ * The notification-sweep connection (ai/phase-9-notifications.md §3.8,
+ * Phase 9 Wave 2)
+ * -------------------------------------------------------------------------- */
+
+let sweepPool: pg.Pool | undefined;
+let sweepDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the due-reminder sweep's pool, as `taskflow_notification_sweep`.
+ *
+ * A SIXTH role, for the identical reason `taskflow_backlinks` is a fifth and
+ * `taskflow_realtime` a fourth: the scan reads `work.cards` across every
+ * tenant in one pass, and no value of `app.org_id` is correct for it. Its
+ * grant on `work.cards` is COLUMN-LEVEL — id/org_id/board_id/title/number/
+ * due_date/assignee_ids, never description or rank — plus SELECT on
+ * `notification_prefs` and SELECT/INSERT on `platform.notifications` and
+ * `notification_deliveries`. Migration 0029's own header has the detail,
+ * including why the delivery-row grant is a deliberate extension of the
+ * plan's §3.8 letter.
+ */
+export function initializeSweepDatabase(config: DbConfig): void {
+  if (sweepPool) {
+    throw new Error('Sweep database already initialized. This is a boot-time call.');
+  }
+
+  sweepPool = new Pool({
+    connectionString: config.url,
+    // Small, matching every other system role: one sweep runs per tick, and
+    // extra connections here buy nothing but ways to contend.
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-notification-sweep',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  sweepDb = drizzle(sweepPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_notification_sweep` — the role that may scan every
+ * tenant's cards for due dates and write `card.due_soon` notification rows.
+ *
+ * NOT tenant-scoped, for the identical reason `withBacklinksScope` is not:
+ * one sweep tick scans across every tenant, so no single value of
+ * `app.org_id` is correct for it. What contains it is the role —
+ * `NOBYPASSRLS`, reaching across orgs only on the tables carrying an
+ * explicit `TO taskflow_notification_sweep` policy, and on `work.cards` only
+ * through the column-level grant migration 0029 applies.
+ */
+export async function withSweepScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!sweepDb) {
+    throw new Error(
+      'Sweep database not initialized. Call initializeSweepDatabase() during boot — ' +
+        'the due-reminder scan must not fall back to the application role, which cannot see ' +
+        'work.cards across every org and would silently scan nothing.',
+    );
+  }
+
+  return sweepDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the sweep pool has been initialized. */
+export function hasSweepDatabase(): boolean {
+  return sweepDb !== undefined;
+}
+
+/* -------------------------------------------------------------------------- *
  * The backlinks connection (ai/phase-6-docs.md §3.10, Phase 6 Wave 3)
  * -------------------------------------------------------------------------- */
 
@@ -523,6 +594,10 @@ export async function closeDatabase(): Promise<void> {
   await backlinksPool?.end();
   backlinksPool = undefined;
   backlinksDb = undefined;
+
+  await sweepPool?.end();
+  sweepPool = undefined;
+  sweepDb = undefined;
 }
 
 /** True when the pool is live and answering. Backs `/health/ready` (§14). */

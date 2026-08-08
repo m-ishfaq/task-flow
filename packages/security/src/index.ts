@@ -135,3 +135,26 @@ export {
  * regex in whatever service happened to need one.
  */
 export { isAllowedUrl, isBlockedAddress, isIpAddress, type UrlVerdict } from './outbound-url.js';
+
+/**
+ * Web Push — VAPID signing and RFC 8291 payload encryption (Phase 9 Wave 2,
+ * ai/phase-9-notifications.md §3.7).
+ *
+ * Here rather than in apps/api or behind a push library for the reason the
+ * crypto ban exists: one file per primitive, on the human-review list,
+ * instead of a hand-rolled ECDH/HKDF composition in whatever service
+ * happened to need one. See `web-push.ts`'s own header for why VAPID and the
+ * per-subscription ECDH key are deliberately different keys.
+ *
+ * Note: `encryptWithFixedInputs` and `RFC8291_VECTOR` are deliberately NOT
+ * re-exported — they exist for the RFC test vector in this package only, and
+ * the package index is the public surface.
+ */
+export {
+  generateVapidKeys,
+  vapidAuthorization,
+  encryptPushPayload,
+  isValidSubscriptionKeys,
+  type VapidKeyPair,
+  type EncryptedPushPayload,
+} from './web-push.js';

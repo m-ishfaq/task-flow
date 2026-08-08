@@ -5,7 +5,7 @@ import { newId } from '@taskflow/security';
 import { messageDeleted, messageEdited, messageSent } from './events.js';
 import { unfurlMessage } from './unfurl.service.js';
 import { channelMemberIds } from './membership.js';
-import { flattenToText, type RichTextNode } from '../work/richtext.js';
+import { flattenToText, mentionedUserIds, type RichTextNode } from '../work/richtext.js';
 import {
   enforceOnChannel,
   envelopeOf,
@@ -422,33 +422,4 @@ async function loadMessage(tx: ChatTx, messageId: MessageId): Promise<MessageRow
   const message = rows[0];
   if (!message) throw errors.notFound();
   return message;
-}
-
-/**
- * Every user id mentioned in a document, deduplicated.
- *
- * Extracted at WRITE time and carried on the event, rather than left for the
- * notification consumer to re-parse. Parsing rich text in a consumer would put
- * the mention rules in two places, and the copy deciding who gets notified would
- * be the one with no test on it.
- *
- * Read defensively even though `RichTextDocument` has already validated the
- * shape: this function's contract is only that it was handed a parsed document,
- * and `RichTextNode`'s `attrs` is deliberately loose. The same reasoning
- * `flattenToText` records for reading `attrs.label`.
- */
-function mentionedUserIds(node: RichTextNode): readonly string[] {
-  const found = new Set<string>();
-
-  const walk = (current: RichTextNode): void => {
-    if (current.type === 'mention') {
-      const userId = (current.attrs as { readonly userId?: unknown } | undefined)?.userId;
-      if (typeof userId === 'string') found.add(userId);
-    }
-    for (const child of current.content ?? []) walk(child);
-  };
-
-  walk(node);
-
-  return [...found];
 }

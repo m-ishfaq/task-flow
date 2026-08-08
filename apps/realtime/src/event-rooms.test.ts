@@ -5,6 +5,8 @@ import {
   chatBroadcastEventNames,
   roomBoardIdOf,
   roomChannelIdOf,
+  roomUserIdOf,
+  userBroadcastEventNames,
 } from './event-rooms.js';
 
 /**
@@ -191,6 +193,44 @@ describe('roomChannelIdOf', () => {
       expect(name).not.toBe('channel.created');
       expect(name).not.toBe('channel.member_added');
       expect(name).not.toBe('channel.member_removed');
+    }
+  });
+});
+
+/**
+ * The personal-room table (Phase 9, ai/phase-9-notifications.md §3.5).
+ *
+ * Same mechanism as the two above, and a third disjointness property: a
+ * personal room's membership is decided by the handshake alone, never by a
+ * `can()` call on a resource, so nothing here may also appear in either of
+ * the other two tables.
+ */
+describe('roomUserIdOf', () => {
+  const USER = '0195ff00-0000-7000-8000-0000000000u1';
+
+  it('resolves notification.created to its recipient', () => {
+    expect(roomUserIdOf('notification.created', { userId: USER })).toBe(USER);
+  });
+
+  it('returns null for an event with no personal-room mapping', () => {
+    expect(roomUserIdOf('card.moved', { boardId: USER })).toBeNull();
+  });
+
+  it('returns null when the payload lacks the key the table expects, or is not an object', () => {
+    expect(roomUserIdOf('notification.created', { notificationId: USER })).toBeNull();
+    expect(roomUserIdOf('notification.created', null)).toBeNull();
+  });
+
+  it('never overlaps the board or channel tables', () => {
+    for (const name of userBroadcastEventNames()) {
+      expect(broadcastEventNames(), name).not.toContain(name);
+      expect(chatBroadcastEventNames(), name).not.toContain(name);
+    }
+  });
+
+  it('never maps an attachment.* event', () => {
+    for (const name of userBroadcastEventNames()) {
+      expect(name.startsWith('attachment.')).toBe(false);
     }
   });
 });

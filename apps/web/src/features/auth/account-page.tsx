@@ -23,6 +23,7 @@ import { ErrorView } from '../../components/error-view.js';
 import { useToast } from '../../lib/toast-context.js';
 import { useStepUp } from './use-step-up.js';
 import { PasskeySection } from './passkey-section.js';
+import { NotificationPreferencesSection } from '../notifications/notification-prefs-section.js';
 
 /**
  * The personal account page (`ai/account-page.md`).
@@ -36,8 +37,8 @@ import { PasskeySection } from './passkey-section.js';
  *
  * Deliberately NOT §3.5's "People" surface — no org directory, no teams, no
  * session/device inventory (PLAN.md names that last one as still deferred).
- * Four sections, all personal: profile, passkeys, sign-out-everywhere, and the
- * list of organizations you belong to.
+ * Five sections, all personal: profile, notification preferences, passkeys,
+ * sign-out-everywhere, and the list of organizations you belong to.
  */
 export function AccountPage() {
   return (
@@ -50,6 +51,7 @@ export function AccountPage() {
       </div>
 
       <AccountSection />
+      <NotificationPreferencesSection />
       <PasskeySection />
       <SessionsSection />
       <OrganizationsSection />
