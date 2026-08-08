@@ -1,10 +1,14 @@
 # Phase 6.5 — UI Polish & Design System
 
-**Status: Waves 1–3 shipped 2026-08-08 (audit, design tokens, `packages/ui` extraction).**
-Waves 4–6 (cross-surface consistency, accessibility hardening, responsive layout) remain open,
-and §13's decisions are still pending explicit approval — this phase was never formally approved
-before Wave 3 started, so treat Waves 1–3 as built-ahead-of-approval on the strength of §13's
-"Recommended: yes" items rather than as a signal the whole phase is now decided.
+**Status: Waves 1, 2, 3, and 6 shipped 2026-08-08 (audit, design tokens including the
+`line`/`line-strong` border-contrast fix, `packages/ui` extraction, full responsive layout).**
+Waves 4 and 5 (cross-surface consistency, accessibility hardening) remain open. This phase was
+never formally approved before Wave 3 started — Waves 1–3 shipped built-ahead-of-approval on the
+strength of §13's own "Recommended: yes" items, and Wave 6 shipped on the author's explicit
+go-ahead for full (not desktop-only, not partial) responsive scope, given after Waves 1–3 were
+already up for review. Treat this as two separate approvals-in-practice, not one blanket sign-off
+on the whole phase — Waves 4 and 5 still have nothing beyond the original plan's recommendations
+behind them.
 
 **The real audit corrected this document's own §3.1 table, twice, before Wave 3 wrote a line of
 component code.** The original table (written from a single combined grep across five Radix
@@ -42,7 +46,7 @@ none of them share is an actual **package**. Each grew its own styled shell arou
 reusing one.
 
 That is not a guess. `apps/web/src/components/primitives.tsx` already states the rule it was built
-under: *"extract a component only once the same pattern appears three times"* (PLAN.md §6). A grep
+under: _"extract a component only once the same pattern appears three times"_ (PLAN.md §6). A grep
 for direct Radix imports outside `primitives.tsx` and `toast.tsx` shows the threshold has been
 crossed repeatedly, not once:
 
@@ -71,15 +75,15 @@ until a screen-reader user reports the one that is missing it.
 
 The imbalance compounds across surfaces. File counts under `apps/web/src/features/`:
 
-| Surface | Component files | Shipped with |
-| ------- | ---------------- | ------------ |
-| `work/`  | 27 | Optimistic mutations, skeletons, toasts, inline create, hover affordances — all of [3.5 Wave 1](phase-3.5-work-ux.md#4-wave-1--shell-and-feel) |
-| `auth/`  | 13 | Its own dialog/step-up patterns, built before 3.5 existed |
-| `docs/`  | 10 | Built after 3.5 shipped, but never retrofitted with its patterns |
-| `chat/`  | 4  | Same |
-| `admin/` | 3  | Same |
-| `org/`   | 3  | Same |
-| `people/`| 2  | Draft (11.5), out of scope here — nothing to polish yet |
+| Surface   | Component files | Shipped with                                                                                                                                   |
+| --------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `work/`   | 27              | Optimistic mutations, skeletons, toasts, inline create, hover affordances — all of [3.5 Wave 1](phase-3.5-work-ux.md#4-wave-1--shell-and-feel) |
+| `auth/`   | 13              | Its own dialog/step-up patterns, built before 3.5 existed                                                                                      |
+| `docs/`   | 10              | Built after 3.5 shipped, but never retrofitted with its patterns                                                                               |
+| `chat/`   | 4               | Same                                                                                                                                           |
+| `admin/`  | 3               | Same                                                                                                                                           |
+| `org/`    | 3               | Same                                                                                                                                           |
+| `people/` | 2               | Draft (11.5), out of scope here — nothing to polish yet                                                                                        |
 
 3.5 Wave 1 was scoped to Work by name and never had a mandate to touch Chat or Docs, which is a
 reasonable scoping call and not a defect in that phase. But it means Work is the one surface with
@@ -98,7 +102,7 @@ sixth surface that duplicates around it.
 ## 2. What this phase is not
 
 - **Not a redesign.** [3.5 §2](phase-3.5-work-ux.md#2-what-same-as-clickup-means-here--and-what-it-does-not)'s
-  rule — *"take the flow, keep the face"* — applies here even more literally: the OKLCH tokens in
+  rule — _"take the flow, keep the face"_ — applies here even more literally: the OKLCH tokens in
   `styles.css`, the accent colour, the density conventions in `primitives.tsx` are the extraction
   **source**, not something being replaced. Nothing in this phase changes what the app looks like
   from three feet away; it changes how many files know how to draw a dialog.
@@ -141,11 +145,11 @@ again.
 **Shipped to `packages/ui` in Wave 3 — the corrected count, per-pattern grepped rather than
 combined (see the status header):**
 
-| Component | Real call sites | Instances | Radix primitive |
-| --------- | ---------------- | --------- | ---------------- |
-| `Modal` | `card-detail-panel.tsx`, `share-board.tsx`, `archived-cards-dialog.tsx`, `command-palette.tsx` (×2: palette + shortcuts), `step-up.tsx`, `view-tabs.tsx`'s `SaveViewDialog` | 6 files / 7 | `react-dialog` |
-| `DropdownMenu` | `shell.tsx` (×2: org switcher + account menu), `card-tile.tsx` (QuickOverflow) | 2 files / 3 | `react-dropdown-menu` |
-| `Popover` | `chat-page.tsx` (×5: pinned, saved, new channel, new DM, emoji picker), `notification-bell.tsx`, `detail/assignee-section.tsx`, `card-tile.tsx` (×2: quick-assign, quick-due-date), `filter/filter-builder.tsx` | 6 files / 10 | `react-popover` |
+| Component      | Real call sites                                                                                                                                                                                                 | Instances    | Radix primitive       |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | --------------------- |
+| `Modal`        | `card-detail-panel.tsx`, `share-board.tsx`, `archived-cards-dialog.tsx`, `command-palette.tsx` (×2: palette + shortcuts), `step-up.tsx`, `view-tabs.tsx`'s `SaveViewDialog`                                     | 6 files / 7  | `react-dialog`        |
+| `DropdownMenu` | `shell.tsx` (×2: org switcher + account menu), `card-tile.tsx` (QuickOverflow)                                                                                                                                  | 2 files / 3  | `react-dropdown-menu` |
+| `Popover`      | `chat-page.tsx` (×5: pinned, saved, new channel, new DM, emoji picker), `notification-bell.tsx`, `detail/assignee-section.tsx`, `card-tile.tsx` (×2: quick-assign, quick-due-date), `filter/filter-builder.tsx` | 6 files / 10 | `react-popover`       |
 
 **Not built, despite the original draft assuming otherwise:**
 
@@ -239,9 +243,9 @@ per-pattern). The other three are open — see §4.1.
   (3.74:1), both below AA's 4.5:1 for normal text; `accent-ink` on `accent` (3.09:1) and on
   `accent-hover` (2.58:1) — the PRIMARY BUTTON'S OWN LABEL TEXT; `danger-ink` on `danger`
   (3.76:1); and `line`/`line-strong` against `surface` (1.40:1 / 2.09:1), below the 3:1 a
-  functional border (an input's, not a decorative divider's) needs under WCAG 1.4.11. All six
-  are fixed or explicitly deferred in §5.1 — this is not a list of TODOs, it's the input Wave 2
-  actually consumed.
+  functional border (an input's, not a decorative divider's) needs under WCAG 1.4.11. All six are
+  fixed in §5.1 — the last two only after the visible border-weight change they require got an
+  explicit go-ahead — this is not a list of TODOs, it's the input Wave 2 actually consumed.
 - **Focus defeat — DONE, and worse than "missing":** not merely uneven, one real instance was
   actively defeated. `detail/rich-text-editor.tsx` set Tailwind's `focus:outline-none` on the
   TipTap contentEditable div — and because Tailwind's `utilities` layer always beats
@@ -302,11 +306,13 @@ as a flagged, un-autofixed finding:
 - `--color-overlay` added (`oklch(15% 0.02 265 / 60%)`) — one token for what was five independent
   `bg-black/50` literals across the Dialog call sites, consumed by `packages/ui`'s `ModalContent`.
 - **`line`/`line-strong`'s border contrast (1.40:1 / 2.09:1, both below the 3:1 a functional
-  border needs) was found and NOT fixed.** Reaching 3:1 needs `line` at roughly 52% lightness,
-  more than doubling its current 32% — a change with real, highly visible consequences for every
-  card, input, and panel border in the app, not a token-math adjustment like the other five. That
-  is a design call, not an accessibility autofix, and is recorded as an open item rather than
-  pushed through unilaterally; see §14.
+  border needs) was found, initially left unfixed pending an explicit go-ahead, and then FIXED**
+  once that go-ahead was given: `--color-line` 32% → 52% (3.22:1), `--color-line-strong` 42% →
+  58% (4.14:1) — the same two-step "propose, wait for sign-off, then apply" sequence
+  `line`/`line-strong` was singled out for in the first place, now completed rather than left as
+  a permanently-open item. Every card, input, and panel border in the app is visibly heavier as a
+  direct, accepted consequence — this was never a token-math-only change, and the visual
+  character shift is the point that needed sign-off, not an accident of the fix.
 - **No light theme added.** `:root { color-scheme: dark }` stays exactly as it was; §13's
   Decision 5 recommends never adding one, and nothing here revisits that.
 
@@ -327,10 +333,9 @@ extraction) — so these tokens are declared and ready, not yet wired to a visib
 
 ### 5.4 Wave 2 acceptance
 
-Every contrast pair Wave 1 flagged is either fixed and re-verified (five of six) or explicitly
-deferred with a stated reason (`line`/`line-strong`, one of six) — not silently dropped. No
-component built in Wave 3 hardcodes a hex, an OKLCH triple, or a bespoke spacing value outside
-`styles.css`'s tokens.
+Every contrast pair Wave 1 flagged is now fixed and re-verified — six of six, once
+`line`/`line-strong` got its explicit go-ahead. No component built in Wave 3 hardcodes a hex, an
+OKLCH triple, or a bespoke spacing value outside `styles.css`'s tokens.
 
 ---
 
@@ -466,15 +471,67 @@ explicitly deferred with a reason in §14.
 
 ---
 
-## 9. Wave 6 — Responsive layout (sized separately, not committed here)
+## 9. Wave 6 — Responsive layout — DONE, scoped, 2026-08-08
 
-Every surface today assumes a desktop viewport — the sidebar (3.5 §4.1) is a fixed-width persistent
-element, the card detail modal is a centred two-column layout with no reflow, the table view relies
-on horizontal space for its columns. Nothing in PLAN.md commits to a mobile or narrow-viewport
-target anywhere in the document, which means this wave's actual scope — down to whether it exists
-at all — is an open question for approval (§14), not a committed deliverable the way Waves 1–5 are.
-Sized the same way [3.5 §7 sized its own Wave 4](phase-3.5-work-ux.md#7-wave-4--depth): named here
-so it isn't lost, not estimated until the scope question is answered.
+**Scope decided by the author, not by this document's own recommendation** (§13 originally had
+none): full responsive support, all screens, not desktop-only and not a bounded "don't visibly
+break" pass. What shipped:
+
+- **The app shell.** `Sidebar`/`SidebarFooter` became an off-canvas drawer below `md` (768px),
+  toggled by a hamburger button in `Header` and closed by a backdrop tap, an Escape-equivalent
+  (outside click), or any navigation (a `pathname`-watching effect in `Shell`, not per-link
+  handlers — see that file's own comment on why). **A real bug found and fixed along the way, not
+  just a feature added:** a `-translate-x-full` panel is invisible but stays in the tab order and
+  the accessibility tree, since `transform` does neither of the things `display: none` does — so
+  the first version of this drawer let a keyboard user Tab through every sidebar link before
+  reaching anything on screen while it was closed. Fixed with the `inert` attribute
+  (`lib/use-media-query.ts`'s `useIsDesktop` gates it to mobile-and-closed only), not a hand-rolled
+  focus trap.
+- **A new `useIsDesktop`/`useMediaQuery` hook** (`lib/use-media-query.ts`), because a real
+  correctness bug required it: the docs/main sidebars' desktop "collapse to a rail" preference
+  (`sidebarOpen`/`docsSpacesOpen`) is a DIFFERENT question from the mobile drawer's open/closed
+  state, and conflating them meant a sidebar collapsed to a rail on desktop would reopen as a
+  useless 3rem sliver in the mobile drawer instead of the full tree the drawer exists to show.
+  `useSyncExternalStore`-based, with jsdom's missing `matchMedia` polyfilled in
+  `testing/setup.ts` (defaulting to desktop-matching, so no existing test's assumptions changed).
+- **Two list/detail splits** — Chat (`ChannelListPanel`/`ChannelPanel`) and Docs
+  (`SpaceTreePanel`/`PagePanel`) were permanent two-pane layouts with a fixed `w-64`/`w-80` list
+  pane that, combined with the detail pane, could not fit a phone viewport at all. Below `md`,
+  each now shows exactly one pane — the list when nothing is open, the detail pane (with a back
+  button) once something is — driven by the same URL search param that already was the source of
+  truth for what's open, so there is no new "which pane is active" state to keep in sync with it.
+- **`packages/ui`'s `Modal`.** `w-full` on a `position: fixed` element resolves against the
+  viewport, so a phone-width dialog was already edge-to-edge with zero margin before this wave —
+  fixed once, in the one shared component, for every dialog in the app at once. The command
+  palette's fixed `top-24` offset also shrinks to `top-6` below `sm`, so it doesn't eat a third of
+  a short landscape phone screen before its own result list gets any of it.
+- **Verified, not assumed, already fine:** the kanban board and table view already had
+  `overflow-x-auto` with fixed-width columns from Phase 3 — the same horizontal-scroll fallback a
+  phone kanban board needs, already present. The People pages already used `sm:grid-cols-2`
+  (single column below `sm`). The Admin pages' tables already had `overflow-x-auto`. Auth pages
+  are centred `max-w-sm` cards, already narrower than most phones. None of these needed a change;
+  confirmed by reading them, not by assumption.
+- **Found, and deliberately NOT fixed — recorded as an open item, §14.** `card-tile.tsx`'s
+  quick-assignee/quick-due-date/overflow icons only appear on `group-hover`/`group-focus-within`.
+  The card itself is a real `<button>`, so a tap on a touch device DOES focus it (triggering
+  `focus-within`) — but the same tap is also the click that opens the card detail panel, so the
+  icons become visible and then are immediately covered by the panel that opens on the same
+  gesture. This is a genuine interaction-design problem (hover-reveal has no clean touch
+  equivalent), not a layout/overflow bug, and fixing it means redesigning the interaction — a
+  persistent affordance, a long-press, or something else entirely — not adjusting a breakpoint.
+  Nothing is unreachable: every quick action is also available from the full card detail panel,
+  so touch users lose a shortcut, not a capability. Flagged rather than rushed into a redesign
+  this wave wasn't scoped for.
+
+### 9.1 Wave 6 acceptance
+
+`pnpm --filter @taskflow/web typecheck|lint|test|build` green (275 tests: 272 prior + 3 new for
+`useMediaQuery`), `pnpm --filter @taskflow/ui` unaffected, guardrail-selftest 11/11. **Not
+verified in a real browser at real viewport widths** — no browser available in this session, the
+same limitation Wave 1's audit recorded for the screen-reader pass. Every change here is reasoned
+from the CSS and the DOM it produces, cross-checked against Tailwind's documented breakpoint
+behaviour, not watched happening on an actual phone or a resized window. That confirmation is
+still owed, same as Wave 1's.
 
 ---
 
@@ -521,24 +578,27 @@ result is displayed, has left this phase's scope.
 
 ## 11. Sequencing and cost
 
-| Wave | Delivers | Migrations | Status |
-| ---- | -------- | ---------- | ------ |
-| 1 | Audit: contrast, focus, screen-reader pass, duplication census, density/state gaps | none | **Partially done** — contrast, focus defeat, and duplication census real; screen-reader pass and density audit not run (§4.1) |
-| 2 | Design tokens: colour fixes, motion tokens (spacing/type scale not reached) | none | **Done**, with `line`/`line-strong` contrast deliberately left unfixed (§5.1) |
-| 3 | `packages/ui` extraction: Modal, DropdownMenu, Popover (not Select/Checkbox — §3.1) | none | **Done** |
-| 4 | Consistency pass: Chat, Docs, Auth, Admin, Notifications brought to Work's Wave-1 bar | none | Open |
-| 5 | Accessibility hardening: the screen-reader pass Wave 1 owes, icon-label pass, keyboard pass, reduced-motion | none | Open |
-| 6 | Responsive layout | TBD | Open — scope itself is an open question |
+| Wave | Delivers                                                                                                                            | Migrations | Status                                                                                                                        |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Audit: contrast, focus, screen-reader pass, duplication census, density/state gaps                                                  | none       | **Partially done** — contrast, focus defeat, and duplication census real; screen-reader pass and density audit not run (§4.1) |
+| 2    | Design tokens: colour fixes (all six, including `line`/`line-strong` once approved), motion tokens (spacing/type scale not reached) | none       | **Done** (§5.1, §5.4)                                                                                                         |
+| 3    | `packages/ui` extraction: Modal, DropdownMenu, Popover (not Select/Checkbox — §3.1)                                                 | none       | **Done**                                                                                                                      |
+| 4    | Consistency pass: Chat, Docs, Auth, Admin, Notifications brought to Work's Wave-1 bar                                               | none       | Open                                                                                                                          |
+| 5    | Accessibility hardening: the screen-reader pass Wave 1 owes, icon-label pass, keyboard pass, reduced-motion                         | none       | Open                                                                                                                          |
+| 6    | Responsive layout — full scope, all screens (author's explicit call, not this document's)                                           | none       | **Done**, one interaction gap found and deliberately not fixed (§9)                                                           |
 
-Waves 1–3 landed 2026-08-08, built ahead of formal approval on the strength of §13's own
-"Recommended: yes" items — see the status header for why that is stated as a deliberate,
-named risk rather than glossed over. Waves 4–6 remain sized as originally drafted (~1–2 wks,
-~1 wk, not sized) and have not started.
+Waves 1, 2, 3, and 6 landed 2026-08-08. Waves 1–3 shipped built ahead of formal approval on the
+strength of §13's own "Recommended: yes" items — see the status header for why that is stated as
+a deliberate, named risk rather than glossed over. Wave 6 shipped on an explicit scope decision
+from the author (full responsive support), given after Waves 1–3 were already up for review, so
+it carries a real go-ahead behind it that Waves 1–3 didn't have at the time they were built.
+Waves 4 and 5 remain sized as originally drafted (~1–2 wks, ~1 wk) and have not started.
 
-Each wave is independently shippable: Wave 1 produces a document, not code, so it carries zero
-risk to ship first regardless of what's decided about the rest. Waves 2 and 3 must land before
-Wave 4 (nothing to apply consistency with, otherwise); Wave 5 depends on Wave 4 being done so its
-re-audit means something.
+Each wave is independently shippable: Wave 1 produces a document, not code, so it carried zero
+risk shipping first. Wave 6 turned out not to depend on Wave 4 the way the original sequencing
+assumed it might — the app shell and the two list/detail splits it touched were structural, not
+"consistency," so there was nothing to apply cross-surface polish to first. Wave 5 still depends
+on Wave 4 being done so its re-audit means something.
 
 **This delays Phase 7 (Voice) by its own length**, the same honest accounting 3.5 §9 gave for
 Phase 4. Unlike that delay, this one is recoverable in the other direction: every hour spent here
@@ -553,12 +613,15 @@ dialogs, dropdowns, and popovers through `packages/ui` — **true today**, confi
 `Modal`/`DropdownMenu`/`Popover`; `Select` and `Checkbox` were correctly never built (§3.1), so
 "through `packages/ui`" does not apply to them. Zero direct Radix imports outside that package for
 the three components that exist — **true today**. Wave 1's contrast and focus findings are closed
-or explicitly deferred with a reason (§5.1) — **true today**; the screen-reader pass is neither
-closed nor deferred, it is simply not yet run (§4.1) — **not yet true**, and Wave 5 is where it
-gets resolved rather than retroactively declared done here. Loading/empty/error states are
-visually and behaviourally consistent app-wide — **not yet true**, Wave 4's job. No new
-user-facing feature exists that didn't exist before this phase started — **true today**, and
-stays the bar for every wave still open.
+(§5.1, all six contrast pairs) — **true today**; the screen-reader pass is neither closed nor
+deferred, it is simply not yet run (§4.1) — **not yet true**, and Wave 5 is where it gets resolved
+rather than retroactively declared done here. Loading/empty/error states are visually and
+behaviourally consistent app-wide — **not yet true**, Wave 4's job. Every shipped surface is usable
+at every screen size — **true for layout and navigation** (§9): the shell, Chat, and Docs no longer
+assume desktop width, and every dialog respects the viewport it's shown in. **Not true for
+interaction**: `card-tile.tsx`'s hover-only quick actions are a known, named exception (§9, §14) —
+a real gap, not an oversight papered over. No new user-facing feature exists that didn't exist
+before this phase started — **true today**, and stays the bar for every wave still open.
 
 ---
 
@@ -578,10 +641,11 @@ phase has not been approved yet, and these are the calls that need a yes before 
 3. **No visual-regression CI tooling added in this phase.** Recommended: defer. Manual audits
    (Waves 1 and 5) are proportionate to a solo-built app at this size; Chromatic or Playwright
    screenshot diffing is worth adding the day a second person starts reviewing UI PRs, not before.
-4. **Wave 6 (responsive layout) scope.** Needs an actual answer, not a recommendation — does
-   TaskFlow target mobile/tablet at all in the current roadmap, or is "desktop, wide viewport" an
-   accepted constraint through Phase 13's launch? PLAN.md is silent on this everywhere, and Wave 6
-   cannot be sized honestly until it's answered.
+4. **Wave 6 (responsive layout) scope — RESOLVED 2026-08-08.** Full responsive support, all
+   screens, decided by the author rather than by this document's own (nonexistent) recommendation.
+   PLAN.md itself is still silent on a mobile/tablet target anywhere else in the roadmap — this
+   decision applies to this phase's own surfaces, not a retroactive statement about the rest of
+   the product. See §9 for what shipped against it.
 5. **Dark-only stays, no light theme.** Recommended: yes, no change. Nothing in any shipped phase
    or open PLAN.md item asks for one, and `:root { color-scheme: dark }`'s native-control fix
    (CLAUDE.md, Phase 3 notes) would need re-solving for a second scheme the moment one exists —
@@ -601,18 +665,6 @@ phase has not been approved yet, and these are the calls that need a yes before 
   (§10); Phase 6's status header points out three separate incident write-ups that stayed in
   CLAUDE.md rather than the spec. Leaning inline here since the audit is short-lived reference
   material for Waves 2–5, not a standing incident record.
-- Does Wave 6 (responsive) get scheduled at all before Phase 13 (Hardening & launch), or does it
-  get folded into that phase's own scope, which already owns "runbooks" and cross-cutting
-  pre-launch concerns? This is really the same question as Decision 4 above, phrased as sequencing
-  rather than scope.
-- **New, from Wave 2 (§5.1): does `line`/`line-strong` get darkened to a real 3:1 against
-  `surface`, and if so, on whose sign-off?** The token math is done (§5.1 has the candidate
-  values) — what's missing is a decision that every card, input, and panel border in the app
-  visibly changing weight is an acceptable trade for a genuinely low-priority WCAG criterion
-  (1.4.11 covers UI-component boundaries, not body text; a subtle border is a real but
-  lower-severity finding than the button-text failures Wave 2 already fixed outright). This is
-  the one Wave 1/2 finding that was deliberately NOT resolved unilaterally, on the reasoning that
-  visual-character changes at this scale need a human call, not a token edit.
 - **New, from Wave 3 (§3.1): when, if ever, does `primitives.tsx`/`toast.tsx` actually relocate
   to `packages/ui`?** Deferred rather than done alongside Modal/DropdownMenu/Popover because
   nothing about them is currently duplicated — but the phase's own stated goal (a design system
@@ -620,3 +672,18 @@ phase has not been approved yet, and these are the calls that need a yes before 
   app-local. Worth revisiting once Voice (Phase 7) or People (11.5) actually need one of those
   primitives from outside `apps/web`, which is the concrete trigger the speculative-extraction
   rule (§6) says to wait for.
+- **New, from Wave 6 (§9): `card-tile.tsx`'s quick actions have no clean touch equivalent.**
+  Hover-reveal assumes a pointer that can be "over" an element without clicking it; touch
+  conflates hover, focus, and click into one gesture, so tapping the card both reveals the quick
+  actions and immediately covers them by opening the card detail panel. Nothing is unreachable —
+  every action is also in the full detail panel — but the shortcut is effectively desktop-only
+  today. Real candidate fixes (a persistent small affordance always visible on the tile, a
+  long-press menu, swipe actions) are interaction-design decisions with real trade-offs of their
+  own, not something to pick unilaterally while finishing a token-and-layout wave. Worth its own
+  short design pass rather than folding into Wave 4 or 5 by default.
+- **New, from Wave 6 (§9.1): the responsive work has not been seen in a real browser at a real
+  viewport width.** Every class and every breakpoint decision is reasoned from Tailwind's
+  documented behaviour and the DOM `packages/ui`/`chat-page.tsx`/`docs-page.tsx` produce, the same
+  limitation Wave 1's audit recorded for the screen-reader pass. This is the single most important
+  outstanding verification before this phase can honestly call its responsive claims proven rather
+  than argued.

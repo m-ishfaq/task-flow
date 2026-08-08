@@ -128,7 +128,7 @@ export function NotificationBell() {
         <button
           type="button"
           aria-label={unread > 0 ? `Notifications, ${String(unread)} unread` : 'Notifications'}
-          className="relative flex h-8 w-8 items-center justify-center rounded text-ink-muted hover:bg-surface-hover hover:text-ink"
+          className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded text-ink-muted hover:bg-surface-hover hover:text-ink"
         >
           🔔
           {unread > 0 && (

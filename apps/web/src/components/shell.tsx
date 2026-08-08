@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -13,6 +14,7 @@ import { resetCache } from '../lib/query.js';
 import { disconnectSocket } from '../lib/socket.js';
 import { disconnectChatSocket } from '../lib/chat-socket.js';
 import { useUi } from '../lib/ui-store.js';
+import { useIsDesktop } from '../lib/use-media-query.js';
 import { orgsQuery } from '../features/org/api.js';
 import { cn } from '../lib/cn.js';
 import { Avatar, Button } from './primitives.js';
@@ -59,6 +61,9 @@ export function Shell() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const status = useSession((state) => state.status);
   const orgId = useSession((state) => state.orgId);
+  const mobileNavOpen = useUi((state) => state.mobileNavOpen);
+  const closeMobileNav = useUi((state) => state.closeMobileNav);
+  const isDesktop = useIsDesktop();
 
   const bare = ANONYMOUS_PATHS.has(pathname) || status !== 'authenticated';
 
@@ -66,6 +71,17 @@ export function Shell() {
      show and every query behind it would answer NOT_A_MEMBER. It keeps the
      footer — that is where the switcher lives — and drops the tree. */
   const hasOrg = orgId !== null;
+
+  /* Closes the mobile drawer on every navigation, not on each Link's own
+     click handler. Threading `onClick={closeMobileNav}` through every link in
+     `Sidebar` (My tasks, Chat, Docs, People, every project, every board) would
+     mean a new link added there later silently forgets to close the drawer;
+     watching the URL instead makes the drawer agree with the route no matter
+     which link — or the browser back button — got you there. */
+  useEffect(() => {
+    closeMobileNav();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- closeMobileNav is a stable Zustand action
+  }, [pathname]);
 
   if (bare) {
     return (
@@ -79,7 +95,44 @@ export function Shell() {
 
   return (
     <div className="flex h-full">
-      <div className="flex flex-col">
+      {/* The drawer's backdrop, below `md` only. A click anywhere outside the
+          drawer closes it — the same "tap away to dismiss" a Radix Popover
+          gives for free, restated by hand because this isn't a Radix
+          component, it's the app's own persistent chrome. */}
+      {hasOrg && mobileNavOpen && (
+        <div
+          aria-hidden="true"
+          onClick={closeMobileNav}
+          className="fixed inset-0 z-30 bg-overlay md:hidden"
+        />
+      )}
+
+      <div
+        /* `inert` while the drawer is closed on a small screen — otherwise a
+           `-translate-x-full` panel is invisible but NOT actually removed
+           from the tab order or the accessibility tree (transform doesn't do
+           either), so Tab from the header would walk a keyboard user through
+           every sidebar link before reaching anything they can see. `inert`
+           makes the whole subtree unfocusable and unreadable to assistive
+           tech while it's off-screen, without `display: none`, which would
+           kill the slide transition outright. Never inert at `md`+, where
+           the drawer classes below don't apply and the sidebar is always the
+           ordinary, always-interactive one Phase 3.5 built. */
+        inert={hasOrg && !isDesktop && !mobileNavOpen}
+        className={cn(
+          'flex flex-col',
+          /* Below `md`: an off-canvas drawer, fixed to the viewport and
+             slid in/out with `translate-x`. At `md` and above: back to being
+             an ordinary flex child with no fixed positioning at all — the
+             desktop layout `Sidebar`'s own `open ? w-60 : w-12` already
+             handles is untouched by anything here. */
+          hasOrg &&
+            cn(
+              'fixed inset-y-0 left-0 z-40 transition-transform duration-200 md:static md:translate-x-0',
+              mobileNavOpen ? 'translate-x-0' : '-translate-x-full',
+            ),
+        )}
+      >
         {hasOrg && <Sidebar />}
         <SidebarFooter standalone={!hasOrg} />
       </div>
@@ -89,7 +142,7 @@ export function Shell() {
       {hasOrg && <CommandPalette />}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header />
+        <Header showMenuButton={hasOrg} />
         <main className="min-h-0 flex-1">
           <Outlet />
         </main>
@@ -131,14 +184,42 @@ function SidebarFooter({ standalone }: { readonly standalone: boolean }) {
  * page-specific controls becomes a second navigation bar that is wrong on every
  * page but one.
  */
-function Header() {
+function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
   const setShortcutsOpen = useUi((state) => state.setShortcutsOpen);
+  const toggleMobileNav = useUi((state) => state.toggleMobileNav);
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-4">
+      {/* Below `md`, the sidebar is an off-canvas drawer (Shell) with no
+          permanent trigger of its own — this is the only way to open it.
+          `showMenuButton` is false in the org-picker's pre-org state, where
+          Shell renders no drawer at all for this to open. */}
+      {showMenuButton && (
+        <button
+          type="button"
+          onClick={toggleMobileNav}
+          aria-label="Open navigation"
+          className="-ml-1 shrink-0 rounded p-1.5 text-ink-muted hover:bg-surface-hover hover:text-ink md:hidden"
+        >
+          <span aria-hidden="true">☰</span>
+        </button>
+      )}
+
       <Breadcrumbs />
 
-      <nav className="ml-auto flex items-center gap-1" aria-label="Settings">
+      {/* `overflow-x-auto` + `flex-nowrap` rather than letting the row wrap:
+          wrapping would grow the header past its fixed `h-12` every time the
+          viewport is too narrow for four items, which pushes `main` down by a
+          varying amount depending on what's currently in the row. Scrolling
+          keeps the header's height constant and every item still reachable —
+          the smallest phone this has been checked against is a 320px-wide
+          viewport, where these four items plus the hamburger button and a
+          short breadcrumb still fit without scrolling; scrolling is the
+          fallback for narrower or zoomed cases, not the primary path. */}
+      <nav
+        className="ml-auto flex flex-nowrap items-center gap-1 overflow-x-auto"
+        aria-label="Settings"
+      >
         {/* Mentions and direct messages. In the shell rather than on the chat
             page because its whole purpose is telling you about a conversation
             you are NOT currently looking at. */}
@@ -154,7 +235,7 @@ function Header() {
           }}
           aria-label="Keyboard shortcuts"
           title="Keyboard shortcuts (?)"
-          className="rounded px-2 py-1 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
+          className="shrink-0 rounded px-2 py-1 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
         >
           ?
         </button>
@@ -201,7 +282,16 @@ function Breadcrumbs() {
                       ? 'Organizations'
                       : 'TaskFlow';
 
-  return <h1 className="truncate text-sm font-medium text-ink">{label}</h1>;
+  /* `min-w-0` is load-bearing, not decorative: a flex item's default
+     min-width is `auto`, which means it will NOT shrink below its own content
+     size no matter how little room its siblings (the menu button, the
+     notification bell, the nav links) leave it — so `truncate`'s
+     `overflow-hidden` + `text-overflow: ellipsis` never actually engages on a
+     narrow header, and the row overflows the viewport instead of eliding the
+     label. This is the one-line fix for a bug that only shows up once the
+     header actually gets tight, which the desktop-only build before this wave
+     never exercised. */
+  return <h1 className="min-w-0 truncate text-sm font-medium text-ink">{label}</h1>;
 }
 
 function NavLink({
@@ -214,7 +304,7 @@ function NavLink({
   return (
     <Link
       to={to}
-      className="rounded px-2 py-1 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
+      className="shrink-0 rounded px-2 py-1 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
       activeProps={{ className: 'bg-surface-hover text-ink' }}
     >
       {label}

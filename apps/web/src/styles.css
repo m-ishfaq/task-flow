@@ -27,8 +27,18 @@
      eyeballed. */
   --color-ink-faint: oklch(64% 0.02 265);
 
-  --color-line: oklch(32% 0.02 265);
-  --color-line-strong: oklch(42% 0.02 265);
+  /* 32%/42% -> 52%/58%. WCAG 1.4.11 (non-text contrast) needs 3:1 for a border
+     that is the sole way to identify a functional UI component's boundary — an
+     Input's border, a card tile's edge — and 32% measured 1.40:1 against
+     --color-surface, 42% measured 2.09:1: both well under. 52% clears 3:1 at
+     3.22:1; --color-line-strong moves to 58% (4.14:1) to keep a real gap over
+     the base line rather than the two converging as both get darker. Applied
+     as part of ai/phase-6.5-ui-polish.md Wave 2, after being deliberately left
+     unfixed at first — see that file's §5.1 for why a border-weight change
+     this visible across every card/input/panel in the app needed an explicit
+     go-ahead rather than being pushed through as a same-class token edit. */
+  --color-line: oklch(52% 0.02 265);
+  --color-line-strong: oklch(58% 0.02 265);
 
   /* Both darkened from the audit's 65%/70%: white text on 65% measured
      3.09:1, below AA's 4.5:1 for the primary button label. 55% clears it

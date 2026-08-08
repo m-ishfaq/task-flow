@@ -74,8 +74,25 @@ export function ModalContent({
       <Dialog.Overlay className="fixed inset-0 bg-overlay" />
       <Dialog.Content
         className={cn(
-          'fixed left-1/2 w-full -translate-x-1/2 overflow-hidden rounded-card border border-line bg-surface-raised shadow-xl',
-          placement === 'center' ? 'top-1/2 -translate-y-1/2' : 'top-24',
+          /* `w-[calc(100vw-2rem)]`, not `w-full` — `w-full` resolves against
+             the CENTERING TRANSFORM's containing block, which for a
+             `position: fixed` element is the viewport, so a `max-w-sm`
+             dialog on a 320px phone was already full-bleed edge to edge with
+             zero margin (a phone's viewport IS 320px, so `w-full` computes to
+             exactly that). The calc reserves 1rem on each side below every
+             `max-w-*` breakpoint; above it, `max-w-*` takes over as the
+             binding constraint and the calc term stops mattering. */
+          'fixed left-1/2 w-[calc(100vw-2rem)] -translate-x-1/2 overflow-hidden rounded-card border border-line bg-surface-raised shadow-xl',
+          /* `placement="top"`'s fixed 6rem offset (`top-24`) was sized for a
+             desktop viewport with room to spare above the fold. On a short
+             phone screen in landscape that offset alone can eat a third of
+             the visible height before the command palette's own result list
+             gets any of it — `top-6` below the `sm` breakpoint (640px, so
+             this tracks viewport WIDTH as a proxy for "small device" the same
+             way every other responsive class in this file does) leaves more
+             room for results without moving the palette on any screen this
+             was previously tuned for. */
+          placement === 'center' ? 'top-1/2 -translate-y-1/2' : 'top-6 sm:top-24',
           MODAL_SIZES[size],
           className,
         )}

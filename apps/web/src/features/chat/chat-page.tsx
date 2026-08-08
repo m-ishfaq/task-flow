@@ -98,18 +98,41 @@ export function ChatPage() {
     void navigate({ to: '/chat', search: { channel: channelId } });
   };
 
+  /* Below `md`, a list and its detail can't share a phone-width screen —
+     this is the same list/detail split Mail apps use, driven entirely by
+     `search.channel` (the URL) rather than a separate "which pane is active"
+     piece of state, so there is only ever one source of truth for what's on
+     screen. At `md` and above both panes are always visible side by side,
+     unchanged from before this wave. */
   return (
     <div className="flex h-full min-h-0">
-      <ChannelListPanel orgId={orgId} selected={search ?? null} onSelect={selectChannel} />
+      <ChannelListPanel
+        orgId={orgId}
+        selected={search ?? null}
+        onSelect={selectChannel}
+        hideWhenChannelOpen={search !== undefined}
+      />
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div
+        className={cn(
+          'min-h-0 min-w-0 flex-1 flex-col md:flex',
+          search === undefined ? 'hidden md:flex' : 'flex',
+        )}
+      >
         {search === undefined ? (
           <Empty
             title="No conversation open"
             description="Pick a channel or direct message on the left, or start a new one."
           />
         ) : (
-          <ChannelPanel key={search} orgId={orgId} channelId={search} />
+          <ChannelPanel
+            key={search}
+            orgId={orgId}
+            channelId={search}
+            onBack={() => {
+              selectChannel(undefined);
+            }}
+          />
         )}
       </div>
     </div>
@@ -124,10 +147,14 @@ function ChannelListPanel({
   orgId,
   selected,
   onSelect,
+  hideWhenChannelOpen,
 }: {
   readonly orgId: string;
   readonly selected: ChannelId | null;
   readonly onSelect: (channelId: ChannelId | undefined) => void;
+  /** Below `md`, hidden once a channel is open — see `ChatPage`'s own comment
+      on why this is a list/detail split rather than two permanent panes. */
+  readonly hideWhenChannelOpen: boolean;
 }) {
   const channels = useQuery({ ...channelsQuery(orgId), enabled: orgId !== '' });
   const list = channels.data ?? [];
@@ -150,7 +177,17 @@ function ChannelListPanel({
   return (
     <aside
       aria-label="Conversations"
-      className="flex w-64 shrink-0 flex-col overflow-y-auto border-r border-line bg-surface-raised"
+      className={cn(
+        'shrink-0 flex-col overflow-y-auto border-r border-line bg-surface-raised md:flex md:w-64',
+        /* Below `md` this pane and the message pane can't both fit — `w-64`
+           alone is already most of a phone's viewport. `hidden`/`flex`
+           rather than `w-0`/`w-64`: a zero-width flex child with overflow
+           content still lays out (and can still be tabbed into) its
+           children, `hidden` actually removes it from the accessibility
+           tree and the tab order. `md:flex md:w-64` above always wins at
+           `md`+ regardless of which of these two applies below it. */
+        hideWhenChannelOpen ? 'hidden' : 'flex w-full',
+      )}
     >
       <div className="flex flex-col gap-0.5 border-b border-line px-1.5 py-1.5">
         <PinnedMessagesButton orgId={orgId} onOpenChannel={onSelect} />
@@ -724,9 +761,12 @@ function NewDirectMessagePopover({
 function ChannelPanel({
   orgId,
   channelId,
+  onBack,
 }: {
   readonly orgId: string;
   readonly channelId: ChannelId;
+  /** Below `md`, returns to the channel list — see `ChatPage`'s own comment. */
+  readonly onBack: () => void;
 }) {
   const navigate = useNavigate();
   const { presence } = useChannelRoom(orgId, channelId);
@@ -1120,6 +1160,16 @@ function ChannelPanel({
     <div className="flex min-h-0 flex-1">
       <div className="flex min-h-0 flex-1 flex-col">
         <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
+          {/* The only way back to the channel list below `md` — see
+              `ChatPage`'s comment on the list/detail split this belongs to. */}
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back to conversations"
+            className="-ml-1.5 shrink-0 rounded p-1.5 text-ink-muted hover:bg-surface-hover hover:text-ink md:hidden"
+          >
+            <span aria-hidden="true">←</span>
+          </button>
           <div className="flex min-w-0 flex-1 flex-col">
             <h2 className="min-w-0 truncate text-sm font-medium text-ink">
               {channel.data === undefined ? '…' : channelTitle(channel.data, viewerId, personOf)}
