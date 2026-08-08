@@ -268,8 +268,7 @@ export const keys = {
   /** Every directory page, whatever cursor — invalidating this refetches the whole directory. */
   directoryAll: (orgId: string) => ['org', orgId, 'people', 'directory'] as const,
   /** One member's detail with manager and direct reports (Phase 11.5). */
-  member: (orgId: string, userId: string) =>
-    ['org', orgId, 'people', 'member', userId] as const,
+  member: (orgId: string, userId: string) => ['org', orgId, 'people', 'member', userId] as const,
 } as const;
 
 /** The org id every key needs, or a placeholder that matches nothing. */

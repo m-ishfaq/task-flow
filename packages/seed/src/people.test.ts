@@ -179,7 +179,11 @@ const PLAN_INDEX = new Map(USER_IDS.map((userId, index) => [userId, index]));
 async function seedPeople(
   mix: Partial<PeopleMix> = {},
   seed = 'people-test',
-): Promise<{ harness: Harness; profiles: readonly Record<string, unknown>[]; membershipProfiles: readonly Record<string, unknown>[] }> {
+): Promise<{
+  harness: Harness;
+  profiles: readonly Record<string, unknown>[];
+  membershipProfiles: readonly Record<string, unknown>[];
+}> {
   const profile: Profile = { ...DEMO, people: { ...DEMO.people, ...mix } };
   const harness = harnessFor(profile, orgWith(), seed);
   await peopleModule.seed(harness.ctx);
@@ -231,9 +235,7 @@ describe('people.profiles — the personal profile', () => {
       harness.columnsOf('people.membership_profiles'),
       harness.rowsOf('people.membership_profiles'),
     );
-    expect(
-      membershipProfiles.filter((row) => row['user_id'] === shared?.user.id),
-    ).toHaveLength(2);
+    expect(membershipProfiles.filter((row) => row['user_id'] === shared?.user.id)).toHaveLength(2);
   });
 
   it('produces a mix of present and absent rows under the demo rates', async () => {
@@ -311,9 +313,9 @@ describe('people.profiles — the personal profile', () => {
 
     // oooActiveShare 0.5 with a fixed seed — the shapes, not the counts.
     expect(states.some((state) => state === 'active')).toBe(true);
-    expect(states.some((state) => state === 'upcoming') || states.some((state) => state === 'past')).toBe(
-      true,
-    );
+    expect(
+      states.some((state) => state === 'upcoming') || states.some((state) => state === 'past'),
+    ).toBe(true);
   });
 
   it('writes the personal profile with NO org scope — the table has none', async () => {

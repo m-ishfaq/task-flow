@@ -153,4 +153,3 @@ export const passkeyLoginFailed = defineEvent(
 );
 
 export { userRef };
-

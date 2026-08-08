@@ -107,9 +107,7 @@ export async function getDirectoryMember(
           eq(schema.membershipProfiles.userId, schema.memberships.userId),
         ),
       )
-      .where(
-        and(eq(schema.memberships.orgId, orgId), eq(schema.memberships.userId, userId)),
-      )
+      .where(and(eq(schema.memberships.orgId, orgId), eq(schema.memberships.userId, userId)))
       .limit(1);
 
     const row = rows[0];
@@ -119,9 +117,7 @@ export async function getDirectoryMember(
 
     const member = toMember(row);
     const manager =
-      member.managerUserId === null
-        ? null
-        : await resolveMember(tx, orgId, member.managerUserId);
+      member.managerUserId === null ? null : await resolveMember(tx, orgId, member.managerUserId);
     const directReports = await listDirectReports(tx, orgId, userId);
 
     return { ...member, manager, directReports };

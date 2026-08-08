@@ -42,9 +42,7 @@ export async function setReportingLine(
     const targets = await tx
       .select({ userId: schema.memberships.userId })
       .from(schema.memberships)
-      .where(
-        and(eq(schema.memberships.orgId, orgId), eq(schema.memberships.userId, input.userId)),
-      )
+      .where(and(eq(schema.memberships.orgId, orgId), eq(schema.memberships.userId, input.userId)))
       .limit(1);
     if (!targets[0]) throw errors.notFound();
 

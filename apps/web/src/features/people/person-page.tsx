@@ -6,7 +6,15 @@ import { useSession } from '../../lib/session.js';
 import { keys } from '../../lib/query.js';
 import { displayName, formatDate } from '../../lib/format.js';
 import { parseNullableInstant } from '../../lib/wire.js';
-import { Avatar, Badge, Button, Field, Input, Section, SkeletonRows } from '../../components/primitives.js';
+import {
+  Avatar,
+  Badge,
+  Button,
+  Field,
+  Input,
+  Section,
+  SkeletonRows,
+} from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { useToast } from '../../lib/toast-context.js';
 import {
@@ -69,7 +77,11 @@ export function PersonPage({ userId }: { readonly userId: string }) {
           empty="No one — top of the chart."
           people={member.manager === null ? [] : [member.manager]}
         />
-        <ChartCard title="Reports to them" empty="No direct reports yet." people={member.directReports} />
+        <ChartCard
+          title="Reports to them"
+          empty="No direct reports yet."
+          people={member.directReports}
+        />
       </section>
 
       <Section title="Job" description="Org-scoped facts about this membership.">
@@ -169,7 +181,13 @@ function OutOfOfficeSection({ member }: { readonly member: DirectoryDetail }) {
  * Admin: job facts + reporting line (Wave 2)
  * -------------------------------------------------------------------------- */
 
-function AdminSection({ member, orgId }: { readonly member: DirectoryDetail; readonly orgId: string }) {
+function AdminSection({
+  member,
+  orgId,
+}: {
+  readonly member: DirectoryDetail;
+  readonly orgId: string;
+}) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [managerId, setManagerId] = useState(member.managerUserId ?? '');

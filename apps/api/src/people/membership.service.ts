@@ -52,9 +52,7 @@ export async function updateMembershipProfile(
     const members = await tx
       .select({ userId: schema.memberships.userId })
       .from(schema.memberships)
-      .where(
-        and(eq(schema.memberships.orgId, orgId), eq(schema.memberships.userId, targetUserId)),
-      )
+      .where(and(eq(schema.memberships.orgId, orgId), eq(schema.memberships.userId, targetUserId)))
       .limit(1);
     if (!members[0]) throw errors.notFound();
 
@@ -79,7 +77,8 @@ export async function updateMembershipProfile(
     };
     const after = { ...before };
     if ('jobTitle' in patch) after.jobTitle = normalizeText(patch.jobTitle, 'jobTitle', 120);
-    if ('department' in patch) after.department = normalizeText(patch.department, 'department', 120);
+    if ('department' in patch)
+      after.department = normalizeText(patch.department, 'department', 120);
 
     const changed = FIELDS.filter((field) => (before[field] ?? null) !== (after[field] ?? null));
     if (changed.length === 0) return { changed: [] };

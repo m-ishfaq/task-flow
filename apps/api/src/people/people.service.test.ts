@@ -141,19 +141,15 @@ describe('people.profile — Wave 1 personal fields', () => {
     await scaffold('profile-set');
     const bus = new RecordingEventBus();
 
-    const { changed } = await profile.updateProfile(
-      { events: bus },
-      actor(null),
-      {
-        displayName: '  Alice Doe  ',
-        timezone: 'America/Chicago',
-        workingHoursStart: '09:00',
-        workingHoursEnd: '17:30',
-        workingDays: [1, 2, 3, 4, 5],
-        oooUntil: '2026-09-01T00:00:00.000Z',
-        oooMessage: 'On leave',
-      },
-    );
+    const { changed } = await profile.updateProfile({ events: bus }, actor(null), {
+      displayName: '  Alice Doe  ',
+      timezone: 'America/Chicago',
+      workingHoursStart: '09:00',
+      workingHoursEnd: '17:30',
+      workingDays: [1, 2, 3, 4, 5],
+      oooUntil: '2026-09-01T00:00:00.000Z',
+      oooMessage: 'On leave',
+    });
 
     expect([...changed].sort()).toEqual([
       'displayName',

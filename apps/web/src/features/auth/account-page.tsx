@@ -209,8 +209,7 @@ function WorkingHoursSection() {
       oooFrom: draft.oooFrom,
       oooUntil: draft.oooUntil,
       oooMessage: draft.oooMessage,
-    }) !==
-      JSON.stringify(saved);
+    }) !== JSON.stringify(saved);
 
   const save = useMutation({
     mutationFn: updateProfile,
@@ -261,7 +260,10 @@ function WorkingHoursSection() {
             value={value.timezone ?? ''}
             placeholder="e.g. America/Chicago"
             onChange={(event) => {
-              setDraft({ ...value, timezone: event.target.value.trim() === '' ? null : event.target.value });
+              setDraft({
+                ...value,
+                timezone: event.target.value.trim() === '' ? null : event.target.value,
+              });
             }}
           />
         </Field>

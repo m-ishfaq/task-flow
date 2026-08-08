@@ -1,4 +1,4 @@
-import { eq, schema, withGlobalScope } from '@taskflow/db';
+import { eq, schema, withUserScope } from '@taskflow/db';
 import { readNotificationPrefsTimezone } from '@taskflow/db';
 import { errors, type OrgId, type RequestId, type UserId } from '@taskflow/contracts';
 import { createEvent, type EventBus } from '@taskflow/events';
@@ -13,13 +13,22 @@ import { updateMembershipProfile } from './membership.service.js';
  *
  * Two structural choices shape everything here:
  *
- * ## `people.profiles` has no org and no RLS — so reads/writes run in
- *    `withGlobalScope`, exactly like `identity.users` (migration 0030's
- *    header explains why no RLS: every write route is self-scoped, the
- *    subject comes from the verified token, never from an argument). This is
- *    also why `profile.get`/`profile.update` are `selfRoute`s that must
- *    answer with no org selected — the account page is reachable before an
- *    org exists, the same contract `auth.me` already holds.
+ * ## `people.profiles` has no org and no RLS, same as `identity.users`
+ *    (migration 0030's header explains why: every write route is
+ *    self-scoped, the subject comes from the verified token, never from an
+ *    argument). Reads/writes run in `withUserScope(userId, ...)`, not
+ *    `withGlobalScope` — the latter is restricted by lint to the identity
+ *    module (§2.2; see `packages/config/eslint/security.js` and
+ *    `.semgrep/taskflow.yml`'s `global-scope-outside-identity` rule), and
+ *    `withUserScope` is the already-precedented tool outside it
+ *    (`apps/api/src/platform/push.ts`, `notifications.ts`): it sets
+ *    `app.user_id` and clears `app.org_id`, which is behaviourally identical
+ *    to `withGlobalScope` for two tables with no RLS policy to consult either
+ *    variable, without reaching for the escape hatch a non-identity module
+ *    should not have. This is also why `profile.get`/`profile.update` are
+ *    `selfRoute`s that must answer with no org selected — the account page is
+ *    reachable before an org exists, the same contract `auth.me` already
+ *    holds.
  *
  * ## The timezone fallback is a READ, never a write (§3.3).
  *    `people.profiles.timezone` starts null for everyone; `getProfile`
@@ -50,7 +59,7 @@ export interface ProfileView {
 
 /** The caller's own profile, merged from identity.users + people.profiles. */
 export async function getProfile(userId: UserId): Promise<ProfileView> {
-  return withGlobalScope(async (tx) => {
+  return withUserScope(userId, async (tx) => {
     const users = await tx
       .select({
         email: schema.users.email,
@@ -145,8 +154,10 @@ export interface PeopleDeps {
 /**
  * Updates the caller's own profile.
  *
- * Personal fields write `people.profiles` (org-independent, `withGlobalScope`)
- * and emit `profile.updated` with a SYSTEM_ORG envelope — the identical
+ * Personal fields write `people.profiles` (org-independent,
+ * `withUserScope(actor.userId, ...)` — see the file header on why not
+ * `withGlobalScope`) and emit `profile.updated` with a SYSTEM_ORG envelope —
+ * the identical
  * sentinel the retired `user.display_name_changed` used, because this fact is
  * true of the person in every org. `jobTitle`/`department` are membership
  * facts: they are self-service (§3.6) but org-scoped, so they require an org
@@ -161,7 +172,7 @@ export async function updateProfile(
   const normalized = normalizePatch(patch);
 
   const now = new Date();
-  const personalChanged = await withGlobalScope(async (tx) => {
+  const personalChanged = await withUserScope(actor.userId, async (tx) => {
     const rows = await tx
       .select({
         displayName: schema.profiles.displayName,

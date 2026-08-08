@@ -110,11 +110,15 @@ export function createPeopleRouter(deps: PeopleRouterDeps) {
         .input(ProfilePatchSchema)
         .output(z.object({ changed: z.array(z.string()).readonly() }).strict())
         .mutation(({ input, ctx }) =>
-          profile.updateProfile(deps, {
-            userId: ctx.principal.userId,
-            orgId: ctx.principal.org?.orgId ?? null,
-            requestId: ctx.requestId,
-          }, input),
+          profile.updateProfile(
+            deps,
+            {
+              userId: ctx.principal.userId,
+              orgId: ctx.principal.org?.orgId ?? null,
+              requestId: ctx.requestId,
+            },
+            input,
+          ),
         ),
     }),
 
@@ -173,14 +177,19 @@ export function createPeopleRouter(deps: PeopleRouterDeps) {
         )
         .output(z.object({ changed: z.array(z.string()).readonly() }).strict())
         .mutation(({ input, ctx }) =>
-          membership.updateMembershipProfile(ctx.principal.org.orgId, {
-            userId: ctx.principal.userId,
-            orgId: ctx.principal.org.orgId,
-            requestId: ctx.requestId,
-          }, input.userId, {
-            ...('jobTitle' in input ? { jobTitle: input.jobTitle } : {}),
-            ...('department' in input ? { department: input.department } : {}),
-          }),
+          membership.updateMembershipProfile(
+            ctx.principal.org.orgId,
+            {
+              userId: ctx.principal.userId,
+              orgId: ctx.principal.org.orgId,
+              requestId: ctx.requestId,
+            },
+            input.userId,
+            {
+              ...('jobTitle' in input ? { jobTitle: input.jobTitle } : {}),
+              ...('department' in input ? { department: input.department } : {}),
+            },
+          ),
         ),
     }),
 
@@ -192,15 +201,17 @@ export function createPeopleRouter(deps: PeopleRouterDeps) {
             .object({ userId: z.string().uuid(), managerUserId: z.string().uuid().nullable() })
             .strict(),
         )
-        .output(
-          z.object({ before: z.string().nullable(), after: z.string().nullable() }).strict(),
-        )
+        .output(z.object({ before: z.string().nullable(), after: z.string().nullable() }).strict())
         .mutation(({ input, ctx }) =>
-          reporting.setReportingLine(ctx.principal.org.orgId, {
-            userId: ctx.principal.userId,
-            orgId: ctx.principal.org.orgId,
-            requestId: ctx.requestId,
-          }, input),
+          reporting.setReportingLine(
+            ctx.principal.org.orgId,
+            {
+              userId: ctx.principal.userId,
+              orgId: ctx.principal.org.orgId,
+              requestId: ctx.requestId,
+            },
+            input,
+          ),
         ),
     }),
   });

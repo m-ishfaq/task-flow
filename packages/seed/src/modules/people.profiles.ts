@@ -1,8 +1,5 @@
 import { createEvent } from '@taskflow/events';
-import {
-  membershipProfileUpdated,
-  reportingLineChanged,
-} from '@taskflow/api/events/people';
+import { membershipProfileUpdated, reportingLineChanged } from '@taskflow/api/events/people';
 import { roleGrants } from '@taskflow/policy';
 import { department, jobTitle, oooMessage, type PersonName } from '../corpus.js';
 import type { SeedContext } from '../context.js';
@@ -298,14 +295,7 @@ export const peopleModule = defineSeedModule({
       await ctx.orgScope(org.id, async () => {
         await ctx.db.insert(
           'people.membership_profiles',
-          [
-            'org_id',
-            'user_id',
-            'manager_user_id',
-            'job_title',
-            'department',
-            'updated_at',
-          ],
+          ['org_id', 'user_id', 'manager_user_id', 'job_title', 'department', 'updated_at'],
           rows,
         );
       });
