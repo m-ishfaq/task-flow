@@ -310,10 +310,20 @@ export const security = [
   /* The identity module is the one consumer of withGlobalScope outside the data
      layer, and the reason it exists: registration, login, verification links and
      refresh exchange all happen before any organization is known. Everything
-     else here — raw SQL, role comparisons, Math.random — stays banned. */
+     else here — raw SQL, role comparisons, Math.random — stays banned.
+
+     Phase 11.5 adds the people module to the exemption for the IDENTICAL
+     structural reason: `people.profiles` is a non-tenant table (no org_id, no
+     RLS — migration 0030's header) whose routes must answer with no org
+     selected, the account page. `people.directory.service.ts` and the org-
+     scoped membership/reporting services use withOrgScope like any tenant
+     code; only profile.service.ts reads/writes the global table. This
+     exemption is what the guardrail-selftest's computed-config check on
+     apps/api/src/people/profile.service.ts proves stays NARROW — every other
+     ban still fires there. */
   {
-    name: 'taskflow/guardrails/exempt-identity',
-    files: ['apps/api/src/identity/**'],
+    name: 'taskflow/guardrails/exempt-global-scope-consumers',
+    files: ['apps/api/src/identity/**', 'apps/api/src/people/**'],
     rules: { 'no-restricted-syntax': restrictedSyntax('globalScope') },
   },
   {

@@ -14,6 +14,7 @@
     "./work/board": "./src/work/board.service.ts",
     "./events/chat": "./src/chat/events.ts",
     "./events/docs": "./src/docs/events.ts",
+    "./events/people": "./src/people/events.ts",
     "./chat/channel": "./src/chat/shared.ts",
     "./docs/page": "./src/docs/shared.ts",
     "./docs/page-version": "./src/docs/page-version.service.ts",

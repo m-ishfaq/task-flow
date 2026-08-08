@@ -43,6 +43,7 @@ export {
   type CardMix,
   type MessageMix,
   type PageMix,
+  type PeopleMix,
 } from './profiles.js';
 export { reset, type ResetOptions, type ResetResult } from './reset.js';
 
@@ -66,6 +67,12 @@ export {
   type SeededPageContent,
 } from './modules/docs.content.js';
 export { commentsModule, type CommentOutput } from './modules/docs.comments.js';
+export {
+  peopleModule,
+  type SeededPersonProfile,
+  type SeededMembershipProfile,
+  type PeopleOutput,
+} from './modules/people.profiles.js';
 export { suggestionsModule, type SuggestionOutput } from './modules/docs.suggestions.js';
 export { templatesModule, type TemplateOutput } from './modules/docs.templates.js';
 export { attachmentsModule } from './modules/platform.attachments.js';

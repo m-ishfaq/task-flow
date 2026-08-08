@@ -1,4 +1,4 @@
-import { format, formatDistanceToNowStrict, isToday, isTomorrow, isPast } from 'date-fns';
+import { format, formatDistanceToNowStrict, isToday, isTomorrow, isPast, isAfter } from 'date-fns';
 import { parseInstant, parseNullableInstant } from './wire.js';
 
 /**
@@ -96,4 +96,29 @@ export function initials(person: Person): string {
   const second = parts.length > 1 ? (parts[parts.length - 1]?.charAt(0) ?? '') : '';
 
   return (first + second).toUpperCase();
+}
+
+/**
+ * A person's out-of-office state, as the directory shows it.
+ *
+ * "Active" means the person is OOO RIGHT NOW: a return date exists and has
+ * not passed, and a scheduled start (if any) has begun. A future OOO is not
+ * active — the directory must not badge someone as out while they are still
+ * working (§7 decision: OOO can be planned in advance). `null` means not out.
+ *
+ * Lives here, not in the component, for the same reason `formatDueDate` does:
+ * `isAfter`/`isPast` consult the clock, and the React Compiler purity rule
+ * flags `Date.now()` called directly in a render body — the lib boundary is
+ * where the clock lives.
+ */
+export function oooStatus(oooFrom: string | null, oooUntil: string | null): boolean {
+  const until = parseNullableInstant(oooUntil);
+  if (until === null) return false;
+
+  /* Active only while the return date is still ahead. */
+  if (!isAfter(until, new Date())) return false;
+
+  /* A scheduled start that has not begun is a FUTURE OOO — not out yet. */
+  const from = parseNullableInstant(oooFrom);
+  return from === null || isPast(from);
 }

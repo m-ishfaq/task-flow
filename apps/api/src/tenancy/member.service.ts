@@ -57,13 +57,18 @@ export async function listMembers(orgId: OrgId): Promise<readonly MemberSummary[
       .select({
         userId: schema.memberships.userId,
         email: schema.users.email,
-        displayName: schema.users.displayName,
+        /* Phase 11.5 §3.2: display names now live in people.profiles, not
+           identity.users (whose column is on its way out and no longer
+           written). LEFT JOIN — a member who has never set a name has no
+           profile row, and that must read as null, not drop the member. */
+        displayName: schema.profiles.displayName,
         role: schema.memberships.role,
         status: schema.memberships.status,
         joinedAt: schema.memberships.joinedAt,
       })
       .from(schema.memberships)
       .innerJoin(schema.users, eq(schema.users.id, schema.memberships.userId))
+      .leftJoin(schema.profiles, eq(schema.profiles.userId, schema.memberships.userId))
       .orderBy(schema.memberships.joinedAt),
   );
 }

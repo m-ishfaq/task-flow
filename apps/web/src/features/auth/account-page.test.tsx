@@ -25,6 +25,7 @@ import { ToastContext } from '../../lib/toast-context.js';
    from a factory would still be in its temporal dead zone at that point. */
 const {
   meQuery,
+  profileGetQuery,
   updateProfileMutate,
   logoutEverywhereMutate,
   orgsListQuery,
@@ -36,6 +37,7 @@ const {
   guard,
 } = vi.hoisted(() => ({
   meQuery: vi.fn<() => Promise<unknown>>(),
+  profileGetQuery: vi.fn<() => Promise<unknown>>(),
   updateProfileMutate: vi.fn<(input: unknown) => Promise<unknown>>(),
   logoutEverywhereMutate: vi.fn<() => Promise<unknown>>(),
   orgsListQuery: vi.fn<() => Promise<unknown[]>>(),
@@ -51,9 +53,17 @@ vi.mock('../../lib/trpc.js', () => ({
   api: {
     auth: {
       me: { query: meQuery },
-      updateProfile: { mutate: updateProfileMutate },
       logoutEverywhere: { mutate: logoutEverywhereMutate },
       passkeys: { list: { query: passkeysListQuery } },
+    },
+    /* Phase 11.5: the display name and the working-hours section now write
+       through people.profile — the canonical record. `auth.updateProfile`
+       does not exist on the wire any more, so the mock must not either. */
+    people: {
+      profile: {
+        get: { query: profileGetQuery },
+        update: { mutate: updateProfileMutate },
+      },
     },
     tenancy: {
       orgs: { list: { query: orgsListQuery } },
@@ -102,8 +112,22 @@ const ME = {
   emailVerified: true,
 };
 
+/* The full merged view the working-hours section reads — everything unset
+   except the display name, so the section renders its defaults. */
+const PROFILE = {
+  ...ME,
+  timezone: null,
+  workingHoursStart: null,
+  workingHoursEnd: null,
+  workingDays: null,
+  oooFrom: null,
+  oooUntil: null,
+  oooMessage: null,
+};
+
 beforeEach(() => {
   meQuery.mockReset().mockResolvedValue(ME);
+  profileGetQuery.mockReset().mockResolvedValue(PROFILE);
   updateProfileMutate.mockReset();
   logoutEverywhereMutate.mockReset();
   orgsListQuery.mockReset().mockResolvedValue([]);
@@ -141,7 +165,9 @@ describe('the profile section', () => {
     const input = await screen.findByDisplayValue('Alice Doe');
     await userEvent.clear(input);
     await userEvent.type(input, 'A. Doe');
-    await userEvent.click(screen.getByRole('button', { name: /save/i }));
+    /* Exact-name match: the page now also has a "Save working hours" button
+       (Phase 11.5), and /save/i would match both. */
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => {
       expect(updateProfileMutate).toHaveBeenCalledWith({ displayName: 'A. Doe' });
@@ -155,7 +181,7 @@ describe('the profile section', () => {
 
     const input = await screen.findByDisplayValue('Alice Doe');
     await userEvent.clear(input);
-    await userEvent.click(screen.getByRole('button', { name: /save/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => {
       expect(updateProfileMutate).toHaveBeenCalledWith({ displayName: null });

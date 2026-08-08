@@ -24,6 +24,8 @@ import { VerifyEmailPage } from './features/auth/verify-email-page.js';
 import { ResetPasswordPage } from './features/auth/reset-password-page.js';
 import { ForgotPasswordPage } from './features/auth/forgot-password-page.js';
 import { AccountPage } from './features/auth/account-page.js';
+import { PeoplePage } from './features/people/people-page.js';
+import { PersonPage } from './features/people/person-page.js';
 import { OrgPickerPage } from './features/org/org-picker-page.js';
 import { ProjectsPage } from './features/work/projects-page.js';
 import { HomePage } from './features/work/home-page.js';
@@ -233,6 +235,32 @@ const boardRoute = createRoute({
  * while the channel list stays mounted, and a child route would unmount it on
  * every switch.
  */
+/**
+ * The org directory and one member's detail (Phase 11.5, ai/phase-11.5-people.md).
+ *
+ * `requireOrg` — both pages are org surfaces: the directory is `member:read`
+ * and the detail page's admin affordances are `member:manage`, neither of
+ * which means anything without a membership to scope them.
+ */
+const peopleRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/people',
+  beforeLoad: () => requireOrg('/people'),
+  component: PeoplePage,
+});
+
+const personRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/people/$userId',
+  parseParams: (params) => ({ userId: params.userId }),
+  stringifyParams: (params) => ({ userId: params.userId }),
+  beforeLoad: () => requireOrg('/people'),
+  component: function PersonRoute() {
+    const { userId } = personRoute.useParams();
+    return <PersonPage userId={userId} />;
+  },
+});
+
 const chatRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/chat',
@@ -343,6 +371,8 @@ const routeTree = rootRoute.addChildren([
   projectsRoute,
   projectSettingsRoute,
   boardRoute,
+  peopleRoute,
+  personRoute,
   chatRoute,
   docsRoute,
   publicDocsPageRoute,

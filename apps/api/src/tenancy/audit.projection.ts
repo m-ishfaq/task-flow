@@ -54,11 +54,15 @@ import {
  * nine Docs events, and to the twenty-five that test's `UNMAPPED` records.
  */
 export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>> = {
-  /* A person renaming themselves. Resolves to `member` keyed on `userId`,
+  /* People (Phase 11.5). All three resolve to `member` keyed on `userId`,
      matching `member.role_changed` above: the subject of the entry is the
-     account, and "what has this account been called" is the question a reader
-     of an old entry has when a name no longer matches anyone. */
-  'user.display_name_changed': { type: 'member', key: 'userId' },
+     account, and "what has this account been called / who did they report
+     to" is the question a reader of an old entry has when a name or an org
+     chart no longer matches anyone. `profile.updated` replaces the retired
+     `user.display_name_changed` entry this block used to hold. */
+  'profile.updated': { type: 'member', key: 'userId' },
+  'membership_profile.updated': { type: 'member', key: 'userId' },
+  'reporting_line.changed': { type: 'member', key: 'userId' },
 
   'org.created': { type: 'org', key: 'orgId' },
   'org.updated': { type: 'org', key: 'orgId' },
