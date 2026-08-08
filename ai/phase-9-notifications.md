@@ -5,6 +5,13 @@
 exists today, with the genuinely open calls pulled into §7 instead of silently decided. Do not
 start Wave 1 until §7 has answers.
 
+**Revised same day, before approval.** Two decisions this draft originally left as a gap and a
+narrow default were resolved and folded in rather than left for Wave 1 to discover: PLAN.md §13
+now schedules **Phase 11.5 (People)**, so §2, §3.7, and §3.9 reference a concrete future phase
+instead of an unscheduled module; and `platform.push_subscriptions` (§3.7) is deliberately shaped
+as a device row rather than a bare endpoint/key pair, so Phase 12's device inventory reads from it
+instead of redesigning around it. §8 spells out the resulting (one-directional) relationship.
+
 Parent: [PLAN.md](../PLAN.md) §3.6 (Platform), §7 (`platform.notifications`,
 `notification_prefs`), §10.6 (Domain events), §13 (Roadmap, row 9).
 
@@ -60,20 +67,26 @@ to Work (`card.assigned`, `comment.created` mentions) and Docs (`page.comment_cr
   one arrives.
 - **Push is genuinely new — there is no `PushProvider` in PLAN.md §5's table at all.** §3.7 covers
   the gap and the recommended fill.
-- **Quiet hours cannot read a canonical user timezone, because there isn't one.** PLAN.md §3.5
-  reserves "timezones, working hours" for the People module, which does not exist yet — CLAUDE.md
-  lists People among the current-state gaps. `identity.users` has no timezone column
-  (confirmed against `packages/db/src/schema/identity.ts`). §3.9 below scopes quiet hours to a
-  timezone captured on the preference row itself, not a claim about the person's canonical
-  profile — so this phase does not collide with what People will later own.
+- **Quiet hours cannot read a canonical user timezone, because there isn't one yet.** PLAN.md §13
+  now schedules Phase 11.5 (People) to own "timezones, working hours" — added to the roadmap
+  alongside this draft, specifically because this phase needed the field and People did not exist
+  to own it. `identity.users` has no timezone column today (confirmed against
+  `packages/db/src/schema/identity.ts`). §3.9 below scopes quiet hours to a timezone captured on
+  the preference row itself, not a claim about the person's canonical profile — so this phase does
+  not collide with what Phase 11.5 will later own, and Phase 11.5 is free to become the source that
+  field defaults from without a migration conflict.
 - **No `apps/worker` / pg-boss.** Same accepted placeholder CLAUDE.md and `apps/api/src/tenancy/relay.ts`
   already use for the audit relay: "the relay belongs in `apps/worker`... and that app does not
   exist until [it exists]... A timer in the API is the smallest thing that makes \[this] real
   today." Digest batching and the due-reminder scan (§3.4, §3.8) extend that same timer rather
   than standing up a scheduler.
-- **No device inventory.** Phase 12 owns a device/session inventory UI; a push subscription here
-  is a narrower thing — an endpoint and a key, scoped to notification delivery, in its own table,
-  not a preview of that later surface.
+- **No device management UI, but the schema is built as its future seed.** Phase 12 still owns the
+  actual device/session inventory screen, and Phase 11.5 still owns canonical profile data — this
+  phase ships no device-list UI. But `platform.push_subscriptions` (§3.7) is deliberately shaped as
+  a per-device row (endpoint, key, a parsed user-agent label, `createdAt`, `lastSeenAt`), not a bare
+  credential blob, specifically so Phase 12's device UI can read directly from it as one of its
+  sources rather than Phase 9 inventing a throwaway shape Phase 12 has to redesign around. Confirmed
+  with PLAN.md's Phase 12 row, which now cross-references this table.
 - **No native mobile push.** The tech stack (PLAN.md §4.1) is React 19 + Vite — a web app, no
   mobile client exists. "Push" in this phase means the Web Push API (browser + service worker),
   not FCM/APNs. Native push is a Phase-12-or-later question, contingent on a mobile app existing
@@ -245,6 +258,19 @@ key generation and request signing are a cryptographic primitive, so per CLAUDE.
 signing code lives in `packages/security` (a new `web-push.ts`, one file per primitive, same as
 every other entry there) — `apps/api` calls it, never `node:crypto` or a push library directly.
 
+**`platform.push_subscriptions` is shaped as a device row, not a bare credential.** The minimum
+this phase needs is `(userId, endpoint, keys)`. It ships with three more columns anyway —
+`userAgentLabel` (parsed at registration time into something a person recognizes, e.g. "Chrome on
+macOS"), `createdAt`, `lastSeenAt` (touched on every successful push) — because PLAN.md's Phase 12
+row now names this table as one of its sources for the device/session inventory screen. Shipping
+the narrower shape now and widening it later would mean either a migration Phase 12 has to write
+before it can start, or Phase 12 building its own parallel device concept and reconciling two
+tables that describe overlapping things. The extra three columns cost nothing this phase doesn't
+already have to compute (the registration request already carries a user-agent header; `lastSeenAt`
+is one `UPDATE` alongside the existing send). This phase still ships **no UI** beyond "push
+notifications: on/off" in the preferences page (Wave 2) — a full device list with per-device revoke
+is Phase 12's screen to build, reading a table that already has what it needs.
+
 **SMS is the deliberately-unfinished half.** The channel enum in `notification_prefs` and
 `notification_deliveries` includes `sms` starting in Wave 1, so no later migration is needed to
 add it. The send path behind it is a stub that logs "would send" and writes `suppressed` with
@@ -293,15 +319,15 @@ the outbox, since it is not consuming an event.
 
 ### 3.9 Quiet hours: timezone lives on the preference row, not on `identity.users`
 
-Storing a timezone on `identity.users` now would preempt PLAN.md §3.5's People module, which is
-explicitly where "timezones, working hours" is scoped to live — and a column added here, then
-duplicated or superseded there, is exactly the kind of migration churn the expand/migrate/contract
-discipline (§7.4) exists to avoid creating in the first place.
+Storing a timezone on `identity.users` now would preempt Phase 11.5 (People), which PLAN.md §13
+now names as the owner of "timezones, working hours" — and a column added here, then duplicated or
+superseded there, is exactly the kind of migration churn the expand/migrate/contract discipline
+(§7.4) exists to avoid creating in the first place.
 
 So `notification_prefs` carries its own `timezone` (IANA name, e.g. `America/Chicago`), captured
 from the browser at the moment a user sets a quiet-hours window and defaulted to UTC if never set.
 This makes no claim to be the person's canonical profile timezone — it answers one narrower
-question, "when should this person's digest and quiet-hours logic run," and People's eventual
+question, "when should this person's digest and quiet-hours logic run," and Phase 11.5's eventual
 timezone field is free to become the _source_ this defaults from later without a schema conflict,
 exactly the kind of seam §5's provider-interface pattern is generally used for elsewhere.
 
@@ -364,8 +390,10 @@ predicate; RLS alone is not enough to keep one member from reading another's pre
 
 **Push subscription keys are a credential-adjacent value, not simple metadata.** A stolen
 subscription endpoint/key pair lets an attacker who compromises the _server_ push arbitrary
-content to a user's device — a smaller blast radius than a session token, but not nothing.
-Whether this rises to §8.4's envelope-encryption bar (currently reserved for phone numbers,
+content to a user's device — a smaller blast radius than a session token, but not nothing. This
+applies to the `endpoint`/`keys` columns specifically; `userAgentLabel`, `createdAt`, and
+`lastSeenAt` (§3.7's device-row shape) are not credentials and need no special handling. Whether
+`endpoint`/`keys` rise to §8.4's envelope-encryption bar (currently reserved for phone numbers,
 recording URLs, transcripts, and profile PII) is a call for §7, not something to default silently
 either way.
 
@@ -414,6 +442,14 @@ nothing here touches search indexing. The roadmap's own sequencing notes already
 "each add a consumer to an event bus that already carries production traffic" with no ordering
 constraint among themselves — this phase is exactly that shape, one wave earlier than its number
 might suggest is required.
+
+**The dependency with Phase 11.5 (People) runs the other direction.** Phase 9 does not wait on
+11.5 — §3.9's timezone-on-the-preference-row seam and §3.7's device-row-shaped
+`push_subscriptions` table both exist so that Phase 9 can ship now, ahead of it. What Phase 11.5
+actually inherits from this phase: a `notification_prefs.timezone` column to read as a default
+rather than invent, and a `push_subscriptions` table already shaped for Phase 12's device UI to
+read from. Neither later phase should need to migrate around what Phase 9 leaves behind — see
+PLAN.md §13's row for 11.5 and the note added to Phase 12's row.
 
 Two new roles if §7.4 is confirmed as proposed (`taskflow_notification_sweep`, and no change to
 `taskflow_audit`'s existing footprint), three new tables (`notification_deliveries`,
