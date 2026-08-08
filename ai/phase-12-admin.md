@@ -657,7 +657,10 @@ wave enforces at:
 An org suspended through this wave's console would therefore, as designed today, still be able to
 receive calls and — more importantly, given §8.5's own framing of where the money risk is — still
 have any already-queued or automation-triggered outbound telephony action fire, because nothing in
-that path ever asks whether the org is suspended.
+that path ever asks whether the org is suspended. This is not telephony-specific: §3.9 finds the
+identical shape twice more inside this wave's own scope (already-open realtime/collab sockets,
+cross-tenant notification sweeps) — "enforcement lives in `resolveOrgMembership`, which nothing
+outside a live request ever calls" is one gap with three symptoms, not three unrelated ones.
 
 **What Phase 7 needs to do about it, when it's scoped.** Treat `platform.orgSuspended` (§4) as a
 subscribed event, not an HTTP-layer concern: whatever holds the spend-cap state (§8.5) needs a
