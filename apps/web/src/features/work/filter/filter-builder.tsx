@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import * as Popover from '@radix-ui/react-popover';
+import { PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import {
   LIST_OPERATORS,
   NULLARY_OPERATORS,
@@ -75,7 +75,7 @@ export function FilterBuilder({ orgId, projectId, value, onChange }: FilterBuild
   };
 
   return (
-    <Popover.Root
+    <PopoverRoot
       open={open}
       onOpenChange={(next) => {
         /* The draft is re-seeded from the applied filter every time the panel
@@ -86,62 +86,53 @@ export function FilterBuilder({ orgId, projectId, value, onChange }: FilterBuild
         setOpen(next);
       }}
     >
-      <Popover.Trigger asChild>
+      <PopoverTrigger asChild>
         <Button size="sm" variant={value === null ? 'secondary' : 'primary'}>
           Filter
           {value !== null && (
             <span className="rounded bg-black/20 px-1 text-[10px]">{countComparisons(value)}</span>
           )}
         </Button>
-      </Popover.Trigger>
+      </PopoverTrigger>
 
-      <Popover.Portal>
-        <Popover.Content
-          align="start"
-          sideOffset={6}
-          className="w-[34rem] max-w-[95vw] rounded border border-line bg-surface-raised p-3 shadow-xl"
-        >
-          <GroupEditor
-            orgId={orgId}
-            projectId={projectId}
-            group={draft}
-            depth={0}
-            onChange={setDraft}
-          />
+      <PopoverContent align="start" sideOffset={6} className="w-[34rem] max-w-[95vw] p-3">
+        <GroupEditor
+          orgId={orgId}
+          projectId={projectId}
+          group={draft}
+          depth={0}
+          onChange={setDraft}
+        />
 
-          {!result.ok && (
-            <ul className="mt-2 space-y-0.5" role="alert">
-              {result.errors.map((error) => (
-                <li
-                  key={`${error.path.join('.')}-${error.message}`}
-                  className="text-xs text-danger"
-                >
-                  {error.message}
-                </li>
-              ))}
-            </ul>
-          )}
+        {!result.ok && (
+          <ul className="mt-2 space-y-0.5" role="alert">
+            {result.errors.map((error) => (
+              <li key={`${error.path.join('.')}-${error.message}`} className="text-xs text-danger">
+                {error.message}
+              </li>
+            ))}
+          </ul>
+        )}
 
-          <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setDraft(EMPTY);
-                onChange(null);
-                setOpen(false);
-              }}
-            >
-              Clear
-            </Button>
+        <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setDraft(EMPTY);
+              onChange(null);
+              setOpen(false);
+            }}
+          >
+            Clear
+          </Button>
 
-            <Button size="sm" variant="primary" onClick={apply} disabled={!result.ok}>
-              Apply
-            </Button>
-          </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+          <Button size="sm" variant="primary" onClick={apply} disabled={!result.ok}>
+            Apply
+          </Button>
+        </div>
+      </PopoverContent>
+    </PopoverRoot>
   );
 }
 

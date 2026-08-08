@@ -1,6 +1,12 @@
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import {
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRoot,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@taskflow/ui';
 import type { OrgId } from '@taskflow/contracts';
 import { signOut, useSession } from '../lib/session.js';
 import { resetCache } from '../lib/query.js';
@@ -258,57 +264,43 @@ function OrgSwitcher() {
   };
 
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
+    <DropdownMenuRoot>
+      <DropdownMenuTrigger asChild>
         <Button size="sm" variant="ghost" className="min-w-0 flex-1 justify-start">
           <span className="truncate">{current?.name ?? 'Select organization'}</span>
           <span aria-hidden="true" className="ml-auto">
             ▾
           </span>
         </Button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="start"
-          side="top"
-          sideOffset={4}
-          className="min-w-48 rounded border border-line bg-surface-raised p-1 shadow-lg"
-        >
-          {memberships.map((org) => (
-            <DropdownMenu.Item
-              key={org.orgId}
-              onSelect={() => {
-                switchTo(org.orgId as OrgId);
-              }}
-              className={cn(
-                'flex cursor-pointer items-center justify-between gap-3 rounded px-2 py-1.5 text-sm',
-                'text-ink outline-none data-[highlighted]:bg-surface-hover',
-              )}
-            >
-              <span>{org.name}</span>
-              <span className="text-[11px] text-ink-faint">{org.role}</span>
-            </DropdownMenu.Item>
-          ))}
-
-          {memberships.length > 0 && <DropdownMenu.Separator className="my-1 h-px bg-line" />}
-
-          {/* The unconditional way to `/orgs`. It is also the only way to CREATE
-              an org, which the switcher cannot offer and which a caller with no
-              memberships needs before anything else in the app works. */}
-          <DropdownMenu.Item
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="top" className="min-w-48">
+        {memberships.map((org) => (
+          <DropdownMenuItem
+            key={org.orgId}
             onSelect={() => {
-              void navigate({ to: '/orgs' });
+              switchTo(org.orgId as OrgId);
             }}
-            className={cn(
-              'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm',
-              'text-ink-muted outline-none data-[highlighted]:bg-surface-hover',
-            )}
           >
-            All organizations…
-          </DropdownMenu.Item>
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+            <span>{org.name}</span>
+            <span className="text-[11px] text-ink-faint">{org.role}</span>
+          </DropdownMenuItem>
+        ))}
+
+        {memberships.length > 0 && <DropdownMenuSeparator />}
+
+        {/* The unconditional way to `/orgs`. It is also the only way to CREATE
+            an org, which the switcher cannot offer and which a caller with no
+            memberships needs before anything else in the app works. */}
+        <DropdownMenuItem
+          tone="muted"
+          onSelect={() => {
+            void navigate({ to: '/orgs' });
+          }}
+        >
+          All organizations…
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenuRoot>
   );
 }
 
@@ -336,8 +328,8 @@ function AccountMenu() {
   };
 
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
+    <DropdownMenuRoot>
+      <DropdownMenuTrigger asChild>
         <button
           type="button"
           aria-label="Account"
@@ -349,46 +341,27 @@ function AccountMenu() {
               it change on every refresh. */}
           <Avatar userId={sessionId ?? 'anonymous'} label={email ?? 'Account'} />
         </button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="end"
-          side="top"
-          sideOffset={4}
-          className="min-w-44 rounded border border-line bg-surface-raised p-1 shadow-lg"
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" side="top" className="min-w-44">
+        {email !== null && (
+          <>
+            <p className="truncate px-2 py-1.5 text-xs text-ink-faint">{email}</p>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {/* `/account` — requireSession only, not requireOrg (ai/account-page.md).
+            Reachable from here specifically because it must be: the org
+            switcher above it is the one place someone can be signed in with
+            no org selected, and this is the account menu's only other item. */}
+        <DropdownMenuItem
+          onSelect={() => {
+            void navigate({ to: '/account' });
+          }}
         >
-          {email !== null && (
-            <>
-              <p className="truncate px-2 py-1.5 text-xs text-ink-faint">{email}</p>
-              <DropdownMenu.Separator className="my-1 h-px bg-line" />
-            </>
-          )}
-          {/* `/account` — requireSession only, not requireOrg (ai/account-page.md).
-              Reachable from here specifically because it must be: the org
-              switcher above it is the one place someone can be signed in with
-              no org selected, and this is the account menu's only other item. */}
-          <DropdownMenu.Item
-            onSelect={() => {
-              void navigate({ to: '/account' });
-            }}
-            className={cn(
-              'cursor-pointer rounded px-2 py-1.5 text-sm',
-              'text-ink outline-none data-[highlighted]:bg-surface-hover',
-            )}
-          >
-            Profile settings
-          </DropdownMenu.Item>
-          <DropdownMenu.Item
-            onSelect={leave}
-            className={cn(
-              'cursor-pointer rounded px-2 py-1.5 text-sm',
-              'text-ink outline-none data-[highlighted]:bg-surface-hover',
-            )}
-          >
-            Sign out
-          </DropdownMenu.Item>
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+          Profile settings
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={leave}>Sign out</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenuRoot>
   );
 }

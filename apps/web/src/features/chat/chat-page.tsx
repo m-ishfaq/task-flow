@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import * as Popover from '@radix-ui/react-popover';
+import { PopoverClose, PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import type { ChannelId, MessageId, UserId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { cn } from '../../lib/cn.js';
@@ -303,8 +303,8 @@ function PinnedMessagesButton({
   });
 
   return (
-    <Popover.Root>
-      <Popover.Trigger asChild>
+    <PopoverRoot>
+      <PopoverTrigger asChild>
         <button
           type="button"
           aria-label={
@@ -322,50 +322,44 @@ function PinnedMessagesButton({
             </span>
           )}
         </button>
-      </Popover.Trigger>
+      </PopoverTrigger>
 
-      <Popover.Portal>
-        <Popover.Content
-          align="start"
-          sideOffset={6}
-          className="z-50 w-80 overflow-hidden rounded-md border border-line bg-surface shadow-lg"
-        >
-          <header className="border-b border-line px-3 py-2">
-            <h2 className="text-sm font-medium text-ink">Pinned messages</h2>
-          </header>
+      <PopoverContent align="start" sideOffset={6} className="w-80 overflow-hidden">
+        <header className="border-b border-line px-3 py-2">
+          <h2 className="text-sm font-medium text-ink">Pinned messages</h2>
+        </header>
 
-          <div className="max-h-96 overflow-y-auto">
-            {list.length === 0 ? (
-              <div className="p-3">
-                <Empty
-                  title="Nothing pinned yet"
-                  description="Pin a message to find it here later."
+        <div className="max-h-96 overflow-y-auto">
+          {list.length === 0 ? (
+            <div className="p-3">
+              <Empty
+                title="Nothing pinned yet"
+                description="Pin a message to find it here later."
+              />
+            </div>
+          ) : (
+            <ul>
+              {list.map((row) => (
+                <PinnedMessageSidebarRow
+                  key={row.messageId}
+                  row={row}
+                  pending={unpin.isPending}
+                  onOpen={() => {
+                    onOpenChannel(row.channelId as ChannelId);
+                  }}
+                  onUnpin={() => {
+                    unpin.mutate({
+                      channelId: row.channelId as ChannelId,
+                      messageId: row.messageId as MessageId,
+                    });
+                  }}
                 />
-              </div>
-            ) : (
-              <ul>
-                {list.map((row) => (
-                  <PinnedMessageSidebarRow
-                    key={row.messageId}
-                    row={row}
-                    pending={unpin.isPending}
-                    onOpen={() => {
-                      onOpenChannel(row.channelId as ChannelId);
-                    }}
-                    onUnpin={() => {
-                      unpin.mutate({
-                        channelId: row.channelId as ChannelId,
-                        messageId: row.messageId as MessageId,
-                      });
-                    }}
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+              ))}
+            </ul>
+          )}
+        </div>
+      </PopoverContent>
+    </PopoverRoot>
   );
 }
 
@@ -442,8 +436,8 @@ function SavedMessagesButton({
   });
 
   return (
-    <Popover.Root>
-      <Popover.Trigger asChild>
+    <PopoverRoot>
+      <PopoverTrigger asChild>
         <button
           type="button"
           aria-label={list.length > 0 ? `Saved messages, ${String(list.length)}` : 'Saved messages'}
@@ -459,47 +453,41 @@ function SavedMessagesButton({
             </span>
           )}
         </button>
-      </Popover.Trigger>
+      </PopoverTrigger>
 
-      <Popover.Portal>
-        <Popover.Content
-          align="start"
-          sideOffset={6}
-          className="z-50 w-80 overflow-hidden rounded-md border border-line bg-surface shadow-lg"
-        >
-          <header className="border-b border-line px-3 py-2">
-            <h2 className="text-sm font-medium text-ink">Saved messages</h2>
-          </header>
+      <PopoverContent align="start" sideOffset={6} className="w-80 overflow-hidden">
+        <header className="border-b border-line px-3 py-2">
+          <h2 className="text-sm font-medium text-ink">Saved messages</h2>
+        </header>
 
-          <div className="max-h-96 overflow-y-auto">
-            {list.length === 0 ? (
-              <div className="p-3">
-                <Empty
-                  title="Nothing saved yet"
-                  description="Save a message from its menu to find it here later."
+        <div className="max-h-96 overflow-y-auto">
+          {list.length === 0 ? (
+            <div className="p-3">
+              <Empty
+                title="Nothing saved yet"
+                description="Save a message from its menu to find it here later."
+              />
+            </div>
+          ) : (
+            <ul>
+              {list.map((row) => (
+                <SavedMessageRow
+                  key={row.messageId}
+                  row={row}
+                  pending={unsave.isPending}
+                  onOpen={() => {
+                    onOpenChannel(row.channelId as ChannelId);
+                  }}
+                  onUnsave={() => {
+                    unsave.mutate(row.messageId as MessageId);
+                  }}
                 />
-              </div>
-            ) : (
-              <ul>
-                {list.map((row) => (
-                  <SavedMessageRow
-                    key={row.messageId}
-                    row={row}
-                    pending={unsave.isPending}
-                    onOpen={() => {
-                      onOpenChannel(row.channelId as ChannelId);
-                    }}
-                    onUnsave={() => {
-                      unsave.mutate(row.messageId as MessageId);
-                    }}
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+              ))}
+            </ul>
+          )}
+        </div>
+      </PopoverContent>
+    </PopoverRoot>
   );
 }
 
@@ -567,14 +555,14 @@ function NewChannelPopover({
   });
 
   return (
-    <Popover.Root
+    <PopoverRoot
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
         if (!next) setName('');
       }}
     >
-      <Popover.Trigger asChild>
+      <PopoverTrigger asChild>
         <button
           type="button"
           aria-label="New channel"
@@ -582,69 +570,63 @@ function NewChannelPopover({
         >
           +
         </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          align="start"
-          sideOffset={4}
-          className="w-64 space-y-2 rounded border border-line bg-surface-raised p-3 shadow-xl"
-        >
-          <Field label="Name" htmlFor="new-channel-name">
-            <FocusOnMountInput
-              id="new-channel-name"
-              value={name}
-              placeholder="e.g. general"
-              onChange={(event) => {
-                setName(event.target.value);
-              }}
-            />
-          </Field>
-
-          <div className="flex gap-1">
-            <button
-              type="button"
-              onClick={() => {
-                setType('public');
-              }}
-              className={cn(
-                'flex-1 rounded px-2 py-1 text-xs',
-                type === 'public'
-                  ? 'bg-accent text-accent-ink'
-                  : 'text-ink-muted ring-1 ring-line hover:bg-surface-hover',
-              )}
-            >
-              Public
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setType('private');
-              }}
-              className={cn(
-                'flex-1 rounded px-2 py-1 text-xs',
-                type === 'private'
-                  ? 'bg-accent text-accent-ink'
-                  : 'text-ink-muted ring-1 ring-line hover:bg-surface-hover',
-              )}
-            >
-              Private
-            </button>
-          </div>
-
-          <Button
-            size="sm"
-            variant="primary"
-            className="w-full"
-            disabled={name.trim() === '' || create.isPending}
-            onClick={() => {
-              create.mutate();
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 space-y-2 p-3">
+        <Field label="Name" htmlFor="new-channel-name">
+          <FocusOnMountInput
+            id="new-channel-name"
+            value={name}
+            placeholder="e.g. general"
+            onChange={(event) => {
+              setName(event.target.value);
             }}
+          />
+        </Field>
+
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              setType('public');
+            }}
+            className={cn(
+              'flex-1 rounded px-2 py-1 text-xs',
+              type === 'public'
+                ? 'bg-accent text-accent-ink'
+                : 'text-ink-muted ring-1 ring-line hover:bg-surface-hover',
+            )}
           >
-            Create channel
-          </Button>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+            Public
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setType('private');
+            }}
+            className={cn(
+              'flex-1 rounded px-2 py-1 text-xs',
+              type === 'private'
+                ? 'bg-accent text-accent-ink'
+                : 'text-ink-muted ring-1 ring-line hover:bg-surface-hover',
+            )}
+          >
+            Private
+          </button>
+        </div>
+
+        <Button
+          size="sm"
+          variant="primary"
+          className="w-full"
+          disabled={name.trim() === '' || create.isPending}
+          onClick={() => {
+            create.mutate();
+          }}
+        >
+          Create channel
+        </Button>
+      </PopoverContent>
+    </PopoverRoot>
   );
 }
 
@@ -682,14 +664,14 @@ function NewDirectMessagePopover({
       : candidates.filter((member) => member.email.toLowerCase().includes(needle));
 
   return (
-    <Popover.Root
+    <PopoverRoot
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
         if (!next) setQuery('');
       }}
     >
-      <Popover.Trigger asChild>
+      <PopoverTrigger asChild>
         <button
           type="button"
           aria-label="New direct message"
@@ -697,47 +679,41 @@ function NewDirectMessagePopover({
         >
           +
         </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          align="start"
-          sideOffset={4}
-          className="w-64 space-y-1.5 rounded border border-line bg-surface-raised p-2 shadow-xl"
-        >
-          <Input
-            aria-label="Search people"
-            placeholder="Search people…"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-            }}
-            className="h-7 text-xs"
-          />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 space-y-1.5 p-2">
+        <Input
+          aria-label="Search people"
+          placeholder="Search people…"
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+          }}
+          className="h-7 text-xs"
+        />
 
-          {filtered.length === 0 ? (
-            <p className="p-1 text-xs text-ink-faint">No matches.</p>
-          ) : (
-            <ul className="max-h-56 space-y-0.5 overflow-y-auto">
-              {filtered.map((member) => (
-                <li key={member.userId}>
-                  <button
-                    type="button"
-                    disabled={start.isPending}
-                    onClick={() => {
-                      start.mutate(member.userId as UserId);
-                    }}
-                    className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
-                  >
-                    <Avatar userId={member.userId} label={member.email} size="xs" />
-                    <span className="truncate">{member.email}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+        {filtered.length === 0 ? (
+          <p className="p-1 text-xs text-ink-faint">No matches.</p>
+        ) : (
+          <ul className="max-h-56 space-y-0.5 overflow-y-auto">
+            {filtered.map((member) => (
+              <li key={member.userId}>
+                <button
+                  type="button"
+                  disabled={start.isPending}
+                  onClick={() => {
+                    start.mutate(member.userId as UserId);
+                  }}
+                  className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
+                >
+                  <Avatar userId={member.userId} label={member.email} size="xs" />
+                  <span className="truncate">{member.email}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </PopoverContent>
+    </PopoverRoot>
   );
 }
 
@@ -2066,34 +2042,28 @@ function ReactionBar({
 
 function EmojiPickerButton({ onPick }: { readonly onPick: (emoji: string) => void }) {
   return (
-    <Popover.Root>
-      <Popover.Trigger asChild>
+    <PopoverRoot>
+      <PopoverTrigger asChild>
         <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]">
           React
         </Button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          side="top"
-          sideOffset={4}
-          className="flex gap-1 rounded border border-line bg-surface-raised p-1.5 text-base shadow-xl"
-        >
-          {QUICK_REACTIONS.map((emoji) => (
-            <Popover.Close asChild key={emoji}>
-              <button
-                type="button"
-                onClick={() => {
-                  onPick(emoji);
-                }}
-                className="rounded p-1 hover:bg-surface-hover"
-              >
-                {emoji}
-              </button>
-            </Popover.Close>
-          ))}
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+      </PopoverTrigger>
+      <PopoverContent side="top" className="flex gap-1 p-1.5 text-base">
+        {QUICK_REACTIONS.map((emoji) => (
+          <PopoverClose asChild key={emoji}>
+            <button
+              type="button"
+              onClick={() => {
+                onPick(emoji);
+              }}
+              className="rounded p-1 hover:bg-surface-hover"
+            >
+              {emoji}
+            </button>
+          </PopoverClose>
+        ))}
+      </PopoverContent>
+    </PopoverRoot>
   );
 }
 

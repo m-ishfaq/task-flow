@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import * as Popover from '@radix-ui/react-popover';
+import { PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import type { BoardId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { cn } from '../../lib/cn.js';
@@ -123,8 +123,8 @@ export function NotificationBell() {
   const unread = count.data?.unread ?? 0;
 
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
+    <PopoverRoot open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
         <button
           type="button"
           aria-label={unread > 0 ? `Notifications, ${String(unread)} unread` : 'Notifications'}
@@ -137,58 +137,49 @@ export function NotificationBell() {
             </span>
           )}
         </button>
-      </Popover.Trigger>
+      </PopoverTrigger>
 
-      <Popover.Portal>
-        <Popover.Content
-          align="end"
-          sideOffset={6}
-          className="z-50 w-80 overflow-hidden rounded-md border border-line bg-surface shadow-lg"
-        >
-          <header className="flex items-center justify-between border-b border-line px-3 py-2">
-            <h2 className="text-sm font-medium text-ink">Notifications</h2>
-            {unread > 0 && (
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={markAllRead.isPending}
-                onClick={() => {
-                  markAllRead.mutate();
-                }}
-              >
-                Mark all read
-              </Button>
-            )}
-          </header>
+      <PopoverContent align="end" sideOffset={6} className="w-80 overflow-hidden">
+        <header className="flex items-center justify-between border-b border-line px-3 py-2">
+          <h2 className="text-sm font-medium text-ink">Notifications</h2>
+          {unread > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={markAllRead.isPending}
+              onClick={() => {
+                markAllRead.mutate();
+              }}
+            >
+              Mark all read
+            </Button>
+          )}
+        </header>
 
-          <div className="max-h-96 overflow-y-auto">
-            {(list.data ?? []).length === 0 ? (
-              <div className="p-3">
-                <Empty
-                  title="Nothing yet"
-                  description="Mentions and direct messages show up here."
+        <div className="max-h-96 overflow-y-auto">
+          {(list.data ?? []).length === 0 ? (
+            <div className="p-3">
+              <Empty title="Nothing yet" description="Mentions and direct messages show up here." />
+            </div>
+          ) : (
+            <ul>
+              {(list.data ?? []).map((notification) => (
+                <NotificationRow
+                  key={notification.notificationId}
+                  notification={notification}
+                  actorLabel={
+                    notification.actorId === null ? null : personOf(notification.actorId).label
+                  }
+                  onOpen={() => {
+                    openNotification(notification);
+                  }}
                 />
-              </div>
-            ) : (
-              <ul>
-                {(list.data ?? []).map((notification) => (
-                  <NotificationRow
-                    key={notification.notificationId}
-                    notification={notification}
-                    actorLabel={
-                      notification.actorId === null ? null : personOf(notification.actorId).label
-                    }
-                    onOpen={() => {
-                      openNotification(notification);
-                    }}
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+              ))}
+            </ul>
+          )}
+        </div>
+      </PopoverContent>
+    </PopoverRoot>
   );
 }
 
