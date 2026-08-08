@@ -9,9 +9,11 @@
 export {
   escapeHtml,
   renderDuplicateRegistration,
+  renderNotificationEmail,
   renderPasswordReset,
   renderVerifyEmail,
   type LinkContext,
+  type NotificationLinkContext,
   type RenderedMail,
 } from './templates.js';
 

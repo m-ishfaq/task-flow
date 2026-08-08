@@ -10,6 +10,7 @@ import { buildServer } from './server.js';
 import { startAuditRelay } from './tenancy/relay.js';
 import { startRetentionSweep } from './chat/retention.scheduler.js';
 import { startBacklinksRelay } from './docs/backlinks.relay.js';
+import { createNotificationMailDelivery } from './platform/notification-mail.js';
 
 /**
  * Process entry point.
@@ -58,11 +59,19 @@ if (env.DATABASE_BACKLINKS_URL !== undefined) {
 
 const app = await buildServer({ env });
 
+/* The notification email queue (Phase 9, ai/phase-9-notifications.md §3.6) —
+   its own MailQueue instance, own connection to MAIL_HOST, separate from
+   identity's so a notification backlog never contends with a password-reset
+   email. Constructed unconditionally: it costs nothing idle, and the relay
+   below only ever calls `send` when there is something to send. */
+const notificationMail = createNotificationMailDelivery({ env });
+
 /* Moves domain events from the outbox into the hash-chained audit log. Belongs
    in apps/worker on a pg-boss schedule once that exists (Phase 4) — see the
    note in tenancy/relay.ts. */
 const relay = startAuditRelay({
   logger: createLogger({ name: 'audit-relay', level: env.LOG_LEVEL }),
+  sendNotificationEmail: notificationMail.send,
 });
 
 /* Folds new docs.page_versions rows into docs.backlinks and emits

@@ -173,15 +173,17 @@ export const attachments = platform.table(
 );
 
 /**
- * In-app notifications (migration 0022).
+ * In-app notifications (migration 0022, widened by 0027 for Phase 9).
  *
- * ## Deliberately smaller than the Phase 9 system
+ * ## No longer chat-only
  *
- * PLAN.md puts digests, per-channel preferences, and email/push delivery in a
- * later phase. This is the narrow thing chat cannot work without: a record that
- * somebody was mentioned or sent a direct message, so they can find out without
- * opening every channel. Phase 9 is expected to ADD to this table rather than
- * replace it.
+ * PLAN.md put digests, per-channel preferences, and email/push delivery in a
+ * later phase, and this table shipped deliberately narrow ahead of it: a
+ * record that somebody was mentioned or sent a direct message, so they can
+ * find out without opening every channel. Migration 0027 is Phase 9 doing the
+ * ADDING 0022's own header anticipated — Work (`card.assigned`,
+ * `card.comment_mention`) and Docs (`page.comment_mention`) kinds, on the same
+ * row shape, for the identical reasons chat needed it.
  *
  * ## One row per RECIPIENT
  *
@@ -191,12 +193,12 @@ export const attachments = platform.table(
  *
  * ## `subject_id` has no foreign key, on purpose
  *
- * A notification about a message must survive that message being deleted —
- * otherwise a retention sweep silently erases the record that somebody was
- * told something, which is the opposite of what a notification is for. The
- * `title`/`excerpt` snapshot exists for the same reason, and for a second one:
- * rendering the list must not re-read a channel the person has since been
- * removed from.
+ * A notification about a message (or a card, or a page) must survive that
+ * subject being deleted — otherwise a retention sweep or an archive silently
+ * erases the record that somebody was told something, which is the opposite
+ * of what a notification is for. The `title`/`excerpt` snapshot exists for the
+ * same reason, and for a second one: rendering the list must not re-read a
+ * channel or board the person has since been removed from.
  */
 export const notifications = platform.table(
   'notifications',
@@ -205,7 +207,12 @@ export const notifications = platform.table(
     orgId: uuid('org_id').notNull(),
     userId: uuid('user_id').notNull(),
 
-    /** 'chat.mention' | 'chat.direct' | 'chat.thread_reply' — a CHECK, not an enum. */
+    /**
+     * 'chat.mention' | 'chat.direct' | 'chat.thread_reply' | 'card.assigned' |
+     * 'card.comment_mention' | 'card.due_soon' | 'page.comment_mention' — a
+     * CHECK, not an enum (0027 widened it; a widened CHECK is one constraint
+     * swap, an enum would need its own migration ceremony per value).
+     */
     kind: text('kind').notNull(),
 
     /** Polymorphic, like `attachments`. No FK — see the note above. */
@@ -213,13 +220,22 @@ export const notifications = platform.table(
     subjectId: uuid('subject_id').notNull(),
 
     /**
-     * Where clicking this notification should navigate. No FK, for the same
-     * reason `subjectId` has none — a channel can be archived or the message
-     * retained-away without erasing the record that someone was told
-     * something. Null for a notification kind that has no single channel
-     * (none exist yet; every current kind is chat-originated).
+     * Where clicking a CHAT notification should navigate. No FK, for the same
+     * reason `subjectId` has none — a channel can be archived without erasing
+     * the record that someone was told something. Null for every non-chat
+     * kind.
      */
     channelId: uuid('channel_id'),
+
+    /**
+     * Where clicking a CARD notification should navigate (0027). The board
+     * route is `/boards/$boardId?card=$cardId` — `boardId` is a path param,
+     * not derivable from `subjectId` (the card id) alone client-side, so it
+     * is stored the same way `channelId` already is. Docs needs no equivalent
+     * column: `/docs?page=$pageId` opens a page from its id alone. Null for
+     * every non-card kind.
+     */
+    boardId: uuid('board_id'),
 
     /** A snapshot of what the recipient was entitled to see when they were told. */
     title: text('title').notNull(),
@@ -244,5 +260,54 @@ export const notifications = platform.table(
       table.userId,
       table.kind,
     ),
+  ],
+);
+
+/**
+ * Delivery tracking, one row per (notification, channel) (migration 0027,
+ * ai/phase-9-notifications.md §3.2).
+ *
+ * Separate from `notifications.readAt` on purpose: "did the recipient open
+ * the bell entry" and "did the email send" are independent facts with
+ * independent failure modes — an email can bounce after the in-app row is
+ * already correctly marked unread, and marking the bell read must never look
+ * like a resend. `status` is a state machine on one column, the same shape
+ * `attachments.status` already uses for its own pipeline; `suppressed` is its
+ * own state rather than silence, because "why didn't I get an email" needs to
+ * see that a decision was made.
+ *
+ * The in-app channel gets no row here — the `notifications` insert itself IS
+ * the in-app delivery, in the same transaction.
+ */
+export const notificationDeliveries = platform.table(
+  'notification_deliveries',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    notificationId: uuid('notification_id')
+      .notNull()
+      .references(() => notifications.id, { onDelete: 'cascade' }),
+
+    /** 'email' | 'push' | 'sms' — a CHECK, not an enum. */
+    channel: text('channel').notNull(),
+    /** 'pending' | 'sent' | 'failed' | 'suppressed' — a CHECK, not an enum. */
+    status: text('status').notNull().default('pending'),
+    /** Set only when `status = 'suppressed'`. Null otherwise. */
+    reason: text('reason'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('notification_deliveries_notification_idx').on(table.notificationId),
+    index('notification_deliveries_pending_idx')
+      .on(table.orgId, table.userId, table.channel)
+      .where(sql`status = 'pending'`),
+    uniqueIndex('notification_deliveries_once').on(table.notificationId, table.channel),
   ],
 );

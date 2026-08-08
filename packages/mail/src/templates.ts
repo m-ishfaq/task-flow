@@ -1,7 +1,8 @@
 /**
  * Transactional mail bodies (PLAN.md §8.1).
  *
- * ## Every message here carries a credential or a security notice
+ * ## Every message here carries a credential or a security notice — with one
+ * exception, added for Phase 9
  *
  * A verification link and a reset link ARE credentials — possession of the URL
  * is the whole proof. That shapes three things below:
@@ -14,6 +15,15 @@
  *      the address itself — which is the one recipient already entitled to know.
  *   3. **Links are single-use and time-boxed**, and each message says so, because
  *      a user who understands the link expires does not forward it.
+ *
+ * `renderNotificationEmail` (Phase 9, ai/phase-9-notifications.md §3.6) is
+ * the exception: a `card.assigned` or `chat.mention` email carries no secret
+ * and its link is not single-use — it is an ordinary deep link into the app,
+ * gated by the recipient's own session the same way clicking it from the
+ * in-app bell already is. Rule 1 (never interpolate unescaped) still applies
+ * in full: `title` and `excerpt` are content someone else wrote, snapshotted
+ * onto the notification row (see `platform.notifications`), and reach this
+ * template exactly as caller-controlled as an email address does.
  */
 
 export interface RenderedMail {
@@ -169,6 +179,63 @@ export function renderPasswordReset(
  * "sign in" link in an unsolicited mail is the exact shape of a phishing
  * message, and this one is triggered by a stranger.
  */
+export interface NotificationLinkContext {
+  /** Origin of the web app, from the validated env schema. Never from a request. */
+  readonly webOrigin: string;
+}
+
+/**
+ * One notification, as an email (Phase 9, ai/phase-9-notifications.md §3.6,
+ * Wave 1).
+ *
+ * `title` and `excerpt` are rendered from the SNAPSHOT already written onto
+ * `platform.notifications` at the moment the recipient was told — never
+ * re-read from the card, comment, or page — for the identical reason
+ * `notification-bell.tsx` already renders from that snapshot rather than the
+ * live subject: a subject can be archived, or the sender can lose access to
+ * it, without erasing the record that someone was notified. Both are
+ * escaped: they are content someone else wrote, not this template's own
+ * copy.
+ *
+ * `path` is an absolute in-app path (`/boards/{boardId}?card={cardId}`,
+ * `/docs?page={pageId}`, `/chat?channel={channelId}`) built by the caller —
+ * this function does not know the routing rules for three different
+ * products and should not need to.
+ */
+export function renderNotificationEmail(
+  context: NotificationLinkContext & {
+    readonly title: string;
+    readonly excerpt: string | null;
+    readonly path: string;
+  },
+): RenderedMail {
+  const origin = context.webOrigin.replace(/\/+$/, '');
+  const href = `${origin}${context.path}`;
+
+  return {
+    subject: context.title,
+    text: textDocument([
+      context.title,
+      ...(context.excerpt === null ? [] : ['', `"${context.excerpt}"`]),
+      '',
+      href,
+      '',
+      'Turn these off or change how you get them in Notification settings.',
+    ]),
+    html: htmlDocument(
+      [
+        `<p><strong>${escapeHtml(context.title)}</strong>${
+          context.excerpt === null
+            ? ''
+            : `<br><span style="color:#444">${escapeHtml(context.excerpt)}</span>`
+        }</p>`,
+        button(href, 'Open in TaskFlow'),
+        '<p style="font-size:13px;color:#666">Turn these off or change how you get them in Notification settings.</p>',
+      ].join('\n'),
+    ),
+  };
+}
+
 export function renderDuplicateRegistration(): RenderedMail {
   return {
     subject: 'Someone tried to sign up with your email address',

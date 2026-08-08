@@ -1,9 +1,11 @@
 # Phase 9 — Notifications
 
-**Status: DRAFT — for review, nothing built yet.** Written the way `phase-3.5-work-ux.md` and
-`phase-4-realtime.md` were before their own approval dates: argued from the actual code that
-exists today, with the genuinely open calls pulled into §7 instead of silently decided. Do not
-start Wave 1 until §7 has answers.
+**Status: Wave 1 core landed the same day, ahead of §7's answers being confirmed by a human.**
+Written the way `phase-3.5-work-ux.md` and `phase-4-realtime.md` were before their own approval
+dates: argued from the actual code that exists today, with the genuinely open calls pulled into
+§7 instead of silently decided. §7's items are still open — they were reasonable defaults to build
+against, not decisions a human signed off on, and are worth a real look before anything here is
+called done.
 
 **Revised same day, before approval.** Two decisions this draft originally left as a gap and a
 narrow default were resolved and folded in rather than left for Wave 1 to discover: PLAN.md §13
@@ -11,6 +13,20 @@ now schedules **Phase 11.5 (People)**, so §2, §3.7, and §3.9 reference a conc
 instead of an unscheduled module; and `platform.push_subscriptions` (§3.7) is deliberately shaped
 as a device row rather than a bare endpoint/key pair, so Phase 12's device inventory reads from it
 instead of redesigning around it. §8 spells out the resulting (one-directional) relationship.
+
+**What's actually built vs. still just designed, since this file's own prose doesn't distinguish
+them anywhere else:** migration 0027, the widened `kind`/`subject_type` usage, `identity.notification_prefs`
+(§3.3 — moved there from the `platform.notification_prefs` this draft originally specified; see
+that migration's own header for why), `notification_deliveries`, the generalized projection
+(`apps/api/src/platform/notification.projection.ts`, covering `card.assigned` and both products'
+comment-mentions alongside chat), immediate email delivery (`packages/mail`'s
+`renderNotificationEmail`), the `notifications`/`notifications.prefs.*` tRPC routes (via a new
+`memberRoute` builder — §3.5's `selfRoute`-only assumption for these turned out wrong; see
+`trpc/builder.ts`), and bell navigation to the right product's page for a card or Docs
+notification. **Not built**: the personal realtime room (§3.5), digests (§3.4), due-date reminders
+and `taskflow_notification_sweep` (§3.8), web push and `platform.push_subscriptions` (§3.7), and a
+dedicated preferences page in `apps/web` (routes exist; no UI calls them yet). All of Wave 2, in
+other words, plus one piece of Wave 1's own scope (the realtime room and the prefs UI).
 
 Parent: [PLAN.md](../PLAN.md) §3.6 (Platform), §7 (`platform.notifications`,
 `notification_prefs`), §10.6 (Domain events), §13 (Roadmap, row 9).

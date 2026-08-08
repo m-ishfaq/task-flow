@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import * as Popover from '@radix-ui/react-popover';
+import type { BoardId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
@@ -78,6 +79,23 @@ export function NotificationBell() {
   const openNotification = (notification: ChatNotification): void => {
     if (notification.readAt === null) markOneRead.mutate(notification.notificationId);
     setOpen(false);
+
+    /* Three products, three routes — `apps/api/src/platform/notification.projection.ts`'s
+       `notificationPath` builds the identical mapping server-side for email
+       links; this is the same routing table, restated for the client's own
+       navigation instead of an href. */
+    if (notification.subjectType === 'card' && notification.boardId !== null) {
+      void navigate({
+        to: '/boards/$boardId',
+        params: { boardId: notification.boardId as BoardId },
+        search: { card: notification.subjectId },
+      });
+      return;
+    }
+    if (notification.subjectType === 'page') {
+      void navigate({ to: '/docs', search: { page: notification.subjectId } });
+      return;
+    }
     if (notification.channelId !== null) {
       void navigate({ to: '/chat', search: { channel: notification.channelId } });
     }
@@ -200,7 +218,15 @@ function NotificationRow({
 
 /** A glyph per kind. Kept here rather than on the row: it is presentation. */
 function iconFor(kind: string): string {
-  if (kind === 'chat.mention') return '@';
+  if (
+    kind === 'chat.mention' ||
+    kind === 'card.comment_mention' ||
+    kind === 'page.comment_mention'
+  ) {
+    return '@';
+  }
   if (kind === 'chat.direct') return '✉️';
-  return '↩️';
+  if (kind === 'chat.thread_reply') return '↩️';
+  if (kind === 'card.assigned') return '📌';
+  return '🔔';
 }

@@ -163,7 +163,26 @@ export const pageContentUpdated = defineEvent(
 
 export const pageCommentCreated = defineEvent(
   'page.comment_created',
-  z.object({ commentId: z.string(), pageId: z.string() }).strict(),
+  z
+    .object({
+      commentId: z.string(),
+      pageId: z.string(),
+      /**
+       * Flattened text, not the JSON — the identical reasoning Work's
+       * `comment.created.excerpt` already carries (Phase 9,
+       * ai/phase-9-notifications.md §4). Absent from this event before Phase
+       * 9 because nothing needed it; a notification projection that must
+       * snapshot at write time rather than re-read the comment later does.
+       */
+      excerpt: z.string(),
+      /**
+       * Every user id `@mentioned` in the comment. Extracted at write time by
+       * `work/richtext.ts`'s `mentionedUserIds`, shared with Work's identical
+       * need rather than a second copy of the walk.
+       */
+      mentionedUserIds: z.array(z.string()).readonly(),
+    })
+    .strict(),
 );
 
 /** Not in §4's own event list, added because guardrail 11 requires it — `updateComment` mutates state and Work's identical `comment.updated` sets the precedent. */
