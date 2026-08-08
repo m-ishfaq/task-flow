@@ -112,10 +112,10 @@ status (`pending | sent | failed | suppressed`) and a reason for `suppressed` (`
 `pref_disabled`, `digest_pending`). This is the same shape `platform.attachments.status` already
 uses for its own pipeline (`pending → scanning → clean | infected | rejected`) — a state machine
 on one column, not a boolean. `suppressed` matters as its own state rather than simply "not sent":
-an admin debugging "why didn't I get an email" needs to see *that a decision was made*, not
+an admin debugging "why didn't I get an email" needs to see _that a decision was made_, not
 silence indistinguishable from a bug.
 
-The in-app channel does **not** get a row here — the `platform.notifications` insert itself *is*
+The in-app channel does **not** get a row here — the `platform.notifications` insert itself _is_
 the in-app delivery, atomically, in the same transaction the existing projection already runs.
 Giving in-app a synthetic `notification_deliveries` row would only be tracking that a write
 succeeded a moment after it succeeded.
@@ -133,7 +133,7 @@ supplies.
 
 **Absence of a row means the coded default, exactly like `FLAGS`' `defaultValue`.** Nobody needs a
 migration-time backfill inserting a row per existing user per category per channel — the
-preference *evaluator* (a `packages/feature-flags`-shaped module, not that package itself:
+preference _evaluator_ (a `packages/feature-flags`-shaped module, not that package itself:
 guardrail 7 is explicit flags gate product surface only, and a notification preference is user
 choice, not a security control or a release gate) consults a small hardcoded default table first,
 an explicit row second. Defaults for Wave 1: `direct` → email on, push on; `activity` → email off
@@ -144,7 +144,7 @@ an entire "what if every channel is off" edge case.
 ### 3.4 Digests batch delivery, never the record
 
 The `platform.notifications` row is written immediately, by the same at-least-once,
-idempotent-by-unique-index projection Phase 5 already proved. Nothing about *that* changes.
+idempotent-by-unique-index projection Phase 5 already proved. Nothing about _that_ changes.
 
 A digest is a batching of the **email channel's delivery**, not a second copy of the notification.
 Once a day (configurable per user, single daily cadence for Wave 1 — see §7), a scan collects each
@@ -166,7 +166,7 @@ shortcut around one." That is not a ban on a personal channel — it is a requir
 built. This phase is the "future change," and it satisfies the requirement rather than working
 around it:
 
-- The room is `user:{socket.data.userId}` — the *same* server-set, handshake-verified identity
+- The room is `user:{socket.data.userId}` — the _same_ server-set, handshake-verified identity
   every other handler in `apps/realtime` already reads (§3.2 of that spec). No client message ever
   names it.
 - **The gateway auto-joins every authenticated socket to its own room at connection time.** There
@@ -193,7 +193,7 @@ latency win.
 `apps/realtime` is a separate process from `apps/api` (§7.0 of the realtime spec) and cannot call
 into the running notification projection directly. The projection, after inserting a
 `platform.notifications` row inside its own transaction (still `withAuditScope`, still the
-`'notifications'` outbox consumer for the *original* event), appends one more row to
+`'notifications'` outbox consumer for the _original_ event), appends one more row to
 `platform.outbox` itself: `notification.created`, payload `{ userId, notificationId }`. This is a
 second-order event — a consumer producing an event about its own write — which has no precedent in
 this codebase yet, so it is called out explicitly rather than assumed. It is safe for the same
@@ -235,9 +235,9 @@ complete its own response.
 PLAN.md §5's Provider Interfaces table has no push row today — this is a genuine gap, not an
 oversight to route around. Proposed addition, in the same table shape as the other six:
 
-| Interface       | Free implementation                          | Paid upgrade                       | Trigger to switch        |
-| ---------------- | ---------------------------------------------- | ----------------------------------- | ------------------------- |
-| `PushProvider`   | Web Push (VAPID) — no third-party service      | Native mobile push (FCM/APNs)       | A mobile app ships        |
+| Interface      | Free implementation                       | Paid upgrade                  | Trigger to switch  |
+| -------------- | ----------------------------------------- | ----------------------------- | ------------------ |
+| `PushProvider` | Web Push (VAPID) — no third-party service | Native mobile push (FCM/APNs) | A mobile app ships |
 
 Web Push needs no paid tier at any volume this project will reach solo — it is a direct
 browser-to-service-worker protocol, not a message broker with a free quota to outgrow. VAPID
@@ -272,7 +272,7 @@ uses.
 **The one gap that index does not close on its own: an edited due date.** If a reminder already
 fired and someone then pushes the due date out and back in, the unique key still matches and no
 second reminder ever fires — silently. The fix does not touch the index; it touches what happens
-to the *existing* row. `card.updated`'s payload already carries exactly what is needed to detect
+to the _existing_ row. `card.updated`'s payload already carries exactly what is needed to detect
 this precisely (`apps/api/src/work/events.ts:158`): `changed` includes `'dueDate'`, and
 `before.dueDate !== after.dueDate`. Extending the projection to delete any existing
 `card.due_soon` row for that card when that condition is seen lets the next scan pass re-fire a
@@ -302,7 +302,7 @@ So `notification_prefs` carries its own `timezone` (IANA name, e.g. `America/Chi
 from the browser at the moment a user sets a quiet-hours window and defaulted to UTC if never set.
 This makes no claim to be the person's canonical profile timezone — it answers one narrower
 question, "when should this person's digest and quiet-hours logic run," and People's eventual
-timezone field is free to become the *source* this defaults from later without a schema conflict,
+timezone field is free to become the _source_ this defaults from later without a schema conflict,
 exactly the kind of seam §5's provider-interface pattern is generally used for elsewhere.
 
 ## 4. Event catalog
@@ -350,7 +350,7 @@ reminder, and editing its due date after that reminder produces exactly one more
 
 ## 6. Cross-cutting obligations
 
-**Guardrail 11 still applies everywhere except the one named exception.** Every *user-facing*
+**Guardrail 11 still applies everywhere except the one named exception.** Every _user-facing_
 mutation that should notify someone still emits its own typed event from `packages/events`, exactly
 as today. `notification.created` (§3.5) is a consumer producing a second-order event about its own
 write, not a service method skipping the rule — call this out in review rather than let it read as
@@ -363,7 +363,7 @@ userId predicate below, and it is not optional." Any new query against either ta
 predicate; RLS alone is not enough to keep one member from reading another's preferences.
 
 **Push subscription keys are a credential-adjacent value, not simple metadata.** A stolen
-subscription endpoint/key pair lets an attacker who compromises the *server* push arbitrary
+subscription endpoint/key pair lets an attacker who compromises the _server_ push arbitrary
 content to a user's device — a smaller blast radius than a session token, but not nothing.
 Whether this rises to §8.4's envelope-encryption bar (currently reserved for phone numbers,
 recording URLs, transcripts, and profile PII) is a call for §7, not something to default silently
@@ -387,7 +387,7 @@ decided by a human before Wave 1 starts."
 
 1. **Category grouping.** §3.3 proposes exactly two categories (`direct`, `activity`) for Wave 1.
    Confirm the split, or add a third before the preferences UI ships — adding a category later
-   means re-bucketing every existing preference row, where adding a *kind* to an existing category
+   means re-bucketing every existing preference row, where adding a _kind_ to an existing category
    does not.
 2. **Digest cadence.** §3.4 proposes daily-only for Wave 1, no hourly/weekly option. Confirm, or
    scope a cadence enum into the Wave 1 migration now rather than adding one later.
