@@ -371,9 +371,12 @@ recommendations, not decisions a human has signed off on yet.
 ## 8. Sequencing and cost
 
 Depends on Phase 1 (email verification — complete), Phase 2 (memberships, role matrix — complete),
-and `packages/feature-flags` (Phase 0B — complete). Independent of Phases 7–11; does not need to
+and `packages/feature-flags` (Phase 0B — complete). Independent of Phases 8–11; does not need to
 wait behind any of them, the same reasoning `ai/phase-11.5-people.md` §8 already applies to its own
 position in the numbered-but-unordered back half of the roadmap.
+
+**Phase 7 is the one exception, and the dependency runs one way.** This phase does not need
+anything from Phase 7. Phase 7 needs one thing from this phase — see §9.
 
 New surface, sized against Phase 12's overall 6-week estimate: one new table
 (`platform.operators`), one altered column (`identity.orgs.status` gains a `CHECK`), one new route
@@ -383,3 +386,58 @@ CLAUDE.md's human-review list. Comparable in size to Phase 4's Wave 1 (a new gat
 boundary) rather than to Phase 9 or 11.5's larger multi-wave scope — **estimate: 2–3 weeks**,
 leaving the rest of Phase 12's 6-week line (retention, DSAR, crypto-shred, TOTP, OAuth, device
 inventory, SCIM/SAML, SOC 2) as later waves of the same phase, unsized here.
+
+## 9. Interaction with Phase 7 (Voice & Messaging)
+
+Checked against PLAN.md §8.5, not assumed: that section already names toll fraud / SMS pumping as
+**"the single most expensive failure mode in the system,"** with a per-org hard spend cap as the
+runtime control. This wave doesn't touch billing or telephony at all (§2), but building it surfaced
+a real, one-directional dependency worth recording here rather than leaving for whoever scopes
+Phase 7 to rediscover.
+
+**What this wave gives Phase 7 for free.** §3.3's `ORG_SUSPENDED` enforcement lives in
+`resolveOrgMembership` — the function every authenticated, org-scoped tRPC route already calls
+before its handler runs. So the moment both phases exist, every Phase-7 route that goes through
+that ordinary path (buying a number, click-to-call, sending an SMS from the Chat inbox) is already
+refused for a suspended org, with no Phase-7-specific code required. This is the same "enforcement
+point already exists, a new phase just starts hitting it" property Phase 9 and Phase 5 both got
+from `withOrgScope`/RLS for free.
+
+**What it does not cover, and why that's a structural gap rather than an oversight to patch here.**
+Telephony's actual cost risk lives almost entirely OUTSIDE the request-authentication path this
+wave enforces at:
+
+- An **inbound** Twilio webhook (a call or SMS arriving) authenticates via `X-Twilio-Signature`
+  (§8.5), not a user session — there is no `x-taskflow-org` header, no `resolveOrgMembership` call,
+  nothing for `ORG_SUSPENDED` to intercept.
+- An **outbound** send from a queued job, a scheduled IVR step, or (once Phase 10 exists) an
+  automation action runs on a worker with no request context at all.
+- The spend-cap check itself (§8.5, "per-org hard spend caps with automatic cutoff") is exactly
+  this kind of out-of-request accounting logic.
+
+An org suspended through this wave's console would therefore, as designed today, still be able to
+receive calls and — more importantly, given §8.5's own framing of where the money risk is — still
+have any already-queued or automation-triggered outbound telephony action fire, because nothing in
+that path ever asks whether the org is suspended.
+
+**What Phase 7 needs to do about it, when it's scoped.** Treat `platform.orgSuspended` (§4) as a
+subscribed event, not an HTTP-layer concern: whatever holds the spend-cap state (§8.5) needs a
+fast, request-context-independent "is this org frozen" check consulted immediately before any
+outbound Twilio API call — the same shape as the spend cap check itself, run alongside it rather
+than instead of it, since they answer different questions ("can this org afford this" vs. "is this
+org allowed to do anything at all"). A stretch goal worth naming for whoever scopes Phase 7: also
+pause the org's Twilio **subaccount** itself (Twilio's own subaccount-suspend API) on
+`orgSuspended`, not only refuse the action on our side — a leaked or compromised org's Twilio
+credentials otherwise remain independently usable directly against Twilio, bypassing this
+application entirely, which the per-org-subaccount credential-compromise control (§8.5) already
+implies matters.
+
+**Sequencing.** This document's own position (§8) is that this wave doesn't need to wait on
+anything past Phase 2. Phase 7 is the reverse case: given §8.5 already calls toll fraud the most
+expensive failure mode in the system, shipping Phase 7 before this wave exists means shipping it
+with automatic spend-cap cutoffs but no operator-initiated kill switch for the org itself — not
+wrong, but worth being a deliberate choice rather than a gap discovered during a real incident. If
+Phase 7 is scoped first for other reasons, it should stand up its own minimal org-freeze primitive
+and treat adopting this wave's `platform.orgSuspended` event later as a straightforward swap, the
+same forward-compatible shape §5's provider-interface pattern uses elsewhere in this codebase —
+not a reason to ship Phase 7 with no equivalent control at all.
