@@ -91,6 +91,11 @@ export function testAppRouter(options: { deliver?: (m: DeliverableLink) => Promi
       passkeys,
       work: buildWorkDeps(TEST_ENV),
       platform: { vapidPublicKey: null },
+      /* No carrier in the fixture. The telephony routes still exist and answer
+         SERVICE_UNAVAILABLE — which is what the manifest assertion and the
+         tenancy fuzz harness need them to do, since both enumerate every
+         registered route. */
+      telephony: undefined,
     }),
     events,
     deps,

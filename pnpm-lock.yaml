@@ -102,6 +102,9 @@ importers:
       '@taskflow/storage':
         specifier: workspace:*
         version: link:../../packages/storage
+      '@taskflow/telephony':
+        specifier: workspace:*
+        version: link:../../packages/telephony
       '@trpc/server':
         specifier: ^11.18.0
         version: 11.18.0(typescript@5.9.3)
@@ -759,6 +762,34 @@ importers:
       '@taskflow/security':
         specifier: workspace:*
         version: link:../security
+    devDependencies:
+      '@taskflow/config':
+        specifier: workspace:*
+        version: link:../config
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.1
+      eslint:
+        specifier: ^9.17.0
+        version: 9.39.5(jiti@2.7.0)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(jsdom@30.0.1)(lightningcss@1.33.0)(tsx@4.23.1)(yaml@2.9.0)
+
+  packages/telephony:
+    dependencies:
+      '@taskflow/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@taskflow/security':
+        specifier: workspace:*
+        version: link:../security
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
     devDependencies:
       '@taskflow/config':
         specifier: workspace:*

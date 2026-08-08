@@ -1,14 +1,70 @@
 # Phase 7 — Voice & Messaging
 
-**Status: DRAFT — not yet approved.** Written to be reviewed and argued with, the same way
-`phase-5-chat.md` and `phase-6-docs.md` were before their own approvals, and for a sharper reason
-than either of them had: this is the first phase in the whole plan that spends real money and
+**Status: APPROVED 2026-08-08. Wave 1 COMPLETE; Waves 2–4 not started.** Written to be reviewed and argued with, the
+same way `phase-5-chat.md` and `phase-6-docs.md` were before their own approvals, and for a sharper
+reason than either of them had: this is the first phase in the whole plan that spends real money and
 carries real regulatory exposure (call recording consent law) on every request it serves. §3 names
 structural decisions that are expensive to unwind once a spend cap has shipped wrong or a
-consent gate has shipped absent, and §7 lists the calls that need to be made before Wave 1 starts
-rather than defaulted into. Nothing here should be built until the calls in §7 are made — §8.5's
-own words are the standard this phase is held to: "Fraud controls are built in Phase 7 from day
-one, not added after an incident."
+consent gate has shipped absent. §8.5's own words are the standard this phase is held to: "Fraud
+controls are built in Phase 7 from day one, not added after an incident."
+
+**The three §7 decisions that gate Wave 1 are made** (§7 records each one and its reasoning;
+decisions 3, 4 and 5 belong to Waves 2–3 and are deliberately still open):
+
+1. **No `apps/worker` in Wave 1.** Wave 1 ships nothing asynchronous — the gate is a synchronous
+   function called before the provider, and webhook verification is a plain Fastify route. The
+   pg-boss question is re-asked at Wave 2, where the first genuinely async action exists.
+2. **Default spend cap: 2500 cents over a rolling 30 days**, raisable Owner-only + step-up,
+   bounded by a hard platform ceiling no self-service path can exceed.
+3. **The geo allowlist is a hand-maintained, in-repo, default-DENY closed table** — the same shape
+   `verifyMagicBytes` uses, where the security property is that the table is closed and auditable
+   rather than comprehensive.
+
+**Three premises in the draft below were wrong against `main` and are corrected here rather than
+silently in the code:**
+
+- **The schema is `comms`, not `telephony`.** `0001_schemas.up.sql:19` created
+  `CREATE SCHEMA comms` — "calls, recordings, sms, spend ledger" — and granted `taskflow_app`
+  USAGE plus `ALTER DEFAULT PRIVILEGES` on it in the same migration. Every `telephony.*` table name
+  in §3.4, §3.8, §3.9 and §5 below means `comms.*`. A new `telephony` schema would need its own
+  grant chain to buy nothing.
+- **This phase is no longer the most recent work on `main`.** The draft's "no concurrent sibling"
+  claim and its citation of Phase 6 as the latest phase predate migrations **0027–0029 (Phase 9,
+  notifications)** and **0030–0031 (Phase 11.5, people)**. Wave 1's first migration is **0032**.
+  Phase 9 §3.7 also already stubs an `sms` notification channel that reports `no_provider` "until
+  Phase 7 ships a real `TelephonyProvider`" — so Wave 1's provider has a second consumer waiting,
+  which the draft could not have known.
+- **Phase 12 Wave 1 does not exist**, so §3.2's controls ship without the operator kill switch
+  PLAN.md §8.5's last row assumes. Per PLAN.md §13 and `ai/phase-12-admin.md` §9, Phase 7 therefore
+  stands up its own minimal org-freeze primitive: `identity.orgs.status` has existed since
+  migration 0004 with a `CHECK (status IN ('active','suspended','deleted'))` and **nothing has ever
+  read it**. This phase's outbound gate is its first reader (§3.3), which makes adopting Phase 12's
+  `platform.orgSuspended` event later a subscription that sets the column, not a redesign.
+
+**What Wave 1 shipped** — `packages/telephony`, `packages/security/twilio-signature.ts`, migration
+0032 (`comms.*`), `apps/api/src/telephony/`, and the `TelephonyProvider` interface in
+`packages/contracts`. Four things were learned building it that are not in the design below:
+
+1. **A `Promise`-returning method that throws SYNCHRONOUSLY is not a method that rejects.**
+   `FakeTelephonyProvider`'s guards threw before any promise existed, so
+   `provider.placeCall(...).catch(handle)` never reached `.catch` — the throw escaped at the call
+   site, past every caller written to handle a rejection, which is precisely the gate's own error
+   handling. Fixed by making every provider method `async`, and pinned as a **contract-suite
+   assertion** so a future implementation cannot reintroduce it.
+2. **`redactUrl` matched a `+` that never occurs.** Every caller builds its path with
+   `encodeURIComponent`, which renders `+14155550100` as `%2B14155550100` — so the redaction
+   pattern was correct-looking and matched nothing, and the Lookups endpoint (which puts the number
+   IN the path) would have logged a phone number on every failure. Only a test caught it.
+3. **The migrator connection is subject to FORCE RLS, so a test's own `UPDATE identity.orgs` with
+   no `app.org_id` set matches ZERO rows and reports success.** Three org-suspension tests failed
+   against a gate that was working correctly. `suspendOrg` in `spend-gate.test.ts` now asserts
+   `rowCount === 1` rather than trusting the update landed.
+4. **`scripts/check-migration-rls.mjs` correctly refused `comms.subaccount_orgs`**, the one table
+   here that has an `org_id` and must not have RLS (§3.11). Rather than bypass it, the checker
+   gained a **column-bounded** exemption: an exempt table is registered with its complete permitted
+   column set, and growing a column outside that set fires a new `rls-exempt-table-grew-a-column`
+   rule — with a fixture case proving it fires. An exemption that is only a name on a list is one
+   nobody rechecks after the table changes.
 
 Parent: [PLAN.md](../PLAN.md) §3.4 (Voice & Messaging), §5 (Provider Interfaces —
 `TelephonyProvider`), §8.5 (Telephony security), §9 (Real-Time Architecture), §10.6 (Domain
@@ -371,24 +427,41 @@ fields** — phone numbers, recording URLs, transcript text, and the Twilio auth
 need to never reach a log line unredacted, the identical obligation `security-checklist.md`'s
 data-exposure section already states for any new sensitive field.
 
-## 7. Open decisions — need a call before Wave 1 starts
+## 7. Decisions
 
-1. **Is this finally the phase `apps/worker`/pg-boss gets built for real, or does outbound
-   call/SMS placement go through yet another timer-in-`apps/api` placeholder?** Three phases
-   (Realtime, Chat, Docs) have each deferred `apps/worker` in turn, always because the thing
-   needing it could tolerate a timer. Placing a call cannot: Twilio's API is a network call with
-   real latency, and blocking a tRPC mutation's response on it is a materially worse UX than
-   enqueueing and returning immediately, the identical "enqueue participates in the same
-   transaction as the mutation" argument PLAN.md §4 already makes for pg-boss generally. Leaning
-   toward: yes, this is the phase — but it is a real scope addition (a new deployable, `apps/worker`
-   in CLAUDE.md's layout going from "arriving" to real) that deserves an explicit sign-off given
-   PLAN.md §15's "component sprawl = attack surface" line, the same weighing `phase-6-docs.md` §7.6
-   did before standing up `apps/collab`.
-2. **What is the default per-org spend cap, and who can raise it?** §3.3 names the mechanism;
-   PLAN.md does not name a number. Needs a concrete default (a fixed dollar amount? scaled to org
-   size or plan tier?) and a decision on whether raising it needs Owner-only + step-up (matching
-   `phoneNumber:purchase`'s existing tier) or is itself a support-ticket-gated action outside this
-   phase's self-service surface entirely.
+### Resolved before Wave 1 (2026-08-08)
+
+**7.1 — `apps/worker`/pg-boss is NOT built in Wave 1. RESOLVED: defer, and re-ask at Wave 2.**
+The original framing ("is this finally the phase?") conflated two things. Placing a call is
+genuinely async and does want a queue — but **nothing in Wave 1 places a call.** Wave 1 is a
+synchronous gate function called before the provider (§3.3, and "checked BEFORE the provider call"
+is the whole point of it), a webhook signature verifier that runs inside one HTTP request, and
+subaccount provisioning that happens once per org on a path a human is already waiting on. A new
+deployable exercised by none of that is PLAN.md §15's "component sprawl = attack surface" paid for
+up front against a Wave 2 benefit. The question is re-asked at Wave 2 with a real caller to design
+against — the identical "an interface designed without a consumer is a guess" reasoning
+`providers/index.ts` already applies to `TelephonyProvider` itself.
+
+**7.2 — Default per-org spend cap: 2500 cents (rolling 30 days). Raised Owner-only + step-up,
+under a hard platform ceiling.** PLAN.md §14 budgets Phase 7 at **~$2/month**, so a $25 cap is
+roughly 12× expected spend: high enough that a legitimate live demo never trips it, low enough that
+an SMS-pumping burst hits the wall in minutes rather than after a four-figure bill. Raising it
+matches `phoneNumber:purchase`'s existing Owner-only tier plus step-up re-auth, and is itself
+bounded — `TELEPHONY_MAX_SPEND_CAP_CENTS` is an environment ceiling, so no self-service path can
+raise an org's cap arbitrarily even with an Owner credential. Rolling 30 days rather than calendar
+month, because a calendar reset hands an attacker a guaranteed fresh budget on a known date.
+
+**7.6 — The geo allowlist is a hand-maintained, in-repo, default-DENY table.** `packages/telephony`
+owns an explicit list of allowed E.164 country codes; everything absent from it is refused. This is
+deliberately the same shape as `verifyMagicBytes`' closed table, and for the same reason: the
+security property is that the list is **closed and reviewable in a diff**, not that it is
+exhaustive. An external high-risk dataset is more current, but it puts a network fetch inside a
+control that must fail closed — a fetch failure then has to mean "refuse every destination", which
+is a second failure mode to design and test for a benefit Wave 1 cannot measure. Adding a country
+is a reviewed one-line diff, which is the intended friction.
+
+### Still open — belong to the waves that need them
+
 3. **Does WhatsApp ship in Wave 3 alongside SMS, or slip to its own wave?** WhatsApp Business API
    access requires a real approval process with Meta independent of anything this codebase
    controls, unlike SMS which Twilio provisions instantly on a purchased number. If that approval
@@ -403,14 +476,8 @@ data-exposure section already states for any new sensitive field.
    external provider interface or extends `TelephonyProvider` alone.
 5. **Does a recording attach to at most one card, or many?** §3.9 flags this as a product question
    the schema needs an answer to before the migration is written — a plain nullable FK on
-   `telephony.recordings` if at most one, a join table if many. Affects the migration, not the
+   `comms.recordings` if at most one, a join table if many. Affects the migration, not the
    authorization model either way.
-6. **Is the default geo allowlist a hand-maintained country list in this codebase, or sourced from
-   a maintained external list (e.g., a known high-risk-jurisdiction dataset)?** §3.3 assumes the
-   allowlist exists; it does not yet specify whether it is curated here (simple, but needs upkeep
-   as fraud patterns shift) or pulled from a source of truth this codebase doesn't own (accurate,
-   but a new dependency). Needs a decision before Wave 1's gate can be built, since the two shapes
-   have different test strategies.
 
 ## 8. Sequencing and cost
 

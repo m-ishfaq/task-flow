@@ -112,6 +112,25 @@ CREATE ROLE taskflow_notification_sweep WITH LOGIN PASSWORD 'sweep-dev-secret' N
 CREATE ROLE taskflow_backlinks WITH LOGIN PASSWORD 'backlinks-dev-secret' NOSUPERUSER NOCREATEDB
   NOCREATEROLE NOBYPASSRLS;
 
+-- ---------------------------------------------------------------------------
+-- taskflow_recording_ingest — the call-recording ingest sweep (Phase 7 Wave 2,
+-- ai/phase-7-voice.md §3.6, migration 0033's own header).
+--
+-- A FIFTH consumer role, on the same pattern as the four above: NOBYPASSRLS,
+-- reaching across tenants only on the one table carrying an explicit
+-- `TO taskflow_recording_ingest` policy, because the sweep pulls pending
+-- recordings off the carrier for every tenant in one pass and no value of
+-- app.org_id is correct for it.
+--
+-- Its grant is COLUMN-LEVEL on comms.recordings and it holds NOTHING on
+-- comms.calls — so the role that fetches a recording cannot learn whose
+-- conversation it is, the same separation taskflow_backlinks has from
+-- docs.page_versions.state. It also has no INSERT anywhere: a compromised
+-- sweep cannot fabricate a recording row pointing at an object it controls.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_recording_ingest WITH LOGIN PASSWORD 'recording-dev-secret' NOSUPERUSER
+  NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+
 -- Baseline grants live in 03-grants.sql, NOT here.
 --
 -- Roles are cluster-wide; grants are per-database. This file creates the roles

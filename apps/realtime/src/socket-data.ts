@@ -1,6 +1,8 @@
 import type { Namespace, Server, Socket } from 'socket.io';
 import type { OrgId, UserId } from '@taskflow/contracts';
 import type {
+  CallClientToServerEvents,
+  CallServerToClientEvents,
   ChatClientToServerEvents,
   ChatServerToClientEvents,
   ClientToServerEvents,
@@ -78,15 +80,15 @@ export type GatewayServer = Server<
  * this line.
  */
 export type ChatSocket = Socket<
-  ChatClientToServerEvents,
-  ChatServerToClientEvents,
+  ChatClientToServerEvents & CallClientToServerEvents,
+  ChatServerToClientEvents & CallServerToClientEvents,
   InterServerEvents,
   SocketData
 >;
 
 export type ChatNamespace = Namespace<
-  ChatClientToServerEvents,
-  ChatServerToClientEvents,
+  ChatClientToServerEvents & CallClientToServerEvents,
+  ChatServerToClientEvents & CallServerToClientEvents,
   InterServerEvents,
   SocketData
 >;

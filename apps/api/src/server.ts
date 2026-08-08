@@ -4,6 +4,8 @@ import { isDatabaseHealthy } from '@taskflow/db';
 import { newId } from '@taskflow/security';
 import { createAppRouter, type AppRouter } from './router.js';
 import { buildWorkDeps } from './work/deps.js';
+import { buildTelephonyDeps } from './telephony/deps.js';
+import { registerTelephonyWebhooks } from './telephony/webhook.routes.js';
 import { assertRoutesDeclarePermissions } from './trpc/manifest.js';
 import type { AuthenticatedPrincipal, RequestContext } from './trpc/context.js';
 import { ORG_HEADER, resolveOrgMembership } from './tenancy/resolve.js';
@@ -69,6 +71,7 @@ export interface BuildOptions {
 
 export async function buildServer(options: BuildOptions): Promise<FastifyInstance> {
   const mail = resolveMail(options);
+  const telephonyDeps = buildTelephonyDeps(options.env);
   const identityDeps = buildIdentityDeps({
     env: options.env,
     ...(options.events === undefined ? {} : { events: options.events }),
@@ -82,6 +85,9 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
        that simply does not send push); null is the honest answer the
        preferences page renders as "push unavailable on this server". */
     platform: { vapidPublicKey: options.env.VAPID_PUBLIC_KEY ?? null },
+    /* Undefined when no carrier is configured. The routes exist either way and
+       answer SERVICE_UNAVAILABLE — see telephony/router.ts. */
+    telephony: telephonyDeps,
   });
 
   /* Guardrail 4, second half. Before a single connection is accepted: if any
@@ -131,6 +137,23 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
     const healthy = await isDatabaseHealthy();
     return healthy ? { status: 'ready' } : reply.status(503).send({ status: 'not-ready' });
   });
+
+  /* Carrier webhooks (Phase 7 §3.11) — plain Fastify routes, registered BEFORE
+     the tRPC plugin.
+   *
+   * Order matters for one specific reason: the tRPC adapter replaces the JSON
+   * body parser with a pass-through, and these routes add their own
+   * form-encoded parser. Registering them after would work today and is exactly
+   * the kind of ordering nobody re-derives later.
+   *
+   * Only when a carrier is configured. Unlike the tRPC routes — whose SHAPE the
+   * client generates from, so they must always exist — an HTTP endpoint has no
+   * type to keep stable, and an unconfigured instance answering 404 on a
+   * webhook path is better than one answering 503 to a carrier that will then
+   * retry it for hours. */
+  if (telephonyDeps !== undefined) {
+    registerTelephonyWebhooks(app, { telephony: telephonyDeps });
+  }
 
   await app.register(fastifyTRPCPlugin<AppRouter>, {
     prefix: '/trpc',

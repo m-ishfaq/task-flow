@@ -143,6 +143,82 @@ export const EnvSchema = z
     CLAMAV_HOST: z.string().default('localhost'),
     CLAMAV_PORT: z.coerce.number().int().positive().max(65_535).default(3310),
 
+    /* Telephony (§8.5; ai/phase-7-voice.md §6.4, Wave 1).
+
+       All optional, and the consequence of omitting them is that this instance
+       cannot provision a subaccount or place anything — NOT that it silently
+       spends without controls. `buildTelephonyDeps` returns undefined when the
+       credentials are absent, and every telephony route is unregistered rather
+       than registered-and-broken, which is the same fail-closed direction
+       DATABASE_AUDIT_URL's own comment describes.
+
+       Unlike MAIL_HOST, these must NOT be required at boot: an API instance
+       that serves Work and Chat is a completely valid deployment, and making a
+       carrier credential a boot requirement would mean every developer needs a
+       Twilio account to run the app. */
+    TWILIO_ACCOUNT_SID: NonEmpty.optional(),
+    TWILIO_AUTH_TOKEN: NonEmpty.optional(),
+    /* Twilio Verify service, for the MFA fallback (§3.12). Separate because
+       Verify is a distinct product with its own SID, and an instance can
+       legitimately have telephony without it. */
+    TWILIO_VERIFY_SERVICE_SID: NonEmpty.optional(),
+
+    /* The per-org default spend cap in CENTS (§7.2 — 2500, roughly 12x
+       PLAN.md §14's expected ~$2/month). Applied to orgs with no explicit
+       comms.spend_policy row; an existing row always wins, so changing this
+       never silently re-caps an org an operator has already decided about. */
+    TELEPHONY_DEFAULT_SPEND_CAP_CENTS: z.coerce.number().int().nonnegative().default(2500),
+
+    /* The ceiling no self-service path may raise an org's cap past (§7.2).
+
+       This is the reason "Owner can raise the cap" is not the same as "an
+       Owner credential is unlimited spend". A compromised Owner account is a
+       realistic path to toll fraud precisely BECAUSE raising the cap is a
+       legitimate Owner action, and an environment-level ceiling is the one
+       bound that a stolen credential cannot move. */
+    TELEPHONY_MAX_SPEND_CAP_CENTS: z.coerce.number().int().nonnegative().default(50_000),
+
+    /* Public origin the carrier reaches this API on, used to build the webhook
+       URLs it will sign. NOT derived from the incoming request: the signature
+       covers the exact URL, and deriving it from a request means an attacker
+       controlling `Host` controls what we verify against. */
+    TELEPHONY_WEBHOOK_ORIGIN: z.string().url().optional(),
+
+    /* Blind-index key for counterparty phone numbers (Wave 2, migration 0033).
+
+       Separate key material from MASTER_KEY_BASE64 on purpose: one compromise
+       should not both decrypt the column and let an attacker generate indexes
+       to confirm guesses against it. Rotating it invalidates every existing
+       index — lookups stop matching, calls are still readable — so a rotation
+       is a reindex, not a restart. */
+    TELEPHONY_INDEX_KEY: Base64Key.optional(),
+
+    /* Where call recordings land. Optional, like every telephony setting: an
+       instance with no carrier has nothing to store. */
+    STORAGE_BUCKET_RECORDINGS: NonEmpty.optional(),
+
+    /* A SEVENTH database role, for the recording-ingest sweep (Wave 2,
+       migration 0033). taskflow_recording_ingest holds a COLUMN-LEVEL grant on
+       comms.recordings and NOTHING on comms.calls — so the role that fetches a
+       recording cannot learn whose conversation it is. Optional, matching every
+       other consumer role: an instance that only serves requests does not need
+       it, and `withRecordingIngestScope` throws rather than silently falling
+       back to the application role, which cannot see across tenants. */
+    DATABASE_RECORDING_INGEST_URL: NonEmpty.optional(),
+
+    /**
+     * Whether THIS instance runs the recording-ingest sweep.
+     *
+     * Off by default, and the default is the safe one — the same reasoning
+     * RETENTION_SWEEP_ENABLED gives. Parsed from the string 'true' rather than
+     * with `z.coerce.boolean()`, which treats EVERY non-empty string as true,
+     * so `=false` would enable it.
+     */
+    RECORDING_INGEST_ENABLED: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
+
     API_PORT: z.coerce.number().int().positive().max(65_535).default(3000),
     API_HOST: z.string().default('0.0.0.0'),
     API_TRUST_PROXY: TrustProxy,
@@ -243,6 +319,18 @@ const KNOWN_VARIABLES = new Set([
   'API_HOST',
   'API_TRUST_PROXY',
   'RETENTION_SWEEP_ENABLED',
+  /* Telephony (Phase 7 Wave 1). Listed for the same reason as every other
+     variable in this set — a typo must be caught wherever it is made. */
+  'TWILIO_ACCOUNT_SID',
+  'TWILIO_AUTH_TOKEN',
+  'TWILIO_VERIFY_SERVICE_SID',
+  'TELEPHONY_DEFAULT_SPEND_CAP_CENTS',
+  'TELEPHONY_MAX_SPEND_CAP_CENTS',
+  'TELEPHONY_WEBHOOK_ORIGIN',
+  'TELEPHONY_INDEX_KEY',
+  'STORAGE_BUCKET_RECORDINGS',
+  'DATABASE_RECORDING_INGEST_URL',
+  'RECORDING_INGEST_ENABLED',
   'WEB_ORIGIN',
   /* Read by apps/web's vite.config.ts, never by a server — but they carry the
      `WEB_` prefix, so `assertNoMisspelledVariables` treats them as ours and
@@ -285,6 +373,8 @@ const TASKFLOW_PREFIXES = [
   'WEB_',
   'CLAMAV_',
   'REALTIME_',
+  'TWILIO_',
+  'TELEPHONY_',
 ];
 
 /**

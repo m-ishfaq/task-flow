@@ -158,3 +158,29 @@ export {
   type VapidKeyPair,
   type EncryptedPushPayload,
 } from './web-push.js';
+
+/**
+ * Twilio webhook signature verification (Phase 7 Wave 1,
+ * ai/phase-7-voice.md §3.11; PLAN.md §8.5 — "Reject unsigned. Non-negotiable.").
+ *
+ * The one primitive standing between an unauthenticated POST from the open
+ * internet and a write to this database. Here rather than in
+ * `packages/telephony` because that package cannot import `node:crypto` at all,
+ * and because a constant-time HMAC comparison belongs on the human-review list
+ * with the rest of them.
+ */
+export {
+  verifyTwilioSignature,
+  signTwilioRequest,
+  twilioSignaturePayload,
+} from './twilio-signature.js';
+
+/**
+ * Blind indexes — equality lookup over an encrypted column (Phase 7 Wave 2).
+ *
+ * Here rather than in the slice that needs it because the tempting shortcuts
+ * are both cryptographic mistakes — plaintext "just for the index", or
+ * deterministic encryption — and this is the file where that argument gets
+ * reviewed once instead of re-litigated per column.
+ */
+export { blindIndex, blindIndexEquals } from './blind-index.js';

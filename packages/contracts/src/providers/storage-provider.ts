@@ -73,6 +73,22 @@ export interface StorageProvider {
    */
   getStream(key: string): Promise<ReadableStream<Uint8Array>>;
 
+  /**
+   * Writes bytes from the SERVER, bypassing the presigned-upload path.
+   *
+   * Deliberately narrow, and it is not a general-purpose upload door. The
+   * presign flow exists because the API must never receive a browser's bytes
+   * (§8.4) — that argument is about UNTRUSTED input, and it does not apply when
+   * the server is the one producing the object: a call recording fetched from
+   * the carrier (Phase 7 §3.6), a generated PDF export.
+   *
+   * The distinction that keeps this safe is that no client can reach it. There
+   * is no route that takes a body and calls this; every caller is a server-side
+   * process writing bytes it produced or fetched itself, under a
+   * server-generated key.
+   */
+  putObject(key: string, body: Uint8Array, contentType: string): Promise<void>;
+
   delete(key: string): Promise<void>;
 
   /** Server-side copy, for duplicating a card or board without a round trip. */

@@ -1,4 +1,4 @@
-import { withOrgScope } from '@taskflow/db';
+import { eq, schema, withOrgScope } from '@taskflow/db';
 import { can, type Decision } from '@taskflow/policy';
 import {
   OrgIdSchema,
@@ -50,7 +50,13 @@ export interface JoinAuthorization {
    */
   readonly decision?: Decision;
   /** Coarse reason, for logs. Never sent to the client — see `JoinRefusal`. */
-  readonly reason: 'granted' | 'not_a_member' | 'no_such_board' | 'no_such_channel' | 'denied';
+  readonly reason:
+    | 'granted'
+    | 'not_a_member'
+    | 'no_such_board'
+    | 'no_such_channel'
+    | 'no_such_call'
+    | 'denied';
 }
 
 /**
@@ -180,6 +186,62 @@ export async function authorizeChannelJoin(
        branded id. The helper's own `orgId` is already typed `OrgId`, so this
        narrows the row's value before it gets there. */
     channelTarget({ ...channel, orgId: OrgIdSchema.parse(channel.orgId) }),
+  );
+
+  return decision.allowed
+    ? { allowed: true, decision, reason: 'granted' }
+    : { allowed: false, decision, reason: 'denied' };
+}
+
+/**
+ * Decides whether `userId` may join `call:{callId}` in `orgId`
+ * (ai/phase-7-voice.md §3.10).
+ *
+ * ## No target, and unlike the two above that is CORRECT here
+ *
+ * `authorizeChannelJoin`'s header warns at length that a target built without
+ * `closed` grants every member every DM. The opposite risk applies here, so the
+ * difference is worth stating rather than leaving to look like an oversight:
+ * `call:read` is a FLAT role grant. §6.3 of the phase spec says so — telephony
+ * has no relationship-tuple or ancestor component, no per-call sharing, and
+ * nothing a target could carry. `can()` with no target answers from the role
+ * alone, and that is the whole check.
+ *
+ * One thing must NOT be inferred from that. "`can()` with no target answers
+ * from ROLE ALONE" is exactly the trap Phase 5 hit, where every `guest` was
+ * refused before the resource-aware check that would have consulted their tuple
+ * ever ran. It is not a bug here for a specific reason: guest holds no
+ * telephony permission by design, and there is no tuple that could grant one —
+ * a guest genuinely may not listen in on an org's calls.
+ *
+ * ## The call must exist and belong to this org
+ *
+ * Checked rather than assumed. The room NAME is the only thing routing
+ * broadcasts, so a room nobody validated is a room anybody can occupy — a
+ * member could sit in `call:<any uuid>` and wait for a message addressed there.
+ */
+export async function authorizeCallJoin(
+  userId: UserId,
+  orgId: OrgId,
+  callId: string,
+): Promise<JoinAuthorization> {
+  const membership = await resolveOrgMembership(userId, orgId);
+  if (membership === null) return { allowed: false, reason: 'not_a_member' };
+
+  const exists = await withOrgScope(orgId, async (tx) => {
+    const rows = await tx
+      .select({ id: schema.calls.id })
+      .from(schema.calls)
+      .where(eq(schema.calls.id, callId))
+      .limit(1);
+    return rows.length > 0;
+  });
+
+  if (!exists) return { allowed: false, reason: 'no_such_call' };
+
+  const decision = can(
+    { orgId: membership.orgId, userId, role: membership.role, tuples: membership.tuples },
+    'call:read',
   );
 
   return decision.allowed

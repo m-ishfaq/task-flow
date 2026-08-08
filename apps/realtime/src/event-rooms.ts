@@ -219,6 +219,33 @@ const USER_KEY_OF: Readonly<Record<string, string>> = {
   'notification.created': 'userId',
 };
 
+/**
+ * Event name -> the payload key holding the call id its room is named after
+ * (Phase 7 Wave 2, ai/phase-7-voice.md §3.10).
+ *
+ * ## Exactly ONE entry, and the omissions are the design
+ *
+ * `call.status_changed` is the only telephony event a room carries. A ringing
+ * or connected call is a state transition a UI wants live; everything else this
+ * phase emits either has no live audience or must not be broadcast at all:
+ *
+ *   - `call.placed` is excluded for `board.created`'s reason. It names a call
+ *     no client has joined a room for yet, so the room has zero subscribers and
+ *     the broadcast is a silent no-op. A caller learns its own call id from the
+ *     mutation's response, and joins the room with it.
+ *   - `recording.*` and `transcription.completed` are NOT broadcast. A call
+ *     room's membership is `call:read`, which MEMBER holds — but recordings are
+ *     `recording:read`, Admin-and-Owner. Routing a recording event to a call
+ *     room would hand every member the existence and timing of a recording that
+ *     the permission catalog says they may not see, and the broadcast would look
+ *     entirely correct from inside the room.
+ *   - `call.consent_recorded` and `spend.*` are governance and cost records for
+ *     the audit log, not live UI state.
+ */
+const CALL_KEY_OF: Readonly<Record<string, string>> = {
+  'call.status_changed': 'callId',
+};
+
 /** Thrown at boot, not at broadcast time — see `assertRoomTableIsSafe`. */
 export class UnsafeRoomMappingError extends Error {
   constructor(name: string, reason: string) {
@@ -246,6 +273,17 @@ const CHANNEL_CREATED_REASON =
   '"channel.created" names a channel no client has ever joined, so its room always has zero ' +
   'subscribers — the same silent no-op as "board.created". A client learns about a new ' +
   'channel from the polled channel list, not from a room it cannot be in.';
+
+const CALL_PLACED_REASON =
+  '"call.placed" names a call no client has joined a room for yet, so its room always has ' +
+  'zero subscribers — the same silent no-op as "board.created". A caller learns its own call ' +
+  'id from the mutation response and joins the room with it.';
+
+const RECORDING_REASON =
+  'A call room is joined with `call:read`, which MEMBER holds; recordings and transcripts are ' +
+  '`recording:read`, which is Admin-and-Owner only. Broadcasting one into a call room ' +
+  'discloses the existence and timing of a recording to people the permission catalog says ' +
+  'may not see it — and the broadcast looks entirely correct from inside the room.';
 
 const DUAL_ROOM_REASON =
   'This event is mapped to BOTH a board room and a channel room. They are different rooms on ' +
@@ -303,6 +341,26 @@ export function assertRoomTableIsSafe(): void {
     // for anyone subscribed to both — the same DUAL_ROOM_REASON the
     // board/channel check above guards, restated for the third room kind.
     if (name in BOARD_KEY_OF || name in CHANNEL_KEY_OF) {
+      throw new UnsafeRoomMappingError(name, DUAL_ROOM_REASON);
+    }
+  }
+
+  for (const name of Object.keys(CALL_KEY_OF)) {
+    if (name.startsWith(NEVER_BROADCAST_PREFIX) || namesAnAttachment(name)) {
+      throw new UnsafeRoomMappingError(name, ATTACHMENT_REASON);
+    }
+    if (name === 'call.placed') {
+      throw new UnsafeRoomMappingError(name, CALL_PLACED_REASON);
+    }
+    /* A call room's membership is `call:read`, which MEMBER holds. Recordings
+       and transcripts are `recording:read` — Admin-and-Owner. Routing one into
+       a call room hands every member the existence and timing of a recording
+       the catalog says they may not see, and it looks correct from inside the
+       room. */
+    if (name.startsWith('recording.') || name.startsWith('transcription.')) {
+      throw new UnsafeRoomMappingError(name, RECORDING_REASON);
+    }
+    if (name in BOARD_KEY_OF || name in CHANNEL_KEY_OF || name in USER_KEY_OF) {
       throw new UnsafeRoomMappingError(name, DUAL_ROOM_REASON);
     }
   }
@@ -368,6 +426,20 @@ export function broadcastEventNames(): readonly string[] {
 }
 
 /** Every event name currently routed to a channel room. */
+/** The call id an event should be broadcast to, or null if it has no room. */
+export function roomCallIdOf(name: string, payload: unknown): string | null {
+  const key = CALL_KEY_OF[name];
+  if (key === undefined) return null;
+  if (typeof payload !== 'object' || payload === null) return null;
+
+  const value = (payload as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : null;
+}
+
+export function callBroadcastEventNames(): readonly string[] {
+  return Object.keys(CALL_KEY_OF);
+}
+
 export function chatBroadcastEventNames(): readonly string[] {
   return Object.keys(CHANNEL_KEY_OF);
 }

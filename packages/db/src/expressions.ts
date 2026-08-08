@@ -61,6 +61,33 @@ export function uuidArrayContains(column: Column, value: unknown): SQL {
 }
 
 /**
+ * `SUM(COALESCE(actual, estimated))` over the telephony spend ledger, as a
+ * bigint rendered to text (Phase 7 Wave 1, ai/phase-7-voice.md §3.4).
+ *
+ * Named here rather than hand-written in `apps/api/src/telephony/spend-gate.ts`
+ * for exactly the reason this file exists: raw `sql` is banned in feature code,
+ * and the answer is a named expression, not an exemption.
+ *
+ * Two things about it are load-bearing:
+ *
+ *   - **The inner COALESCE, not `SUM(actual)`.** A ledger row the carrier has
+ *     not billed yet has a NULL `actual_cents`, so summing that column alone
+ *     counts every in-flight action as free. That is precisely the window an
+ *     attacker exploits by placing calls faster than reconciliation runs. The
+ *     conservative estimate stands in until the real figure arrives.
+ *   - **The outer COALESCE to 0.** `SUM` over zero rows is NULL, not 0, and a
+ *     NULL total parsed in JavaScript becomes `NaN` — which compares false
+ *     against every threshold, so an org with no ledger history would read as
+ *     permanently under its cap.
+ *
+ * Returned as text because a Postgres `bigint` exceeds what the driver will
+ * hand back as a safe JavaScript number; the caller parses it explicitly.
+ */
+export function sumWithFallback(preferred: Column, fallback: Column): SQL<string> {
+  return sql<string>`COALESCE(SUM(COALESCE(${preferred}, ${fallback})), 0)::text`;
+}
+
+/**
  * A predicate compiled elsewhere, converted into a Drizzle expression.
  *
  * The bridge between `@taskflow/filter`'s compiler and the tenant-scoped

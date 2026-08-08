@@ -502,6 +502,73 @@ export function hasSweepDatabase(): boolean {
 }
 
 /* -------------------------------------------------------------------------- *
+ * The recording-ingest connection (ai/phase-7-voice.md §3.6, Phase 7 Wave 2)
+ * -------------------------------------------------------------------------- */
+
+let recordingIngestPool: pg.Pool | undefined;
+let recordingIngestDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the recording-ingest pool, as `taskflow_recording_ingest`.
+ *
+ * A SEVENTH role, on the same reasoning as every consumer role before it: the
+ * sweep pulls pending recordings off the carrier for every tenant in one pass,
+ * and no value of `app.org_id` is correct for it.
+ *
+ * Migration 0033 has the column-level detail. The short version: this role can
+ * read which recordings are pending and where the carrier says the audio is,
+ * and holds NOTHING on `comms.calls` — so the role that fetches a recording
+ * cannot learn whose conversation it is. It also has no INSERT anywhere, so a
+ * compromised sweep cannot fabricate a recording row pointing at an object it
+ * controls.
+ */
+export function initializeRecordingIngestDatabase(config: DbConfig): void {
+  if (recordingIngestPool) {
+    throw new Error('Recording ingest database already initialized. This is a boot-time call.');
+  }
+
+  recordingIngestPool = new Pool({
+    connectionString: config.url,
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-recording-ingest',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  recordingIngestDb = drizzle(recordingIngestPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_recording_ingest`.
+ *
+ * Throws rather than falling back to the application role — which could not see
+ * pending recordings across every org anyway, so the fallback would silently
+ * ingest nothing while looking healthy. That failure shape is exactly what
+ * Phase 4's `FOR UPDATE`-without-an-UPDATE-policy bug looked like, and the
+ * reason every consumer scope in this file refuses instead of degrading.
+ */
+export async function withRecordingIngestScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!recordingIngestDb) {
+    throw new Error(
+      'Recording ingest database not initialized. Call initializeRecordingIngestDatabase() ' +
+        'during boot — the ingest sweep must not fall back to the application role, which ' +
+        'cannot see comms.recordings across every org and would silently ingest nothing.',
+    );
+  }
+
+  return recordingIngestDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the recording-ingest pool has been initialized. */
+export function hasRecordingIngestDatabase(): boolean {
+  return recordingIngestDb !== undefined;
+}
+
+/* -------------------------------------------------------------------------- *
  * The backlinks connection (ai/phase-6-docs.md §3.10, Phase 6 Wave 3)
  * -------------------------------------------------------------------------- */
 
@@ -598,6 +665,10 @@ export async function closeDatabase(): Promise<void> {
   await sweepPool?.end();
   sweepPool = undefined;
   sweepDb = undefined;
+
+  await recordingIngestPool?.end();
+  recordingIngestPool = undefined;
+  recordingIngestDb = undefined;
 }
 
 /** True when the pool is live and answering. Backs `/health/ready` (§14). */

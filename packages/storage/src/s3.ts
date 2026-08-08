@@ -190,6 +190,23 @@ export class S3StorageProvider implements StorageProvider {
     return body.transformToWebStream();
   }
 
+  async putObject(key: string, body: Uint8Array, contentType: string): Promise<void> {
+    /* Server-side write only — see the interface's own note on why this does
+       not reopen the "API never receives the bytes" rule. `ContentLength` is
+       set explicitly because the SDK cannot infer it from a Uint8Array without
+       buffering, and an absent length makes S3 use chunked encoding that some
+       S3-compatible backends reject. */
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: body,
+        ContentType: contentType,
+        ContentLength: body.byteLength,
+      }),
+    );
+  }
+
   async delete(key: string): Promise<void> {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }

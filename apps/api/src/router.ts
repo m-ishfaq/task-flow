@@ -7,6 +7,8 @@ import { createChatRouter } from './chat/router.js';
 import { createDocsRouter } from './docs/router.js';
 import { createPlatformRouter } from './platform/router.js';
 import { createPeopleRouter } from './people/router.js';
+import { createTelephonyRouter } from './telephony/router.js';
+import type { TelephonyDeps } from './telephony/deps.js';
 
 /**
  * The root router.
@@ -29,6 +31,16 @@ export interface AppRouterDeps extends IdentityRouterDeps {
   readonly work: WorkRouterDeps;
   /** Notifications — the VAPID public key for the push ceremony (§3.7). */
   readonly platform: { readonly vapidPublicKey: string | null };
+  /**
+   * Voice & Messaging (Phase 7 Wave 2).
+   *
+   * Undefined when no carrier is configured. The routes still EXIST in that
+   * case and answer SERVICE_UNAVAILABLE — the browser client generates from
+   * this router's TYPE (guardrail 5), so a shape that varied by deployment
+   * would produce a different client per environment, which is the drift that
+   * guarantee exists to prevent.
+   */
+  readonly telephony: TelephonyDeps | undefined;
 }
 
 export function createAppRouter(deps: AppRouterDeps) {
@@ -109,6 +121,9 @@ export function createAppRouter(deps: AppRouterDeps) {
      * the scope's org). See `people/events.ts`'s file header.
      */
     people: createPeopleRouter({ events: deps.identity.events }),
+
+    /** Voice & Messaging (Phase 7 Wave 2). */
+    telephony: createTelephonyRouter(deps.telephony),
   });
 }
 

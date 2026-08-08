@@ -59,6 +59,8 @@ AI may write anything, but changes to these need the author to read every line b
 (PLAN.md §2.2):
 
 `packages/policy` · `packages/db` · `packages/security` · `apps/api/src/identity` ·
+`apps/api/src/telephony` (Phase 7 — the outbound spend gate, subaccount credential handling, and
+`webhook.ts`'s signature verification; §6.1 of the phase spec named these before they existed) ·
 `apps/collab/src/auth.ts` and `authorize.ts` (Phase 6 — the collab gateway's own handshake and
 tree-permission resolution, the same severity as `apps/realtime/src/auth.ts`/`rooms.ts`) ·
 any webhook signature verification · any file upload/download path · any code touching
@@ -100,8 +102,13 @@ apps/       api                              (arriving: worker)
               src/lib          tRPC client, session, query client, wire types
               src/components   primitives + app shell
               src/features     auth/ org/ work/ admin/
+              src/telephony  ⚠ Phase 7 Wave 1 — the ONE outbound gate
+                               (spend cap, geo, velocity, org freeze),
+                               subaccount provisioning, webhook signature
+                               verification + replay. No route registered yet.
 packages/   config, contracts, db, security, policy, events, mail, observability,
-            feature-flags, guardrail-selftest, ⚠ storage, filter   (arriving: ui)
+            feature-flags, guardrail-selftest, ⚠ storage, filter,
+            telephony (carrier boundary + geo allowlist)          (arriving: ui)
 docker/     compose config + Postgres init (roles, RLS)
 ```
 
@@ -293,6 +300,62 @@ before clearing a page's published pointer, and Postgres refused it —
 never be left pointing at a version that no longer exists. Fixed in the test (clear the pointer
 first, delete the version rows after — "children before parents," the same ordering
 `tenancy-seed.ts`'s `clearTenant` already documents for Work), not in the schema.
+
+### Phase 7 Wave 1 — the gate that ships before the thing it gates
+
+`packages/telephony` · `packages/security/twilio-signature.ts` · migration 0032 (`comms.*`) ·
+`apps/api/src/telephony`. Spec: [ai/phase-7-voice.md](ai/phase-7-voice.md), approved 2026-08-08.
+⚠ Human-review surface — read that spec's status header before touching any of it.
+
+**Wave 1 deliberately ships nothing a user would call a feature.** The acceptance bar is "the gate
+exists and refuses correctly", proven against a `TelephonyProvider` no product surface calls yet.
+The most important assertion in `spend-gate.test.ts` is therefore not that a refusal is returned —
+it is that **the provider was never reached**, asserted against a fake that would have recorded it.
+A gate that answers `{ allowed: false }` after having already placed the call reads correctly in a
+diff and costs money in production, and only an assertion about the provider tells the two apart.
+
+**`+1` is not a country, and that is why the geo check matches PREFIXES.** The E.164 code +1 is the
+North American Numbering Plan — the US and Canada plus about twenty Caribbean territories that bill
+at premium international rates while looking like an ordinary domestic number. A geo check that
+resolved "+1" to a country and asked whether that country is allowed permits every one of them, and
+`+1-809-...` is the classic toll-fraud destination. `geo.ts` is a closed, default-DENY table where
+longest-prefix wins, so a `deny` on `1809` overrides the `allow` on `1`; a test reverses the table
+to prove ordering cannot change a verdict.
+
+**The spend sum is `COALESCE(actual, estimated)`, never `SUM(actual)`.** A ledger row the carrier
+has not billed yet has a NULL `actual_cents`, so summing that column alone counts every in-flight
+action as free — which is exactly the window an attacker exploits by going faster than
+reconciliation. `SUM` over zero rows is also NULL, and a NULL parsed in JavaScript is `NaN`, which
+compares false against every threshold: an org with no history would read as permanently under its
+cap. Both halves live in `sumWithFallback` in `packages/db/expressions.ts`, because raw `sql` is
+banned in feature code and the answer to that ban is a named expression, not an exemption.
+
+**The velocity limiter runs LAST, because it is the only check that mutates.** Counting an attempt
+that was going to be refused anyway lets an attacker burn a legitimate user's burst allowance with
+requests that cost nothing to refuse — a denial of service inflicted through a control meant to
+prevent one. It is also not the durable defence: those counters are in-process, so a restart
+forgives everyone. The spend ledger in Postgres is what actually stops the bill, the same
+relationship §8.9's per-IP limiter has to the database-backed account lockout.
+
+**`identity.orgs.status` has existed since migration 0004 and nothing ever read it.** The gate is
+its first reader. It is checked there rather than at the HTTP layer because telephony's cost risk
+lives on paths that never authenticate a request — an inbound webhook, a queued send — and a kill
+switch that only runs where a user is waiting is not a kill switch. Phase 12 Wave 1 will set the
+column from its console; adopting it is a swap, not a redesign.
+
+**The webhook's order of operations IS the control**, and it looks like trusting the payload.
+`AccountSid` is read from an unverified body, resolved to an org through `comms.subaccount_orgs`,
+and that org's token is what the signature is then checked against. That is a client-supplied value
+used as a LOOKUP KEY, not as an assertion — the same reason Phase 4's `x-taskflow-org` header is
+safe. Naming a subaccount whose token you do not hold resolves to an org whose key refuses you.
+Nothing is written before the signature passes, and the replay check runs AFTER it, or an
+unauthenticated caller could write rows into `comms.webhook_nonces` for any SID they can guess.
+
+**The replay nonce is recorded on SUCCESS, inside the handler's own transaction.** Twilio retries a
+webhook when we answer 5xx, and a retry carries a byte-identical signature — so a nonce written on
+receipt would mark the request seen, the handler would fail, and the retry that exists to recover
+the event would be refused as a replay. The event is lost silently, only when something was already
+going wrong. Writing it alongside the effect makes a failed attempt roll it back too.
 
 **Read a spec's own status header before trusting a phase marker anywhere else.** The §13 roadmap
 table and this section were both stale for the whole of Phase 3.5's Wave 1 and Wave 2, which is how
@@ -730,6 +793,7 @@ What is enforced, and by what:
 | 9 authz matrix       | 235 role × permission assertions         | `packages/policy`                     |
 | 10 human review      | this file, PLAN.md §2.2                  | people                                |
 | 11 domain events     | custom ESLint rule                       | guardrail-selftest                    |
+| 12 migration RLS     | `scripts/check-migration-rls.mjs`        | both directions, against a fixture    |
 
 `node packages/guardrail-selftest/verify.js` proves the lint-enforced ones still fire — including
 the negative cases, since a rule that reports correct code is one that gets switched off. It also
