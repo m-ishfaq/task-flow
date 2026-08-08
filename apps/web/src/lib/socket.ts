@@ -80,10 +80,20 @@ interface PresenceMessage {
   readonly boardId: string;
   readonly userIds: readonly string[];
 }
+/**
+ * "You have a new notification" (Phase 9, ai/phase-9-notifications.md §3.5).
+ * Delivered on `user:{userId}` — the one room this tab is in without ever
+ * having asked to join it; see `apps/realtime/src/wire.ts`'s own comment on
+ * `NotificationMessage` for why the payload carries only an id.
+ */
+interface NotificationMessage {
+  readonly notificationId: string;
+}
 
 interface ServerToClientEvents {
   ready: (message: ReadyMessage) => void;
   broadcast: (message: BroadcastMessage) => void;
+  notification: (message: NotificationMessage) => void;
   'room:closed': (message: RoomClosedMessage) => void;
   'session:ended': (message: SessionEndedMessage) => void;
   presence: (message: PresenceMessage) => void;
@@ -292,6 +302,27 @@ export function onBroadcast(handler: (message: BroadcastMessage) => void): () =>
   return () => active.off('broadcast', handler);
 }
 
+/**
+ * Subscribes to this tab's own notifications (Phase 9,
+ * ai/phase-9-notifications.md §3.5). No join call, unlike `onBroadcast` —
+ * the gateway places every authenticated socket in its own `user:{userId}`
+ * room at connection time, so there is nothing for this tab to ask for.
+ *
+ * Does NOT force a connection. Consistent with `onBroadcast`/`onPresence`
+ * above: this app connects lazily, only once a board or a channel is
+ * actually open (`joinBoardRoom`/chat's equivalent), and a bell mounted in
+ * the shell on every page is not by itself a reason to change that policy.
+ * The practical effect: a tab with a board or channel open gets an instant
+ * bell update; a tab with neither open falls back to
+ * `notificationsQuery`'s ordinary poll, same as before this existed. Both
+ * are correct; only the LATENCY differs.
+ */
+export function onNotification(handler: (message: NotificationMessage) => void): () => void {
+  const active = ensureSocket();
+  active.on('notification', handler);
+  return () => active.off('notification', handler);
+}
+
 export function onRoomClosed(handler: (message: RoomClosedMessage) => void): () => void {
   const active = ensureSocket();
   active.on('room:closed', handler);
@@ -320,4 +351,4 @@ export function disconnectSocket(): void {
   socket = undefined;
 }
 
-export type { BroadcastMessage, PresenceMessage, RoomClosedMessage };
+export type { BroadcastMessage, NotificationMessage, PresenceMessage, RoomClosedMessage };

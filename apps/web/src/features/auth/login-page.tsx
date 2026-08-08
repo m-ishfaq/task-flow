@@ -7,6 +7,13 @@ import { useSession } from '../../lib/session.js';
 import { resetCache } from '../../lib/query.js';
 import { Button, Field, Input } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
+import {
+  browserSupportsWebAuthn,
+  passkeyCeremonyMessage,
+  PasskeyCeremonyError,
+  signInWithPasskey,
+} from './passkey.js';
+import type { SessionBody } from '../../lib/session.js';
 
 /**
  * Password sign-in.
@@ -35,24 +42,33 @@ export function LoginPage() {
   const search = useSearch({ from: '/login' });
   const adopt = useSession((state) => state.adopt);
   const queryClient = useQueryClient();
-  const [passkeyNote, setPasskeyNote] = useState<string | null>(null);
+  /* Computed once — a browser's WebAuthn support does not change over the
+     component's lifetime, so there is nothing to re-derive on a later render. */
+  const [passkeySupported] = useState(() => browserSupportsWebAuthn());
 
   const { register, handleSubmit, formState } = useForm<FormValues>({
     defaultValues: { email: '', password: '' },
   });
 
+  const afterSignIn = async (session: SessionBody, email?: string) => {
+    // The email is remembered in memory so the step-up prompt (§8.1) does not
+    // make someone retype their own address. Never persisted — see session.ts.
+    adopt(session, email);
+    /* A fresh sign-in must never render from the previous session's cache.
+       Cheap here — the cache is nearly empty — and the alternative is another
+       user's board appearing for a moment on a shared machine. */
+    resetCache(queryClient);
+    await navigate({ to: search.next ?? '/' });
+  };
+
   const signIn = useMutation({
     mutationFn: (values: FormValues) => api.auth.login.mutate(values),
-    onSuccess: async (session, values) => {
-      // The email is remembered in memory so the step-up prompt (§8.1) does not
-      // make someone retype their own address. Never persisted — see session.ts.
-      adopt(session, values.email);
-      /* A fresh sign-in must never render from the previous session's cache.
-         Cheap here — the cache is nearly empty — and the alternative is
-         another user's board appearing for a moment on a shared machine. */
-      resetCache(queryClient);
-      await navigate({ to: search.next ?? '/' });
-    },
+    onSuccess: (session, values) => afterSignIn(session, values.email),
+  });
+
+  const signInWithPasskeyMutation = useMutation({
+    mutationFn: signInWithPasskey,
+    onSuccess: (session) => afterSignIn(session),
   });
 
   return (
@@ -101,24 +117,40 @@ export function LoginPage() {
       </form>
 
       <div className="space-y-2 border-t border-line pt-4">
-        <Button
-          variant="secondary"
-          className="w-full"
-          onClick={() => {
-            /* Passkeys are the primary factor from Phase 1 and the ceremony
-               takes no identifier — credentials are discoverable, which is what
-               makes this the one sign-in flow that cannot enumerate accounts by
-               construction. Wiring @simplewebauthn/browser is a small, separate
-               slice; until then this says so rather than pretending the button
-               is decorative. */
-            setPasskeyNote(
-              'Passkey sign-in is available on the API and is not yet wired into this build.',
-            );
-          }}
-        >
-          Sign in with a passkey
-        </Button>
-        {passkeyNote !== null && <p className="text-xs text-ink-faint">{passkeyNote}</p>}
+        {passkeySupported ? (
+          <Button
+            variant="secondary"
+            className="w-full"
+            disabled={signInWithPasskeyMutation.isPending}
+            onClick={() => {
+              signInWithPasskeyMutation.mutate();
+            }}
+          >
+            {signInWithPasskeyMutation.isPending
+              ? 'Waiting for your passkey…'
+              : 'Sign in with a passkey'}
+          </Button>
+        ) : (
+          <p className="text-xs text-ink-faint">
+            This browser does not support passkeys. Use your email and password instead.
+          </p>
+        )}
+
+        {/* A cancelled or timed-out ceremony (§8.1: both report as the same
+            `NotAllowedError`) shows nothing — it is not a failure, it is the
+            user closing a prompt. Everything else gets a message: a genuine
+            ceremony problem from `passkeyCeremonyMessage`, or the server's own
+            answer via `ErrorView` for a completed-but-rejected assertion. */}
+        {signInWithPasskeyMutation.isError &&
+          (signInWithPasskeyMutation.error instanceof PasskeyCeremonyError ? (
+            passkeyCeremonyMessage(signInWithPasskeyMutation.error.reason) !== null && (
+              <p role="alert" className="text-xs text-danger">
+                {passkeyCeremonyMessage(signInWithPasskeyMutation.error.reason)}
+              </p>
+            )
+          ) : (
+            <ErrorView error={signInWithPasskeyMutation.error} />
+          ))}
       </div>
 
       <div className="flex justify-between text-sm text-ink-muted">

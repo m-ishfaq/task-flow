@@ -1,6 +1,6 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import Suggestion, { type SuggestionOptions } from '@tiptap/suggestion';
-import { cn } from '../../../lib/cn.js';
+import { cn } from '../cn.js';
 
 /**
  * `@mention` — an atomic, inline reference to a person.
@@ -19,6 +19,11 @@ import { cn } from '../../../lib/cn.js';
  * `userId` — see the matching comment on the server's `NODE_ATTRIBUTES.mention`
  * for why: it is CONTENT, not a live lookup, and should not silently reword
  * itself if the person renames their account later.
+ *
+ * Lives under `lib/tiptap/` rather than `features/work/detail/` because Docs'
+ * collaborative editor (Phase 6 Wave 2) needs the identical node — one
+ * definition two features share, not a second copy free to drift from the
+ * server's whitelist.
  */
 
 export interface MentionCandidate {

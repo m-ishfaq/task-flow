@@ -77,6 +77,24 @@ CREATE ROLE taskflow_collab WITH LOGIN PASSWORD 'collab-dev-secret' NOSUPERUSER 
   NOCREATEROLE NOBYPASSRLS;
 
 -- ---------------------------------------------------------------------------
+-- taskflow_notification_sweep — the due-reminder scan (Phase 9 Wave 2,
+-- ai/phase-9-notifications.md §3.8, migration 0029's own header).
+--
+-- A SIXTH system role, for the identical reason taskflow_realtime and
+-- taskflow_backlinks are separate roles: the sweep reads work.cards across
+-- EVERY tenant in one pass, so no value of app.org_id is correct for it.
+-- What makes it narrower than every precedent: its grant on work.cards is
+-- COLUMN-LEVEL and names only the seven columns needed to decide "is this
+-- card due, and who should be told" — never description, rank, or anything
+-- else — mirroring taskflow_backlinks' exclusion of page_versions.state.
+-- It also reads notification_prefs and writes notification rows plus
+-- delivery rows (see migration 0029's header for why that is a deliberate
+-- extension of §3.8's letter).
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_notification_sweep WITH LOGIN PASSWORD 'sweep-dev-secret' NOSUPERUSER NOCREATEDB
+  NOCREATEROLE NOBYPASSRLS;
+
+-- ---------------------------------------------------------------------------
 -- taskflow_backlinks — the backlinks relay's outbox-style consumer (Phase 6
 -- Wave 3, ai/phase-6-docs.md §3.10, migration 0025's own header).
 --

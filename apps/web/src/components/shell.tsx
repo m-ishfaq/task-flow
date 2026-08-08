@@ -179,19 +179,21 @@ function Breadcrumbs() {
       ? 'My tasks'
       : pathname.startsWith('/chat')
         ? 'Chat'
-        : pathname.startsWith('/projects/')
-          ? 'Project'
-          : pathname.startsWith('/projects')
-            ? 'Projects'
-            : pathname.startsWith('/settings/audit')
-              ? 'Audit log'
-              : pathname.startsWith('/settings')
-                ? 'Settings'
-                : pathname.startsWith('/admin/permissions')
-                  ? 'Permissions'
-                  : pathname.startsWith('/orgs')
-                    ? 'Organizations'
-                    : 'TaskFlow';
+        : pathname.startsWith('/docs')
+          ? 'Docs'
+          : pathname.startsWith('/projects/')
+            ? 'Project'
+            : pathname.startsWith('/projects')
+              ? 'Projects'
+              : pathname.startsWith('/settings/audit')
+                ? 'Audit log'
+                : pathname.startsWith('/settings')
+                  ? 'Settings'
+                  : pathname.startsWith('/admin/permissions')
+                    ? 'Permissions'
+                    : pathname.startsWith('/orgs')
+                      ? 'Organizations'
+                      : 'TaskFlow';
 
   return <h1 className="truncate text-sm font-medium text-ink">{label}</h1>;
 }
@@ -361,6 +363,21 @@ function AccountMenu() {
               <DropdownMenu.Separator className="my-1 h-px bg-line" />
             </>
           )}
+          {/* `/account` — requireSession only, not requireOrg (ai/account-page.md).
+              Reachable from here specifically because it must be: the org
+              switcher above it is the one place someone can be signed in with
+              no org selected, and this is the account menu's only other item. */}
+          <DropdownMenu.Item
+            onSelect={() => {
+              void navigate({ to: '/account' });
+            }}
+            className={cn(
+              'cursor-pointer rounded px-2 py-1.5 text-sm',
+              'text-ink outline-none data-[highlighted]:bg-surface-hover',
+            )}
+          >
+            Profile settings
+          </DropdownMenu.Item>
           <DropdownMenu.Item
             onSelect={leave}
             className={cn(

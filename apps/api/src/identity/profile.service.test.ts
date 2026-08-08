@@ -138,6 +138,49 @@ beforeEach(async () => {
   });
 });
 
+describe('reading your own account (getProfile)', () => {
+  /**
+   * `ai/account-page.md`: the one account-level read that answers with no org
+   * selected — everything else on the client derived "who am I" from the org
+   * member list, which does not exist before an org is chosen.
+   */
+  it('returns the account, verified, once email verification has happened', async () => {
+    const alice = await registeredUser(ALICE);
+
+    const result = await profile.getProfile(alice);
+
+    expect(result.email).toBe(ALICE);
+    expect(result.emailVerified).toBe(true);
+    expect(result.displayName).toBeNull();
+    expect(result.createdAt).toBeInstanceOf(Date);
+  });
+
+  it('reports unverified before the link is clicked', async () => {
+    // `registeredUser` verifies as part of the fixture; this test registers
+    // directly so the unverified state actually exists to read.
+    await identity.register(deps(), { email: ALICE, password: PASSWORD }, meta);
+    const user = await repo.findUserByEmail(ALICE);
+    if (user === undefined) throw new Error('fixture failed: account was not created');
+
+    const result = await profile.getProfile(unsafeAsId<'UserId'>(user.id));
+
+    expect(result.emailVerified).toBe(false);
+  });
+
+  it('reflects a display name that was set', async () => {
+    const alice = await registeredUser(ALICE);
+    await profile.updateProfile(deps(), alice, { displayName: 'Alice Doe' });
+
+    expect((await profile.getProfile(alice)).displayName).toBe('Alice Doe');
+  });
+
+  it('refuses to read an account that does not exist', async () => {
+    const ghost = unsafeAsId<'UserId'>('0195ee02-0000-7000-8000-0000000000ff');
+
+    expect(await codeOfRejection(profile.getProfile(ghost))).toBe('NOT_FOUND');
+  });
+});
+
 describe('setting your own name', () => {
   it('stores a name and reports it back', async () => {
     const alice = await registeredUser(ALICE);

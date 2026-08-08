@@ -6,7 +6,15 @@ import {
 } from '@tanstack/react-router';
 import type { QueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
-import { BoardIdSchema, CardIdSchema, ChannelIdSchema, ProjectIdSchema } from '@taskflow/contracts';
+import {
+  BoardIdSchema,
+  CardIdSchema,
+  ChannelIdSchema,
+  OrgIdSchema,
+  PageIdSchema,
+  ProjectIdSchema,
+  SpaceIdSchema,
+} from '@taskflow/contracts';
 import { FilterTree } from '@taskflow/filter';
 import { useSession } from './lib/session.js';
 import { Shell } from './components/shell.js';
@@ -15,11 +23,14 @@ import { RegisterPage } from './features/auth/register-page.js';
 import { VerifyEmailPage } from './features/auth/verify-email-page.js';
 import { ResetPasswordPage } from './features/auth/reset-password-page.js';
 import { ForgotPasswordPage } from './features/auth/forgot-password-page.js';
+import { AccountPage } from './features/auth/account-page.js';
 import { OrgPickerPage } from './features/org/org-picker-page.js';
 import { ProjectsPage } from './features/work/projects-page.js';
 import { HomePage } from './features/work/home-page.js';
 import { BoardPage } from './features/work/board-page.js';
 import { ChatPage } from './features/chat/chat-page.js';
+import { DocsPage } from './features/docs/docs-page.js';
+import { PublicPageView } from './features/docs/public-page.js';
 import { PermissionDebugPage } from './features/admin/permission-debug-page.js';
 import { SettingsPage } from './features/admin/settings-page.js';
 import { AuditPage } from './features/admin/audit-page.js';
@@ -232,6 +243,48 @@ const chatRoute = createRoute({
   component: ChatPage,
 });
 
+/**
+ * Spaces and pages (Phase 6, ai/phase-6-docs.md §5 Wave 1 of the UI).
+ *
+ * `space`/`page` are search params, not nested routes — the identical
+ * reasoning `chatRoute`'s `channel` gives: the tree must stay mounted and
+ * the open page must be deep-linkable and back-button correct, and a child
+ * route would unmount the tree on every switch.
+ */
+const docsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/docs',
+  validateSearch: z.object({
+    space: SpaceIdSchema.optional().catch(undefined),
+    page: PageIdSchema.optional().catch(undefined),
+  }),
+  beforeLoad: () => requireOrg('/docs'),
+  component: DocsPage,
+});
+
+/**
+ * The public, no-session view of a published page (Phase 6 Wave 4, §3.9).
+ *
+ * No `beforeLoad` guard — the whole point is that it works with no session
+ * at all. `components/shell.tsx`'s `bare` rendering already covers a route
+ * hit while `status !== 'authenticated'`, which is the ordinary case for a
+ * link shared outside the app; a signed-in visitor sees the normal app
+ * chrome around it, which is harmless (the same content either way).
+ */
+const publicDocsPageRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/public/docs/$orgId/$pageId',
+  parseParams: (params) => ({
+    orgId: OrgIdSchema.parse(params.orgId),
+    pageId: PageIdSchema.parse(params.pageId),
+  }),
+  stringifyParams: (params) => ({ orgId: params.orgId, pageId: params.pageId }),
+  component: function PublicDocsRoute() {
+    const { orgId, pageId } = publicDocsPageRoute.useParams();
+    return <PublicPageView orgId={orgId} pageId={pageId} />;
+  },
+});
+
 const permissionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/admin/permissions',
@@ -255,6 +308,22 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 });
 
+/**
+ * The personal account page (`ai/account-page.md`).
+ *
+ * `requireSession`, not `requireOrg` — deliberately. This is the fix for the
+ * bug that motivated it: passkeys need no org, but were reachable only through
+ * `/settings`, which does. Anyone signed in must reach this page, org selected
+ * or not, which is also why `Shell` renders the sidebar footer (and therefore
+ * the avatar menu this is reached from) even in the no-org state.
+ */
+const accountRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/account',
+  beforeLoad: () => requireSession('/account'),
+  component: AccountPage,
+});
+
 const auditRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/audit',
@@ -275,9 +344,12 @@ const routeTree = rootRoute.addChildren([
   projectSettingsRoute,
   boardRoute,
   chatRoute,
+  docsRoute,
+  publicDocsPageRoute,
   settingsRoute,
   auditRoute,
   permissionsRoute,
+  accountRoute,
 ]);
 
 export function createAppRouter(queryClient: QueryClient) {

@@ -67,6 +67,7 @@ export async function listPages(
         title: schema.pages.title,
         rank: schema.pages.rank,
         archivedAt: schema.pages.archivedAt,
+        publishedAt: schema.pages.publishedAt,
       })
       .from(schema.pages)
       .where(eq(schema.pages.spaceId, input.spaceId))
@@ -85,6 +86,7 @@ export async function listPages(
       title: row.title,
       rank: row.rank,
       archivedAt: row.archivedAt,
+      publishedAt: row.publishedAt,
     }));
   });
 }
@@ -95,6 +97,8 @@ interface PageSummary {
   readonly title: string;
   readonly rank: string;
   readonly archivedAt: Date | null;
+  /** Wave 4, §3.9 — non-null exactly when this page has a live public snapshot. */
+  readonly publishedAt: Date | null;
 }
 
 export async function createPage(

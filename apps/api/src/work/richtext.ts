@@ -362,6 +362,39 @@ export function flattenToText(node: RichTextNode): string {
     .slice(0, MAX_TEXT_LENGTH);
 }
 
+/**
+ * Every user id `@mentioned` in a document, deduplicated (Phase 9,
+ * ai/phase-9-notifications.md §4).
+ *
+ * Extracted at WRITE time and carried on the domain event, rather than left
+ * for a notification consumer to re-parse — parsing rich text in a consumer
+ * would put the mention rules in two places, and the copy deciding who gets
+ * notified would be the one with no test on it. Originally chat-only
+ * (`chat/message.service.ts`); moved here alongside `flattenToText` once Work
+ * and Docs comments needed the identical extraction, for the same reason
+ * `flattenToText` itself is shared rather than copied per module.
+ *
+ * Read defensively even though `RichTextDocument` has already validated the
+ * shape: this function's contract is only that it was handed a parsed
+ * document, and `RichTextNode.attrs` is deliberately loose — the same
+ * reasoning `flattenToText` records for reading `attrs.label`.
+ */
+export function mentionedUserIds(node: RichTextNode): readonly string[] {
+  const found = new Set<string>();
+
+  const walk = (current: RichTextNode): void => {
+    if (current.type === 'mention') {
+      const userId = (current.attrs as { readonly userId?: unknown } | undefined)?.userId;
+      if (typeof userId === 'string') found.add(userId);
+    }
+    for (const child of current.content ?? []) walk(child);
+  };
+
+  walk(node);
+
+  return [...found];
+}
+
 const BLOCK_NODES: ReadonlySet<string> = new Set([
   'paragraph',
   'heading',

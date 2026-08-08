@@ -202,6 +202,23 @@ function namesAnAttachment(name: string): boolean {
  */
 const PROJECT_SCOPED_PREFIXES = ['label.', 'custom_field.', 'status.'] as const;
 
+/**
+ * Event name -> the payload key holding the user id its PERSONAL room is
+ * named after (Phase 9, ai/phase-9-notifications.md §3.5).
+ *
+ * Structurally identical to `BOARD_KEY_OF`/`CHANNEL_KEY_OF` — one fixed
+ * literal key per event, never derived — but a genuinely different kind of
+ * room: `user:{userId}` has exactly one legitimate member (that person's own
+ * sockets, across however many tabs), decided entirely by the handshake
+ * (`gateway.ts`'s auto-join), with no client join request and therefore no
+ * `can()` check to run. `notification.created` is the one event routed here
+ * today; see `apps/api/src/platform/events.ts` for why it exists as a
+ * second-order event rather than a normal service-emitted one.
+ */
+const USER_KEY_OF: Readonly<Record<string, string>> = {
+  'notification.created': 'userId',
+};
+
 /** Thrown at boot, not at broadcast time — see `assertRoomTableIsSafe`. */
 export class UnsafeRoomMappingError extends Error {
   constructor(name: string, reason: string) {
@@ -276,6 +293,19 @@ export function assertRoomTableIsSafe(): void {
       throw new UnsafeRoomMappingError(name, DUAL_ROOM_REASON);
     }
   }
+
+  for (const name of Object.keys(USER_KEY_OF)) {
+    if (name.startsWith(NEVER_BROADCAST_PREFIX) || namesAnAttachment(name)) {
+      throw new UnsafeRoomMappingError(name, ATTACHMENT_REASON);
+    }
+    // A personal room and a board/channel room are different rooms on
+    // different subscriptions. One event mapped into both would double up
+    // for anyone subscribed to both — the same DUAL_ROOM_REASON the
+    // board/channel check above guards, restated for the third room kind.
+    if (name in BOARD_KEY_OF || name in CHANNEL_KEY_OF) {
+      throw new UnsafeRoomMappingError(name, DUAL_ROOM_REASON);
+    }
+  }
 }
 
 /**
@@ -315,6 +345,23 @@ export function roomChannelIdOf(name: string, payload: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+/**
+ * The user id a personal-room event should be broadcast to, or null.
+ *
+ * Same contract as `roomBoardIdOf`/`roomChannelIdOf`: null covers "not routed
+ * here" and "malformed payload" identically, and the correct response to
+ * either is not to broadcast.
+ */
+export function roomUserIdOf(name: string, payload: unknown): string | null {
+  const key = USER_KEY_OF[name];
+  if (key === undefined) return null;
+
+  if (typeof payload !== 'object' || payload === null) return null;
+
+  const value = (payload as Record<string, unknown>)[key];
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
 /** Every event name currently routed to a board room. For tests and diagnostics. */
 export function broadcastEventNames(): readonly string[] {
   return Object.keys(BOARD_KEY_OF);
@@ -323,4 +370,9 @@ export function broadcastEventNames(): readonly string[] {
 /** Every event name currently routed to a channel room. */
 export function chatBroadcastEventNames(): readonly string[] {
   return Object.keys(CHANNEL_KEY_OF);
+}
+
+/** Every event name currently routed to a personal room. */
+export function userBroadcastEventNames(): readonly string[] {
+  return Object.keys(USER_KEY_OF);
 }
