@@ -5,7 +5,7 @@ import { newId } from '@taskflow/security';
 import { commentCreated, commentDeleted, commentUpdated } from './events.js';
 import { loadCard } from './card.service.js';
 import { recountComments } from './counters.js';
-import { flattenToText, type RichTextNode } from './richtext.js';
+import { flattenToText, mentionedUserIds, type RichTextNode } from './richtext.js';
 import { ancestorsOfCard, enforceOn, envelopeOf, orgOf, type WorkActor } from './shared.js';
 
 /**
@@ -156,6 +156,7 @@ export async function createComment(
           // Words, not a document: a notification cannot render TipTap JSON.
           excerpt: bodyText.slice(0, 280),
           parentCommentId: input.parentCommentId ?? null,
+          mentionedUserIds: mentionedUserIds(input.body),
         },
         envelopeOf(actor),
       ),

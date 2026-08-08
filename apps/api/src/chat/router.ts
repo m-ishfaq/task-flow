@@ -18,7 +18,6 @@ import * as attachments from './attachment.service.js';
 import * as unfurls from './unfurl.service.js';
 import * as compliance from './compliance.service.js';
 import * as saved from './saved.service.js';
-import * as notifications from './notifications.js';
 import type { VerifyDeps } from '../attachments/verify.js';
 
 /**
@@ -555,58 +554,6 @@ export function createChatRouter(deps: ChatRouterDeps) {
         .input(z.object({ messageId: MessageIdSchema }).strict())
         .output(z.object({ saved: z.literal(false) }))
         .mutation(({ input, ctx }) => saved.unsaveMessage(actorOf(ctx), input)),
-    }),
-
-    /**
-     * In-app notifications for chat.
-     *
-     * Every route is scoped to the CALLER — `listMine`, `unreadCount` and
-     * `markAllRead` take the user from the verified principal, and no input
-     * schema here has a field naming one. That is the same structural refusal
-     * §3.7 uses for socket joins: not a check that could be forgotten, but no
-     * place to put the value.
-     *
-     * `channel:read` because a notification is about a chat message. Someone
-     * who cannot read any channel has none.
-     */
-    notifications: router({
-      listMine: route({ permission: 'channel:read' })
-        .output(
-          z
-            .array(
-              z.object({
-                notificationId: z.string(),
-                kind: z.string(),
-                subjectType: z.string(),
-                subjectId: z.string(),
-                channelId: z.string().nullable(),
-                title: z.string(),
-                excerpt: z.string().nullable(),
-                actorId: z.string().nullable(),
-                readAt: z.date().nullable(),
-                createdAt: z.date(),
-              }),
-            )
-            .readonly(),
-        )
-        .query(({ ctx }) => notifications.listMine(actorOf(ctx))),
-
-      unreadCount: route({ permission: 'channel:read' })
-        .output(z.object({ unread: z.number().int().nonnegative() }))
-        .query(({ ctx }) => notifications.unreadCount(actorOf(ctx))),
-
-      /* Marks the ONE notification the caller opened, not everything —
-         `markAllRead` stays for the bulk "clear the bell" action. Takes no
-         `userId`: the row is scoped to the caller inside the repository, the
-         same structural refusal every other self-scoped route here uses. */
-      markRead: route({ permission: 'channel:read' })
-        .input(z.object({ notificationId: z.string() }).strict())
-        .output(z.object({ marked: z.number().int().nonnegative() }))
-        .mutation(({ input, ctx }) => notifications.markRead(actorOf(ctx), input)),
-
-      markAllRead: route({ permission: 'channel:read' })
-        .output(z.object({ marked: z.number().int().nonnegative() }))
-        .mutation(({ ctx }) => notifications.markAllRead(actorOf(ctx))),
     }),
 
     /**

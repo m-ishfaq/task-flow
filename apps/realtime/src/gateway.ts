@@ -5,7 +5,12 @@ import { createRealtimeAdapterPool, type OutboxRow } from '@taskflow/db';
 import type { Logger } from '@taskflow/observability';
 import { clientAddress, HandshakeError, verifyHandshake } from './auth.js';
 import { allowedOrigins, type Env } from './config/env.js';
-import { assertRoomTableIsSafe, roomBoardIdOf, roomChannelIdOf } from './event-rooms.js';
+import {
+  assertRoomTableIsSafe,
+  roomBoardIdOf,
+  roomChannelIdOf,
+  roomUserIdOf,
+} from './event-rooms.js';
 import { broadcastChannelPresence, broadcastPresence } from './presence.js';
 import { FixedWindowLimiter } from './rate-limit.js';
 import { authorizeChannelJoin, authorizeJoin } from './rooms.js';
@@ -15,6 +20,7 @@ import type { ChatNamespace, ChatSocket, GatewayServer, GatewaySocket } from './
 import {
   boardRoom,
   channelRoom,
+  userRoom,
   ChannelJoinRequestSchema,
   ChannelLeaveRequestSchema,
   CHAT_NAMESPACE,
@@ -171,6 +177,17 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
   io.on('connection', (socket: GatewaySocket) => {
     const { userId } = socket.data.identity;
     logger.debug({ userId }, 'socket connected');
+
+    /* The one room with no join request and no `can()` check (§3.5, §3.7):
+       membership is exactly "authenticated as this user," which the
+       handshake already decided. Every socket gets exactly one, joined here
+       rather than left for a client to ask for — there is nothing to ask
+       for, and a `user:join` event would be a place for a future edit to
+       accidentally take a userId from the request instead of
+       `socket.data.identity`, which is the whole vulnerability §3.7 warns
+       against. Fire-and-forget: nothing downstream needs to wait for the
+       join to settle before this socket is otherwise usable. */
+    void socket.join(userRoom(userId));
 
     /* The client learns the reauth lead time from the server rather than
        hardcoding it (§7.1). Today it comes from this process's environment; when
@@ -465,6 +482,19 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
         occurredAt: row.occurredAt.toISOString(),
         payload: row.payload,
       });
+    }
+
+    const notifiedUserId = roomUserIdOf(row.name, row.payload);
+    if (notifiedUserId !== null) {
+      const fields = row.payload as { readonly notificationId?: unknown };
+      const notificationId =
+        typeof fields.notificationId === 'string' ? fields.notificationId : null;
+      // Malformed payload is not a reason to guess — same rule
+      // `roomUserIdOf` itself already applies to the room; applied here to
+      // the MESSAGE this room is about to receive.
+      if (notificationId !== null) {
+        io.to(userRoom(notifiedUserId)).emit('notification', { notificationId });
+      }
     }
 
     const boardId = roomBoardIdOf(row.name, row.payload);

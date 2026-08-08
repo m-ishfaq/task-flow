@@ -1,9 +1,11 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   index,
   inet,
   integer,
   pgSchema,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -164,4 +166,43 @@ export const passwordResets = identity.table(
     uniqueIndex('password_resets_hash_key').on(table.tokenHash),
     index('password_resets_user_idx').on(table.userId),
   ],
+);
+
+/**
+ * Notification delivery preferences — a category x channel matrix (migration
+ * 0027, ai/phase-9-notifications.md §3.3).
+ *
+ * GLOBAL PER USER, NOT PER ORG, and living in `identity` rather than
+ * `platform` because of it — see the migration's own header for why the
+ * org-keyed draft did not survive contact with the router (every route
+ * reading this needs to be `selfRoute`, and `selfRoute` resolves no org).
+ * The shape is `display_name`'s: "yours alone... the same wherever you sign
+ * in."
+ *
+ * `category` groups kinds the same way `PROJECT_SCOPED_PREFIXES` groups
+ * events in `apps/realtime/src/event-rooms.ts` — a short, closed, reviewed
+ * list (`direct`: mentions, DMs, assignments; `activity`: replies, comments,
+ * due reminders), never one row per kind. Absence of a row means the coded
+ * default, exactly like `FLAGS`' `defaultValue`.
+ *
+ * In-app is not in this matrix at all: turning off your own bell is not a
+ * preference this phase supports, and leaving it out removes the "every
+ * channel is off" edge case entirely.
+ */
+export const notificationPrefs = identity.table(
+  'notification_prefs',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+
+    /** 'direct' | 'activity' — a CHECK, not an enum; see `platform.notifications.kind`. */
+    category: text('category').notNull(),
+    /** 'email' | 'push' | 'sms' — a CHECK, not an enum. */
+    channel: text('channel').notNull(),
+    enabled: boolean('enabled').notNull(),
+
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.category, table.channel] })],
 );

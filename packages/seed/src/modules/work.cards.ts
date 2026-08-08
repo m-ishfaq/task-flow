@@ -571,6 +571,10 @@ function buildCard(args: {
             // plan scopes comments to flat threads); every seeded comment is
             // top-level.
             parentCommentId: null,
+            // Seed content never generates `@mention` nodes (Phase 9) —
+            // matching reality rather than fabricating notifications nobody
+            // would see fire in a real corpus.
+            mentionedUserIds: [],
           },
           envelopeFor(project.orgId, createdBy, comment.createdAt),
         ),

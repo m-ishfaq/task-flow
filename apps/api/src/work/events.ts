@@ -545,6 +545,14 @@ export const commentCreated = defineEvent(
       excerpt: z.string(),
       /** Null for a top-level comment, the parent's id for a reply. */
       parentCommentId: z.string().nullable(),
+      /**
+       * Every user id `@mentioned` in the comment (Phase 9,
+       * ai/phase-9-notifications.md §4). Extracted at write time by
+       * `work/richtext.ts`'s `mentionedUserIds`, the same pass that already
+       * builds `excerpt` — one more field off a walk this event already pays
+       * for, not a new one.
+       */
+      mentionedUserIds: z.array(z.string()).readonly(),
     })
     .strict(),
 );

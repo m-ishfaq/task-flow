@@ -456,7 +456,7 @@ export function exportChannel(input: { channelId: ChannelId; includeDeleted: boo
 
 export type SavedMessage = Wire<Awaited<ReturnType<typeof api.chat.saved.list.query>>>[number];
 export type ChatNotification = Wire<
-  Awaited<ReturnType<typeof api.chat.notifications.listMine.query>>
+  Awaited<ReturnType<typeof api.notifications.listMine.query>>
 >[number];
 
 export function savedQuery(orgId: string) {
@@ -487,7 +487,7 @@ export function unsaveMessage(messageId: MessageId) {
 export function notificationsQuery(orgId: string) {
   return queryOptions({
     queryKey: ['org', orgId, 'chat', 'notifications'] as const,
-    queryFn: async () => wire(await api.chat.notifications.listMine.query()),
+    queryFn: async () => wire(await api.notifications.listMine.query()),
     /* Without this, the badge above ticks up every 20s while the panel behind
        it — mounted once in the shell and never unmounted — kept showing
        whatever it fetched on first load until a window refocus happened to
@@ -500,18 +500,18 @@ export function notificationsQuery(orgId: string) {
 export function notificationCountQuery(orgId: string) {
   return queryOptions({
     queryKey: ['org', orgId, 'chat', 'notifications', 'count'] as const,
-    queryFn: () => api.chat.notifications.unreadCount.query(),
+    queryFn: () => api.notifications.unreadCount.query(),
     refetchInterval: 20_000,
   });
 }
 
 export function markNotificationsRead() {
-  return api.chat.notifications.markAllRead.mutate();
+  return api.notifications.markAllRead.mutate();
 }
 
 /** Marks the ONE notification just opened, without touching the rest of the bell. */
 export function markNotificationRead(notificationId: string) {
-  return api.chat.notifications.markRead.mutate({ notificationId });
+  return api.notifications.markRead.mutate({ notificationId });
 }
 
 export function invalidateSaved(client: QueryClient, orgId: string): void {

@@ -130,7 +130,17 @@ export const commentsModule = defineSeedModule({
           ctx.emit(
             createEvent(
               pageCommentCreated,
-              { commentId, pageId },
+              {
+                commentId,
+                pageId,
+                // Words, not a document — the same reasoning
+                // apps/api/src/docs/comment.service.ts gives (Phase 9).
+                excerpt: bodyText.slice(0, 280),
+                // Seed content never generates `@mention` nodes, so this is
+                // always empty — matching reality rather than fabricating
+                // notifications nobody would see fire in a real corpus.
+                mentionedUserIds: [],
+              },
               envelopeFor(orgId, author.user.id, createdAt),
             ),
           );

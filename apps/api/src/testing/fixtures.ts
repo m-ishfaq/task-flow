@@ -86,7 +86,12 @@ export function testAppRouter(options: { deliver?: (m: DeliverableLink) => Promi
 
   const passkeys = buildPasskeyDeps(deps, TEST_ENV);
   return {
-    router: createAppRouter({ identity: deps, passkeys, work: buildWorkDeps(TEST_ENV) }),
+    router: createAppRouter({
+      identity: deps,
+      passkeys,
+      work: buildWorkDeps(TEST_ENV),
+      platform: { vapidPublicKey: null },
+    }),
     events,
     deps,
     passkeys,

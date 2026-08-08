@@ -5,6 +5,7 @@ import { createTenancyRouter } from './tenancy/router.js';
 import { createWorkRouter, type WorkRouterDeps } from './work/router.js';
 import { createChatRouter } from './chat/router.js';
 import { createDocsRouter } from './docs/router.js';
+import { createPlatformRouter } from './platform/router.js';
 
 /**
  * The root router.
@@ -25,6 +26,8 @@ export interface AppRouterDeps extends IdentityRouterDeps {
    * map, without a container.
    */
   readonly work: WorkRouterDeps;
+  /** Notifications — the VAPID public key for the push ceremony (§3.7). */
+  readonly platform: { readonly vapidPublicKey: string | null };
 }
 
 export function createAppRouter(deps: AppRouterDeps) {
@@ -88,6 +91,13 @@ export function createAppRouter(deps: AppRouterDeps) {
      * process — nothing here talks to it.
      */
     docs: createDocsRouter(),
+
+    /**
+     * Notifications — reading your own, and your own delivery preferences
+     * (Phase 9). Moved out from under `chat` once Work and Docs became
+     * producers too — see `platform/router.ts`'s own header.
+     */
+    notifications: createPlatformRouter(deps.platform),
   });
 }
 
