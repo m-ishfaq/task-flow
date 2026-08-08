@@ -134,7 +134,11 @@ export function vapidAuthorization(input: {
   });
 
   const protectedSegment = `${header}.${payload}`;
-  const signature = sign('sha256', Buffer.from(protectedSegment, 'utf8'), keyObjectFromBase64Url(input.privateKey));
+  const signature = sign(
+    'sha256',
+    Buffer.from(protectedSegment, 'utf8'),
+    keyObjectFromBase64Url(input.privateKey),
+  );
 
   const publicKey = publicPointFromBase64Url(input.privateKey);
 
@@ -305,7 +309,9 @@ export function encryptWithFixedInputs(
 /** HKDF-SHA256 with a single Expand step (RFC 5869). */
 function hkdf(ikm: Buffer, salt: Buffer, info: Buffer, length: number): Buffer {
   const prk = createHmac('sha256', salt).update(ikm).digest();
-  const output = createHmac('sha256', prk).update(Buffer.concat([info, Buffer.from([0x01])])).digest();
+  const output = createHmac('sha256', prk)
+    .update(Buffer.concat([info, Buffer.from([0x01])]))
+    .digest();
   // Buffer.from, not subarray: @types/node types Buffer#subarray as a plain
   // Uint8Array, and the caller needs a real Buffer.
   return Buffer.from(output.subarray(0, length));

@@ -143,7 +143,12 @@ export function startAuditRelay(options: StartRelayOptions): RelayHandle {
         const pushed = await deliverPendingPushes(options.pushProvider, options.logger);
         if (pushed.attempted > 0) {
           options.logger.debug(
-            { attempted: pushed.attempted, sent: pushed.sent, failed: pushed.failed, gone: pushed.gone },
+            {
+              attempted: pushed.attempted,
+              sent: pushed.sent,
+              failed: pushed.failed,
+              gone: pushed.gone,
+            },
             'push relay delivered notifications',
           );
         }

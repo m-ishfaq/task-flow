@@ -255,7 +255,11 @@ export function renderNotificationEmail(
  */
 export function renderNotificationDigest(
   context: NotificationLinkContext & {
-    readonly items: readonly { readonly title: string; readonly excerpt: string | null; readonly path: string }[];
+    readonly items: readonly {
+      readonly title: string;
+      readonly excerpt: string | null;
+      readonly path: string;
+    }[];
   },
 ): RenderedMail {
   const origin = context.webOrigin.replace(/\/+$/, '');
@@ -281,7 +285,8 @@ export function renderNotificationDigest(
     )
     .join('');
 
-  const countLabel = context.items.length === 1 ? '1 update' : `${String(context.items.length)} updates`;
+  const countLabel =
+    context.items.length === 1 ? '1 update' : `${String(context.items.length)} updates`;
 
   return {
     subject: `${countLabel} for you on TaskFlow`,

@@ -1,6 +1,12 @@
 import { and, desc, eq, schema, withUserScope } from '@taskflow/db';
 import { AppError, type UserId } from '@taskflow/contracts';
-import { newId, isValidSubscriptionKeys, isAllowedUrl, isIpAddress, isBlockedAddress } from '@taskflow/security';
+import {
+  newId,
+  isValidSubscriptionKeys,
+  isAllowedUrl,
+  isIpAddress,
+  isBlockedAddress,
+} from '@taskflow/security';
 import { lookup } from 'node:dns/promises';
 
 /**
@@ -90,10 +96,7 @@ export async function registerSubscription(
   userAgent: string | null,
 ): Promise<{ readonly registered: true }> {
   if (!isValidSubscriptionKeys({ p256dh: input.p256dh, auth: input.auth })) {
-    throw new AppError(
-      'VALIDATION_FAILED',
-      'The subscription keys are not valid Web Push keys.',
-    );
+    throw new AppError('VALIDATION_FAILED', 'The subscription keys are not valid Web Push keys.');
   }
   await assertSafeEndpoint(input.endpoint);
 

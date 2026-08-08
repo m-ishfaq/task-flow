@@ -209,7 +209,9 @@ export function NotificationPreferencesSection() {
                             })
                             .catch((error: unknown) => {
                               toast.failure('Push could not be enabled on this browser', error);
-                              void queryClient.invalidateQueries({ queryKey: devicesQuery.queryKey });
+                              void queryClient.invalidateQueries({
+                                queryKey: devicesQuery.queryKey,
+                              });
                             });
                           return;
                         }

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { OutboxRow } from '@taskflow/db';
-import { dueDateChanged, planChannelDeliveries, planNotifications } from './notification.projection.js';
+import {
+  dueDateChanged,
+  planChannelDeliveries,
+  planNotifications,
+} from './notification.projection.js';
 
 /**
  * Who gets told about an event (§4, §10.6; ai/phase-9-notifications.md §4).
@@ -321,9 +325,7 @@ describe('planChannelDeliveries — Wave 2 delivery decisions (§3.4, §3.7)', (
     /* A due reminder arriving in tomorrow's digest is the point of a digest;
        a mention arriving there instead of tonight defeats the point of the
        mention. */
-    const prefs = [
-      { category: 'activity' as const, channel: 'email' as const, enabled: true },
-    ];
+    const prefs = [{ category: 'activity' as const, channel: 'email' as const, enabled: true }];
     expect(planChannelDeliveries('card.due_soon', prefs)).toMatchObject({ email: 'digest' });
     expect(planChannelDeliveries('chat.thread_reply', prefs)).toMatchObject({ email: 'digest' });
   });

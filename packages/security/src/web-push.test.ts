@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  createDecipheriv,
-  createECDH,
-  createHmac,
-  createPublicKey,
-  verify,
-} from 'node:crypto';
+import { createDecipheriv, createECDH, createHmac, createPublicKey, verify } from 'node:crypto';
 import {
   RFC8291_VECTOR,
   encryptPushPayload,
@@ -57,11 +51,14 @@ describe('RFC 8291 Appendix A vector', () => {
 
 describe('encryptPushPayload (the random path that actually runs)', () => {
   /** The browser side: derive the keys from the subscription's PRIVATE key. */
-  function decryptAsReceiver(subscription: {
-    readonly p256dh: string;
-    readonly uaPrivate: string;
-    readonly auth: string;
-  }, body: Buffer): string {
+  function decryptAsReceiver(
+    subscription: {
+      readonly p256dh: string;
+      readonly uaPrivate: string;
+      readonly auth: string;
+    },
+    body: Buffer,
+  ): string {
     // aes128gcm header: salt(16) || rs(4) || idlen(1) || keyid(idlen).
     const salt = body.subarray(0, 16);
     const idlen = body[20]!;
@@ -93,7 +90,10 @@ describe('encryptPushPayload (the random path that actually runs)', () => {
     // Empty AAD — RFC 8188 §5.2; the vector test is what pins this down.
     const decipher = createDecipheriv('aes-128-gcm', cek, nonce, { authTagLength: 16 });
     decipher.setAuthTag(ciphertext.subarray(-16));
-    const plaintext = Buffer.concat([decipher.update(ciphertext.subarray(0, -16)), decipher.final()]);
+    const plaintext = Buffer.concat([
+      decipher.update(ciphertext.subarray(0, -16)),
+      decipher.final(),
+    ]);
 
     // Trailing 0x02 padding delimiter, per RFC 8291 §4.
     expect(plaintext[plaintext.length - 1]).toBe(0x02);
@@ -204,9 +204,9 @@ describe('isValidSubscriptionKeys', () => {
       isValidSubscriptionKeys({ p256dh: RFC8291_VECTOR.uaPublic, auth: RFC8291_VECTOR.authSecret }),
     ).toBe(true);
     expect(isValidSubscriptionKeys({ p256dh: 'garbage', auth: 'garbage' })).toBe(false);
-    expect(
-      isValidSubscriptionKeys({ p256dh: RFC8291_VECTOR.uaPublic, auth: 'garbage' }),
-    ).toBe(false);
+    expect(isValidSubscriptionKeys({ p256dh: RFC8291_VECTOR.uaPublic, auth: 'garbage' })).toBe(
+      false,
+    );
     expect(isValidSubscriptionKeys({ p256dh: 'garbage', auth: RFC8291_VECTOR.authSecret })).toBe(
       false,
     );

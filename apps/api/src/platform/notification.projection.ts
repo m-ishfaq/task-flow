@@ -276,7 +276,11 @@ function planCardAssigned(row: OutboxRow): readonly PlannedNotification[] {
 export function planChannelDeliveries(
   kind: string,
   prefs: readonly ExplicitPref[],
-): { readonly email: 'immediate' | 'digest' | 'off'; readonly push: boolean; readonly sms: boolean } {
+): {
+  readonly email: 'immediate' | 'digest' | 'off';
+  readonly push: boolean;
+  readonly sms: boolean;
+} {
   const category = categoryOfKind(kind);
   const email = resolvePref(prefs, category, 'email');
   const push = resolvePref(prefs, category, 'push');
@@ -306,7 +310,9 @@ export function planChannelDeliveries(
  * belt and braces: `changed` is derived from the same comparison, and if one
  * were ever wrong the other still catches the change.
  */
-export function dueDateChanged(row: OutboxRow): { readonly orgId: string; readonly cardId: string } | null {
+export function dueDateChanged(
+  row: OutboxRow,
+): { readonly orgId: string; readonly cardId: string } | null {
   if (row.name !== 'card.updated') return null;
   const record = asRecord(row.payload);
   if (record === null) return null;
@@ -425,7 +431,8 @@ function asIdList(value: unknown): readonly string[] {
 export async function drainNotifications(limit = 100): Promise<NotificationDrainResult> {
   return withAuditScope(async (tx) => {
     const pending = await claimPending(tx, NOTIFICATION_CONSUMER, limit);
-    if (pending.length === 0) return { processed: 0, written: 0, pendingEmails: [], pendingPushes: [] };
+    if (pending.length === 0)
+      return { processed: 0, written: 0, pendingEmails: [], pendingPushes: [] };
 
     let written = 0;
     /* Recipients whose preferences and idempotent delivery insert both said

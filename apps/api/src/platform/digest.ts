@@ -183,7 +183,10 @@ export function startDigestSweep(options: StartDigestSweepOptions): DigestSweepH
         await markDigestSent(batch.deliveryIds);
       }
       options.logger.info(
-        { batches: batches.length, deliveries: batches.reduce((n, b) => n + b.deliveryIds.length, 0) },
+        {
+          batches: batches.length,
+          deliveries: batches.reduce((n, b) => n + b.deliveryIds.length, 0),
+        },
         'digest sweep sent activity email',
       );
     } catch (error) {

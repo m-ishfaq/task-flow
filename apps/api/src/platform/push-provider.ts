@@ -69,10 +69,7 @@ export class WebPushProvider implements PushProvider {
 
   async send(input: PushSendInput): Promise<PushSendOutcome> {
     const audience = new URL(input.endpoint).origin;
-    const { body } = encryptPushPayload(
-      { p256dh: input.p256dh, auth: input.auth },
-      input.payload,
-    );
+    const { body } = encryptPushPayload({ p256dh: input.p256dh, auth: input.auth }, input.payload);
     const { authorization } = vapidAuthorization({
       subject: this.#subject,
       privateKey: this.#privateKey,
@@ -111,5 +108,3 @@ export class WebPushProvider implements PushProvider {
     return 'failed';
   }
 }
-
-

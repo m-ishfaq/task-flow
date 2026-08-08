@@ -1,4 +1,10 @@
-import { MailQueue, renderNotificationDigest, renderNotificationEmail, SmtpMailer, type Mailer } from '@taskflow/mail';
+import {
+  MailQueue,
+  renderNotificationDigest,
+  renderNotificationEmail,
+  SmtpMailer,
+  type Mailer,
+} from '@taskflow/mail';
 import type { Env } from '../config/env.js';
 import type { PendingEmailSend } from './notification.projection.js';
 import type { DigestBatch } from './digest.js';

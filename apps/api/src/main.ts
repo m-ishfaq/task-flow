@@ -92,7 +92,10 @@ const notificationMail = createNotificationMailDelivery({ env });
    pending push delivery rows on every tick. */
 const pushProvider =
   env.VAPID_PRIVATE_KEY !== undefined && env.VAPID_SUBJECT !== undefined
-    ? new WebPushProvider({ VAPID_SUBJECT: env.VAPID_SUBJECT, VAPID_PRIVATE_KEY: env.VAPID_PRIVATE_KEY })
+    ? new WebPushProvider({
+        VAPID_SUBJECT: env.VAPID_SUBJECT,
+        VAPID_PRIVATE_KEY: env.VAPID_PRIVATE_KEY,
+      })
     : undefined;
 
 /* Moves domain events from the outbox into the hash-chained audit log. Belongs

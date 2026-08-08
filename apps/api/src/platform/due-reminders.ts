@@ -143,7 +143,10 @@ export async function runDueReminderSweep(
         if (notificationId === undefined) continue;
         written += 1;
 
-        const deliveries = planChannelDeliveries('card.due_soon', prefsByUser.get(assigneeId) ?? []);
+        const deliveries = planChannelDeliveries(
+          'card.due_soon',
+          prefsByUser.get(assigneeId) ?? [],
+        );
         const path = notificationPath({
           subjectType: 'card',
           subjectId: card.id,
@@ -227,7 +230,9 @@ export interface StartDueReminderSweepOptions {
  * runs the job), and what must never happen silently is the narrow role's
  * grant being bypassed by a fallback to the application role.
  */
-export function startDueReminderSweep(options: StartDueReminderSweepOptions): DueReminderSweepHandle {
+export function startDueReminderSweep(
+  options: StartDueReminderSweepOptions,
+): DueReminderSweepHandle {
   let running = false;
 
   const tick = async (): Promise<void> => {

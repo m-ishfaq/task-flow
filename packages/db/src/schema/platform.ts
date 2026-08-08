@@ -358,7 +358,5 @@ export const pushSubscriptions = platform.table(
     /** Touched on every successful push — Phase 12's "is this device alive" answer. */
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [
-    uniqueIndex('push_subscriptions_user_endpoint_key').on(table.userId, table.endpoint),
-  ],
+  (table) => [uniqueIndex('push_subscriptions_user_endpoint_key').on(table.userId, table.endpoint)],
 );

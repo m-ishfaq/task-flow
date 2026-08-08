@@ -49,9 +49,7 @@ export function pushVapidKeyQuery() {
   });
 }
 
-export type PushDeviceEntry = Awaited<
-  ReturnType<typeof api.notifications.push.list.query>
->[number];
+export type PushDeviceEntry = Awaited<ReturnType<typeof api.notifications.push.list.query>>[number];
 
 /** The caller's registered devices, in wire form (createdAt/lastSeenAt are strings). */
 export function pushDevicesQuery() {
