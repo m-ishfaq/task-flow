@@ -20,7 +20,7 @@ Parent: [PLAN.md](../PLAN.md) §3.5 (People), §13 (Roadmap, row 11.5).
 ## 1. Why this phase exists
 
 Nobody built a People module before now because nobody needed one badly enough to justify it —
-two other phases needed one *field* each, and both built the minimal thing rather than wait:
+two other phases needed one _field_ each, and both built the minimal thing rather than wait:
 
 - **Phase 5 (Chat) added `identity.users.display_name`** (migration 0019) because a DM sidebar
   with no channel name to fall back on rendered raw email addresses on every line. Its own
@@ -89,11 +89,11 @@ reports).
 A profile has two kinds of fact in it, and they do not share a lifecycle:
 
 - **Personal facts** — display name, timezone, working hours, out-of-office — are true of the
-  *person*, identically in every organization they belong to. This is exactly
+  _person_, identically in every organization they belong to. This is exactly
   `identity.users.display_name`'s existing shape, and `ai/account-page.md`'s own words for why:
   "yours alone... the same wherever you sign in."
 - **Organizational facts** — job title, department, who you report to — are true of a
-  *membership*. A consultant who belongs to three orgs can have three managers and three titles;
+  _membership_. A consultant who belongs to three orgs can have three managers and three titles;
   collapsing that onto the user row would make "who is Priya's manager" an ambiguous question the
   moment she joins a second org, which `identity.memberships` already solved for `role` by keying
   it on `(org_id, user_id)` rather than on the user.
@@ -138,7 +138,7 @@ The composite foreign keys are the same containment argument CLAUDE.md already m
 card hierarchy and Docs' page tree: `identity.memberships` carries the unique index
 `memberships_org_user_key` on `(org_id, user_id)` (migration 0004) precisely so a child row can be
 constrained to reference a membership that actually exists **in that org** — `manager_user_id`
-naming someone who is a member of a *different* org is refused by the database, not caught by a
+naming someone who is a member of a _different_ org is refused by the database, not caught by a
 service-layer lookup someone could forget to write. `ON DELETE SET NULL` on the manager FK (rather
 than `CASCADE`) is deliberate: a manager leaving the org should orphan their reports' `manager_id`
 back to null, not delete the reports' own job-title/department rows.
@@ -247,7 +247,7 @@ rather than collapsing "unknown" into "unavailable."
 present-and-non-blank CHECK pattern as `display_name`) together answer one question — "is this
 person OOO right now, and until when" — as a single mutable pair, not an append-only history of
 OOO periods. Setting `ooo_until` to a future timestamp starts OOO immediately (there is no
-`ooo_from` for scheduling a *future* OOO period in advance — §7 names this as an open call, not a
+`ooo_from` for scheduling a _future_ OOO period in advance — §7 names this as an open call, not a
 default nobody considered); clearing it (`null`) ends OOO immediately, which is also how someone
 returning early cancels it. "Is this person OOO" is computed at read time (`ooo_until IS NOT NULL
 AND ooo_until > now()`), never stored as a separate boolean that could drift from the timestamp
@@ -290,7 +290,7 @@ as "nobody assigns their own manager."
 `people.profiles` gets **no row-level security policy at all — the same choice `identity.users`
 already made**, and for the identical reason: nothing about a display name, a timezone, or an
 out-of-office message is secret from other people in a shared org, and the actual access boundary
-is which *routes* exist, not which *rows* a query can see. There is no route that accepts an
+is which _routes_ exist, not which _rows_ a query can see. There is no route that accepts an
 arbitrary target user id for a personal-profile write (§3.9's `people.profile.update` is
 self-only, exactly like `auth.updateProfile` before it), so no row-level check is doing any work a
 route-level check is not already doing more legibly. Adding RLS here would be defense that defends
@@ -300,7 +300,7 @@ that cannot happen.
 `people.membership_profiles` is the opposite case and gets the ordinary, non-negotiable org
 tenant-isolation policy every other org-scoped table has (guardrail 1): `org_id =
 current_setting('app.org_id')::uuid`, `USING`/`WITH CHECK` both. This one **is** doing real work —
-`people.reportingLine.set` is callable by an admin naming *another* member as the subject, so the
+`people.reportingLine.set` is callable by an admin naming _another_ member as the subject, so the
 query is not self-scoped the way §3.9's personal-profile routes are, and `withOrgScope` plus RLS
 is what stops an admin of org A from being able to name org B's membership rows at all, the same
 guarantee every other tenant table in this codebase relies on.
@@ -335,7 +335,7 @@ Mirrors the existing per-product layout (`work/`, `chat/`, `docs/`), mounted in
 - `people.profile.get` — `memberRoute`/`selfRoute` (§3.8). No input; subject is the caller. Returns
   the merged personal-profile view, including §3.3's timezone fallback.
 - `people.profile.update` — same route kind. Input: partial `{ displayName, timezone,
-  workingHoursStart, workingHoursEnd, workingDays, oooUntil, oooMessage }`, using the same
+workingHoursStart, workingHoursEnd, workingDays, oooUntil, oooMessage }`, using the same
   `'x' in patch` (not `??`) discipline `apps/web`'s `useUpdateCard` already established for
   telling "clear this field" apart from "did not send this field" (CLAUDE.md, Phase 3 §"the two
   places its types lied").
@@ -367,7 +367,7 @@ Mirrors the existing per-product layout (`work/`, `chat/`, `docs/`), mounted in
 - **`/people/$userId`**: one member's profile — personal fields (read-only unless it is the
   viewer's own), job title/department, manager (linked), direct reports (linked). An admin viewing
   someone else's page sees an edit affordance for job title/department/manager gated on
-  `member:manage`, exactly as `admin/settings-page.tsx`'s role dropdown already is today —  the UI
+  `member:manage`, exactly as `admin/settings-page.tsx`'s role dropdown already is today — the UI
   never re-derives that check (CLAUDE.md's standing rule, §"The UI never re-derives authorization");
   the server answers and a member without the permission gets an honest FORBIDDEN from the route,
   not a hidden button.
@@ -400,7 +400,7 @@ naming rule) and, per guardrail 11, emitted inside the same transaction as the w
   `jobTitle`/`department`. Real `orgId`, not `SYSTEM_ORG` — this fact is org-scoped and the audit
   log's per-org projection needs to attribute it correctly.
 - **`reportingLine.changed`** — `{ orgId, userId, before: managerUserId | null, after:
-  managerUserId | null }`, its own event rather than folded into `membershipProfile.updated`
+managerUserId | null }`, its own event rather than folded into `membershipProfile.updated`
   (§3.6's own reasoning: a structural org-chart edge is a more sensitive fact than a free-text
   title, and deserves to be independently greppable in the audit log rather than mixed into a
   "some profile field changed" bucket an auditor has to open to interpret).
@@ -408,7 +408,7 @@ naming rule) and, per guardrail 11, emitted inside the same transaction as the w
   time this was written; delete the definition rather than leave a dead event type importable from
   `@taskflow/events`.
 
-No changes to any *existing* event's payload — unlike Phase 4 Wave 2 and Phase 9's own experience
+No changes to any _existing_ event's payload — unlike Phase 4 Wave 2 and Phase 9's own experience
 ("the draft claimed no new payload schemas... that held for Wave 1 and broke in Wave 2"), this
 phase touches no event another product already emits, because it consumes nothing — no automation,
 no notification routing, no search indexing reads a People event yet. That is a deliberate
@@ -460,7 +460,7 @@ work": a test proving `setReportingLine` refuses a direct self-report (the CHECK
 cycle (the service walk) with a validation error, not a constraint-violation 500; a test proving
 `people.membership_profiles`' composite FK refuses a manager who is a member of a **different**
 org (the tenancy-fuzz-style cross-tenant substitution, run once explicitly as a targeted unit test
-too, since a passing fuzz run alone would not explain *why* it passed to a future reader); a
+too, since a passing fuzz run alone would not explain _why_ it passed to a future reader); a
 migration-verify test for Wave 1's expand step and, separately, Wave 3's contract step; a test
 proving `people.profile.get`'s timezone fallback reads `identity.notification_prefs` when present
 and returns `null` (not `'UTC'`, not an error) when that table has no row for the caller — the
