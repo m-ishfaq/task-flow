@@ -172,6 +172,17 @@ export const keys = {
   /** The caller's own account (`/account`) — answers with no org selected. */
   me: () => ['auth', 'me'] as const,
 
+  /**
+   * The caller's own merged profile (Phase 11.5, people/api.ts).
+   *
+   * Deliberately NOT `keys.me()`: `auth.me` answers with the four-field
+   * identity shape (session bootstrap) while `people.profile.get` carries the
+   * full merged view — timezone, working hours, OOO. Sharing a key would make
+   * two different-shaped responses race for one cache entry and the page
+   * would render whichever won.
+   */
+  profile: () => ['people', 'profile'] as const,
+
   org: (orgId: string) => ['org', orgId] as const,
 
   /**
@@ -250,6 +261,15 @@ export const keys = {
   /** "What links here" for one page (Phase 6 Wave 4, docs/api.ts). */
   pageBacklinks: (orgId: string, pageId: string) =>
     ['org', orgId, 'page', pageId, 'backlinks'] as const,
+
+  /** The org directory (Phase 11.5, people/api.ts). One key per cursor — the cursor IS the page. */
+  directory: (orgId: string, cursor: string | null) =>
+    ['org', orgId, 'people', 'directory', cursor ?? 'first'] as const,
+  /** Every directory page, whatever cursor — invalidating this refetches the whole directory. */
+  directoryAll: (orgId: string) => ['org', orgId, 'people', 'directory'] as const,
+  /** One member's detail with manager and direct reports (Phase 11.5). */
+  member: (orgId: string, userId: string) =>
+    ['org', orgId, 'people', 'member', userId] as const,
 } as const;
 
 /** The org id every key needs, or a placeholder that matches nothing. */

@@ -64,6 +64,8 @@ export {
   type UnprocessedPageVersion,
 } from './docs-backlinks.js';
 
+export { readNotificationPrefsTimezone } from './notification-prefs-timezone.js';
+
 export {
   readAuditEntries,
   readAuditChain,

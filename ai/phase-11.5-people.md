@@ -1,8 +1,22 @@
 # Phase 11.5 — People
 
-**Status: PROPOSED. Nothing in this phase is built.** Written the way `phase-9-notifications.md`
-and `phase-4-realtime.md` were before their own approval dates: argued from the actual code that
-exists today, with genuinely open calls pulled into §7 instead of silently decided.
+**Status: Waves 1 and 2 are COMPLETE — approved and built 2026-08-08 on top of Phase 9 (merged
+into `main` first, per the author's own instruction). Wave 3 (dropping `identity.users.display_name`
+after a release cycle) remains deliberately not built — it is a contract step that cannot run at
+build time. Migrations 0030/0031, `apps/api/src/people` (profile, directory, membership, reporting),
+the `/people` + `/people/$userId` pages, the `/account` working-hours/timezone/OOO section, and the
+`profile.updated`/`membershipProfile.updated`/`reportingLine.changed` events all shipped. The demo
+seeder shipped too — `packages/seed/src/modules/people.profiles.ts` seeds both tables so `/people`,
+the org chart and the OOO badge have real data in a demo run; its org chart is cycle-free BY
+CONSTRUCTION (a manager is always an earlier entry in the org plan's member list — see the module
+header), and it emits the two org-scoped events but never `profile.updated`, whose `SYSTEM_ORG`
+envelope the outbox's RLS cannot hold. Two
+build-time corrections to the draft are recorded here because they are exactly the kind of thing
+the next reader needs: `selfRoute` won over `memberRoute` for the profile routes once Phase 9's
+builder was actually in the tree (the account page must answer with NO org selected — see
+`apps/api/src/people/router.ts`'s own header), and §7's OOO decision resolved to **schedule in
+advance** (`ooo_from` + `ooo_until`, CHECK `from < until`), so the directory never badges someone
+as out while they are still working.**
 
 **Relationship to Phase 9.** `ai/phase-9-notifications.md` (drafted 2026-08-08, Wave 1 core landed
 the same day, not yet merged to `main`) is the reason this phase exists on the roadmap at all —

@@ -47,8 +47,9 @@ import '../docs/events.js';
  *
  *   - The identity events are the genuinely arguable ones. `user.logged_in`
  *     already carries the account in `actor_id`, so `resource_id` would repeat
- *     it — but `user.display_name_changed` IS mapped (to `member`/`userId`),
- *     so the two conventions currently disagree with each other.
+ *     it — but `profile.updated` (Phase 11.5, the successor to the retired
+ *     `user.display_name_changed`) IS mapped (to `member`/`userId`), so the
+ *     two conventions currently disagree with each other.
  *   - `attachment.*` (Work) are almost certainly an oversight: chat's
  *     `message_attachment.*` are all mapped to `attachment`, and these are the
  *     same events one phase earlier.

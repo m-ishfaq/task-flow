@@ -9,6 +9,7 @@ import { contentModule } from './docs.content.js';
 import { commentsModule } from './docs.comments.js';
 import { suggestionsModule } from './docs.suggestions.js';
 import { templatesModule } from './docs.templates.js';
+import { peopleModule } from './people.profiles.js';
 
 /**
  * The outbox, and the real hash-chained audit log it drains into.
@@ -43,7 +44,9 @@ export const auditModule = defineSeedModule({
      reaches `docs.spaces` through its own `requires`, `docs.comments`/
      `docs.suggestions` each reach both `docs.spaces` and `docs.content`
      through theirs, and `docs.templates` reaches `docs.spaces` through its
-     own. */
+     own. `people.profiles` reaches `tenancy.orgs` through its own and needs
+     nothing else, but it must appear here all the same: nothing else in the
+     graph reads its output. */
   requires: [
     attachmentsModule,
     tuplesModule,
@@ -52,6 +55,7 @@ export const auditModule = defineSeedModule({
     commentsModule,
     suggestionsModule,
     templatesModule,
+    peopleModule,
   ],
   tables: ['platform.outbox'],
 

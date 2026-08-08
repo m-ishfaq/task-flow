@@ -154,25 +154,3 @@ export const passkeyLoginFailed = defineEvent(
 
 export { userRef };
 
-/**
- * Someone changed what they are called (migration 0019).
- *
- * Carries both sides, like every other update event in this codebase: an event
- * saying only what a field became cannot answer whether anything changed, and
- * "who was this person called before?" is the question an audit reader has when
- * a name in an old entry no longer matches anyone.
- *
- * Both are nullable — null on the `before` side is an account that never had a
- * name, and on the `after` side is someone clearing theirs, which is a real
- * operation and not a failed write.
- */
-export const displayNameChanged = defineEvent(
-  'user.display_name_changed',
-  z
-    .object({
-      userId: z.string(),
-      before: z.string().nullable(),
-      after: z.string().nullable(),
-    })
-    .strict(),
-);

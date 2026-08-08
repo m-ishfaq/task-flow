@@ -24,6 +24,7 @@ import { useToast } from '../../lib/toast-context.js';
 import { useStepUp } from './use-step-up.js';
 import { PasskeySection } from './passkey-section.js';
 import { NotificationPreferencesSection } from '../notifications/notification-prefs-section.js';
+import { profileQuery, updateProfile } from '../people/api.js';
 
 /**
  * The personal account page (`ai/account-page.md`).
@@ -51,6 +52,7 @@ export function AccountPage() {
       </div>
 
       <AccountSection />
+      <WorkingHoursSection />
       <NotificationPreferencesSection />
       <PasskeySection />
       <SessionsSection />
@@ -80,7 +82,7 @@ function AccountSection() {
   const value = draft ?? me.data?.displayName ?? '';
 
   const save = useMutation({
-    mutationFn: (displayName: string | null) => api.auth.updateProfile.mutate({ displayName }),
+    mutationFn: (displayName: string | null) => updateProfile({ displayName }),
     onSuccess: () => {
       setDraft(null);
       void queryClient.invalidateQueries({ queryKey: keys.me() });
@@ -140,6 +142,250 @@ function AccountSection() {
           </span>
         </div>
       </form>
+    </Section>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * Working hours, timezone & out-of-office
+ * -------------------------------------------------------------------------- */
+
+/**
+ * The timezone, working-hours window and OOO state (Phase 11.5 Wave 1,
+ * ai/phase-11.5-people.md §3.3–§3.4).
+ *
+ * Uses `people.profile.get`, not `auth.me` — the merged view carries the
+ * timezone, hours and OOO fields the identity shape deliberately does not.
+ * The timezone is the §3.3 fallback chain's result: the profile's own value,
+ * then (if the database has it) Phase 9's quiet-hours timezone, then null —
+ * and null is rendered as an explicit "set one" prompt rather than a guessed
+ * zone, exactly the honesty the fallback exists to preserve.
+ */
+function WorkingHoursSection() {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const profile = useQuery(profileQuery());
+
+  /* One `draft` object for all four controls, null until touched — the same
+     discipline `AccountSection` uses, so the save cannot overwrite fields the
+     user never looked at with values from a stale first render. */
+  const [draft, setDraft] = useState<{
+    timezone: string | null;
+    workingHoursStart: string | null;
+    workingHoursEnd: string | null;
+    workingDays: readonly number[];
+    oooFrom: string | null;
+    oooUntil: string | null;
+    oooMessage: string | null;
+  } | null>(null);
+
+  const value = draft ?? {
+    timezone: profile.data?.timezone ?? null,
+    workingHoursStart: profile.data?.workingHoursStart ?? null,
+    workingHoursEnd: profile.data?.workingHoursEnd ?? null,
+    workingDays: profile.data?.workingDays ?? [],
+    oooFrom: profile.data?.oooFrom ?? null,
+    oooUntil: profile.data?.oooUntil ?? null,
+    oooMessage: profile.data?.oooMessage ?? null,
+  };
+
+  const saved = {
+    timezone: profile.data?.timezone ?? null,
+    workingHoursStart: profile.data?.workingHoursStart ?? null,
+    workingHoursEnd: profile.data?.workingHoursEnd ?? null,
+    workingDays: profile.data?.workingDays ?? [],
+    oooFrom: profile.data?.oooFrom ?? null,
+    oooUntil: profile.data?.oooUntil ?? null,
+    oooMessage: profile.data?.oooMessage ?? null,
+  };
+
+  const dirty =
+    draft !== null &&
+    JSON.stringify({
+      timezone: draft.timezone,
+      workingHoursStart: draft.workingHoursStart,
+      workingHoursEnd: draft.workingHoursEnd,
+      workingDays: [...draft.workingDays].sort(),
+      oooFrom: draft.oooFrom,
+      oooUntil: draft.oooUntil,
+      oooMessage: draft.oooMessage,
+    }) !==
+      JSON.stringify(saved);
+
+  const save = useMutation({
+    mutationFn: updateProfile,
+    onSuccess: () => {
+      setDraft(null);
+      /* Both views change — the merged profile is the source, but `auth.me`
+         mirrors its displayName for the session bootstrap. */
+      void queryClient.invalidateQueries({ queryKey: keys.me() });
+      void queryClient.invalidateQueries({ queryKey: keys.profile() });
+      toast.show('Working hours saved');
+    },
+    onError: (error) => {
+      toast.failure('Your working hours were not saved', error);
+    },
+  });
+
+  if (profile.isPending) return <SkeletonRows rows={3} className="*:h-9" />;
+  if (profile.isError) {
+    return <ErrorView error={profile.error} title="Could not load your profile" />;
+  }
+
+  const toggleDay = (day: number) => {
+    setDraft({
+      ...value,
+      workingDays: value.workingDays.includes(day)
+        ? value.workingDays.filter((existing) => existing !== day)
+        : [...value.workingDays, day].sort((a, b) => a - b),
+    });
+  };
+
+  return (
+    <Section
+      title="Working hours & timezone"
+      description="Your working week and where you are — shown on your profile and used for scheduling."
+    >
+      <div className="flex flex-col gap-3">
+        <Field
+          label="Timezone"
+          htmlFor="profile-timezone"
+          hint={
+            value.timezone === null
+              ? 'Not set — pick one so working hours and reminders land at the right time.'
+              : undefined
+          }
+        >
+          <Input
+            id="profile-timezone"
+            value={value.timezone ?? ''}
+            placeholder="e.g. America/Chicago"
+            onChange={(event) => {
+              setDraft({ ...value, timezone: event.target.value.trim() === '' ? null : event.target.value });
+            }}
+          />
+        </Field>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Work starts" htmlFor="profile-hours-start">
+            <Input
+              id="profile-hours-start"
+              type="time"
+              value={value.workingHoursStart ?? ''}
+              onChange={(event) => {
+                setDraft({ ...value, workingHoursStart: event.target.value || null });
+              }}
+            />
+          </Field>
+          <Field label="Work ends" htmlFor="profile-hours-end">
+            <Input
+              id="profile-hours-end"
+              type="time"
+              value={value.workingHoursEnd ?? ''}
+              onChange={(event) => {
+                setDraft({ ...value, workingHoursEnd: event.target.value || null });
+              }}
+            />
+          </Field>
+        </div>
+
+        <fieldset>
+          <legend className="mb-1 block text-xs font-medium text-ink-muted">Working days</legend>
+          <div className="flex flex-wrap gap-1">
+            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, index) => {
+              const dayNumber = index + 1;
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  aria-pressed={value.workingDays.includes(dayNumber)}
+                  onClick={() => {
+                    toggleDay(dayNumber);
+                  }}
+                  className={
+                    value.workingDays.includes(dayNumber)
+                      ? 'rounded px-2 py-1 text-xs font-medium bg-accent text-accent-ink'
+                      : 'rounded px-2 py-1 text-xs text-ink-muted border border-line hover:bg-surface-hover'
+                  }
+                >
+                  {day}
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field
+            label="Out of office from"
+            htmlFor="profile-ooo-from"
+            hint="Leave empty to start immediately."
+          >
+            <Input
+              id="profile-ooo-from"
+              type="date"
+              value={value.oooFrom?.slice(0, 10) ?? ''}
+              onChange={(event) => {
+                setDraft({ ...value, oooFrom: event.target.value || null });
+              }}
+            />
+          </Field>
+          <Field label="Returning" htmlFor="profile-ooo-until">
+            <Input
+              id="profile-ooo-until"
+              type="date"
+              value={value.oooUntil?.slice(0, 10) ?? ''}
+              onChange={(event) => {
+                setDraft({ ...value, oooUntil: event.target.value || null });
+              }}
+            />
+          </Field>
+        </div>
+
+        <Field label="Out-of-office message" htmlFor="profile-ooo-message">
+          <Input
+            id="profile-ooo-message"
+            value={value.oooMessage ?? ''}
+            maxLength={200}
+            placeholder="e.g. On leave, back with you soon"
+            onChange={(event) => {
+              setDraft({ ...value, oooMessage: event.target.value });
+            }}
+          />
+        </Field>
+
+        <div className="flex items-center gap-2">
+          <Button
+            type="submit"
+            size="sm"
+            disabled={save.isPending || !dirty}
+            onClick={() => {
+              save.mutate({
+                timezone: value.timezone,
+                workingHoursStart: value.workingHoursStart,
+                workingHoursEnd: value.workingHoursEnd,
+                workingDays: value.workingDays,
+                oooFrom: value.oooFrom,
+                oooUntil: value.oooUntil,
+                oooMessage: value.oooMessage,
+              });
+            }}
+          >
+            Save working hours
+          </Button>
+          {dirty && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setDraft(null);
+              }}
+            >
+              Discard
+            </Button>
+          )}
+        </div>
+      </div>
     </Section>
   );
 }

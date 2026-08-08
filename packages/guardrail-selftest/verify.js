@@ -232,6 +232,54 @@ if (webFailures.length > 0) {
   process.exit(1);
 }
 
+/* -------------------------------------------------------------------------- *
+ * The people module's withGlobalScope exemption — asserted on the computed
+ * config, the same way apps/web's bans are.
+ *
+ * Phase 11.5 added apps/api/src/people/** to the globalScope exemption for the
+ * identical structural reason the identity module holds it: people.profiles is
+ * a non-tenant table reached by routes that must answer with no org selected
+ * (security.js's own comment). The fixture above cannot test this — a fixture
+ * outside those paths proves nothing about the exemption's BREADTH. The
+ * computed config answers the question that matters: the exemption must strip
+ * withGlobalScope AND NOTHING ELSE. If a later edit copied the whole
+ * restrictedSyntax list into the exemption block, role comparisons and raw SQL
+ * would silently stop being banned in the people module — the exact shape of
+ * guardrail drift this harness exists to catch.
+ * -------------------------------------------------------------------------- */
+
+const PEOPLE_FILE = resolve(repoRoot, 'apps', 'api', 'src', 'people', 'profile.service.ts');
+const peopleConfig = await eslint.calculateConfigForFile(PEOPLE_FILE);
+const peopleSyntaxText = JSON.stringify(peopleConfig.rules?.['no-restricted-syntax'] ?? []);
+
+const PEOPLE_SYNTAX_BANS = [
+  ['can() from @taskflow/policy', 'inline role comparison'],
+  ['Raw SQL belongs in packages/db', 'raw SQL'],
+  ['not cryptographically secure', 'Math.random()'],
+  ['Zod-validated schema', 'bare process.env'],
+];
+
+const peopleFailures = [];
+for (const [needle, label] of PEOPLE_SYNTAX_BANS) {
+  if (peopleSyntaxText.includes(needle)) {
+    console.log(`  ok    people module keeps the ${label} ban`);
+  } else {
+    console.error(`  FAIL  people module LOST the ${label} ban`);
+    peopleFailures.push(label);
+  }
+}
+
+if (peopleFailures.length > 0) {
+  console.error(
+    `\nFAIL: the people module's globalScope exemption is wider than intended — ` +
+      `${peopleFailures.length} guardrail(s) stopped firing there.\n` +
+      `Most likely cause: the exemption block in packages/config/eslint/security.js\n` +
+      `re-emitted restrictedSyntax() with fewer exemptions instead of listing the\n` +
+      `full ban set.\n`,
+  );
+  process.exit(1);
+}
+
 if (failures.length > 0) {
   console.error(
     `\nFAIL: ${failures.length} guardrail(s) not firing as specified.\n` +
