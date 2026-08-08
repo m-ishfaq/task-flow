@@ -71,7 +71,7 @@ export function ModalContent({
           one token (`ai/phase-6.5-ui-polish.md` Wave 2) instead of six copies
           of the same magic number and a seventh that happened to also be
           bg-black/50 by coincidence rather than by reference to anything. */}
-      <Dialog.Overlay className="fixed inset-0 bg-overlay" />
+      <Dialog.Overlay className="ui-fade fixed inset-0 bg-overlay" />
       <Dialog.Content
         className={cn(
           /* `w-[calc(100vw-2rem)]`, not `w-full` — `w-full` resolves against
@@ -82,7 +82,7 @@ export function ModalContent({
              exactly that). The calc reserves 1rem on each side below every
              `max-w-*` breakpoint; above it, `max-w-*` takes over as the
              binding constraint and the calc term stops mattering. */
-          'fixed left-1/2 w-[calc(100vw-2rem)] -translate-x-1/2 overflow-hidden rounded-card border border-line bg-surface-raised shadow-xl',
+          'ui-fade fixed left-1/2 w-[calc(100vw-2rem)] -translate-x-1/2 overflow-hidden rounded-card border border-line bg-surface-raised shadow-xl',
           /* `placement="top"`'s fixed 6rem offset (`top-24`) was sized for a
              desktop viewport with room to spare above the fold. On a short
              phone screen in landscape that offset alone can eat a third of

@@ -39,7 +39,10 @@ export function PopoverContent({
       <PopoverPrimitive.Content
         align={align}
         sideOffset={sideOffset}
-        className={cn('z-50 rounded border border-line bg-surface-raised shadow-lg', className)}
+        className={cn(
+          'ui-fade z-50 rounded border border-line bg-surface-raised shadow-lg',
+          className,
+        )}
         {...props}
       />
     </PopoverPrimitive.Portal>

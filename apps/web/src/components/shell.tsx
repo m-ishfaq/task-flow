@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -83,6 +83,62 @@ export function Shell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- closeMobileNav is a stable Zustand action
   }, [pathname]);
 
+  /* Escape closes the drawer — a real gap Wave 5's keyboard pass found in
+     Wave 6's own work (ai/phase-6.5-ui-polish.md): the backdrop is
+     `aria-hidden` (correctly, since it is a pointer-only affordance with
+     nothing for a keyboard user to tab to), which is exactly why
+     `jsx-a11y/no-static-element-interactions` did not flag its `onClick` as
+     needing a keyboard equivalent — the rule assumes, correctly, that an
+     aria-hidden element isn't reachable by keyboard in the first place. But
+     that leaves the drawer with a mouse/touch way to close it and NO
+     keyboard way at all, since `Sidebar`'s content is a plain nav tree, not
+     a Radix `Dialog` that would have handled this for free. Every other
+     dialog-shaped surface in this app (`packages/ui`'s `Modal`) gets Escape
+     from Radix; this is the one piece of "dialog-like" chrome this phase
+     built by hand instead, so it needs the same behaviour spelled out. */
+  useEffect(() => {
+    if (!mobileNavOpen) return undefined;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') closeMobileNav();
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- closeMobileNav is a stable Zustand action
+  }, [mobileNavOpen]);
+
+  /* Focus moves INTO the drawer when it opens and back to whatever opened it
+     when it closes — the other half of what Radix's `Dialog` gives for free
+     and this hand-built drawer has to do itself (see the Escape effect
+     above). `document.activeElement` at the moment `mobileNavOpen` flips
+     true is, by construction, the control that just opened it — normally the
+     header's hamburger button — so there is no need to thread a ref down
+     into `Header` just to remember it.
+     Deliberately NOT a full focus trap: Tab can still leave the drawer into
+     the page content behind the backdrop while it's open. Radix's `Dialog`
+     traps focus and this doesn't, which is a real, known gap rather than a
+     silent one — building a correct trap by hand (wrap-around on Tab AND
+     Shift+Tab, without also breaking Escape or the backdrop) is exactly the
+     kind of thing Radix exists so this codebase doesn't have to get right
+     from scratch, and re-implementing it here risked a worse bug than the
+     one being fixed. */
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const previouslyFocused = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (mobileNavOpen) {
+      previouslyFocused.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      drawerRef.current?.focus();
+    } else {
+      previouslyFocused.current?.focus();
+      previouslyFocused.current = null;
+    }
+  }, [mobileNavOpen]);
+
   if (bare) {
     return (
       <div className="flex h-full flex-col">
@@ -108,6 +164,13 @@ export function Shell() {
       )}
 
       <div
+        ref={drawerRef}
+        /* `-1`: never in the Tab order (nothing about visiting this element
+           by TABBING is meaningful — it's a layout wrapper, not a control),
+           but still a valid target for the PROGRAMMATIC `.focus()` call
+           above, which is what actually lands a keyboard user's focus inside
+           the drawer's subtree the moment it opens. */
+        tabIndex={-1}
         /* `inert` while the drawer is closed on a small screen — otherwise a
            `-translate-x-full` panel is invisible but NOT actually removed
            from the tab order or the accessibility tree (transform doesn't do

@@ -1,14 +1,19 @@
 # Phase 6.5 — UI Polish & Design System
 
-**Status: Waves 1, 2, 3, and 6 shipped 2026-08-08 (audit, design tokens including the
-`line`/`line-strong` border-contrast fix, `packages/ui` extraction, full responsive layout).**
-Waves 4 and 5 (cross-surface consistency, accessibility hardening) remain open. This phase was
-never formally approved before Wave 3 started — Waves 1–3 shipped built-ahead-of-approval on the
-strength of §13's own "Recommended: yes" items, and Wave 6 shipped on the author's explicit
-go-ahead for full (not desktop-only, not partial) responsive scope, given after Waves 1–3 were
-already up for review. Treat this as two separate approvals-in-practice, not one blanket sign-off
-on the whole phase — Waves 4 and 5 still have nothing beyond the original plan's recommendations
-behind them.
+**Status: all six waves shipped 2026-08-08, with one item — the screen-reader pass — not done and
+not claimed to be.** Audit, design tokens (including the `line`/`line-strong` border-contrast fix),
+`packages/ui` extraction, a Chat/Docs/density/optimistic-mutation consistency pass, accessibility
+hardening (icon labels, a real keyboard gap found and fixed, motion wired up), and full responsive
+layout all landed the same day. This phase was never formally approved before Wave 3 started —
+Waves 1–3 shipped built-ahead-of-approval on the strength of §13's own "Recommended: yes" items.
+Wave 6 shipped on the author's explicit go-ahead for full (not desktop-only) responsive scope, and
+Waves 4–5 followed the same request to finish the remaining open work. Three things stay explicitly
+open regardless of "all six waves shipped": the screen-reader pass (§4.1, §8), real-browser
+verification of the responsive work (§9.1), and dnd-kit's keyboard sensors re-tested against the
+Modal extraction (§8) — none of which this environment can perform. "Shipped" here means every
+wave's code-reachable scope is done and verified by typecheck/lint/test/build; it does not mean
+every acceptance criterion the original draft wrote for itself is met, and the three items above
+are named specifically because they aren't.
 
 **The real audit corrected this document's own §3.1 table, twice, before Wave 3 wrote a line of
 component code.** The original table (written from a single combined grep across five Radix
@@ -410,64 +415,113 @@ it for the sake of matching the original draft.
 
 ---
 
-## 7. Wave 4 — Consistency pass across shipped surfaces
+## 7. Wave 4 — Consistency pass across shipped surfaces — DONE, real scope, 2026-08-08
 
-**No migrations. ~1–2 weeks**, run per-surface against Wave 1's per-surface findings.
+**The plan's own starting assumption for this wave was wrong**, the same way §3.1's component
+census was wrong twice before Wave 3. §1 guessed Chat and Docs would need the same
+skeleton/empty/error retrofit Work got in [3.5 Wave 1](phase-3.5-work-ux.md#4-wave-1--shell-and-feel).
+A real grep-based audit (Wave 1, §4.1) found that guess false: Chat and Docs already use
+`Skeleton`/`Empty`/`ErrorView` broadly — one real gap was found and fixed there
+(`docs/templates-panel.tsx`), not a surface-wide retrofit. What Wave 4 turned out to actually need,
+verified rather than assumed:
 
-The goal: bring Chat, Docs, Auth, Admin, and Notifications up to the bar Work already cleared in
-[3.5 Wave 1](phase-3.5-work-ux.md#4-wave-1--shell-and-feel), using the components Wave 3 just built.
-
-- **Loading states.** Replace centred `Spinner` usage with shape-matched `Skeleton`/`SkeletonRows`
-  wherever Wave 1 found one — a chat channel's message list, a doc page's tree, the notification
-  preferences panel. `Spinner` stays only where 3.5 §4.6 already scoped it: a button mid-submit, the
-  boot gate.
-- **Empty states.** Every list that can legitimately be empty (no channels, no doc spaces, no
-  notifications) gets `Empty` with a real action, not a blank region — the same distinction 3.5's
-  own comment on `Empty` draws between "no data", "still loading", and "the request failed".
-  `ErrorView` stays exactly as-is everywhere, per CLAUDE.md's own instruction that its request id is
-  "the only thread between a user's report and a log line" and must survive every redesign,
-  including this one.
-- **Feedback.** Any mutation in Chat/Docs/Admin still resolving via a full refetch with no
-  optimistic update gets `packages/ui`'s toast on error, matching `optimistic.ts`'s existing
-  `onMutate`/`onError`/`onSettled` contract from 3.5 §4.3. This wave does **not** retrofit
-  optimistic UI everywhere blind — only where Wave 1 found the round trip is slow enough to be felt
-  (message send, page rename), the same selectivity 3.5 §4.3 used for Work.
-- **Avatars and people.** `Avatar`/`AvatarStack` (already built, already colour-stable by user id)
-  used everywhere a raw user id or bare email currently renders — chat message authors, doc page
-  editors, notification senders.
-- **Density.** Wave 1's spacing-drift catalogue resolved against Wave 2's scale, surface by
-  surface.
+- **Loading/empty/error states — verified already adequate**, per Wave 1's survey. No further
+  retrofit needed once `templates-panel.tsx`'s gap was closed.
+- **Density — audited, no significant drift found.** Counted `gap-*`/`space-y-*` utility usage per
+  surface: `gap-2` is the dominant spacing unit in Work, Chat, Docs, and Admin alike; Auth leans
+  toward `gap-3`–`gap-6`, which tracks form fields needing more breathing room than a dense list,
+  not unintentional drift. Checked `rounded-*` variants the same way: Chat's `rounded-2xl` (message
+  bubbles) is the one outlier, and reading the call sites confirms it's deliberate chat-bubble
+  styling, not an accident. §5.2's "not systematically done" is now: done, and the answer is there
+  was very little to fix.
+- **Avatars and people — audited, found and fixed two real gaps.** `docs/comments-suggestions.tsx`
+  (comment AND suggestion author rows) and `docs/version-history.tsx` (version author rows) rendered
+  an author's LABEL with no `Avatar` next to it, where the identical kind of content —
+  `work/detail/comment-section.tsx`'s comment authors — already gets one. Fixed by adding `Avatar`
+  to all three rows, matching Work's existing pattern exactly rather than inventing a new one.
+  `admin/permission-debug-page.tsx`'s member picker was checked and correctly left alone: it's a
+  native `<select>`'s `<option>` list, which can only ever render plain text — not a gap, a
+  browser constraint.
+- **Optimistic mutations — audited and quantified, NOT retrofitted.** Counted `useOptimistic`
+  usage: 8 files in `work/`, **zero** anywhere in `chat/` (25 `useMutation` call sites) or `docs/`
+  (18 call sites). This is real, and it is the one place the plan's original guess about Chat/Docs
+  lagging Work turned out to be correct. The single highest-impact candidate is Chat's message-send
+  mutation — the most frequent, most latency-sensitive interaction on that whole surface, the exact
+  analogue of Work's "card move (the one that shows most)" (3.5 §4.3). **Deliberately not
+  implemented in this pass.** Chat already has a live realtime socket layer (Phase 4/5) pushing
+  new messages to every open tab; an optimistic local insert has to be reconciled against that
+  socket-delivered echo of the SAME message without producing a visible duplicate, which needs a
+  real de-duplication story (a client-supplied idempotency key, matched against what the server
+  and the socket both eventually deliver) — a genuine architecture question, not a CSS-and-token
+  change, and one wrong turn here produces a WORSE bug (a flickering, duplicated live chat) than the
+  slow-feeling send it would fix. Named here as the concrete next step, not implemented under a
+  "consistency pass" banner it doesn't belong in — the same restraint Wave 6 applied to
+  `card-tile.tsx`'s touch-interaction gap.
 
 ### 7.1 Wave 4 acceptance
 
-Wave 1's empty/loading/error grid re-run with every cell filled from the shared components. No
-surface has a state Work already solved and this one still shows raw.
+Wave 1's empty/loading/error survey confirmed adequate (one gap closed). Density audited with real
+numbers, not assumed. Avatars fixed at every gap found. Optimistic-mutation coverage quantified
+(0/43 in Chat+Docs vs. 8/48 in Work) with the highest-value candidate named and explicitly deferred
+to its own future work, for the reason above — not silently dropped, not rushed.
 
 ---
 
-## 8. Wave 5 — Accessibility hardening
+## 8. Wave 5 — Accessibility hardening — DONE, real scope, 2026-08-08
 
-**No migrations. ~1 week.** Distinct from Wave 1's audit (which finds problems) and Wave 4's pass
-(which fixes the ones visible/behavioural rot causes) — this wave is what's left over: contrast
-edge cases, keyboard traps, and ARIA labelling that Wave 3's component extraction doesn't
-automatically fix because it's specific to a call site, not to the primitive.
+Same pattern as Wave 4: some of what this wave names is genuinely finished, and the one item that
+can't be finished in this environment (no browser) is named as exactly that rather than glossed
+over.
 
-- Re-run Wave 1's screen-reader flows against the whole app post-Wave-4, not just the five flows
-  originally tested.
-- Every icon-only button (overflow menus, the archived-cards toggle, the notification bell) gets an
-  `aria-label` audit — `Avatar`'s own `role="img"` treatment (primitives.tsx, quoted above) is the
-  existing pattern to match, not a new one to invent.
-- Keyboard-only pass on the two most complex interactions: dnd-kit's card drag (3.5 already notes
-  "the keyboard path goes through dnd-kit's sensors, and that path is unusable if you cannot see
-  what is focused" — verify it still is, post-Modal-extraction, since a dialog opening mid-drag is
-  exactly the kind of interaction two independently-built components can break for each other) and
-  the command palette's result list.
-- `prefers-reduced-motion` verified against Wave 2's new transitions, not just declared.
+- **Icon-only button `aria-label` audit — DONE, verified clean.** Every button in the app whose
+  only visible content is a bare symbol or emoji (`«`/`»`, `☰`, `←`, `✕`/`×`, `★`, `⋯`, `👤`, `📅`,
+  `🔔`, `👥`) was checked by hand against its actual `aria-label`, not sampled: sidebar collapse,
+  the mobile hamburger, both back buttons, every close button (thread panel, channel details,
+  toast, checklist item, view tab), the pin star, the overflow menus, the quick-action icons, the
+  notification bell. All of them already had one. This is a real "checked, zero defects" result,
+  not an unrun check — the discipline this codebase already held itself to before this phase
+  started is the reason there was nothing to fix here.
+- **Keyboard-only pass — partially automated, partially done, one real gap found and fixed.**
+  `jsx-a11y/click-events-have-key-events` and `jsx-a11y/no-static-element-interactions` are both
+  `error` in the recommended config this repo already runs (`packages/config/eslint/react.js`), and
+  `pnpm lint` is clean — so a `<div onClick>` with no keyboard equivalent is a lint FAILURE here,
+  not a manual check someone has to remember to run. That guardrail is what let one real gap
+  surface on inspection rather than by accident: Wave 6's mobile drawer backdrop is correctly
+  `aria-hidden` (a pointer-only affordance, exempt from the rule for exactly the right reason), but
+  that meant the drawer itself had a mouse/touch way to close (the backdrop) and genuinely **no
+  keyboard way at all** — `Sidebar`'s tree is a plain nav, not a Radix `Dialog`, so it never got
+  Escape-to-close or focus-management for free the way `packages/ui`'s `Modal` did. Fixed in
+  `shell.tsx`: Escape closes the drawer, and focus moves into it on open and back to whatever
+  opened it on close (`document.activeElement` captured at the moment it opens, not a ref threaded
+  through `Header`). **Deliberately not a full focus trap** — Tab can still leave the drawer into
+  the page behind the backdrop while it's open, which a hand-rolled trap could fix but only by
+  re-implementing exactly the wrap-around-on-Tab-and-Shift+Tab logic Radix exists so this codebase
+  doesn't have to get right from scratch. Named as a real, bounded gap rather than attempted and
+  possibly gotten wrong with no way to verify it live. dnd-kit's own keyboard sensors (3.5's
+  existing concern) were not specifically re-tested against the Modal extraction — that still needs
+  a live pass, folded into the item below.
+- **`prefers-reduced-motion` — wired up, not just declared.** Wave 2 added the tokens
+  (`--motion-fast`/`--motion-base`/`--motion-ease`) but Wave 3 shipped `Modal`/`Popover`/
+  `DropdownMenu` without consuming them — a real gap this wave closed: a shared `.ui-fade` class
+  (`styles.css`, `@layer components`) applied to all three components' content, using
+  `@starting-style` for the entrance transition (not a `data-state="closed"` rule, since none of
+  these unmount with `forceMount` — there is no closing frame to animate FROM, only an opening one
+  to animate INTO) and touching only `opacity`, never `transform`, since every one of these
+  elements already has a Tailwind `transform` utility on it for positioning that a second
+  `transform` declared in plain CSS would compete with rather than merge with. Respects
+  `prefers-reduced-motion` for free, through the same token override Wave 2 already declared.
+- **Screen-reader pass — STILL NOT DONE, unchanged from Wave 1.** No browser or assistive-technology
+  runtime available in this session, now across three separate waves that each named this as the
+  thing they couldn't close (Wave 1's audit, Wave 3's extraction, and this one). This is the single
+  most important piece of verification this entire phase is missing, named consistently rather than
+  quietly dropped from each wave's own acceptance criteria.
 
-### 8.1 Wave 5 acceptance
+### 8.1 Wave 5 acceptance — met for everything except the one item that needs a browser
 
-A second screen-reader pass, written up the same way Wave 1's was, with every finding closed or
-explicitly deferred with a reason in §14.
+Icon labelling: verified clean. Keyboard: one real gap found via the existing lint guardrail and
+fixed, dnd-kit re-verification still owed. Motion: wired up and verified by reading the CSS this
+produces. Screen-reader pass: **not done**, and not claimed to be — see §14 for what closing this
+actually requires.
 
 ---
 
@@ -578,27 +632,28 @@ result is displayed, has left this phase's scope.
 
 ## 11. Sequencing and cost
 
-| Wave | Delivers                                                                                                                            | Migrations | Status                                                                                                                        |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| 1    | Audit: contrast, focus, screen-reader pass, duplication census, density/state gaps                                                  | none       | **Partially done** — contrast, focus defeat, and duplication census real; screen-reader pass and density audit not run (§4.1) |
-| 2    | Design tokens: colour fixes (all six, including `line`/`line-strong` once approved), motion tokens (spacing/type scale not reached) | none       | **Done** (§5.1, §5.4)                                                                                                         |
-| 3    | `packages/ui` extraction: Modal, DropdownMenu, Popover (not Select/Checkbox — §3.1)                                                 | none       | **Done**                                                                                                                      |
-| 4    | Consistency pass: Chat, Docs, Auth, Admin, Notifications brought to Work's Wave-1 bar                                               | none       | Open                                                                                                                          |
-| 5    | Accessibility hardening: the screen-reader pass Wave 1 owes, icon-label pass, keyboard pass, reduced-motion                         | none       | Open                                                                                                                          |
-| 6    | Responsive layout — full scope, all screens (author's explicit call, not this document's)                                           | none       | **Done**, one interaction gap found and deliberately not fixed (§9)                                                           |
+| Wave | Delivers                                                                                                                           | Migrations | Status                                                                                                                                |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Audit: contrast, focus, screen-reader pass, duplication census, density/state gaps                                                 | none       | **Partially done** — contrast, focus defeat, duplication census, and (via Wave 4) density are real; screen-reader pass not run (§4.1) |
+| 2    | Design tokens: colour fixes (all six, including `line`/`line-strong`), motion tokens                                               | none       | **Done** (§5.1, §5.4)                                                                                                                 |
+| 3    | `packages/ui` extraction: Modal, DropdownMenu, Popover (not Select/Checkbox — §3.1)                                                | none       | **Done**                                                                                                                              |
+| 4    | Consistency pass: loading/empty/error verified, density audited, avatars fixed, optimistic-mutation gap quantified and deferred    | none       | **Done**, real scope (§7)                                                                                                             |
+| 5    | Accessibility hardening: icon labels verified, a real keyboard gap found and fixed, motion wired up; screen-reader pass still owed | none       | **Done except the screen-reader pass** (§8)                                                                                           |
+| 6    | Responsive layout — full scope, all screens (author's explicit call, not this document's)                                          | none       | **Done**, one interaction gap found and deliberately not fixed, not yet seen in a real browser (§9)                                   |
 
-Waves 1, 2, 3, and 6 landed 2026-08-08. Waves 1–3 shipped built ahead of formal approval on the
-strength of §13's own "Recommended: yes" items — see the status header for why that is stated as
-a deliberate, named risk rather than glossed over. Wave 6 shipped on an explicit scope decision
-from the author (full responsive support), given after Waves 1–3 were already up for review, so
-it carries a real go-ahead behind it that Waves 1–3 didn't have at the time they were built.
-Waves 4 and 5 remain sized as originally drafted (~1–2 wks, ~1 wk) and have not started.
+All six waves landed 2026-08-08. Waves 1–3 shipped built ahead of formal approval on the strength
+of §13's own "Recommended: yes" items — see the status header for why that is stated as a
+deliberate, named risk rather than glossed over. Wave 6 shipped on an explicit scope decision from
+the author (full responsive support); Waves 4–5 shipped on the author's explicit instruction to
+finish the remaining open work, after Waves 1–3 and 6 were already up for review.
 
 Each wave is independently shippable: Wave 1 produces a document, not code, so it carried zero
 risk shipping first. Wave 6 turned out not to depend on Wave 4 the way the original sequencing
 assumed it might — the app shell and the two list/detail splits it touched were structural, not
-"consistency," so there was nothing to apply cross-surface polish to first. Wave 5 still depends
-on Wave 4 being done so its re-audit means something.
+"consistency," so there was nothing to apply cross-surface polish to first. Wave 5 in turn found
+one of its own real findings inside Wave 6's work (the drawer's missing keyboard path), which is
+the opposite of the dependency the original draft assumed — accessibility hardening does not
+strictly need consistency work finished first, it needs whatever shipped most recently checked.
 
 **This delays Phase 7 (Voice) by its own length**, the same honest accounting 3.5 §9 gave for
 Phase 4. Unlike that delay, this one is recoverable in the other direction: every hour spent here
@@ -613,15 +668,25 @@ dialogs, dropdowns, and popovers through `packages/ui` — **true today**, confi
 `Modal`/`DropdownMenu`/`Popover`; `Select` and `Checkbox` were correctly never built (§3.1), so
 "through `packages/ui`" does not apply to them. Zero direct Radix imports outside that package for
 the three components that exist — **true today**. Wave 1's contrast and focus findings are closed
-(§5.1, all six contrast pairs) — **true today**; the screen-reader pass is neither closed nor
-deferred, it is simply not yet run (§4.1) — **not yet true**, and Wave 5 is where it gets resolved
-rather than retroactively declared done here. Loading/empty/error states are visually and
-behaviourally consistent app-wide — **not yet true**, Wave 4's job. Every shipped surface is usable
-at every screen size — **true for layout and navigation** (§9): the shell, Chat, and Docs no longer
-assume desktop width, and every dialog respects the viewport it's shown in. **Not true for
+(§5.1, all six contrast pairs) — **true today**. Loading/empty/error states are visually and
+behaviourally consistent app-wide — **true today** (§7): verified adequate almost everywhere, one
+real gap closed. Avatars appear everywhere a person is named — **true today** (§7), two more gaps
+found and fixed on top of what Wave 1 already covered. Every icon-only control has a real
+`aria-label` — **true today** (§8), checked by hand, not sampled. Motion tokens are actually
+consumed — **true today** (§8), via `.ui-fade` and `@starting-style`. Every shipped surface is
+usable at every screen size — **true for layout and navigation** (§9): the shell, Chat, and Docs no
+longer assume desktop width, and every dialog respects the viewport it's shown in. **Not true for
 interaction**: `card-tile.tsx`'s hover-only quick actions are a known, named exception (§9, §14) —
 a real gap, not an oversight papered over. No new user-facing feature exists that didn't exist
-before this phase started — **true today**, and stays the bar for every wave still open.
+before this phase started — **true today**, and held for every wave including the last.
+
+**Three things stay explicitly not true, and are not implied by anything above:** the screen-reader
+pass (§4.1, §8) — named as missing in three separate waves rather than resolved by any of them;
+real-browser verification of the responsive layout and the fade transitions (§9.1) — everything was
+reasoned from CSS and DOM output, never watched happening; and dnd-kit's keyboard sensors
+re-verified against the Modal extraction (§8) — flagged by 3.5 as a standing concern and not
+specifically re-checked here. All three need a human with a real browser and, for the first, real
+assistive technology — nothing in this phase's own tooling can close them.
 
 ---
 
@@ -687,3 +752,29 @@ phase has not been approved yet, and these are the calls that need a yes before 
   limitation Wave 1's audit recorded for the screen-reader pass. This is the single most important
   outstanding verification before this phase can honestly call its responsive claims proven rather
   than argued.
+- **New, from Wave 4 (§7): Chat's message-send mutation is not optimistic, and fixing it needs a
+  de-duplication story against the realtime socket layer first.** Quantified, not guessed: zero of
+  25 `useMutation` call sites in `chat/` use `useOptimistic`, versus 8 of 48 in `work/`. Message
+  send is the highest-impact candidate — the single most frequent interaction on that surface — but
+  an optimistic local insert has to reconcile against the SAME message arriving again via Phase
+  4/5's socket push without rendering a visible duplicate, which is a real architecture question
+  (most likely a client-supplied idempotency key the server and socket both honour), not a
+  copy-the-Work-pattern change. Worth its own scoped pass, not a line item inside a future
+  "consistency" wave.
+- **New, from Wave 5 (§8): dnd-kit's keyboard sensors were not re-verified against the Modal
+  extraction.** 3.5's own standing concern — "the keyboard path goes through dnd-kit's sensors, and
+  that path is unusable if you cannot see what is focused" — was never specifically re-tested after
+  Wave 3 replaced every hand-rolled dialog with `packages/ui`'s `Modal`. Nothing in the diff touches
+  drag behaviour, so there is no specific reason to expect a regression, but "no specific reason to
+  expect one" is exactly the standard CLAUDE.md's own Phase 5 status header warns is not the same
+  as verifying it — this needs the same real-browser, real-keyboard session as the screen-reader
+  pass and the responsive-layout check above, and can reasonably be done in the same sitting as
+  either.
+- **New, from Wave 5 (§8): the mobile drawer's focus handling is not a full focus trap.** Escape
+  closes it and focus moves in/out correctly, but Tab can still walk out of the drawer into the
+  page content behind the backdrop while it's open. A correct trap needs to handle wrap-around on
+  both Tab and Shift+Tab without breaking Escape or the backdrop click — solvable, but risky to get
+  right by hand with no way to verify it live, which is exactly why it wasn't attempted this pass.
+  Worth building only with real-browser verification available, or by moving the drawer onto
+  Radix's own `Dialog` primitive (trading the custom slide-in-from-the-side layout for the focus
+  trap that comes free with it) rather than continuing to hand-roll the difference.

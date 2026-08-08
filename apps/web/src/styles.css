@@ -152,6 +152,41 @@
 
 @layer components {
   /**
+   * Fade-in for `packages/ui`'s Modal overlay/content and Popover/DropdownMenu
+   * content — Wave 2's `--motion-*` tokens declared and unused until now
+   * (ai/phase-6.5-ui-polish.md Wave 5; the header comment on `--motion-fast`
+   * above was written ahead of this actually being true, which is itself the
+   * kind of drift this file's own conventions warn against leaving uncorrected).
+   *
+   * `@starting-style`, not a `data-state="closed"` opacity-0 rule: Radix
+   * unmounts a `Dialog`/`Popover`/`DropdownMenu`'s content on close (no
+   * `forceMount` anywhere in this codebase), so there is no closing frame to
+   * transition FROM — only an opening one to transition INTO. `@starting-style`
+   * is exactly "what to render for one frame before the element's real styles
+   * apply," which is the entrance case and only the entrance case.
+   *
+   * Opacity only, deliberately not `transform`. Every one of these elements is
+   * already positioned with a Tailwind `transform` utility (Modal's centering
+   * translate, in particular) applied via `className` — a second `transform`
+   * declared here would not MERGE with that utility, it would be a competing
+   * declaration that wins or loses the whole property outright depending on
+   * cascade order, which is exactly the kind of fragile ordering dependency
+   * this rule avoids by only ever touching a property nothing else sets.
+   *
+   * `prefers-reduced-motion`'s override on `--motion-base` (`0.01ms`, above)
+   * makes this respect that preference for free — no separate media query
+   * needed here.
+   */
+  .ui-fade {
+    transition: opacity var(--motion-base) var(--motion-ease);
+  }
+  @starting-style {
+    .ui-fade[data-state='open'] {
+      opacity: 0;
+    }
+  }
+
+  /**
    * TipTap's rendered output.
    *
    * Scoped to `.rich-text` and written as plain CSS because the editor produces

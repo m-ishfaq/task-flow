@@ -31,7 +31,7 @@ export function DropdownMenuContent({
       <DropdownMenuPrimitive.Content
         sideOffset={sideOffset}
         className={cn(
-          'min-w-40 rounded border border-line bg-surface-raised p-1 shadow-lg',
+          'ui-fade min-w-40 rounded border border-line bg-surface-raised p-1 shadow-lg',
           className,
         )}
         {...props}
