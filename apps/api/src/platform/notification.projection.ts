@@ -5,11 +5,15 @@ import {
   inArray,
   isNull,
   markDispatched,
+  outboxWriter,
   schema,
   withAuditScope,
   type OutboxRow,
 } from '@taskflow/db';
 import { newId } from '@taskflow/security';
+import { unsafeAsId } from '@taskflow/contracts';
+import { createEvent } from '@taskflow/events';
+import { notificationCreated } from './events.js';
 import { categoryOfKind, resolvePref, type ExplicitPref } from './notification-prefs.js';
 
 /**
@@ -424,6 +428,20 @@ export async function drainNotifications(limit = 100): Promise<NotificationDrain
         const notificationId = inserted[0]?.id;
         if (notificationId === undefined) continue; // Already delivered — a redelivery.
         written += 1;
+
+        /* The second-order event apps/realtime's outbox consumer routes to
+           `user:{userId}` (§3.5). Same transaction as the insert above, so a
+           broadcast is never queued for a notification that did not commit,
+           and a committed notification never fails to get one queued.
+           Migration 0028 is what makes this INSERT possible for
+           `taskflow_audit` at all — see its header. */
+        await outboxWriter.append(tx, [
+          createEvent(
+            notificationCreated,
+            { userId: plan.userId, notificationId },
+            { orgId: unsafeAsId<'OrgId'>(row.orgId), actorId: null },
+          ),
+        ]);
 
         const category = categoryOfKind(plan.kind);
         const wantsEmail = resolvePref(prefsByUser.get(plan.userId) ?? [], category, 'email');

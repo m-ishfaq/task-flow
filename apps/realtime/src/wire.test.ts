@@ -7,6 +7,7 @@ import {
   channelRoom,
   JoinRequestSchema,
   LeaveRequestSchema,
+  userRoom,
 } from './wire.js';
 
 /**
@@ -114,8 +115,19 @@ describe('room naming', () => {
     // Wave 2 adds no other room kinds, but Chat (Phase 5) shares this gateway
     // on its own namespace and Docs (Phase 6) joins it later — a prefix check
     // that answered for every room would silently mis-route the first one.
+    // `user:123` stopped being a hypothetical the moment Phase 9 added
+    // `userRoom` below — this assertion is what proves the prediction held.
     expect(boardIdOfRoom('user:123')).toBeNull();
     expect(boardIdOfRoom('')).toBeNull();
+  });
+
+  it('round-trips a user id through its personal room name (Phase 9)', () => {
+    expect(userRoom('123')).toBe('user:123');
+    // The inverse this room kind does NOT need, unlike boardRoom/channelRoom:
+    // nothing ever reads a personal room's name back off a socket to
+    // recover the id — the gateway already knows it from
+    // `socket.data.identity`, which is the entire reason this room needs no
+    // join request in the first place.
   });
 });
 

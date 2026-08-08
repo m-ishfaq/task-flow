@@ -23,10 +23,18 @@ comment-mentions alongside chat), immediate email delivery (`packages/mail`'s
 `renderNotificationEmail`), the `notifications`/`notifications.prefs.*` tRPC routes (via a new
 `memberRoute` builder — §3.5's `selfRoute`-only assumption for these turned out wrong; see
 `trpc/builder.ts`), and bell navigation to the right product's page for a card or Docs
-notification. **Not built**: the personal realtime room (§3.5), digests (§3.4), due-date reminders
-and `taskflow_notification_sweep` (§3.8), web push and `platform.push_subscriptions` (§3.7), and a
-dedicated preferences page in `apps/web` (routes exist; no UI calls them yet). All of Wave 2, in
-other words, plus one piece of Wave 1's own scope (the realtime room and the prefs UI).
+notification. **Also now built**, same day, second pass: the personal realtime room (§3.5) —
+migration 0028 grants `taskflow_audit` a narrow `INSERT` on `platform.outbox` so the projection can
+emit `notification.created` as a second-order event, `apps/realtime` auto-joins every socket to
+`user:{userId}` and routes it there (`roomUserIdOf`, structurally identical to `roomBoardIdOf`), and
+`apps/web`'s bell invalidates instantly when a socket happens to already be open, falling back to
+its existing poll otherwise — and the preferences page (`NotificationPreferencesSection` on
+`/account`, since `identity.notification_prefs` is global per user, the same "yours alone" shape
+the rest of that page already has). Email and push there are shown but push/SMS are disabled with a
+reason, honestly, since neither channel sends anything yet. **Still not built**: digests (§3.4),
+due-date reminders and `taskflow_notification_sweep` (§3.8), and web push itself —
+`platform.push_subscriptions`, a `PushProvider`, and the browser-side subscription flow (§3.7). All
+of Wave 2, in other words — Wave 1 as originally scoped is now complete.
 
 Parent: [PLAN.md](../PLAN.md) §3.6 (Platform), §7 (`platform.notifications`,
 `notification_prefs`), §10.6 (Domain events), §13 (Roadmap, row 9).

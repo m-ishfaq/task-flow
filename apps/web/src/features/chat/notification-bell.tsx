@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import * as Popover from '@radix-ui/react-popover';
@@ -6,6 +6,7 @@ import type { BoardId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
+import { onNotification } from '../../lib/socket.js';
 import { Button, Empty } from '../../components/primitives.js';
 import { useMembers } from '../org/use-members.js';
 import {
@@ -29,12 +30,20 @@ import {
  * channel does not have its content re-disclosed to them when they open the
  * bell. What is shown is what they were entitled to see when they were told.
  *
- * ## Polled, not pushed
+ * ## Polled always, pushed when a socket happens to be open (Phase 9)
  *
- * A notification arrives from a channel this tab has not joined — that is
- * rather the point of it — so there is no room broadcast to ride on. The count
- * refetches on an interval; the same half-a-minute tradeoff the unread badges
- * already accept.
+ * A notification can arrive from a channel, board, or Docs page this tab has
+ * never joined — that is rather the point of it — so there is no ROOM
+ * broadcast to ride on the way `board:{boardId}`'s events do. But every
+ * authenticated socket is placed in its own personal `user:{userId}` room at
+ * connection time (`apps/realtime/src/gateway.ts`, `ai/phase-9-notifications.md`
+ * §3.5), with no join required — so if this tab already has a socket open for
+ * some other reason (a board, a channel), a new notification invalidates these
+ * queries immediately via `onNotification` below. If it does not, the
+ * interval poll is the honest fallback, unchanged from before this existed —
+ * `lib/socket.ts`'s own comment on `onNotification` is explicit that this
+ * component mounting in the shell is not by itself a reason to force a
+ * connection open on every page.
  *
  * ## Clicking a row marks ONLY that row read, and opens its channel
  *
@@ -55,6 +64,16 @@ export function NotificationBell() {
 
   const count = useQuery({ ...notificationCountQuery(orgId), enabled: orgId !== '' });
   const list = useQuery({ ...notificationsQuery(orgId), enabled: orgId !== '' });
+
+  useEffect(() => {
+    if (orgId === '') return undefined;
+    // Best-effort instant update — see the file header on why this is not
+    // the only path these queries refresh on.
+    return onNotification(() => {
+      invalidateNotifications(queryClient, orgId);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- queryClient is stable for the app's lifetime
+  }, [orgId]);
 
   const markAllRead = useMutation({
     mutationFn: () => markNotificationsRead(),

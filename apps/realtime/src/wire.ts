@@ -200,10 +200,30 @@ export interface PresenceMessage {
   readonly userIds: readonly string[];
 }
 
+/**
+ * "You have a new notification" (Phase 9, ai/phase-9-notifications.md §3.5).
+ *
+ * Delivered on `user:{userId}` — the one room a socket is placed into by the
+ * SERVER at connection time, from `socket.data.identity`, never by a client
+ * request (§3.7's rule applied to the one room that needs no `can()` check:
+ * nobody needs permission to read their own mailbox). Deliberately minimal —
+ * `notificationId` only, no title or excerpt — because the client's only
+ * reaction is to invalidate its notification queries (the INVALIDATE
+ * strategy §5 already establishes) and refetch over the ordinary authorized
+ * tRPC path, the same as every other broadcast strategy here. There is no
+ * `userId` field: unlike `BroadcastMessage`'s `boardId` (a ROOM the socket
+ * chose to join and must filter events by), this message is only ever
+ * delivered to sockets already in the one room it could possibly be for.
+ */
+export interface NotificationMessage {
+  readonly notificationId: string;
+}
+
 /** Server-to-client events, named for `io.on`/`socket.on` type inference. */
 export interface ServerToClientEvents {
   ready: (message: ReadyMessage) => void;
   broadcast: (message: BroadcastMessage) => void;
+  notification: (message: NotificationMessage) => void;
   'room:closed': (message: RoomClosedMessage) => void;
   'session:ended': (message: SessionEndedMessage) => void;
   presence: (message: PresenceMessage) => void;
@@ -223,6 +243,20 @@ export function boardRoom(boardId: string): string {
 /** The inverse of `boardRoom`, or null if the room is not a board room. */
 export function boardIdOfRoom(room: string): string | null {
   return room.startsWith('board:') ? room.slice('board:'.length) : null;
+}
+
+/**
+ * The Socket.io room name for one person's personal notifications (§3.5).
+ *
+ * Every authenticated socket on the default namespace is joined to its OWN
+ * `user:{userId}` room at connection time (`gateway.ts`) — the id comes from
+ * `socket.data.identity`, set at the handshake, never from a client
+ * request. There is no `userJoin`/`userLeave` client event because there is
+ * nothing to request: this room's membership is exactly "connections
+ * authenticated as this user," which the handshake already decided.
+ */
+export function userRoom(userId: string): string {
+  return `user:${userId}`;
 }
 
 /* -------------------------------------------------------------------------- *
