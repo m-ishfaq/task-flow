@@ -59,13 +59,23 @@ export interface VapidKeyPair {
   readonly privateKey: string;
 }
 
-/** Generates a fresh VAPID key pair. Call once, store, reuse. */
+/**
+ * Generates a fresh VAPID key pair. Call once, store, reuse.
+ *
+ * `ecdh.getPrivateKey()` returns the scalar as a big-endian integer with NO
+ * fixed length: about 1 in 256 keys have a zero top byte, and Node returns
+ * that buffer one byte short rather than zero-padded — the identical failure
+ * mode `toJwsInteger` below already exists to fix for a DER-decoded
+ * signature integer. Left-padding here reuses that same function rather than
+ * re-solving it, so `keyObjectFromBase64Url`'s `length !== 32` check (and
+ * every caller downstream of it) never sees a generated key it refuses.
+ */
 export function generateVapidKeys(): VapidKeyPair {
   const ecdh = createECDH('prime256v1');
   ecdh.generateKeys();
   return {
     publicKey: Buffer.from(ecdh.getPublicKey()).toString('base64url'),
-    privateKey: Buffer.from(ecdh.getPrivateKey()).toString('base64url'),
+    privateKey: toJwsInteger(Buffer.from(ecdh.getPrivateKey())).toString('base64url'),
   };
 }
 
