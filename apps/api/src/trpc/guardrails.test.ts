@@ -308,8 +308,8 @@ describe('the real application router', () => {
     expect(paths).toEqual([
       'auth.logoutEverywhere',
       /* The one account-level read that answers with no org selected
-         (`ai/account-page.md`). Self-scoped for the same reason
-         `updateProfile` is: there is no org permission that describes reading
+         (`ai/account-page.md`). Self-scoped for the same reason the retired
+         `updateProfile` was: there is no org permission that describes reading
          your own account, and it must work before any org is chosen — that is
          the entire reason `/account` exists as a route independent of
          `/settings`. Not step-up: reading is not credential-adjacent. */
@@ -319,18 +319,6 @@ describe('the real application router', () => {
       'auth.passkeys.remove',
       'auth.passkeys.rename',
       'auth.passkeys.startRegistration',
-      /* Setting your own display name (migration 0019). Self-scoped for the
-         same reason `logoutEverywhere` is: no ORG permission describes it, and
-         a guest — who holds nothing from their role — must still be able to do
-         it, or the people with the least access are the ones permanently shown
-         as an email address.
-
-         Not step-up, unlike `logoutEverywhere`. The worst an attacker with a
-         stolen session achieves here is a confusing label, which is audited and
-         reversible; signing every other device out is not. It carries no user
-         id in its input — the subject comes from the verified principal — which
-         is what keeps it "rename myself" rather than "rename anyone". */
-      'auth.updateProfile',
       /* Notification preferences (Phase 9) — global per user, not per org
          (`identity.notification_prefs`; see that table's own comment in
          `packages/db/src/schema/identity.ts`), so `selfRoute` for the same
@@ -348,6 +336,15 @@ describe('the real application router', () => {
       'notifications.push.register',
       'notifications.push.unregister',
       'notifications.push.vapidPublicKey',
+      /* People (Phase 11.5) — your own profile, org-independent and answering
+         with no org selected (the account page). `auth.updateProfile` is GONE:
+         display names now write people.profiles through `people.profile.update`
+         (ai/phase-11.5-people.md §3.2). Same self-scoped reasoning as the
+         routes above — no ORG permission describes managing your own fields,
+         and a guest must still be able to. `people.profile.update` also takes
+         no user id in its input: the subject is always the caller. */
+      'people.profile.get',
+      'people.profile.update',
       /* The two tenancy routes a caller with NO membership must still reach.
          Neither can be permission-bearing without a contradiction: a user who
          belongs to no organization has no role, so requiring an org permission

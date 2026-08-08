@@ -7,7 +7,7 @@ import { createPasskeyRouter } from './passkey.router.js';
 import type { PasskeyDeps } from './passkey.service.js';
 import type { IdentityDeps, RequestMeta } from './identity.service.js';
 import * as identity from './identity.service.js';
-import * as profile from './profile.service.js';
+import * as people from '../people/profile.service.js';
 
 /**
  * Identity routes (PLAN.md §8.1).
@@ -123,41 +123,19 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
       ),
 
     /**
-     * Sets the caller's own display name (migration 0019).
-     *
-     * `selfRoute`, not `route({ permission })`, and the reason is the same one
-     * `logoutEverywhere` gives: there is no ORG permission that describes
-     * changing your own name, and a guest — who holds nothing from their role —
-     * must still be able to do it. A `member:manage` gate here would mean the
-     * people with the least access could never be shown as anything but an
-     * email address.
-     *
-     * No step-up. Renaming yourself is not a credential-adjacent action: the
-     * worst an attacker with a stolen session achieves is a confusing label,
-     * which is recoverable and audited, unlike signing every other device out.
-     *
-     * The input carries NO user id. The subject comes from `ctx.principal`,
-     * which came from the verified token — an id in the body would make this
-     * "rename any account", which is the shape of the bug §3.7 rules out on the
-     * socket path for the same reason.
-     */
-    updateProfile: selfRoute({
-      selfReason:
-        'A user setting their own display name. No org permission describes it, and a guest must be able to do it.',
-    })
-      .input(z.object({ displayName: z.string().trim().max(80).nullable() }).strict())
-      .output(z.object({ displayName: z.string().nullable() }))
-      .mutation(({ input, ctx }) =>
-        profile.updateProfile(deps.identity, ctx.principal.userId, input),
-      ),
-
-    /**
      * The caller's own account, independent of any organization (`/account`).
      *
-     * `selfRoute` for the same reason as `updateProfile`: there is no org
-     * permission that describes reading your own account, and it must answer
-     * with no org selected at all — that is the whole point of the page it
-     * backs (`ai/account-page.md`).
+     * `selfRoute` for the same reason as the retired `updateProfile`: there is
+     * no org permission that describes reading your own account, and it must
+     * answer with no org selected at all — that is the whole point of the page
+     * it backs (`ai/account-page.md`).
+     *
+     * `auth.updateProfile` is GONE (Phase 11.5, ai/phase-11.5-people.md §3.2):
+     * setting a display name now writes people.profiles through
+     * `people.profile.update`, the canonical profile record. `me` keeps its
+     * four-field identity shape — the session bootstrap needs it — but its
+     * displayName now sources from people.profiles via the people module's
+     * merged view, so no call site reads the stale identity.users column.
      */
     me: selfRoute({
       selfReason: 'A user reading their own account. Answers with no org selected.',
@@ -172,7 +150,15 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
           })
           .strict(),
       )
-      .query(({ ctx }) => profile.getProfile(ctx.principal.userId)),
+      .query(async ({ ctx }) => {
+        const view = await people.getProfile(ctx.principal.userId);
+        return {
+          email: view.email,
+          displayName: view.displayName,
+          createdAt: view.createdAt,
+          emailVerified: view.emailVerified,
+        };
+      }),
 
     /** Nested rather than merged, so the manifest reads `auth.passkeys.*`. */
     passkeys: createPasskeyRouter({ passkeys: deps.passkeys }),

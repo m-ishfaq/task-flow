@@ -1,4 +1,5 @@
 import { flattenToText, type RichTextNode } from '@taskflow/api/richtext';
+import type { Role } from '@taskflow/policy';
 import type { Rng } from './rng.js';
 
 /**
@@ -206,6 +207,123 @@ export function emailLocalPart(name: PersonName): string {
       .replace(/[^A-Za-z0-9.]/g, '')
       .toLowerCase()
   );
+}
+
+/* The people vocabulary (Phase 11.5): what a profile SAYS about a person.
+   Kept in the corpus for the same reason every other pool is — a module
+   decides that a membership has a job title, this decides what the title is. */
+
+const IC_TITLES = [
+  'Backend Engineer',
+  'Frontend Engineer',
+  'Full-Stack Engineer',
+  'Product Designer',
+  'QA Engineer',
+  'Data Analyst',
+  'Platform Engineer',
+  'Site Reliability Engineer',
+  'Security Engineer',
+  'Technical Writer',
+  'Support Engineer',
+  'Mobile Engineer',
+  'DevOps Engineer',
+  'Product Manager',
+  'Analytics Engineer',
+  'Accessibility Specialist',
+  'Performance Engineer',
+  'Customer Success Manager',
+  'Technical Program Manager',
+  'Release Engineer',
+] as const;
+
+const MANAGER_TITLES = [
+  'Engineering Manager',
+  'Design Lead',
+  'Product Lead',
+  'QA Lead',
+  'Data Lead',
+  'Head of Engineering',
+  'Head of Design',
+  'Head of Product',
+  'Security Lead',
+  'Head of Support',
+  'Delivery Lead',
+  'Engineering Director',
+] as const;
+
+const EXEC_TITLES = [
+  'Chief Executive Officer',
+  'Chief Technology Officer',
+  'Chief Operating Officer',
+  'Chief Product Officer',
+  'Founder',
+] as const;
+
+const GUEST_TITLES = [
+  'External Consultant',
+  'Vendor Partner',
+  'Contractor',
+  'Contract Designer',
+  'Security Auditor',
+] as const;
+
+/**
+ * A job title for someone holding `role`.
+ *
+ * Drawn from the pool that matches the role rather than one flat list: an
+ * owner titled "Backend Engineer" reads as a fixture mistake in the exact way
+ * a board with no cards reads as one, and the four pools are small enough to
+ * keep separate. `roleGrants`-style capability checks are the module's job
+ * (deciding who CAN manage), not this function's.
+ */
+export function jobTitle(rng: Rng, role: Role): string {
+  switch (role) {
+    case 'owner':
+      return rng.pick(EXEC_TITLES);
+    case 'admin':
+      return rng.pick(MANAGER_TITLES);
+    case 'member':
+      return rng.pick(IC_TITLES);
+    case 'guest':
+      return rng.pick(GUEST_TITLES);
+  }
+}
+
+const DEPARTMENTS = [
+  'Engineering',
+  'Design',
+  'Product',
+  'Quality',
+  'Operations',
+  'Sales',
+  'Support',
+  'Security',
+  'Data',
+  'Finance',
+  'People',
+] as const;
+
+export function department(rng: Rng): string {
+  return rng.pick(DEPARTMENTS);
+}
+
+const OOO_MESSAGES = [
+  'On vacation — replies will be slow until I am back.',
+  'Out of office on personal leave.',
+  'Traveling this week — on email sporadically.',
+  'Away from my desk. For urgent matters, ping the on-call channel.',
+  'Parental leave — contact my manager for anything urgent.',
+  'At a conference — replies will be slow.',
+  'On holiday — back next week.',
+  'Out sick — reach the team channel for anything urgent.',
+] as const;
+
+/**
+ * An out-of-office note. Every entry is non-blank and well under the 200-
+ * character CHECK, by inspection rather than by measurement.
+ */
+export function oooMessage(rng: Rng): string {
+  return rng.pick(OOO_MESSAGES);
 }
 
 /* -------------------------------------------------------------------------- *

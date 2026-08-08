@@ -6,6 +6,7 @@ import { createWorkRouter, type WorkRouterDeps } from './work/router.js';
 import { createChatRouter } from './chat/router.js';
 import { createDocsRouter } from './docs/router.js';
 import { createPlatformRouter } from './platform/router.js';
+import { createPeopleRouter } from './people/router.js';
 
 /**
  * The root router.
@@ -98,6 +99,16 @@ export function createAppRouter(deps: AppRouterDeps) {
      * producers too — see `platform/router.ts`'s own header.
      */
     notifications: createPlatformRouter(deps.platform),
+
+    /**
+     * People — the org directory and personal profiles (Phase 11.5).
+     *
+     * Needs the event bus for `profile.updated`, which — like identity's own
+     * events — carries a SYSTEM_ORG envelope that the transactional outbox
+     * cannot hold (platform.outbox's RLS rejects events whose org id is not
+     * the scope's org). See `people/events.ts`'s file header.
+     */
+    people: createPeopleRouter({ events: deps.identity.events }),
   });
 }
 

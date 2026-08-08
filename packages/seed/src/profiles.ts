@@ -329,6 +329,48 @@ export interface PageMix {
   readonly publishShare: number;
 }
 
+/**
+ * How one person's profile is filled in. `CardMix` and `PageMix`'s
+ * counterpart — ranges belong here for the same reason they belong there.
+ *
+ * The rates pick the SHARES, not the content: which job title, which timezone
+ * and which window are corpus/module draws (deterministic per seed), while
+ * these decide how many people have the feature at all. The one rate that
+ * deserves a comment is `oooActiveShare` — of the OOO windows a run produces,
+ * this many are "right now" (from <= now < until), so the directory's OOO
+ * badge and the profile header have a live example and a scheduled one in
+ * every database.
+ */
+export interface PeopleMix {
+  /** Share of users with a people.profiles row at all (absent = all null). */
+  readonly profileRate: number;
+  /** Of profiles, the share carrying a display name. */
+  readonly displayNameRate: number;
+  /**
+   * Of the display-named profiles, the share using first-name-only rather
+   * than the full name — the "Amara" next to "Amara Okonkwo" mix a real
+   * directory shows. Its own rate rather than a magic number so the shape
+   * is declared in the same place as every other share.
+   */
+  readonly displayNameNicknameShare: number;
+  /** Of profiles, the share carrying a timezone. */
+  readonly timezoneRate: number;
+  /** Of profiles, the share carrying a working-hours window (+ weekdays). */
+  readonly workingHoursRate: number;
+  /** Of profiles, the share carrying an OOO window. */
+  readonly oooRate: number;
+  /** Of OOO windows, the share currently active rather than upcoming or past. */
+  readonly oooActiveShare: number;
+  /** Share of memberships with a people.membership_profiles row at all. */
+  readonly membershipProfileRate: number;
+  /** Of those, the share carrying a job title. */
+  readonly jobTitleRate: number;
+  /** Of those, the share carrying a department. */
+  readonly departmentRate: number;
+  /** Share of memberships (owner excluded — nobody above them) with a manager. */
+  readonly managerRate: number;
+}
+
 export interface Profile {
   readonly name: string;
   /** Size of the shared user pool. Org plans index into it. */
@@ -336,7 +378,28 @@ export interface Profile {
   readonly orgs: readonly OrgPlan[];
   readonly card: CardMix;
   readonly message: MessageMix;
+  /**
+   * How one page is filled in. `CardMix` and `MessageMix`'s counterpart.
+   *
+   * The rates here describe two different things and it is worth knowing which is
+   * which: `archivedRate`, `bodyRate` and the two history rates shape what the
+   * PRODUCT looks like, while `snapshotRate`, `prunedShare` and `tailRate` shape
+   * what the RECOVERY PATHS look like — which combination of `docs.page_versions`
+   * snapshot and `docs.yjs_updates` tail a page's content is spread across. All
+   * four combinations occur in a seeded database on purpose:
+   *
+   *   - no snapshot, WAL only            — a page opened once and never compacted
+   *   - snapshot + tail, WAL kept        — compaction ran, then editing continued
+   *   - snapshot + tail, WAL pruned      — the ordinary steady state
+   *   - snapshot, no tail                — compacted and untouched since
+   *
+   * `replayPage` (apps/collab) reconstructs all four the same way, and a bug in
+   * the boundary arithmetic shows up in exactly one of them. A fixture carrying
+   * only the easy case would let that ship.
+   */
   readonly page: PageMix;
+  /** How people's profiles are filled in (Phase 11.5). See `PeopleMix`. */
+  readonly people: PeopleMix;
   /**
    * Share of cards that contribute lifecycle events to the outbox.
    *
@@ -446,6 +509,20 @@ const DEMO_PAGE_MIX: PageMix = {
   publishShare: 0.15,
 };
 
+const DEMO_PEOPLE_MIX: PeopleMix = {
+  profileRate: 0.9,
+  displayNameRate: 0.95,
+  displayNameNicknameShare: 0.4,
+  timezoneRate: 0.9,
+  workingHoursRate: 0.6,
+  oooRate: 0.15,
+  oooActiveShare: 0.5,
+  membershipProfileRate: 0.9,
+  jobTitleRate: 0.95,
+  departmentRate: 0.8,
+  managerRate: 0.75,
+};
+
 /**
  * The default. Three tenants, ~1,350 live cards, ~2,500 messages, ~150 pages,
  * every Phase 3, Phase 5 and Phase 6 (Waves 1–3) surface populated.
@@ -460,6 +537,7 @@ const DEMO: Profile = {
   card: DEMO_MIX,
   message: DEMO_MESSAGE_MIX,
   page: DEMO_PAGE_MIX,
+  people: DEMO_PEOPLE_MIX,
   orgs: [
     {
       name: 'Acme Corp',
@@ -701,6 +779,22 @@ const MINIMAL: Profile = {
      Phase 6 most worth being able to check in seconds, and six pages of it cost
      nothing — it is the TREE that gets small here, not the mechanism. */
   page: { ...DEMO_PAGE_MIX, archivedRate: 0, bodyRate: 1, blocks: [2, 4], updates: [2, 4] },
+  /* Every person gets a profile at this size — the account page and the
+     directory are what `minimal` is for — with a manager in half the org so
+     the org chart has an edge to render without a full hierarchy. */
+  people: {
+    profileRate: 1,
+    displayNameRate: 1,
+    displayNameNicknameShare: 0.4,
+    timezoneRate: 1,
+    workingHoursRate: 0.5,
+    oooRate: 0.25,
+    oooActiveShare: 0.5,
+    membershipProfileRate: 1,
+    jobTitleRate: 1,
+    departmentRate: 0.5,
+    managerRate: 0.5,
+  },
   orgs: [
     {
       name: 'Test Org',
@@ -757,6 +851,24 @@ const LARGE: Profile = {
   messageEventSampleRate: 0.01,
   docEventSampleRate: 0.01,
   attachments: false,
+  /* A profile row per person costs one row each — nothing like the card-child
+     volumes this profile switches off — so full coverage stays on and only the
+     OOO rate drops, keeping the badge visible without every other row carrying
+     a window. Managers follow the same reasoning: an org chart with ~two
+     thirds of members on it is a real chart. */
+  people: {
+    profileRate: 1,
+    displayNameRate: 1,
+    displayNameNicknameShare: 0.4,
+    timezoneRate: 1,
+    workingHoursRate: 0.5,
+    oooRate: 0.05,
+    oooActiveShare: 0.5,
+    membershipProfileRate: 1,
+    jobTitleRate: 0.9,
+    departmentRate: 0.5,
+    managerRate: 0.6,
+  },
   /**
    * Page CONTENT is switched off here, and that is a different decision from
    * switching card children off.

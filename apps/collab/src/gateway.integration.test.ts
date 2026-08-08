@@ -338,6 +338,10 @@ describe('the collab gateway, end to end', () => {
     const second = await startGateway();
     try {
       const reader = await connectClient(fixture, fixture.userId, second.port);
+      /* 'synced' can fire before the loaded state has been applied to the
+         local doc — every other content check in this file settles with
+         waitUntil rather than asserting on the first event. */
+      await waitUntil(() => textOf(reader.doc) === 'written before restart');
       expect(textOf(reader.doc)).toBe('written before restart');
     } finally {
       await second.gateway.close();
@@ -376,6 +380,9 @@ describe('the collab gateway, end to end', () => {
     const second = await startGateway();
     try {
       const reader = await connectClient(fixture, fixture.userId, second.port);
+      /* Same settle as the restart test above: the fresh load must be
+         APPLIED, not merely synced. */
+      await waitUntil(() => textOf(reader.doc) === 'original content');
       expect(textOf(reader.doc)).toBe('original content');
     } finally {
       await second.gateway.close();
