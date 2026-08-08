@@ -9,9 +9,9 @@ Parent: [PLAN.md](../PLAN.md) §13 (Roadmap, row 12).
 This is **one wave of Phase 12**, not the whole row. Phase 12's roadmap line also covers
 retention policies, DSAR export, crypto-shred erasure, TOTP, OAuth account linking, device
 inventory, impossible-travel detection, and SCIM/SAML — none of that is in scope here. This wave
-is the part of Phase 12 that came up investigating a specific question: *self-serve org creation
+is the part of Phase 12 that came up investigating a specific question: _self-serve org creation
 lets anyone become an Owner of their own tenant, so what stops that from being a mess, and what
-does an actual admin look at across the whole system?* Everything below answers that question and
+does an actual admin look at across the whole system?_ Everything below answers that question and
 nothing else. SaaS billing (plans, seats, Stripe) is explicitly **not** in this wave either — see
 §2.
 
@@ -22,7 +22,7 @@ nothing else. SaaS billing (plans, seats, Stripe) is explicitly **not** in this 
 Self-serve org creation is not a bug. `apps/api/src/tenancy/router.ts:15-26` and
 `org.service.ts:40-54` already say so directly: any authenticated user can call `orgs.create` and
 become the Owner of a brand-new, empty tenant, with no permission check, because a permission
-required to create your *first* org is a permission every role would need to hold — which is a
+required to create your _first_ org is a permission every role would need to hold — which is a
 permission that means nothing. This is the same growth motion Slack, Notion, Linear, and Asana all
 use. Restricting who can create an org would break it. Nothing in this wave changes that.
 
@@ -32,8 +32,7 @@ was already known to be missing (a platform-wide view):
 1. **No abuse controls on creation.** `orgs.create` has no email-verification gate and no rate
    limit. `identity.users.emailVerifiedAt` already exists (Phase 1) and is simply not checked
    here; an unverified account can create unlimited orgs today.
-2. **`identity.orgs.status` is a dead column.** It exists (`text`, default `'active'`, migration
-   0004) with no `CHECK` constraint and, per a repo-wide grep, **zero readers**. Compare
+2. **`identity.orgs.status` is a dead column.** It exists (`text`, default `'active'`, migration 0004) with no `CHECK` constraint and, per a repo-wide grep, **zero readers**. Compare
    `identity.users.status`, which login (`identity.service.ts:206`, `passkey.service.ts:218`)
    actually enforces. An org's `status` column looks like a suspend switch and is not wired to
    anything — flipping it today would do precisely nothing.
@@ -43,7 +42,7 @@ was already known to be missing (a platform-wide view):
    excludes `'owner'` from what it renders (CLAUDE.md, Phase 3 card-detail notes cross-reference),
    so there is **no UI path to it at all**. And `changeRole` unconditionally refuses
    `target.userId === actor.userId` ("nobody changes their own role") — so even calling the route
-   directly, an Owner cannot demote *themselves* in the same call that promotes someone else. The
+   directly, an Owner cannot demote _themselves_ in the same call that promotes someone else. The
    only way to hand off ownership today is two separate, non-atomic calls by two different
    people (A promotes B to owner; B, now also an owner, demotes A) — a workaround nobody can
    discover from the product, that leaves an org with two Owners in between, and that nothing
@@ -86,7 +85,7 @@ a user directory (read-only in this wave — see §7.5), and a feature-flag admi
   capability than suspending an org, and it sits naturally with Phase 12's device-inventory /
   impossible-travel work rather than shipping as a side effect of building the org directory. §7.5
   makes this an explicit decision to confirm, not a silent cut.
-- **Cross-org data access.** A platform operator in this wave can see *that* an org exists, how
+- **Cross-org data access.** A platform operator in this wave can see _that_ an org exists, how
   many members it has, and whether it's suspended — never a board, a card, a chat message, or a
   doc page belonging to it. That is a structurally different, much larger capability (it needs
   either an RLS-bypassing Postgres role or an audited impersonation flow) and is not this wave's
@@ -106,7 +105,7 @@ a user directory (read-only in this wave — see §7.5), and a feature-flag admi
 `packages/policy`'s `can()`, `RESOURCE_TYPES`, and `PERMISSIONS` are all built around one
 assumption that holds everywhere else in this codebase: a subject's authority comes from an
 `identity.memberships` row and is relative to exactly one org. A platform operator's authority is
-relative to *no* org — extending `RESOURCE_TYPES` with `'platform'` and writing permissions like
+relative to _no_ org — extending `RESOURCE_TYPES` with `'platform'` and writing permissions like
 `platform:read` would bend `can(subject, permission, target?)` into describing something it isn't:
 there is no membership row, no `target`, and no org whose RLS session variable would confine a
 mistake the way it confines every other permission check in this system.
@@ -135,7 +134,7 @@ before a second need shows up.
 for why role-adjacent decisions get their own module rather than inline comparisons) exports:
 
 ```ts
-export async function isPlatformOperator(userId: UserId): Promise<boolean>
+export async function isPlatformOperator(userId: UserId): Promise<boolean>;
 ```
 
 reached only through `withGlobalScope` — no org context exists to check against, the same honest
@@ -203,12 +202,12 @@ export async function transferOwnership(
   orgId: OrgId,
   input: { readonly toUserId: UserId; readonly selfNewRole: 'admin' | 'member' },
   actor: Actor,
-): Promise<{ readonly newOwnerId: UserId }>
+): Promise<{ readonly newOwnerId: UserId }>;
 ```
 
 Both writes — promote `toUserId` to `'owner'`, demote `actor.userId` to `input.selfNewRole` —
 happen in the same `withOrgScope` transaction the existing `changeRole` already opens one of, so
-the org is never observably ownerless and never observably has the *old* owner still holding the
+the org is never observably ownerless and never observably has the _old_ owner still holding the
 role after the call returns; `assertAnotherOwnerRemains`-style counting is unnecessary because
 the two writes commit together rather than needing to reason about a moment in between. The route
 is `route({ permission: 'member:manage', stepUp: true })` — since `member:manage` is already
@@ -277,7 +276,7 @@ emitted inside the mutation's own transaction:
 **Where these get audited is §7.2 — the one open question in this section.** The existing
 hash-chained audit log (`audit.audit_log`) is per-org by construction (Phase 2: a trigger under a
 per-org chain-head lock). `platform.orgSuspended` has a real `orgId` and could write into that
-org's own chain — an Owner arguably *should* see "a platform operator suspended this org" in their
+org's own chain — an Owner arguably _should_ see "a platform operator suspended this org" in their
 own audit history. But `platformAdmin.orgs.list` and `platformAdmin.users.list` (read-only,
 cross-org) have no single org to attribute to at all. §7.2 lays out the choice.
 
@@ -315,7 +314,7 @@ it from the first PR, not retroactively once something goes wrong.
 **Guardrail 8 (tenancy fuzz) does not apply directly** — `platformRoute` has no org context to
 substitute a foreign org's id into, the same documented `not-applicable` outcome
 `ai/phase-11.5-people.md` §6 already established for `people.profile.*`. What the fuzz harness
-*should* gain is the mirror case: a regular org member (any role, any org) calling a
+_should_ gain is the mirror case: a regular org member (any role, any org) calling a
 `platformAdmin.*` route and getting FORBIDDEN, proving the platform/org boundary holds in the
 direction that actually matters day to day.
 
