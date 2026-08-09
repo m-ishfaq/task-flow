@@ -49,8 +49,20 @@ const MIGRATION_URL =
 
 const MIGRATIONS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'migrations');
 
-const OPERATOR = '0195ee00-0000-7000-8000-000000000001';
-const ORG_A = '0195ee00-0000-7000-8000-00000000000a' as OrgId;
+/* `0195ee0b`, not `0195ee00` — this file's own prefix used to collide with
+   `apps/work/work.service.test.ts`'s `OWNER` (both `...00000001`). turbo
+   runs the `packages/db` and `apps/api` test tasks in parallel against the
+   SAME `taskflow_test`, and this file's `cleanup()` unconditionally deletes
+   `identity.users` for this id — so whichever file's `beforeAll` lost the
+   race found its fixture user gone, or present with no `email_verified_at`,
+   moments after setting it. That surfaced as `work.service.test.ts`'s
+   `createOrg` calls failing with "verify your email", intermittently, in CI
+   only — the two suites never run concurrently on a single-package local
+   run. Real UUIDs, not the shared literal family the rest of this file's
+   neighbours draw from, is what makes a second collision here structurally
+   unlikely rather than merely lucky. */
+const OPERATOR = '0195ee0b-0000-7000-8000-000000000001';
+const ORG_A = '0195ee0b-0000-7000-8000-00000000000a' as OrgId;
 
 /** SQLSTATE for "permission denied". */
 const INSUFFICIENT_PRIVILEGE = '42501';
@@ -225,7 +237,7 @@ describe('identity.orgs — taskflow_platform_admin’s reach (§3.7)', () => {
     const rows = await withOrgScope(
       // A DIFFERENT org than the one seeded — proves this is RLS refusing an
       // unrelated tenant, not a coincidental empty result.
-      '0195ee00-0000-7000-8000-0000000000ff' as OrgId,
+      '0195ee0b-0000-7000-8000-0000000000ff' as OrgId,
       async (tx) =>
         tx.execute(sql`SELECT count(*)::int AS n FROM identity.orgs WHERE id = ${ORG_A}::uuid`),
     );
