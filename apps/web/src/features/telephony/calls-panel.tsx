@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { api } from '../../lib/trpc.js';
 import { useToast } from '../../lib/toast-context.js';
 import { useStepUp } from '../auth/use-step-up.js';
-import { Button, Empty, Field, Input, Section, SkeletonRows } from '../../components/primitives.js';
+import { Button, Empty, Field, Input, SkeletonRows } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
+import { cn } from '../../lib/cn.js';
+import { formatRelative } from '../../lib/format.js';
 import { callRecordingsQuery, callsQuery, invalidateAfterSpend, phoneNumbersQuery } from './api.js';
 
 /**
@@ -15,19 +18,51 @@ import { callRecordingsQuery, callsQuery, invalidateAfterSpend, phoneNumbersQuer
  * opt-out means forgetting a checkbox is an unlawfully recorded call.
  */
 
-function statusLabel(status: string): string {
-  switch (status) {
-    case 'in_progress':
-      return 'In progress';
-    case 'no_answer':
-      return 'No answer';
-    default:
-      return status.charAt(0).toUpperCase() + status.slice(1);
-  }
+const STATUS_LABELS: Readonly<Record<string, string>> = {
+  queued: 'Queued',
+  ringing: 'Ringing',
+  in_progress: 'In progress',
+  completed: 'Completed',
+  busy: 'Busy',
+  no_answer: 'No answer',
+  failed: 'Failed',
+  canceled: 'Canceled',
+};
+
+/** A coloured pill per carrier status — colour drives recognition, never meaning. */
+function StatusPill({ status }: { readonly status: string }) {
+  const tone =
+    status === 'in_progress'
+      ? 'bg-accent/15 text-accent'
+      : status === 'completed'
+        ? 'bg-success/15 text-success'
+        : status === 'failed' || status === 'canceled'
+          ? 'bg-danger/15 text-danger'
+          : status === 'busy' || status === 'no_answer'
+            ? 'bg-warning/15 text-warning'
+            : 'bg-surface-hover text-ink-muted';
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium whitespace-nowrap',
+        tone,
+      )}
+    >
+      {STATUS_LABELS[status] ?? status.charAt(0).toUpperCase() + status.slice(1)}
+    </span>
+  );
+}
+
+function durationLabel(seconds: number | null): string | null {
+  if (seconds === null) return null;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return minutes > 0 ? `${String(minutes)}m ${String(rest).padStart(2, '0')}s` : `${String(rest)}s`;
 }
 
 export function CallsPanel({ orgId }: { readonly orgId: string }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const toast = useToast();
   const numbers = useQuery(phoneNumbersQuery(orgId));
   const calls = useQuery(callsQuery(orgId));
@@ -50,6 +85,8 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
         toast.show('Call placed', {
           description: 'A recording announcement will play before it starts.',
         });
+      } else {
+        toast.show('Call placed');
       }
       await invalidateAfterSpend(queryClient, orgId);
     },
@@ -58,111 +95,194 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
     },
   });
 
+  const owned = numbers.data ?? [];
   const activeNumber =
-    fromPhoneNumberId !== '' ? fromPhoneNumberId : (numbers.data?.[0]?.phoneNumberId ?? '');
+    fromPhoneNumberId !== '' ? fromPhoneNumberId : (owned[0]?.phoneNumberId ?? '');
+
+  const goBuyNumber = () => {
+    void navigate({ to: '/calls', search: { tab: 'numbers', thread: undefined } });
+  };
 
   return (
-    <div className="space-y-6">
-      <Section title="Place a call">
+    <div className="mx-auto max-w-3xl space-y-6">
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
+            Place a call
+          </h2>
+        </div>
         <form
-          className="flex flex-wrap items-end gap-2"
+          className="rounded-lg border border-line bg-surface-raised p-3"
           onSubmit={(event) => {
             event.preventDefault();
             place.mutate();
           }}
         >
-          <Field label="To" htmlFor="call-to" hint="E.164, e.g. +14155550100">
-            <Input
-              id="call-to"
-              value={to}
-              className="w-44"
-              placeholder="+14155550100"
-              onChange={(event) => {
-                setTo(event.target.value);
-              }}
-            />
-          </Field>
+          <div className="flex flex-wrap items-end gap-2">
+            <Field label="To" htmlFor="call-to" hint="E.164, e.g. +14155550100">
+              <Input
+                id="call-to"
+                value={to}
+                className="w-44"
+                placeholder="+14155550100"
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => {
+                  setTo(event.target.value);
+                }}
+              />
+            </Field>
 
-          <Field label="From" htmlFor="call-from">
-            <select
-              id="call-from"
-              value={activeNumber}
-              onChange={(event) => {
-                setFromPhoneNumberId(event.target.value);
-              }}
-              className="h-9 rounded border border-line bg-surface-sunken px-2 text-sm text-ink"
+            <Field label="From" htmlFor="call-from">
+              <select
+                id="call-from"
+                value={activeNumber}
+                disabled={owned.length === 0}
+                onChange={(event) => {
+                  setFromPhoneNumberId(event.target.value);
+                }}
+                className="h-9 min-w-36 rounded border border-line bg-surface-sunken px-2 text-sm text-ink focus:border-accent focus:outline-none disabled:opacity-50"
+              >
+                {owned.length === 0 && <option value="">No numbers yet</option>}
+                {owned.map((number) => (
+                  <option key={number.phoneNumberId} value={number.phoneNumberId}>
+                    {String(number.e164)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <label className="flex h-9 cursor-pointer items-center gap-1.5 text-xs text-ink-muted select-none">
+              <input
+                type="checkbox"
+                checked={record}
+                onChange={(event) => {
+                  setRecord(event.target.checked);
+                }}
+                className="size-3.5 accent-accent"
+              />
+              Record
+            </label>
+
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={place.isPending || activeNumber === '' || to.trim() === ''}
             >
-              {(numbers.data ?? []).map((number) => (
-                <option key={number.phoneNumberId} value={number.phoneNumberId}>
-                  {String(number.e164)}
-                </option>
-              ))}
-            </select>
-          </Field>
+              {place.isPending ? 'Calling…' : 'Call'}
+            </Button>
+          </div>
 
-          <label className="flex h-9 items-center gap-1.5 text-xs text-ink-muted">
-            <input
-              type="checkbox"
-              checked={record}
-              onChange={(event) => {
-                setRecord(event.target.checked);
-              }}
-            />
-            Record
-          </label>
-
-          <Button
-            type="submit"
-            disabled={place.isPending || activeNumber === '' || to.trim() === ''}
-          >
-            Call
-          </Button>
+          {/* Gated on `!numbers.isPending` so the initial load doesn't flash a
+              false "no numbers" warning at a caller who does own one. */}
+          {!numbers.isPending && owned.length === 0 && (
+            <div className="mt-3 flex items-center justify-between gap-2 rounded border border-warning/40 bg-warning/5 px-2.5 py-1.5">
+              <p className="text-xs text-warning">
+                No numbers yet — buy one before you can place a call.
+              </p>
+              <button
+                type="button"
+                onClick={goBuyNumber}
+                className="shrink-0 text-xs font-medium text-accent hover:underline"
+              >
+                Buy a number
+              </button>
+            </div>
+          )}
+          {place.isError && <ErrorText error={place.error} />}
         </form>
-        {numbers.data?.length === 0 && (
-          <p className="mt-2 text-xs text-ink-muted">
-            Buy a number on the Numbers tab before placing a call.
-          </p>
-        )}
-        {place.isError && <ErrorText error={place.error} />}
-      </Section>
+      </section>
 
-      <Section title="Call log" count={calls.data?.length}>
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Call log</h2>
+          {calls.data !== undefined && (
+            <span className="rounded-full bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
+              {calls.data.length}
+            </span>
+          )}
+        </div>
+
         {calls.isPending ? (
           <SkeletonRows rows={3} />
         ) : calls.isError ? (
           <ErrorView error={calls.error} title="Could not load the call log" />
         ) : calls.data.length === 0 ? (
-          <Empty title="No calls yet" />
+          <Empty
+            title="No calls yet"
+            description="Calls you place appear here with their status, duration, and any recording."
+          />
         ) : (
-          <ul className="space-y-1">
+          <ul className="space-y-1.5">
             {calls.data.map((call) => (
-              <li key={call.callId} className="rounded border border-line">
+              <li
+                key={call.callId}
+                className={cn(
+                  'overflow-hidden rounded-lg border transition-colors',
+                  expanded === call.callId ? 'border-accent/40' : 'border-line',
+                )}
+              >
                 <button
                   type="button"
                   onClick={() => {
                     setExpanded((current) => (current === call.callId ? null : call.callId));
                   }}
-                  className="flex w-full items-center gap-2 px-2 py-1.5 text-left"
+                  className="flex w-full items-center gap-2.5 bg-surface-raised px-3 py-2 text-left hover:bg-surface-hover"
                 >
-                  <span className="text-xs text-ink">{String(call.counterparty)}</span>
-                  <span className="text-[11px] text-ink-faint">
-                    {call.direction} · {statusLabel(call.status)}
-                    {call.durationSeconds !== null && ` · ${String(call.durationSeconds)}s`}
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'text-sm leading-none',
+                      call.direction === 'outbound' ? 'text-accent' : 'text-ink-faint',
+                    )}
+                  >
+                    {call.direction === 'outbound' ? '→' : '←'}
                   </span>
-                  {call.recorded && (
-                    <span className="ml-auto text-[11px] text-ink-faint">Recorded</span>
+                  <span className="sr-only">
+                    {call.direction === 'outbound' ? 'Outbound' : 'Inbound'}
+                  </span>
+                  <span className="font-mono text-xs text-ink">{String(call.counterparty)}</span>
+                  {call.durationSeconds !== null && (
+                    <span className="text-[11px] text-ink-faint">
+                      {durationLabel(call.durationSeconds)}
+                    </span>
                   )}
+                  <span className="ml-auto flex items-center gap-2">
+                    {call.recorded && (
+                      <span className="text-[10px] font-medium text-ink-muted">● recorded</span>
+                    )}
+                    <StatusPill status={call.status} />
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        'text-[10px] text-ink-faint transition-transform',
+                        expanded === call.callId && 'rotate-90',
+                      )}
+                    >
+                      ›
+                    </span>
+                  </span>
                 </button>
-                {expanded === call.callId && call.recorded && (
-                  <div className="border-t border-line px-2 py-1.5">
-                    <CallRecordings orgId={orgId} callId={call.callId} />
+                {expanded === call.callId && (
+                  <div className="border-t border-line bg-surface px-3 py-2">
+                    {call.startedAt !== null && (
+                      <p className="mb-1.5 text-[11px] text-ink-faint">
+                        {call.direction === 'outbound' ? 'Placed' : 'Received'}{' '}
+                        {formatRelative(call.startedAt)}
+                      </p>
+                    )}
+                    {call.recorded ? (
+                      <CallRecordings orgId={orgId} callId={call.callId} />
+                    ) : (
+                      <p className="text-[11px] text-ink-faint">This call was not recorded.</p>
+                    )}
                   </div>
                 )}
               </li>
             ))}
           </ul>
         )}
-      </Section>
+      </section>
     </div>
   );
 }
@@ -204,7 +324,8 @@ function CallRecordings({ orgId, callId }: { readonly orgId: string; readonly ca
           <li key={recording.recordingId} className="flex items-center gap-2">
             <span className="text-[11px] text-ink-muted">
               {recording.status}
-              {recording.durationSeconds !== null && ` · ${String(recording.durationSeconds)}s`}
+              {recording.durationSeconds !== null &&
+                ` · ${durationLabel(recording.durationSeconds)}`}
             </span>
             {recording.status === 'stored' && (
               <Button

@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { formatCents } from '../../lib/format.js';
-import { Empty, Section, SkeletonRows } from '../../components/primitives.js';
+import { Empty, SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
+import { cn } from '../../lib/cn.js';
 import { spendCurrentQuery, spendReportQuery } from './api.js';
 
 /**
@@ -31,53 +32,112 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
   const current = useQuery(spendCurrentQuery(orgId));
   const report = useQuery(spendReportQuery(orgId, SINCE_DAYS));
 
+  const spentCents = current.data?.spentCents;
+  const capCents = current.data?.capCents;
+  const ratio = capCents === undefined || capCents === 0 ? 0 : (spentCents ?? 0) / capCents;
+  const over = ratio > 1;
+
   return (
-    <div className="space-y-6">
-      <Section title="This organization's spend">
+    <div className="mx-auto max-w-3xl space-y-6">
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
+            This organization's spend
+          </h2>
+        </div>
+
         {current.isPending ? (
           <SkeletonRows rows={1} />
         ) : current.isError ? (
           <ErrorView error={current.error} title="Could not load spend" />
         ) : (
-          <div className="flex items-baseline gap-2">
-            <p className="text-2xl font-semibold text-ink">
-              {formatCents(current.data.spentCents)}
-            </p>
-            <p className="text-xs text-ink-muted">of {formatCents(current.data.capCents)} cap</p>
+          <div className="rounded-lg border border-line bg-surface-raised p-4">
+            <div className="flex items-baseline gap-2">
+              <p className="text-2xl font-semibold text-ink">{formatCents(spentCents ?? 0)}</p>
+              <p className="text-xs text-ink-muted">
+                of {formatCents(capCents ?? 0)} cap · rolling 30 days
+              </p>
+              <span
+                className={cn(
+                  'ml-auto rounded-full px-2 py-0.5 text-[10px] font-medium',
+                  over
+                    ? 'bg-danger/15 text-danger'
+                    : ratio > 0.8
+                      ? 'bg-warning/15 text-warning'
+                      : 'bg-success/15 text-success',
+                )}
+              >
+                {over ? 'Cap reached' : `${String(Math.round(ratio * 100))}% used`}
+              </span>
+            </div>
+            <div
+              role="progressbar"
+              aria-valuenow={Math.min(Math.round(ratio * 100), 100)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Spend against cap"
+              className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface-sunken"
+            >
+              <div
+                className={cn(
+                  'h-full rounded-full transition-all',
+                  over ? 'bg-danger' : ratio > 0.8 ? 'bg-warning' : 'bg-accent',
+                )}
+                style={{ width: `${String(Math.min(ratio * 100, 100))}%` }}
+              />
+            </div>
           </div>
         )}
-      </Section>
+      </section>
 
-      <Section title={`Cost attribution — last ${String(SINCE_DAYS)} days`}>
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
+            Cost attribution — last {String(SINCE_DAYS)} days
+          </h2>
+        </div>
+
         {report.isPending ? (
           <SkeletonRows rows={3} />
         ) : report.isError ? (
           <ErrorView error={report.error} title="Could not load the itemized report" />
         ) : report.data.length === 0 ? (
-          <Empty title="No spend recorded in this window" />
+          <Empty
+            title="No spend recorded in this window"
+            description="Place a call or send an SMS to see it itemized here."
+          />
         ) : (
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-line text-ink-faint">
-                <th className="py-1.5 font-medium">Kind</th>
-                <th className="py-1.5 text-right font-medium">Count</th>
-                <th className="py-1.5 text-right font-medium">Estimated</th>
-                <th className="py-1.5 text-right font-medium">Billed</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.data.map((row) => (
-                <tr key={row.kind} className="border-b border-line/60 text-ink">
-                  <td className="py-1.5">{KIND_LABELS.get(row.kind) ?? row.kind}</td>
-                  <td className="py-1.5 text-right">{row.count}</td>
-                  <td className="py-1.5 text-right">{formatCents(row.estimatedCents)}</td>
-                  <td className="py-1.5 text-right">{formatCents(row.billedCents)}</td>
+          <div className="overflow-hidden rounded-lg border border-line">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-line bg-surface-raised text-ink-faint">
+                  <th className="px-3 py-2 font-medium">Kind</th>
+                  <th className="px-3 py-2 text-right font-medium">Count</th>
+                  <th className="px-3 py-2 text-right font-medium">Estimated</th>
+                  <th className="px-3 py-2 text-right font-medium">Billed</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="bg-surface">
+                {report.data.map((row) => (
+                  <tr
+                    key={row.kind}
+                    className="border-b border-line/60 text-ink transition-colors last:border-b-0 hover:bg-surface-hover"
+                  >
+                    <td className="px-3 py-2">{KIND_LABELS.get(row.kind) ?? row.kind}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{row.count}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {formatCents(row.estimatedCents)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {formatCents(row.billedCents)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </Section>
+      </section>
     </div>
   );
 }

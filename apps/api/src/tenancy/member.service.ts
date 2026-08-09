@@ -9,7 +9,7 @@ import {
   sameRole,
   type Role,
 } from '@taskflow/policy';
-import { memberAdded, memberRemoved, memberRoleChanged } from './events.js';
+import { memberAdded, memberRemoved, memberRoleChanged, ownershipTransferred } from './events.js';
 import type { Actor } from './org.service.js';
 
 /**
@@ -262,6 +262,87 @@ export async function removeMember(
     ]);
 
     return { removed: true as const };
+  });
+}
+
+export interface TransferOwnershipInput {
+  readonly toUserId: UserId;
+  /** The role the OLD owner keeps after handing the org over. */
+  readonly selfNewRole: 'admin' | 'member';
+}
+
+/**
+ * Hands ownership to another member in ONE atomic transaction (§3.5,
+ * ai/phase-12-admin.md §3.5).
+ *
+ * Replaces the accidental two-step workaround — promote target, demote self,
+ * two calls by two people — with a single action. Both writes commit
+ * together, so the org is never observably ownerless and never observably
+ * has the old owner still holding the role after the call returns; no
+ * `assertAnotherOwnerRemains`-style counting is needed because the two
+ * writes can never leave zero owners, and a pre-existing second owner is
+ * simply still there afterward (a shape this route did not create, and §3.5
+ * explicitly says is not its job to detect).
+ *
+ * The route is `member:manage`, which the role matrix makes Owner-only — so
+ * the permission check alone already guarantees the caller currently holds
+ * the role they are giving away.
+ */
+export async function transferOwnership(
+  orgId: OrgId,
+  input: TransferOwnershipInput,
+  actor: Actor,
+): Promise<{ readonly newOwnerId: UserId }> {
+  return withOrgScope(orgId, async (tx) => {
+    const rows = await tx
+      .select({ id: schema.memberships.id, role: schema.memberships.role })
+      .from(schema.memberships)
+      .where(eq(schema.memberships.userId, input.toUserId))
+      .limit(1);
+
+    const membership = rows[0];
+    // NOT_FOUND rather than a message naming the user: across tenants, "that
+    // person is not in this org" confirms the account exists (§8.7).
+    if (!membership) throw errors.notFound();
+
+    const currentRole = knownRole(membership.role);
+
+    /* §3.5's first decided edge case: a guest must not jump straight to
+       Owner. That would skip every intentional friction
+       `isDirectlyAssignable`/`DIRECTLY_ASSIGNABLE_ROLES` builds into how
+       someone reaches a real role, and "transfer ownership" must not be a
+       shortcut around it. */
+    if (currentRole !== 'admin' && currentRole !== 'member') {
+      throw errors.validation({
+        toUserId:
+          'This person must be a member or admin before becoming Owner. Promote them first.',
+      });
+    }
+
+    await tx
+      .update(schema.memberships)
+      .set({ role: 'owner', updatedAt: new Date() })
+      .where(eq(schema.memberships.id, membership.id));
+
+    await tx
+      .update(schema.memberships)
+      .set({ role: input.selfNewRole, updatedAt: new Date() })
+      .where(and(eq(schema.memberships.orgId, orgId), eq(schema.memberships.userId, actor.userId)));
+
+    await outboxWriter.append(tx, [
+      createEvent(
+        ownershipTransferred,
+        {
+          orgId,
+          fromUserId: actor.userId,
+          toUserId: input.toUserId,
+          fromNewRole: input.selfNewRole,
+        },
+        { orgId, actorId: actor.userId, requestId: actor.requestId },
+      ),
+    ]);
+
+    return { newOwnerId: input.toUserId };
   });
 }
 

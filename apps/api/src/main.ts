@@ -3,6 +3,7 @@ import {
   initializeAuditDatabase,
   initializeBacklinksDatabase,
   initializeDatabase,
+  initializePlatformAdminDatabase,
   initializeRecordingIngestDatabase,
   initializeSweepDatabase,
 } from '@taskflow/db';
@@ -88,6 +89,20 @@ if (env.DATABASE_RECORDING_INGEST_URL !== undefined) {
   initializeRecordingIngestDatabase({
     url: env.DATABASE_RECORDING_INGEST_URL,
     applicationName: 'taskflow-recording-ingest',
+  });
+}
+
+/* The platform-admin console's connection, on its own role and pool (Phase
+   12 Wave 1, §3.7; migration 0035). Same optionality reasoning as every
+   consumer pool above: `taskflow_platform_admin` reads the org directory
+   across every tenant and writes orgs.status, and an instance that never
+   serves a console request does not need it — `withPlatformAdminScope`
+   throws rather than silently falling back to the application role, which
+   cannot see across every org. */
+if (env.DATABASE_PLATFORM_ADMIN_URL !== undefined) {
+  initializePlatformAdminDatabase({
+    url: env.DATABASE_PLATFORM_ADMIN_URL,
+    applicationName: 'taskflow-platform-admin',
   });
 }
 

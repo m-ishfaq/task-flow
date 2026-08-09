@@ -262,7 +262,13 @@ function textOf(doc: Y.Doc): string {
   return doc.getXmlFragment('content').toString();
 }
 
-async function waitUntil(check: () => boolean, timeoutMs = 8_000): Promise<void> {
+async function waitUntil(check: () => boolean, timeoutMs = 20_000): Promise<void> {
+  /* 8s used to be the default and was too tight for this suite under turbo:
+     every package's tests run in parallel against one taskflow_test, and the
+     restore round-trip boots a SECOND gateway whose fresh onLoadDocument
+     replay can exceed a short window on a loaded machine. The condition is
+     unchanged — only the observation window is. 20s still sits well inside
+     each test's own 30s vitest timeout. */
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (check()) return;

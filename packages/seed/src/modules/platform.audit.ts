@@ -10,6 +10,7 @@ import { commentsModule } from './docs.comments.js';
 import { suggestionsModule } from './docs.suggestions.js';
 import { templatesModule } from './docs.templates.js';
 import { peopleModule } from './people.profiles.js';
+import { adminModule } from './platform.admin.js';
 
 /**
  * The outbox, and the real hash-chained audit log it drains into.
@@ -56,6 +57,11 @@ export const auditModule = defineSeedModule({
     suggestionsModule,
     templatesModule,
     peopleModule,
+    /* The platform-admin fixture (Phase 12 Wave 1). Nothing reads its output
+       either, so like `people.profiles` it must be named here or it silently
+       never runs — and a seeded database without an operator is a console
+       nobody can open (see platform.admin.ts's header). */
+    adminModule,
   ],
   tables: ['platform.outbox'],
 

@@ -319,6 +319,14 @@ describe('the real application router', () => {
       'auth.passkeys.remove',
       'auth.passkeys.rename',
       'auth.passkeys.startRegistration',
+      /* The resolved feature-flag snapshot (Phase 12 Wave 1 §3.8) — the
+         client bootstrap payload, and the consumer that makes the override
+         store real. Self-scoped rather than public because the flags are a
+         product-surface view for logged-in users only, and self-scoped
+         rather than platformRoute because non-operators must see it too;
+         the values are non-sensitive (feature visibility, never a security
+         control). */
+      'flags.snapshot',
       /* Notification preferences (Phase 9) — global per user, not per org
          (`identity.notification_prefs`; see that table's own comment in
          `packages/db/src/schema/identity.ts`), so `selfRoute` for the same
@@ -345,6 +353,13 @@ describe('the real application router', () => {
          no user id in its input: the subject is always the caller. */
       'people.profile.get',
       'people.profile.update',
+      /* The operator flag check (Phase 12 Wave 1 §3.2) — deliberately
+         selfRoute, not platformRoute: every logged-in user calls it on every
+         page load so the account menu can decide whether to render a link to
+         /platform-admin, and forcing a step-up re-authentication on all of
+         them just to hear "no" would be a real, avoidable dead-end. The
+         answer ({ isOperator }) is not sensitive on its own. */
+      'platformAdmin.self.check',
       /* The two tenancy routes a caller with NO membership must still reach.
          Neither can be permission-bearing without a contradiction: a user who
          belongs to no organization has no role, so requiring an org permission

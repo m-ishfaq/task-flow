@@ -307,23 +307,31 @@ export const security = [
       '@typescript-eslint/no-non-null-assertion': 'off',
     },
   },
-  /* The identity module is the one consumer of withGlobalScope outside the data
-     layer, and the reason it exists: registration, login, verification links and
-     refresh exchange all happen before any organization is known. Everything
-     else here — raw SQL, role comparisons, Math.random — stays banned.
+  /* The consumers of withGlobalScope outside the data layer, and why each is
+     exempt:
 
-     Phase 11.5 adds the people module to the exemption for the IDENTICAL
-     structural reason: `people.profiles` is a non-tenant table (no org_id, no
-     RLS — migration 0030's header) whose routes must answer with no org
-     selected, the account page. `people.directory.service.ts` and the org-
-     scoped membership/reporting services use withOrgScope like any tenant
-     code; only profile.service.ts reads/writes the global table. This
-     exemption is what the guardrail-selftest's computed-config check on
-     apps/api/src/people/profile.service.ts proves stays NARROW — every other
-     ban still fires there. */
+       - apps/api/src/identity/** is the reason it exists: registration, login,
+         verification links and refresh exchange all happen before any
+         organization is known.
+       - apps/api/src/people/** (Phase 11.5) for the identical structural
+         reason: `people.profiles` is a non-tenant table (no org_id, no RLS —
+         migration 0030's header) whose routes must answer with no org
+         selected, the account page.
+       - apps/api/src/platform-admin/** (Phase 12 Wave 1) because
+         `operator.ts`'s `isPlatformOperator` must run before any org is
+         known — the whole point of the operator flag is that it is relative
+         to NO org. (The consumer lives in the API layer, not packages/policy,
+         for the identical reason people does: `packages/policy` has no
+         database dependency.)
+
+     Everything else here — raw SQL, role comparisons, Math.random — stays
+     banned for all three paths. This exemption is what the guardrail-selftest's
+     computed-config checks on apps/api/src/people/profile.service.ts and
+     apps/api/src/platform-admin/org-directory.service.ts prove stays NARROW —
+     every other ban still fires there. */
   {
     name: 'taskflow/guardrails/exempt-global-scope-consumers',
-    files: ['apps/api/src/identity/**', 'apps/api/src/people/**'],
+    files: ['apps/api/src/identity/**', 'apps/api/src/people/**', 'apps/api/src/platform-admin/**'],
     rules: { 'no-restricted-syntax': restrictedSyntax('globalScope') },
   },
   {
@@ -333,6 +341,27 @@ export const security = [
       // Integration tests here read the database directly to assert on stored
       // state — that a token column holds a hash and not the token.
       'no-restricted-syntax': restrictedSyntax('globalScope', ...SQL_BANS, ...TEST_BANS),
+      '@typescript-eslint/no-non-null-assertion': 'off',
+    },
+  },
+  /* Combined exemption for the platform-admin module's OWN test files, for
+     exactly the reason the identity one above exists: `exempt-tests` lifts
+     `bareEnv` (connection strings) from every test, but the LATER
+     `exempt-global-scope-consumers` block — which matches
+     `apps/api/src/platform-admin/**`, tests included — re-emits the full ban
+     list minus only `globalScope`, REPLACING the tests block's narrower list
+     for these files. Without this combined block, the module's own suites
+     fail lint on the very `process.env['TEST_DATABASE_*']` fallbacks every
+     other integration suite in the repo uses. Same shape as
+     `exempt-identity-tests`: globalScope (the suites call withGlobalScope),
+     the test bans, and nothing else — raw SQL stays banned here because
+     these suites read the database through the AdminConnection, not the `sql`
+     tagged template. */
+  {
+    name: 'taskflow/guardrails/exempt-platform-admin-tests',
+    files: ['apps/api/src/platform-admin/**/*.test.ts', 'apps/api/src/platform-admin/**/*.spec.ts'],
+    rules: {
+      'no-restricted-syntax': restrictedSyntax('globalScope', ...TEST_BANS),
       '@typescript-eslint/no-non-null-assertion': 'off',
     },
   },

@@ -10,7 +10,6 @@ import {
   Empty,
   Field,
   Input,
-  Section,
   SkeletonRows,
 } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
@@ -86,115 +85,141 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
   });
 
   return (
-    <div className="space-y-6">
-      <Section title="This org's numbers" count={numbers.data?.length}>
+    <div className="mx-auto max-w-3xl space-y-6">
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
+            This org's numbers
+          </h2>
+          {numbers.data !== undefined && (
+            <span className="rounded-full bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
+              {numbers.data.length}
+            </span>
+          )}
+        </div>
+
         {numbers.isPending ? (
           <SkeletonRows rows={2} />
         ) : numbers.isError ? (
           <ErrorView error={numbers.error} title="Could not load phone numbers" />
         ) : numbers.data.length === 0 ? (
-          <Empty title="No numbers yet" description="Search below to buy the org's first one." />
+          <Empty
+            title="No numbers yet"
+            description="Search below to buy the organization's first one. A number is what calls and texts are made from."
+          />
         ) : (
-          <ul className="space-y-1">
+          <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface-raised">
             {numbers.data.map((number) => (
               <li
                 key={number.phoneNumberId}
-                className="flex items-center gap-2 rounded border border-line px-2 py-1.5"
+                className="group flex items-center gap-3 px-3 py-2 transition-colors hover:bg-surface-hover"
               >
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-ink">{String(number.e164)}</p>
-                  <p className="text-[11px] text-ink-faint">
-                    {number.isoCountry} · bought {formatDate(number.purchasedAt)}
-                  </p>
-                </div>
+                <span className="font-mono text-sm text-ink">{String(number.e164)}</span>
+                <span className="rounded bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
+                  {number.isoCountry}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[11px] text-ink-faint">
+                  bought {formatDate(number.purchasedAt)}
+                </span>
                 <ConfirmButton
                   label="Release"
-                  confirmLabel="Release this number"
+                  confirmLabel={`Release ${String(number.e164)}`}
                   disabled={release.isPending}
                   onConfirm={() => {
                     release.mutate(number.phoneNumberId);
                   }}
+                  className="focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
                 />
               </li>
             ))}
           </ul>
         )}
         {release.isError && <ErrorText error={release.error} />}
-      </Section>
+      </section>
 
-      <Section title="Buy a number" description="Twilio test credentials — no real charge.">
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
+            Buy a number
+          </h2>
+        </div>
         <form
-          className="flex flex-wrap items-end gap-2"
+          className="rounded-lg border border-line bg-surface-raised p-3"
           onSubmit={(event) => {
             event.preventDefault();
             search.mutate();
           }}
         >
-          <Field label="Country" htmlFor="tel-country">
-            <Input
-              id="tel-country"
-              value={isoCountry}
-              maxLength={2}
-              className="w-16 uppercase"
-              onChange={(event) => {
-                setIsoCountry(event.target.value.toUpperCase());
-              }}
-            />
-          </Field>
-          <Field label="Area code" htmlFor="tel-area" hint="Optional, e.g. 415">
-            <Input
-              id="tel-area"
-              value={areaCode}
-              maxLength={3}
-              className="w-24"
-              onChange={(event) => {
-                setAreaCode(event.target.value.replace(/\D/g, ''));
-              }}
-            />
-          </Field>
-          <Button type="submit" disabled={search.isPending}>
-            Search
-          </Button>
+          <div className="flex flex-wrap items-end gap-2">
+            <Field label="Country" htmlFor="tel-country">
+              <Input
+                id="tel-country"
+                value={isoCountry}
+                maxLength={2}
+                className="w-16 uppercase"
+                onChange={(event) => {
+                  setIsoCountry(event.target.value.toUpperCase());
+                }}
+              />
+            </Field>
+            <Field label="Area code" htmlFor="tel-area" hint="Optional, e.g. 415">
+              <Input
+                id="tel-area"
+                value={areaCode}
+                maxLength={3}
+                className="w-24"
+                onChange={(event) => {
+                  setAreaCode(event.target.value.replace(/\D/g, ''));
+                }}
+              />
+            </Field>
+            <Button type="submit" variant="primary" disabled={search.isPending}>
+              {search.isPending ? 'Searching…' : 'Search'}
+            </Button>
+          </div>
+          {search.isError && <ErrorText error={search.error} />}
+
+          {results !== null && (
+            <div className="mt-3 border-t border-line pt-3">
+              {results.length === 0 ? (
+                <p className="text-xs text-ink-muted">No numbers matched that search.</p>
+              ) : (
+                <ul className="space-y-1">
+                  {results.map((available) => {
+                    const phoneNumber = String(available.phoneNumber);
+                    return (
+                      <li
+                        key={phoneNumber}
+                        className="group flex items-center gap-3 rounded border border-line px-2.5 py-1.5 transition-colors hover:border-accent/40 hover:bg-surface-hover"
+                      >
+                        <span className="font-mono text-xs text-ink">{phoneNumber}</span>
+                        <span className="min-w-0 flex-1 truncate text-[11px] text-ink-faint">
+                          {[available.locality, available.region].filter(Boolean).join(', ') ||
+                            available.isoCountry}
+                        </span>
+                        <span className="text-[11px] text-ink-muted">
+                          ${(available.monthlyCostCents / 100).toFixed(2)}/mo
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          disabled={purchase.isPending}
+                          onClick={() => {
+                            purchase.mutate(phoneNumber);
+                          }}
+                        >
+                          Buy
+                        </Button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
+          {purchase.isError && <ErrorText error={purchase.error} />}
         </form>
-
-        {search.isError && <ErrorText error={search.error} />}
-
-        {results !== null && (
-          <ul className="mt-3 space-y-1">
-            {results.length === 0 && (
-              <p className="text-xs text-ink-muted">No numbers matched that search.</p>
-            )}
-            {results.map((available) => {
-              const phoneNumber = String(available.phoneNumber);
-              return (
-                <li
-                  key={phoneNumber}
-                  className="flex items-center gap-2 rounded border border-line px-2 py-1.5"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs text-ink">{phoneNumber}</p>
-                    <p className="text-[11px] text-ink-faint">
-                      {[available.locality, available.region].filter(Boolean).join(', ') ||
-                        available.isoCountry}{' '}
-                      · ${(available.monthlyCostCents / 100).toFixed(2)}/mo
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    disabled={purchase.isPending}
-                    onClick={() => {
-                      purchase.mutate(phoneNumber);
-                    }}
-                  >
-                    Buy
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {purchase.isError && <ErrorText error={purchase.error} />}
-      </Section>
+      </section>
 
       {dialog}
     </div>

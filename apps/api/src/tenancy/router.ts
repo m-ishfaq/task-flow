@@ -132,6 +132,23 @@ export function createTenancyRouter() {
         .mutation(({ input, ctx }) =>
           members.removeMember(ctx.principal.org.orgId, input, actorOf(ctx)),
         ),
+
+      /**
+       * The single, atomic ownership handoff (Phase 12 Wave 1, §3.5).
+       *
+       * `member:manage` is Owner-only in the role matrix, so this route is
+       * reachable only by whoever holds the role they are giving away.
+       * Step-up, like every other role-changing mutation — it is exactly what
+       * an attacker with a stolen session reaches for first.
+       */
+      transferOwnership: route({ permission: 'member:manage', stepUp: true })
+        .input(
+          z.object({ toUserId: UserIdSchema, selfNewRole: z.enum(['admin', 'member']) }).strict(),
+        )
+        .output(z.object({ newOwnerId: z.string() }))
+        .mutation(({ input, ctx }) =>
+          members.transferOwnership(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
     }),
 
     teams: router({

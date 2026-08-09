@@ -76,25 +76,44 @@ export async function reset(options: ResetOptions): Promise<ResetResult> {
   );
 
   /**
-   * `identity.users` and `people.profiles` are the two tables here with no
-   * `org_id`, so neither can go through the per-org loop below — it would ask
-   * Postgres to filter on a column that does not exist, and `people.profiles`
-   * did exactly that: `--reset` died with `column "org_id" does not exist`
-   * from the moment `people.profiles` joined a module's `tables`, while a
-   * plain `pnpm seed` kept working, so the break only surfaced for whoever
-   * reached for the flag.
+   * The tables here with no `org_id`, so none can go through the per-org loop
+   * below — it would ask Postgres to filter on a column that does not exist,
+   * and `people.profiles` did exactly that: `--reset` died with `column
+   * "org_id" does not exist` from the moment `people.profiles` joined a
+   * module's `tables`, while a plain `pnpm seed` kept working, so the break
+   * only surfaced for whoever reached for the flag.
    *
-   * Both are keyed by user and both are removed by the unscoped DELETE at the
-   * end — `profiles_user_id_fkey` is `ON DELETE CASCADE`, so dropping the user
-   * takes the profile with it. Filtering rather than special-casing a DELETE
-   * for it: an explicit statement would be dead code that reads like a
-   * safeguard.
+   * Four tables, two cleanup paths:
+   *
+   *   - `identity.users` and `people.profiles` are removed by the unscoped
+   *     DELETE at the end (`profiles_user_id_fkey` is `ON DELETE CASCADE`, so
+   *     dropping the user takes the profile with it). Filtering rather than
+   *     special-casing a DELETE for it: an explicit statement would be dead
+   *     code that reads like a safeguard.
+   *   - `platform.operators` (Phase 12 Wave 1, migration 0035) is removed by
+   *     the same users DELETE — `operators_user_id_fkey` is also `ON DELETE
+   *     CASCADE`, which is deliberate: an operator is a user, and removing the
+   *     user must remove their flag.
+   *   - `platform.flag_overrides` is the exception. `flag_overrides_set_by_fkey`
+   *     has NO cascade — an override row is a fact that should survive the
+   *     operator who set it — so the users DELETE would be refused by the
+   *     foreign key for any override pointing at a seeded user. Those rows are
+   *     deleted explicitly below, keyed by the same user-id marker everything
+   *     else in this file keys on.
    */
-  const GLOBAL_TABLES = new Set(['identity.users', 'people.profiles']);
+  const GLOBAL_TABLES = new Set([
+    'identity.users',
+    'people.profiles',
+    'platform.operators',
+    'platform.flag_overrides',
+  ]);
 
-  const tables = tablesInTeardownOrder(resolveModules(roots)).filter(
-    (table) => !GLOBAL_TABLES.has(table),
-  );
+  const allTables = tablesInTeardownOrder(resolveModules(roots));
+  /* The per-org loop below filters on `org_id`, so the global tables must be
+     excluded from it — but the flag_override guard after it needs to know
+     whether the module is in the graph AT ALL, which is why the unfiltered
+     list is kept here rather than recomputing or dropping the check. */
+  const tables = allTables.filter((table) => !GLOBAL_TABLES.has(table));
 
   for (const orgId of orgIds) {
     await connection.setOrg(orgId);
@@ -117,6 +136,27 @@ export async function reset(options: ResetOptions): Promise<ResetResult> {
     }
   }
   await connection.setOrg(null);
+
+  /* `platform.flag_overrides.set_by` references users WITHOUT cascade
+     (migration 0035 — an override outlives the operator who set it), so
+     deleting the users below would be refused by that foreign key for any
+     override pointing at a seeded user. Delete exactly those first, scoped
+     by the same user-id marker everything else keys on: an override a real
+     developer set from the console points at a real user and survives,
+     which is the surgical boundary this file exists to draw.
+
+     `platform.operators` needs no statement here — its `user_id` FK is ON
+     DELETE CASCADE, so the users DELETE below takes the flag with the user.
+     (`platform.operator_audit_log` also references users without cascade,
+     but the seeder deliberately never writes it — an audit trail a seed
+     could edit would not be one, the same reasoning the file header gives
+     for `audit.audit_log` — so no seeded-user rows can exist to block the
+     delete.) */
+  if (allTables.includes('platform.flag_overrides')) {
+    await connection.query('DELETE FROM platform.flag_overrides WHERE set_by = ANY($1::uuid[])', [
+      userIds,
+    ]);
+  }
 
   /* Users last, and unscoped — `identity.users` carries no `org_id` (it is
      the one global table, CLAUDE.md). By this point every membership row

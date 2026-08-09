@@ -73,6 +73,18 @@ export async function collectDigestBatches(limit = BATCH): Promise<readonly Dige
         schema.notifications,
         eq(schema.notifications.id, schema.notificationDeliveries.notificationId),
       )
+      /* Phase 12 Wave 1 §3.9: a delivery decided BEFORE the org was
+         suspended must not ride the next digest while it is suspended. The
+         join is the filter; reactivation lets the pending rows flow again.
+         Runs as taskflow_audit with the column-limited orgs read migration
+         0037 grants. */
+      .innerJoin(
+        schema.orgs,
+        and(
+          eq(schema.orgs.id, schema.notificationDeliveries.orgId),
+          eq(schema.orgs.status, 'active'),
+        ),
+      )
       .where(
         and(
           eq(schema.notificationDeliveries.channel, 'email'),

@@ -39,6 +39,7 @@ export interface RouteEntry {
   readonly publicReason?: string;
   readonly selfReason?: string;
   readonly memberReason?: string;
+  readonly platformReason?: string;
   readonly stepUp: boolean;
   /**
    * Whether the route accepts caller-supplied input at all.
@@ -69,12 +70,17 @@ export interface RouteEntry {
  * `permission` null: only `member` touches org-scoped data, which is exactly
  * why guardrail 8 (below, `protectedRoutes`) enrolls it and not `self`.
  */
-export type RouteAccess = 'public' | 'self' | 'member' | 'permission' | 'undeclared';
+export type RouteAccess = 'public' | 'self' | 'member' | 'platform' | 'permission' | 'undeclared';
 
 export function accessOf(entry: RouteEntry): RouteAccess {
   if (entry.permission === undefined) return 'undeclared';
   if (typeof entry.permission === 'string') return 'permission';
   if (entry.memberReason !== undefined) return 'member';
+  // A platform route also leaves `permission` null (Phase 12 Wave 1, §3.2):
+  // it is authenticated but carries no org permission. It must be told apart
+  // from `public`, or the "what is reachable without credentials" answer
+  // would include the platform-admin console.
+  if (entry.platformReason !== undefined) return 'platform';
   return entry.selfReason === undefined ? 'public' : 'self';
 }
 
@@ -133,6 +139,7 @@ export function routeManifest(appRouter: AnyRouter): readonly RouteEntry[] {
           ...(meta?.publicReason === undefined ? {} : { publicReason: meta.publicReason }),
           ...(meta?.selfReason === undefined ? {} : { selfReason: meta.selfReason }),
           ...(meta?.memberReason === undefined ? {} : { memberReason: meta.memberReason }),
+          ...(meta?.platformReason === undefined ? {} : { platformReason: meta.platformReason }),
           stepUp: meta?.stepUp === true,
           acceptsInput: (value._def?.inputs?.length ?? 0) > 0,
         });

@@ -39,6 +39,13 @@ SECURITY` with a policy keyed on `app.org_id`, and `withGlobalScope` clears both
   exactly that role, following the `taskflow_audit`/`taskflow_backlinks`/
   `taskflow_notification_sweep` precedent. `platformAdmin.users.list` is unaffected —
   `identity.users` carries no RLS at all, the same reason login can look up any account by email.
+- §4's event catalog named the events in camelCase (`platform.orgSuspended`,
+  `member.ownershipTransferred`, `platform.operatorGranted`). The registry
+  (`packages/events/src/registry.ts`) accepts only `<resource>.<past_tense_verb>` in snake_case,
+  and `defineEvent('platform.orgSuspended')` throws at module load — it took down `tsx watch`
+  before the server started. Corrected in §4 and §9 to the names actually registered:
+  `platform.org_suspended` / `platform.org_reactivated` / `member.ownership_transferred` /
+  `platform.operator_granted`.
 
 Seven further gaps the first draft simply didn't ask about are folded into the design below
 (§3.1, §3.2, §3.5, §3.8, §3.9) rather than kept as a separate list — a plan that names a gap
@@ -409,10 +416,16 @@ CREATE TABLE platform.flag_overrides (
 
 `platformAdmin.flags.set` writes a row here (or deletes it, to fall back to the
 environment/default precedence); `platformAdmin.flags.list` reads all of them plus the registry
-(`FLAGS`) to show every flag's current resolved value and source. This is a conscious, named cut,
-not silence: the evaluator's `orgOverrides` context parameter goes unused by this wave, and a
-genuine per-org targeting UI — which the evaluator is already shaped for — is real, valuable,
-out-of-scope follow-up work, not a capability this wave discovered didn't exist.
+(`FLAGS`) to show every flag's current resolved value and source. **BUILT — 2026-08-09.** The
+store now feeds a live evaluator: `apps/api/src/platform-admin/flag-evaluator.ts` merges
+`platform.flag_overrides` into `FeatureFlags`' env tier (TTL-cached, single-flight, per the
+runbook's own proposal), `platformAdmin.flags.list` resolves every row through the real
+evaluator instead of the inline `override ?? default` it used to reimplement, and a
+`flags.snapshot` selfRoute serves the resolved snapshot to the client bootstrap — the first real
+`FeatureFlags.evaluate()` consumer. Still open by design: the evaluator's `orgOverrides` context
+parameter (per-org targeting) goes unused, because there is no per-org row shape yet — a genuine
+per-org targeting UI is real, valuable, out-of-scope follow-up work, not a capability this wave
+discovered didn't exist.
 
 ### 3.9 Suspension is enforced at request time only, and that has two real consequences
 
@@ -442,9 +455,14 @@ due-date reminders, digests, and push notifications exactly as if nothing change
 that code has ever had a reason to ask about org status before now. This wave's recommendation:
 each of those four sweeps gains one additional join/filter, excluding cards, digests, and
 notifications belonging to a non-`'active'` org — a small, explicitly-scoped change to Phase 9's
-existing code, not something this wave's own migration or schema needs to touch. Confirm this is
-wanted before it's built — silently notifying members of a suspended org is a real but
-low-severity gap, and it's cheaper to decide now than to discover it from a support ticket.
+existing code, not something this wave's own migration or schema needs to touch. **BUILT —
+2026-08-09, migration 0037.** The four delivery paths (the due-reminder cards scan, the digest's
+pending-email collection, the push drain, and the projection's immediate-email decision) each join
+`identity.orgs.status = 'active'`; `taskflow_notification_sweep` and `taskflow_audit` each gained
+a column-limited `(id, status)` read of `identity.orgs` with its own permissive policy,
+following 0035's `orgs_platform_admin_read` shape. A delivery row written before suspension stays
+`pending` and flows again on reactivation. Proven by `wave2.sweep.test.ts`'s §3.9 suite against a
+real database as both real roles.
 
 ### 3.10 Web UI surface
 
@@ -471,20 +489,20 @@ low-severity gap, and it's cheaper to decide now than to discover it from a supp
 Four new events, `<resource>.<past_tense_verb>`, guardrail 11 applies with no exception — every one
 emitted inside the mutation's own transaction:
 
-- **`platform.orgSuspended`** / **`platform.orgReactivated`** — `{ orgId, operatorUserId }`.
-- **`member.ownershipTransferred`** — `{ orgId, fromUserId, toUserId, fromNewRole }`, its own event
+- **`platform.org_suspended`** / **`platform.org_reactivated`** — `{ orgId, operatorUserId }`.
+- **`member.ownership_transferred`** — `{ orgId, fromUserId, toUserId, fromNewRole }`, its own event
   rather than two generic `memberRoleChanged` events, for the identical reason
-  `ai/phase-11.5-people.md` §3.6 gives for `reportingLine.changed`: a structural, sensitive fact
+  `ai/phase-11.5-people.md` §3.6 gives for `reporting_line.changed`: a structural, sensitive fact
   deserves to be independently greppable in the audit log rather than requiring a reader to
   reconstruct "these two role changes were actually one handoff" from two unrelated-looking rows.
-- **`platform.operatorGranted`** — emitted by whatever inserts a `platform.operators` row. Wave 1
+- **`platform.operator_granted`** — emitted by whatever inserts a `platform.operators` row. Wave 1
   ships with no self-service route for this (§7 decision 7), so in practice this event's only producer
   is a migration/seed script — still worth a real event definition rather than an unaudited manual
   `INSERT`, because "who has platform-operator access and since when" is exactly the kind of
   question this system's audit log exists to answer.
 
-**Audit routing is decided: both** (§7 decision 2, option (c)). `platform.orgSuspended` and
-`platform.orgReactivated` write into the target org's own `audit.audit_log` chain, using its real
+**Audit routing is decided: both** (§7 decision 2, option (c)). `platform.org_suspended` and
+`platform.org_reactivated` write into the target org's own `audit.audit_log` chain, using its real
 `orgId`, through the same `withAuditScope`/trigger mechanism every other org-scoped mutation
 already uses — an Owner sees "a platform operator suspended this org" in their own audit history
 with no operator access required, the same way any other action they didn't personally take
@@ -659,7 +677,7 @@ receive calls and — more importantly, given §8.5's own framing of where the m
 have any already-queued or automation-triggered outbound telephony action fire, because nothing in
 that path ever asks whether the org is suspended.
 
-**What Phase 7 needs to do about it, when it's scoped.** Treat `platform.orgSuspended` (§4) as a
+**What Phase 7 needs to do about it, when it's scoped.** Treat `platform.org_suspended` (§4) as a
 subscribed event, not an HTTP-layer concern: whatever holds the spend-cap state (§8.5) needs a
 fast, request-context-independent "is this org frozen" check consulted immediately before any
 outbound Twilio API call — the same shape as the spend cap check itself, run alongside it rather
@@ -669,7 +687,13 @@ pause the org's Twilio **subaccount** itself (Twilio's own subaccount-suspend AP
 `orgSuspended`, not only refuse the action on our side — a leaked or compromised org's Twilio
 credentials otherwise remain independently usable directly against Twilio, bypassing this
 application entirely, which the per-org-subaccount credential-compromise control (§8.5) already
-implies matters.
+implies matters. **BUILT — 2026-08-09.** The spend-gate's org-status check was already in place
+(Phase 7 Wave 1); the subaccount pause now lands with the suspension itself:
+`platformAdmin.orgs.suspend`/`.reactivate` call the telephony module's own `setSubaccountStatus`
+(reused, not reimplemented — its `carrierUpdated: false` honesty on carrier failure carries
+over), best-effort and last, so a missing subaccount or a carrier outage can never fail the
+operator's action. The freeze is recorded in the org's own audit chain via the
+`subaccount.status_changed` event, and proven by the platform-admin suite's §9 tests.
 
 **Sequencing.** This document's own position (§8) is that this wave doesn't need to wait on
 anything past Phase 2. Phase 7 is the reverse case: given §8.5 already calls toll fraud the most
@@ -677,6 +701,6 @@ expensive failure mode in the system, shipping Phase 7 before this wave exists m
 with automatic spend-cap cutoffs but no operator-initiated kill switch for the org itself — not
 wrong, but worth being a deliberate choice rather than a gap discovered during a real incident. If
 Phase 7 is scoped first for other reasons, it should stand up its own minimal org-freeze primitive
-and treat adopting this wave's `platform.orgSuspended` event later as a straightforward swap, the
+and treat adopting this wave's `platform.org_suspended` event later as a straightforward swap, the
 same forward-compatible shape §5's provider-interface pattern uses elsewhere in this codebase —
 not a reason to ship Phase 7 with no equivalent control at all.

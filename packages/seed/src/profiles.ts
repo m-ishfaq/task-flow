@@ -184,6 +184,19 @@ export interface OrgPlan {
   readonly grants: number;
   readonly channels: readonly ChannelPlan[];
   readonly spaces: readonly SpacePlan[];
+  /**
+   * Platform-admin demo state (Phase 12 Wave 1): a suspended org appears in
+   * the operator console as something to reactivate, and its members are
+   * refused at request time (resolveOrgMembership, CLAUDE.md §3.9).
+   *
+   * The org is written DIRECTLY as `'suspended'` rather than created active
+   * and then suspended through the operator routes — a seed run has no
+   * EventBus (see platform.admin.ts's header on why platform events travel
+   * one), so there is no `platform.org_suspended` event to emit, and the row
+   * itself is the durable record, exactly as it is for every other column
+   * this package writes. Omitted means `'active'`.
+   */
+  readonly status?: 'active' | 'suspended';
 }
 
 /**
@@ -682,6 +695,10 @@ const DEMO: Profile = {
     {
       name: 'Globex Industries',
       slug: 'globex',
+      /* Suspended on purpose — the one org the operator console shows in its
+         suspended state, with its owner and members refused at request time
+         until someone reactivates it. See `OrgPlan.status`. */
+      status: 'suspended',
       grants: 8,
       teams: ['Compliance', 'Revenue'],
       members: [

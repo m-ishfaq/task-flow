@@ -63,6 +63,9 @@ AI may write anything, but changes to these need the author to read every line b
 `webhook.ts`'s signature verification; §6.1 of the phase spec named these before they existed) ·
 `apps/collab/src/auth.ts` and `authorize.ts` (Phase 6 — the collab gateway's own handshake and
 tree-permission resolution, the same severity as `apps/realtime/src/auth.ts`/`rooms.ts`) ·
+`apps/api/src/platform-admin` (Phase 12 Wave 1 — the org-directory console that runs as
+`taskflow_platform_admin`, the one role that can change another org's status, plus the
+`withGlobalScope` carve-out that admits it in `packages/config/eslint/security.js`) ·
 any webhook signature verification · any file upload/download path · any code touching
 telephony spend.
 
@@ -84,6 +87,9 @@ apps/       api                              (arriving: worker)
                                building, page-version save/restore, comments,
                                suggestions, the backlinks relay, publish-to-
                                public, PDF export, page templates (Phase 6)
+              src/platform-admin ⚠ Phase 12 Wave 1 — the org-directory console,
+                               run as taskflow_platform_admin (the one role that
+                               may change another org's status)
             realtime           Socket.io gateway — broadcast only, never writes
               src/auth.ts    ⚠ handshake: token, origin, socket.data.identity
               src/rooms.ts   ⚠ room join = a fresh can() check
@@ -306,6 +312,64 @@ before clearing a page's published pointer, and Postgres refused it —
 never be left pointing at a version that no longer exists. Fixed in the test (clear the pointer
 first, delete the version rows after — "children before parents," the same ordering
 `tenancy-seed.ts`'s `clearTenant` already documents for Work), not in the schema.
+
+### Phase 12 Wave 1 — the platform console (org directory, flag overrides, operator audit)
+
+`apps/api/src/platform-admin` · migrations 0035–0036 · `apps/web/src/features/platform-admin` ·
+the `platformRoute` route kind in `apps/api/src/trpc/builder.ts`. Spec:
+[ai/phase-12-admin.md](ai/phase-12-admin.md). ⚠ Human-review surface (§2.2): the module runs as
+`taskflow_platform_admin`, the one role that can change another org's status, so the author reads
+every line of it before merge.
+
+Shipped: the flat operator flag (`platform.operators` — SELECT-only for every
+application-reachable role, bootstrapped by migration, never by a route); the org directory
+(list/suspend/reactivate, writing `identity.orgs.status` and nothing else through the dedicated
+role's permissive policies); global feature-flag overrides (`platform.flag_overrides`); a GLOBAL
+hash-chained operator audit log (`platform.operator_audit_log`, the one-row sibling of 0007's
+per-org chain) recording every operator call — reads included; `platformRoute` (no org context
+at all, step-up baked into every call, while `self.check` is deliberately a `selfRoute` so the
+account menu can ask for everyone); `tenancy.members.transferOwnership` (one atomic transaction,
+never an observable zero-owner moment); the email-verification gate and 3/day rate limit on
+`orgs.create`; and suspension enforcement in `resolveOrgMembership` — one check that refuses the
+suspended org's routes, realtime room joins, AND collab page authorizations for free. The web
+console lives at `/platform-admin` (Orgs, Users, Flags, Audit), gated on the server's own
+`self.check` answer.
+
+**Two grant bugs had no failing unit test and were found only by the wave's own §6 tests against a
+real database — the same lesson Phase 4 and Phase 6 taught: the database does not read your
+comments.** First, migration 0001's `ALTER DEFAULT PRIVILEGES ... IN SCHEMA platform` gives
+`taskflow_app` full CRUD on every table the migrator later creates there, so 0035's "SELECT only"
+grants on `platform.operators` were weaker than what the database already enforced — the table was
+WRITABLE by the app role despite the migration saying otherwise, until 0036's explicit REVOKEs. A
+migration that creates a table in a schema with default privileges must say what the table should
+NOT have, not only what it should. Second, `GRANT USAGE ON SCHEMA public` from a migration is a
+silent no-op: `03-grants.sql` grants the migrator `ALL ON SCHEMA public` WITHOUT GRANT OPTION, so
+Postgres answers `WARNING: no privileges were granted` and changes nothing — which meant the
+operator chain trigger could not call `public.digest` as SECURITY INVOKER at all. The fix is a
+narrow SECURITY DEFINER hash wrapper (`platform.operator_chain_hash`) in a schema the role can
+use, keeping the trigger SECURITY INVOKER per the 0007 precedent and the digest preimage
+byte-identical. Both are written up in 0036's own header.
+
+§3.9 (the notification sweeps respecting org suspension) shipped 2026-08-09 with migration 0037:
+the due-reminder scan, digest collection, push drain, and the projection's immediate-email
+decision all join `identity.orgs.status = 'active'`, via column-limited `(id, status)` org reads
+for `taskflow_notification_sweep` and `taskflow_audit` (permissive policies, the 0035 shape).
+Pending deliveries written before a suspension stay `pending` and resume on reactivation; the
+§3.9 suite in `wave2.sweep.test.ts` proves all four paths refuse a suspended org as the real
+roles.
+
+The flag-override store gained its live consumer 2026-08-09: `platform-admin/flag-evaluator.ts`
+merges `platform.flag_overrides` into `FeatureFlags`' env tier (TTL-cached, single-flight),
+`platformAdmin.flags.list` resolves every row through the real evaluator, and a `flags.snapshot`
+selfRoute serves the resolved snapshot to the client bootstrap. §9's stretch also landed the same
+day: `platformAdmin.orgs.suspend`/`.reactivate` freeze or unfreeze the org's Twilio subaccount
+through the telephony module's own `setSubaccountStatus` (reused; best-effort and last, so a
+missing subaccount or carrier outage never fails the operator's action), with the freeze recorded
+in the org's audit chain via `subaccount.status_changed`.
+
+Still open: granting the operator flag is migration/script-only (§7 decision 7 — no self-service
+route, deliberately); and `platformAdmin.audit.list` exists because the doc's route list named the
+Audit tab but no route to feed it.
 
 ### Phase 7 — Voice & Messaging: Waves 1–4 complete (API), Wave 5 (UI) added and shipped
 

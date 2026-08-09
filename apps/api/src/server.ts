@@ -110,6 +110,18 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
        File uploads never pass through the API — they go straight to object
        storage through a presigned URL (§8.4). */
     bodyLimit: 1_000_000,
+    /* tRPC batches put EVERY procedure name into one path segment under
+       /trpc (`/trpc/a.b,c.d,e.f`), and Fastify's default maxParamLength of
+       100 answered 414 the moment a page's batch grew past a few procedures
+       — the app-shell batch is already ~165 characters of names, so the
+       router rejected it before authentication ever ran (server.test.ts
+       pins the regression). 4096 is generous for any real batch, sits far
+       below Node's own 16KB request-line cap, and keeps the guard against
+       absurd URLs intact. In `routerOptions` rather than the deprecated
+       top-level form, which fastify@6 removes. */
+    routerOptions: {
+      maxParamLength: 4096,
+    },
   });
 
   /* Registered BEFORE the tRPC plugin. Fastify hooks are inherited only by

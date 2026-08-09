@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
+import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import type { TeamId, UserId } from '@taskflow/contracts';
 import { DIRECTLY_ASSIGNABLE_ROLES, type Role } from '@taskflow/policy';
 import { api } from '../../lib/trpc.js';
@@ -182,6 +183,49 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
     },
   });
 
+  /* Ownership transfer (Phase 12 Wave 1, §3.5) — a distinct action from the
+     role dropdown, which keeps excluding 'owner' on purpose: you cannot ASSIGN
+     the role, only hand it over whole. The dialog names the new owner AND the
+     caller's resulting role because the transaction changes both rows at once
+     and there is never an observable zero-owner moment in between.
+
+     Candidates are everyone except the caller, deliberately unfiltered by
+     role: the route answers FORBIDDEN for anyone who is not the Owner and the
+     service refuses a guest jumping straight to owner ("promote them first"),
+     so the UI offers the action to everyone and the server decides — the same
+     shape as every other permission-gated control on this page. Filtering the
+     candidate list by role here would be the UI re-deriving authorization,
+     which is exactly what §8.2 forbids. */
+  const transferCandidates = (members.data ?? []).filter(
+    (member) => member.userId !== currentUserId,
+  );
+
+  const transfer = useMutation({
+    mutationFn: (input: { toUserId: UserId; selfNewRole: 'admin' | 'member' }) =>
+      api.tenancy.members.transferOwnership.mutate(input),
+    onSuccess: async () => {
+      setTransferOpen(false);
+      await refresh();
+    },
+    onError: (error, input) => {
+      guard(error, () => {
+        transfer.mutate(input);
+      });
+    },
+  });
+
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferTo, setTransferTo] = useState('');
+  const [transferSelfRole, setTransferSelfRole] = useState<'admin' | 'member'>('admin');
+
+  const openTransfer = () => {
+    /* Preselect the first candidate so the confirm button is live the moment
+       the dialog opens — a dialog whose only action starts disabled with no
+       explanation is a dialog nobody fills in. */
+    setTransferTo(transferCandidates[0]?.userId ?? '');
+    setTransferOpen(true);
+  };
+
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('member');
 
@@ -193,7 +237,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
     >
       <AddPanel>
         <form
-          className="flex flex-wrap items-end gap-2"
+          className="flex flex-wrap items-end gap-2 align-items-center"
           onSubmit={(event) => {
             event.preventDefault();
             if (email.trim() !== '') add.mutate({ email: email.trim(), role });
@@ -240,6 +284,23 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
         {add.isError && <ErrorText error={add.error} />}
       </AddPanel>
 
+      {/* Rendered for everyone — see the transfer comment above on why the
+          role check is the server's, not this button's. */}
+      <div className="flex justify-end">
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={transferCandidates.length === 0}
+          title={
+            transferCandidates.length === 0 ? 'There is nobody else to transfer to yet.' : undefined
+          }
+          onClick={openTransfer}
+          className="text-ink-muted hover:text-ink"
+        >
+          Transfer ownership…
+        </Button>
+      </div>
+
       {members.isPending && <SkeletonRows rows={4} className="*:h-12" />}
       {members.isError && <ErrorView error={members.error} title="Could not load members" />}
 
@@ -264,6 +325,85 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
 
       {changeRole.isError && <ErrorText error={changeRole.error} />}
       {remove.isError && <ErrorText error={remove.error} />}
+
+      {transferOpen && (
+        <ModalRoot
+          open
+          onOpenChange={(next) => {
+            if (!next) setTransferOpen(false);
+          }}
+        >
+          <ModalContent size="sm" className="p-4">
+            <ModalTitle>Transfer ownership</ModalTitle>
+            <ModalDescription>
+              The new owner gets everything Owner allows, immediately. You become
+              an {transferSelfRole} in the same transaction — there is never a
+              moment with no owner.
+            </ModalDescription>
+
+            <form
+              className="mt-4 space-y-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (transferTo !== '') {
+                  transfer.mutate({ toUserId: transferTo as UserId, selfNewRole: transferSelfRole });
+                }
+              }}
+            >
+              <Field label="New owner" htmlFor="transfer-to">
+                <select
+                  id="transfer-to"
+                  value={transferTo}
+                  onChange={(event) => {
+                    setTransferTo(event.target.value);
+                  }}
+                  className="h-9 w-full rounded border border-line bg-surface px-2 text-sm text-ink"
+                >
+                  {transferCandidates.map((member) => (
+                    <option key={member.userId} value={member.userId}>
+                      {member.email} ({member.role})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Your role afterwards" htmlFor="transfer-self-role">
+                <select
+                  id="transfer-self-role"
+                  value={transferSelfRole}
+                  onChange={(event) => {
+                    setTransferSelfRole(event.target.value as 'admin' | 'member');
+                  }}
+                  className="h-9 w-full rounded border border-line bg-surface px-2 text-sm text-ink"
+                >
+                  <option value="admin">Admin</option>
+                  <option value="member">Member</option>
+                </select>
+              </Field>
+
+              {transfer.isError && <ErrorText error={transfer.error} />}
+
+              <div className="flex gap-2">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={transfer.isPending || transferTo === ''}
+                >
+                  {transfer.isPending ? 'Transferring…' : 'Transfer ownership'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setTransferOpen(false);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </ModalContent>
+        </ModalRoot>
+      )}
 
       {dialog}
     </Section>

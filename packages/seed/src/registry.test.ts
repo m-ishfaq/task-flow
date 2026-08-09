@@ -158,6 +158,11 @@ describe('the registered module graph', () => {
         'platform.attachments',
         'authz.tuples',
         'platform.audit',
+        /* Phase 12 Wave 1's operator fixture. Nothing reads its output, so it
+           survives in the graph only through `platform.audit`'s `requires` —
+           drop that and the run reports success with no operator and a
+           console nobody can open (platform.admin.ts's own header). */
+        'platform.admin',
       ]),
     );
   });
@@ -168,6 +173,13 @@ describe('the registered module graph', () => {
     // rather than a subtle wrongness.
     expect(names.indexOf('chat.channels')).toBeLessThan(names.indexOf('chat.messages'));
     expect(names.indexOf('chat.messages')).toBeLessThan(names.indexOf('platform.audit'));
+  });
+
+  it('runs platform.admin after the user pool it grants the flag to', () => {
+    // `platform.admin` hands users[0] the operator flag, so the pool must
+    // exist first — the graph edge is `adminModule.requires = [usersModule]`.
+    expect(names.indexOf('identity.users')).toBeLessThan(names.indexOf('platform.admin'));
+    expect(names.indexOf('platform.admin')).toBeLessThan(names.indexOf('platform.audit'));
   });
 
   it('runs chat.messages before platform.attachments', () => {

@@ -44,9 +44,12 @@ export function TelephonyPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b border-line px-4 pt-3">
-        <h1 className="mb-2 text-sm font-semibold text-ink">Voice &amp; Messaging</h1>
-        <nav aria-label="Voice & Messaging sections" className="flex gap-1">
+      <header className="border-b border-line px-4 pt-4 pb-2">
+        <h1 className="text-base font-semibold text-ink">Voice &amp; Messaging</h1>
+        <p className="mt-0.5 text-xs text-ink-muted">
+          Phone numbers, calls, SMS, and spend — one carrier account per organization.
+        </p>
+        <nav aria-label="Voice & Messaging sections" className="mt-3 flex gap-1">
           {TABS.map((item) => (
             <button
               key={item.id}
@@ -56,17 +59,17 @@ export function TelephonyPage() {
                 selectTab(item.id);
               }}
               className={cn(
-                'rounded-t px-3 py-1.5 text-xs font-medium',
+                'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
                 tab === item.id
-                  ? 'border-x border-t border-line bg-surface text-ink'
-                  : 'text-ink-muted hover:text-ink',
+                  ? 'bg-accent text-accent-ink shadow-sm'
+                  : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
               )}
             >
               {item.label}
             </button>
           ))}
         </nav>
-      </div>
+      </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {tab === 'calls' && <CallsPanel orgId={orgId} />}

@@ -37,14 +37,17 @@ export function MessagesPanel({ orgId }: { readonly orgId: string }) {
   };
 
   return (
-    <div className="flex h-full min-h-0 gap-4">
+    <div className="mx-auto flex h-full min-h-0 max-w-4xl gap-4">
       <div className="w-64 shrink-0 space-y-1 overflow-y-auto">
         {threads.isPending ? (
           <SkeletonRows rows={4} />
         ) : threads.isError ? (
           <ErrorView error={threads.error} title="Could not load threads" />
         ) : threads.data.length === 0 ? (
-          <Empty title="No SMS conversations yet" />
+          <Empty
+            title="No SMS conversations yet"
+            description="Inbound texts to your numbers land here."
+          />
         ) : (
           threads.data.map((thread) => (
             <button
@@ -54,21 +57,29 @@ export function MessagesPanel({ orgId }: { readonly orgId: string }) {
                 selectThread(thread.threadId);
               }}
               className={cn(
-                'block w-full rounded px-2 py-1.5 text-left',
-                thread.threadId === threadId ? 'bg-surface-hover' : 'hover:bg-surface-hover',
+                'flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors',
+                thread.threadId === threadId
+                  ? 'border-accent/40 bg-accent/10'
+                  : 'border-transparent hover:bg-surface-hover',
               )}
             >
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-xs text-ink">{String(thread.counterparty)}</span>
-                {thread.unreadCount > 0 && (
-                  <span className="rounded-full bg-accent px-1.5 text-[10px] text-accent-ink">
-                    {thread.unreadCount}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate font-mono text-xs text-ink">
+                    {String(thread.counterparty)}
                   </span>
+                  {thread.unreadCount > 0 && (
+                    <span className="rounded-full bg-accent px-1.5 text-[10px] font-medium text-accent-ink">
+                      {thread.unreadCount}
+                    </span>
+                  )}
+                </div>
+                {thread.lastMessageAt !== null && (
+                  <p className="mt-0.5 text-[10px] text-ink-faint">
+                    {formatRelative(thread.lastMessageAt)}
+                  </p>
                 )}
               </div>
-              {thread.lastMessageAt !== null && (
-                <p className="text-[11px] text-ink-faint">{formatRelative(thread.lastMessageAt)}</p>
-              )}
             </button>
           ))
         )}
@@ -117,38 +128,55 @@ function ThreadView({ orgId, threadId }: { readonly orgId: string; readonly thre
   });
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b border-line px-2 pb-2">
-        <p className="text-xs font-medium text-ink">{counterparty ?? '…'}</p>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-line bg-surface-raised">
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2">
+        <span className="font-mono text-xs font-medium text-ink">{counterparty ?? '…'}</span>
+        <span className="rounded bg-surface-hover px-1.5 py-0.5 text-[10px] text-ink-muted">
+          SMS
+        </span>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-2 py-3">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
         {messages.isPending ? (
           <SkeletonRows rows={4} />
         ) : messages.isError ? (
           <ErrorView error={messages.error} title="Could not load messages" />
         ) : messages.data.length === 0 ? (
-          <p className="text-xs text-ink-muted">No messages yet.</p>
+          <p className="text-xs text-ink-muted">No messages yet — send the first one below.</p>
         ) : (
           [...messages.data].reverse().map((message) => (
             <div
               key={message.messageId}
               className={cn(
-                'max-w-[75%] rounded px-2.5 py-1.5 text-xs',
-                message.direction === 'outbound'
-                  ? 'ml-auto bg-accent text-accent-ink'
-                  : 'bg-surface-hover text-ink',
+                'flex',
+                message.direction === 'outbound' ? 'justify-end' : 'justify-start',
               )}
             >
-              <p>{message.body}</p>
-              <p className="mt-0.5 text-[10px] opacity-70">{formatRelative(message.createdAt)}</p>
+              <div
+                className={cn(
+                  'max-w-[75%] rounded-lg px-2.5 py-1.5 text-xs shadow-sm',
+                  message.direction === 'outbound'
+                    ? 'rounded-br-sm bg-accent text-accent-ink'
+                    : 'rounded-bl-sm bg-surface-hover text-ink',
+                )}
+              >
+                <p className="whitespace-pre-wrap break-words">{message.body}</p>
+                <p
+                  className={cn(
+                    'mt-0.5 text-[10px]',
+                    message.direction === 'outbound' ? 'text-accent-ink/70' : 'text-ink-faint',
+                  )}
+                >
+                  {formatRelative(message.createdAt)}
+                </p>
+              </div>
             </div>
           ))
         )}
       </div>
 
       <form
-        className="flex items-end gap-2 border-t border-line px-2 py-2"
+        className="flex items-end gap-2 border-t border-line bg-surface p-2.5"
         onSubmit={(event) => {
           event.preventDefault();
           if (body.trim() !== '') send.mutate();
@@ -160,7 +188,7 @@ function ThreadView({ orgId, threadId }: { readonly orgId: string; readonly thre
             onChange={(event) => {
               setFromPhoneNumberId(event.target.value);
             }}
-            className="h-9 rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+            className="h-9 rounded border border-line bg-surface-sunken px-2 text-xs text-ink focus:border-accent focus:outline-none"
           >
             {(numbers.data ?? []).map((number) => (
               <option key={number.phoneNumberId} value={number.phoneNumberId}>
@@ -171,14 +199,21 @@ function ThreadView({ orgId, threadId }: { readonly orgId: string; readonly thre
         )}
         <Input
           value={body}
-          placeholder="Type a message…"
+          placeholder={
+            (numbers.data?.length ?? 0) === 0 ? 'Buy a number first…' : 'Type a message…'
+          }
+          disabled={(numbers.data?.length ?? 0) === 0}
           className="flex-1"
           onChange={(event) => {
             setBody(event.target.value);
           }}
         />
-        <Button type="submit" disabled={send.isPending || body.trim() === ''}>
-          Send
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={send.isPending || body.trim() === '' || (numbers.data?.length ?? 0) === 0}
+        >
+          {send.isPending ? 'Sending…' : 'Send'}
         </Button>
       </form>
       {send.isError && <ErrorText error={send.error} />}

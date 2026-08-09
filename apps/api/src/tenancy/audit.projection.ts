@@ -69,6 +69,10 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'member.added': { type: 'member', key: 'userId' },
   'member.role_changed': { type: 'member', key: 'userId' },
   'member.removed': { type: 'member', key: 'userId' },
+  /* Phase 12 Wave 1. The handoff resolves to the ORG — the fact being
+     recorded is "this org changed owners", and the org is what an access
+     review asks about. */
+  'member.ownership_transferred': { type: 'org', key: 'orgId' },
   'team.created': { type: 'team', key: 'teamId' },
   'team.member_added': { type: 'team', key: 'teamId' },
   'team.member_removed': { type: 'team', key: 'teamId' },

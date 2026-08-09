@@ -280,6 +280,59 @@ if (peopleFailures.length > 0) {
   process.exit(1);
 }
 
+/* -------------------------------------------------------------------------- *
+ * The platform-admin module's withGlobalScope exemption — Phase 12 Wave 1
+ * (ai/phase-12-admin.md §3.1, §6).
+ *
+ * The identical assertion as the people block above, pointed at
+ * apps/api/src/platform-admin/operator.ts instead: `isPlatformOperator` must
+ * run before any org is known, which is the whole point of the operator flag.
+ * It lives in the API layer (not packages/policy) so the policy package keeps
+ * no database dependency — the same reason the people module holds its own
+ * exemption. The exemption must strip withGlobalScope AND NOTHING ELSE.
+ * -------------------------------------------------------------------------- */
+
+const PLATFORM_ADMIN_FILE = resolve(
+  repoRoot,
+  'apps',
+  'api',
+  'src',
+  'platform-admin',
+  'operator.ts',
+);
+const platformAdminConfig = await eslint.calculateConfigForFile(PLATFORM_ADMIN_FILE);
+const platformAdminSyntaxText = JSON.stringify(
+  platformAdminConfig.rules?.['no-restricted-syntax'] ?? [],
+);
+
+const PLATFORM_ADMIN_SYNTAX_BANS = [
+  ['can() from @taskflow/policy', 'inline role comparison'],
+  ['Raw SQL belongs in packages/db', 'raw SQL'],
+  ['not cryptographically secure', 'Math.random()'],
+  ['Zod-validated schema', 'bare process.env'],
+];
+
+const platformAdminFailures = [];
+for (const [needle, label] of PLATFORM_ADMIN_SYNTAX_BANS) {
+  if (platformAdminSyntaxText.includes(needle)) {
+    console.log(`  ok    platform-admin module keeps the ${label} ban`);
+  } else {
+    console.error(`  FAIL  platform-admin module LOST the ${label} ban`);
+    platformAdminFailures.push(label);
+  }
+}
+
+if (platformAdminFailures.length > 0) {
+  console.error(
+    `\nFAIL: the platform-admin module's globalScope exemption is wider than intended — ` +
+      `${platformAdminFailures.length} guardrail(s) stopped firing there.\n` +
+      `Most likely cause: the exemption block in packages/config/eslint/security.js\n` +
+      `re-emitted restrictedSyntax() with fewer exemptions instead of listing the\n` +
+      `full ban set.\n`,
+  );
+  process.exit(1);
+}
+
 if (failures.length > 0) {
   console.error(
     `\nFAIL: ${failures.length} guardrail(s) not firing as specified.\n` +

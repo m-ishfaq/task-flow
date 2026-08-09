@@ -111,7 +111,15 @@ export const orgsModule = defineSeedModule({
         await ctx.db.insert(
           'identity.orgs',
           ['id', 'name', 'slug', 'status', 'created_at', 'updated_at'],
-          [[orgId, plan.name, plan.slug, 'active', createdAt, createdAt]],
+          /* `OrgPlan.status` — a suspended org is written suspended, not
+             created active and suspended afterwards. See the field's comment
+             in profiles.ts: a seed has no EventBus to emit
+             `platform.org_suspended` through, so the row is the durable
+             record, and everything this module seeds beneath it (members,
+             teams, projects, channels, spaces) still lands — the operator
+             console lists a suspended org's directory, which is the whole
+             point of seeding one. */
+          [[orgId, plan.name, plan.slug, plan.status ?? 'active', createdAt, createdAt]],
         );
 
         await ctx.db.insert(

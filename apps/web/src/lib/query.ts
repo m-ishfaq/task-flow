@@ -22,6 +22,7 @@ import { refresh, useSession } from './session.js';
 const TERMINAL_CODES = new Set([
   'FORBIDDEN',
   'NOT_A_MEMBER',
+  'ORG_SUSPENDED',
   'NOT_FOUND',
   'GONE',
   'VALIDATION_FAILED',
@@ -290,6 +291,22 @@ export const keys = {
   /** Cost attribution by kind (Wave 4) — the admin-visible report. */
   spendReport: (orgId: string, sinceDays: number) =>
     ['org', orgId, 'telephony', 'spend', 'report', sinceDays] as const,
+
+  /* --- Platform admin (Phase 12 Wave 1) -----------------------------------
+     Cross-tenant by definition, so deliberately NOT org-prefixed: these
+     queries answer without a membership, and keying them under an org would
+     make them disappear whenever no org is selected — which is exactly the
+     moment the account-menu link (and the page it opens) must work. */
+  /** `self.check` — the account menu's one cheap, no-step-up probe. */
+  platformSelf: () => ['platform', 'self'] as const,
+  /** One page of the org directory. The cursor IS the page. */
+  platformOrgs: (cursor: string | null) => ['platform', 'orgs', cursor ?? 'first'] as const,
+  /** One page of the user directory. */
+  platformUsers: (cursor: string | null) => ['platform', 'users', cursor ?? 'first'] as const,
+  /** The flag registry with resolved values. */
+  platformFlags: () => ['platform', 'flags'] as const,
+  /** One page of the operator chain. Keyset on seq — the page is `before`. */
+  platformAudit: (before: string | null) => ['platform', 'audit', before ?? 'latest'] as const,
 } as const;
 
 /** The org id every key needs, or a placeholder that matches nothing. */

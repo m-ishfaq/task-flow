@@ -90,6 +90,16 @@ const OPERATION_RULES: Readonly<Record<string, RateLimitRule>> = {
      member directory by opening a conversation with everybody is slow enough
      to notice. */
   'chat.channels.openDirect': { limit: 30, windowMs: 60_000 },
+
+  /* Self-serve org creation (Phase 12 Wave 1 §3.4, §7 decision 3): 3 per
+     account per 24 hours. Generous for a legitimate person setting up a
+     company and a personal workspace in the same day, cheap to raise later,
+     expensive to have shipped unset. Keyed per CALLER (bearer token), not per
+     address — the whole point is bounding what one person can create, and an
+     office behind one NAT must not share a single budget. The key is the full
+     tRPC path exactly as registered: the tenancy router nests `orgs.create`
+     under `tenancy`, so `orgs.create` would silently never match. */
+  'tenancy.orgs.create': { limit: 3, windowMs: 24 * 60 * 60_000 },
 };
 
 export interface RateLimitOptions {

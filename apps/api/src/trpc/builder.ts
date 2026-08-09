@@ -2,6 +2,7 @@ import { TRPCError, initTRPC } from '@trpc/server';
 import { ZodError } from 'zod';
 import { AppError, isAppError, type ApiError } from '@taskflow/contracts';
 import { couldGrant, type Permission } from '@taskflow/policy';
+import { isPlatformOperator } from '../platform-admin/operator.js';
 import {
   subjectOf,
   type AuthenticatedContext,
@@ -66,6 +67,15 @@ export interface RouteMeta {
    * null, and the reason field is what tells them apart in the manifest.
    */
   readonly memberReason?: string;
+  /**
+   * Why this route is a platform-operator route. Required by `platformRoute`.
+   *
+   * The same "a reason sentence is the mechanism" argument as `publicReason`:
+   * the fifth route kind exists to gate the ONE trust tier that is relative to
+   * no org, and every route using it has to say why it is cross-tenant in the
+   * diff.
+   */
+  readonly platformReason?: string;
   /** Requires a recent credential proof, e.g. role changes, recording export (§8.1). */
   readonly stepUp?: boolean;
 }
@@ -227,6 +237,7 @@ function toTrpcCode(code: string): TRPCError['code'] {
     case 'EMAIL_NOT_VERIFIED':
     case 'FORBIDDEN':
     case 'NOT_A_MEMBER':
+    case 'ORG_SUSPENDED':
       return 'FORBIDDEN';
     case 'NOT_FOUND':
     case 'GONE':
@@ -460,6 +471,47 @@ function requireOrg(ctx: AuthenticatedContext): OrgScopedContext {
   }
 
   return { ...ctx, principal: { ...ctx.principal, org } };
+}
+
+/**
+ * Platform-operator route (Phase 12 Wave 1, ai/phase-12-admin.md §3.2).
+ *
+ * The fifth route kind, and the one that is relative to NO org. Unlike
+ * `route()` it never calls `resolveOrgMembership` — a platform-admin request
+ * carries no `x-taskflow-org` header and needs none — and instead checks
+ * `isPlatformOperator(ctx.principal.userId)` after authentication. Anything
+ * false gets the ordinary FORBIDDEN shape, not a disguised 404 (§3.2: an
+ * honest denial, the same as every other permission boundary).
+ *
+ * `stepUp` is baked in UNCONDITIONALLY, not a per-route opt-out like
+ * `route()`'s. Everything reachable through this builder is cross-tenant by
+ * definition, and PLAN.md §8.1 already treats acting across tenant
+ * boundaries at the same severity as role changes and member removal.
+ */
+export function platformRoute(meta: { platformReason: string }) {
+  if (meta.platformReason.trim().length === 0) {
+    throw new Error('platformRoute requires a non-empty reason.');
+  }
+
+  return procedure
+    .meta({
+      permission: null,
+      platformReason: meta.platformReason,
+      stepUp: true,
+    })
+    .use(async ({ ctx, next, meta: routeMeta }) => {
+      const authed = requireAuth(ctx, routeMeta);
+
+      const isOperator = await isPlatformOperator(authed.principal.userId);
+      if (!isOperator) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          cause: new AppError('FORBIDDEN', 'You do not have permission to perform this action.'),
+        });
+      }
+
+      return next({ ctx: authed });
+    });
 }
 
 /**

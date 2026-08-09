@@ -1,6 +1,8 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  boolean,
+  customType,
   index,
   integer,
   jsonb,
@@ -336,6 +338,63 @@ export const notificationDeliveries = platform.table(
  * push service reports gone. No INSERT — registering a device is always a
  * person's own act through the application role.
  */
+export const operators = platform.table('operators', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  grantedBy: uuid('granted_by')
+    .notNull()
+    .references(() => users.id),
+  grantedAt: timestamp('granted_at', { withTimezone: true }).notNull().defaultNow(),
+  note: text('note').notNull(),
+});
+
+/**
+ * Global feature-flag overrides (migration 0035, ai/phase-12-admin.md §3.8).
+ *
+ * The store the evaluator never had: `FeatureFlags.evaluate()` takes per-org
+ * overrides as an input and nothing persisted them. This is the deliberate
+ * narrow first cut — a single GLOBAL override table, no per-org row shape —
+ * and the evaluator's `orgOverrides` context parameter stays unused by this
+ * wave. `flag_name` is a PRIMARY KEY rather than a foreign key into
+ * `FLAGS` (which lives in TypeScript): a row for a retired flag would just
+ * be ignored, and the registry is the place flags are removed.
+ */
+export const flagOverrides = platform.table('flag_overrides', {
+  flagName: text('flag_name').primaryKey(),
+  value: boolean('value').notNull(),
+  setBy: uuid('set_by')
+    .notNull()
+    .references(() => users.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Postgres `bytea`, which Drizzle has no first-class column type for. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => 'bytea',
+});
+
+/**
+ * The global operator chain (migration 0035, ai/phase-12-admin.md §4).
+ *
+ * The platform-wide sibling of `audit.auditLog`: every operator action is
+ * recorded here, hash-chained under one global head lock. `seq`, `prevHash`
+ * and `hash` are assigned by the BEFORE INSERT trigger, never by the caller
+ * — the same rule `audit.auditLog`'s own comment states. Inserts omit them.
+ */
+export const operatorAuditLog = platform.table('operator_audit_log', {
+  seq: bigint('seq', { mode: 'number' }).primaryKey(),
+  operatorId: uuid('operator_id')
+    .notNull()
+    .references(() => users.id),
+  action: text('action').notNull(),
+  target: jsonb('target'),
+  /** Null only for the first entry in the chain. Assigned by the trigger. */
+  prevHash: bytea('prev_hash'),
+  hash: bytea('hash').notNull(),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const pushSubscriptions = platform.table(
   'push_subscriptions',
   {

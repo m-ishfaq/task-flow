@@ -1,6 +1,6 @@
 import { SoftwareKeyProvider } from '@taskflow/security';
 import { S3StorageProvider } from '@taskflow/storage';
-import { TwilioTelephonyProvider } from '@taskflow/telephony';
+import { FakeTelephonyProvider, TwilioTelephonyProvider } from '@taskflow/telephony';
 import type { KeyProvider, StorageProvider, TelephonyProvider } from '@taskflow/contracts';
 import type { Env } from '../config/env.js';
 
@@ -66,19 +66,25 @@ export function buildTelephonyDeps(env: Env): TelephonyDeps | undefined {
     );
   }
 
-  const telephony = new TwilioTelephonyProvider({
-    accountSid,
-    authToken,
-    verifyServiceSid: env.TWILIO_VERIFY_SERVICE_SID,
-    /* Test credentials are the ONLY thing Wave 1 is exercised against
-       (ai/phase-7-voice.md §8, PLAN.md §14 — the whole phase is budgeted at ~$2
-       precisely because the rails are built and tested before a real number is
-       ever purchased). Twilio's test credentials carry a distinct SID prefix,
-       so this is derived rather than configured: a separate boolean could
-       disagree with the credentials actually in use, and the direction it would
-       disagree in is "we thought we were in test mode". */
-    isLive: !accountSid.startsWith('ACtest') && !isTestCredential(accountSid),
-  });
+  /* The marker SIDs (the `ACtest` prefix and the all-zero placeholder) boot the
+     IN-MEMORY FakeTelephonyProvider, not the real one. `isLive: false` alone
+     would still construct `TwilioTelephonyProvider` and genuinely call
+     api.twilio.com with credentials that belong to no account — which answers
+     403, and turns the mock mode `.env.example` promises into an
+     INTERNAL_SERVER_ERROR on the UI's very first request (subaccount
+     provisioning). The fake makes the marker real: numbers search/purchase,
+     calls, SMS and spend all work against in-process state, no Twilio account
+     required. A real SID still boots the real provider, and is LIVE — a
+     separate boolean could disagree with the credentials in use, and the
+     direction it would disagree in is "we thought we were in test mode". */
+  const telephony = isTestCredential(accountSid)
+    ? new FakeTelephonyProvider()
+    : new TwilioTelephonyProvider({
+        accountSid,
+        authToken,
+        verifyServiceSid: env.TWILIO_VERIFY_SERVICE_SID,
+        isLive: true,
+      });
 
   return {
     telephony,
@@ -114,15 +120,20 @@ export function buildTelephonyDeps(env: Env): TelephonyDeps | undefined {
 }
 
 /**
- * Whether a Twilio account SID belongs to the test credential set.
+ * Whether an account SID is one of this codebase's MOCK markers.
  *
- * Twilio's test credentials are a separate SID/token pair on the same account,
- * documented as producing no charges and reaching no real handsets. There is no
- * field in the SID that marks them, so this is a configured convention rather
- * than a derived fact — which is why `isLive` defaults to TRUE for anything
- * unrecognised. Guessing "test" for an unknown credential is guessing that
- * spending is free, and that is the wrong way for this to be wrong.
+ * These are NOT Twilio credentials — Twilio's own sandbox is the same SID with
+ * a test auth token, and there is no field in the SID that marks it. These two
+ * shapes are a configured convention local to this repo: `ACtest` and the
+ * all-zero placeholder. Anything else is treated as real, because guessing
+ * "mock" for an unknown credential is guessing that spending is free, and that
+ * is the wrong way for this to be wrong. A real Twilio SID is `AC` followed by
+ * base62 and can never be either shape.
  */
 function isTestCredential(accountSid: string): boolean {
   return accountSid.startsWith('ACtest') || accountSid === 'AC00000000000000000000000000000000';
 }
+
+/* The provider contract declares `isLive` (contracts/providers/telephony-provider.ts) and the
+   fake reports `isLive = false` itself (`fake.ts`), so nothing here sets it twice — the real
+   provider's `isLive: true` above is simply the truth about real credentials. */

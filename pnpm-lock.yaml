@@ -710,6 +710,9 @@ importers:
       '@taskflow/events':
         specifier: workspace:*
         version: link:../events
+      '@taskflow/feature-flags':
+        specifier: workspace:*
+        version: link:../feature-flags
       '@taskflow/filter':
         specifier: workspace:*
         version: link:../filter

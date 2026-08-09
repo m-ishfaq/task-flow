@@ -10,7 +10,8 @@ import {
 } from '@taskflow/ui';
 import type { OrgId } from '@taskflow/contracts';
 import { signOut, useSession } from '../lib/session.js';
-import { resetCache } from '../lib/query.js';
+import { resetCache, keys } from '../lib/query.js';
+import { api } from '../lib/trpc.js';
 import { disconnectSocket } from '../lib/socket.js';
 import { disconnectChatSocket } from '../lib/chat-socket.js';
 import { useUi } from '../lib/ui-store.js';
@@ -339,9 +340,11 @@ function Breadcrumbs() {
                 ? 'Audit log'
                 : pathname.startsWith('/settings')
                   ? 'Settings'
-                  : pathname.startsWith('/admin/permissions')
-                    ? 'Permissions'
-                    : pathname.startsWith('/orgs')
+              : pathname.startsWith('/admin/permissions')
+                ? 'Permissions'
+                : pathname.startsWith('/platform-admin')
+                  ? 'Platform admin'
+                  : pathname.startsWith('/orgs')
                       ? 'Organizations'
                       : 'TaskFlow';
 
@@ -463,6 +466,20 @@ function AccountMenu() {
   const email = useSession((state) => state.email);
   const sessionId = useSession((state) => state.sessionId);
 
+  /* The ONE nav item this app hides on a server answer, and why that is not the
+     §8.2 anti-pattern. Everywhere else the rule is "render the control, let the
+     API say no": a button on a page you are already looking at has an honest
+     FORBIDDEN experience. A nav link to /platform-admin has no such thing —
+     nothing sensible renders for "you are not an operator" at a menu item —
+     and pointing it at everyone would advertise a surface nobody else may
+     reach. `self.check` is a selfRoute with no step-up on purpose (§3.2) so
+     this probe is cheap for every logged-in user on every load. The link is a
+     convenience; the page behind it still refuses non-operators at the server. */
+  const isOperator = useQuery({
+    queryKey: keys.platformSelf(),
+    queryFn: async () => (await api.platformAdmin.self.check.query(undefined)).isOperator,
+  });
+
   const leave = () => {
     void (async () => {
       await signOut();
@@ -513,6 +530,18 @@ function AccountMenu() {
         >
           Profile settings
         </DropdownMenuItem>
+        {isOperator.data === true && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => {
+                void navigate({ to: '/platform-admin' });
+              }}
+            >
+              Platform admin
+            </DropdownMenuItem>
+          </>
+        )}
         <DropdownMenuItem onSelect={leave}>Sign out</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenuRoot>

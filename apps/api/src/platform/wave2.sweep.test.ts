@@ -9,10 +9,13 @@ import {
   schema,
   withAuditScope,
 } from '@taskflow/db';
+import { createLogger } from '@taskflow/observability';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { runDueReminderSweep } from './due-reminders.js';
 import { collectDigestBatches, markDigestSent } from './digest.js';
+import { deliverPendingPushes } from './notification-push.js';
 import { drainNotificationsFully } from './notification.projection.js';
+import type { PushProvider } from './push-provider.js';
 
 /**
  * Phase 9 Wave 2's sweeps, against real Postgres (`docker compose up -d`).
@@ -44,6 +47,9 @@ const SWEEP_URL =
   process.env['TEST_DATABASE_NOTIFICATION_SWEEP_URL'] ??
   'postgresql://taskflow_notification_sweep:sweep-dev-secret@localhost:5433/taskflow_test';
 
+/* deliverPendingPushes requires a logger; silent keeps a passing run quiet. */
+const silentLogger = createLogger({ name: 'wave2-sweep-test', level: 'silent' });
+
 /* Annotated (not just `unsafeAsId<'OrgId'>`) because the no-unused-vars rule
    does not count a generic type ARGUMENT as use — the imported types must
    appear in a real annotation or they are reported unused. */
@@ -55,20 +61,41 @@ const BOARD = '0195ee10-0000-7000-8000-000000000011';
 const LIST = '0195ee10-0000-7000-8000-000000000012';
 const CARD = '0195ee10-0000-7000-8000-000000000013';
 
+/* A second, SUSPENDED tenant (Phase 12 Wave 1 §3.9). Seeded once in
+   beforeAll like the base tenant; the §3.9 tests assert that every one of
+   the four delivery paths refuses its rows. */
+const SUSPENDED: OrgId = unsafeAsId('0195ee10-0000-7000-8000-00000000001a');
+const SUSPENDED_USER: UserId = unsafeAsId('0195ee10-0000-7000-8000-000000000003');
+const SUSPENDED_PROJECT = '0195ee10-0000-7000-8000-00000000001b';
+const SUSPENDED_BOARD = '0195ee10-0000-7000-8000-00000000001c';
+const SUSPENDED_LIST = '0195ee10-0000-7000-8000-00000000001d';
+const SUSPENDED_CARD = '0195ee10-0000-7000-8000-00000000001e';
+
 let admin: AdminConnection;
 
 /* Removes every TEST-SPECIFIC row, leaving the base tenant (users, org,
    project, board, list seeded in `beforeAll`) standing — cards, deliveries
    and notifications are what each test seeds and tears down. */
 async function clearAll(): Promise<void> {
-  await admin.setOrg(ORG);
   /* Deliveries explicitly, not just via the notifications cascade: a failed
      earlier run can leave orphans a cascade from a now-gone notification row
-     cannot reach. */
-  await admin.query(`DELETE FROM platform.notification_deliveries WHERE org_id = $1`, [ORG]);
-  await admin.query(`DELETE FROM platform.notifications WHERE org_id = $1`, [ORG]);
-  await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [ORG]);
-  await admin.query(`DELETE FROM work.cards WHERE org_id = $1`, [ORG]);
+     cannot reach. Both test tenants — the base ORG and the suspended one
+     (§3.9) — are cleared the same way.
+
+     Each tenant is cleared under its OWN setOrg, one at a time. Every table
+     below is RLS-scoped on app.org_id and the migrator does not bypass it
+     (FORCE ROW LEVEL SECURITY), so a single `org_id = ANY(both)` delete run
+     while app.org_id holds ORG clears ORG's rows and silently matches ZERO
+     of the suspended tenant's — no error, just a delete that names rows the
+     policy hides. The suspended tenant then leaks into the next test. */
+  for (const orgId of [ORG, SUSPENDED]) {
+    await admin.setOrg(orgId);
+    await admin.query(`DELETE FROM platform.notification_deliveries WHERE org_id = $1`, [orgId]);
+    await admin.query(`DELETE FROM platform.notifications WHERE org_id = $1`, [orgId]);
+    await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [orgId]);
+    await admin.query(`DELETE FROM work.cards WHERE org_id = $1`, [orgId]);
+  }
+  await admin.setOrg(ORG);
   /* Prefs have no DELETE policy (0027 grants SELECT/INSERT/UPDATE only), so a
      delete would silently match zero rows and LEAK the previous test's rows
      into the next — the delivery rows prove the leak. Disable instead: the
@@ -88,20 +115,32 @@ async function clearAll(): Promise<void> {
 
 /* Removes the base tenant itself. Only for afterAll — beforeAll seeds it. */
 async function clearTenant(): Promise<void> {
+  /* One tenant at a time, under its own setOrg — see clearAll's comment: a
+     delete naming both orgs only ever reaches the one app.org_id names, and
+     `identity.orgs`' own policy keys on `id`, so the suspended org ROW
+     survived every teardown. beforeAll then re-seeded it and Postgres
+     answered `duplicate key value violates unique constraint "orgs_pkey"` —
+     on the second run of the suite, never the first. */
+  for (const orgId of [ORG, SUSPENDED]) {
+    await admin.setOrg(orgId);
+    await admin.query(`DELETE FROM platform.notification_deliveries WHERE org_id = $1`, [orgId]);
+    await admin.query(`DELETE FROM platform.notifications WHERE org_id = $1`, [orgId]);
+    await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [orgId]);
+    await admin.query(`DELETE FROM work.cards WHERE org_id = $1`, [orgId]);
+    await admin.query(`DELETE FROM work.lists WHERE org_id = $1`, [orgId]);
+    await admin.query(`DELETE FROM work.boards WHERE org_id = $1`, [orgId]);
+    await admin.query(`DELETE FROM work.projects WHERE org_id = $1`, [orgId]);
+    await admin.query(`DELETE FROM identity.memberships WHERE org_id = $1`, [orgId]);
+    await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [orgId]);
+  }
+  /* Users and prefs are not org-scoped — one pass, outside the loop. */
   await admin.setOrg(ORG);
-  await admin.query(`DELETE FROM platform.notification_deliveries WHERE org_id = $1`, [ORG]);
-  await admin.query(`DELETE FROM platform.notifications WHERE org_id = $1`, [ORG]);
-  await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [ORG]);
-  await admin.query(`DELETE FROM work.cards WHERE org_id = $1`, [ORG]);
-  await admin.query(`DELETE FROM work.lists WHERE org_id = $1`, [ORG]);
-  await admin.query(`DELETE FROM work.boards WHERE org_id = $1`, [ORG]);
-  await admin.query(`DELETE FROM work.projects WHERE org_id = $1`, [ORG]);
   await admin.query(`DELETE FROM identity.notification_prefs WHERE user_id = ANY($1::uuid[])`, [
-    [USER, OTHER],
+    [USER, OTHER, SUSPENDED_USER],
   ]);
-  await admin.query(`DELETE FROM identity.memberships WHERE org_id = $1`, [ORG]);
-  await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [ORG]);
-  await admin.query(`DELETE FROM identity.users WHERE id = ANY($1::uuid[])`, [[USER, OTHER]]);
+  await admin.query(`DELETE FROM identity.users WHERE id = ANY($1::uuid[])`, [
+    [USER, OTHER, SUSPENDED_USER],
+  ]);
   await admin.setOrg(null);
 }
 
@@ -112,6 +151,26 @@ async function seedCard(dueInHours: number, cardId: string = CARD): Promise<void
        (id, org_id, project_id, board_id, list_id, number, title, rank, assignee_ids, due_date)
      VALUES ($1, $2, $3, $4, $5, 1, 'Sweep Card', 'a0', $6, now() + ($7 || ' hours')::interval)`,
     [cardId, ORG, PROJECT, BOARD, LIST, [USER], String(dueInHours)],
+  );
+  await admin.setOrg(null);
+}
+
+/** A due card in the SUSPENDED tenant — the §3.9 org filter must refuse it. */
+async function seedSuspendedCard(dueInHours: number): Promise<void> {
+  await admin.setOrg(SUSPENDED);
+  await admin.query(
+    `INSERT INTO work.cards
+       (id, org_id, project_id, board_id, list_id, number, title, rank, assignee_ids, due_date)
+     VALUES ($1, $2, $3, $4, $5, 1, 'Suspended Card', 'a0', $6, now() + ($7 || ' hours')::interval)`,
+    [
+      SUSPENDED_CARD,
+      SUSPENDED,
+      SUSPENDED_PROJECT,
+      SUSPENDED_BOARD,
+      SUSPENDED_LIST,
+      [SUSPENDED_USER],
+      String(dueInHours),
+    ],
   );
   await admin.setOrg(null);
 }
@@ -141,6 +200,7 @@ beforeAll(async () => {
   for (const [id, email] of [
     [USER, 'sweep@wave2.test'],
     [OTHER, 'other@wave2.test'],
+    [SUSPENDED_USER, 'suspended@wave2.test'],
   ] as const) {
     await admin.query(
       `INSERT INTO identity.users (id, email, email_normalized, email_verified_at)
@@ -172,6 +232,38 @@ beforeAll(async () => {
      VALUES ($1, $2, $3, $4, 'Wave2 List', 'a0')`,
     [LIST, ORG, PROJECT, BOARD],
   );
+
+  /* The suspended tenant (§3.9) — same hierarchy shape as the base one,
+     with status = 'suspended' on the org row. Every §3.9 test asserts one of
+     the four delivery paths refuses this tenant's rows. orgs RLS keys on
+     app.org_id (0004) and the migrator does NOT bypass it — the insert must
+     run under setOrg(SUSPENDED), exactly like the base org's own insert
+     above runs under setOrg(ORG). */
+  await admin.setOrg(SUSPENDED);
+  await admin.query(
+    `INSERT INTO identity.orgs (id, name, slug, status)
+     VALUES ($1, 'Wave2 Suspended', 'wave2-suspended', 'suspended')`,
+    [SUSPENDED],
+  );
+  await admin.query(
+    `INSERT INTO identity.memberships (id, org_id, user_id, role)
+     VALUES (gen_random_uuid(), $1, $2, 'member')`,
+    [SUSPENDED, SUSPENDED_USER],
+  );
+  await admin.query(
+    `INSERT INTO work.projects (id, org_id, name, key) VALUES ($1, $2, 'Wave2 Suspended', 'WS')`,
+    [SUSPENDED_PROJECT, SUSPENDED],
+  );
+  await admin.query(
+    `INSERT INTO work.boards (id, org_id, project_id, name, rank)
+     VALUES ($1, $2, $3, 'Suspended Board', 'a0')`,
+    [SUSPENDED_BOARD, SUSPENDED, SUSPENDED_PROJECT],
+  );
+  await admin.query(
+    `INSERT INTO work.lists (id, org_id, project_id, board_id, name, rank)
+     VALUES ($1, $2, $3, $4, 'Suspended List', 'a0')`,
+    [SUSPENDED_LIST, SUSPENDED, SUSPENDED_PROJECT, SUSPENDED_BOARD],
+  );
   await admin.setOrg(null);
 
   initializeAuditDatabase({ url: AUDIT_URL, applicationName: 'taskflow-wave2-test-audit' });
@@ -188,14 +280,18 @@ afterAll(async () => {
   await admin.end();
 });
 
-async function countNotifications(kind: string, subjectId: string = CARD): Promise<number> {
+async function countNotifications(
+  kind: string,
+  subjectId: string = CARD,
+  orgId: OrgId = ORG,
+): Promise<number> {
   return withAuditScope(async (tx) => {
     const rows = await tx
       .select({ id: schema.notifications.id })
       .from(schema.notifications)
       .where(
         and(
-          eq(schema.notifications.orgId, ORG),
+          eq(schema.notifications.orgId, orgId),
           eq(schema.notifications.kind, kind),
           eq(schema.notifications.subjectId, subjectId),
         ),
@@ -359,5 +455,107 @@ describe('the digest sweep (§3.4)', () => {
 
     const batches = await collectDigestBatches();
     expect(batches).toHaveLength(0);
+  });
+});
+
+describe('the §3.9 org-status filter (ai/phase-12-admin.md)', () => {
+  it('does not remind for a card in a suspended org', async () => {
+    await seedSuspendedCard(2);
+    const result = await runDueReminderSweep(new Date(), 24);
+
+    /* The org join refuses the card before the insert loop ever sees it —
+       and therefore neither a notification nor the delivery rows that would
+       have followed. */
+    expect(result.written).toBe(0);
+    expect(await countNotifications('card.due_soon', SUSPENDED_CARD, SUSPENDED)).toBe(0);
+  });
+
+  it("does not collect a suspended org's pending activity email into the digest", async () => {
+    /* A delivery decided (and written) BEFORE the org was suspended must not
+       ride the next digest while it is suspended — the row stays pending,
+       and reactivation resumes it. */
+    await admin.setOrg(SUSPENDED);
+    await admin.query(
+      `INSERT INTO platform.notifications
+         (id, org_id, user_id, kind, subject_type, subject_id, title)
+       VALUES (gen_random_uuid(), $1, $2, 'card.due_soon', 'card',
+               '0195ee10-0000-7000-8000-0000000000ee', 'Due soon: Suspended Card')`,
+      [SUSPENDED, SUSPENDED_USER],
+    );
+    await admin.query(
+      `INSERT INTO platform.notification_deliveries
+         (id, org_id, user_id, notification_id, channel, status)
+       SELECT gen_random_uuid(), n.org_id, n.user_id, n.id, 'email', 'pending'
+       FROM platform.notifications n
+       WHERE n.org_id = $1 AND n.kind = 'card.due_soon'`,
+      [SUSPENDED],
+    );
+    await admin.setOrg(null);
+
+    const batches = await collectDigestBatches();
+    expect(batches.every((batch) => batch.to !== 'suspended@wave2.test')).toBe(true);
+  });
+
+  it("does not send a suspended org's pending push", async () => {
+    /* The provider is a fake that RECORDS every call — a push sent despite
+       the filter would fail the assertion, the same prove-the-side-effect
+       discipline the spend-gate suite applies to the carrier. */
+    let calls = 0;
+    const provider: PushProvider = {
+      /* Not `async` — the method never awaits, and `require-await` flags a
+         fake whose body is synchronous. `Promise.resolve` keeps the return
+         type the interface declares. */
+      send: () => {
+        calls += 1;
+        return Promise.resolve('sent');
+      },
+    };
+
+    await admin.setOrg(SUSPENDED);
+    await admin.query(
+      `INSERT INTO platform.notifications
+         (id, org_id, user_id, kind, subject_type, subject_id, title)
+       VALUES (gen_random_uuid(), $1, $2, 'chat.direct', 'message',
+               '0195ee10-0000-7000-8000-0000000000dd', 'New direct message')`,
+      [SUSPENDED, SUSPENDED_USER],
+    );
+    await admin.query(
+      `INSERT INTO platform.notification_deliveries
+         (id, org_id, user_id, notification_id, channel, status)
+       SELECT gen_random_uuid(), n.org_id, n.user_id, n.id, 'push', 'pending'
+       FROM platform.notifications n
+       WHERE n.org_id = $1 AND n.kind = 'chat.direct'`,
+      [SUSPENDED],
+    );
+    await admin.setOrg(null);
+
+    await deliverPendingPushes(provider, silentLogger);
+    expect(calls).toBe(0);
+  });
+
+  it("creates no notification for a suspended org's event", async () => {
+    /* The projection runs on the relay tick, not at request time — but a
+       suspended org's event is consumed (dispatched) and produces nothing:
+       no in-app row, no delivery. */
+    await admin.setOrg(SUSPENDED);
+    await admin.query(
+      `INSERT INTO platform.outbox
+         (id, org_id, name, version, occurred_at, payload)
+       VALUES (gen_random_uuid(), $1, 'card.assigned', 1, now(), $2::jsonb)`,
+      [
+        SUSPENDED,
+        JSON.stringify({
+          cardId: SUSPENDED_CARD,
+          boardId: SUSPENDED_BOARD,
+          before: [],
+          after: [SUSPENDED_USER],
+        }),
+      ],
+    );
+    await admin.setOrg(null);
+
+    const drained = await drainNotificationsFully();
+    expect(drained.written).toBe(0);
+    expect(await countNotifications('card.assigned', SUSPENDED_CARD, SUSPENDED)).toBe(0);
   });
 });

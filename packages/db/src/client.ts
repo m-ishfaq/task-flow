@@ -569,6 +569,86 @@ export function hasRecordingIngestDatabase(): boolean {
 }
 
 /* -------------------------------------------------------------------------- *
+ * The platform-admin connection (ai/phase-12-admin.md §3.7, Phase 12 Wave 1)
+ * -------------------------------------------------------------------------- */
+
+let platformAdminPool: pg.Pool | undefined;
+let platformAdminDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the platform-admin console's pool, as `taskflow_platform_admin`.
+ *
+ * AN EIGHTH role, for the identical reason every consumer role before it
+ * exists: the org DIRECTORY is read across EVERY tenant in one pass, and no
+ * value of `app.org_id` is correct for it. The role is `NOBYPASSRLS`, reaching
+ * across orgs only on the tables carrying an explicit
+ * `TO taskflow_platform_admin` policy (migration 0035): `identity.orgs` and
+ * `identity.memberships` for the directory, `identity.users` (which has no
+ * RLS at all), and the operator audit log it owns.
+ *
+ * This is NOT the connection `isPlatformOperator` reads on: that check goes
+ * through `withGlobalScope` on the ordinary application pool, because
+ * `platform.operators` is a non-tenant table with no RLS and the app role
+ * holds SELECT on it.
+ */
+export function initializePlatformAdminDatabase(config: DbConfig): void {
+  if (platformAdminPool) {
+    throw new Error('Platform-admin database already initialized. This is a boot-time call.');
+  }
+
+  platformAdminPool = new Pool({
+    connectionString: config.url,
+    // Small, matching every other system role: one console session at a time,
+    // and extra connections here buy nothing but ways to contend.
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-platform-admin',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  platformAdminDb = drizzle(platformAdminPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_platform_admin` — the role that may read the org
+ * directory across every tenant and write `identity.orgs.status`.
+ *
+ * NOT tenant-scoped, for the identical reason `withAuditScope` is not: the
+ * console's queries span every org, so no single value of `app.org_id` is
+ * correct for it. What contains it is the role — `NOBYPASSRLS`, reaching
+ * across orgs only on the tables carrying an explicit
+ * `TO taskflow_platform_admin` policy. Every OTHER table still filters on
+ * `app.org_id`, which this clears, so a stray query for cards here returns
+ * zero rows.
+ *
+ * Throws rather than falling back to the application role — which could not
+ * see across every org anyway, so the fallback would silently list zero orgs
+ * while looking healthy. That is exactly the quiet failure §3.7 exists to
+ * prevent (an operator looking at a real system with real orgs misreading an
+ * empty list as "no orgs exist yet").
+ */
+export async function withPlatformAdminScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!platformAdminDb) {
+    throw new Error(
+      'Platform-admin database not initialized. Call initializePlatformAdminDatabase() during ' +
+        'boot — the console must not fall back to the application role, which cannot see ' +
+        'identity.orgs across every tenant and would silently list nothing.',
+    );
+  }
+
+  return platformAdminDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the platform-admin pool has been initialized. */
+export function hasPlatformAdminDatabase(): boolean {
+  return platformAdminDb !== undefined;
+}
+
+/* -------------------------------------------------------------------------- *
  * The backlinks connection (ai/phase-6-docs.md §3.10, Phase 6 Wave 3)
  * -------------------------------------------------------------------------- */
 
@@ -669,6 +749,10 @@ export async function closeDatabase(): Promise<void> {
   await recordingIngestPool?.end();
   recordingIngestPool = undefined;
   recordingIngestDb = undefined;
+
+  await platformAdminPool?.end();
+  platformAdminPool = undefined;
+  platformAdminDb = undefined;
 }
 
 /** True when the pool is live and answering. Backs `/health/ready` (§14). */

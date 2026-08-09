@@ -1,4 +1,4 @@
-import { and, inArray, isNotNull, isNull, lte, schema, withSweepScope } from '@taskflow/db';
+import { and, eq, inArray, isNotNull, isNull, lte, schema, withSweepScope } from '@taskflow/db';
 import { newId } from '@taskflow/security';
 import type { Logger } from '@taskflow/observability';
 import { notificationPath } from './notification-paths.js';
@@ -81,6 +81,16 @@ export async function runDueReminderSweep(
         assigneeIds: schema.cards.assigneeIds,
       })
       .from(schema.cards)
+      /* Phase 12 Wave 1 §3.9: a suspended org must not keep receiving
+         due-date reminders after its members are cut off from the request
+         paths. The join is the filter — a card whose org is not 'active'
+         never reaches the insert loop, and therefore never produces the
+         delivery rows that would follow. Runs as taskflow_notification_sweep
+         with the column-limited orgs read migration 0037 grants. */
+      .innerJoin(
+        schema.orgs,
+        and(eq(schema.orgs.id, schema.cards.orgId), eq(schema.orgs.status, 'active')),
+      )
       .where(
         and(
           isNotNull(schema.cards.dueDate),

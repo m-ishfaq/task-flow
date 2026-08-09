@@ -38,6 +38,7 @@ import { PermissionDebugPage } from './features/admin/permission-debug-page.js';
 import { SettingsPage } from './features/admin/settings-page.js';
 import { AuditPage } from './features/admin/audit-page.js';
 import { ProjectSettingsPage } from './features/work/project-settings-page.js';
+import { PlatformAdminPage } from './features/platform-admin/platform-admin-page.js';
 
 /**
  * The route tree (PLAN.md §4.1 — typed routes and typed search params).
@@ -385,6 +386,24 @@ const auditRoute = createRoute({
   component: AuditPage,
 });
 
+/**
+ * The platform administration console (Phase 12 Wave 1).
+ *
+ * `requireSession`, not `requireOrg` — deliberately, and for the same reason
+ * `accountRoute` is: the console is relative to NO organization. Every route
+ * behind it is `platformRoute`, which never resolves a membership and checks
+ * the operator flag instead. Gating it on an org selection would lock the
+ * cross-tenant console behind one tenant's membership — the exact inverse of
+ * what it is for. The page itself is the access control: a non-operator who
+ * reaches it gets FORBIDDEN from every query it fires.
+ */
+const platformAdminRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/platform-admin',
+  beforeLoad: () => requireSession('/platform-admin'),
+  component: PlatformAdminPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -407,6 +426,7 @@ const routeTree = rootRoute.addChildren([
   auditRoute,
   permissionsRoute,
   accountRoute,
+  platformAdminRoute,
 ]);
 
 export function createAppRouter(queryClient: QueryClient) {
