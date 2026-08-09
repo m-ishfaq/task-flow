@@ -228,14 +228,11 @@ export async function updateProfile(
      membership without one. A validation error names the gap honestly rather
      than silently dropping the fields. */
   const hasMembershipFields =
-    patch.jobTitle !== undefined ||
-    patch.department !== undefined ||
-    patch.workPhone !== undefined;
+    patch.jobTitle !== undefined || patch.department !== undefined || patch.workPhone !== undefined;
   if (hasMembershipFields) {
     if (actor.orgId === null) {
       throw errors.validation({
-        jobTitle:
-          'Select an organization before setting a job title, department, or work phone.',
+        jobTitle: 'Select an organization before setting a job title, department, or work phone.',
       });
     }
     await updateMembershipProfile(actor.orgId, actor, actor.userId, {

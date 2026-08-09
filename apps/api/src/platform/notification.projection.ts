@@ -440,7 +440,10 @@ export async function drainNotifications(limit = 100): Promise<NotificationDrain
        still marked dispatched below; skipping IS the decision. Runs as
        taskflow_audit with the column-limited orgs read migration 0037
        grants. */
-    const activeOrgIds = await activeOrgIdsFor(tx, pending.map((row) => row.orgId));
+    const activeOrgIds = await activeOrgIdsFor(
+      tx,
+      pending.map((row) => row.orgId),
+    );
 
     let written = 0;
     /* Recipients whose preferences and idempotent delivery insert both said

@@ -63,6 +63,16 @@ rules:
         # the code, and neither guess matched where it landed. A path-scoped rule
         # whose scope is wrong reports every legitimate call and nothing else.
         - '/apps/api/src/identity/**'
+        # The other two legitimate consumers of withGlobalScope, matching the
+        # exemption in packages/config/eslint/security.js's
+        # exempt-global-scope-consumers block. people/** is a non-tenant table
+        # (people.profiles, migration 0030) that must answer with no org
+        # selected; platform-admin/** is isPlatformOperator, which by design
+        # must run before any org is known. This rule and the ESLint one guard
+        # the same invariant over different file types, and a scope that only
+        # one of them recognizes reports every legitimate call in the other.
+        - '/apps/api/src/people/**'
+        - '/apps/api/src/platform-admin/**'
         - '/packages/db/**'
         - '**/*.test.ts'
         # Deliberate violations, asserted by packages/guardrail-selftest.
