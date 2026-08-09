@@ -146,17 +146,39 @@ export async function reset(options: ResetOptions): Promise<ResetResult> {
      which is the surgical boundary this file exists to draw.
 
      `platform.operators` needs no statement here — its `user_id` FK is ON
-     DELETE CASCADE, so the users DELETE below takes the flag with the user.
-     (`platform.operator_audit_log` also references users without cascade,
-     but the seeder deliberately never writes it — an audit trail a seed
-     could edit would not be one, the same reasoning the file header gives
-     for `audit.audit_log` — so no seeded-user rows can exist to block the
-     delete.) */
+     DELETE CASCADE, so the users DELETE below takes the flag with the user. */
   if (allTables.includes('platform.flag_overrides')) {
     await connection.query('DELETE FROM platform.flag_overrides WHERE set_by = ANY($1::uuid[])', [
       userIds,
     ]);
   }
+
+  /* `platform.operator_audit_log.operator_id` references users without
+     cascade too, and unlike the override table above it is written by the
+     RUNNING APPLICATION rather than by this package.
+
+     This block used to be absent, on the stated reasoning that "the seeder
+     deliberately never writes that table, so no seeded-user rows can exist
+     to block the delete." That was true of the seeder and false of the
+     system: the seeded operator is a seeded user (platform.admin.ts grants
+     the flag to user index 0), and `recordOperatorAction` writes a row for
+     EVERY platformAdmin.* call — including the read-only list routes, by
+     §5's own acceptance criterion. So merely OPENING the operator console
+     once with the demo login left rows pointing at a seeded user, and the
+     next `--reset` failed on the foreign key with a message naming
+     `operator_audit_log`, nowhere near the console that caused it.
+
+     Deleting these is the same surgical boundary the overrides above draw,
+     not a weakening of the "a seed must not edit an audit trail" rule: the
+     scope is `operator_id = ANY(seeded users)`, so what goes is the record
+     of actions taken BY a demo account that is itself being deleted. A real
+     developer's operator actions carry their real user id and survive
+     untouched. `audit.audit_log` remains genuinely off limits — no role
+     holds DELETE on it at all (see the file header). */
+  await connection.query(
+    'DELETE FROM platform.operator_audit_log WHERE operator_id = ANY($1::uuid[])',
+    [userIds],
+  );
 
   /* Users last, and unscoped — `identity.users` carries no `org_id` (it is
      the one global table, CLAUDE.md). By this point every membership row

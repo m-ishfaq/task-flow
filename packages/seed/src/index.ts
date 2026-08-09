@@ -77,3 +77,4 @@ export { suggestionsModule, type SuggestionOutput } from './modules/docs.suggest
 export { templatesModule, type TemplateOutput } from './modules/docs.templates.js';
 export { attachmentsModule } from './modules/platform.attachments.js';
 export { auditModule } from './modules/platform.audit.js';
+export { telephonyModule, type TelephonyOutput } from './modules/comms.telephony.js';

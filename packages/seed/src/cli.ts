@@ -4,8 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { initializeAuditDatabase } from '@taskflow/db';
 import { connectAsMigrator } from '@taskflow/db/testing';
 import { S3StorageProvider } from '@taskflow/storage';
+import { TwilioTelephonyProvider } from '@taskflow/telephony';
+import { masterKeysFromBase64, SoftwareKeyProvider } from '@taskflow/security';
 import type { StorageProvider } from '@taskflow/contracts';
-import { createSeedContext } from './context.js';
+import { createSeedContext, type TelephonySeedConfig } from './context.js';
 import { createRng } from './rng.js';
 import {
   DEFAULT_PROFILE,
@@ -187,6 +189,57 @@ function buildStorage(): StorageProvider | null {
   });
 }
 
+/**
+ * The carrier + key material `comms.telephony` needs, or null to skip it.
+ *
+ * Built here rather than in the module for the same reason `buildStorage` is:
+ * guardrail 7 bans bare `process.env` outside a validated schema, and a CLI
+ * entry point is the one exempted process boundary (`packages/config/eslint/
+ * security.js`). The module receives a resolved object or nothing.
+ *
+ * FOUR things must all be present, and a missing one is a SKIP rather than an
+ * error — a contributor with no Twilio account must still be able to seed
+ * everything else:
+ *
+ *   - TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN, to ask the carrier which
+ *     numbers the account actually holds.
+ *   - MASTER_KEY_ID / MASTER_KEY_BASE64, because `comms.subaccounts` stores a
+ *     genuinely wrapped data key and a placeholder there fails to unwrap the
+ *     first time real code reads it.
+ *   - TELEPHONY_INDEX_KEY, the blind-index key. Deliberately separate from
+ *     the master key (see `counterparty.ts`): one compromise should not both
+ *     decrypt the column and let an attacker generate indexes to confirm
+ *     guesses against it.
+ *
+ * `isLive: false` is passed to the provider even against real credentials.
+ * Nothing here places a call or buys anything — the only carrier method used
+ * is the read-only `listOwnedNumbers` — and `isLive` is what a fixture would
+ * assert on to prove no real spend occurred.
+ */
+function buildTelephonySeedConfig(): TelephonySeedConfig | null {
+  const accountSid = process.env['TWILIO_ACCOUNT_SID'];
+  const authToken = process.env['TWILIO_AUTH_TOKEN'];
+  const masterKeyId = process.env['MASTER_KEY_ID'];
+  const masterKeyBase64 = process.env['MASTER_KEY_BASE64'];
+  const indexKeyBase64 = process.env['TELEPHONY_INDEX_KEY'];
+
+  if (!accountSid || !authToken) return null;
+  if (!masterKeyId || !masterKeyBase64 || !indexKeyBase64) return null;
+
+  return {
+    provider: new TwilioTelephonyProvider({
+      accountSid,
+      authToken,
+      isLive: false,
+    }),
+    keys: new SoftwareKeyProvider({
+      masterKeys: masterKeysFromBase64({ [masterKeyId]: masterKeyBase64 }),
+      currentMasterKeyId: masterKeyId,
+    }),
+    indexKey: Buffer.from(indexKeyBase64, 'base64'),
+  };
+}
+
 /* ---------------------------------------------------------------------- *
  * Main
  * ---------------------------------------------------------------------- */
@@ -242,6 +295,14 @@ async function main(): Promise<void> {
       );
     }
 
+    const telephony = buildTelephonySeedConfig();
+    if (!telephony) {
+      console.warn(
+        'comms.telephony: TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN, MASTER_KEY_* or ' +
+          'TELEPHONY_INDEX_KEY not set — telephony will be skipped.',
+      );
+    }
+
     const { ctx, record } = createSeedContext({
       connection,
       rng,
@@ -249,6 +310,7 @@ async function main(): Promise<void> {
       now: new Date(),
       chaos: args.chaos,
       storage,
+      telephony,
       log: (message) => {
         console.warn(message);
       },
