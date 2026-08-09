@@ -125,7 +125,16 @@ export function RichTextEditor({
     editorProps: {
       attributes: {
         class: cn(
-          'rich-text focus:outline-none',
+          /* No `focus:outline-none` here. Tailwind's `focus:` utility lives in
+             the `utilities` layer, which beats `styles.css`'s `@layer base`
+             `:focus-visible` rule regardless of selector specificity — so this
+             editor's contentEditable div had NO visible focus indicator for a
+             keyboard user, only the text caret, which is invisible in an empty
+             field. Leaving the class off lets the app-wide accent ring apply
+             here exactly like every other interactive element; `:focus-visible`
+             already excludes mouse-click focus, so this changes nothing about
+             how a click into the editor looks. ai/phase-6.5-ui-polish.md Wave 1. */
+          'rich-text',
           bare ? undefined : 'min-h-24 px-3 py-2',
           className,
         ),

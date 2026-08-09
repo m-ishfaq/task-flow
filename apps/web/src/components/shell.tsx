@@ -1,12 +1,20 @@
+import { useEffect, useRef } from 'react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import {
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRoot,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@taskflow/ui';
 import type { OrgId } from '@taskflow/contracts';
 import { signOut, useSession } from '../lib/session.js';
 import { resetCache } from '../lib/query.js';
 import { disconnectSocket } from '../lib/socket.js';
 import { disconnectChatSocket } from '../lib/chat-socket.js';
 import { useUi } from '../lib/ui-store.js';
+import { useIsDesktop } from '../lib/use-media-query.js';
 import { orgsQuery } from '../features/org/api.js';
 import { cn } from '../lib/cn.js';
 import { Avatar, Button } from './primitives.js';
@@ -53,6 +61,9 @@ export function Shell() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const status = useSession((state) => state.status);
   const orgId = useSession((state) => state.orgId);
+  const mobileNavOpen = useUi((state) => state.mobileNavOpen);
+  const closeMobileNav = useUi((state) => state.closeMobileNav);
+  const isDesktop = useIsDesktop();
 
   const bare = ANONYMOUS_PATHS.has(pathname) || status !== 'authenticated';
 
@@ -60,6 +71,73 @@ export function Shell() {
      show and every query behind it would answer NOT_A_MEMBER. It keeps the
      footer — that is where the switcher lives — and drops the tree. */
   const hasOrg = orgId !== null;
+
+  /* Closes the mobile drawer on every navigation, not on each Link's own
+     click handler. Threading `onClick={closeMobileNav}` through every link in
+     `Sidebar` (My tasks, Chat, Docs, People, every project, every board) would
+     mean a new link added there later silently forgets to close the drawer;
+     watching the URL instead makes the drawer agree with the route no matter
+     which link — or the browser back button — got you there. */
+  useEffect(() => {
+    closeMobileNav();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- closeMobileNav is a stable Zustand action
+  }, [pathname]);
+
+  /* Escape closes the drawer — a real gap Wave 5's keyboard pass found in
+     Wave 6's own work (ai/phase-6.5-ui-polish.md): the backdrop is
+     `aria-hidden` (correctly, since it is a pointer-only affordance with
+     nothing for a keyboard user to tab to), which is exactly why
+     `jsx-a11y/no-static-element-interactions` did not flag its `onClick` as
+     needing a keyboard equivalent — the rule assumes, correctly, that an
+     aria-hidden element isn't reachable by keyboard in the first place. But
+     that leaves the drawer with a mouse/touch way to close it and NO
+     keyboard way at all, since `Sidebar`'s content is a plain nav tree, not
+     a Radix `Dialog` that would have handled this for free. Every other
+     dialog-shaped surface in this app (`packages/ui`'s `Modal`) gets Escape
+     from Radix; this is the one piece of "dialog-like" chrome this phase
+     built by hand instead, so it needs the same behaviour spelled out. */
+  useEffect(() => {
+    if (!mobileNavOpen) return undefined;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') closeMobileNav();
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- closeMobileNav is a stable Zustand action
+  }, [mobileNavOpen]);
+
+  /* Focus moves INTO the drawer when it opens and back to whatever opened it
+     when it closes — the other half of what Radix's `Dialog` gives for free
+     and this hand-built drawer has to do itself (see the Escape effect
+     above). `document.activeElement` at the moment `mobileNavOpen` flips
+     true is, by construction, the control that just opened it — normally the
+     header's hamburger button — so there is no need to thread a ref down
+     into `Header` just to remember it.
+     Deliberately NOT a full focus trap: Tab can still leave the drawer into
+     the page content behind the backdrop while it's open. Radix's `Dialog`
+     traps focus and this doesn't, which is a real, known gap rather than a
+     silent one — building a correct trap by hand (wrap-around on Tab AND
+     Shift+Tab, without also breaking Escape or the backdrop) is exactly the
+     kind of thing Radix exists so this codebase doesn't have to get right
+     from scratch, and re-implementing it here risked a worse bug than the
+     one being fixed. */
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const previouslyFocused = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (mobileNavOpen) {
+      previouslyFocused.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      drawerRef.current?.focus();
+    } else {
+      previouslyFocused.current?.focus();
+      previouslyFocused.current = null;
+    }
+  }, [mobileNavOpen]);
 
   if (bare) {
     return (
@@ -72,8 +150,52 @@ export function Shell() {
   }
 
   return (
-    <div className="flex h-full">
-      <div className="flex flex-col">
+    <div className="flex h-full overflow-y-hidden">
+      {/* The drawer's backdrop, below `md` only. A click anywhere outside the
+          drawer closes it — the same "tap away to dismiss" a Radix Popover
+          gives for free, restated by hand because this isn't a Radix
+          component, it's the app's own persistent chrome. */}
+      {hasOrg && mobileNavOpen && (
+        <div
+          aria-hidden="true"
+          onClick={closeMobileNav}
+          className="fixed inset-0 z-30 bg-overlay md:hidden"
+        />
+      )}
+
+      <div
+        ref={drawerRef}
+        /* `-1`: never in the Tab order (nothing about visiting this element
+           by TABBING is meaningful — it's a layout wrapper, not a control),
+           but still a valid target for the PROGRAMMATIC `.focus()` call
+           above, which is what actually lands a keyboard user's focus inside
+           the drawer's subtree the moment it opens. */
+        tabIndex={-1}
+        /* `inert` while the drawer is closed on a small screen — otherwise a
+           `-translate-x-full` panel is invisible but NOT actually removed
+           from the tab order or the accessibility tree (transform doesn't do
+           either), so Tab from the header would walk a keyboard user through
+           every sidebar link before reaching anything they can see. `inert`
+           makes the whole subtree unfocusable and unreadable to assistive
+           tech while it's off-screen, without `display: none`, which would
+           kill the slide transition outright. Never inert at `md`+, where
+           the drawer classes below don't apply and the sidebar is always the
+           ordinary, always-interactive one Phase 3.5 built. */
+        inert={hasOrg && !isDesktop && !mobileNavOpen}
+        className={cn(
+          'flex flex-col',
+          /* Below `md`: an off-canvas drawer, fixed to the viewport and
+             slid in/out with `translate-x`. At `md` and above: back to being
+             an ordinary flex child with no fixed positioning at all — the
+             desktop layout `Sidebar`'s own `open ? w-60 : w-12` already
+             handles is untouched by anything here. */
+          hasOrg &&
+            cn(
+              'fixed inset-y-0 left-0 z-40 transition-transform duration-200 md:static md:translate-x-0',
+              mobileNavOpen ? 'translate-x-0' : '-translate-x-full',
+            ),
+        )}
+      >
         {hasOrg && <Sidebar />}
         <SidebarFooter standalone={!hasOrg} />
       </div>
@@ -83,8 +205,8 @@ export function Shell() {
       {hasOrg && <CommandPalette />}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header />
-        <main className="min-h-0 flex-1">
+        <Header showMenuButton={hasOrg} />
+        <main className="min-h-0 flex-1 overflow-x-auto">
           <Outlet />
         </main>
       </div>
@@ -125,14 +247,42 @@ function SidebarFooter({ standalone }: { readonly standalone: boolean }) {
  * page-specific controls becomes a second navigation bar that is wrong on every
  * page but one.
  */
-function Header() {
+function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
   const setShortcutsOpen = useUi((state) => state.setShortcutsOpen);
+  const toggleMobileNav = useUi((state) => state.toggleMobileNav);
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-4">
+      {/* Below `md`, the sidebar is an off-canvas drawer (Shell) with no
+          permanent trigger of its own — this is the only way to open it.
+          `showMenuButton` is false in the org-picker's pre-org state, where
+          Shell renders no drawer at all for this to open. */}
+      {showMenuButton && (
+        <button
+          type="button"
+          onClick={toggleMobileNav}
+          aria-label="Open navigation"
+          className="-ml-1 shrink-0 rounded p-1.5 text-ink-muted hover:bg-surface-hover hover:text-ink md:hidden"
+        >
+          <span aria-hidden="true">☰</span>
+        </button>
+      )}
+
       <Breadcrumbs />
 
-      <nav className="ml-auto flex items-center gap-1" aria-label="Settings">
+      {/* `overflow-x-auto` + `flex-nowrap` rather than letting the row wrap:
+          wrapping would grow the header past its fixed `h-12` every time the
+          viewport is too narrow for four items, which pushes `main` down by a
+          varying amount depending on what's currently in the row. Scrolling
+          keeps the header's height constant and every item still reachable —
+          the smallest phone this has been checked against is a 320px-wide
+          viewport, where these four items plus the hamburger button and a
+          short breadcrumb still fit without scrolling; scrolling is the
+          fallback for narrower or zoomed cases, not the primary path. */}
+      <nav
+        className="ml-auto flex flex-nowrap items-center gap-1 overflow-x-auto"
+        aria-label="Settings"
+      >
         {/* Mentions and direct messages. In the shell rather than on the chat
             page because its whole purpose is telling you about a conversation
             you are NOT currently looking at. */}
@@ -148,7 +298,7 @@ function Header() {
           }}
           aria-label="Keyboard shortcuts"
           title="Keyboard shortcuts (?)"
-          className="rounded px-2 py-1 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
+          className="shrink-0 rounded px-2 py-1 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
         >
           ?
         </button>
@@ -195,7 +345,16 @@ function Breadcrumbs() {
                       ? 'Organizations'
                       : 'TaskFlow';
 
-  return <h1 className="truncate text-sm font-medium text-ink">{label}</h1>;
+  /* `min-w-0` is load-bearing, not decorative: a flex item's default
+     min-width is `auto`, which means it will NOT shrink below its own content
+     size no matter how little room its siblings (the menu button, the
+     notification bell, the nav links) leave it — so `truncate`'s
+     `overflow-hidden` + `text-overflow: ellipsis` never actually engages on a
+     narrow header, and the row overflows the viewport instead of eliding the
+     label. This is the one-line fix for a bug that only shows up once the
+     header actually gets tight, which the desktop-only build before this wave
+     never exercised. */
+  return <h1 className="min-w-0 truncate text-sm font-medium text-ink">{label}</h1>;
 }
 
 function NavLink({
@@ -208,7 +367,7 @@ function NavLink({
   return (
     <Link
       to={to}
-      className="rounded px-2 py-1 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
+      className="shrink-0 rounded px-2 py-1 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
       activeProps={{ className: 'bg-surface-hover text-ink' }}
     >
       {label}
@@ -258,57 +417,43 @@ function OrgSwitcher() {
   };
 
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
+    <DropdownMenuRoot>
+      <DropdownMenuTrigger asChild>
         <Button size="sm" variant="ghost" className="min-w-0 flex-1 justify-start">
           <span className="truncate">{current?.name ?? 'Select organization'}</span>
           <span aria-hidden="true" className="ml-auto">
             ▾
           </span>
         </Button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="start"
-          side="top"
-          sideOffset={4}
-          className="min-w-48 rounded border border-line bg-surface-raised p-1 shadow-lg"
-        >
-          {memberships.map((org) => (
-            <DropdownMenu.Item
-              key={org.orgId}
-              onSelect={() => {
-                switchTo(org.orgId as OrgId);
-              }}
-              className={cn(
-                'flex cursor-pointer items-center justify-between gap-3 rounded px-2 py-1.5 text-sm',
-                'text-ink outline-none data-[highlighted]:bg-surface-hover',
-              )}
-            >
-              <span>{org.name}</span>
-              <span className="text-[11px] text-ink-faint">{org.role}</span>
-            </DropdownMenu.Item>
-          ))}
-
-          {memberships.length > 0 && <DropdownMenu.Separator className="my-1 h-px bg-line" />}
-
-          {/* The unconditional way to `/orgs`. It is also the only way to CREATE
-              an org, which the switcher cannot offer and which a caller with no
-              memberships needs before anything else in the app works. */}
-          <DropdownMenu.Item
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="top" className="min-w-48">
+        {memberships.map((org) => (
+          <DropdownMenuItem
+            key={org.orgId}
             onSelect={() => {
-              void navigate({ to: '/orgs' });
+              switchTo(org.orgId as OrgId);
             }}
-            className={cn(
-              'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm',
-              'text-ink-muted outline-none data-[highlighted]:bg-surface-hover',
-            )}
           >
-            All organizations…
-          </DropdownMenu.Item>
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+            <span>{org.name}</span>
+            <span className="text-[11px] text-ink-faint">{org.role}</span>
+          </DropdownMenuItem>
+        ))}
+
+        {memberships.length > 0 && <DropdownMenuSeparator />}
+
+        {/* The unconditional way to `/orgs`. It is also the only way to CREATE
+            an org, which the switcher cannot offer and which a caller with no
+            memberships needs before anything else in the app works. */}
+        <DropdownMenuItem
+          tone="muted"
+          onSelect={() => {
+            void navigate({ to: '/orgs' });
+          }}
+        >
+          All organizations…
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenuRoot>
   );
 }
 
@@ -336,8 +481,8 @@ function AccountMenu() {
   };
 
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
+    <DropdownMenuRoot>
+      <DropdownMenuTrigger asChild>
         <button
           type="button"
           aria-label="Account"
@@ -349,46 +494,27 @@ function AccountMenu() {
               it change on every refresh. */}
           <Avatar userId={sessionId ?? 'anonymous'} label={email ?? 'Account'} />
         </button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="end"
-          side="top"
-          sideOffset={4}
-          className="min-w-44 rounded border border-line bg-surface-raised p-1 shadow-lg"
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" side="top" className="min-w-44">
+        {email !== null && (
+          <>
+            <p className="truncate px-2 py-1.5 text-xs text-ink-faint">{email}</p>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {/* `/account` — requireSession only, not requireOrg (ai/account-page.md).
+            Reachable from here specifically because it must be: the org
+            switcher above it is the one place someone can be signed in with
+            no org selected, and this is the account menu's only other item. */}
+        <DropdownMenuItem
+          onSelect={() => {
+            void navigate({ to: '/account' });
+          }}
         >
-          {email !== null && (
-            <>
-              <p className="truncate px-2 py-1.5 text-xs text-ink-faint">{email}</p>
-              <DropdownMenu.Separator className="my-1 h-px bg-line" />
-            </>
-          )}
-          {/* `/account` — requireSession only, not requireOrg (ai/account-page.md).
-              Reachable from here specifically because it must be: the org
-              switcher above it is the one place someone can be signed in with
-              no org selected, and this is the account menu's only other item. */}
-          <DropdownMenu.Item
-            onSelect={() => {
-              void navigate({ to: '/account' });
-            }}
-            className={cn(
-              'cursor-pointer rounded px-2 py-1.5 text-sm',
-              'text-ink outline-none data-[highlighted]:bg-surface-hover',
-            )}
-          >
-            Profile settings
-          </DropdownMenu.Item>
-          <DropdownMenu.Item
-            onSelect={leave}
-            className={cn(
-              'cursor-pointer rounded px-2 py-1.5 text-sm',
-              'text-ink outline-none data-[highlighted]:bg-surface-hover',
-            )}
-          >
-            Sign out
-          </DropdownMenu.Item>
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+          Profile settings
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={leave}>Sign out</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenuRoot>
   );
 }

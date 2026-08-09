@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import * as Popover from '@radix-ui/react-popover';
+import { PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import { useMutation } from '@tanstack/react-query';
 import type { BoardId, CardId, UserId } from '@taskflow/contracts';
 import { api } from '../../../lib/trpc.js';
@@ -109,14 +109,14 @@ export function AssigneeSection({ orgId, boardId, cardId, assigneeIds }: Assigne
           </button>
         ))}
 
-        <Popover.Root
+        <PopoverRoot
           onOpenChange={(open) => {
             // Cleared on close, not on each keystroke's own render — reopening
             // the picker should not still be filtered from the last time.
             if (!open) setQuery('');
           }}
         >
-          <Popover.Trigger asChild>
+          <PopoverTrigger asChild>
             <button
               type="button"
               aria-label="Add assignee"
@@ -124,66 +124,60 @@ export function AssigneeSection({ orgId, boardId, cardId, assigneeIds }: Assigne
             >
               +
             </button>
-          </Popover.Trigger>
-          <Popover.Portal>
-            <Popover.Content
-              align="start"
-              sideOffset={4}
-              className="w-56 space-y-1.5 rounded border border-line bg-surface-raised p-2 shadow-xl"
-            >
-              {people.length === 0 ? (
-                <p className="p-1 text-xs text-ink-faint">No members to assign.</p>
-              ) : (
-                <>
-                  {/* Only worth the row past a handful of members — see the
-                      header note on why the picker exists at all. */}
-                  {people.length > 8 && (
-                    <Input
-                      aria-label="Search members"
-                      placeholder="Search members…"
-                      value={query}
-                      onChange={(event) => {
-                        setQuery(event.target.value);
-                      }}
-                      className="h-7 text-xs"
-                    />
-                  )}
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-56 space-y-1.5 p-2">
+            {people.length === 0 ? (
+              <p className="p-1 text-xs text-ink-faint">No members to assign.</p>
+            ) : (
+              <>
+                {/* Only worth the row past a handful of members — see the
+                    header note on why the picker exists at all. */}
+                {people.length > 8 && (
+                  <Input
+                    aria-label="Search members"
+                    placeholder="Search members…"
+                    value={query}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                    }}
+                    className="h-7 text-xs"
+                  />
+                )}
 
-                  {filtered.length === 0 ? (
-                    <p className="p-1 text-xs text-ink-faint">No matches.</p>
-                  ) : (
-                    <ul className="max-h-56 space-y-0.5 overflow-y-auto">
-                      {filtered.map((member) => {
-                        const on = selected.has(member.userId);
-                        return (
-                          <li key={member.userId}>
-                            <button
-                              type="button"
-                              aria-pressed={on}
-                              onClick={() => {
-                                toggle(member.userId);
-                              }}
-                              className={cn(
-                                'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs',
-                                on
-                                  ? 'bg-accent text-accent-ink'
-                                  : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-                              )}
-                            >
-                              <Avatar userId={member.userId} label={member.email} size="xs" />
-                              <span className="truncate">{member.email}</span>
-                              {on && <span className="ml-auto">✓</span>}
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </>
-              )}
-            </Popover.Content>
-          </Popover.Portal>
-        </Popover.Root>
+                {filtered.length === 0 ? (
+                  <p className="p-1 text-xs text-ink-faint">No matches.</p>
+                ) : (
+                  <ul className="max-h-56 space-y-0.5 overflow-y-auto">
+                    {filtered.map((member) => {
+                      const on = selected.has(member.userId);
+                      return (
+                        <li key={member.userId}>
+                          <button
+                            type="button"
+                            aria-pressed={on}
+                            onClick={() => {
+                              toggle(member.userId);
+                            }}
+                            className={cn(
+                              'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs',
+                              on
+                                ? 'bg-accent text-accent-ink'
+                                : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+                            )}
+                          >
+                            <Avatar userId={member.userId} label={member.email} size="xs" />
+                            <span className="truncate">{member.email}</span>
+                            {on && <span className="ml-auto">✓</span>}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </>
+            )}
+          </PopoverContent>
+        </PopoverRoot>
       </div>
     </section>
   );

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
+import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../../lib/trpc.js';
 import { useSession } from '../../lib/session.js';
@@ -50,74 +50,71 @@ export function StepUpDialog({ open, onClose, onConfirmed }: StepUpDialogProps) 
   });
 
   return (
-    <Dialog.Root
+    <ModalRoot
       open={open}
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded border border-line bg-surface-raised p-4 shadow-xl">
-          <Dialog.Title className="text-sm font-semibold text-ink">Confirm it is you</Dialog.Title>
-          <Dialog.Description className="mt-1 text-xs text-ink-muted">
-            This change affects who can reach your organization, so it needs your password again.
-          </Dialog.Description>
+      <ModalContent size="sm" className="p-4">
+        <ModalTitle>Confirm it is you</ModalTitle>
+        <ModalDescription>
+          This change affects who can reach your organization, so it needs your password again.
+        </ModalDescription>
 
-          <form
-            className="mt-4 space-y-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (email !== '' && password !== '') reauthenticate.mutate({ email, password });
-            }}
-          >
-            {/* Shown only when the address is not already known — after a reload
+        <form
+          className="mt-4 space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (email !== '' && password !== '') reauthenticate.mutate({ email, password });
+          }}
+        >
+          {/* Shown only when the address is not already known — after a reload
                 the session is restored from the refresh cookie, which carries no
                 email, and it is not persisted (an address in localStorage tells
                 the next person at a shared machine who was last here). */}
-            {known === null && (
-              <Field label="Email" htmlFor="step-up-email">
-                <Input
-                  id="step-up-email"
-                  type="email"
-                  autoComplete="username"
-                  value={email}
-                  onChange={(event) => {
-                    setEmail(event.target.value);
-                  }}
-                />
-              </Field>
-            )}
-
-            <Field label="Password" htmlFor="step-up-password">
+          {known === null && (
+            <Field label="Email" htmlFor="step-up-email">
               <Input
-                id="step-up-password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
+                id="step-up-email"
+                type="email"
+                autoComplete="username"
+                value={email}
                 onChange={(event) => {
-                  setPassword(event.target.value);
+                  setEmail(event.target.value);
                 }}
               />
             </Field>
+          )}
 
-            {reauthenticate.isError && <ErrorView error={reauthenticate.error} />}
+          <Field label="Password" htmlFor="step-up-password">
+            <Input
+              id="step-up-password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => {
+                setPassword(event.target.value);
+              }}
+            />
+          </Field>
 
-            <div className="flex gap-2">
-              <Button
-                type="submit"
-                variant="primary"
-                disabled={reauthenticate.isPending || password === '' || email === ''}
-              >
-                {reauthenticate.isPending ? 'Confirming…' : 'Confirm'}
-              </Button>
-              <Button variant="ghost" onClick={onClose}>
-                Cancel
-              </Button>
-            </div>
-          </form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+          {reauthenticate.isError && <ErrorView error={reauthenticate.error} />}
+
+          <div className="flex gap-2">
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={reauthenticate.isPending || password === '' || email === ''}
+            >
+              {reauthenticate.isPending ? 'Confirming…' : 'Confirm'}
+            </Button>
+            <Button variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </ModalContent>
+    </ModalRoot>
   );
 }

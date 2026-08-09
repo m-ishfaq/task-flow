@@ -2,7 +2,13 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PageId, PageTemplateId, SpaceId } from '@taskflow/contracts';
 import { useToast } from '../../lib/toast-context.js';
-import { Button, ConfirmButton, FocusOnMountInput } from '../../components/primitives.js';
+import {
+  Button,
+  ConfirmButton,
+  FocusOnMountInput,
+  SkeletonRows,
+} from '../../components/primitives.js';
+import { ErrorView } from '../../components/error-view.js';
 import {
   createTemplate,
   deleteTemplate,
@@ -111,7 +117,14 @@ export function TemplatesPanel({
         </Button>
       )}
 
-      {list.length > 0 && (
+      {/* `templates.data ?? []` above made "still loading" and "no templates
+          exist" the same empty list — ai/phase-6.5-ui-polish.md Wave 1's audit
+          finding. `isPending`/`isError` are checked ahead of the list so a
+          slow fetch doesn't read as "this space has none". */}
+      {templates.isPending && <SkeletonRows rows={2} className="h-6" />}
+      {templates.isError && <ErrorView error={templates.error} title="Templates didn't load" />}
+
+      {!templates.isPending && !templates.isError && list.length > 0 && (
         <ul className="space-y-1">
           {list.map((template) => (
             <li

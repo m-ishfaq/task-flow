@@ -1,6 +1,6 @@
 # Phase 3.5 — Work, to ClickUp-class flow
 
-**Status: APPROVED 2026-07-30. Wave 1 in progress.**
+**Status: COMPLETE 2026-08-05. All three waves shipped.**
 All six open questions in §10 were settled as this document recommended — the decisions are
 recorded there rather than removed, because the reasoning is what a future reader needs.
 

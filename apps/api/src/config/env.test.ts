@@ -131,6 +131,7 @@ describe('parseEnv', () => {
         ...valid,
         WEB_API_ORIGIN: 'http://localhost:3000',
         WEB_REALTIME_ORIGIN: 'http://localhost:3001',
+        WEB_ALLOWED_HOSTS: '.ngrok-free.app,.ngrok.app',
       }),
     ).not.toThrow();
   });

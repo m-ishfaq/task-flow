@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import * as Popover from '@radix-ui/react-popover';
+import { PopoverClose, PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import type { ChannelId, MessageId, UserId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { cn } from '../../lib/cn.js';
@@ -98,18 +98,41 @@ export function ChatPage() {
     void navigate({ to: '/chat', search: { channel: channelId } });
   };
 
+  /* Below `md`, a list and its detail can't share a phone-width screen —
+     this is the same list/detail split Mail apps use, driven entirely by
+     `search.channel` (the URL) rather than a separate "which pane is active"
+     piece of state, so there is only ever one source of truth for what's on
+     screen. At `md` and above both panes are always visible side by side,
+     unchanged from before this wave. */
   return (
     <div className="flex h-full min-h-0">
-      <ChannelListPanel orgId={orgId} selected={search ?? null} onSelect={selectChannel} />
+      <ChannelListPanel
+        orgId={orgId}
+        selected={search ?? null}
+        onSelect={selectChannel}
+        hideWhenChannelOpen={search !== undefined}
+      />
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div
+        className={cn(
+          'min-h-0 min-w-0 flex-1 flex-col md:flex',
+          search === undefined ? 'hidden md:flex' : 'flex',
+        )}
+      >
         {search === undefined ? (
           <Empty
             title="No conversation open"
             description="Pick a channel or direct message on the left, or start a new one."
           />
         ) : (
-          <ChannelPanel key={search} orgId={orgId} channelId={search} />
+          <ChannelPanel
+            key={search}
+            orgId={orgId}
+            channelId={search}
+            onBack={() => {
+              selectChannel(undefined);
+            }}
+          />
         )}
       </div>
     </div>
@@ -124,10 +147,14 @@ function ChannelListPanel({
   orgId,
   selected,
   onSelect,
+  hideWhenChannelOpen,
 }: {
   readonly orgId: string;
   readonly selected: ChannelId | null;
   readonly onSelect: (channelId: ChannelId | undefined) => void;
+  /** Below `md`, hidden once a channel is open — see `ChatPage`'s own comment
+      on why this is a list/detail split rather than two permanent panes. */
+  readonly hideWhenChannelOpen: boolean;
 }) {
   const channels = useQuery({ ...channelsQuery(orgId), enabled: orgId !== '' });
   const list = channels.data ?? [];
@@ -150,7 +177,17 @@ function ChannelListPanel({
   return (
     <aside
       aria-label="Conversations"
-      className="flex w-64 shrink-0 flex-col overflow-y-auto border-r border-line bg-surface-raised"
+      className={cn(
+        'shrink-0 flex-col overflow-y-auto border-r border-line bg-surface-raised md:flex md:w-64',
+        /* Below `md` this pane and the message pane can't both fit — `w-64`
+           alone is already most of a phone's viewport. `hidden`/`flex`
+           rather than `w-0`/`w-64`: a zero-width flex child with overflow
+           content still lays out (and can still be tabbed into) its
+           children, `hidden` actually removes it from the accessibility
+           tree and the tab order. `md:flex md:w-64` above always wins at
+           `md`+ regardless of which of these two applies below it. */
+        hideWhenChannelOpen ? 'hidden' : 'flex w-full',
+      )}
     >
       <div className="flex flex-col gap-0.5 border-b border-line px-1.5 py-1.5">
         <PinnedMessagesButton orgId={orgId} onOpenChannel={onSelect} />
@@ -303,8 +340,8 @@ function PinnedMessagesButton({
   });
 
   return (
-    <Popover.Root>
-      <Popover.Trigger asChild>
+    <PopoverRoot>
+      <PopoverTrigger asChild>
         <button
           type="button"
           aria-label={
@@ -322,50 +359,44 @@ function PinnedMessagesButton({
             </span>
           )}
         </button>
-      </Popover.Trigger>
+      </PopoverTrigger>
 
-      <Popover.Portal>
-        <Popover.Content
-          align="start"
-          sideOffset={6}
-          className="z-50 w-80 overflow-hidden rounded-md border border-line bg-surface shadow-lg"
-        >
-          <header className="border-b border-line px-3 py-2">
-            <h2 className="text-sm font-medium text-ink">Pinned messages</h2>
-          </header>
+      <PopoverContent align="start" sideOffset={6} className="w-80 overflow-hidden">
+        <header className="border-b border-line px-3 py-2">
+          <h2 className="text-sm font-medium text-ink">Pinned messages</h2>
+        </header>
 
-          <div className="max-h-96 overflow-y-auto">
-            {list.length === 0 ? (
-              <div className="p-3">
-                <Empty
-                  title="Nothing pinned yet"
-                  description="Pin a message to find it here later."
+        <div className="max-h-96 overflow-y-auto">
+          {list.length === 0 ? (
+            <div className="p-3">
+              <Empty
+                title="Nothing pinned yet"
+                description="Pin a message to find it here later."
+              />
+            </div>
+          ) : (
+            <ul>
+              {list.map((row) => (
+                <PinnedMessageSidebarRow
+                  key={row.messageId}
+                  row={row}
+                  pending={unpin.isPending}
+                  onOpen={() => {
+                    onOpenChannel(row.channelId as ChannelId);
+                  }}
+                  onUnpin={() => {
+                    unpin.mutate({
+                      channelId: row.channelId as ChannelId,
+                      messageId: row.messageId as MessageId,
+                    });
+                  }}
                 />
-              </div>
-            ) : (
-              <ul>
-                {list.map((row) => (
-                  <PinnedMessageSidebarRow
-                    key={row.messageId}
-                    row={row}
-                    pending={unpin.isPending}
-                    onOpen={() => {
-                      onOpenChannel(row.channelId as ChannelId);
-                    }}
-                    onUnpin={() => {
-                      unpin.mutate({
-                        channelId: row.channelId as ChannelId,
-                        messageId: row.messageId as MessageId,
-                      });
-                    }}
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+              ))}
+            </ul>
+          )}
+        </div>
+      </PopoverContent>
+    </PopoverRoot>
   );
 }
 
@@ -442,8 +473,8 @@ function SavedMessagesButton({
   });
 
   return (
-    <Popover.Root>
-      <Popover.Trigger asChild>
+    <PopoverRoot>
+      <PopoverTrigger asChild>
         <button
           type="button"
           aria-label={list.length > 0 ? `Saved messages, ${String(list.length)}` : 'Saved messages'}
@@ -459,47 +490,41 @@ function SavedMessagesButton({
             </span>
           )}
         </button>
-      </Popover.Trigger>
+      </PopoverTrigger>
 
-      <Popover.Portal>
-        <Popover.Content
-          align="start"
-          sideOffset={6}
-          className="z-50 w-80 overflow-hidden rounded-md border border-line bg-surface shadow-lg"
-        >
-          <header className="border-b border-line px-3 py-2">
-            <h2 className="text-sm font-medium text-ink">Saved messages</h2>
-          </header>
+      <PopoverContent align="start" sideOffset={6} className="w-80 overflow-hidden">
+        <header className="border-b border-line px-3 py-2">
+          <h2 className="text-sm font-medium text-ink">Saved messages</h2>
+        </header>
 
-          <div className="max-h-96 overflow-y-auto">
-            {list.length === 0 ? (
-              <div className="p-3">
-                <Empty
-                  title="Nothing saved yet"
-                  description="Save a message from its menu to find it here later."
+        <div className="max-h-96 overflow-y-auto">
+          {list.length === 0 ? (
+            <div className="p-3">
+              <Empty
+                title="Nothing saved yet"
+                description="Save a message from its menu to find it here later."
+              />
+            </div>
+          ) : (
+            <ul>
+              {list.map((row) => (
+                <SavedMessageRow
+                  key={row.messageId}
+                  row={row}
+                  pending={unsave.isPending}
+                  onOpen={() => {
+                    onOpenChannel(row.channelId as ChannelId);
+                  }}
+                  onUnsave={() => {
+                    unsave.mutate(row.messageId as MessageId);
+                  }}
                 />
-              </div>
-            ) : (
-              <ul>
-                {list.map((row) => (
-                  <SavedMessageRow
-                    key={row.messageId}
-                    row={row}
-                    pending={unsave.isPending}
-                    onOpen={() => {
-                      onOpenChannel(row.channelId as ChannelId);
-                    }}
-                    onUnsave={() => {
-                      unsave.mutate(row.messageId as MessageId);
-                    }}
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+              ))}
+            </ul>
+          )}
+        </div>
+      </PopoverContent>
+    </PopoverRoot>
   );
 }
 
@@ -567,14 +592,14 @@ function NewChannelPopover({
   });
 
   return (
-    <Popover.Root
+    <PopoverRoot
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
         if (!next) setName('');
       }}
     >
-      <Popover.Trigger asChild>
+      <PopoverTrigger asChild>
         <button
           type="button"
           aria-label="New channel"
@@ -582,69 +607,63 @@ function NewChannelPopover({
         >
           +
         </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          align="start"
-          sideOffset={4}
-          className="w-64 space-y-2 rounded border border-line bg-surface-raised p-3 shadow-xl"
-        >
-          <Field label="Name" htmlFor="new-channel-name">
-            <FocusOnMountInput
-              id="new-channel-name"
-              value={name}
-              placeholder="e.g. general"
-              onChange={(event) => {
-                setName(event.target.value);
-              }}
-            />
-          </Field>
-
-          <div className="flex gap-1">
-            <button
-              type="button"
-              onClick={() => {
-                setType('public');
-              }}
-              className={cn(
-                'flex-1 rounded px-2 py-1 text-xs',
-                type === 'public'
-                  ? 'bg-accent text-accent-ink'
-                  : 'text-ink-muted ring-1 ring-line hover:bg-surface-hover',
-              )}
-            >
-              Public
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setType('private');
-              }}
-              className={cn(
-                'flex-1 rounded px-2 py-1 text-xs',
-                type === 'private'
-                  ? 'bg-accent text-accent-ink'
-                  : 'text-ink-muted ring-1 ring-line hover:bg-surface-hover',
-              )}
-            >
-              Private
-            </button>
-          </div>
-
-          <Button
-            size="sm"
-            variant="primary"
-            className="w-full"
-            disabled={name.trim() === '' || create.isPending}
-            onClick={() => {
-              create.mutate();
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 space-y-2 p-3">
+        <Field label="Name" htmlFor="new-channel-name">
+          <FocusOnMountInput
+            id="new-channel-name"
+            value={name}
+            placeholder="e.g. general"
+            onChange={(event) => {
+              setName(event.target.value);
             }}
+          />
+        </Field>
+
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              setType('public');
+            }}
+            className={cn(
+              'flex-1 rounded px-2 py-1 text-xs',
+              type === 'public'
+                ? 'bg-accent text-accent-ink'
+                : 'text-ink-muted ring-1 ring-line hover:bg-surface-hover',
+            )}
           >
-            Create channel
-          </Button>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+            Public
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setType('private');
+            }}
+            className={cn(
+              'flex-1 rounded px-2 py-1 text-xs',
+              type === 'private'
+                ? 'bg-accent text-accent-ink'
+                : 'text-ink-muted ring-1 ring-line hover:bg-surface-hover',
+            )}
+          >
+            Private
+          </button>
+        </div>
+
+        <Button
+          size="sm"
+          variant="primary"
+          className="w-full"
+          disabled={name.trim() === '' || create.isPending}
+          onClick={() => {
+            create.mutate();
+          }}
+        >
+          Create channel
+        </Button>
+      </PopoverContent>
+    </PopoverRoot>
   );
 }
 
@@ -682,14 +701,14 @@ function NewDirectMessagePopover({
       : candidates.filter((member) => member.email.toLowerCase().includes(needle));
 
   return (
-    <Popover.Root
+    <PopoverRoot
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
         if (!next) setQuery('');
       }}
     >
-      <Popover.Trigger asChild>
+      <PopoverTrigger asChild>
         <button
           type="button"
           aria-label="New direct message"
@@ -697,47 +716,41 @@ function NewDirectMessagePopover({
         >
           +
         </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          align="start"
-          sideOffset={4}
-          className="w-64 space-y-1.5 rounded border border-line bg-surface-raised p-2 shadow-xl"
-        >
-          <Input
-            aria-label="Search people"
-            placeholder="Search people…"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-            }}
-            className="h-7 text-xs"
-          />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 space-y-1.5 p-2">
+        <Input
+          aria-label="Search people"
+          placeholder="Search people…"
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+          }}
+          className="h-7 text-xs"
+        />
 
-          {filtered.length === 0 ? (
-            <p className="p-1 text-xs text-ink-faint">No matches.</p>
-          ) : (
-            <ul className="max-h-56 space-y-0.5 overflow-y-auto">
-              {filtered.map((member) => (
-                <li key={member.userId}>
-                  <button
-                    type="button"
-                    disabled={start.isPending}
-                    onClick={() => {
-                      start.mutate(member.userId as UserId);
-                    }}
-                    className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
-                  >
-                    <Avatar userId={member.userId} label={member.email} size="xs" />
-                    <span className="truncate">{member.email}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+        {filtered.length === 0 ? (
+          <p className="p-1 text-xs text-ink-faint">No matches.</p>
+        ) : (
+          <ul className="max-h-56 space-y-0.5 overflow-y-auto">
+            {filtered.map((member) => (
+              <li key={member.userId}>
+                <button
+                  type="button"
+                  disabled={start.isPending}
+                  onClick={() => {
+                    start.mutate(member.userId as UserId);
+                  }}
+                  className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
+                >
+                  <Avatar userId={member.userId} label={member.email} size="xs" />
+                  <span className="truncate">{member.email}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </PopoverContent>
+    </PopoverRoot>
   );
 }
 
@@ -748,9 +761,12 @@ function NewDirectMessagePopover({
 function ChannelPanel({
   orgId,
   channelId,
+  onBack,
 }: {
   readonly orgId: string;
   readonly channelId: ChannelId;
+  /** Below `md`, returns to the channel list — see `ChatPage`'s own comment. */
+  readonly onBack: () => void;
 }) {
   const navigate = useNavigate();
   const { presence } = useChannelRoom(orgId, channelId);
@@ -1142,8 +1158,25 @@ function ChannelPanel({
 
   return (
     <div className="flex min-h-0 flex-1">
-      <div className="flex min-h-0 flex-1 flex-col">
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
+      {/* `min-w-0` is what makes the comment on the details panel below true.
+          A flex item's `min-width` defaults to `auto`, which is its content's
+          min-content width — so without this the message column cannot shrink
+          past its widest unbreakable content and pushes the row wider than the
+          viewport instead, which is the opposite of "the message column
+          shrinks rather than either panel overflowing the page". `min-h-0`
+          already carries the identical argument for the other axis. */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3 sm:px-4">
+          {/* The only way back to the channel list below `md` — see
+              `ChatPage`'s comment on the list/detail split this belongs to. */}
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back to conversations"
+            className="-ml-1.5 shrink-0 rounded p-1.5 text-ink-muted hover:bg-surface-hover hover:text-ink md:hidden"
+          >
+            <span aria-hidden="true">←</span>
+          </button>
           <div className="flex min-w-0 flex-1 flex-col">
             <h2 className="min-w-0 truncate text-sm font-medium text-ink">
               {channel.data === undefined ? '…' : channelTitle(channel.data, viewerId, personOf)}
@@ -1194,7 +1227,12 @@ function ChannelPanel({
           </button>
         </header>
 
-        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        {/* `px-3 sm:px-4`, matched by the header, the typing line and the
+            composer below so their left edges stay on one line. 1rem of gutter
+            on each side of a phone is 8.5% of the viewport spent on nothing,
+            and it comes straight out of the message column — see the bubble's
+            own comment on where a phone's width actually goes. */}
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
           {messages.isLoading ? (
             <div className="space-y-2">
               <Skeleton className="h-10 w-3/4" />
@@ -1264,7 +1302,9 @@ function ChannelPanel({
         </div>
 
         {typingLabel !== null && (
-          <div className="h-5 shrink-0 px-4 text-xs text-ink-faint italic">{typingLabel}</div>
+          <div className="h-5 shrink-0 px-3 text-xs text-ink-faint italic sm:px-4">
+            {typingLabel}
+          </div>
         )}
 
         {/* The composer is hidden when the server says this person cannot post
@@ -1273,13 +1313,13 @@ function ChannelPanel({
             While the channel is still loading `post` is false, which shows the
             notice for a moment rather than a composer that might be refused. */}
         {channel.data !== undefined && !channel.data.capabilities.post ? (
-          <div className="shrink-0 border-t border-line px-4 py-3 text-xs text-ink-faint">
+          <div className="shrink-0 border-t border-line px-3 py-3 text-xs text-ink-faint sm:px-4">
             {channel.data.archivedAt !== null
               ? 'This channel is archived. No new messages can be posted.'
               : 'You have read-only access to this conversation.'}
           </div>
         ) : (
-          <div className="shrink-0 border-t border-line px-4 py-3">
+          <div className="shrink-0 border-t border-line px-3 py-3 sm:px-4">
             {/* Named stages rather than a spinner: "Scanning…" is the one that
               takes a noticeable moment, and saying so is the difference between
               a slow upload and a stuck one. */}
@@ -1767,7 +1807,23 @@ function MessageGroupView({
         )}
       </div>
 
-      <div className={cn('flex min-w-0 max-w-[75%] flex-col gap-0.5', isOwn && 'items-end')}>
+      {/* 85% on a phone, 75% from `sm` up.
+          A single 75% cap reads as a comfortable margin on a desktop and as a
+          cramped column on a phone, because the fixed costs around it do not
+          scale: the avatar gutter (`w-6`) and its gap take 2rem, and the list's
+          own horizontal padding takes another, before the percentage applies to
+          what's left. On a 375px viewport that is 75% of ~19rem rather than 75%
+          of the screen — bubbles a third of the width of the device, wrapping
+          every few words. Widening the cap below `sm` is what every chat
+          product does for the same arithmetic; the point of the cap at all is
+          to keep the opposite edge visible so left and right bubbles stay
+          distinguishable, and 85% still does that. */}
+      <div
+        className={cn(
+          'flex min-w-0 max-w-[85%] flex-col gap-0.5 sm:max-w-[75%]',
+          isOwn && 'items-end',
+        )}
+      >
         {/* Own bubbles skip the name — the side they're on already says who
             sent them — but every group still gets ONE relative timestamp,
             because "who and when" is what a message header is for and only
@@ -1913,7 +1969,19 @@ function MessageBubble({
       <div className={cn('flex items-end gap-1', isOwn && 'flex-row-reverse')}>
         <div
           className={cn(
-            'rounded-2xl px-3 py-1.5',
+            /* `min-w-0` because the bubble is a flex item whose automatic
+               minimum size would otherwise be its widest child, and two of
+               its children are wider than a phone: a link preview card is
+               `max-w-md` (28rem — a cap, but one no small viewport can
+               honour), and an attachment row's filename is `truncate`, which
+               is `white-space: nowrap` and therefore contributes the WHOLE
+               filename to min-content even though it renders as an ellipsis.
+               Both are clipped or capped for their own layout and neither can
+               shrink the box that contains them. Bounding the bubble here
+               instead means every child resolves against the 75% the message
+               column actually has, rather than the bubble growing to fit them
+               and taking the message list's horizontal scrollbar with it. */
+            'min-w-0 rounded-2xl px-3 py-1.5',
             isOwn ? 'bg-accent text-accent-ink' : 'bg-surface-raised text-ink',
             cornerClass,
           )}
@@ -2066,34 +2134,28 @@ function ReactionBar({
 
 function EmojiPickerButton({ onPick }: { readonly onPick: (emoji: string) => void }) {
   return (
-    <Popover.Root>
-      <Popover.Trigger asChild>
+    <PopoverRoot>
+      <PopoverTrigger asChild>
         <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]">
           React
         </Button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          side="top"
-          sideOffset={4}
-          className="flex gap-1 rounded border border-line bg-surface-raised p-1.5 text-base shadow-xl"
-        >
-          {QUICK_REACTIONS.map((emoji) => (
-            <Popover.Close asChild key={emoji}>
-              <button
-                type="button"
-                onClick={() => {
-                  onPick(emoji);
-                }}
-                className="rounded p-1 hover:bg-surface-hover"
-              >
-                {emoji}
-              </button>
-            </Popover.Close>
-          ))}
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+      </PopoverTrigger>
+      <PopoverContent side="top" className="flex gap-1 p-1.5 text-base">
+        {QUICK_REACTIONS.map((emoji) => (
+          <PopoverClose asChild key={emoji}>
+            <button
+              type="button"
+              onClick={() => {
+                onPick(emoji);
+              }}
+              className="rounded p-1 hover:bg-surface-hover"
+            >
+              {emoji}
+            </button>
+          </PopoverClose>
+        ))}
+      </PopoverContent>
+    </PopoverRoot>
   );
 }
 
