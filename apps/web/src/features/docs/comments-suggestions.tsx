@@ -4,7 +4,14 @@ import type { CommentId, PageId, SuggestionId } from '@taskflow/contracts';
 import { useToast } from '../../lib/toast-context.js';
 import { useSession } from '../../lib/session.js';
 import { formatRelative } from '../../lib/format.js';
-import { Badge, Button, ConfirmButton, Empty, Skeleton } from '../../components/primitives.js';
+import {
+  Avatar,
+  Badge,
+  Button,
+  ConfirmButton,
+  Empty,
+  Skeleton,
+} from '../../components/primitives.js';
 import { useMembers } from '../org/use-members.js';
 import { RichTextEditor, RichTextView } from '../work/detail/rich-text-editor.js';
 import { EMPTY_DOCUMENT, isEmptyDocument, type DocumentNode } from '../work/detail/rich-text.js';
@@ -305,6 +312,18 @@ function CommentsTab({
           {list.map((comment) => (
             <li key={comment.commentId} className="rounded border border-line p-2">
               <div className="flex items-center gap-1.5 text-[11px] text-ink-faint">
+                {/* Matches `work/detail/comment-section.tsx`'s own comment
+                    rows — a name with no face next to it here was the one
+                    place Docs quietly diverged from Work's convention for
+                    the identical kind of content (ai/phase-6.5-ui-polish.md
+                    Wave 4). */}
+                {comment.authorId !== null && (
+                  <Avatar
+                    userId={comment.authorId}
+                    label={personOf(comment.authorId).label}
+                    size="xs"
+                  />
+                )}
                 <span className="font-medium text-ink-muted">
                   {comment.authorId === null ? 'Unknown author' : personOf(comment.authorId).label}
                 </span>
@@ -632,6 +651,10 @@ function SuggestionRow({
     <li className="rounded border border-line p-2">
       <div className="flex items-center gap-1.5 text-[11px] text-ink-faint">
         <Badge>{suggestion.kind}</Badge>
+        {/* Same fix as the comment rows above — see that one's comment. */}
+        {suggestion.authorId !== null && (
+          <Avatar userId={suggestion.authorId} label={authorLabel} size="xs" />
+        )}
         <span className="font-medium text-ink-muted">{authorLabel}</span>
         <span>{formatRelative(suggestion.createdAt)}</span>
         {!pending && (

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { BoardId, ProjectId } from '@taskflow/contracts';
 import { useSession } from '../lib/session.js';
 import { pinKey, pinnedProjectIds, useUi } from '../lib/ui-store.js';
+import { useIsDesktop } from '../lib/use-media-query.js';
 import { cn } from '../lib/cn.js';
 import { boardsQuery, projectsQuery, type BoardSummary } from '../features/work/api.js';
 import { Skeleton } from './primitives.js';
@@ -40,8 +41,20 @@ import { Skeleton } from './primitives.js';
 
 export function Sidebar() {
   const orgId = useSession((state) => state.orgId);
-  const open = useUi((state) => state.sidebarOpen);
+  const collapsed = useUi((state) => !state.sidebarOpen);
   const toggleSidebar = useUi((state) => state.toggleSidebar);
+  const isDesktop = useIsDesktop();
+
+  /* `sidebarOpen` is a DESKTOP preference — collapse to a rail to reclaim
+     width. Below `md` this component is rendered inside Shell's off-canvas
+     drawer, which is either fully on screen or fully off it; there is no
+     "rail" state for a drawer, and respecting a collapsed desktop preference
+     here would mean opening the mobile drawer sometimes shows a 3rem sliver
+     with none of the tree that's the entire reason to open it. So `open`
+     below is desktop-collapse-aware only when `isDesktop` is true, and always
+     "fully expanded" otherwise — the drawer's own open/closed state is
+     handled by Shell's `translate-x` and `inert`, not by this component. */
+  const open = isDesktop ? !collapsed : true;
 
   const projects = useQuery({ ...projectsQuery(orgId ?? ''), enabled: orgId !== null });
 
@@ -51,8 +64,8 @@ export function Sidebar() {
     <aside
       aria-label="Workspace"
       className={cn(
-        'flex shrink-0 flex-col border-r border-line bg-surface-raised transition-[width]',
-        open ? 'w-60' : 'w-12',
+        'flex shrink-0 flex-col border-r border-line h-[94%] bg-surface-raised transition-[width]',
+        open ? 'w-72 md:w-60' : 'w-12',
       )}
     >
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line px-2">
@@ -61,15 +74,21 @@ export function Sidebar() {
             TaskFlow
           </Link>
         )}
-        <button
-          type="button"
-          onClick={toggleSidebar}
-          aria-label={open ? 'Collapse sidebar' : 'Expand sidebar'}
-          aria-expanded={open}
-          className="ml-auto rounded px-1.5 py-1 text-xs text-ink-faint hover:bg-surface-hover hover:text-ink"
-        >
-          {open ? '«' : '»'}
-        </button>
+        {/* The collapse toggle only makes sense as a desktop rail control —
+            below `md` the drawer's own backdrop and header hamburger are the
+            close affordances, and a second, differently-behaved toggle here
+            would be confusing next to them. */}
+        {isDesktop && (
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            aria-label={open ? 'Collapse sidebar' : 'Expand sidebar'}
+            aria-expanded={open}
+            className="ml-auto rounded px-1.5 py-1 text-xs text-ink-faint hover:bg-surface-hover hover:text-ink"
+          >
+            {open ? '«' : '»'}
+          </button>
+        )}
       </div>
 
       {/* Collapsed is a rail, not a narrow tree. Truncating project names to two

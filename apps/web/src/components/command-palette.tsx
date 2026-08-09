@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
+import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { ProjectId } from '@taskflow/contracts';
@@ -152,7 +152,7 @@ function PaletteDialog({
   };
 
   return (
-    <Dialog.Root
+    <ModalRoot
       open={open}
       onOpenChange={(next) => {
         onOpenChange(next);
@@ -166,74 +166,71 @@ function PaletteDialog({
         }
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50" />
-        <Dialog.Content className="fixed top-24 left-1/2 w-full max-w-lg -translate-x-1/2 overflow-hidden rounded-card border border-line bg-surface-raised shadow-xl">
-          <Dialog.Title className="sr-only">Command palette</Dialog.Title>
-          <Dialog.Description className="sr-only">
-            Jump to a page or project, or run an action.
-          </Dialog.Description>
+      <ModalContent size="lg" placement="top">
+        <ModalTitle className="sr-only">Command palette</ModalTitle>
+        <ModalDescription className="sr-only">
+          Jump to a page or project, or run an action.
+        </ModalDescription>
 
-          {/* No `autoFocus` — Radix's `Dialog.Content` already moves focus to
-              the first focusable descendant when it opens, which is this
-              input, so a second, ESLint-flagged focus mechanism would be
-              redundant rather than additive. */}
-          <input
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              // A fresh search invalidates whatever was highlighted — a
-              // direct consequence of the keystroke, not a derived effect.
-              setActive(0);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'ArrowDown') {
-                event.preventDefault();
-                setActive((index) => Math.min(index + 1, filtered.length - 1));
-              } else if (event.key === 'ArrowUp') {
-                event.preventDefault();
-                setActive((index) => Math.max(index - 1, 0));
-              } else if (event.key === 'Enter') {
-                event.preventDefault();
-                runAt(active);
-              }
-            }}
-            placeholder="Jump to a project, or run an action…"
-            aria-label="Command palette"
-            className="w-full border-b border-line bg-transparent px-4 py-3 text-sm text-ink outline-none placeholder:text-ink-faint"
-          />
+        {/* No `autoFocus` — Radix's `Dialog.Content` already moves focus to
+            the first focusable descendant when it opens, which is this
+            input, so a second, ESLint-flagged focus mechanism would be
+            redundant rather than additive. */}
+        <input
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            // A fresh search invalidates whatever was highlighted — a
+            // direct consequence of the keystroke, not a derived effect.
+            setActive(0);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowDown') {
+              event.preventDefault();
+              setActive((index) => Math.min(index + 1, filtered.length - 1));
+            } else if (event.key === 'ArrowUp') {
+              event.preventDefault();
+              setActive((index) => Math.max(index - 1, 0));
+            } else if (event.key === 'Enter') {
+              event.preventDefault();
+              runAt(active);
+            }
+          }}
+          placeholder="Jump to a project, or run an action…"
+          aria-label="Command palette"
+          className="w-full border-b border-line bg-transparent px-4 py-3 text-sm text-ink outline-none placeholder:text-ink-faint"
+        />
 
-          <ul role="listbox" className="max-h-80 overflow-y-auto p-1">
-            {filtered.length === 0 ? (
-              <li className="px-3 py-6 text-center text-xs text-ink-faint">No matches</li>
-            ) : (
-              filtered.map((command, index) => (
-                <li key={command.id}>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={index === active}
-                    onMouseEnter={() => {
-                      setActive(index);
-                    }}
-                    onClick={() => {
-                      runAt(index);
-                    }}
-                    className={cn(
-                      'flex w-full items-center justify-between gap-2 rounded px-3 py-2 text-left text-sm',
-                      index === active ? 'bg-surface-hover text-ink' : 'text-ink-muted',
-                    )}
-                  >
-                    <span className="truncate">{command.label}</span>
-                    <span className="shrink-0 text-[11px] text-ink-faint">{command.hint}</span>
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        <ul role="listbox" className="max-h-80 overflow-y-auto p-1">
+          {filtered.length === 0 ? (
+            <li className="px-3 py-6 text-center text-xs text-ink-faint">No matches</li>
+          ) : (
+            filtered.map((command, index) => (
+              <li key={command.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={index === active}
+                  onMouseEnter={() => {
+                    setActive(index);
+                  }}
+                  onClick={() => {
+                    runAt(index);
+                  }}
+                  className={cn(
+                    'flex w-full items-center justify-between gap-2 rounded px-3 py-2 text-left text-sm',
+                    index === active ? 'bg-surface-hover text-ink' : 'text-ink-muted',
+                  )}
+                >
+                  <span className="truncate">{command.label}</span>
+                  <span className="shrink-0 text-[11px] text-ink-faint">{command.hint}</span>
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      </ModalContent>
+    </ModalRoot>
   );
 }
 
@@ -276,36 +273,33 @@ function ShortcutsDialog({
   readonly onOpenChange: (open: boolean) => void;
 }) {
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-card border border-line bg-surface-raised p-4 shadow-xl">
-          <Dialog.Title className="text-sm font-semibold text-ink">Keyboard shortcuts</Dialog.Title>
-          <Dialog.Description className="sr-only">
-            Every shortcut this app understands.
-          </Dialog.Description>
+    <ModalRoot open={open} onOpenChange={onOpenChange}>
+      <ModalContent size="md" className="p-4">
+        <ModalTitle>Keyboard shortcuts</ModalTitle>
+        <ModalDescription className="sr-only">
+          Every shortcut this app understands.
+        </ModalDescription>
 
-          <div className="mt-3 space-y-4">
-            {SHORTCUT_GROUPS.map((group) => (
-              <div key={group.title}>
-                <p className="mb-1 text-[11px] font-semibold tracking-wide text-ink-faint uppercase">
-                  {group.title}
-                </p>
-                <ul className="space-y-1">
-                  {group.items.map((item) => (
-                    <li key={item.keys} className="flex items-center justify-between text-sm">
-                      <span className="text-ink-muted">{item.description}</span>
-                      <kbd className="rounded border border-line bg-surface-sunken px-1.5 py-0.5 font-mono text-[11px] text-ink">
-                        {item.keys}
-                      </kbd>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        <div className="mt-3 space-y-4">
+          {SHORTCUT_GROUPS.map((group) => (
+            <div key={group.title}>
+              <p className="mb-1 text-[11px] font-semibold tracking-wide text-ink-faint uppercase">
+                {group.title}
+              </p>
+              <ul className="space-y-1">
+                {group.items.map((item) => (
+                  <li key={item.keys} className="flex items-center justify-between text-sm">
+                    <span className="text-ink-muted">{item.description}</span>
+                    <kbd className="rounded border border-line bg-surface-sunken px-1.5 py-0.5 font-mono text-[11px] text-ink">
+                      {item.keys}
+                    </kbd>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </ModalContent>
+    </ModalRoot>
   );
 }

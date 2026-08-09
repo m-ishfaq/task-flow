@@ -1,5 +1,12 @@
 import { useState } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
+import {
+  ModalClose,
+  ModalContent,
+  ModalDescription,
+  ModalRoot,
+  ModalTitle,
+  ModalTrigger,
+} from '@taskflow/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BoardId } from '@taskflow/contracts';
 import {
@@ -48,29 +55,26 @@ export function ShareBoardDialog({ orgId, boardId }: ShareBoardProps) {
   const [open, setOpen] = useState(false);
 
   return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Trigger asChild>
+    <ModalRoot open={open} onOpenChange={setOpen}>
+      <ModalTrigger asChild>
         <Button size="sm">Share</Button>
-      </Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 max-h-[85vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded border border-line bg-surface-raised p-4 shadow-xl">
-          <Dialog.Title className="text-sm font-semibold text-ink">Share this board</Dialog.Title>
-          <Dialog.Description className="mt-1 text-xs text-ink-muted">
-            Grants apply to this board alone, on top of whatever the person&rsquo;s org role already
-            allows.
-          </Dialog.Description>
+      </ModalTrigger>
+      <ModalContent size="lg" className="max-h-[85vh] overflow-y-auto p-4">
+        <ModalTitle>Share this board</ModalTitle>
+        <ModalDescription>
+          Grants apply to this board alone, on top of whatever the person&rsquo;s org role already
+          allows.
+        </ModalDescription>
 
-          <ShareBody orgId={orgId} boardId={boardId} />
+        <ShareBody orgId={orgId} boardId={boardId} />
 
-          <div className="mt-4 flex justify-end">
-            <Dialog.Close asChild>
-              <Button>Done</Button>
-            </Dialog.Close>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        <div className="mt-4 flex justify-end">
+          <ModalClose asChild>
+            <Button>Done</Button>
+          </ModalClose>
+        </div>
+      </ModalContent>
+    </ModalRoot>
   );
 }
 

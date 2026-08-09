@@ -60,7 +60,7 @@ export default defineConfig({
      normal pipeline, so a change in packages/filter is picked up by HMR instead
      of being served from a stale optimized bundle. */
   optimizeDeps: {
-    exclude: ['@taskflow/contracts', '@taskflow/filter', '@taskflow/policy'],
+    exclude: ['@taskflow/contracts', '@taskflow/filter', '@taskflow/policy', '@taskflow/ui'],
   },
 
   server: {

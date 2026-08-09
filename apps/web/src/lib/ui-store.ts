@@ -115,6 +115,24 @@ interface UiState {
   readonly commandPaletteOpen: boolean;
   /** The `?` keyboard-shortcuts overlay, discoverable from the same key everywhere. */
   readonly shortcutsOpen: boolean;
+  /**
+   * The sidebar as an off-canvas drawer, below the `md` breakpoint
+   * (ai/phase-6.5-ui-polish.md Wave 6).
+   *
+   * Deliberately a SEPARATE flag from `sidebarOpen` rather than the same one
+   * reused at a different breakpoint. `sidebarOpen` means "rail or full width"
+   * on a screen where the sidebar is always present and takes up permanent
+   * layout space; below `md` there is no room for even a rail alongside
+   * content, so the sidebar is either a full-width drawer covering the page or
+   * entirely off-screen. Those are two different questions, and collapsing
+   * them into one boolean would make toggling one break the other the next
+   * time the viewport crosses the breakpoint.
+   *
+   * Not persisted, unlike `sidebarOpen`'s cousins in this file — a drawer that
+   * remembered being open across a reload would cover the page on first paint
+   * on a phone, which is a worse default than always starting closed.
+   */
+  readonly mobileNavOpen: boolean;
 }
 
 interface UiActions {
@@ -126,6 +144,8 @@ interface UiActions {
   readonly togglePinnedBoard: (projectId: string, boardId: string) => void;
   readonly setCommandPaletteOpen: (open: boolean) => void;
   readonly setShortcutsOpen: (open: boolean) => void;
+  readonly toggleMobileNav: () => void;
+  readonly closeMobileNav: () => void;
 }
 
 export const useUi = create<UiState & UiActions>((set) => ({
@@ -137,6 +157,7 @@ export const useUi = create<UiState & UiActions>((set) => ({
   pinnedBoards: readIds(PINNED_KEY),
   commandPaletteOpen: false,
   shortcutsOpen: false,
+  mobileNavOpen: false,
 
   toggleSidebar: () => {
     set((state) => ({ sidebarOpen: !state.sidebarOpen }));
@@ -172,5 +193,12 @@ export const useUi = create<UiState & UiActions>((set) => ({
   },
   setShortcutsOpen: (shortcutsOpen) => {
     set({ shortcutsOpen });
+  },
+
+  toggleMobileNav: () => {
+    set((state) => ({ mobileNavOpen: !state.mobileNavOpen }));
+  },
+  closeMobileNav: () => {
+    set({ mobileNavOpen: false });
   },
 }));
