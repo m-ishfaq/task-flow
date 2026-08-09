@@ -6,7 +6,14 @@ import { keys } from '../../lib/query.js';
 import { wire } from '../../lib/wire.js';
 import { formatDate, formatDateTime } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
-import { Badge, Button, ConfirmButton, Empty, SkeletonRows, Spinner } from '../../components/primitives.js';
+import {
+  Badge,
+  Button,
+  ConfirmButton,
+  Empty,
+  SkeletonRows,
+  Spinner,
+} from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { useStepUp } from '../auth/use-step-up.js';
 import { StepUpDialog } from '../auth/step-up.js';
@@ -60,8 +67,8 @@ export function PlatformAdminPage() {
       <header>
         <h1 className="text-lg font-semibold text-ink">Platform administration</h1>
         <p className="mt-1 text-sm text-ink-muted">
-          Every organization, user, and release flag. There is no organization
-          selected here on purpose — this console spans them all.
+          Every organization, user, and release flag. There is no organization selected here on
+          purpose — this console spans them all.
         </p>
       </header>
 
@@ -157,8 +164,7 @@ function StepUpGate({ onStepUp }: { readonly onStepUp: () => void }) {
   return (
     <div className="flex flex-col items-start gap-3 rounded-lg border border-line bg-surface-raised p-4">
       <p className="text-sm text-ink">
-        Platform administration needs a fresh sign-in. Your last one is more
-        than five minutes old.
+        Platform administration needs a fresh sign-in. Your last one is more than five minutes old.
       </p>
       <Button variant="primary" onClick={onStepUp}>
         Re-authenticate
@@ -255,15 +261,16 @@ function OrgsTab({
                       >
                         Reactivate
                       </Button>
-                    ) : (      <ConfirmButton
-        size="sm"
-        label="Suspend"
-        confirmLabel={`Suspend ${org.name}?`}
-        disabled={suspend.isPending}
-        onConfirm={() => {
-          suspend.mutate(org.orgId as OrgId);
-        }}
-      />
+                    ) : (
+                      <ConfirmButton
+                        size="sm"
+                        label="Suspend"
+                        confirmLabel={`Suspend ${org.name}?`}
+                        disabled={suspend.isPending}
+                        onConfirm={() => {
+                          suspend.mutate(org.orgId as OrgId);
+                        }}
+                      />
                     )}
                   </td>
                 </tr>
@@ -430,8 +437,8 @@ function FlagsTab({
   return (
     <section aria-label="Feature flags">
       <p className="text-xs text-ink-muted">
-        Global overrides — the table the evaluator never had. A toggle here
-        changes what every organization resolves until the override is reset.
+        Global overrides — the table the evaluator never had. A toggle here changes what every
+        organization resolves until the override is reset.
       </p>
 
       {flags.isPending && <SkeletonRows rows={5} className="*:h-16" />}
@@ -457,8 +464,7 @@ function FlagsTab({
                     {flag.source === 'override' ? (
                       <>
                         overridden — default was {String(flag.defaultValue)}
-                        {flag.overrideSetAt !== null &&
-                          `, set ${formatDate(flag.overrideSetAt)}`}
+                        {flag.overrideSetAt !== null && `, set ${formatDate(flag.overrideSetAt)}`}
                       </>
                     ) : (
                       'using the registry default'
@@ -523,8 +529,7 @@ function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
 
   const entries = useQuery({
     queryKey: keys.platformAudit(before),
-    queryFn: async () =>
-      wire(await api.platformAdmin.audit.list.query({ limit: 50, before })),
+    queryFn: async () => wire(await api.platformAdmin.audit.list.query({ limit: 50, before })),
   });
 
   if (errorCodeOf(entries.error) === 'STEP_UP_REQUIRED') return <StepUpGate onStepUp={onStepUp} />;
@@ -532,12 +537,14 @@ function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
   return (
     <section aria-label="Operator audit">
       <p className="text-xs text-ink-muted">
-        Every platform-admin call lands in a global hash chain — the
-        accountability record of this tier itself. Reading it is recorded too.
+        Every platform-admin call lands in a global hash chain — the accountability record of this
+        tier itself. Reading it is recorded too.
       </p>
 
       {entries.isPending && <Spinner />}
-      {entries.isError && <ErrorView error={entries.error} title="Could not load the operator audit" />}
+      {entries.isError && (
+        <ErrorView error={entries.error} title="Could not load the operator audit" />
+      )}
 
       {entries.data !== undefined &&
         (entries.data.entries.length === 0 ? (

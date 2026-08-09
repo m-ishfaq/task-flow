@@ -114,10 +114,9 @@ export class TwilioTelephonyProvider implements TelephonyProvider {
   }
 
   async setSubaccountStatus(sid: string, status: SubaccountStatus): Promise<void> {
-    await this.#post(
-      `${this.#api}/2010-04-01/Accounts/${encodeURIComponent(sid)}.json`,
-      { Status: status },
-    );
+    await this.#post(`${this.#api}/2010-04-01/Accounts/${encodeURIComponent(sid)}.json`, {
+      Status: status,
+    });
   }
 
   /* --- Numbers ----------------------------------------------------------- */
@@ -261,9 +260,7 @@ export class TwilioTelephonyProvider implements TelephonyProvider {
     const body = await this.#get<{
       country_code: string | null;
       line_type_intelligence?: { type?: string | null } | null;
-    }>(
-      `${this.#lookups}/v2/PhoneNumbers/${encodeURIComponent(phoneNumber)}`,
-    );
+    }>(`${this.#lookups}/v2/PhoneNumbers/${encodeURIComponent(phoneNumber)}`);
 
     return {
       phoneNumber,

@@ -340,13 +340,13 @@ function Breadcrumbs() {
                 ? 'Audit log'
                 : pathname.startsWith('/settings')
                   ? 'Settings'
-              : pathname.startsWith('/admin/permissions')
-                ? 'Permissions'
-                : pathname.startsWith('/platform-admin')
-                  ? 'Platform admin'
-                  : pathname.startsWith('/orgs')
-                      ? 'Organizations'
-                      : 'TaskFlow';
+                  : pathname.startsWith('/admin/permissions')
+                    ? 'Permissions'
+                    : pathname.startsWith('/platform-admin')
+                      ? 'Platform admin'
+                      : pathname.startsWith('/orgs')
+                        ? 'Organizations'
+                        : 'TaskFlow';
 
   /* `min-w-0` is load-bearing, not decorative: a flex item's default
      min-width is `auto`, which means it will NOT shrink below its own content
