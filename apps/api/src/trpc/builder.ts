@@ -465,7 +465,7 @@ export function platformRoute(meta: { platformReason: string }) {
       platformReason: meta.platformReason,
       stepUp: true,
     })
-    .use(async ({ ctx, next, meta: routeMeta, path, input }) => {
+    .use(async ({ ctx, next, meta: routeMeta, path, getRawInput }) => {
       const authed = requireAuth(ctx, routeMeta);
 
       if (!(await isPlatformOperator(authed.principal.userId))) {
@@ -487,12 +487,26 @@ export function platformRoute(meta: { platformReason: string }) {
          action its name claims — logging it would misrepresent what
          happened. `action` strips the `platformAdmin.` prefix every path
          here shares, matching the short, stable strings migration 0032's
-         own header documents ('orgs.suspend', 'orgs.list', ...). */
+         own header documents ('orgs.suspend', 'orgs.list', ...).
+         `getRawInput()`, not the destructured `input`: this middleware is
+         `.use()`-attached to the SHARED `platformRoute()` builder, which
+         every route's own `.input(schema)` is chained onto AFTERWARDS —
+         trpc appends each builder call to one flat middleware list in call
+         order, so the input-parsing middleware runs AFTER this one and the
+         destructured `input` here is always the procedure's pre-parse
+         `undefined`, for every route, always. That is not a shape issue
+         `inferOperatorTarget`'s guards would catch — it silently returned
+         `null` for every call. `getRawInput()` is the same accessor the
+         input middleware itself calls to obtain the value it parses, so it
+         works regardless of where in the chain this middleware sits, and by
+         the time `result.ok` is true the call already passed its `.strict()`
+         schema — so the raw and parsed shapes agree on every field
+         `inferOperatorTarget` looks at. */
       if (result.ok) {
         await appendOperatorAuditEntry({
           operatorId: authed.principal.userId,
           action: path.startsWith('platformAdmin.') ? path.slice('platformAdmin.'.length) : path,
-          target: inferOperatorTarget(input),
+          target: inferOperatorTarget(await getRawInput()),
         });
       }
 
