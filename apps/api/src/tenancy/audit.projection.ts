@@ -81,6 +81,13 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'grant.created': { type: 'member', key: 'subjectId' },
   'grant.revoked': { type: 'member', key: 'subjectId' },
 
+  /* Platform admin (Phase 12 §3.6, §4). Both resolve to the ORG the operator
+     acted on — the same `org.created`/`org.updated` mapping above — so a
+     suspension appears in that org's own audit history exactly like any
+     other action nobody in the org itself performed. */
+  'platform.org_suspended': { type: 'org', key: 'orgId' },
+  'platform.org_reactivated': { type: 'org', key: 'orgId' },
+
   /* Work (Phase 3). Lists resolve to their BOARD, matching the authorization
      model: there is no `list` resource type, because a list is not
      independently grantable and no tuple can point at one. An audit entry
@@ -262,6 +269,18 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
 export const NEVER_AUDITED: ReadonlySet<string> = new Set([
   'channel.read_advanced',
   'page.content_updated',
+  /* Phase 12 §3.8. Different reason than the two above, same outcome: these
+     never reach THIS consumer at all — they publish through the system
+     `EventBus` (`SYSTEM_ORG`'s own mechanism, apps/api/src/identity/
+     identity.service.ts), not `outboxWriter.append`, because
+     `platform.flag_overrides` is global and has no target org for the
+     outbox's `NOT NULL REFERENCES identity.orgs` to point at. Listed here
+     anyway so the registered-event accounting test has a real answer rather
+     than reading as an oversight; `platform.operator_audit_log` (written by
+     platform-admin's router wrapper) is this action's actual accountability
+     record. */
+  'platform.flag_override_set',
+  'platform.flag_override_cleared',
 ]);
 
 interface Resource {

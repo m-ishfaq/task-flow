@@ -345,6 +345,13 @@ describe('the real application router', () => {
          no user id in its input: the subject is always the caller. */
       'people.profile.get',
       'people.profile.update',
+      /* Phase 12 — the one platform-admin route that is NOT `platformRoute`
+         (`platform-admin/router.ts`'s own comment has the full reasoning):
+         every signed-in user calls this to learn whether to render a
+         `/platform-admin` link, and routing it through the step-up every
+         real platformAdmin.* action requires would make every ordinary
+         member re-authenticate just to be told "no". */
+      'platformAdmin.self.check',
       /* The two tenancy routes a caller with NO membership must still reach.
          Neither can be permission-bearing without a contradiction: a user who
          belongs to no organization has no role, so requiring an org permission

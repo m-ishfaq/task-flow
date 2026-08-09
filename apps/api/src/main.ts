@@ -3,6 +3,7 @@ import {
   initializeAuditDatabase,
   initializeBacklinksDatabase,
   initializeDatabase,
+  initializePlatformAdminDatabase,
   initializeSweepDatabase,
 } from '@taskflow/db';
 import { createLogger } from '@taskflow/observability';
@@ -73,6 +74,21 @@ if (env.DATABASE_NOTIFICATION_SWEEP_URL !== undefined) {
   initializeSweepDatabase({
     url: env.DATABASE_NOTIFICATION_SWEEP_URL,
     applicationName: 'taskflow-notification-sweep',
+  });
+}
+
+/**
+ * The platform-operator console's connection, on its own role and pool
+ * (Phase 12 §3.7). Same optionality reasoning as every other cross-tenant
+ * pool above: `taskflow_platform_admin` reaches `identity.orgs`/
+ * `identity.memberships` across every tenant and nothing else, so an
+ * instance without this variable serves ordinary requests and simply has no
+ * platform-admin console to offer.
+ */
+if (env.DATABASE_PLATFORM_ADMIN_URL !== undefined) {
+  initializePlatformAdminDatabase({
+    url: env.DATABASE_PLATFORM_ADMIN_URL,
+    applicationName: 'taskflow-platform-admin',
   });
 }
 

@@ -134,8 +134,10 @@ export {
   lte,
   gt,
   gte,
+  ilike,
   desc,
   asc,
+  count,
   sql,
 } from 'drizzle-orm';
 

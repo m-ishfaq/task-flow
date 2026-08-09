@@ -2,6 +2,8 @@ import { TRPCError, initTRPC } from '@trpc/server';
 import { ZodError } from 'zod';
 import { AppError, isAppError, type ApiError } from '@taskflow/contracts';
 import { couldGrant, type Permission } from '@taskflow/policy';
+import { appendOperatorAuditEntry } from '@taskflow/db';
+import { isPlatformOperator } from '../platform-admin/self.service.js';
 import {
   subjectOf,
   type AuthenticatedContext,
@@ -66,6 +68,13 @@ export interface RouteMeta {
    * null, and the reason field is what tells them apart in the manifest.
    */
   readonly memberReason?: string;
+  /**
+   * Why this route is a platform-operator route. Required by `platformRoute`
+   * (Phase 12 §3.2). Distinguishes a cross-tenant operator route — no org
+   * resolved at all, `isPlatformOperator` gated, unconditionally step-up —
+   * from every other kind that also leaves `permission` null.
+   */
+  readonly platformReason?: string;
   /** Requires a recent credential proof, e.g. role changes, recording export (§8.1). */
   readonly stepUp?: boolean;
 }
@@ -411,6 +420,107 @@ export function memberRoute(meta: { memberReason: string; stepUp?: boolean }) {
     .use(async ({ ctx, next, meta: routeMeta }) =>
       next({ ctx: requireOrg(requireAuth(ctx, routeMeta)) }),
     );
+}
+
+/**
+ * A cross-tenant platform-operator route (Phase 12 §3.2).
+ *
+ * ⚠ HUMAN REVIEW SURFACE (§2.2) — a new privilege-escalation surface of the
+ * same shape as `apps/api/src/identity` and `apps/collab/src/auth.ts`.
+ *
+ * Does NOT call `requireOrg` — a platform-admin request carries no
+ * `x-taskflow-org` header and needs none; its authority is relative to no
+ * org at all, the same structural fact `packages/policy/src/permissions.ts`
+ * makes about `RESOURCE_TYPES` never gaining a `'platform'` entry.
+ *
+ * Every route built with this requires step-up UNCONDITIONALLY, no
+ * per-route opt-out — unlike `route()`, where `stepUp` is an explicit flag
+ * because most permissions do not warrant it, everything reachable through
+ * this builder is cross-tenant by definition, and PLAN.md §8.1 already
+ * treats "acting across tenant boundaries" at the same severity as the
+ * operations already on the step-up list.
+ *
+ * `isPlatformOperator`, not `couldGrant`/`can()` — a platform operator's
+ * authority does not come from a membership row or a relationship tuple, so
+ * the policy engine has nothing to ask. A `false` here is an honest
+ * `FORBIDDEN`, the same shape every other permission boundary in this
+ * codebase already returns, never a disguised 404 (§8.2's own "the UI never
+ * re-derives authorization" holds here exactly as everywhere else — the
+ * `/platform-admin` pages render for anyone who reaches the URL and let the
+ * server's answer decide what's visible).
+ *
+ * `platformAdmin.self.check` deliberately does NOT go through this builder
+ * — see that route's own comment in `platform-admin/router.ts` for why
+ * routing it through step-up would create a real, avoidable dead-end for
+ * every ordinary member's account menu.
+ */
+export function platformRoute(meta: { platformReason: string }) {
+  if (meta.platformReason.trim().length === 0) {
+    throw new Error('platformRoute requires a non-empty reason.');
+  }
+
+  return procedure
+    .meta({
+      permission: null,
+      platformReason: meta.platformReason,
+      stepUp: true,
+    })
+    .use(async ({ ctx, next, meta: routeMeta, path, input }) => {
+      const authed = requireAuth(ctx, routeMeta);
+
+      if (!(await isPlatformOperator(authed.principal.userId))) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          cause: new AppError('FORBIDDEN', 'You do not have permission to perform this action.'),
+        });
+      }
+
+      const result = await next({ ctx: authed });
+
+      /* "Every platformAdmin.* call, read or write, produces a row" (§4) —
+         done HERE, once, rather than repeated in every service method or
+         router handler, so a new route is covered by construction and
+         cannot forget it. Written only on SUCCESS: a caller who is not an
+         operator never reaches this line (refused above), and a
+         successfully-authorized call that then fails its own business logic
+         (a CONFLICT on an already-suspended org, say) did not perform the
+         action its name claims — logging it would misrepresent what
+         happened. `action` strips the `platformAdmin.` prefix every path
+         here shares, matching the short, stable strings migration 0032's
+         own header documents ('orgs.suspend', 'orgs.list', ...). */
+      if (result.ok) {
+        await appendOperatorAuditEntry({
+          operatorId: authed.principal.userId,
+          action: path.startsWith('platformAdmin.') ? path.slice('platformAdmin.'.length) : path,
+          target: inferOperatorTarget(input),
+        });
+      }
+
+      return result;
+    });
+}
+
+/**
+ * Best-effort target extraction for the operator-log entry, from whatever
+ * shape a route's own Zod input already validated.
+ *
+ * Deliberately narrow — a fixed, known set of id-shaped fields, checked in a
+ * fixed order so a route naming more than one (there are none today) is
+ * still deterministic — rather than dumping the whole input, which could
+ * carry a `note` or a flag `value` nobody asked to have re-logged as a
+ * "target". `null` for a route with no such field (a bare list call) is a
+ * real, expected answer, not a failure to infer one.
+ */
+function inferOperatorTarget(input: unknown): Record<string, unknown> | null {
+  if (typeof input !== 'object' || input === null) return null;
+  const record = input as Record<string, unknown>;
+
+  for (const key of ['orgId', 'toUserId', 'userId', 'flagName'] as const) {
+    const value = record[key];
+    if (typeof value === 'string') return { [key === 'toUserId' ? 'userId' : key]: value };
+  }
+
+  return null;
 }
 
 /** Shared gate: authentication, then step-up freshness if the route asks for it. */

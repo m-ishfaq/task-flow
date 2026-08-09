@@ -307,23 +307,41 @@ export const security = [
       '@typescript-eslint/no-non-null-assertion': 'off',
     },
   },
-  /* The identity module is the one consumer of withGlobalScope outside the data
-     layer, and the reason it exists: registration, login, verification links and
-     refresh exchange all happen before any organization is known. Everything
-     else here — raw SQL, role comparisons, Math.random — stays banned.
+  /* THREE consumers of withGlobalScope outside the data layer, not one — this
+     comment used to claim identity was the only one, which was already wrong
+     the moment Phase 11.5 added the second and stayed wrong until Phase 12
+     added the third; corrected here rather than left for a later reader to
+     notice the drift. Everything else in every one of these paths — raw SQL,
+     role comparisons, Math.random — stays banned; only the globalScope ban
+     lifts.
 
-     Phase 11.5 adds the people module to the exemption for the IDENTICAL
-     structural reason: `people.profiles` is a non-tenant table (no org_id, no
-     RLS — migration 0030's header) whose routes must answer with no org
+     apps/api/src/identity: registration, login, verification links and
+     refresh exchange all happen before any organization is known.
+
+     apps/api/src/people: `people.profiles` is a non-tenant table (no org_id,
+     no RLS — migration 0030's header) whose routes must answer with no org
      selected, the account page. `people.directory.service.ts` and the org-
      scoped membership/reporting services use withOrgScope like any tenant
-     code; only profile.service.ts reads/writes the global table. This
-     exemption is what the guardrail-selftest's computed-config check on
-     apps/api/src/people/profile.service.ts proves stays NARROW — every other
-     ban still fires there. */
+     code; only profile.service.ts reads/writes the global table.
+
+     apps/api/src/platform-admin (Phase 12 §3.1, §3.6): a platform operator's
+     authority is relative to no org at all, so `platform.operators` (no
+     org_id, no RLS) and reading `identity.users` for the operator console's
+     user directory both need the identical "no tenant is known" scope —
+     `identity.users` for the same reason login can look up any account by
+     email. Reaching identity.orgs/identity.memberships is a DIFFERENT
+     mechanism (withPlatformAdminScope, a real cross-tenant role with its own
+     RLS policies, §3.7) and calls withOrgScope-shaped code, not
+     withGlobalScope — that distinction is why this exemption does not need
+     to be any wider than it is.
+
+     This exemption is what the guardrail-selftest's computed-config checks on
+     apps/api/src/people/profile.service.ts and
+     apps/api/src/platform-admin/self.service.ts prove stays NARROW — every
+     other ban still fires in both paths. */
   {
     name: 'taskflow/guardrails/exempt-global-scope-consumers',
-    files: ['apps/api/src/identity/**', 'apps/api/src/people/**'],
+    files: ['apps/api/src/identity/**', 'apps/api/src/people/**', 'apps/api/src/platform-admin/**'],
     rules: { 'no-restricted-syntax': restrictedSyntax('globalScope') },
   },
   {
@@ -332,6 +350,18 @@ export const security = [
     rules: {
       // Integration tests here read the database directly to assert on stored
       // state — that a token column holds a hash and not the token.
+      'no-restricted-syntax': restrictedSyntax('globalScope', ...SQL_BANS, ...TEST_BANS),
+      '@typescript-eslint/no-non-null-assertion': 'off',
+    },
+  },
+  {
+    // Same combined-exemption need as exempt-identity-tests, and the same
+    // reason: a platform-admin integration test connects as
+    // taskflow_platform_admin/taskflow_app directly to assert a grant is
+    // refused, which is a raw-SQL, database-reading test by nature.
+    name: 'taskflow/guardrails/exempt-platform-admin-tests',
+    files: ['apps/api/src/platform-admin/**/*.test.ts', 'apps/api/src/platform-admin/**/*.spec.ts'],
+    rules: {
       'no-restricted-syntax': restrictedSyntax('globalScope', ...SQL_BANS, ...TEST_BANS),
       '@typescript-eslint/no-non-null-assertion': 'off',
     },

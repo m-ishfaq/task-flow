@@ -7,6 +7,7 @@ import { createChatRouter } from './chat/router.js';
 import { createDocsRouter } from './docs/router.js';
 import { createPlatformRouter } from './platform/router.js';
 import { createPeopleRouter } from './people/router.js';
+import { createPlatformAdminRouter } from './platform-admin/router.js';
 
 /**
  * The root router.
@@ -109,6 +110,17 @@ export function createAppRouter(deps: AppRouterDeps) {
      * the scope's org). See `people/events.ts`'s file header.
      */
     people: createPeopleRouter({ events: deps.identity.events }),
+
+    /**
+     * The platform-operator console — org governance across every tenant
+     * (Phase 12 Wave 1, ai/phase-12-admin.md). ⚠ Human-review surface.
+     *
+     * Reuses the SAME system event bus `people` does above, for the
+     * identical reason: `platform.flag_override_set`/`_cleared` carry a
+     * `SYSTEM_ORG` envelope the transactional outbox cannot hold —
+     * `platform.flag_overrides` is global, not tenant data.
+     */
+    platformAdmin: createPlatformAdminRouter({ events: deps.identity.events }),
   });
 }
 

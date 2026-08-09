@@ -39,6 +39,7 @@ export interface RouteEntry {
   readonly publicReason?: string;
   readonly selfReason?: string;
   readonly memberReason?: string;
+  readonly platformReason?: string;
   readonly stepUp: boolean;
   /**
    * Whether the route accepts caller-supplied input at all.
@@ -62,18 +63,26 @@ export interface RouteEntry {
  *
  * `self` is authenticated but carries no org permission — see `selfRoute`.
  * `member` is authenticated AND org-resolved but carries no specific
- * permission — see `memberRoute`. Both are separated from `public` because
- * the manifest is what answers "what is reachable without credentials", and
- * merging any of them would make that answer wrong in the direction that
- * matters. `member` is separated from `self` too, even though both leave
- * `permission` null: only `member` touches org-scoped data, which is exactly
- * why guardrail 8 (below, `protectedRoutes`) enrolls it and not `self`.
+ * permission — see `memberRoute`. `platform` is authenticated, requires
+ * step-up, and requires `isPlatformOperator` — see `platformRoute` (Phase 12
+ * §3.2). All three are separated from `public` because the manifest is what
+ * answers "what is reachable without credentials", and merging any of them
+ * would make that answer wrong in the direction that matters. `member` is
+ * separated from `self` too, even though both leave `permission` null: only
+ * `member` touches org-scoped data, which is exactly why guardrail 8 (below,
+ * `protectedRoutes`) enrolls it and not `self`. `platform` touches NO org at
+ * all — there is no `x-taskflow-org` header for a platform route, so
+ * guardrail 8's org-id substitution has nothing to substitute; it is
+ * deliberately excluded from `protectedRoutes` for the identical
+ * `not-applicable` reason `ai/phase-11.5-people.md` §6 already established
+ * for `people.profile.*`.
  */
-export type RouteAccess = 'public' | 'self' | 'member' | 'permission' | 'undeclared';
+export type RouteAccess = 'public' | 'self' | 'member' | 'platform' | 'permission' | 'undeclared';
 
 export function accessOf(entry: RouteEntry): RouteAccess {
   if (entry.permission === undefined) return 'undeclared';
   if (typeof entry.permission === 'string') return 'permission';
+  if (entry.platformReason !== undefined) return 'platform';
   if (entry.memberReason !== undefined) return 'member';
   return entry.selfReason === undefined ? 'public' : 'self';
 }
@@ -133,6 +142,7 @@ export function routeManifest(appRouter: AnyRouter): readonly RouteEntry[] {
           ...(meta?.publicReason === undefined ? {} : { publicReason: meta.publicReason }),
           ...(meta?.selfReason === undefined ? {} : { selfReason: meta.selfReason }),
           ...(meta?.memberReason === undefined ? {} : { memberReason: meta.memberReason }),
+          ...(meta?.platformReason === undefined ? {} : { platformReason: meta.platformReason }),
           stepUp: meta?.stepUp === true,
           acceptsInput: (value._def?.inputs?.length ?? 0) > 0,
         });
@@ -198,6 +208,11 @@ export function selfRoutes(entries: readonly RouteEntry[]): readonly RouteEntry[
 /** Authenticated, org-resolved routes that carry no specific permission. */
 export function memberRoutes(entries: readonly RouteEntry[]): readonly RouteEntry[] {
   return entries.filter((entry) => accessOf(entry) === 'member');
+}
+
+/** Authenticated, step-up, `isPlatformOperator`-gated routes (Phase 12 §3.2). */
+export function platformRoutes(entries: readonly RouteEntry[]): readonly RouteEntry[] {
+  return entries.filter((entry) => accessOf(entry) === 'platform');
 }
 
 /**

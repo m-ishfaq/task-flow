@@ -280,6 +280,53 @@ if (peopleFailures.length > 0) {
   process.exit(1);
 }
 
+/* -------------------------------------------------------------------------- *
+ * The platform-admin module's withGlobalScope exemption (Phase 12 §3.1,
+ * §3.6) — the THIRD consumer, asserted the identical way the people
+ * module's is above. A platform operator's authority is relative to no org
+ * at all, so `platform.operators` (no org_id, no RLS) and the operator
+ * console's `identity.users` read both need the same "no tenant is known"
+ * scope identity and people already hold it for. The computed config is
+ * what proves the exemption strips withGlobalScope AND NOTHING ELSE — this
+ * module is also on CLAUDE.md's human-review list, the same severity as
+ * identity, so a silently widened exemption here is exactly the kind of
+ * drift that list exists to catch before it ships, not after.
+ * -------------------------------------------------------------------------- */
+
+const PLATFORM_ADMIN_FILE = resolve(
+  repoRoot,
+  'apps',
+  'api',
+  'src',
+  'platform-admin',
+  'self.service.ts',
+);
+const platformAdminConfig = await eslint.calculateConfigForFile(PLATFORM_ADMIN_FILE);
+const platformAdminSyntaxText = JSON.stringify(
+  platformAdminConfig.rules?.['no-restricted-syntax'] ?? [],
+);
+
+const platformAdminFailures = [];
+for (const [needle, label] of PEOPLE_SYNTAX_BANS) {
+  if (platformAdminSyntaxText.includes(needle)) {
+    console.log(`  ok    platform-admin module keeps the ${label} ban`);
+  } else {
+    console.error(`  FAIL  platform-admin module LOST the ${label} ban`);
+    platformAdminFailures.push(label);
+  }
+}
+
+if (platformAdminFailures.length > 0) {
+  console.error(
+    `\nFAIL: the platform-admin module's globalScope exemption is wider than intended — ` +
+      `${platformAdminFailures.length} guardrail(s) stopped firing there.\n` +
+      `Most likely cause: the exemption block in packages/config/eslint/security.js\n` +
+      `re-emitted restrictedSyntax() with fewer exemptions instead of listing the\n` +
+      `full ban set.\n`,
+  );
+  process.exit(1);
+}
+
 if (failures.length > 0) {
   console.error(
     `\nFAIL: ${failures.length} guardrail(s) not firing as specified.\n` +
