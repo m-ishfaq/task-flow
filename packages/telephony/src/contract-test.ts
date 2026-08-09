@@ -201,6 +201,55 @@ export function describeTelephonyProviderContract(
           expect(() => PhoneNumberSchema.parse(entry.phoneNumber)).not.toThrow();
         }
       });
+
+      it('does not report a merely AVAILABLE number as one the account owns', async () => {
+        /* The distinction the seeder and every "which number do I send from"
+           caller depends on. A provider that answered `listOwnedNumbers` from
+           the same inventory as `searchAvailableNumbers` would hand back a
+           number that only becomes usable by BUYING it — and the failure
+           would surface as a carrier rejection at send time, long after the
+           wrong number was chosen. */
+        const provider = createProvider();
+        const account = await provider.createSubaccount({ friendlyName: 'org' });
+
+        const available = await provider.searchAvailableNumbers({
+          subaccountSid: account.sid,
+          isoCountry: 'US',
+          limit: 2,
+        });
+        const ownedBefore = await provider.listOwnedNumbers({ accountSid: account.sid });
+
+        const availableSet = new Set(available.map((entry) => entry.phoneNumber));
+        for (const entry of ownedBefore) {
+          expect(availableSet.has(entry.phoneNumber)).toBe(false);
+        }
+      });
+
+      it('reports a purchased number as owned, in E.164', async () => {
+        const provider = createProvider();
+        const account = await provider.createSubaccount({ friendlyName: 'org' });
+        const available = await provider.searchAvailableNumbers({
+          subaccountSid: account.sid,
+          isoCountry: 'US',
+          limit: 1,
+        });
+        const target = available[0];
+        expect(target).toBeDefined();
+        if (target === undefined) return;
+
+        const purchased = await provider.purchaseNumber({
+          subaccountSid: account.sid,
+          phoneNumber: target.phoneNumber,
+          voiceUrl: 'https://example.test/voice',
+          smsUrl: 'https://example.test/sms',
+        });
+
+        const owned = await provider.listOwnedNumbers({ accountSid: account.sid });
+        const match = owned.find((entry) => entry.sid === purchased.sid);
+
+        expect(match).toBeDefined();
+        expect(() => PhoneNumberSchema.parse(match?.phoneNumber)).not.toThrow();
+      });
     });
 
     describe('verification', () => {

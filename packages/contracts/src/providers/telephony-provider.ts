@@ -72,6 +72,25 @@ export interface PurchasedNumber {
   readonly monthlyCostCents: number;
 }
 
+/**
+ * A number the account ALREADY OWNS.
+ *
+ * Deliberately a separate type from `AvailableNumber`, which describes a
+ * number on sale that nobody holds yet. Conflating them is how a caller ends
+ * up passing a for-sale number where an owned one belongs — and the only way
+ * to turn the first into the second is `purchaseNumber`, which spends money.
+ */
+export interface OwnedNumber {
+  readonly sid: string;
+  readonly phoneNumber: PhoneNumber;
+  /** ISO 3166-1 alpha-2, as the carrier reports it. */
+  readonly isoCountry: string;
+  readonly capabilities: {
+    readonly voice: boolean;
+    readonly sms: boolean;
+  };
+}
+
 /* -------------------------------------------------------------------------- *
  * Outbound actions
  * -------------------------------------------------------------------------- */
@@ -181,6 +200,24 @@ export interface TelephonyProvider {
     readonly areaCode?: string | undefined;
     readonly limit: number;
   }): Promise<readonly AvailableNumber[]>;
+
+  /**
+   * The numbers an account ALREADY HOLDS. Read-only; spends nothing.
+   *
+   * Distinct from `searchAvailableNumbers`, which lists numbers for sale that
+   * the account does not own. The distinction matters more than it looks:
+   * "give me a number I can send from" is answered by this method, and
+   * answering it with the search method instead would return a number that
+   * only becomes usable by BUYING it.
+   *
+   * `accountSid` defaults to the account the provider was constructed with.
+   * Passing a subaccount's sid lists that subaccount's numbers instead —
+   * which is the form the org-scoped services want, while the default form is
+   * what a tool holding only the master credentials (the seeder) can use.
+   */
+  listOwnedNumbers(options?: {
+    readonly accountSid?: string | undefined;
+  }): Promise<readonly OwnedNumber[]>;
 
   purchaseNumber(options: {
     readonly subaccountSid: string;
