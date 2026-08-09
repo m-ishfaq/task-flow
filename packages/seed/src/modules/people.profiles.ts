@@ -251,7 +251,10 @@ export const peopleModule = defineSeedModule({
         /* Self-service fields, actor = the member; the before-half is nulls
            because this is the row's first write, exactly as the service's own
            first `updateMembershipProfile` emits it. `changed` lists only the
-           fields that actually landed. */
+           fields that actually landed — `workPhone` is carried as null in both
+           halves and absent from `changed` because this seed writes no work
+           phone (migration 0039's column stays NULL here), which is the shape
+           `updateMembershipProfile` emits for a patch that never named it. */
         const changed = [
           ...(title !== null ? ['jobTitle'] : []),
           ...(dept !== null ? ['department'] : []),
@@ -264,8 +267,8 @@ export const peopleModule = defineSeedModule({
                 orgId: org.id,
                 userId: membership.user.id,
                 changed,
-                before: { jobTitle: null, department: null },
-                after: { jobTitle: title, department: dept },
+                before: { jobTitle: null, department: null, workPhone: null },
+                after: { jobTitle: title, department: dept, workPhone: null },
               },
               envelopeFor(org.id, membership.user.id, setAt),
             ),
