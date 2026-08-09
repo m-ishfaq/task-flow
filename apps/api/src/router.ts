@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { publicRoute, router } from './trpc/builder.js';
+import { publicRoute, router, selfRoute } from './trpc/builder.js';
+import { getResolvedFlags } from './platform-admin/flag-evaluator.js';
 import { createIdentityRouter, type IdentityRouterDeps } from './identity/router.js';
 import { createTenancyRouter } from './tenancy/router.js';
 import { createWorkRouter, type WorkRouterDeps } from './work/router.js';
@@ -7,6 +8,9 @@ import { createChatRouter } from './chat/router.js';
 import { createDocsRouter } from './docs/router.js';
 import { createPlatformRouter } from './platform/router.js';
 import { createPeopleRouter } from './people/router.js';
+import { createPlatformAdminRouter } from './platform-admin/router.js';
+import { createTelephonyRouter } from './telephony/router.js';
+import type { TelephonyDeps } from './telephony/deps.js';
 
 /**
  * The root router.
@@ -29,6 +33,16 @@ export interface AppRouterDeps extends IdentityRouterDeps {
   readonly work: WorkRouterDeps;
   /** Notifications — the VAPID public key for the push ceremony (§3.7). */
   readonly platform: { readonly vapidPublicKey: string | null };
+  /**
+   * Voice & Messaging (Phase 7 Wave 2).
+   *
+   * Undefined when no carrier is configured. The routes still EXIST in that
+   * case and answer SERVICE_UNAVAILABLE — the browser client generates from
+   * this router's TYPE (guardrail 5), so a shape that varied by deployment
+   * would produce a different client per environment, which is the drift that
+   * guarantee exists to prevent.
+   */
+  readonly telephony: TelephonyDeps | undefined;
 }
 
 export function createAppRouter(deps: AppRouterDeps) {
@@ -109,6 +123,54 @@ export function createAppRouter(deps: AppRouterDeps) {
      * the scope's org). See `people/events.ts`'s file header.
      */
     people: createPeopleRouter({ events: deps.identity.events }),
+
+    /**
+     * Platform admin — the operator console (Phase 12 Wave 1).
+     *
+     * Needs the event bus for the platform events, which — like identity's
+     * own — cannot ride the transactional outbox: they are emitted by
+     * `taskflow_platform_admin`, a role with no grant on `platform.outbox`
+     * and no org scope. See `platform-admin/events.ts`'s file header.
+     */
+    platformAdmin: createPlatformAdminRouter({
+      events: deps.identity.events,
+      /* §9: suspend/reactivate also freeze or unfreeze the org's Twilio
+         subaccount, when a carrier is configured. The narrowed dep keeps the
+         platform-admin module from seeing the storage provider and spend
+         configuration it has no business with. (Conditional spread: with
+         exactOptionalPropertyTypes, an explicit `undefined` is not the same
+         as an absent optional property.) */
+      ...(deps.telephony === undefined
+        ? {}
+        : {
+            subaccounts: {
+              telephony: deps.telephony.telephony,
+              keys: deps.telephony.keys,
+            },
+          }),
+    }),
+
+    /** Voice & Messaging (Phase 7 Wave 2). */
+    telephony: createTelephonyRouter(deps.telephony),
+
+    /**
+     * Feature flags — the resolved snapshot for the client bootstrap
+     * (Phase 12 Wave 1 §3.8).
+     *
+     * `selfRoute`, deliberately not `platformRoute`: this is the product
+     * surface view every logged-in user needs ("what features am I allowed
+     * to see?"), and the resolved values are non-sensitive. The operator
+     * console's read/write of the override store lives under
+     * `platformAdmin.flags` instead.
+     */
+    flags: router({
+      snapshot: selfRoute({
+        selfReason:
+          'The resolved feature-flag snapshot for the client bootstrap — every logged-in user reads it; non-sensitive product surface (§3.8).',
+      })
+        .output(z.record(z.boolean()))
+        .query(async () => getResolvedFlags()),
+    }),
   });
 }
 

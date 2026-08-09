@@ -20,10 +20,11 @@ import { usersModule } from './modules/identity.users.js';
 import { orgsModule } from './modules/tenancy.orgs.js';
 // Every other module is reached transitively through `auditModule`'s own
 // `requires` chain (platform.audit -> ... -> identity.users) — importing it
-// alone is what registers the whole graph. `usersModule` and `orgsModule` are
-// imported here only because the login-table printout below reads their
+// alone is what registers the whole graph. `usersModule`, `orgsModule` and
+// `adminModule` are imported here only because the printouts below read their
 // output directly.
 import { auditModule } from './modules/platform.audit.js';
+import { adminModule } from './modules/platform.admin.js';
 
 /**
  * `pnpm seed [--profile <name>] [--seed <value>] [--reset] [--chaos]`
@@ -264,6 +265,7 @@ async function main(): Promise<void> {
 
     const { users, password } = ctx.use(usersModule);
     const { orgs } = ctx.use(orgsModule);
+    const { operator } = ctx.use(adminModule);
 
     console.warn('\nSeeded users (all share one password):');
     console.warn(`  password: ${password}`);
@@ -273,6 +275,9 @@ async function main(): Promise<void> {
     console.warn(
       `  (${String(users.length)} accounts total, @${users[0]?.email.split('@')[1] ?? ''})`,
     );
+    /* The console has no nav link until someone IS an operator — this is the
+       only place a fresh database says who that is. */
+    console.warn(`  platform operator: ${operator.email}`);
 
     console.warn('\nDone.');
   } finally {

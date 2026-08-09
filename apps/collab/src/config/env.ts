@@ -84,6 +84,14 @@ const KNOWN_VARIABLES = new Set([
      and to .env.example without this set being updated alongside. */
   'DATABASE_COLLAB_URL',
   'DATABASE_BACKLINKS_URL',
+  /* The notification sweep's role (migration 0029), the platform-admin
+     console's (migration 0035) and the recording-ingest sweep's (migration
+     0033). Exactly the same class as the two above, and exactly the same
+     failure they document: all three are spelled correctly, none is read
+     here, and every one of them refused this process a boot until listed. */
+  'DATABASE_NOTIFICATION_SWEEP_URL',
+  'DATABASE_PLATFORM_ADMIN_URL',
+  'DATABASE_RECORDING_INGEST_URL',
   'DATABASE_POOL_MAX',
   'JWT_SECRET',
   'WEB_ORIGIN',

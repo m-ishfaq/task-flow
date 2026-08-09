@@ -56,6 +56,30 @@ export async function createOrg(
   input: CreateOrgInput,
   actor: Actor,
 ): Promise<{ orgId: OrgId; slug: string }> {
+  /* Phase 12 Wave 1 (§3.4): an unverified account may not create an org. The
+     gate lives BEFORE the transaction opens because it is a precondition on
+     the ACTOR, not part of the org write — and because self-serve creation
+     was the abuse surface the wave exists to bound. `identity.users` carries
+     no RLS, so the read works in any scope; `withUserScope` is used because
+     it is the established idiom for "a fact about this actor" in this file
+     (resolve.ts uses it identically), not because it is structurally
+     required. */
+  const verified = await withUserScope(actor.userId, async (tx) => {
+    const rows = await tx
+      .select({ emailVerifiedAt: schema.users.emailVerifiedAt })
+      .from(schema.users)
+      .where(eq(schema.users.id, actor.userId))
+      .limit(1);
+    return rows[0]?.emailVerifiedAt ?? null;
+  });
+
+  if (verified === null) {
+    throw errors.validation(
+      { _: 'Please verify your email address before creating an organization.' },
+      'Email verification required.',
+    );
+  }
+
   const orgId = newId<'OrgId'>();
   const membershipId = newId<'MembershipId'>();
 

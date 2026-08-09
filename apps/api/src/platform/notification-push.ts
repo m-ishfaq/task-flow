@@ -70,6 +70,18 @@ async function readPendingPushRows(): Promise<PendingPushRow[]> {
         schema.notifications,
         eq(schema.notifications.id, schema.notificationDeliveries.notificationId),
       )
+      /* Phase 12 Wave 1 §3.9: a push decided before the org was suspended
+         must not leave the system after it is. The join is the filter — the
+         row stays pending, and reactivation resumes it. Runs as
+         taskflow_audit with the column-limited orgs read migration 0037
+         grants. */
+      .innerJoin(
+        schema.orgs,
+        and(
+          eq(schema.orgs.id, schema.notificationDeliveries.orgId),
+          eq(schema.orgs.status, 'active'),
+        ),
+      )
       .where(
         and(
           eq(schema.notificationDeliveries.channel, 'push'),

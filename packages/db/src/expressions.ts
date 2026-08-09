@@ -61,6 +61,59 @@ export function uuidArrayContains(column: Column, value: unknown): SQL {
 }
 
 /**
+ * `SUM(COALESCE(actual, estimated))` over the telephony spend ledger, as a
+ * bigint rendered to text (Phase 7 Wave 1, ai/phase-7-voice.md §3.4).
+ *
+ * Named here rather than hand-written in `apps/api/src/telephony/spend-gate.ts`
+ * for exactly the reason this file exists: raw `sql` is banned in feature code,
+ * and the answer is a named expression, not an exemption.
+ *
+ * Two things about it are load-bearing:
+ *
+ *   - **The inner COALESCE, not `SUM(actual)`.** A ledger row the carrier has
+ *     not billed yet has a NULL `actual_cents`, so summing that column alone
+ *     counts every in-flight action as free. That is precisely the window an
+ *     attacker exploits by placing calls faster than reconciliation runs. The
+ *     conservative estimate stands in until the real figure arrives.
+ *   - **The outer COALESCE to 0.** `SUM` over zero rows is NULL, not 0, and a
+ *     NULL total parsed in JavaScript becomes `NaN` — which compares false
+ *     against every threshold, so an org with no ledger history would read as
+ *     permanently under its cap.
+ *
+ * Returned as text because a Postgres `bigint` exceeds what the driver will
+ * hand back as a safe JavaScript number; the caller parses it explicitly.
+ */
+export function sumWithFallback(preferred: Column, fallback: Column): SQL<string> {
+  return sql<string>`COALESCE(SUM(COALESCE(${preferred}, ${fallback})), 0)::text`;
+}
+
+/**
+ * `SUM(column)`, grouped by whatever the caller's query groups by.
+ *
+ * For a column that can be NULL, `sumWithFallback` is almost certainly the
+ * right function instead — this one exists for the simpler case of summing a
+ * `NOT NULL` column, where there is nothing to fall back to. Returned as text
+ * for the reason `sumWithFallback` and `countRows` both are: a Postgres
+ * `bigint` sum exceeds a safe JavaScript number, so parsing is the caller's
+ * job, done explicitly.
+ */
+export function sumColumn(column: Column): SQL<string> {
+  return sql<string>`COALESCE(SUM(${column}), 0)::text`;
+}
+
+/**
+ * `COUNT(column)`, grouped by whatever the caller's query groups by.
+ *
+ * Returned as text for the same reason `sumWithFallback` is: a Postgres
+ * `bigint` count exceeds what the driver hands back as a safe JavaScript
+ * number, so the caller parses it explicitly rather than trusting an implicit
+ * cast.
+ */
+export function countRows(column: Column): SQL<string> {
+  return sql<string>`COUNT(${column})::text`;
+}
+
+/**
  * A predicate compiled elsewhere, converted into a Drizzle expression.
  *
  * The bridge between `@taskflow/filter`'s compiler and the tenant-scoped

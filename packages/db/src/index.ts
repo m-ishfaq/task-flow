@@ -40,6 +40,12 @@ export {
   initializeSweepDatabase,
   withSweepScope,
   hasSweepDatabase,
+  initializeRecordingIngestDatabase,
+  withRecordingIngestScope,
+  hasRecordingIngestDatabase,
+  initializePlatformAdminDatabase,
+  withPlatformAdminScope,
+  hasPlatformAdminDatabase,
   type OrgId,
   type UserId,
   type DbConfig,
@@ -57,6 +63,16 @@ export {
 } from './outbox.js';
 
 export { listenForOutboxAppends, type OutboxListener, type ListenOptions } from './notify.js';
+
+/**
+ * The one telephony read that has no org yet (Phase 7 Wave 1, §3.11).
+ *
+ * Here rather than in `apps/api/src/telephony` because it needs
+ * `withGlobalScope`, which is lint-restricted to this package and the identity
+ * module. See the file's own header for what it can and cannot see, and for the
+ * ordering obligation it puts on its caller.
+ */
+export { resolveOrgBySubaccountSid } from './comms-directory.js';
 
 export {
   claimUnprocessedPageVersions,
@@ -141,6 +157,9 @@ export {
   coalesce,
   compiledPredicate,
   uuidArrayContains,
+  sumWithFallback,
+  sumColumn,
+  countRows,
 } from './expressions.js';
 
 /**

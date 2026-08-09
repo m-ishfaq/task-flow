@@ -59,8 +59,13 @@ AI may write anything, but changes to these need the author to read every line b
 (PLAN.md §2.2):
 
 `packages/policy` · `packages/db` · `packages/security` · `apps/api/src/identity` ·
+`apps/api/src/telephony` (Phase 7 — the outbound spend gate, subaccount credential handling, and
+`webhook.ts`'s signature verification; §6.1 of the phase spec named these before they existed) ·
 `apps/collab/src/auth.ts` and `authorize.ts` (Phase 6 — the collab gateway's own handshake and
 tree-permission resolution, the same severity as `apps/realtime/src/auth.ts`/`rooms.ts`) ·
+`apps/api/src/platform-admin` (Phase 12 Wave 1 — the org-directory console that runs as
+`taskflow_platform_admin`, the one role that can change another org's status, plus the
+`withGlobalScope` carve-out that admits it in `packages/config/eslint/security.js`) ·
 any webhook signature verification · any file upload/download path · any code touching
 telephony spend.
 
@@ -82,6 +87,9 @@ apps/       api                              (arriving: worker)
                                building, page-version save/restore, comments,
                                suggestions, the backlinks relay, publish-to-
                                public, PDF export, page templates (Phase 6)
+              src/platform-admin ⚠ Phase 12 Wave 1 — the org-directory console,
+                               run as taskflow_platform_admin (the one role that
+                               may change another org's status)
             realtime           Socket.io gateway — broadcast only, never writes
               src/auth.ts    ⚠ handshake: token, origin, socket.data.identity
               src/rooms.ts   ⚠ room join = a fresh can() check
@@ -100,8 +108,19 @@ apps/       api                              (arriving: worker)
               src/lib          tRPC client, session, query client, wire types
               src/components   primitives + app shell
               src/features     auth/ org/ work/ admin/
+              src/telephony  ⚠ Phase 7 — the ONE outbound gate (spend cap,
+                               geo, velocity, org freeze), subaccount
+                               provisioning, webhook signature verification +
+                               replay (Wave 1); numbers, calls, the consent
+                               gate, recordings, transcripts, SMS threads,
+                               STOP/UNSUBSCRIBE, card-attached recordings
+                               (Waves 2–3); a spend-gated Verify capability
+                               with no caller yet, and cost-attribution
+                               reporting (Wave 4 — see status header, its
+                               MFA half is not apps/api/src/identity work)
 packages/   config, contracts, db, security, policy, events, mail, observability,
-            feature-flags, guardrail-selftest, ⚠ storage, filter   (arriving: ui)
+            feature-flags, guardrail-selftest, ⚠ storage, filter,
+            telephony (carrier boundary + geo allowlist)          (arriving: ui)
 docker/     compose config + Postgres init (roles, RLS)
 ```
 
@@ -293,6 +312,205 @@ before clearing a page's published pointer, and Postgres refused it —
 never be left pointing at a version that no longer exists. Fixed in the test (clear the pointer
 first, delete the version rows after — "children before parents," the same ordering
 `tenancy-seed.ts`'s `clearTenant` already documents for Work), not in the schema.
+
+### Phase 12 Wave 1 — the platform console (org directory, flag overrides, operator audit)
+
+`apps/api/src/platform-admin` · migrations 0035–0036 · `apps/web/src/features/platform-admin` ·
+the `platformRoute` route kind in `apps/api/src/trpc/builder.ts`. Spec:
+[ai/phase-12-admin.md](ai/phase-12-admin.md). ⚠ Human-review surface (§2.2): the module runs as
+`taskflow_platform_admin`, the one role that can change another org's status, so the author reads
+every line of it before merge.
+
+Shipped: the flat operator flag (`platform.operators` — SELECT-only for every
+application-reachable role, bootstrapped by migration, never by a route); the org directory
+(list/suspend/reactivate, writing `identity.orgs.status` and nothing else through the dedicated
+role's permissive policies); global feature-flag overrides (`platform.flag_overrides`); a GLOBAL
+hash-chained operator audit log (`platform.operator_audit_log`, the one-row sibling of 0007's
+per-org chain) recording every operator call — reads included; `platformRoute` (no org context
+at all, step-up baked into every call, while `self.check` is deliberately a `selfRoute` so the
+account menu can ask for everyone); `tenancy.members.transferOwnership` (one atomic transaction,
+never an observable zero-owner moment); the email-verification gate and 3/day rate limit on
+`orgs.create`; and suspension enforcement in `resolveOrgMembership` — one check that refuses the
+suspended org's routes, realtime room joins, AND collab page authorizations for free. The web
+console lives at `/platform-admin` (Orgs, Users, Flags, Audit), gated on the server's own
+`self.check` answer.
+
+**Two grant bugs had no failing unit test and were found only by the wave's own §6 tests against a
+real database — the same lesson Phase 4 and Phase 6 taught: the database does not read your
+comments.** First, migration 0001's `ALTER DEFAULT PRIVILEGES ... IN SCHEMA platform` gives
+`taskflow_app` full CRUD on every table the migrator later creates there, so 0035's "SELECT only"
+grants on `platform.operators` were weaker than what the database already enforced — the table was
+WRITABLE by the app role despite the migration saying otherwise, until 0036's explicit REVOKEs. A
+migration that creates a table in a schema with default privileges must say what the table should
+NOT have, not only what it should. Second, `GRANT USAGE ON SCHEMA public` from a migration is a
+silent no-op: `03-grants.sql` grants the migrator `ALL ON SCHEMA public` WITHOUT GRANT OPTION, so
+Postgres answers `WARNING: no privileges were granted` and changes nothing — which meant the
+operator chain trigger could not call `public.digest` as SECURITY INVOKER at all. The fix is a
+narrow SECURITY DEFINER hash wrapper (`platform.operator_chain_hash`) in a schema the role can
+use, keeping the trigger SECURITY INVOKER per the 0007 precedent and the digest preimage
+byte-identical. Both are written up in 0036's own header.
+
+§3.9 (the notification sweeps respecting org suspension) shipped 2026-08-09 with migration 0037:
+the due-reminder scan, digest collection, push drain, and the projection's immediate-email
+decision all join `identity.orgs.status = 'active'`, via column-limited `(id, status)` org reads
+for `taskflow_notification_sweep` and `taskflow_audit` (permissive policies, the 0035 shape).
+Pending deliveries written before a suspension stay `pending` and resume on reactivation; the
+§3.9 suite in `wave2.sweep.test.ts` proves all four paths refuse a suspended org as the real
+roles.
+
+The flag-override store gained its live consumer 2026-08-09: `platform-admin/flag-evaluator.ts`
+merges `platform.flag_overrides` into `FeatureFlags`' env tier (TTL-cached, single-flight),
+`platformAdmin.flags.list` resolves every row through the real evaluator, and a `flags.snapshot`
+selfRoute serves the resolved snapshot to the client bootstrap. §9's stretch also landed the same
+day: `platformAdmin.orgs.suspend`/`.reactivate` freeze or unfreeze the org's Twilio subaccount
+through the telephony module's own `setSubaccountStatus` (reused; best-effort and last, so a
+missing subaccount or carrier outage never fails the operator's action), with the freeze recorded
+in the org's audit chain via `subaccount.status_changed`.
+
+Still open: granting the operator flag is migration/script-only (§7 decision 7 — no self-service
+route, deliberately); and `platformAdmin.audit.list` exists because the doc's route list named the
+Audit tab but no route to feed it.
+
+#### Phase 7 — four defects a green suite could not see, found by a live carrier (2026-08-10)
+
+**Outbound telephony had never worked against real Twilio**, through five "complete" waves, 733
+passing API tests and a clean lint. Read `ai/phase-7-voice.md`'s status header before touching any
+of it; the short version:
+
+**Basic auth paired the subaccount SID with the parent's auth token**, which names no account —
+every number search, purchase, release, call and SMS answered 401/20003. Only subaccount creation,
+Lookup and Verify worked, because only those three passed the parent SID, so it read as a
+credentials problem rather than a bug. **The wrong rule was written down first**:
+`subaccount.service.ts` claimed Twilio "accepts the master token for its children", `twilio.ts` was
+built to match, and `twilio.test.ts` asserted the same wrong pairing — an implementation and a test
+that agreed with each other and with nothing real. `#authorization` no longer takes a username at
+all: the subaccount is named by the URL path, the credential is always the parent's pair.
+
+**`/telephony/outbound/:callId` was never registered**, though `placeCall` has always pointed Twilio
+at it for the call's TwiML. `outboundTwiml` sat in `packages/telephony` with no caller. Calls were
+accepted and then dropped on a 404 — no phone ever rang. `placeCall`'s tests assert what we SEND the
+provider; this is the request the provider makes BACK, and nothing but a real carrier issues it.
+
+**Record intent was never persisted** (migration 0038). Folding `record` into
+`announcement_required` is recoverable in an all-party jurisdiction and ambiguous in a one-party one
+— GB, CA, IE, NZ, IN, ZA all store `false` either way — so recording silently did nothing for a
+large share of destinations. Two facts, two columns, because a compliance review needs both.
+
+**A missing `TELEPHONY_WEBHOOK_ORIGIN` yielded RELATIVE callback URLs.** Purchase fails loudly
+(21402); the quiet half is that `statusCallbackUrl` is how actual cost arrives, so the instance
+would bill every org against `sumWithFallback`'s ESTIMATE forever. `deps.ts` now refuses at boot for
+a live carrier — the `TELEPHONY_INDEX_KEY` precedent.
+
+**None of it was diagnosable until `TwilioApiError` carried Twilio's numeric `code`.** The body is
+still withheld (Twilio echoes phone numbers and message bodies into error payloads, exactly what
+`REDACTION_PATHS` guards), but the code is an integer from a published table that echoes no
+parameter. `carrier-error.ts` maps the ones worth naming, so a landline in the To field is a field
+error rather than a 500.
+
+Also shipped: the surfaces PLAN.md §3.4 named and Wave 5 missed — a "New message" composer (there
+was **no way to start an SMS from the UI**), click-to-call from an SMS thread, a contact, and a 1:1
+DM, plus `people.membership_profiles.work_phone` (0039), org-scoped so a number given to one
+employer is not disclosed to every other org. And `placeCall`'s refusal path now compensates the
+ledger (`actual_cents = 0`, call `failed`) rather than leaving an estimate held against the cap for
+30 days with no SID to correct it.
+
+### Phase 7 — Voice & Messaging: Waves 1–4 complete (API), Wave 5 (UI) added and shipped
+
+**Every wave through Wave 4 shipped `apps/api/src/telephony` only — nothing in `apps/web` referenced
+telephony at all, despite the spec's own §2 listing click-to-call and an SMS inbox as in-scope.**
+That was a real gap against the phase's stated scope, not a deferral: Chat and Docs each shipped
+their UI inside their own phase, and this phase's spec never said Wave 5 would come later. Added and
+shipped in the same session that found the gap — `apps/web/src/features/telephony` (numbers, calls,
+messages, spend) behind a new `/calls` sidebar item, and `recording-section.tsx` for attaching a
+recording to a Work card. See `ai/phase-7-voice.md`'s own Wave 5 note for the two API-surface gaps
+this UI had to design around (no `fromPhoneNumberId` on a thread; no org-wide recording search).
+
+### Phase 7 — Voice & Messaging: Waves 1–3 complete, Wave 4 split
+
+`packages/telephony` · `packages/security/twilio-signature.ts` · migrations 0032–0034 (`comms.*`) ·
+`apps/api/src/telephony`. Spec: [ai/phase-7-voice.md](ai/phase-7-voice.md), approved 2026-08-08.
+⚠ Human-review surface — read that spec's status header before touching any of it. That header was
+itself stale for a stretch of this phase (see below), which is the same lesson Phase 3.5 and Phase 5
+already taught this file: a status marker is a claim, not a fact, and this codebase's own habit of
+correcting a wrong premise in the header rather than silently in the code is what makes it possible
+to catch.
+
+**Wave 1 (below) shipped the gate before anything could reach it. Waves 2 and 3 — numbers, calls,
+the consent gate, recordings, transcripts, SMS threads, STOP/UNSUBSCRIBE, and card-attached
+recordings — shipped in the same commit that never updated this section or the spec's own status
+line, so a later pass found a phase that read "not started" and was, by file count, mostly done.**
+Nothing wrong was found in that read-through beyond the status claim itself; what was missing was
+test coverage for it, not correctness. `call.service.test.ts` and `message.service.test.ts` closed
+the two highest-stakes gaps: the first proves `comms.calls`' `calls_recording_after_announcement`
+CHECK constraint — not the service — is what actually refuses a recording started before a required
+announcement played; the second proves `sendSms` checks the suppression list BEFORE the spend gate,
+using an org that is both suppressed and over its cap so the ORDER is what the assertion depends on,
+not just the outcome. `number.service.ts`, `recording.service.ts` and `transcript.service.ts` still
+have no dedicated test file.
+
+**Wave 4 — Twilio Verify wired into "the existing MFA path" — does not have an existing MFA path to
+wire into.** The spec's §3.12 assumed one exists in `apps/api/src/identity`; PLAN.md §3.4 is explicit
+that TOTP and this SMS/call fallback are deferred to Phase 12, itself still an unapproved draft, and
+`apps/api/src/identity` today is password and passkeys only. Building a login-time second factor here
+would be new, un-spec'd work on a second human-review surface, not "finishing" an approved phase — so
+only the capability shipped: `verify.service.ts`'s `startPhoneVerification`/`checkPhoneVerification`,
+gated through the identical `checkOutboundAllowed` chokepoint every other outbound path uses, with no
+caller, the same way Wave 1 shipped webhook verification "with no route registered yet that uses it
+for anything real." The cost-attribution half of Wave 4 — `spend-report.ts`'s `spendReport`, grouping
+`comms.spend_ledger` by kind, gated `recording:read` (the catalog's admin tier, reused rather than
+extended per §6.3) — shipped in full, with a route and a test suite.
+
+#### Wave 1 — the gate that ships before the thing it gates
+
+**Wave 1 deliberately ships nothing a user would call a feature.** The acceptance bar is "the gate
+exists and refuses correctly", proven against a `TelephonyProvider` no product surface calls yet.
+The most important assertion in `spend-gate.test.ts` is therefore not that a refusal is returned —
+it is that **the provider was never reached**, asserted against a fake that would have recorded it.
+A gate that answers `{ allowed: false }` after having already placed the call reads correctly in a
+diff and costs money in production, and only an assertion about the provider tells the two apart.
+
+**`+1` is not a country, and that is why the geo check matches PREFIXES.** The E.164 code +1 is the
+North American Numbering Plan — the US and Canada plus about twenty Caribbean territories that bill
+at premium international rates while looking like an ordinary domestic number. A geo check that
+resolved "+1" to a country and asked whether that country is allowed permits every one of them, and
+`+1-809-...` is the classic toll-fraud destination. `geo.ts` is a closed, default-DENY table where
+longest-prefix wins, so a `deny` on `1809` overrides the `allow` on `1`; a test reverses the table
+to prove ordering cannot change a verdict.
+
+**The spend sum is `COALESCE(actual, estimated)`, never `SUM(actual)`.** A ledger row the carrier
+has not billed yet has a NULL `actual_cents`, so summing that column alone counts every in-flight
+action as free — which is exactly the window an attacker exploits by going faster than
+reconciliation. `SUM` over zero rows is also NULL, and a NULL parsed in JavaScript is `NaN`, which
+compares false against every threshold: an org with no history would read as permanently under its
+cap. Both halves live in `sumWithFallback` in `packages/db/expressions.ts`, because raw `sql` is
+banned in feature code and the answer to that ban is a named expression, not an exemption.
+
+**The velocity limiter runs LAST, because it is the only check that mutates.** Counting an attempt
+that was going to be refused anyway lets an attacker burn a legitimate user's burst allowance with
+requests that cost nothing to refuse — a denial of service inflicted through a control meant to
+prevent one. It is also not the durable defence: those counters are in-process, so a restart
+forgives everyone. The spend ledger in Postgres is what actually stops the bill, the same
+relationship §8.9's per-IP limiter has to the database-backed account lockout.
+
+**`identity.orgs.status` has existed since migration 0004 and nothing ever read it.** The gate is
+its first reader. It is checked there rather than at the HTTP layer because telephony's cost risk
+lives on paths that never authenticate a request — an inbound webhook, a queued send — and a kill
+switch that only runs where a user is waiting is not a kill switch. Phase 12 Wave 1 will set the
+column from its console; adopting it is a swap, not a redesign.
+
+**The webhook's order of operations IS the control**, and it looks like trusting the payload.
+`AccountSid` is read from an unverified body, resolved to an org through `comms.subaccount_orgs`,
+and that org's token is what the signature is then checked against. That is a client-supplied value
+used as a LOOKUP KEY, not as an assertion — the same reason Phase 4's `x-taskflow-org` header is
+safe. Naming a subaccount whose token you do not hold resolves to an org whose key refuses you.
+Nothing is written before the signature passes, and the replay check runs AFTER it, or an
+unauthenticated caller could write rows into `comms.webhook_nonces` for any SID they can guess.
+
+**The replay nonce is recorded on SUCCESS, inside the handler's own transaction.** Twilio retries a
+webhook when we answer 5xx, and a retry carries a byte-identical signature — so a nonce written on
+receipt would mark the request seen, the handler would fail, and the retry that exists to recover
+the event would be refused as a replay. The event is lost silently, only when something was already
+going wrong. Writing it alongside the effect makes a failed attempt roll it back too.
 
 **Read a spec's own status header before trusting a phase marker anywhere else.** The §13 roadmap
 table and this section were both stale for the whole of Phase 3.5's Wave 1 and Wave 2, which is how
@@ -730,6 +948,7 @@ What is enforced, and by what:
 | 9 authz matrix       | 235 role × permission assertions         | `packages/policy`                     |
 | 10 human review      | this file, PLAN.md §2.2                  | people                                |
 | 11 domain events     | custom ESLint rule                       | guardrail-selftest                    |
+| 12 migration RLS     | `scripts/check-migration-rls.mjs`        | both directions, against a fixture    |
 
 `node packages/guardrail-selftest/verify.js` proves the lint-enforced ones still fire — including
 the negative cases, since a rule that reports correct code is one that gets switched off. It also

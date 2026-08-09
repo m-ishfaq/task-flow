@@ -210,6 +210,39 @@ describe('enforcement', () => {
       expect(response.statusCode).toBe(200);
     }
   });
+
+  it('throttles org creation to three per caller per day', async () => {
+    /* Phase 12 Wave 1 §3.4 / §7 decision 3: 3 orgs per ACCOUNT per 24h,
+       keyed by the caller (bearer token), not the address — the whole point
+       is bounding what one person can create, and an office behind one NAT
+       must not share a single budget. This hook does NOT verify the token
+       (rate-limit.ts's own comment: it is an opaque bucket key), so a fake
+       token exercises the rule exactly as a real one would.
+
+       The fourth request answers 429, the LIMITER's answer, and not 401, the
+       auth gate's — the refusal happened before authentication even ran,
+       which is the proof the org-creation handler was never reached (the
+       same "prove the side effect didn't happen" discipline the spend-gate
+       suite applies to the carrier). */
+    const headers = { authorization: 'Bearer rate-limit-org-create-token' };
+    for (let i = 0; i < 3; i += 1) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/trpc/tenancy.orgs.create',
+        headers,
+        payload: { name: `Rate Org ${String(i)}`, slug: `rate-org-${String(i)}` },
+      });
+      expect(response.statusCode).toBe(401);
+    }
+
+    const fourth = await app.inject({
+      method: 'POST',
+      url: '/trpc/tenancy.orgs.create',
+      headers,
+      payload: { name: 'Rate Org Four', slug: 'rate-org-four' },
+    });
+    expect(fourth.statusCode).toBe(429);
+  });
 });
 
 describe('trust proxy', () => {

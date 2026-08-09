@@ -8,19 +8,23 @@ import { allowedOrigins, type Env } from './config/env.js';
 import {
   assertRoomTableIsSafe,
   roomBoardIdOf,
+  roomCallIdOf,
   roomChannelIdOf,
   roomUserIdOf,
 } from './event-rooms.js';
 import { broadcastChannelPresence, broadcastPresence } from './presence.js';
 import { FixedWindowLimiter } from './rate-limit.js';
-import { authorizeChannelJoin, authorizeJoin } from './rooms.js';
+import { authorizeCallJoin, authorizeChannelJoin, authorizeJoin } from './rooms.js';
 import { applyChatRevocation, applyRevocation, revocationOf } from './revocation.js';
 import { startRealtimeRelay, type RelayHandle } from './relay.js';
 import type { ChatNamespace, ChatSocket, GatewayServer, GatewaySocket } from './socket-data.js';
 import {
   boardRoom,
+  callRoom,
   channelRoom,
   userRoom,
+  CallJoinRequestSchema,
+  CallLeaveRequestSchema,
   ChannelJoinRequestSchema,
   ChannelLeaveRequestSchema,
   CHAT_NAMESPACE,
@@ -376,6 +380,64 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
       })();
     });
 
+    /* Call state (Phase 7 Wave 2, ai/phase-7-voice.md §3.10).
+     *
+     * Rides the chat namespace rather than standing up a fourth transport —
+     * §2's "not a second real-time transport" is explicit, and a ringing call is
+     * a state transition a UI wants live, exactly like a card move. The
+     * namespace is an authenticated socket, not a chat-specific concept.
+     *
+     * No presence broadcast on join, unlike a channel: who is WATCHING a call is
+     * not something the other participants have any interest in, and publishing
+     * it would be a disclosure nobody asked for. */
+    socket.on('call:join', (request: unknown, ack?: (result: JoinAck) => void) => {
+      void (async () => {
+        const respond = (result: JoinAck): void => ack?.(result);
+
+        if (!joinsPerSocket.hit(socket.id)) {
+          logger.warn({ userId }, 'call join refused: too many joins on this socket');
+          respond({ ok: false, reason: 'rate_limited' });
+          return;
+        }
+
+        const parsed = CallJoinRequestSchema.safeParse(request);
+        if (!parsed.success) {
+          countChatRefusal(socket, 'invalid');
+          respond({ ok: false, reason: 'invalid' });
+          return;
+        }
+
+        const { orgId, callId } = parsed.data;
+
+        /* userId from socket.data, never from the request — the same rule as
+           every other join in this file, and the request has no field for it. */
+        const outcome = await authorizeCallJoin(userId, orgId, callId);
+
+        if (!outcome.allowed) {
+          logger.warn({ userId, orgId, callId, reason: outcome.reason }, 'call join refused');
+          countChatRefusal(socket, 'denied');
+          /* One reason for every refusal, as everywhere else here: telling
+             "no such call" apart from "denied" would let a member enumerate
+             which calls exist by id. */
+          respond({ ok: false, reason: 'denied' });
+          return;
+        }
+
+        await socket.join(callRoom(callId));
+        socket.data.rooms.set(callId, orgId);
+        logger.debug({ userId, callId }, 'socket joined call room');
+        respond({ ok: true });
+      })();
+    });
+
+    socket.on('call:leave', (request: unknown) => {
+      const parsed = CallLeaveRequestSchema.safeParse(request);
+      if (!parsed.success) return;
+
+      socket.data.rooms.delete(parsed.data.callId);
+      void socket.leave(callRoom(parsed.data.callId));
+    });
+
     /* Typing indicators (ai/phase-5-chat.md §5) — relayed in-process, never a
        domain event (see `events.ts`'s header on why). `socket.to(...)` rather
        than `chat.to(...)` so the sender never receives its own typing state
@@ -482,6 +544,23 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
         occurredAt: row.occurredAt.toISOString(),
         payload: row.payload,
       });
+    }
+
+    /* Call state (Phase 7 Wave 2, §3.10). Carries the STATUS and nothing else
+       — no phone number, no recording url. `event-rooms.ts` refuses at BOOT to
+       map any `recording.*` event here, because a call room is joined with
+       `call:read` (MEMBER) and recordings are `recording:read`
+       (Admin-and-Owner). */
+    const callId = roomCallIdOf(row.name, row.payload);
+    if (callId !== null) {
+      const fields = row.payload as { readonly status?: unknown };
+      if (typeof fields.status === 'string') {
+        chat.to(callRoom(callId)).emit('call:state', {
+          callId,
+          status: fields.status,
+          at: row.occurredAt.toISOString(),
+        });
+      }
     }
 
     const notifiedUserId = roomUserIdOf(row.name, row.payload);

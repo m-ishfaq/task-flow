@@ -9,7 +9,7 @@ import {
   withOrgScope,
   withUserScope,
 } from '@taskflow/db';
-import { OrgIdSchema, type OrgId, type UserId } from '@taskflow/contracts';
+import { errors, OrgIdSchema, type OrgId, type UserId } from '@taskflow/contracts';
 import { isRelation, type RelationshipTuple, type ResourceType } from '@taskflow/policy';
 import { isRole } from '@taskflow/policy';
 import type { OrgMembership } from '../trpc/context.js';
@@ -95,6 +95,50 @@ export async function resolveOrgMembership(
      it turns "silently permitted nothing" into a clean NOT_A_MEMBER rather than
      a user who appears to be signed in and can do nothing. */
   if (!isRole(role)) return null;
+
+  /* Phase 12 Wave 1 (§3.3): identity.orgs.status was real but unenforced, and
+     this is where enforcement lives — this function is what every org-scoped
+     tRPC route, every realtime room join, and every collab page authorization
+     run through, so one change here refuses all three for free.
+
+     The read runs in `withUserScope(userId)`, NOT `withOrgScope(orgId)`, and
+     that is correct for a subtle reason: identity.orgs has FORCE RLS with
+     `orgs_tenant_isolation` keyed on app.org_id, which this scope clears — but
+     the caller is an ACTIVE member (we just found the membership row), so
+     `orgs_self_read` (0004) admits the row through `app.user_id`. A member of
+     a suspended org still sees the org row, which is exactly what this check
+     needs. An org that is somehow invisible here reads as `undefined` and
+     falls through, which is the not-suspended answer — the case the spec's
+     own §3.7 correction warns to verify empirically rather than assume, and
+     the tenancy suite's suspension tests pin it against real Postgres. */
+  const status = await withUserScope(userId, async (tx) => {
+    const orgRow = await tx
+      .select({ status: schema.orgs.status })
+      .from(schema.orgs)
+      .where(eq(schema.orgs.id, orgId))
+      .limit(1);
+    return orgRow[0]?.status;
+  });
+
+  /* Suspended and deleted get different treatments on purpose (§3.3):
+
+     - 'suspended' is its OWN error. NOT_A_MEMBER already means "you were
+       never in this org, or you were removed", and telling a legitimately-
+       still-a-member Owner that would lie about what happened and what to do
+       next. This is a temporary, operator-controlled state; the membership
+       is still valid.
+
+     - 'deleted' collapses into NOT_A_MEMBER deliberately. This wave adds no
+       route that can produce that state (§2), and when it happens "that org
+       used to exist" is exactly the kind of fact a former member should not
+       get confirmed by an error message — the same cross-tenant-privacy
+       argument member.service.ts already makes for NOT_FOUND. */
+  if (status === 'suspended') {
+    throw errors.orgSuspended();
+  }
+  if (status === 'deleted') {
+    return null;
+  }
 
   const tuples = await loadTuples(orgId, userId);
 

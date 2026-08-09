@@ -104,6 +104,43 @@ describe('tRPC surface', () => {
     const response = await app.inject({ method: 'GET', url: '/trpc/org.destroy' });
     expect(response.statusCode).toBe(404);
   });
+
+  it("routes a batched path longer than Fastify's default param limit", async () => {
+    /* tRPC batches put every procedure name in ONE path segment under /trpc
+       (`/trpc/a.b,c.d,e.f`). Fastify's default maxParamLength (100) answered
+       414 as soon as a page's batch grew past a few procedures — the
+       app-shell batch is ~165 characters of names — so the router rejected
+       the request before authentication could run, and every page load
+       failed with URI Too Long. The path must ROUTE (401 from the auth
+       gate) instead of being refused by the router. */
+    const batch = [
+      'tenancy.orgs.list',
+      'work.projects.list',
+      'tenancy.members.list',
+      'tenancy.orgs.get',
+      'tenancy.teams.list',
+      'work.boards.list',
+      'work.boards.list',
+      'work.boards.list',
+      'work.boards.list',
+    ].join(',');
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/trpc/${batch}?batch=1&input=${encodeURIComponent(
+        '{"0":{},"1":{},"2":{},"3":{},"4":{},"5":{},"6":{},"7":{},"8":{}}',
+      )}`,
+    });
+
+    expect(response.statusCode).toBe(401);
+
+    // A batched response is one element per procedure, each an error envelope.
+    const body: unknown[] = response.json();
+    expect(body).toHaveLength(9);
+    for (const item of body) {
+      expect(item).toMatchObject({ error: { data: { code: 'UNAUTHENTICATED' } } });
+    }
+  });
 });
 
 describe('refresh cookie', () => {

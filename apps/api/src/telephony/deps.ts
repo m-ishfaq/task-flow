@@ -1,0 +1,173 @@
+import { SoftwareKeyProvider } from '@taskflow/security';
+import { S3StorageProvider } from '@taskflow/storage';
+import { FakeTelephonyProvider, TwilioTelephonyProvider } from '@taskflow/telephony';
+import type { KeyProvider, StorageProvider, TelephonyProvider } from '@taskflow/contracts';
+import type { Env } from '../config/env.js';
+
+/**
+ * Wiring for the telephony module (ai/phase-7-voice.md §6.4).
+ *
+ * Built from the validated environment rather than `process.env` (guardrail 3),
+ * and constructed once at boot.
+ *
+ * ## Returns undefined when the carrier is not configured, and that is the point
+ *
+ * An API instance serving Work and Chat with no Twilio credentials is a
+ * completely valid deployment — and a developer running this app must not need
+ * a Twilio account. So the credentials are optional in the env schema, and this
+ * returns `undefined` rather than constructing a half-configured provider.
+ *
+ * The consequence is deliberately shaped to fail CLOSED: a caller with no deps
+ * has nothing to call, so telephony routes are UNREGISTERED rather than
+ * registered-and-broken. The alternative — a provider built with empty strings
+ * — produces a Basic auth header that authenticates as nobody, and the failure
+ * arrives as a 401 from the carrier at the first click-to-call, which reads as
+ * "Twilio is down" rather than "this instance was never configured".
+ */
+
+export interface TelephonyDeps {
+  readonly telephony: TelephonyProvider;
+  readonly keys: KeyProvider;
+  /**
+   * Blind-index key for counterparty phone numbers (Wave 2).
+   *
+   * Separate from the master key so one compromise does not both decrypt the
+   * column and let an attacker generate indexes to confirm guesses against it.
+   */
+  readonly indexKey: Uint8Array;
+  readonly storage: StorageProvider | undefined;
+  readonly recordingsBucket: string | undefined;
+  /** §7.2's resolved default, for orgs with no explicit spend policy row. */
+  readonly defaultSpendCapCents: number;
+  /** The ceiling no self-service cap raise may exceed (§7.2). */
+  readonly maxSpendCapCents: number;
+  /** Absolute origin the carrier signs webhook URLs against (§3.11). */
+  readonly webhookOrigin: string | undefined;
+}
+
+export function buildTelephonyDeps(env: Env): TelephonyDeps | undefined {
+  const accountSid = env.TWILIO_ACCOUNT_SID;
+  const authToken = env.TWILIO_AUTH_TOKEN;
+
+  if (accountSid === undefined || authToken === undefined) return undefined;
+
+  /* The index key is REQUIRED once a carrier is configured, and this refuses at
+     boot rather than at the first call.
+
+     There is no safe default. Falling back to the master key would defeat the
+     separation the key exists for; generating one per process would make every
+     restart produce indexes that no longer match the rows already stored, and
+     the symptom would be inbound messages silently starting new threads rather
+     than anything that looks like a failure. */
+  if (env.TELEPHONY_INDEX_KEY === undefined) {
+    throw new Error(
+      'TELEPHONY_INDEX_KEY is required when TWILIO_ACCOUNT_SID is set — it keys the ' +
+        'blind index for counterparty phone numbers. Generate 32 random bytes, base64.',
+    );
+  }
+
+  /* The marker SIDs (the `ACtest` prefix and the all-zero placeholder) boot the
+     IN-MEMORY FakeTelephonyProvider, not the real one. `isLive: false` alone
+     would still construct `TwilioTelephonyProvider` and genuinely call
+     api.twilio.com with credentials that belong to no account — which answers
+     403, and turns the mock mode `.env.example` promises into an
+     INTERNAL_SERVER_ERROR on the UI's very first request (subaccount
+     provisioning). The fake makes the marker real: numbers search/purchase,
+     calls, SMS and spend all work against in-process state, no Twilio account
+     required. A real SID still boots the real provider, and is LIVE — a
+     separate boolean could disagree with the credentials in use, and the
+     direction it would disagree in is "we thought we were in test mode". */
+  const isFake = isTestCredential(accountSid);
+
+  const telephony = isFake
+    ? new FakeTelephonyProvider()
+    : new TwilioTelephonyProvider({
+        accountSid,
+        authToken,
+        verifyServiceSid: env.TWILIO_VERIFY_SERVICE_SID,
+        isLive: true,
+      });
+
+  /* TELEPHONY_WEBHOOK_ORIGIN is REQUIRED for a LIVE carrier, and this refuses
+     at boot for the same reason TELEPHONY_INDEX_KEY above does.
+
+     Every URL handed to the carrier is built as `${webhookOrigin ?? ''}/...`
+     by number.service, call.service and message.service. With no origin that
+     `??` yields a RELATIVE path, and a relative URL is not a thing a carrier
+     can call back. Twilio refuses a number purchase outright for it (error
+     21402, "invalid URL") — which is the LOUD half, and the half that is
+     harmless because nothing was bought.
+
+     The quiet half is why this is a boot check rather than a better error at
+     the purchase call site: `statusCallbackUrl` is how a call's or message's
+     ACTUAL cost ever arrives. Miss it and the carrier still places the call,
+     the spend ledger keeps `actual_cents` NULL forever, and `sumWithFallback`
+     goes on charging the cap the ESTIMATE — an instance that bills against
+     guesses indefinitely, with nothing failing to say so. That is precisely
+     the reconciliation window §3.3 refuses to leave open.
+
+     Scoped to the live provider on purpose: the fake reaches no carrier, so a
+     developer running the offline demo needs no tunnel. */
+  if (!isFake && env.TELEPHONY_WEBHOOK_ORIGIN === undefined) {
+    throw new Error(
+      'TELEPHONY_WEBHOOK_ORIGIN is required when a live Twilio account is configured — ' +
+        'it is the absolute origin every carrier callback URL is built from, and without it ' +
+        'the carrier is handed relative URLs it cannot call back (number purchase fails with ' +
+        'Twilio error 21402, and call/message status callbacks never arrive, so no spend is ' +
+        'ever reconciled against its estimate). Set it to a PUBLIC https origin that reaches ' +
+        'this API — in development, an ngrok tunnel. Use the mock account SID instead if you ' +
+        'meant to run offline.',
+    );
+  }
+
+  return {
+    telephony,
+    keys: new SoftwareKeyProvider({
+      currentMasterKeyId: env.MASTER_KEY_ID,
+      masterKeys: [
+        {
+          id: env.MASTER_KEY_ID,
+          key: new Uint8Array(Buffer.from(env.MASTER_KEY_BASE64, 'base64')),
+        },
+      ],
+    }),
+    indexKey: new Uint8Array(Buffer.from(env.TELEPHONY_INDEX_KEY, 'base64')),
+    /* Recordings go to their OWN bucket, not the attachments one. Different
+       retention, different access rules, and a bucket-level lifecycle policy on
+       recordings must not touch a card's attachments. */
+    storage:
+      env.STORAGE_BUCKET_RECORDINGS === undefined
+        ? undefined
+        : new S3StorageProvider({
+            endpoint: env.STORAGE_ENDPOINT,
+            region: env.STORAGE_REGION,
+            bucket: env.STORAGE_BUCKET_RECORDINGS,
+            accessKeyId: env.STORAGE_ACCESS_KEY_ID,
+            secretAccessKey: env.STORAGE_SECRET_ACCESS_KEY,
+            forcePathStyle: env.STORAGE_FORCE_PATH_STYLE,
+          }),
+    recordingsBucket: env.STORAGE_BUCKET_RECORDINGS,
+    defaultSpendCapCents: env.TELEPHONY_DEFAULT_SPEND_CAP_CENTS,
+    maxSpendCapCents: env.TELEPHONY_MAX_SPEND_CAP_CENTS,
+    webhookOrigin: env.TELEPHONY_WEBHOOK_ORIGIN,
+  };
+}
+
+/**
+ * Whether an account SID is one of this codebase's MOCK markers.
+ *
+ * These are NOT Twilio credentials — Twilio's own sandbox is the same SID with
+ * a test auth token, and there is no field in the SID that marks it. These two
+ * shapes are a configured convention local to this repo: `ACtest` and the
+ * all-zero placeholder. Anything else is treated as real, because guessing
+ * "mock" for an unknown credential is guessing that spending is free, and that
+ * is the wrong way for this to be wrong. A real Twilio SID is `AC` followed by
+ * base62 and can never be either shape.
+ */
+function isTestCredential(accountSid: string): boolean {
+  return accountSid.startsWith('ACtest') || accountSid === 'AC00000000000000000000000000000000';
+}
+
+/* The provider contract declares `isLive` (contracts/providers/telephony-provider.ts) and the
+   fake reports `isLive = false` itself (`fake.ts`), so nothing here sets it twice — the real
+   provider's `isLive: true` above is simply the truth about real credentials. */

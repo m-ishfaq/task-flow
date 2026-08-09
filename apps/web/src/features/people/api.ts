@@ -76,6 +76,8 @@ export interface MembershipPatchInput {
   readonly userId: string;
   readonly jobTitle?: string | null;
   readonly department?: string | null;
+  /** E.164, or null to clear. Validated server-side (migration 0039). */
+  readonly workPhone?: string | null;
 }
 
 export async function updateMembershipProfile(input: MembershipPatchInput) {

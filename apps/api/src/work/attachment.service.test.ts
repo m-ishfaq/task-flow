@@ -88,6 +88,12 @@ class FakeStorage implements StorageProvider {
     return Promise.resolve(`https://storage.test/${key}?expires=${String(expiresInSeconds)}`);
   }
 
+  /** Server-side write (Phase 7 §3.6). No attachment path uses it. */
+  putObject(key: string, body: Uint8Array, contentType: string): Promise<void> {
+    this.objects.set(key, { body, contentType });
+    return Promise.resolve();
+  }
+
   head(key: string): Promise<ObjectMetadata | undefined> {
     const object = this.objects.get(key);
     if (!object) return Promise.resolve(undefined);

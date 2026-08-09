@@ -502,6 +502,153 @@ export function hasSweepDatabase(): boolean {
 }
 
 /* -------------------------------------------------------------------------- *
+ * The recording-ingest connection (ai/phase-7-voice.md §3.6, Phase 7 Wave 2)
+ * -------------------------------------------------------------------------- */
+
+let recordingIngestPool: pg.Pool | undefined;
+let recordingIngestDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the recording-ingest pool, as `taskflow_recording_ingest`.
+ *
+ * A SEVENTH role, on the same reasoning as every consumer role before it: the
+ * sweep pulls pending recordings off the carrier for every tenant in one pass,
+ * and no value of `app.org_id` is correct for it.
+ *
+ * Migration 0033 has the column-level detail. The short version: this role can
+ * read which recordings are pending and where the carrier says the audio is,
+ * and holds NOTHING on `comms.calls` — so the role that fetches a recording
+ * cannot learn whose conversation it is. It also has no INSERT anywhere, so a
+ * compromised sweep cannot fabricate a recording row pointing at an object it
+ * controls.
+ */
+export function initializeRecordingIngestDatabase(config: DbConfig): void {
+  if (recordingIngestPool) {
+    throw new Error('Recording ingest database already initialized. This is a boot-time call.');
+  }
+
+  recordingIngestPool = new Pool({
+    connectionString: config.url,
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-recording-ingest',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  recordingIngestDb = drizzle(recordingIngestPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_recording_ingest`.
+ *
+ * Throws rather than falling back to the application role — which could not see
+ * pending recordings across every org anyway, so the fallback would silently
+ * ingest nothing while looking healthy. That failure shape is exactly what
+ * Phase 4's `FOR UPDATE`-without-an-UPDATE-policy bug looked like, and the
+ * reason every consumer scope in this file refuses instead of degrading.
+ */
+export async function withRecordingIngestScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!recordingIngestDb) {
+    throw new Error(
+      'Recording ingest database not initialized. Call initializeRecordingIngestDatabase() ' +
+        'during boot — the ingest sweep must not fall back to the application role, which ' +
+        'cannot see comms.recordings across every org and would silently ingest nothing.',
+    );
+  }
+
+  return recordingIngestDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the recording-ingest pool has been initialized. */
+export function hasRecordingIngestDatabase(): boolean {
+  return recordingIngestDb !== undefined;
+}
+
+/* -------------------------------------------------------------------------- *
+ * The platform-admin connection (ai/phase-12-admin.md §3.7, Phase 12 Wave 1)
+ * -------------------------------------------------------------------------- */
+
+let platformAdminPool: pg.Pool | undefined;
+let platformAdminDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the platform-admin console's pool, as `taskflow_platform_admin`.
+ *
+ * AN EIGHTH role, for the identical reason every consumer role before it
+ * exists: the org DIRECTORY is read across EVERY tenant in one pass, and no
+ * value of `app.org_id` is correct for it. The role is `NOBYPASSRLS`, reaching
+ * across orgs only on the tables carrying an explicit
+ * `TO taskflow_platform_admin` policy (migration 0035): `identity.orgs` and
+ * `identity.memberships` for the directory, `identity.users` (which has no
+ * RLS at all), and the operator audit log it owns.
+ *
+ * This is NOT the connection `isPlatformOperator` reads on: that check goes
+ * through `withGlobalScope` on the ordinary application pool, because
+ * `platform.operators` is a non-tenant table with no RLS and the app role
+ * holds SELECT on it.
+ */
+export function initializePlatformAdminDatabase(config: DbConfig): void {
+  if (platformAdminPool) {
+    throw new Error('Platform-admin database already initialized. This is a boot-time call.');
+  }
+
+  platformAdminPool = new Pool({
+    connectionString: config.url,
+    // Small, matching every other system role: one console session at a time,
+    // and extra connections here buy nothing but ways to contend.
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-platform-admin',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  platformAdminDb = drizzle(platformAdminPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_platform_admin` — the role that may read the org
+ * directory across every tenant and write `identity.orgs.status`.
+ *
+ * NOT tenant-scoped, for the identical reason `withAuditScope` is not: the
+ * console's queries span every org, so no single value of `app.org_id` is
+ * correct for it. What contains it is the role — `NOBYPASSRLS`, reaching
+ * across orgs only on the tables carrying an explicit
+ * `TO taskflow_platform_admin` policy. Every OTHER table still filters on
+ * `app.org_id`, which this clears, so a stray query for cards here returns
+ * zero rows.
+ *
+ * Throws rather than falling back to the application role — which could not
+ * see across every org anyway, so the fallback would silently list zero orgs
+ * while looking healthy. That is exactly the quiet failure §3.7 exists to
+ * prevent (an operator looking at a real system with real orgs misreading an
+ * empty list as "no orgs exist yet").
+ */
+export async function withPlatformAdminScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!platformAdminDb) {
+    throw new Error(
+      'Platform-admin database not initialized. Call initializePlatformAdminDatabase() during ' +
+        'boot — the console must not fall back to the application role, which cannot see ' +
+        'identity.orgs across every tenant and would silently list nothing.',
+    );
+  }
+
+  return platformAdminDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the platform-admin pool has been initialized. */
+export function hasPlatformAdminDatabase(): boolean {
+  return platformAdminDb !== undefined;
+}
+
+/* -------------------------------------------------------------------------- *
  * The backlinks connection (ai/phase-6-docs.md §3.10, Phase 6 Wave 3)
  * -------------------------------------------------------------------------- */
 
@@ -598,6 +745,14 @@ export async function closeDatabase(): Promise<void> {
   await sweepPool?.end();
   sweepPool = undefined;
   sweepDb = undefined;
+
+  await recordingIngestPool?.end();
+  recordingIngestPool = undefined;
+  recordingIngestDb = undefined;
+
+  await platformAdminPool?.end();
+  platformAdminPool = undefined;
+  platformAdminDb = undefined;
 }
 
 /** True when the pool is live and answering. Backs `/health/ready` (§14). */

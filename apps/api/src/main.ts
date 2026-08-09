@@ -3,6 +3,8 @@ import {
   initializeAuditDatabase,
   initializeBacklinksDatabase,
   initializeDatabase,
+  initializePlatformAdminDatabase,
+  initializeRecordingIngestDatabase,
   initializeSweepDatabase,
 } from '@taskflow/db';
 import { createLogger } from '@taskflow/observability';
@@ -15,6 +17,8 @@ import { createNotificationMailDelivery } from './platform/notification-mail.js'
 import { startDigestSweep } from './platform/digest.js';
 import { startDueReminderSweep } from './platform/due-reminders.js';
 import { WebPushProvider } from './platform/push-provider.js';
+import { buildTelephonyDeps } from './telephony/deps.js';
+import { createCarrierFetch, startRecordingIngest } from './telephony/ingest.scheduler.js';
 
 /**
  * Process entry point.
@@ -75,6 +79,34 @@ if (env.DATABASE_NOTIFICATION_SWEEP_URL !== undefined) {
     applicationName: 'taskflow-notification-sweep',
   });
 }
+
+/* The recording-ingest sweep's claim connection, on its own role and pool
+   (Phase 7 Wave 2, §3.6; migration 0033). `taskflow_recording_ingest` holds a
+   COLUMN-LEVEL grant on `comms.recordings` and nothing at all on `comms.calls`,
+   so the role that fetches a recording cannot learn whose conversation it is.
+   Same optionality reasoning as every consumer pool above. */
+if (env.DATABASE_RECORDING_INGEST_URL !== undefined) {
+  initializeRecordingIngestDatabase({
+    url: env.DATABASE_RECORDING_INGEST_URL,
+    applicationName: 'taskflow-recording-ingest',
+  });
+}
+
+/* The platform-admin console's connection, on its own role and pool (Phase
+   12 Wave 1, §3.7; migration 0035). Same optionality reasoning as every
+   consumer pool above: `taskflow_platform_admin` reads the org directory
+   across every tenant and writes orgs.status, and an instance that never
+   serves a console request does not need it — `withPlatformAdminScope`
+   throws rather than silently falling back to the application role, which
+   cannot see across every org. */
+if (env.DATABASE_PLATFORM_ADMIN_URL !== undefined) {
+  initializePlatformAdminDatabase({
+    url: env.DATABASE_PLATFORM_ADMIN_URL,
+    applicationName: 'taskflow-platform-admin',
+  });
+}
+
+const telephonyDeps = buildTelephonyDeps(env);
 
 const app = await buildServer({ env });
 
@@ -144,6 +176,28 @@ const retention = env.RETENTION_SWEEP_ENABLED
     })
   : null;
 
+/* Pulls call recordings off the carrier into this org's own object storage
+   (Phase 7 Wave 2, ai/phase-7-voice.md §3.6). PLAN.md §8.5: "Recordings stored
+   in your own object storage, never left on Twilio."
+
+   Same "belongs in apps/worker" caveat as every sweep above — §7.1's re-asked
+   decision at Wave 2 was to defer that deployable rather than stand one up for
+   a single consumer. Off by default like the retention sweep, though this one
+   is genuinely safe to run twice: its claim is a conditional UPDATE on
+   `attempts`, so a second instance wastes carrier bandwidth rather than
+   corrupting anything. */
+const recordingIngest =
+  env.RECORDING_INGEST_ENABLED && telephonyDeps?.storage !== undefined
+    ? startRecordingIngest({
+        logger: createLogger({ name: 'recording-ingest', level: env.LOG_LEVEL }),
+        storage: telephonyDeps.storage,
+        fetchRecording: createCarrierFetch({
+          accountSid: env.TWILIO_ACCOUNT_SID ?? '',
+          authToken: env.TWILIO_AUTH_TOKEN ?? '',
+        }),
+      })
+    : null;
+
 await app.listen({ port: env.API_PORT, host: env.API_HOST });
 
 /**
@@ -164,6 +218,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
       digestSweep.stop();
       dueReminderSweep.stop();
       retention?.stop();
+      recordingIngest?.stop();
       await app.close();
       await closeDatabase();
       process.exit(0);

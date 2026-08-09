@@ -399,6 +399,73 @@ export function channelRoom(channelId: string): string {
   return `channel:${channelId}`;
 }
 
+/* -------------------------------------------------------------------------- *
+ * Calls (Phase 7 Wave 2, ai/phase-7-voice.md §3.10)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * "Subscribe me to this call's state."
+ *
+ * The same two fields and the same absence as every other join request in this
+ * file: an org and a resource, `.strict()`, and NO subject. The reasoning is
+ * identical and it is not repeated here by accident — this is the third join
+ * type, and the shape being uniform is what makes "there is nowhere in the
+ * protocol to assert an identity" a property of the protocol rather than of
+ * three separately-remembered handlers.
+ *
+ * A call id is `z.string().uuid()` rather than a branded parser because there
+ * is no `CallIdSchema` in contracts — calls are identified by an opaque id the
+ * server minted, and the room is validated against the database anyway
+ * (`authorizeCallJoin`), which is a stronger check than a shape.
+ */
+export interface CallJoinRequest {
+  readonly orgId: OrgId;
+  readonly callId: string;
+}
+
+/** Annotated rather than inferred — see the note on `JoinRequestSchema`. */
+export const CallJoinRequestSchema: z.ZodType<
+  CallJoinRequest,
+  z.ZodTypeDef,
+  { orgId: string; callId: string }
+> = z.object({ orgId: OrgIdSchema, callId: z.string().uuid() }).strict();
+
+export interface CallLeaveRequest {
+  readonly callId: string;
+}
+
+export const CallLeaveRequestSchema: z.ZodType<CallLeaveRequest, z.ZodTypeDef, { callId: string }> =
+  z.object({ callId: z.string().uuid() }).strict();
+
+/**
+ * A call changed state.
+ *
+ * Carries the STATUS and nothing else — no phone number, no recording URL. The
+ * client already knows which call it subscribed to, and a room message is the
+ * easiest thing in this system to end up in a browser console or a client-side
+ * log. `apps/web` reacts by invalidating its call queries (the INVALIDATE
+ * strategy ai/phase-4-realtime.md §5 establishes), not by rendering this.
+ */
+export interface CallStateMessage {
+  readonly callId: string;
+  readonly status: string;
+  readonly at: string;
+}
+
+export interface CallServerToClientEvents {
+  'call:state': (message: CallStateMessage) => void;
+}
+
+export interface CallClientToServerEvents {
+  'call:join': (request: CallJoinRequest, ack: (result: JoinAck) => void) => void;
+  'call:leave': (request: CallLeaveRequest) => void;
+}
+
+/** The Socket.io room name for a call. One definition, used on both sides. */
+export function callRoom(callId: string): string {
+  return `call:${callId}`;
+}
+
 /** The inverse of `channelRoom`, or null if the room is not a channel room. */
 export function channelIdOfRoom(room: string): string | null {
   return room.startsWith('channel:') ? room.slice('channel:'.length) : null;

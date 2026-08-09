@@ -434,6 +434,17 @@ export async function drainNotifications(limit = 100): Promise<NotificationDrain
     if (pending.length === 0)
       return { processed: 0, written: 0, pendingEmails: [], pendingPushes: [] };
 
+    /* Phase 12 Wave 1 §3.9: the org-status filter, resolved ONCE for the
+       whole batch rather than per row — a suspended (or deleted) org's
+       events produce no in-app notification and no delivery. The rows are
+       still marked dispatched below; skipping IS the decision. Runs as
+       taskflow_audit with the column-limited orgs read migration 0037
+       grants. */
+    const activeOrgIds = await activeOrgIdsFor(
+      tx,
+      pending.map((row) => row.orgId),
+    );
+
     let written = 0;
     /* Recipients whose preferences and idempotent delivery insert both said
        "email this person", keyed by userId — resolved to addresses and turned
@@ -451,6 +462,13 @@ export async function drainNotifications(limit = 100): Promise<NotificationDrain
     const pendingPushes: PendingPushSend[] = [];
 
     for (const row of pending) {
+      /* A suspended org's event is consumed (dispatched below) but produces
+         nothing — §3.9. The due-date-edit clearing in the branch below is
+         skipped for such orgs too, which is correct: their cards never get
+         reminders in the first place, because the sweep's own org join
+         filters them out. */
+      if (!activeOrgIds.has(row.orgId)) continue;
+
       const plans = planNotifications(row);
 
       if (plans.length === 0) {
@@ -644,6 +662,23 @@ export async function drainNotifications(limit = 100): Promise<NotificationDrain
 
     return { processed: pending.length, written, pendingEmails, pendingPushes };
   });
+}
+
+/**
+ * The orgs in a batch that are currently `'active'` (Phase 12 Wave 1 §3.9) —
+ * one read per batch, never per row. An org missing entirely (deleted)
+ * is not in the set and its events are skipped, the same collapse
+ * resolve.ts gives `'deleted'` → NOT_A_MEMBER.
+ */
+async function activeOrgIdsFor(
+  tx: Parameters<Parameters<typeof withAuditScope>[0]>[0],
+  orgIds: readonly string[],
+): Promise<Set<string>> {
+  const rows = await tx
+    .select({ id: schema.orgs.id })
+    .from(schema.orgs)
+    .where(and(inArray(schema.orgs.id, [...orgIds]), eq(schema.orgs.status, 'active')));
+  return new Set(rows.map((row) => row.id));
 }
 
 /**

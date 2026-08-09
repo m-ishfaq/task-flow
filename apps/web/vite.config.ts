@@ -130,6 +130,23 @@ export default defineConfig({
         changeOrigin: false,
         ws: true,
       },
+      /* Carrier webhooks (Phase 7 §3.11). These are plain Fastify routes on the
+         API, not tRPC, and they are the one path where the CALLER is Twilio
+         rather than this browser — so they only matter when a tunnel is
+         pointed at this dev server, which is the usual setup because
+         TELEPHONY_WEBHOOK_ORIGIN and WEB_ORIGIN want to be the same host.
+
+         Without this, a tunnel aimed at :5173 answers 404 to every callback:
+         Twilio cannot fetch the TwiML for an outbound call, so the call fails
+         before it dials, and no status callback ever arrives to reconcile
+         cost. `changeOrigin: false` matters more here than anywhere else in
+         this block — the webhook signature is computed over the URL, so
+         rewriting the Host would make every genuine request fail
+         verification. */
+      '/telephony': {
+        target: API_ORIGIN,
+        changeOrigin: false,
+      },
     },
   },
 

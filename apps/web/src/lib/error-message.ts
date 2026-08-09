@@ -26,6 +26,7 @@ import { apiErrorOf } from './trpc.js';
  */
 const FRIENDLY: Partial<Record<ErrorCode, string>> = {
   NOT_A_MEMBER: 'You are not a member of this organization.',
+  ORG_SUSPENDED: 'This organization has been suspended by a platform administrator.',
   FORBIDDEN: 'You do not have permission to do that.',
   STEP_UP_REQUIRED: 'Please sign in again to confirm this change.',
   CONFLICT: 'Someone else changed this first. Reload to see the current version.',

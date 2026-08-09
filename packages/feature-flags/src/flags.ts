@@ -57,7 +57,11 @@ export const FLAGS = {
   telephony: {
     description: 'Voice & Messaging: calls, SMS, recordings',
     phase: 7,
-    stage: 'planned',
+    // Wave 1 shipped: the provider interface, the outbound spend/geo/velocity
+    // gate, subaccount provisioning, and webhook signature verification. No
+    // product surface is behind this flag yet — Wave 1 deliberately ships
+    // nothing a user would call a feature (ai/phase-7-voice.md §5).
+    stage: 'in-progress',
     defaultValue: false,
     perOrg: true,
   },

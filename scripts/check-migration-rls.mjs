@@ -45,6 +45,22 @@
  * WITH CHECK on user_id would let any caller insert a membership naming
  * themselves as owner of any org. Flagging them asks for the vulnerability.
  *
+ * ---------------------------------------------------------------------------
+ * THE SECOND EXEMPTION, AND WHY IT IS NARROW BY CONSTRUCTION
+ *
+ * Phase 7 added one table that genuinely has an org_id and genuinely must not
+ * have RLS: comms.subaccount_orgs, the carrier-SID -> org lookup an inbound
+ * webhook needs BEFORE it can open a scope (ai/phase-7-voice.md 3.11). RLS on
+ * it would make the pre-tenant read it exists for return zero rows, which is
+ * the whole chicken-and-egg the table resolves.
+ *
+ * An exemption that is just a name on a list rots: the table gets a column, the
+ * column holds something sensitive, and the entry that was safe when written is
+ * now a hole nobody rechecks. So RLS_EXEMPT does not name tables, it names
+ * tables AND their complete permitted column set. Adding any column not on that
+ * list makes this checker fire again — which is exactly what should happen if
+ * somebody decides the auth token would be handy to keep alongside the mapping.
+ *
  * Usage: node scripts/check-migration-rls.mjs
  *
  * Runs both directions, like packages/guardrail-selftest: the real migrations
@@ -58,6 +74,26 @@ import { join } from 'node:path';
 
 const MIGRATIONS_DIR = 'packages/db/migrations';
 const FIXTURE = '.semgrep/fixtures/bad_migration.up.sql';
+
+/**
+ * Tables with an org_id that deliberately have no RLS, and the COMPLETE set of
+ * columns each is allowed to carry.
+ *
+ * See "THE SECOND EXEMPTION" above. The column list is the control: a table on
+ * this list that grows a column outside its set is reported as
+ * `rls-exempt-table-grew-a-column`, because the argument for exempting it was
+ * always "it holds nothing worth protecting", and that argument expires the
+ * moment it holds something.
+ */
+const RLS_EXEMPT = new Map([
+  [
+    'comms.subaccount_orgs',
+    {
+      columns: new Set(['subaccount_sid', 'org_id']),
+      why: 'Pre-tenant webhook lookup (ai/phase-7-voice.md §3.11). RLS here would make the read it exists for return zero rows. Holds no secrets — see migration 0032.',
+    },
+  ],
+]);
 
 /**
  * Removes comments and string literals, replacing each with equal-length
@@ -147,7 +183,7 @@ function analyze(files) {
       const open = m.index + m[0].length - 1;
       const columns = sql.slice(open, matchParen(sql, open));
       if (!/\borg_id\b/i.test(columns)) continue;
-      tables.push({ name: qualify(m[1], m[2]), path, line: lineOf(sql, m.index) });
+      tables.push({ name: qualify(m[1], m[2]), path, line: lineOf(sql, m.index), columns });
     }
 
     const alter =
@@ -198,6 +234,26 @@ function analyze(files) {
   }
 
   for (const table of tables) {
+    const exemption = RLS_EXEMPT.get(table.name);
+
+    if (exemption !== undefined) {
+      /* The exemption is bounded by its column set, not by its name. An exempt
+         table that grows a column was exempted on an argument — "it holds
+         nothing worth protecting" — that no longer holds. */
+      const declared = columnNames(table.columns);
+      const extra = declared.filter((name) => !exemption.columns.has(name));
+
+      if (extra.length > 0) {
+        findings.push({
+          rule: 'rls-exempt-table-grew-a-column',
+          path: table.path,
+          line: table.line,
+          message: `${table.name} is RLS-exempt (${exemption.why}) but now declares ${extra.join(', ')}, which is outside its permitted column set. Either drop the column, or remove the exemption and give the table real RLS.`,
+        });
+      }
+      continue;
+    }
+
     const missing = [
       enabled.has(table.name) ? '' : 'ENABLE',
       forced.has(table.name) ? '' : 'FORCE',
@@ -215,6 +271,47 @@ function analyze(files) {
   return findings;
 }
 
+/**
+ * Column names from a CREATE TABLE body.
+ *
+ * Only the leading identifier of each top-level, comma-separated clause counts,
+ * and table CONSTRAINT clauses are skipped — otherwise `CONSTRAINT foo CHECK
+ * (...)` would read as a column named "constraint" and every exempt table would
+ * appear to have grown one.
+ */
+function columnNames(body) {
+  const names = [];
+  let depth = 0;
+  let current = '';
+
+  for (const char of body.slice(1)) {
+    if (char === '(') depth += 1;
+    else if (char === ')') {
+      if (depth === 0) break;
+      depth -= 1;
+    }
+
+    if (char === ',' && depth === 0) {
+      pushColumn(names, current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  pushColumn(names, current);
+  return names;
+}
+
+function pushColumn(names, clause) {
+  const first = clause.trim().split(/\s+/)[0]?.toLowerCase();
+  if (first === undefined || first.length === 0) return;
+  // Table-level constraints are not columns.
+  if (['constraint', 'primary', 'unique', 'foreign', 'check', 'exclude', 'like'].includes(first)) {
+    return;
+  }
+  names.push(first.replace(/["']/g, ''));
+}
+
 const read = (path) => ({ path, raw: readFileSync(path, 'utf8') });
 
 const migrations = readdirSync(MIGRATIONS_DIR)
@@ -226,6 +323,7 @@ const EXPECTED_ON_FIXTURE = [
   'tenant-table-without-force-rls',
   'rls-policy-without-nullif',
   'rls-policy-without-with-check',
+  'rls-exempt-table-grew-a-column',
 ];
 
 let failed = false;

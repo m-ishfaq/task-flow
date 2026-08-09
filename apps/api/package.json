@@ -39,6 +39,7 @@
     "@taskflow/policy": "workspace:*",
     "@taskflow/security": "workspace:*",
     "@taskflow/storage": "workspace:*",
+    "@taskflow/telephony": "workspace:*",
     "@trpc/server": "^11.18.0",
     "fastify": "^5.10.0",
     "pdf-lib": "^1.17.1",

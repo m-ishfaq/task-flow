@@ -73,6 +73,15 @@ export const REDACTION_PATHS: readonly string[] = [
   '*.transcript',
   '*.transcriptText',
   '*.twilioAuthToken',
+  /* Phase 7 Wave 1 (ai/phase-7-voice.md §6.5). `TelephonySubaccount.authToken`
+     is the field name the provider interface actually uses, and `twilioAuthToken`
+     above does not match it — a path that names a field nothing is called is a
+     redaction rule that never fires. The subaccount SID is not a credential, but
+     it is the key that resolves an inbound webhook to a tenant, so it stays out
+     of logs alongside it. */
+  'authToken',
+  '*.authToken',
+  '*.subaccountSid',
 
   /* --- Object storage ------------------------------------------------------ */
   // Presigned URLs carry their own authorization in the query string.

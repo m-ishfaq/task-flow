@@ -143,6 +143,16 @@ const KNOWN_VARIABLES = new Set([
      a correctly-spelled variable the moment it lands in a developer's .env. */
   'DATABASE_COLLAB_URL',
   'DATABASE_BACKLINKS_URL',
+  /* The notification sweep's role (Phase 9 Wave 2, migration 0029), the
+     platform-admin console's (Phase 12 Wave 1, migration 0035) and the
+     recording-ingest sweep's (Phase 7, migration 0033) — none read here, all
+     three claimed by the `DATABASE_` prefix. Their absence is what stopped
+     this gateway booting the moment a developer's .env carried the full
+     example: the error named DATABASE_PLATFORM_ADMIN_URL as a suspected typo
+     of nothing at all. */
+  'DATABASE_NOTIFICATION_SWEEP_URL',
+  'DATABASE_PLATFORM_ADMIN_URL',
+  'DATABASE_RECORDING_INGEST_URL',
   'DATABASE_POOL_MAX',
   'STORAGE_ENDPOINT',
   'STORAGE_REGION',
@@ -152,6 +162,8 @@ const KNOWN_VARIABLES = new Set([
   'STORAGE_BUCKET_EXPORTS',
   'STORAGE_FORCE_PATH_STYLE',
   'STORAGE_MAX_UPLOAD_BYTES',
+  /* Where call recordings land (Phase 7). `STORAGE_` prefix, never read here. */
+  'STORAGE_BUCKET_RECORDINGS',
   'CLAMAV_HOST',
   'CLAMAV_PORT',
   'MAIL_HOST',

@@ -107,8 +107,10 @@ services:
       mc alias set local http://minio:9000 taskflow taskflow-dev-secret &&
       mc mb --ignore-existing local/taskflow-attachments &&
       mc mb --ignore-existing local/taskflow-exports &&
+      mc mb --ignore-existing local/taskflow-recordings &&
       mc anonymous set none local/taskflow-attachments &&
       mc anonymous set none local/taskflow-exports &&
+      mc anonymous set none local/taskflow-recordings &&
       echo 'buckets ready (private)';
       "
     restart: 'no'

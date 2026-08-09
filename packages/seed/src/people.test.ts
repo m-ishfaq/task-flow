@@ -442,16 +442,25 @@ describe('people.profiles — events', () => {
         readonly orgId: string;
         readonly userId: string;
         readonly changed: readonly string[];
-        readonly before: { readonly jobTitle: string | null; readonly department: string | null };
-        readonly after: { readonly jobTitle: string | null; readonly department: string | null };
+        readonly before: {
+          readonly jobTitle: string | null;
+          readonly department: string | null;
+          readonly workPhone: string | null;
+        };
+        readonly after: {
+          readonly jobTitle: string | null;
+          readonly department: string | null;
+          readonly workPhone: string | null;
+        };
       };
       expect(payload.orgId).toBe(ORG_ID);
       expect(payload.changed).toEqual(['jobTitle']); // departmentRate 0
-      expect(payload.before).toEqual({ jobTitle: null, department: null });
+      expect(payload.before).toEqual({ jobTitle: null, department: null, workPhone: null });
 
       const row = membershipProfiles.find((r) => r['user_id'] === payload.userId);
       expect(row?.['job_title']).toBe(payload.after.jobTitle);
       expect(payload.after.department).toBeNull();
+      expect(payload.after.workPhone).toBeNull(); // the seed writes no work phone
       expect(event.actorId).toBe(payload.userId); // self-service (§3.6)
     }
   });

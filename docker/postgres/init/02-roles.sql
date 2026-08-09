@@ -112,6 +112,45 @@ CREATE ROLE taskflow_notification_sweep WITH LOGIN PASSWORD 'sweep-dev-secret' N
 CREATE ROLE taskflow_backlinks WITH LOGIN PASSWORD 'backlinks-dev-secret' NOSUPERUSER NOCREATEDB
   NOCREATEROLE NOBYPASSRLS;
 
+-- ---------------------------------------------------------------------------
+-- taskflow_platform_admin — the org-directory console (Phase 12 Wave 1,
+-- ai/phase-12-admin.md §3.7, migration 0035's own header).
+--
+-- A FIFTH consumer role on the same pattern as every role in this file:
+-- NOBYPASSRLS, reaching across every tenant only on the tables carrying an
+-- explicit `TO taskflow_platform_admin` policy. What it can see is the
+-- org DIRECTORY — identity.orgs and identity.memberships (control-plane
+-- tables) plus identity.users — never a board, card, chat message, or doc
+-- page: no policy this wave adds names any product table, and the one table
+-- it may WRITE among them is orgs.status alone (the application code is what
+-- keeps it to status; the RLS policy is deliberately wide, §3.7). It also
+-- owns the global operator audit log: INSERT on platform.operator_audit_log
+-- and the head-table grants its chain trigger needs. It holds NOTHING on
+-- platform.operators beyond SELECT — no application-reachable role may ever
+-- write that table.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_platform_admin WITH LOGIN PASSWORD 'platform-admin-dev-secret'
+  NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+
+-- ---------------------------------------------------------------------------
+-- taskflow_recording_ingest — the call-recording ingest sweep (Phase 7 Wave 2,
+-- ai/phase-7-voice.md §3.6, migration 0033's own header).
+--
+-- A FIFTH consumer role, on the same pattern as the four above: NOBYPASSRLS,
+-- reaching across tenants only on the one table carrying an explicit
+-- `TO taskflow_recording_ingest` policy, because the sweep pulls pending
+-- recordings off the carrier for every tenant in one pass and no value of
+-- app.org_id is correct for it.
+--
+-- Its grant is COLUMN-LEVEL on comms.recordings and it holds NOTHING on
+-- comms.calls — so the role that fetches a recording cannot learn whose
+-- conversation it is, the same separation taskflow_backlinks has from
+-- docs.page_versions.state. It also has no INSERT anywhere: a compromised
+-- sweep cannot fabricate a recording row pointing at an object it controls.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_recording_ingest WITH LOGIN PASSWORD 'recording-dev-secret' NOSUPERUSER
+  NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+
 -- Baseline grants live in 03-grants.sql, NOT here.
 --
 -- Roles are cluster-wide; grants are per-database. This file creates the roles

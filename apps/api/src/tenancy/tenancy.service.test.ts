@@ -36,12 +36,16 @@ const AUDIT_URL =
 const OWNER = unsafeAsId<'UserId'>('0195dd00-0000-7000-8000-000000000001');
 const COLLEAGUE = unsafeAsId<'UserId'>('0195dd00-0000-7000-8000-000000000002');
 const OUTSIDER = unsafeAsId<'UserId'>('0195dd00-0000-7000-8000-000000000003');
+/* The one fixture user with NO verified email — the org-creation gate
+   (Phase 12 Wave 1 §3.4) must refuse them while everyone above passes. */
+const UNVERIFIED = unsafeAsId<'UserId'>('0195dd00-0000-7000-8000-000000000004');
 const BOARD = '0195dd00-0000-7000-8000-0000000000bb';
 
 const USERS: readonly [UserId, string][] = [
   [OWNER, 'owner@tenancy.test'],
   [COLLEAGUE, 'colleague@tenancy.test'],
   [OUTSIDER, 'outsider@tenancy.test'],
+  [UNVERIFIED, 'unverified@tenancy.test'],
 ];
 
 const requestId = unsafeAsId<'RequestId'>('0195dd00-0000-7000-8000-0000000000ff');
@@ -82,12 +86,19 @@ beforeAll(async () => {
     USERS.map(([id]) => id),
   ]);
   for (const [id, email] of USERS) {
+    if (id === UNVERIFIED) continue;
     await admin.query(
       `INSERT INTO identity.users (id, email, email_normalized, email_verified_at)
        VALUES ($1, $2, $2, now())`,
       [id, email],
     );
   }
+  /* UNVERIFIED deliberately gets NO `email_verified_at` — the org-creation
+     gate exists to refuse exactly that row. */
+  await admin.query(
+    `INSERT INTO identity.users (id, email, email_normalized) VALUES ($1, $2, $2)`,
+    [UNVERIFIED, 'unverified@tenancy.test'],
+  );
 
   initializeDatabase({ url: TEST_ENV.DATABASE_URL, applicationName: 'taskflow-tenancy-svc-test' });
   initializeAuditDatabase({ url: AUDIT_URL, applicationName: 'taskflow-tenancy-svc-audit' });
@@ -135,6 +146,16 @@ describe('creating an organization', () => {
       tx.select({ name: schema.outbox.name }).from(schema.outbox),
     );
     expect(rows).toEqual([{ name: 'org.created' }]);
+  });
+
+  it('refuses an account that has not verified its email', async () => {
+    /* Phase 12 Wave 1 §3.4: self-serve creation is the abuse surface the gate
+       exists for, so the precondition is on the ACTOR, checked before the
+       transaction opens — an unverified account must not even get as far as
+       minting an org id. */
+    await expect(
+      orgs.createOrg({ name: 'No Verify', slug: 'no-verify' }, actorOf(UNVERIFIED)),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
   });
 });
 
@@ -610,5 +631,152 @@ describe('the audit projection', () => {
     const entries = await audit.listAuditEntries(mine, { limit: 50, before: null });
     expect(entries).toHaveLength(1);
     expect((await audit.verifyAuditLog(mine)).intact).toBe(true);
+  });
+});
+
+describe('suspension enforcement', () => {
+  /* Phase 12 Wave 1 §3.3, pinned against real Postgres: identity.orgs is
+     FORCE RLS keyed on app.org_id, and the enforcement read in
+     resolveOrgMembership deliberately runs in `withUserScope` — the claim it
+     rests on is that `orgs_self_read` (0004) admits the row through
+     `app.user_id` for an ACTIVE member. This suite is what verifies that
+     empirically rather than assuming it (§3.7's own warning). */
+  it('refuses a suspended org for every member, including its owner', async () => {
+    const orgId = await newOrg('suspend-enforce');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'member' },
+      actorOf(OWNER),
+    );
+
+    await admin.setOrg(orgId);
+    await admin.query(`UPDATE identity.orgs SET status = 'suspended' WHERE id = $1`, [orgId]);
+    await admin.setOrg(null);
+
+    /* ORG_SUSPENDED, not silent success and not NOT_A_MEMBER — the Owner is
+       still a member, and the error has to say what actually happened. */
+    await expect(resolveOrgMembership(OWNER, orgId)).rejects.toMatchObject({
+      code: 'ORG_SUSPENDED',
+    });
+    await expect(resolveOrgMembership(COLLEAGUE, orgId)).rejects.toMatchObject({
+      code: 'ORG_SUSPENDED',
+    });
+  });
+
+  it('collapses a deleted org into NOT_A_MEMBER', async () => {
+    /* §3.3's deliberate choice: nothing this wave produces 'deleted', and
+       "that org used to exist" is the kind of cross-tenant fact a former
+       member should not get confirmed by an error message. */
+    const orgId = await newOrg('deleted-enforce');
+
+    await admin.setOrg(orgId);
+    await admin.query(`UPDATE identity.orgs SET status = 'deleted' WHERE id = $1`, [orgId]);
+    await admin.setOrg(null);
+
+    expect(await resolveOrgMembership(OWNER, orgId)).toBeNull();
+  });
+});
+
+describe('ownership transfer', () => {
+  it('hands the org over in one atomic transaction', async () => {
+    const orgId = await newOrg('transfer-one');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'admin' },
+      actorOf(OWNER),
+    );
+
+    const result = await members.transferOwnership(
+      orgId,
+      { toUserId: COLLEAGUE, selfNewRole: 'admin' },
+      actorOf(OWNER),
+    );
+    expect(result.newOwnerId).toBe(COLLEAGUE);
+
+    /* Both writes committed together: the new owner holds the role and the
+       old owner does not. There was never an observable zero-owner moment
+       between them. */
+    expect((await resolveOrgMembership(COLLEAGUE, orgId))?.role).toBe('owner');
+    expect((await resolveOrgMembership(OWNER, orgId))?.role).toBe('admin');
+  });
+
+  it('refuses a guest jumping straight to owner', async () => {
+    /* §3.5's first decided edge case: transfer must not be a shortcut around
+       the friction `isDirectlyAssignable` builds into reaching a real role. */
+    const orgId = await newOrg('transfer-guest');
+    await members.addMember(
+      orgId,
+      { email: 'outsider@tenancy.test', role: 'guest' },
+      actorOf(OWNER),
+    );
+
+    await expect(
+      members.transferOwnership(
+        orgId,
+        { toUserId: OUTSIDER, selfNewRole: 'admin' },
+        actorOf(OWNER),
+      ),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    /* And the org is untouched by the refusal. */
+    expect((await resolveOrgMembership(OUTSIDER, orgId))?.role).toBe('guest');
+    expect((await resolveOrgMembership(OWNER, orgId))?.role).toBe('owner');
+  });
+
+  it('emits member.ownership_transferred into the outbox', async () => {
+    const orgId = await newOrg('transfer-event');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'admin' },
+      actorOf(OWNER),
+    );
+
+    await members.transferOwnership(
+      orgId,
+      { toUserId: COLLEAGUE, selfNewRole: 'member' },
+      actorOf(OWNER),
+    );
+
+    const rows = await withOrgScope(orgId, async (tx) =>
+      tx.select({ name: schema.outbox.name }).from(schema.outbox),
+    );
+    expect(rows.map((row) => row.name)).toContain('member.ownership_transferred');
+  });
+
+  it('never leaves the org ownerless under concurrent transfers', async () => {
+    /* Two simultaneous handoffs to two different admins both commit — the two
+       writes of each are one transaction, so at no point is the org
+       ownerless. A racing second owner is explicitly not this route's job to
+       detect (§3.5); the invariant that MUST hold is that the caller's demotion
+       never removes the last owner, and both calls together leave the caller
+       demoted with owners standing. */
+    const orgId = await newOrg('transfer-race');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'admin' },
+      actorOf(OWNER),
+    );
+    await members.addMember(
+      orgId,
+      { email: 'outsider@tenancy.test', role: 'admin' },
+      actorOf(OWNER),
+    );
+
+    await Promise.all([
+      members.transferOwnership(
+        orgId,
+        { toUserId: COLLEAGUE, selfNewRole: 'admin' },
+        actorOf(OWNER),
+      ),
+      members.transferOwnership(
+        orgId,
+        { toUserId: OUTSIDER, selfNewRole: 'admin' },
+        actorOf(OWNER),
+      ),
+    ]);
+
+    expect((await resolveOrgMembership(COLLEAGUE, orgId))?.role).toBe('owner');
+    expect((await resolveOrgMembership(OUTSIDER, orgId))?.role).toBe('owner');
+    expect((await resolveOrgMembership(OWNER, orgId))?.role).toBe('admin');
   });
 });

@@ -10,7 +10,8 @@ import {
 } from '@taskflow/ui';
 import type { OrgId } from '@taskflow/contracts';
 import { signOut, useSession } from '../lib/session.js';
-import { resetCache } from '../lib/query.js';
+import { resetCache, keys } from '../lib/query.js';
+import { api } from '../lib/trpc.js';
 import { disconnectSocket } from '../lib/socket.js';
 import { disconnectChatSocket } from '../lib/chat-socket.js';
 import { useUi } from '../lib/ui-store.js';
@@ -150,7 +151,18 @@ export function Shell() {
   }
 
   return (
-    <div className="flex h-full overflow-y-hidden">
+    <div
+      className={cn(
+        'flex h-full overflow-y-hidden',
+        /* The pre-org state has no drawer, so its switcher is an ordinary flex
+           child with a fixed width — which below `md` left the org picker about
+           180px to render "Choose an organization" in, header and all. Stacking
+           is the fix rather than a narrower column: at this width there is no
+           room for two, and the switcher is the one thing on this screen that
+           is not the choice being made. */
+        !hasOrg && 'flex-col md:flex-row',
+      )}
+    >
       {/* The drawer's backdrop, below `md` only. A click anywhere outside the
           drawer closes it — the same "tap away to dismiss" a Radix Popover
           gives for free, restated by hand because this isn't a Radix
@@ -194,6 +206,11 @@ export function Shell() {
               'fixed inset-y-0 left-0 z-40 transition-transform duration-200 md:static md:translate-x-0',
               mobileNavOpen ? 'translate-x-0' : '-translate-x-full',
             ),
+          /* Stacked (pre-org, below `md`) it belongs UNDER the choice, not
+             above it: source order puts it first because at `md`+ it is the
+             left column, and `order-last` restores the reading order the
+             layout implies without moving it in the DOM. */
+          !hasOrg && 'order-last md:order-0',
         )}
       >
         {hasOrg && <Sidebar />}
@@ -227,10 +244,14 @@ function SidebarFooter({ standalone }: { readonly standalone: boolean }) {
   return (
     <div
       className={cn(
-        'mt-auto flex shrink-0 items-center gap-1 border-t border-r border-line bg-surface-raised p-2',
+        'mt-auto flex shrink-0 items-center gap-1 border-t border-line bg-surface-raised p-2',
         /* With no tree above it there is nothing to inherit a width from, and a
-           switcher sized to the word "Select organization" is not a layout. */
-        standalone && 'w-60',
+           switcher sized to the word "Select organization" is not a layout. The
+           fixed width is `md`+ ONLY: below that the pre-org shell stacks, and a
+           240px column there consumed more than half a phone's width, leaving
+           the org picker to wrap "Choose an organization" over three lines and
+           truncating the header to "Orga…" and "Settir". */
+        standalone ? 'w-full border-r-0 md:w-60 md:border-r' : 'border-r',
       )}
     >
       <OrgSwitcher />
@@ -341,9 +362,11 @@ function Breadcrumbs() {
                   ? 'Settings'
                   : pathname.startsWith('/admin/permissions')
                     ? 'Permissions'
-                    : pathname.startsWith('/orgs')
-                      ? 'Organizations'
-                      : 'TaskFlow';
+                    : pathname.startsWith('/platform-admin')
+                      ? 'Platform admin'
+                      : pathname.startsWith('/orgs')
+                        ? 'Organizations'
+                        : 'TaskFlow';
 
   /* `min-w-0` is load-bearing, not decorative: a flex item's default
      min-width is `auto`, which means it will NOT shrink below its own content
@@ -463,6 +486,20 @@ function AccountMenu() {
   const email = useSession((state) => state.email);
   const sessionId = useSession((state) => state.sessionId);
 
+  /* The ONE nav item this app hides on a server answer, and why that is not the
+     §8.2 anti-pattern. Everywhere else the rule is "render the control, let the
+     API say no": a button on a page you are already looking at has an honest
+     FORBIDDEN experience. A nav link to /platform-admin has no such thing —
+     nothing sensible renders for "you are not an operator" at a menu item —
+     and pointing it at everyone would advertise a surface nobody else may
+     reach. `self.check` is a selfRoute with no step-up on purpose (§3.2) so
+     this probe is cheap for every logged-in user on every load. The link is a
+     convenience; the page behind it still refuses non-operators at the server. */
+  const isOperator = useQuery({
+    queryKey: keys.platformSelf(),
+    queryFn: async () => (await api.platformAdmin.self.check.query(undefined)).isOperator,
+  });
+
   const leave = () => {
     void (async () => {
       await signOut();
@@ -513,6 +550,18 @@ function AccountMenu() {
         >
           Profile settings
         </DropdownMenuItem>
+        {isOperator.data === true && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => {
+                void navigate({ to: '/platform-admin' });
+              }}
+            >
+              Platform admin
+            </DropdownMenuItem>
+          </>
+        )}
         <DropdownMenuItem onSelect={leave}>Sign out</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenuRoot>

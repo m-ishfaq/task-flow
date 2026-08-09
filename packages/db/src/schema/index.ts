@@ -11,6 +11,7 @@
  *   Phase 5  chat      — channels, channel members, messages                  ✅
  *   Phase 6  docs      — spaces, pages (Wave 1: tree only, no body yet)       ✅
  *   Phase 11.5 people  — profiles, membership_profiles                        ✅
+ *   Phase 7  comms     — subaccounts, spend policy + ledger, webhook nonces   ✅
  */
 
 export * from './identity.js';
@@ -23,3 +24,4 @@ export * from './work.js';
 export * from './chat.js';
 export * from './docs.js';
 export * from './people.js';
+export * from './comms.js';

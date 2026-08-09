@@ -28,6 +28,11 @@ export const ERROR_CODES = [
   /* --- Authorization (§8.2) -------------------------------------------- */
   'FORBIDDEN',
   'NOT_A_MEMBER',
+  // Distinct from NOT_A_MEMBER on purpose: "the org itself is suspended" is
+  // not "you were never in this org", and a member who is still legitimately
+  // a member deserves to be told what happened and what to do next (Phase 12
+  // Wave 1, ai/phase-12-admin.md §3.3).
+  'ORG_SUSPENDED',
 
   /* --- Resource --------------------------------------------------------- */
   // NOT_FOUND is deliberately returned for resources that exist but are not
@@ -88,6 +93,7 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
 
   FORBIDDEN: 403,
   NOT_A_MEMBER: 403,
+  ORG_SUSPENDED: 403,
 
   NOT_FOUND: 404,
   ALREADY_EXISTS: 409,
@@ -200,6 +206,9 @@ export const errors = {
 
   forbidden: (message = 'You do not have permission to perform this action.') =>
     new AppError('FORBIDDEN', message),
+
+  orgSuspended: (message = 'This organization has been suspended.') =>
+    new AppError('ORG_SUSPENDED', message),
 
   /**
    * Use for resources the caller may not see, as well as those that do not

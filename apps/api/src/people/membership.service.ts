@@ -1,5 +1,5 @@
 import { and, eq, schema, withOrgScope, outboxWriter } from '@taskflow/db';
-import { errors, type OrgId } from '@taskflow/contracts';
+import { errors, PhoneNumberSchema, type OrgId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { membershipProfileUpdated } from './events.js';
 import type { PeopleActor } from './profile.service.js';
@@ -30,9 +30,11 @@ export interface MembershipPatch {
      doc for the same reasoning). */
   readonly jobTitle?: string | null | undefined;
   readonly department?: string | null | undefined;
+  /** E.164 work number for click-to-call (migration 0039). */
+  readonly workPhone?: string | null | undefined;
 }
 
-const FIELDS = ['jobTitle', 'department'] as const;
+const FIELDS = ['jobTitle', 'department', 'workPhone'] as const;
 
 /**
  * Sets or clears a member's job title/department in one org.
@@ -60,6 +62,7 @@ export async function updateMembershipProfile(
       .select({
         jobTitle: schema.membershipProfiles.jobTitle,
         department: schema.membershipProfiles.department,
+        workPhone: schema.membershipProfiles.workPhone,
       })
       .from(schema.membershipProfiles)
       .where(
@@ -74,11 +77,13 @@ export async function updateMembershipProfile(
     const before = {
       jobTitle: existing?.jobTitle ?? null,
       department: existing?.department ?? null,
+      workPhone: existing?.workPhone ?? null,
     };
     const after = { ...before };
     if ('jobTitle' in patch) after.jobTitle = normalizeText(patch.jobTitle, 'jobTitle', 120);
     if ('department' in patch)
       after.department = normalizeText(patch.department, 'department', 120);
+    if ('workPhone' in patch) after.workPhone = normalizePhone(patch.workPhone);
 
     const changed = FIELDS.filter((field) => (before[field] ?? null) !== (after[field] ?? null));
     if (changed.length === 0) return { changed: [] };
@@ -110,6 +115,31 @@ export async function updateMembershipProfile(
 
     return { changed };
   });
+}
+
+/**
+ * Validates a work phone against the SAME parser every other phone number in
+ * this system goes through.
+ *
+ * Not a looser check, and not the migration's CHECK doing the work alone. This
+ * value ends up as `to` on `calls.place`, where a malformed number reaches the
+ * geo allowlist, matches no prefix, and is refused as a disallowed destination
+ * — a refusal that reads like a policy decision about the country rather than
+ * "that is not a phone number". Rejecting it at the boundary is what keeps the
+ * two failures distinguishable.
+ */
+function normalizePhone(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  const trimmed = value.trim();
+  if (trimmed === '') return null;
+
+  const parsed = PhoneNumberSchema.safeParse(trimmed);
+  if (!parsed.success) {
+    throw errors.validation({
+      workPhone: 'Enter a number in E.164 format, e.g. +14155550100.',
+    });
+  }
+  return parsed.data;
 }
 
 function normalizeText(

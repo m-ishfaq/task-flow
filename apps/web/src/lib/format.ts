@@ -71,6 +71,20 @@ export function formatBytes(bytes: number): string {
 }
 
 /**
+ * An integer-cents amount, as USD.
+ *
+ * Every telephony money value is `CentsSchema` — an integer, never a float
+ * (`packages/contracts/src/telephony.ts`) — so this divides by 100 only at the
+ * point of display, the one place a rounding error is harmless. `Intl` rather
+ * than hand-built string math, for the same reason `formatBytes` does not
+ * reinvent unit suffixes: locale-correct grouping and decimal points are not
+ * worth re-deriving.
+ */
+export function formatCents(cents: number): string {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
+}
+
+/**
  * A person's display name from whatever the API returned.
  *
  * `name` is optional because `tenancy.members.list` does not return one today —

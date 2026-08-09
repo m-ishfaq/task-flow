@@ -6,6 +6,8 @@ import { useSession } from '../../lib/session.js';
 import { useToast } from '../../lib/toast-context.js';
 import { Avatar, Button, ConfirmButton, Empty, Field, Input } from '../../components/primitives.js';
 import { useMembers, type Person } from '../org/use-members.js';
+import { CallButton } from '../telephony/call-button.js';
+import { directoryMemberQuery } from '../people/api.js';
 import {
   addChannelMember,
   exportChannel,
@@ -114,6 +116,7 @@ export function ChannelDetailsPanel({
       <div className="flex flex-col gap-4 p-4">
         {isDirect ? (
           <DirectMessageIdentity
+            orgId={orgId}
             memberIds={data.memberIds}
             viewerId={viewerId}
             personOf={personOf}
@@ -265,15 +268,18 @@ function PanelHeader({ title, onClose }: { readonly title: string; readonly onCl
  * the sidebar shows, and the panel is where the actual names belong.
  */
 function DirectMessageIdentity({
+  orgId,
   memberIds,
   viewerId,
   personOf,
 }: {
+  readonly orgId: string;
   readonly memberIds: readonly string[];
   readonly viewerId: string | null;
   readonly personOf: (userId: string) => Person;
 }) {
   const others = memberIds.filter((userId) => userId !== viewerId);
+  const only = others.length === 1 ? others[0] : undefined;
 
   return (
     <section className="flex flex-col gap-2">
@@ -283,7 +289,38 @@ function DirectMessageIdentity({
       {others.map((userId) => (
         <PersonLine key={userId} person={personOf(userId)} />
       ))}
+      {only !== undefined && <DirectCallAction orgId={orgId} userId={only} />}
     </section>
+  );
+}
+
+/**
+ * Click-to-call the other side of a 1:1 DM — PLAN.md §3.4's third named
+ * surface ("from any card/contact/chat thread").
+ *
+ * Only for a two-person DM. A group conversation has no single callee, and
+ * picking one for the caller would dial someone they did not choose.
+ *
+ * The number comes from the people directory rather than `useMembers`, whose
+ * cache backs every avatar in the app and is deliberately narrow. Widening it
+ * to carry a phone number would mean every board render holds one, for the
+ * benefit of one panel.
+ */
+function DirectCallAction({ orgId, userId }: { readonly orgId: string; readonly userId: string }) {
+  const member = useQuery({ ...directoryMemberQuery(orgId, userId), enabled: orgId !== '' });
+  const workPhone = member.data?.workPhone ?? null;
+
+  /* Silent when there is no number. This is an affordance, not a permission
+     boundary — there is simply nothing to dial, and an explanatory empty state
+     in a details panel would be noise on every DM in an org that has not filled
+     the directory in. */
+  if (workPhone === null) return null;
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="font-mono text-[11px] text-ink-muted">{workPhone}</span>
+      <CallButton orgId={orgId} to={workPhone} />
+    </div>
   );
 }
 

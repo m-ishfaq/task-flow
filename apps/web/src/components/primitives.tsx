@@ -134,6 +134,20 @@ export interface FieldProps {
  * The error is wired with `aria-describedby` by the caller passing the same id;
  * a validation message that is only red text is invisible to a screen reader,
  * which means the form is unusable rather than merely unattractive.
+ *
+ * ## Laying these out in a ROW
+ *
+ * The three parts stack, so a Field carrying a hint or an error is TALLER than
+ * one that is not — which makes `items-end` the wrong choice for a horizontal
+ * row, even though it is the intuitive one. Aligning bottom edges puts a
+ * hintless field's input level with its neighbour's hint text, one line below
+ * where it looks like it belongs, and the row only goes crooked once a hint
+ * appears.
+ *
+ * Use `items-start` instead: every label is one line of `text-xs`, so the
+ * controls line up on their own and the hints hang off the bottom without
+ * moving anything. Bare controls in the same row (a submit button, a checkbox)
+ * carry `mt-5` to drop past the label — 1rem of label plus `space-y-1`.
  */
 export function Field({ label, htmlFor, error, hint, children }: FieldProps) {
   return (

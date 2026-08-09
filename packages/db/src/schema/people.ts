@@ -78,6 +78,13 @@ export const membershipProfiles = people.table(
     managerUserId: uuid('manager_user_id'),
     jobTitle: text('job_title'),
     department: text('department'),
+    /**
+     * E.164 work number for click-to-call (migration 0039). Org-scoped rather
+     * than on `profiles`, so a number given to one employer is not disclosed
+     * to every other org the same person belongs to. The E.164 CHECK lives in
+     * the migration.
+     */
+    workPhone: text('work_phone'),
 
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
