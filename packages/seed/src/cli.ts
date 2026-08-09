@@ -309,18 +309,27 @@ const PG_ERROR_FIELDS = [
  * pg fields below are the part worth reading.
  */
 function reportFailure(error: unknown): void {
-  console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
+  console.error(error instanceof Error ? (error.stack ?? error.message) : describe(error));
 
   let cause: unknown = error instanceof Error ? error.cause : undefined;
   for (let depth = 0; depth < 5 && cause !== null && cause !== undefined; depth += 1) {
-    const record = cause as Record<string, unknown>;
-    console.error(`\ncaused by: ${String(record['message'] ?? cause)}`);
+    const record: Record<string, unknown> =
+      typeof cause === 'object' ? (cause as Record<string, unknown>) : {};
+
+    console.error(`\ncaused by: ${describe(record['message'] ?? cause)}`);
     for (const field of PG_ERROR_FIELDS) {
       const value = record[field];
-      if (value !== undefined && value !== null) console.error(`  ${field}: ${String(value)}`);
+      if (value !== undefined && value !== null) console.error(`  ${field}: ${describe(value)}`);
     }
     cause = record['cause'];
   }
+}
+
+/** Anything printable, without an object silently becoming `[object Object]`. */
+function describe(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return JSON.stringify(value) ?? 'unknown';
 }
 
 main().catch((error: unknown) => {
