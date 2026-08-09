@@ -1,7 +1,82 @@
 # Phase 7 — Voice & Messaging
 
 **Status: APPROVED 2026-08-08. Waves 1–3 COMPLETE; Wave 4 partially shipped (see its own note
-below); Wave 5 (UI) added and shipped 2026-08-09 — not in the original wave plan.**
+below); Wave 5 (UI) added and shipped 2026-08-09 — not in the original wave plan. Wave 5 extended
+and four defects fixed 2026-08-10 (migrations 0038–0039) — see "What a live carrier found" below.**
+
+### What a live carrier found, 2026-08-10
+
+Every wave above was green — 733 API tests, lint, typecheck — and **outbound telephony had never
+once worked against real Twilio.** Four separate defects, none of which any test could see, all
+found within an hour of pointing the code at a live account for the first time. This is the same
+lesson Phase 4, Phase 6 and Phase 12 each recorded in their own headers, arriving here with money
+attached.
+
+1. **Basic auth paired the SUBACCOUNT SID with the PARENT's auth token.** `twilio.ts`'s
+   `#authorization` took a caller-supplied username while the password half was fixed at
+   construction, and six call sites passed `options.subaccountSid`. Twilio requires both halves to
+   belong to the same account, so that pair names no account at all: number search, purchase,
+   release, calls and SMS all answered **401 / 20003**. Subaccount creation, Lookup and Verify kept
+   working, because those three passed the parent SID — which is exactly why the failure read as a
+   credentials problem in the operator's console rather than a bug in this file.
+
+   **The bug was documented as the design.** `subaccount.service.ts` stated outbound calls "use the
+   subaccount SID with the MASTER auth token, which Twilio accepts for its children". They do not.
+   `twilio.ts` was written to match that sentence, and `twilio.test.ts`'s assertion was written from
+   it too — so one wrong sentence produced an implementation and a passing test that agreed with
+   each other and with nothing else. The `username` parameter is now gone rather than corrected at
+   its call sites: the subaccount is named by its position in the URL path, the credential is always
+   the parent's own pair, and there is no caller for whom anything else is right.
+
+2. **`/telephony/outbound/:callId` was never registered.** `placeCall` puts that URL in the call's
+   `Url` parameter and Twilio fetches it the moment the call connects. `outboundTwiml` existed in
+   `packages/telephony` with no caller and no route. Every outbound call was accepted by the
+   carrier and then dropped when the fetch 404'd — nobody's phone ever rang. Nothing could catch
+   it: `placeCall`'s tests assert on what we SEND the provider, and this is the request the
+   provider makes back.
+
+3. **Record intent was not persisted** (migration 0038). `placeCall` folded `record` into
+   `announcement_required` (`record ? consent.announcementRequired : false`), which is recoverable
+   in an all-party jurisdiction and ambiguous in a one-party one — GB, CA, IE, NZ, IN and ZA all
+   store `false` either way. So recording silently did nothing for a large share of destinations.
+   `record_requested` is now its own column, and the two facts — "recording was asked for" and "an
+   announcement is required" — are kept separate because a compliance review needs both.
+
+4. **A missing `TELEPHONY_WEBHOOK_ORIGIN` produced RELATIVE callback URLs.** Every carrier URL is
+   built as `${webhookOrigin ?? ''}/telephony/...`; with the variable unset that `??` yields a path,
+   and Twilio refuses a number purchase for it (**21402**). The loud half is harmless. The quiet
+   half is why `deps.ts` now refuses at BOOT for a live carrier: `statusCallbackUrl` is how a
+   call's actual cost ever arrives, so an instance that limped past this would bill every org
+   against `sumWithFallback`'s ESTIMATE forever, with nothing failing to say so.
+
+**Diagnosing any of it was only possible after `TwilioApiError` started carrying Twilio's numeric
+`code`.** The thrown error deliberately excludes the response body — Twilio echoes phone numbers
+and message bodies into its error payloads, which is exactly what `REDACTION_PATHS` exists to keep
+out of logs — but the `code` is an integer from a published table that echoes no parameter. Without
+it every failure read as a bare status; with it, 20008 / 20003 / 21402 / 21404 / 21408 each named
+their own fix. `carrier-error.ts` now maps the ones worth naming onto the error contract, so a
+landline in the To field is a field error rather than a 500.
+
+**Wave 5 also shipped the surfaces PLAN.md §3.4 named and Wave 5 had missed**: a "New message"
+composer (there was NO way to start an SMS from the UI — the composer existed only inside an
+already-open thread, and threads are created by inbound messages), click-to-call from an SMS
+thread, redial from the call log, `people.membership_profiles.work_phone` (migration 0039) with
+click-to-call from a contact and from a 1:1 DM's details panel. The work phone is org-scoped rather
+than on `people.profiles`, so a number given to one employer is not disclosed to every other org
+the same person belongs to.
+
+**One `placeCall` ordering consequence is now paid for rather than noted.** The ledger row commits
+BEFORE the carrier is told anything (§3.4 — so a crash mid-flight can never leave a placed call
+unbilled), which means a carrier refusal left a `queued` call holding its estimate against the
+30-day cap with no SID for reconciliation to correct it, and nothing would ever release it. The
+refusal path now compensates: `actual_cents = 0` (a settled zero, not a deleted row — the ledger is
+the record that an attempt was made) and the call moves to `failed` with a `call.status_changed`
+event.
+
+**Still open:** `number.service.ts`, `recording.service.ts` and `transcript.service.ts` have no
+dedicated test files, and neither the outbound TwiML route nor the boot guard has one. A trial
+Twilio account cannot purchase numbers through the API at all (21404), so the end-to-end purchase
+path remains unexercised against a live carrier.
 This header was stale for a real stretch of this phase's life: the commit that first landed most of
 Waves 2 and 3 did not update it, so a later reader (correctly) treated "Waves 2–4 not started" as
 untrustworthy and re-verified against the actual files rather than the claim — the same lesson

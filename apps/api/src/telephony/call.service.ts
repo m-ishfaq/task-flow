@@ -168,13 +168,18 @@ export async function placeCall(
   });
 
   /* Same translation `sendSms` applies: an unreachable destination is a refusal
-     the caller can act on, not a fault. NOTE that unlike `sendSms` this runs
-     AFTER the row and its ledger entry have committed (§3.4 — the charge lands
-     before the carrier is told anything), so a refusal here leaves a `queued`
-     call that never happened, holding its estimate against the cap with no SID
-     for reconciliation to correct it by. Fixing that needs a compensating write
-     on the spend path, which is a decision for the human-review pass, not a
-     side effect of classifying the error. */
+     the caller can act on, not a fault.
+
+     Unlike `sendSms`, this runs AFTER the row and its ledger entry have
+     committed (§3.4 — the charge lands before the carrier is told anything, so
+     a crash mid-flight can never leave a placed call unbilled). That ordering
+     is right, and it has a consequence that must be paid for here: a refusal
+     leaves a `queued` call that never happened, holding its estimate against
+     the org's 30-day cap with no provider SID for reconciliation to correct it
+     by. Nothing else would ever release it — status callbacks only arrive for
+     calls the carrier accepted.
+
+     So the refusal path compensates before rethrowing. */
   const result = await deps.telephony
     .placeCall({
       subaccountSid: account.subaccountSid,
@@ -183,7 +188,10 @@ export async function placeCall(
       instructionsUrl: `${deps.webhookOrigin ?? ''}/telephony/outbound/${callId}`,
       statusCallbackUrl: `${deps.webhookOrigin ?? ''}/telephony/status/${callId}`,
     })
-    .catch(rethrowCarrierRefusal);
+    .catch(async (error: unknown) => {
+      await releaseUnplacedCall(actor, callId, spendId);
+      return rethrowCarrierRefusal(error);
+    });
 
   await withOrgScope(orgId, async (tx) => {
     await tx
@@ -333,6 +341,60 @@ export async function listCalls(
     durationSeconds: row.durationSeconds,
     recorded: row.recordingStartedAt !== null,
   }));
+}
+
+/**
+ * Releases the money held for a call the carrier refused to place.
+ *
+ * ## Why `actual_cents = 0` and not a deleted row
+ *
+ * The cap is summed with `COALESCE(actual, estimated)` (`sumWithFallback`),
+ * precisely so an unbilled in-flight action still counts — that is the window
+ * an attacker exploits by going faster than reconciliation. Writing a real,
+ * known-final `0` is therefore the only way to release the hold without
+ * weakening that rule: it says "this one is settled, and it settled at
+ * nothing", which is the truth for a call the carrier never accepted.
+ *
+ * Deleting the row would also release it, and would destroy the record that an
+ * attempt was made. The ledger is the spend record; an attempt that failed is
+ * exactly the kind of thing a bill dispute needs to see.
+ *
+ * ## Best-effort, and it rethrows nothing
+ *
+ * The caller is already on its way to throwing the carrier's refusal, which is
+ * the error the user needs. A failure to compensate must not replace it — the
+ * worst case is one estimate held for 30 days, against a cap that is a
+ * safety limit rather than an invoice.
+ */
+async function releaseUnplacedCall(
+  actor: TelephonyActor,
+  callId: string,
+  spendId: string,
+): Promise<void> {
+  const orgId = orgOf(actor);
+
+  try {
+    await withOrgScope(orgId, async (tx) => {
+      await tx
+        .update(schema.calls)
+        .set({ status: 'failed', updatedAt: new Date() })
+        .where(eq(schema.calls.id, callId));
+
+      await tx
+        .update(schema.spendLedger)
+        .set({ actualCents: 0 })
+        .where(and(eq(schema.spendLedger.orgId, orgId), eq(schema.spendLedger.id, spendId)));
+
+      /* Guardrail 6: the status transition is a state change like any other,
+         and the call log would otherwise show `queued` forever with nothing
+         explaining why. */
+      await outboxWriter.append(tx, [
+        createEvent(callStatusChanged, { callId, status: 'failed' }, envelopeOf(actor)),
+      ]);
+    });
+  } catch {
+    /* Swallowed deliberately — see the note above. */
+  }
 }
 
 /** What `/telephony/outbound/:callId` needs to build the call's TwiML. */

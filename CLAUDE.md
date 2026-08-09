@@ -371,6 +371,49 @@ Still open: granting the operator flag is migration/script-only (§7 decision 7 
 route, deliberately); and `platformAdmin.audit.list` exists because the doc's route list named the
 Audit tab but no route to feed it.
 
+#### Phase 7 — four defects a green suite could not see, found by a live carrier (2026-08-10)
+
+**Outbound telephony had never worked against real Twilio**, through five "complete" waves, 733
+passing API tests and a clean lint. Read `ai/phase-7-voice.md`'s status header before touching any
+of it; the short version:
+
+**Basic auth paired the subaccount SID with the parent's auth token**, which names no account —
+every number search, purchase, release, call and SMS answered 401/20003. Only subaccount creation,
+Lookup and Verify worked, because only those three passed the parent SID, so it read as a
+credentials problem rather than a bug. **The wrong rule was written down first**:
+`subaccount.service.ts` claimed Twilio "accepts the master token for its children", `twilio.ts` was
+built to match, and `twilio.test.ts` asserted the same wrong pairing — an implementation and a test
+that agreed with each other and with nothing real. `#authorization` no longer takes a username at
+all: the subaccount is named by the URL path, the credential is always the parent's pair.
+
+**`/telephony/outbound/:callId` was never registered**, though `placeCall` has always pointed Twilio
+at it for the call's TwiML. `outboundTwiml` sat in `packages/telephony` with no caller. Calls were
+accepted and then dropped on a 404 — no phone ever rang. `placeCall`'s tests assert what we SEND the
+provider; this is the request the provider makes BACK, and nothing but a real carrier issues it.
+
+**Record intent was never persisted** (migration 0038). Folding `record` into
+`announcement_required` is recoverable in an all-party jurisdiction and ambiguous in a one-party one
+— GB, CA, IE, NZ, IN, ZA all store `false` either way — so recording silently did nothing for a
+large share of destinations. Two facts, two columns, because a compliance review needs both.
+
+**A missing `TELEPHONY_WEBHOOK_ORIGIN` yielded RELATIVE callback URLs.** Purchase fails loudly
+(21402); the quiet half is that `statusCallbackUrl` is how actual cost arrives, so the instance
+would bill every org against `sumWithFallback`'s ESTIMATE forever. `deps.ts` now refuses at boot for
+a live carrier — the `TELEPHONY_INDEX_KEY` precedent.
+
+**None of it was diagnosable until `TwilioApiError` carried Twilio's numeric `code`.** The body is
+still withheld (Twilio echoes phone numbers and message bodies into error payloads, exactly what
+`REDACTION_PATHS` guards), but the code is an integer from a published table that echoes no
+parameter. `carrier-error.ts` maps the ones worth naming, so a landline in the To field is a field
+error rather than a 500.
+
+Also shipped: the surfaces PLAN.md §3.4 named and Wave 5 missed — a "New message" composer (there
+was **no way to start an SMS from the UI**), click-to-call from an SMS thread, a contact, and a 1:1
+DM, plus `people.membership_profiles.work_phone` (0039), org-scoped so a number given to one
+employer is not disclosed to every other org. And `placeCall`'s refusal path now compensates the
+ledger (`actual_cents = 0`, call `failed`) rather than leaving an estimate held against the cap for
+30 days with no SID to correct it.
+
 ### Phase 7 — Voice & Messaging: Waves 1–4 complete (API), Wave 5 (UI) added and shipped
 
 **Every wave through Wave 4 shipped `apps/api/src/telephony` only — nothing in `apps/web` referenced
