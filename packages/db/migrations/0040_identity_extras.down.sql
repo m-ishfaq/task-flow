@@ -1,4 +1,4 @@
--- Down migration for 0033_identity_extras.
+-- Down migration for 0040_identity_extras.
 
 REVOKE DELETE ON identity.orgs FROM taskflow_platform_admin;
 DROP POLICY IF EXISTS orgs_platform_admin_delete ON identity.orgs;

@@ -1,4 +1,4 @@
--- 0033 — identity extras: user suspension, TOTP, OAuth, org deletion
+-- 0040 — identity extras: user suspension, TOTP, OAuth, org deletion
 -- (Phase 12 Wave 2, ai/phase-12-wave2.md)
 --
 -- Five things land in this one migration, because Wave 2's six feature slices
@@ -11,7 +11,7 @@
 --      and the only real secret (the master key) lives in KeyProvider's own
 --      config, never in this table. So this migration adds NO grant
 --      restrictions here; the schema-wide default privileges from migration
---      0002 are exactly right, unlike migration 0032's platform.operators
+--      0002 are exactly right, unlike migration 0036's platform.operators
 --      REVOKE dance.
 --   2. identity.totp_credentials / identity.totp_recovery_codes — TOTP as a
 --      second factor (§3.2).
@@ -24,8 +24,11 @@
 --      always bypass row security"), confirmed with a throwaway
 --      parent/child RLS fixture before writing this migration. Every
 --      org_id foreign key in this schema already carries ON DELETE CASCADE
---      (checked: all 11 direct references to identity.orgs(id) across
---      every migration through 0032), so a single DELETE on identity.orgs,
+--      (re-checked when this migration was renumbered onto main: all 25
+--      direct references to identity.orgs(id) across every migration
+--      through 0039 — the count rose from 11 because Phase 7's telephony
+--      migrations 0032-0034 added 13 comms.* references, and every one of
+--      them cascades too), so a single DELETE on identity.orgs,
 --      run as taskflow_platform_admin, correctly removes every downstream
 --      row across Work/Chat/Docs/People/audit/outbox with NO additional
 --      grants or policies needed on any of those tables. This is the one
@@ -46,7 +49,7 @@
 -- migration — a migration runs as plain SQL with no access to KeyProvider or
 -- the master key material a real wrap requires. The CHECK makes a second row
 -- impossible rather than merely unlikely, the identical singleton shape
--- platform.operator_chain_head (migration 0032) already uses.
+-- platform.operator_chain_head (migration 0035) already uses.
 -- --------------------------------------------------------------------------
 CREATE TABLE identity.secret_keys (
   id            boolean     PRIMARY KEY DEFAULT true,
@@ -118,7 +121,7 @@ CREATE TABLE identity.oauth_identities (
 -- 4. Org deletion — taskflow_platform_admin needs DELETE on identity.orgs
 -- (§3.5)
 --
--- Migration 0032 granted this role SELECT and UPDATE only (§3.7 — status
+-- Migration 0035 granted this role SELECT and UPDATE only (§3.7 — status
 -- suspend/reactivate). Deletion is a distinct, far more consequential
 -- capability, so it is its own grant and its own policy rather than widened
 -- into the existing UPDATE one.

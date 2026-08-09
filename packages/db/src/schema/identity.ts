@@ -214,7 +214,7 @@ export const notificationPrefs = identity.table(
 );
 
 /**
- * The identity-scoped data key (Phase 12 Wave 2, migration 0033, §3.2).
+ * The identity-scoped data key (Phase 12 Wave 2, migration 0040, §3.2).
  *
  * A singleton row, created by application code at boot — never by a
  * migration, which has no access to KeyProvider or the master key a real
@@ -229,7 +229,7 @@ export const secretKeys = identity.table('secret_keys', {
 });
 
 /**
- * TOTP as a second factor (migration 0033, §3.2).
+ * TOTP as a second factor (migration 0040, §3.2).
  *
  * `confirmedAt IS NULL` means enrolled but never proven with a real code —
  * unusable for login or step-up. `secretEncrypted` is ciphertext under
@@ -260,7 +260,7 @@ export const totpRecoveryCodes = identity.table(
 );
 
 /**
- * OAuth account linking (migration 0033, §3.3).
+ * OAuth account linking (migration 0040, §3.3).
  *
  * `providerUserId` is the provider's own stable subject id, never the email
  * — an email can change at the provider, a subject id does not.
