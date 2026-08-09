@@ -28,7 +28,7 @@ export const userLoggedIn = defineEvent(
     .object({
       userId: z.string(),
       sessionId: z.string(),
-      method: z.enum(['password', 'passkey']),
+      method: z.enum(['password', 'passkey', 'totp']),
       ip: z.string().nullable(),
       userAgent: z.string().nullable(),
     })
@@ -150,6 +150,17 @@ export const passkeyLoginFailed = defineEvent(
       ip: z.string().nullable(),
     })
     .strict(),
+);
+
+/** TOTP enrolled or removed (Phase 12 Wave 2 §3.2) — a new way into an account either way. */
+export const totpEnrolled = defineEvent(
+  'user.totp_enrolled',
+  z.object({ userId: z.string() }).strict(),
+);
+
+export const totpDisabled = defineEvent(
+  'user.totp_disabled',
+  z.object({ userId: z.string() }).strict(),
 );
 
 export { userRef };

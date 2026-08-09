@@ -105,6 +105,65 @@ export async function signAccessToken(
     .sign(config.secret);
 }
 
+/**
+ * TOTP login challenge tokens (Phase 12 Wave 2 §3.2).
+ *
+ * Issued when `login()` verifies the password but the account also has a
+ * confirmed TOTP credential — proof that the FIRST factor succeeded, good
+ * for five minutes, redeemable exactly once at `auth.totp.verifyLogin`.
+ *
+ * A DIFFERENT audience than `AUDIENCE` above, deliberately — the one
+ * property this token must never have is being accepted anywhere an access
+ * token is, and `verifyAccessToken`'s own audience check already refuses
+ * anything not signed for `'taskflow-api'`. Sharing the audience would mean
+ * a bug in one verifier's caller could accept the other token type; a
+ * distinct audience makes that a signature failure instead of a logic bug.
+ */
+const TOTP_CHALLENGE_AUDIENCE = 'taskflow-totp-challenge';
+const TOTP_CHALLENGE_TTL_SECONDS = 300;
+
+export interface TotpChallengeClaims {
+  readonly userId: string;
+}
+
+export async function signTotpChallenge(
+  claims: TotpChallengeClaims,
+  config: JwtConfig,
+): Promise<string> {
+  assertSecret(config.secret);
+
+  return new SignJWT({ sub: claims.userId })
+    .setProtectedHeader({ alg: ALGORITHM, typ: 'JWT' })
+    .setIssuer(ISSUER)
+    .setAudience(TOTP_CHALLENGE_AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime(`${String(TOTP_CHALLENGE_TTL_SECONDS)}s`)
+    .sign(config.secret);
+}
+
+export async function verifyTotpChallenge(
+  token: string,
+  config: JwtConfig,
+): Promise<TotpChallengeClaims> {
+  assertSecret(config.secret);
+
+  try {
+    const { payload } = await jwtVerify(token, config.secret, {
+      issuer: ISSUER,
+      audience: TOTP_CHALLENGE_AUDIENCE,
+      algorithms: [ALGORITHM],
+      clockTolerance: 5,
+    });
+
+    const userId = payload.sub;
+    if (typeof userId !== 'string') throw new InvalidTokenError();
+
+    return { userId };
+  } catch {
+    throw new InvalidTokenError();
+  }
+}
+
 export class InvalidTokenError extends Error {
   constructor() {
     // One message for every failure. Expired, wrong audience, bad signature and

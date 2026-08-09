@@ -4,7 +4,9 @@ import {
   ACCESS_TOKEN_TTL_SECONDS,
   InvalidTokenError,
   signAccessToken,
+  signTotpChallenge,
   verifyAccessToken,
+  verifyTotpChallenge,
   type AccessTokenClaims,
 } from './jwt.js';
 import { secureBytes } from './random.js';
@@ -160,6 +162,43 @@ describe('rejection', () => {
     );
 
     expect(new Set(messages).size).toBe(1);
+  });
+});
+
+describe('TOTP challenge tokens', () => {
+  const userId = claims.userId;
+
+  it('round-trips the user id', async () => {
+    const token = await signTotpChallenge({ userId }, config);
+    await expect(verifyTotpChallenge(token, config)).resolves.toEqual({ userId });
+  });
+
+  it('rejects a token signed with a different secret', async () => {
+    const token = await signTotpChallenge({ userId }, other);
+    await expect(verifyTotpChallenge(token, config)).rejects.toThrow(InvalidTokenError);
+  });
+
+  it('is refused by the access-token verifier, and vice versa', async () => {
+    // The one property this token type exists for: a distinct audience means
+    // a challenge can never be replayed as a bearer access token even though
+    // both are signed with the same secret.
+    const challenge = await signTotpChallenge({ userId }, config);
+    await expect(verifyAccessToken(challenge, config)).rejects.toThrow(InvalidTokenError);
+
+    const access = await signAccessToken(
+      { userId, sessionId: claims.sessionId, authenticatedAt: claims.authenticatedAt },
+      config,
+    );
+    await expect(verifyTotpChallenge(access, config)).rejects.toThrow(InvalidTokenError);
+  });
+
+  it('expires within the documented five-minute window', async () => {
+    const token = await signTotpChallenge({ userId }, config);
+    const payload = JSON.parse(
+      Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8'),
+    ) as { exp: number; iat: number };
+
+    expect(payload.exp - payload.iat).toBe(300);
   });
 });
 
