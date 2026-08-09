@@ -287,6 +287,7 @@ export const NEVER_AUDITED: ReadonlySet<string> = new Set([
   'platform.org_reactivated',
   'platform.operator_granted',
   'platform.flag_override_set',
+  'platform.flag_override_cleared',
   'platform.user_suspended',
   'platform.user_reactivated',
 ]);

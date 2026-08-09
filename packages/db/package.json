@@ -15,7 +15,8 @@
     "migrate:up": "tsx src/migrate/cli.ts up",
     "migrate:down": "tsx src/migrate/cli.ts down",
     "migrate:status": "tsx src/migrate/cli.ts status",
-    "migrate:verify": "tsx src/migrate/cli.ts verify"
+    "migrate:verify": "tsx src/migrate/cli.ts verify",
+    "grant-platform-operator": "tsx src/grant-platform-operator.cli.ts"
   },
   "dependencies": {
     "@taskflow/contracts": "workspace:*",

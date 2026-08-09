@@ -78,6 +78,23 @@ export const flagOverrideSet = defineEvent(
 );
 
 /**
+ * A global feature-flag override was REMOVED, so the flag falls back to its
+ * compiled default (§3.8).
+ *
+ * Its own event rather than `flagOverrideSet` with a null value, even though
+ * one route (`flags.set`) produces both. "The override now says false" and
+ * "there is no longer an override" are different facts with different
+ * consequences — the first pins behaviour against a later default change,
+ * the second releases it — and a reader reconstructing why a flag behaved a
+ * certain way on a given day cannot tell them apart from a null payload
+ * alone. The route surface stays single; only the record distinguishes.
+ */
+export const flagOverrideCleared = defineEvent(
+  'platform.flag_override_cleared',
+  z.object({ flagName: z.string(), operatorUserId: z.string() }).strict(),
+);
+
+/**
  * An account was suspended by a platform operator (Phase 12 Wave 2 §3.1,
  * ai/phase-12-wave2.md).
  *
