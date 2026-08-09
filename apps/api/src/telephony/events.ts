@@ -251,16 +251,27 @@ export const transcriptionCompleted = defineEvent(
  * `ensureThread` reports whether it created the row or found an existing
  * one, and this fires only on creation — a thread reused by a later message
  * mutates nothing new, and firing on every message would make this
- * indistinguishable from `message.sent`/`message.received`, which already
- * exist for that.
+ * indistinguishable from `sms.sent`/`sms.received`, which already exist for
+ * that.
  */
 export const messageThreadCreated = defineEvent(
   'message_thread.created',
   z.object({ threadId: z.string() }).strict(),
 );
 
-export const messageSent = defineEvent(
-  'message.sent',
+/**
+ * Named `sms.*`, not `message.*` — `apps/api/src/chat/events.ts` already
+ * registers `message.sent` for Chat (Phase 5), and `defineEvent`'s registry
+ * is a single global namespace shared by every module that imports it. Two
+ * modules registering the same name is not a naming preference collision, it
+ * is a runtime crash the moment both get imported in the same process — that
+ * is what CI's `Lint, typecheck, test` step caught here, and what
+ * `packages/events/src/registry.ts` throws on: "Event \"message.sent\" is
+ * already registered." rather than silently letting the second definition
+ * win, which would make an app's behaviour depend on import order.
+ */
+export const smsSent = defineEvent(
+  'sms.sent',
   z
     .object({
       threadId: z.string(),
@@ -270,13 +281,13 @@ export const messageSent = defineEvent(
     .strict(),
 );
 
-export const messageReceived = defineEvent(
-  'message.received',
+export const smsReceived = defineEvent(
+  'sms.received',
   z.object({ threadId: z.string(), messageId: z.string() }).strict(),
 );
 
-export const messageDeliveryFailed = defineEvent(
-  'message.delivery_failed',
+export const smsDeliveryFailed = defineEvent(
+  'sms.delivery_failed',
   z
     .object({
       messageId: z.string(),

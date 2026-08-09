@@ -3,9 +3,9 @@ import { errors, type OrgId, type PhoneNumber } from '@taskflow/contracts';
 import { createEvent, type DomainEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
 import {
-  messageDeliveryFailed,
-  messageReceived,
-  messageSent,
+  smsDeliveryFailed,
+  smsReceived,
+  smsSent,
   messageThreadCreated,
   messageThreadOptedOut,
 } from './events.js';
@@ -149,7 +149,7 @@ export async function sendSms(
 
     await outboxWriter.append(tx, [
       createEvent(
-        messageSent,
+        smsSent,
         { threadId: thread.threadId, messageId, segments: result.segments },
         envelopeOf(actor),
       ),
@@ -230,7 +230,7 @@ export async function receiveSms(
 
     const events: DomainEvent[] = [
       createEvent(
-        messageReceived,
+        smsReceived,
         { threadId: thread.threadId, messageId },
         webhookContext(orgId, input.requestId),
       ),
@@ -296,7 +296,7 @@ export async function applyMessageStatus(
     if (input.status === 'undelivered' || input.status === 'failed') {
       await outboxWriter.append(tx, [
         createEvent(
-          messageDeliveryFailed,
+          smsDeliveryFailed,
           {
             messageId: message.id,
             status: input.status,
