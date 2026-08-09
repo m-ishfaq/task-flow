@@ -175,6 +175,10 @@ const KNOWN_VARIABLES = new Set([
      above: `WEB_` prefix, no server reads it, must be listed or it is
      rejected. */
   'WEB_COLLAB_ORIGIN',
+  /* apps/web's vite.config.ts `server.allowedHosts` — the hosts the dev
+     server accepts besides localhost (tunnels such as ngrok). Same class
+     as the three above. */
+  'WEB_ALLOWED_HOSTS',
   'REALTIME_PORT',
   'REALTIME_HOST',
   'REALTIME_TRUST_PROXY',

@@ -1,5 +1,8 @@
 // `vitest/config` rather than `vite`, so the `test` block below is typed. With
 // the plain vite export it is an unknown property and `tsc` rejects the file.
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -30,6 +33,19 @@ import tailwindcss from '@tailwindcss/vite';
  * third-party origin.
  */
 
+/* The repo-root .env — the same file apps/api, apps/realtime and apps/collab
+   load at boot (each app's src/config/env.ts). Vite itself only surfaces
+   `VITE_`-prefixed variables from .env files into `import.meta.env` and does
+   NOT put the rest on `process.env`, so without this load the WEB_* variables
+   below would only work when exported in the shell. `process.loadEnvFile`
+   follows --env-file semantics: a variable already set on process.env wins,
+   exactly like the server apps' own loader, so a shell export still beats the
+   file. */
+const envFile = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '.env');
+if (existsSync(envFile)) {
+  process.loadEnvFile(envFile);
+}
+
 const API_ORIGIN = process.env['WEB_API_ORIGIN'] ?? 'http://localhost:3000';
 
 /**
@@ -52,6 +68,26 @@ const REALTIME_ORIGIN = process.env['WEB_REALTIME_ORIGIN'] ?? 'http://localhost:
  */
 const COLLAB_ORIGIN = process.env['WEB_COLLAB_ORIGIN'] ?? 'http://localhost:3002';
 
+/**
+ * Hosts the dev server accepts besides localhost, for Vite's DNS-rebinding
+ * defence (`server.allowedHosts`). Comma-separated; an entry starting with a
+ * dot matches ANY subdomain, which is what covers ngrok's per-session random
+ * URLs without an edit per run. Env-driven rather than hardcoded so switching
+ * tunnel hosts — or adding a LAN IP when running `vite --host` — is a .env
+ * edit, not a config edit. The default is the ngrok family; an explicit empty
+ * value means "no extra hosts" (strict localhost-only). Listed in every
+ * server's KNOWN_VARIABLES (apps/api, apps/realtime, apps/collab) so the
+ * `WEB_` prefix does not trip their misspelling checks. The default is the
+ * ngrok family — its TLDs have shifted before (.app, now .dev), so treat it
+ * as a starting point and keep the set you actually use in WEB_ALLOWED_HOSTS.
+ */
+const ALLOWED_HOSTS = (
+  process.env['WEB_ALLOWED_HOSTS'] ?? '.ngrok-free.app,.ngrok-free.dev,.ngrok.app,.ngrok.io'
+)
+  .split(',')
+  .map((host) => host.trim())
+  .filter((host) => host.length > 0);
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
 
@@ -65,6 +101,20 @@ export default defineConfig({
 
   server: {
     port: 5173,
+
+    /* Vite refuses any request whose Host header is not localhost — the
+       DNS-rebinding defence, and the "Blocked request. This host is not
+       allowed." 403 a phone gets when browsing through a tunnel such as
+       ngrok, whose host is its own domain rather than localhost. The accepted
+       hosts come from `WEB_ALLOWED_HOSTS` (see above); `true` (allow any
+       host) is deliberately not supported, as that disables the check
+       entirely and reopens the rebinding hole it exists to close. LAN-IP
+       access via `vite --host` needs the address added to that variable too
+       — but see the file header on the `__Host-` refresh cookie: only HTTPS
+       or localhost is a secure context, which is why a TLS tunnel rather
+       than a bare LAN IP is the supported path. */
+    allowedHosts: ALLOWED_HOSTS,
+
     proxy: {
       '/trpc': {
         target: API_ORIGIN,
