@@ -1,7 +1,12 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { PhoneNumberSchema, type OrgId, type PhoneNumber } from '@taskflow/contracts';
 import { eq, isNull, and, schema, withOrgScope } from '@taskflow/db';
-import { InboundRoute, menuChoiceToTwiml, routeToTwiml, type TwimlContext } from '@taskflow/telephony';
+import {
+  InboundRoute,
+  menuChoiceToTwiml,
+  routeToTwiml,
+  type TwimlContext,
+} from '@taskflow/telephony';
 import { applyCallStatus, markAnnouncementPlayed, recordInboundCall } from './call.service.js';
 import { applyMessageStatus, receiveSms } from './message.service.js';
 import { registerRecording } from './recording.service.js';
@@ -102,12 +107,19 @@ export function registerTelephonyWebhooks(app: FastifyInstance, deps: WebhookRou
            honest thing to say to a person who dialled it. */
         return reply
           .type('text/xml')
-          .send('<?xml version="1.0" encoding="UTF-8"?><Response><Say>This number is not in service.</Say><Hangup/></Response>');
+          .send(
+            '<?xml version="1.0" encoding="UTF-8"?><Response><Say>This number is not in service.</Say><Hangup/></Response>',
+          );
       }
 
       return reply
         .type('text/xml')
-        .send(routeToTwiml(route.data, contextFor(telephony, call.callId, false, call.announcementRequired)));
+        .send(
+          routeToTwiml(
+            route.data,
+            contextFor(telephony, call.callId, false, call.announcementRequired),
+          ),
+        );
     },
   );
 
@@ -351,12 +363,7 @@ async function loadRoutableNumber(
     const rows = await tx
       .select({ inboundRoute: schema.phoneNumbers.inboundRoute })
       .from(schema.phoneNumbers)
-      .where(
-        and(
-          eq(schema.phoneNumbers.id, phoneNumberId),
-          isNull(schema.phoneNumbers.releasedAt),
-        ),
-      )
+      .where(and(eq(schema.phoneNumbers.id, phoneNumberId), isNull(schema.phoneNumbers.releasedAt)))
       .limit(1);
     return rows[0];
   });

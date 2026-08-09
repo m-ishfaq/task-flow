@@ -105,7 +105,12 @@ describe('spendReport', () => {
     const rows = await spendReport(orgId, { sinceDays: 30 });
     const byKind = new Map(rows.map((row) => [row.kind, row]));
 
-    expect(byKind.get('call')).toEqual({ kind: 'call', count: 2, estimatedCents: 200, billedCents: 210 });
+    expect(byKind.get('call')).toEqual({
+      kind: 'call',
+      count: 2,
+      estimatedCents: 200,
+      billedCents: 210,
+    });
     expect(byKind.get('sms')).toEqual({ kind: 'sms', count: 1, estimatedCents: 5, billedCents: 5 });
   });
 
@@ -118,9 +123,7 @@ describe('spendReport', () => {
 
     const rows = await spendReport(orgId, { sinceDays: 30 });
 
-    expect(rows).toEqual([
-      { kind: 'verification', count: 1, estimatedCents: 7, billedCents: 7 },
-    ]);
+    expect(rows).toEqual([{ kind: 'verification', count: 1, estimatedCents: 7, billedCents: 7 }]);
   });
 
   it('excludes rows outside the window', async () => {

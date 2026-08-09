@@ -132,10 +132,7 @@ async function claimPending(): Promise<readonly PendingRow[]> {
       })
       .from(schema.recordings)
       .where(
-        and(
-          eq(schema.recordings.status, 'pending'),
-          lt(schema.recordings.attempts, MAX_ATTEMPTS),
-        ),
+        and(eq(schema.recordings.status, 'pending'), lt(schema.recordings.attempts, MAX_ATTEMPTS)),
       )
       .orderBy(asc(schema.recordings.createdAt))
       .limit(BATCH);

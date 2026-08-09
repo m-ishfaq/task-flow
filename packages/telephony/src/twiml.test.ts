@@ -66,10 +66,7 @@ describe('routeToTwiml', () => {
         strategy: 'simultaneous',
         ringSeconds: 20,
       });
-      const xml = routeToTwiml(
-        route,
-        context({ forwardingNumberFor: () => '+14155550111' }),
-      );
+      const xml = routeToTwiml(route, context({ forwardingNumberFor: () => '+14155550111' }));
 
       expect(xml.match(/<Dial/g)).toHaveLength(1);
       expect(xml.match(/<Number>/g)).toHaveLength(2);
@@ -82,10 +79,7 @@ describe('routeToTwiml', () => {
         strategy: 'sequential',
         ringSeconds: 20,
       });
-      const xml = routeToTwiml(
-        route,
-        context({ forwardingNumberFor: () => '+14155550111' }),
-      );
+      const xml = routeToTwiml(route, context({ forwardingNumberFor: () => '+14155550111' }));
 
       expect(xml.match(/<Dial/g)).toHaveLength(2);
     });
@@ -160,7 +154,11 @@ describe('routeToTwiml', () => {
     });
 
     it('does not repeat the recording announcement on a menu selection', () => {
-      const xml = menuChoiceToTwiml(menu, '1', context({ record: true, announcementRequired: true }));
+      const xml = menuChoiceToTwiml(
+        menu,
+        '1',
+        context({ record: true, announcementRequired: true }),
+      );
       expect(xml).not.toContain('may be recorded');
     });
   });
@@ -169,13 +167,13 @@ describe('routeToTwiml', () => {
     it('rejects an unknown action kind', () => {
       // The config can only express destinations this system already knows
       // about — an admin cannot smuggle raw TwiML through it.
-      expect(() => InboundRoute.parse({ kind: 'raw_twiml', xml: '<Dial>+19005550100</Dial>' })).toThrow();
+      expect(() =>
+        InboundRoute.parse({ kind: 'raw_twiml', xml: '<Dial>+19005550100</Dial>' }),
+      ).toThrow();
     });
 
     it('rejects unknown keys on a known action', () => {
-      expect(() =>
-        InboundRoute.parse({ kind: 'say', text: 'hi', record: true }),
-      ).toThrow();
+      expect(() => InboundRoute.parse({ kind: 'say', text: 'hi', record: true })).toThrow();
     });
 
     it('bounds hunt group size and ring time', () => {

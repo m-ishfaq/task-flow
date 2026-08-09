@@ -61,9 +61,7 @@ const HuntAction = z
   .strict();
 
 /** Say something and hang up. The terminal action for out-of-hours. */
-const SayAction = z
-  .object({ kind: z.literal('say'), text: z.string().min(1).max(500) })
-  .strict();
+const SayAction = z.object({ kind: z.literal('say'), text: z.string().min(1).max(500) }).strict();
 
 /** Record a voicemail. Subject to the same consent gate as a call recording. */
 const VoicemailAction = z
@@ -299,9 +297,10 @@ export function outboundTwiml(options: {
   readonly callerId: string;
   readonly context: TwimlContext;
 }): string {
-  const preamble = options.context.record && options.context.announcementRequired
-    ? `<Say>${escapeXml(RECORDING_ANNOUNCEMENT)}</Say>`
-    : '';
+  const preamble =
+    options.context.record && options.context.announcementRequired
+      ? `<Say>${escapeXml(RECORDING_ANNOUNCEMENT)}</Say>`
+      : '';
 
   return document(
     preamble +

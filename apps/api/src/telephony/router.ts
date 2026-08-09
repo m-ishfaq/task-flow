@@ -76,7 +76,10 @@ export function createTelephonyRouter(maybeDeps: TelephonyDeps | undefined) {
           z
             .object({
               isoCountry: z.string().length(2).toUpperCase(),
-              areaCode: z.string().regex(/^[0-9]{3}$/).optional(),
+              areaCode: z
+                .string()
+                .regex(/^[0-9]{3}$/)
+                .optional(),
               limit: z.number().int().min(1).max(20).default(10),
             })
             .strict(),

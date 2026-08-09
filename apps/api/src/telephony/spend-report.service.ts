@@ -41,7 +41,10 @@ export async function spendReport(
         kind: schema.spendLedger.kind,
         count: countRows(schema.spendLedger.id),
         estimatedCents: sumColumn(schema.spendLedger.estimatedCents),
-        billedCents: sumWithFallback(schema.spendLedger.actualCents, schema.spendLedger.estimatedCents),
+        billedCents: sumWithFallback(
+          schema.spendLedger.actualCents,
+          schema.spendLedger.estimatedCents,
+        ),
       })
       .from(schema.spendLedger)
       .where(gte(schema.spendLedger.occurredAt, since))

@@ -142,10 +142,7 @@ export async function listCardRecordings(
         attachedAt: schema.recordingCards.attachedAt,
       })
       .from(schema.recordingCards)
-      .innerJoin(
-        schema.recordings,
-        eq(schema.recordings.id, schema.recordingCards.recordingId),
-      )
+      .innerJoin(schema.recordings, eq(schema.recordings.id, schema.recordingCards.recordingId))
       .where(eq(schema.recordingCards.cardId, input.cardId));
 
     return rows.map((row) => ({

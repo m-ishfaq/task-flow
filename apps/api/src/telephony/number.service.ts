@@ -1,10 +1,5 @@
 import { and, eq, isNull, schema, withOrgScope, outboxWriter } from '@taskflow/db';
-import {
-  errors,
-  type AvailableNumber,
-  type OrgId,
-  type PhoneNumber,
-} from '@taskflow/contracts';
+import { errors, type AvailableNumber, type OrgId, type PhoneNumber } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
 import { InboundRoute, type InboundRouteConfig } from '@taskflow/telephony';
@@ -45,7 +40,11 @@ export interface NumberRecord {
 export async function searchNumbers(
   actor: TelephonyActor,
   deps: TelephonyDeps,
-  input: { readonly isoCountry: string; readonly areaCode?: string | undefined; readonly limit: number },
+  input: {
+    readonly isoCountry: string;
+    readonly areaCode?: string | undefined;
+    readonly limit: number;
+  },
 ): Promise<readonly AvailableNumber[]> {
   const account = await ensureSubaccount(actor, deps);
 
@@ -74,7 +73,13 @@ export async function purchaseNumber(
   });
 
   const decision = await checkOutboundAllowed(
-    { orgId, userId: userOf(actor), kind: 'number_purchase', to: input.phoneNumber, estimatedCents },
+    {
+      orgId,
+      userId: userOf(actor),
+      kind: 'number_purchase',
+      to: input.phoneNumber,
+      estimatedCents,
+    },
     { defaultCapCents: deps.defaultSpendCapCents },
   );
 
@@ -238,16 +243,13 @@ export async function loadNumber(
     const rows = await tx
       .select({ providerSid: schema.phoneNumbers.providerSid, e164: schema.phoneNumbers.e164 })
       .from(schema.phoneNumbers)
-      .where(
-        and(
-          eq(schema.phoneNumbers.id, phoneNumberId),
-          isNull(schema.phoneNumbers.releasedAt),
-        ),
-      )
+      .where(and(eq(schema.phoneNumbers.id, phoneNumberId), isNull(schema.phoneNumbers.releasedAt)))
       .limit(1);
 
     const row = rows[0];
-    return row === undefined ? undefined : { providerSid: row.providerSid, e164: row.e164 as PhoneNumber };
+    return row === undefined
+      ? undefined
+      : { providerSid: row.providerSid, e164: row.e164 as PhoneNumber };
   });
 }
 

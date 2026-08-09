@@ -1,14 +1,14 @@
 import { and, desc, eq, schema, withOrgScope, outboxWriter } from '@taskflow/db';
-import {
-  errors,
-  type OrgId,
-  type PhoneNumber,
-  type UserId,
-} from '@taskflow/contracts';
+import { errors, type OrgId, type PhoneNumber, type UserId } from '@taskflow/contracts';
 import { createEvent, type DomainEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
 import { consentRequirementFor } from '@taskflow/telephony';
-import { callAnnouncementPlayed, callPlaced, callStatusChanged, consentRecorded } from './events.js';
+import {
+  callAnnouncementPlayed,
+  callPlaced,
+  callStatusChanged,
+  consentRecorded,
+} from './events.js';
 import {
   loadOrgDataKey,
   openCounterparty,
@@ -239,7 +239,9 @@ export async function applyCallStatus(
         {
           callId: call.id,
           status: input.status,
-          ...(input.durationSeconds === undefined ? {} : { durationSeconds: input.durationSeconds }),
+          ...(input.durationSeconds === undefined
+            ? {}
+            : { durationSeconds: input.durationSeconds }),
         },
         webhookContext(orgId, input.requestId, input.actorId),
       ),

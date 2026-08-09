@@ -51,12 +51,7 @@ export interface JoinAuthorization {
   readonly decision?: Decision;
   /** Coarse reason, for logs. Never sent to the client — see `JoinRefusal`. */
   readonly reason:
-    | 'granted'
-    | 'not_a_member'
-    | 'no_such_board'
-    | 'no_such_channel'
-    | 'no_such_call'
-    | 'denied';
+    'granted' | 'not_a_member' | 'no_such_board' | 'no_such_channel' | 'no_such_call' | 'denied';
 }
 
 /**

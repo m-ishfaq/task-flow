@@ -434,11 +434,8 @@ export interface CallLeaveRequest {
   readonly callId: string;
 }
 
-export const CallLeaveRequestSchema: z.ZodType<
-  CallLeaveRequest,
-  z.ZodTypeDef,
-  { callId: string }
-> = z.object({ callId: z.string().uuid() }).strict();
+export const CallLeaveRequestSchema: z.ZodType<CallLeaveRequest, z.ZodTypeDef, { callId: string }> =
+  z.object({ callId: z.string().uuid() }).strict();
 
 /**
  * A call changed state.

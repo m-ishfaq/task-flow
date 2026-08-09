@@ -77,9 +77,7 @@ describe('redactTranscript', () => {
   });
 
   it('redacts email addresses', () => {
-    expect(redactTranscript('reach me at a.person@example.com').text).toContain(
-      '[redacted:email]',
-    );
+    expect(redactTranscript('reach me at a.person@example.com').text).toContain('[redacted:email]');
   });
 
   it('leaves ordinary conversation untouched', () => {

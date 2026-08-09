@@ -1,9 +1,5 @@
 import { and, desc, eq, schema, withOrgScope, outboxWriter } from '@taskflow/db';
-import {
-  errors,
-  type OrgId,
-  type PhoneNumber,
-} from '@taskflow/contracts';
+import { errors, type OrgId, type PhoneNumber } from '@taskflow/contracts';
 import { createEvent, type DomainEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
 import {

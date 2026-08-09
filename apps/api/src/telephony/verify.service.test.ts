@@ -148,9 +148,10 @@ async function outboxNames(orgId: OrgId): Promise<readonly string[]> {
 
 async function ledgerCount(orgId: OrgId): Promise<number> {
   await admin.setOrg(orgId);
-  const result = await admin.query(`SELECT count(*)::int AS n FROM comms.spend_ledger WHERE org_id = $1`, [
-    orgId,
-  ]);
+  const result = await admin.query(
+    `SELECT count(*)::int AS n FROM comms.spend_ledger WHERE org_id = $1`,
+    [orgId],
+  );
   await admin.setOrg(null);
   return (result.rows[0]?.['n'] as number | undefined) ?? 0;
 }

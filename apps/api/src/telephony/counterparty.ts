@@ -75,10 +75,7 @@ function counterpartyAad(orgId: OrgId, rowId: string): string {
  * and doing one per row inside a loop is how a bulk import becomes slow enough
  * that somebody caches the key somewhere it should not live.
  */
-export async function loadOrgDataKey(
-  orgId: OrgId,
-  keys: KeyProvider,
-): Promise<Uint8Array> {
+export async function loadOrgDataKey(orgId: OrgId, keys: KeyProvider): Promise<Uint8Array> {
   const row = await withOrgScope(orgId, async (tx) => {
     const rows = await tx
       .select({
@@ -157,7 +154,5 @@ export function openCounterparty(
   rowId: string,
   ciphertext: Uint8Array,
 ): PhoneNumber {
-  return PhoneNumberSchema.parse(
-    decryptString(dataKey, ciphertext, counterpartyAad(orgId, rowId)),
-  );
+  return PhoneNumberSchema.parse(decryptString(dataKey, ciphertext, counterpartyAad(orgId, rowId)));
 }

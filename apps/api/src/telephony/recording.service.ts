@@ -76,9 +76,7 @@ export async function registerRecording(
         providerSid: input.providerSid,
         providerUrl: input.providerUrl,
         status: 'pending',
-        ...(input.durationSeconds === undefined
-          ? {}
-          : { durationSeconds: input.durationSeconds }),
+        ...(input.durationSeconds === undefined ? {} : { durationSeconds: input.durationSeconds }),
       })
       /* The carrier retries recording callbacks. Unique on (org, provider_sid),
          so a replay is a no-op rather than a second row pointing at the same

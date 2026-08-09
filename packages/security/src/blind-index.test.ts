@@ -15,9 +15,7 @@ describe('blindIndex', () => {
   });
 
   it('differs for different values', () => {
-    expect(blindIndex(KEY, ORG, '+14155550100')).not.toEqual(
-      blindIndex(KEY, ORG, '+14155550101'),
-    );
+    expect(blindIndex(KEY, ORG, '+14155550100')).not.toEqual(blindIndex(KEY, ORG, '+14155550101'));
   });
 
   it('differs across orgs for the SAME value', () => {

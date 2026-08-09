@@ -211,7 +211,11 @@ describe('sendSms', () => {
     });
 
     await expect(
-      sendSms(actor, depsFor(), { to: COUNTERPARTY, fromPhoneNumberId: fromId, body: 'welcome back' }),
+      sendSms(actor, depsFor(), {
+        to: COUNTERPARTY,
+        fromPhoneNumberId: fromId,
+        body: 'welcome back',
+      }),
     ).resolves.toBeDefined();
   });
 });
