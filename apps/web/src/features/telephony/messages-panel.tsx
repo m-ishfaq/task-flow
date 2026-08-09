@@ -252,7 +252,9 @@ function ComposeView({
           <Button
             type="submit"
             variant="primary"
-            disabled={send.isPending || activeNumber === '' || to.trim() === '' || body.trim() === ''}
+            disabled={
+              send.isPending || activeNumber === '' || to.trim() === '' || body.trim() === ''
+            }
           >
             {send.isPending ? 'Sending…' : 'Send'}
           </Button>

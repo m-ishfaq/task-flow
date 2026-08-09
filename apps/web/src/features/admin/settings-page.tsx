@@ -336,9 +336,8 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
           <ModalContent size="sm" className="p-4">
             <ModalTitle>Transfer ownership</ModalTitle>
             <ModalDescription>
-              The new owner gets everything Owner allows, immediately. You become
-              an {transferSelfRole} in the same transaction — there is never a
-              moment with no owner.
+              The new owner gets everything Owner allows, immediately. You become an{' '}
+              {transferSelfRole} in the same transaction — there is never a moment with no owner.
             </ModalDescription>
 
             <form
@@ -346,7 +345,10 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
               onSubmit={(event) => {
                 event.preventDefault();
                 if (transferTo !== '') {
-                  transfer.mutate({ toUserId: transferTo as UserId, selfNewRole: transferSelfRole });
+                  transfer.mutate({
+                    toUserId: transferTo as UserId,
+                    selfNewRole: transferSelfRole,
+                  });
                 }
               }}
             >

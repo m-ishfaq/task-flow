@@ -124,7 +124,12 @@ export async function setFlag(
         value: input.value,
         operatorUserId: operator.userId,
       },
-      { orgId: SYSTEM_ORG, actorId: operator.userId, requestId: operator.requestId, occurredAt: now },
+      {
+        orgId: SYSTEM_ORG,
+        actorId: operator.userId,
+        requestId: operator.requestId,
+        occurredAt: now,
+      },
     ),
   ]);
 

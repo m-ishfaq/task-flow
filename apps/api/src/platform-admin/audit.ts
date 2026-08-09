@@ -88,7 +88,9 @@ export async function readOperatorAudit(input: {
       })
       .from(schema.operatorAuditLog)
       .innerJoin(schema.users, eq(schema.users.id, schema.operatorAuditLog.operatorId))
-      .where(input.before === null ? undefined : lt(schema.operatorAuditLog.seq, Number(input.before)))
+      .where(
+        input.before === null ? undefined : lt(schema.operatorAuditLog.seq, Number(input.before)),
+      )
       .orderBy(desc(schema.operatorAuditLog.seq))
       .limit(input.limit);
 

@@ -96,9 +96,8 @@ initializeDatabase({
   applicationName: 'taskflow-dev-webhook',
 });
 const { SoftwareKeyProvider, signTwilioRequest } = await import('@taskflow/security');
-const { loadSubaccount, loadSubaccountAuthToken } = await import(
-  '../src/telephony/subaccount.service.js'
-);
+const { loadSubaccount, loadSubaccountAuthToken } =
+  await import('../src/telephony/subaccount.service.js');
 
 /* ------------------------------------------------------------------ *
  * Arguments
@@ -132,7 +131,9 @@ const orgId = orgIdRaw as Parameters<typeof loadSubaccount>[0];
 
 const origin = process.env['TELEPHONY_WEBHOOK_ORIGIN'];
 if (origin === undefined || origin.length === 0) {
-  die('TELEPHONY_WEBHOOK_ORIGIN is not set in .env — that is the origin the URL is signed against.');
+  die(
+    'TELEPHONY_WEBHOOK_ORIGIN is not set in .env — that is the origin the URL is signed against.',
+  );
 }
 
 /* ------------------------------------------------------------------ *

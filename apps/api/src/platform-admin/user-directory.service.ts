@@ -106,6 +106,7 @@ export async function listUsers(
       orgCount: countByUser.get(row.userId) ?? 0,
       createdAt: row.createdAt,
     })),
-    nextCursor: hasMore && last !== undefined ? encodeCreatedCursor(last.createdAt, last.userId) : null,
+    nextCursor:
+      hasMore && last !== undefined ? encodeCreatedCursor(last.createdAt, last.userId) : null,
   };
 }

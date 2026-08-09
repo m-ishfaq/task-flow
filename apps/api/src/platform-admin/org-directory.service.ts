@@ -84,10 +84,7 @@ export async function listOrgs(
       .from(schema.orgs)
       .leftJoin(
         schema.memberships,
-        and(
-          eq(schema.memberships.orgId, schema.orgs.id),
-          eq(schema.memberships.status, 'active'),
-        ),
+        and(eq(schema.memberships.orgId, schema.orgs.id), eq(schema.memberships.status, 'active')),
       )
       .groupBy(schema.orgs.id)
       .orderBy(desc(schema.orgs.createdAt), desc(schema.orgs.id))
@@ -125,7 +122,8 @@ export async function listOrgs(
       createdAt: row.createdAt,
       memberCount: Number(row.memberCount),
     })),
-    nextCursor: hasMore && last !== undefined ? encodeCreatedCursor(last.createdAt, last.orgId) : null,
+    nextCursor:
+      hasMore && last !== undefined ? encodeCreatedCursor(last.createdAt, last.orgId) : null,
   };
 }
 

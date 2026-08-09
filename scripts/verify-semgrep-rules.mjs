@@ -91,8 +91,19 @@ const onFixture = new Set(
  * withGlobalScope, and a scope rule pointed at the wrong directory reports every
  * call in it. That is not a harmless false positive: a rule that flags correct
  * code is one that gets muted, and a muted rule protects nothing.
+ *
+ * people and platform-admin are the same argument for the other two
+ * withGlobalScope consumers the ESLint exemption in
+ * packages/config/eslint/security.js already recognizes (people.profiles has
+ * no org_id; isPlatformOperator must run before any org is known) — this is
+ * what proves the Semgrep exclude list did not drift out of sync with it.
  */
-const CLEAN_PATHS = ['packages/db/migrations', 'apps/api/src/identity'];
+const CLEAN_PATHS = [
+  'packages/db/migrations',
+  'apps/api/src/identity',
+  'apps/api/src/people',
+  'apps/api/src/platform-admin',
+];
 
 const falsePositives = report.results.filter((r) => {
   const normalized = r.path.split('\\').join('/');
