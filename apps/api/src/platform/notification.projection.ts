@@ -434,6 +434,23 @@ export async function drainNotifications(limit = 100): Promise<NotificationDrain
     if (pending.length === 0)
       return { processed: 0, written: 0, pendingEmails: [], pendingPushes: [] };
 
+    /* Phase 12 §3.9: a suspended org's members stop receiving outbound
+       reach (email/push) while suspended — the in-app bell is not the
+       concern here, only reach beyond it, so the `notifications` insert
+       below is untouched and only the delivery rows are gated. One batched
+       read of the distinct orgs in THIS batch, not a query per event —
+       `taskflow_audit`'s grant on `identity.orgs` is column-limited to
+       `(id, status)`, migration 0032, the same shape as `digest.ts` and
+       `notification-push.ts`'s own join. */
+    const orgIdsInBatch = [...new Set(pending.map((row) => row.orgId))];
+    const orgStatusRows = await tx
+      .select({ id: schema.orgs.id, status: schema.orgs.status })
+      .from(schema.orgs)
+      .where(inArray(schema.orgs.id, orgIdsInBatch));
+    const activeOrgIds = new Set(
+      orgStatusRows.filter((org) => org.status === 'active').map((org) => org.id),
+    );
+
     let written = 0;
     /* Recipients whose preferences and idempotent delivery insert both said
        "email this person", keyed by userId — resolved to addresses and turned
@@ -557,8 +574,9 @@ export async function drainNotifications(limit = 100): Promise<NotificationDrain
            itself IS that delivery, as it has been since 0022. */
         const deliveries = planChannelDeliveries(plan.kind, prefsByUser.get(plan.userId) ?? []);
         const path = notificationPath(plan);
+        const orgActive = activeOrgIds.has(row.orgId);
 
-        if (deliveries.email !== 'off' && path !== null) {
+        if (deliveries.email !== 'off' && path !== null && orgActive) {
           const deliveryId = newId<'NotificationDeliveryId'>();
           const deliveryInserted = await tx
             .insert(schema.notificationDeliveries)
@@ -585,7 +603,7 @@ export async function drainNotifications(limit = 100): Promise<NotificationDrain
           }
         }
 
-        if (deliveries.push && path !== null) {
+        if (deliveries.push && path !== null && orgActive) {
           const deliveryId = newId<'NotificationDeliveryId'>();
           const pushInserted = await tx
             .insert(schema.notificationDeliveries)

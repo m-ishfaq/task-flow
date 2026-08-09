@@ -1,4 +1,4 @@
-import { and, inArray, isNotNull, isNull, lte, schema, withSweepScope } from '@taskflow/db';
+import { and, eq, inArray, isNotNull, isNull, lte, schema, withSweepScope } from '@taskflow/db';
 import { newId } from '@taskflow/security';
 import type { Logger } from '@taskflow/observability';
 import { notificationPath } from './notification-paths.js';
@@ -81,12 +81,19 @@ export async function runDueReminderSweep(
         assigneeIds: schema.cards.assigneeIds,
       })
       .from(schema.cards)
+      /* Phase 12 §3.9: a suspended org's members stop receiving due-reminders
+         while suspended. `taskflow_notification_sweep`'s grant on
+         `identity.orgs` is column-limited to `(id, status)` — migration
+         0032 — so this join can never see a suspended org's name or slug,
+         only whether it is worth reaching at all. */
+      .innerJoin(schema.orgs, eq(schema.orgs.id, schema.cards.orgId))
       .where(
         and(
           isNotNull(schema.cards.dueDate),
           lte(schema.cards.dueDate, cutoff),
           isNull(schema.cards.archivedAt),
           isNull(schema.cards.deletedAt),
+          eq(schema.orgs.status, 'active'),
         ),
       );
 

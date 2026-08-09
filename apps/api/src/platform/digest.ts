@@ -73,11 +73,17 @@ export async function collectDigestBatches(limit = BATCH): Promise<readonly Dige
         schema.notifications,
         eq(schema.notifications.id, schema.notificationDeliveries.notificationId),
       )
+      /* Phase 12 §3.9: a suspended org's members stop receiving digest email
+         while suspended. `taskflow_audit`'s grant on `identity.orgs` is
+         column-limited to `(id, status)` — migration 0032 — the same shape
+         as its existing column-limited `identity.users` read below. */
+      .innerJoin(schema.orgs, eq(schema.orgs.id, schema.notificationDeliveries.orgId))
       .where(
         and(
           eq(schema.notificationDeliveries.channel, 'email'),
           eq(schema.notificationDeliveries.status, 'pending'),
           inArray(schema.notifications.kind, [...ACTIVITY_KINDS]),
+          eq(schema.orgs.status, 'active'),
         ),
       )
       .limit(limit);

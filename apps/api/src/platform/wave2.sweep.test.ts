@@ -9,10 +9,13 @@ import {
   schema,
   withAuditScope,
 } from '@taskflow/db';
+import { createLogger, type Logger } from '@taskflow/observability';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { runDueReminderSweep } from './due-reminders.js';
 import { collectDigestBatches, markDigestSent } from './digest.js';
+import { deliverPendingPushes } from './notification-push.js';
 import { drainNotificationsFully } from './notification.projection.js';
+import type { PushProvider } from './push-provider.js';
 
 /**
  * Phase 9 Wave 2's sweeps, against real Postgres (`docker compose up -d`).
@@ -69,6 +72,10 @@ async function clearAll(): Promise<void> {
   await admin.query(`DELETE FROM platform.notifications WHERE org_id = $1`, [ORG]);
   await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [ORG]);
   await admin.query(`DELETE FROM work.cards WHERE org_id = $1`, [ORG]);
+  /* A leaked 'suspended' status from Phase 12 §3.9's own tests must not bleed
+     into every other test in this file, whose sweeps all assume the base
+     tenant is reachable. */
+  await admin.query(`UPDATE identity.orgs SET status = 'active' WHERE id = $1`, [ORG]);
   /* Prefs have no DELETE policy (0027 grants SELECT/INSERT/UPDATE only), so a
      delete would silently match zero rows and LEAK the previous test's rows
      into the next — the delivery rows prove the leak. Disable instead: the
@@ -78,7 +85,7 @@ async function clearAll(): Promise<void> {
     await admin.query(`SELECT set_config('app.user_id', $1, false)`, [userId]);
     await admin.query(
       `UPDATE identity.notification_prefs SET enabled = false
-       WHERE user_id = $1 AND (category, channel) = ('activity', 'email')`,
+       WHERE user_id = $1 AND category = 'activity' AND channel IN ('email', 'push')`,
       [userId],
     );
   }
@@ -359,5 +366,143 @@ describe('the digest sweep (§3.4)', () => {
 
     const batches = await collectDigestBatches();
     expect(batches).toHaveLength(0);
+  });
+});
+
+/** A silent logger — these tests assert on return values, not log lines. */
+const SILENT_LOGGER: Logger = createLogger({ name: 'wave2-sweep-test', level: 'silent' });
+
+/** A provider that must never be reached — every push in this block is filtered before it would send. */
+const UNREACHABLE_PUSH_PROVIDER: PushProvider = {
+  send: () => {
+    throw new Error('push provider reached — the org-suspended filter did not exclude this row');
+  },
+};
+
+async function setOrgStatus(status: 'active' | 'suspended'): Promise<void> {
+  await admin.setOrg(ORG);
+  await admin.query(`UPDATE identity.orgs SET status = $1 WHERE id = $2`, [status, ORG]);
+  await admin.setOrg(null);
+}
+
+describe('Phase 12 §3.9 — a suspended org stops reaching its members', () => {
+  it('the due-reminder sweep writes nothing at all for a suspended org', async () => {
+    await seedCard(2);
+    await setOrgStatus('suspended');
+
+    const result = await runDueReminderSweep(new Date(), 24);
+
+    expect(result.written).toBe(0);
+    expect(await countNotifications('card.due_soon')).toBe(0);
+
+    /* Reactivating does not backfill what the sweep never wrote — the next
+       ordinary pass just sees the card as newly due, exactly as it would for
+       a card created after reactivation. */
+    await setOrgStatus('active');
+    const refired = await runDueReminderSweep(new Date(), 24);
+    expect(refired.written).toBe(1);
+  });
+
+  it('the digest sweep skips a pending row while suspended, and collects it once reactivated', async () => {
+    await seedCard(2);
+    await seedPrefs(true);
+    await runDueReminderSweep(new Date(), 24);
+
+    await setOrgStatus('suspended');
+    expect(await collectDigestBatches()).toHaveLength(0);
+
+    await setOrgStatus('active');
+    const batches = await collectDigestBatches();
+    expect(batches).toHaveLength(1);
+  });
+
+  it('the push relay skips a pending row while suspended, and picks it up once reactivated', async () => {
+    /* No subscription is seeded — deliverPendingPushes would mark an
+       unreachable row `failed` on its own "no device registered" path, and
+       that write is the tell: if the org-suspended filter did not exclude
+       this row, it would flip to `failed` during suspension instead of
+       staying `pending`. */
+    await admin.setOrg(ORG);
+    const notificationId = '0195ee10-0000-7000-8000-0000000000fe';
+    const deliveryId = '0195ee10-0000-7000-8000-0000000000fd';
+    await admin.query(
+      `INSERT INTO platform.notifications
+         (id, org_id, user_id, kind, subject_type, subject_id, title)
+       VALUES ($1, $2, $3, 'card.assigned', 'card', $4, 'You were assigned a card')`,
+      [notificationId, ORG, USER, CARD],
+    );
+    await admin.query(
+      `INSERT INTO platform.notification_deliveries
+         (id, org_id, user_id, notification_id, channel, status)
+       VALUES ($1, $2, $3, $4, 'push', 'pending')`,
+      [deliveryId, ORG, USER, notificationId],
+    );
+    await admin.setOrg(null);
+
+    async function statusOf(): Promise<string> {
+      const rows = await withAuditScope(async (tx) =>
+        tx
+          .select({ status: schema.notificationDeliveries.status })
+          .from(schema.notificationDeliveries)
+          .where(eq(schema.notificationDeliveries.id, deliveryId)),
+      );
+      return rows[0]?.status ?? 'missing';
+    }
+
+    await setOrgStatus('suspended');
+    const whileSuspended = await deliverPendingPushes(UNREACHABLE_PUSH_PROVIDER, SILENT_LOGGER);
+    expect(whileSuspended.attempted).toBe(0);
+    expect(await statusOf()).toBe('pending');
+
+    await setOrgStatus('active');
+    const afterReactivation = await deliverPendingPushes(UNREACHABLE_PUSH_PROVIDER, SILENT_LOGGER);
+    /* No subscription exists, so the row is picked up and marked `failed` —
+       the "no device registered" path, not the "org excluded" path. That
+       transition IS the proof: the row was reachable once the org went
+       active again. */
+    expect(afterReactivation.attempted).toBe(0);
+    expect(await statusOf()).toBe('failed');
+  });
+
+  it('the notification projection writes the in-app bell but skips email/push delivery for a suspended org', async () => {
+    await admin.setOrg(ORG);
+    await admin.query(`SELECT set_config('app.user_id', $1, false)`, [OTHER]);
+    await admin.query(
+      `INSERT INTO identity.notification_prefs (user_id, category, channel, enabled)
+       VALUES ($1, 'activity', 'email', true), ($1, 'activity', 'push', true)
+       ON CONFLICT (user_id, category, channel) DO UPDATE SET enabled = EXCLUDED.enabled`,
+      [OTHER],
+    );
+    await admin.query(`SELECT set_config('app.user_id', '', false)`);
+
+    await setOrgStatus('suspended');
+
+    await admin.setOrg(ORG);
+    await admin.query(
+      `INSERT INTO platform.outbox
+         (id, org_id, name, version, occurred_at, payload, actor_id)
+       VALUES (gen_random_uuid(), $1, 'card.assigned', 1, now(), $2::jsonb, $3)`,
+      [
+        ORG,
+        JSON.stringify({ cardId: CARD, boardId: BOARD, before: [], after: [OTHER] }),
+        USER,
+      ],
+    );
+    await admin.setOrg(null);
+
+    const drained = await drainNotificationsFully();
+    expect(drained.written).toBe(1);
+    expect(await countNotifications('card.assigned')).toBe(1);
+
+    /* The in-app bell is unaffected — only outbound reach stops. */
+    const deliveries = await withAuditScope(async (tx) =>
+      tx
+        .select({ channel: schema.notificationDeliveries.channel })
+        .from(schema.notificationDeliveries)
+        .where(
+          and(eq(schema.notificationDeliveries.orgId, ORG), eq(schema.notificationDeliveries.userId, OTHER)),
+        ),
+    );
+    expect(deliveries).toEqual([]);
   });
 });
