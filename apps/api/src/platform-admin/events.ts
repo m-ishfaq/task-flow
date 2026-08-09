@@ -48,6 +48,25 @@ export const flagOverrideCleared = defineEvent(
 );
 
 /**
+ * A single account was frozen or reactivated (Phase 12 Wave 2 §3.1,
+ * ai/phase-12-wave2.md). Published through the same system `EventBus`
+ * `flagOverrideSet`/`.Cleared` already use above — a suspended user may
+ * belong to several orgs or none, so there is no single target org's
+ * `audit.audit_log` to also write into the way `orgSuspended` above does;
+ * `platform.operator_audit_log` (written by the router wrapper, §4) is this
+ * action's whole accountability record.
+ */
+export const userSuspended = defineEvent(
+  'platform.user_suspended',
+  z.object({ userId: z.string(), operatorUserId: z.string() }).strict(),
+);
+
+export const userReactivated = defineEvent(
+  'platform.user_reactivated',
+  z.object({ userId: z.string(), operatorUserId: z.string() }).strict(),
+);
+
+/**
  * NOT HERE: a `platform.operatorGranted` domain event.
  *
  * §4 of the spec calls for one, and the reasoning is real — "who has

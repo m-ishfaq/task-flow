@@ -16,6 +16,7 @@ import '../identity/events.js';
 import '../work/events.js';
 import '../chat/events.js';
 import '../docs/events.js';
+import '../platform-admin/events.js';
 
 /**
  * The audit projection's mapping table, checked against what is actually

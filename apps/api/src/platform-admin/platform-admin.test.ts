@@ -23,6 +23,7 @@ const PLATFORM_ADMIN_URL =
 
 const OPERATOR = unsafeAsId<'UserId'>('0195ee10-0000-7000-8000-000000000001');
 const NON_OPERATOR = unsafeAsId<'UserId'>('0195ee10-0000-7000-8000-000000000002');
+const TARGET_USER = unsafeAsId<'UserId'>('0195ee10-0000-7000-8000-000000000003');
 const ORG = '0195ee10-0000-7000-8000-0000000000aa' as OrgId;
 
 let admin: AdminConnection;
@@ -37,8 +38,9 @@ async function cleanup(): Promise<void> {
   await admin.query(`DELETE FROM identity.memberships WHERE org_id = $1`, [ORG]);
   await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [ORG]);
   await admin.setOrg(null);
+  await admin.query(`DELETE FROM identity.sessions WHERE user_id = $1`, [TARGET_USER]);
   await admin.query(`DELETE FROM identity.users WHERE id = ANY($1::uuid[])`, [
-    [OPERATOR, NON_OPERATOR],
+    [OPERATOR, NON_OPERATOR, TARGET_USER],
   ]);
 }
 
@@ -57,8 +59,9 @@ beforeAll(async () => {
   await admin.query(
     `INSERT INTO identity.users (id, email, email_normalized, email_verified_at)
      VALUES ($1, 'operator@platform-admin.test', 'operator@platform-admin.test', now()),
-            ($2, 'member@platform-admin.test', 'member@platform-admin.test', now())`,
-    [OPERATOR, NON_OPERATOR],
+            ($2, 'member@platform-admin.test', 'member@platform-admin.test', now()),
+            ($3, 'target@platform-admin.test', 'target@platform-admin.test', now())`,
+    [OPERATOR, NON_OPERATOR, TARGET_USER],
   );
   await admin.query(
     `INSERT INTO platform.operators (user_id, granted_by, note) VALUES ($1, $1, 'seeded for test')`,
@@ -95,6 +98,8 @@ beforeEach(async () => {
   await admin.setOrg(ORG);
   await admin.query(`UPDATE identity.orgs SET status = 'active' WHERE id = $1`, [ORG]);
   await admin.setOrg(null);
+  await admin.query(`UPDATE identity.users SET status = 'active' WHERE id = $1`, [TARGET_USER]);
+  await admin.query(`DELETE FROM identity.sessions WHERE user_id = $1`, [TARGET_USER]);
 });
 
 describe('platformRoute — the FORBIDDEN gate', () => {
@@ -181,6 +186,50 @@ describe('org suspend/reactivate — round trip through the router', () => {
     await expect(caller.platformAdmin.orgs.reactivate({ orgId: ORG })).rejects.toThrow(
       /not suspended/i,
     );
+  });
+});
+
+describe('user suspend/reactivate — round trip through the router (Wave 2 §3.1)', () => {
+  it('suspends and reactivates, refusing a redundant call each way', async () => {
+    const caller = callerFor(OPERATOR);
+
+    await expect(caller.platformAdmin.users.suspend({ userId: TARGET_USER })).resolves.toEqual({
+      status: 'suspended',
+    });
+    await expect(caller.platformAdmin.users.suspend({ userId: TARGET_USER })).rejects.toThrow(
+      /already suspended/i,
+    );
+
+    await expect(caller.platformAdmin.users.reactivate({ userId: TARGET_USER })).resolves.toEqual({
+      status: 'active',
+    });
+    await expect(caller.platformAdmin.users.reactivate({ userId: TARGET_USER })).rejects.toThrow(
+      /not suspended/i,
+    );
+  });
+
+  it('revokes existing sessions immediately on suspend', async () => {
+    await admin.query(
+      `INSERT INTO identity.sessions (id, user_id, authenticated_at, expires_at)
+       VALUES (gen_random_uuid(), $1, now(), now() + interval '30 days')`,
+      [TARGET_USER],
+    );
+
+    await callerFor(OPERATOR).platformAdmin.users.suspend({ userId: TARGET_USER });
+
+    const rows = await admin.query(
+      `SELECT revoked_at, revoked_reason FROM identity.sessions WHERE user_id = $1`,
+      [TARGET_USER],
+    );
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]?.['revoked_at']).not.toBeNull();
+    expect(rows.rows[0]?.['revoked_reason']).toBe('account_suspended');
+  });
+
+  it('is refused for a non-operator', async () => {
+    await expect(
+      callerFor(NON_OPERATOR).platformAdmin.users.suspend({ userId: TARGET_USER }),
+    ).rejects.toThrow();
   });
 });
 

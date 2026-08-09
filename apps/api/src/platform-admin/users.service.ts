@@ -5,11 +5,16 @@ import {
   eq,
   ilike,
   inArray,
+  isNull,
   lt,
   schema,
   withGlobalScope,
   withPlatformAdminScope,
 } from '@taskflow/db';
+import { errors, type RequestId, type UserId } from '@taskflow/contracts';
+import { createEvent, type EventBus } from '@taskflow/events';
+import { SYSTEM_ORG } from '../identity/identity.service.js';
+import { userReactivated, userSuspended } from './events.js';
 
 /**
  * The platform-wide user directory — read-only in this wave (§2, §7
@@ -114,4 +119,93 @@ export async function listUsers(input: ListUsersInput): Promise<ListUsersResult>
     })),
     nextCursor,
   };
+}
+
+/**
+ * User suspension (Phase 12 Wave 2 §3.1, ai/phase-12-wave2.md) — the direct
+ * extension of Wave 1's org suspension.
+ *
+ * `identity.users` carries no RLS at all (this file's own header, above),
+ * so — unlike `orgs.service.ts`'s `suspendOrg`/`reactivateOrg`, which needs
+ * `withPlatformAdminScope` to get past `identity.orgs`' `FORCE ROW LEVEL
+ * SECURITY` — this is an ordinary `withGlobalScope` write, the same
+ * connection `listUsers` above already reads through.
+ *
+ * `fromStatus` in the `WHERE` clause is the identical "turn a no-op into an
+ * honest CONFLICT" reasoning `orgs.service.ts`'s own comment gives — not a
+ * race-safety net, just the difference between a caller mistake surfacing
+ * and silently doing nothing.
+ */
+
+export interface OperatorActor {
+  readonly userId: UserId;
+  readonly requestId: RequestId;
+}
+
+export async function suspendUser(
+  userId: string,
+  operator: OperatorActor,
+  events: EventBus,
+): Promise<{ status: 'suspended' }> {
+  const updated = await withGlobalScope(async (tx) =>
+    tx
+      .update(schema.users)
+      .set({ status: 'suspended', updatedAt: new Date() })
+      .where(and(eq(schema.users.id, userId), eq(schema.users.status, 'active')))
+      .returning({ id: schema.users.id }),
+  );
+
+  if (updated.length === 0) {
+    throw errors.conflict('This account is already suspended, or does not exist.');
+  }
+
+  /* Suspending someone means their existing sessions stop working
+     immediately, not eventually — the read-side check alone (login/passkey
+     already refuse anything but `'active'`) leaves an already-signed-in
+     session usable until it naturally expires. `identity.sessions` carries
+     no RLS either, so this is the same `withGlobalScope` connection. */
+  await withGlobalScope(async (tx) =>
+    tx
+      .update(schema.sessions)
+      .set({ revokedAt: new Date(), revokedReason: 'account_suspended' })
+      .where(and(eq(schema.sessions.userId, userId), isNull(schema.sessions.revokedAt))),
+  );
+
+  await events.publish([
+    createEvent(
+      userSuspended,
+      { userId, operatorUserId: operator.userId },
+      { orgId: SYSTEM_ORG, actorId: operator.userId, occurredAt: new Date() },
+    ),
+  ]);
+
+  return { status: 'suspended' };
+}
+
+export async function reactivateUser(
+  userId: string,
+  operator: OperatorActor,
+  events: EventBus,
+): Promise<{ status: 'active' }> {
+  const updated = await withGlobalScope(async (tx) =>
+    tx
+      .update(schema.users)
+      .set({ status: 'active', updatedAt: new Date() })
+      .where(and(eq(schema.users.id, userId), eq(schema.users.status, 'suspended')))
+      .returning({ id: schema.users.id }),
+  );
+
+  if (updated.length === 0) {
+    throw errors.conflict('This account is not suspended, or does not exist.');
+  }
+
+  await events.publish([
+    createEvent(
+      userReactivated,
+      { userId, operatorUserId: operator.userId },
+      { orgId: SYSTEM_ORG, actorId: operator.userId, occurredAt: new Date() },
+    ),
+  ]);
+
+  return { status: 'active' };
 }

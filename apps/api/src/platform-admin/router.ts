@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { EventBus } from '@taskflow/events';
 import { readOperatorAuditEntries } from '@taskflow/db';
-import { OrgIdSchema } from '@taskflow/contracts';
+import { OrgIdSchema, UserIdSchema } from '@taskflow/contracts';
 import { FLAG_NAMES, type FlagName } from '@taskflow/feature-flags';
 import { platformRoute, router, selfRoute } from '../trpc/builder.js';
 import * as flags from './flags.service.js';
@@ -109,10 +109,8 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
     }),
 
     users: router({
-      /** Read-only in this wave — user suspension is a later Phase 12 wave (§2, §7 decision 5). */
       list: platformRoute({
-        platformReason:
-          'The user directory — read-only; this console can freeze an org, not a person.',
+        platformReason: 'The user directory.',
       })
         .input(
           z
@@ -141,6 +139,33 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
           }),
         )
         .query(({ input }) => users.listUsers(input)),
+
+      /** Phase 12 Wave 2 §3.1 — the direct extension of orgs.suspend/.reactivate. */
+      suspend: platformRoute({
+        platformReason: 'Freezes an account — its sessions are revoked immediately.',
+      })
+        .input(z.object({ userId: UserIdSchema }).strict())
+        .output(z.object({ status: z.literal('suspended') }))
+        .mutation(({ input, ctx }) =>
+          users.suspendUser(
+            input.userId,
+            { userId: ctx.principal.userId, requestId: ctx.requestId },
+            deps.events,
+          ),
+        ),
+
+      reactivate: platformRoute({
+        platformReason: 'Lifts a suspension.',
+      })
+        .input(z.object({ userId: UserIdSchema }).strict())
+        .output(z.object({ status: z.literal('active') }))
+        .mutation(({ input, ctx }) =>
+          users.reactivateUser(
+            input.userId,
+            { userId: ctx.principal.userId, requestId: ctx.requestId },
+            deps.events,
+          ),
+        ),
     }),
 
     flags: router({

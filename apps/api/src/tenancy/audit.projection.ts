@@ -281,6 +281,13 @@ export const NEVER_AUDITED: ReadonlySet<string> = new Set([
      record. */
   'platform.flag_override_set',
   'platform.flag_override_cleared',
+  /* Phase 12 Wave 2 §3.1. Same reason as the flag events above: published
+     through the system EventBus, not the outbox — a suspended user may
+     belong to several orgs or none, so there is no single target org's
+     chain to write into. `platform.operator_audit_log` is this action's
+     actual accountability record. */
+  'platform.user_suspended',
+  'platform.user_reactivated',
 ]);
 
 interface Resource {
