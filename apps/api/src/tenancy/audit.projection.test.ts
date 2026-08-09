@@ -70,6 +70,10 @@ const UNMAPPED: ReadonlySet<string> = new Set([
   'user.passkey_registered',
   'user.passkey_removed',
   'user.passkey_login_failed',
+  // Phase 12 Wave 2 §3.2 — same shape as the passkey pair above: a new/removed
+  // way into the account, `resource_id` would repeat `actor_id`.
+  'user.totp_enrolled',
+  'user.totp_disabled',
   'session.revoked',
   'session.token_reuse_detected',
   // Work (Phase 3 / 3.5)
