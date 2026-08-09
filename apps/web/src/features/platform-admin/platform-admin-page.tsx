@@ -355,6 +355,10 @@ function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
               {users.data.users.map((user) => (
                 <tr key={user.userId} className="border-b border-line/50 last:border-0">
                   <td className="px-3 py-2">
+                    {/* Null for an account that never set a profile name, which
+                        is why this renders conditionally rather than falling
+                        back to the email — that is already the line below. */}
+                    {user.name !== null && <p className="truncate text-ink">{user.name}</p>}
                     <p className="truncate text-ink">{user.email}</p>
                     <p className="font-mono text-[10px] text-ink-faint">
                       {user.userId.slice(0, 8)}

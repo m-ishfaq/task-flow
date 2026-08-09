@@ -43,6 +43,24 @@ import type { PlatformOperator } from './org-directory.service.js';
 export interface UserDirectoryRow {
   readonly userId: string;
   readonly email: string;
+  /**
+   * From `people.profiles`, NOT `identity.users.display_name`.
+   *
+   * That column still exists and is explicitly stale — Phase 11.5 moved the
+   * canonical profile record to `people.profiles` and retired
+   * `auth.updateProfile`, so nothing has written the identity column since
+   * (see `identity/router.ts`'s comment on `me`). Reading it here would show
+   * an operator a name the owner changed months ago and cannot change again.
+   *
+   * `people.profiles` is a non-tenant table — no `org_id`, no RLS (migration
+   * 0030's header) — which is what lets it join inside the same
+   * `withGlobalScope` query as the users read rather than needing the
+   * platform-admin connection the org-count aggregate below does.
+   *
+   * Null for an account that has never set one; the console falls back to the
+   * email it already shows.
+   */
+  readonly name: string | null;
   readonly emailVerifiedAt: Date | null;
   readonly status: string;
   readonly orgCount: number;
@@ -61,11 +79,17 @@ export async function listUsers(
       .select({
         userId: schema.users.id,
         email: schema.users.email,
+        /* LEFT, not INNER: a profile row is created lazily, so an account
+           that has never opened the account page has none — and an inner
+           join would silently drop exactly those users from the operator's
+           directory, which is the population most worth seeing. */
+        name: schema.profiles.displayName,
         emailVerifiedAt: schema.users.emailVerifiedAt,
         status: schema.users.status,
         createdAt: schema.users.createdAt,
       })
       .from(schema.users)
+      .leftJoin(schema.profiles, eq(schema.profiles.userId, schema.users.id))
       .orderBy(desc(schema.users.createdAt), desc(schema.users.id))
       .limit(input.limit + 1);
 
@@ -107,6 +131,7 @@ export async function listUsers(
     users: page.map((row) => ({
       userId: row.userId,
       email: row.email,
+      name: row.name,
       emailVerifiedAt: row.emailVerifiedAt,
       status: row.status,
       orgCount: countByUser.get(row.userId) ?? 0,

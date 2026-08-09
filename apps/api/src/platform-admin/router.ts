@@ -60,6 +60,10 @@ const UserRow = z
   .object({
     userId: z.string(),
     email: z.string(),
+    /* From people.profiles, and nullable because a profile row is lazy —
+       see user-directory.service.ts's own note on why not
+       identity.users.display_name. */
+    name: z.string().nullable(),
     emailVerifiedAt: z.date().nullable(),
     status: z.string(),
     orgCount: z.number().int().nonnegative(),
