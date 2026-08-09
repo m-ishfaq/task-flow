@@ -51,7 +51,7 @@ export function envelopeOf(actor: TelephonyActor): {
 export function webhookContext(
   orgId: OrgId,
   requestId: string,
-  actorId?: UserId | undefined,
+  actorId?: UserId,
 ): { readonly orgId: OrgId; readonly actorId: UserId | null; readonly requestId: RequestId } {
   return {
     orgId,

@@ -88,6 +88,32 @@ export function sumWithFallback(preferred: Column, fallback: Column): SQL<string
 }
 
 /**
+ * `SUM(column)`, grouped by whatever the caller's query groups by.
+ *
+ * For a column that can be NULL, `sumWithFallback` is almost certainly the
+ * right function instead — this one exists for the simpler case of summing a
+ * `NOT NULL` column, where there is nothing to fall back to. Returned as text
+ * for the reason `sumWithFallback` and `countRows` both are: a Postgres
+ * `bigint` sum exceeds a safe JavaScript number, so parsing is the caller's
+ * job, done explicitly.
+ */
+export function sumColumn(column: Column): SQL<string> {
+  return sql<string>`COALESCE(SUM(${column}), 0)::text`;
+}
+
+/**
+ * `COUNT(column)`, grouped by whatever the caller's query groups by.
+ *
+ * Returned as text for the same reason `sumWithFallback` is: a Postgres
+ * `bigint` count exceeds what the driver hands back as a safe JavaScript
+ * number, so the caller parses it explicitly rather than trusting an implicit
+ * cast.
+ */
+export function countRows(column: Column): SQL<string> {
+  return sql<string>`COUNT(${column})::text`;
+}
+
+/**
  * A predicate compiled elsewhere, converted into a Drizzle expression.
  *
  * The bridge between `@taskflow/filter`'s compiler and the tenant-scoped

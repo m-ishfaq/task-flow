@@ -8,10 +8,10 @@ import {
 import { createEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
 import { InboundRoute, type InboundRouteConfig } from '@taskflow/telephony';
-import { phoneNumberPurchased, phoneNumberReleased } from './events.js';
+import { phoneNumberPurchased, phoneNumberReleased, phoneNumberRouteChanged } from './events.js';
 import { emitRefusal, refusalMessage } from './refusal.js';
 import { checkOutboundAllowed, recordSpend } from './spend-gate.js';
-import { ensureSubaccount, type SubaccountDeps } from './subaccount.service.js';
+import { ensureSubaccount } from './subaccount.service.js';
 import { envelopeOf, orgOf, userOf, type TelephonyActor } from './shared.js';
 import type { TelephonyDeps } from './deps.js';
 
@@ -47,7 +47,7 @@ export async function searchNumbers(
   deps: TelephonyDeps,
   input: { readonly isoCountry: string; readonly areaCode?: string | undefined; readonly limit: number },
 ): Promise<readonly AvailableNumber[]> {
-  const account = await ensureSubaccount(actor, deps as SubaccountDeps);
+  const account = await ensureSubaccount(actor, deps);
 
   /* A search does not spend, so it does not pass the gate — but it is still
      rate-limited by the ordinary per-route limiter, because an unbounded search
@@ -66,7 +66,7 @@ export async function purchaseNumber(
   input: { readonly phoneNumber: PhoneNumber },
 ): Promise<NumberRecord> {
   const orgId = orgOf(actor);
-  const account = await ensureSubaccount(actor, deps as SubaccountDeps);
+  const account = await ensureSubaccount(actor, deps);
 
   const estimatedCents = await deps.telephony.estimateCostCents({
     kind: 'number_purchase',
@@ -144,7 +144,7 @@ export async function releaseNumber(
   const row = await loadNumber(orgId, input.phoneNumberId);
   if (row === undefined) throw errors.notFound('No such phone number.');
 
-  const account = await ensureSubaccount(actor, deps as SubaccountDeps);
+  const account = await ensureSubaccount(actor, deps);
   await deps.telephony.releaseNumber({
     subaccountSid: account.subaccountSid,
     numberSid: row.providerSid,
@@ -218,6 +218,14 @@ export async function setInboundRoute(
       .returning({ id: schema.phoneNumbers.id });
 
     if (updated.length === 0) throw errors.notFound('No such phone number.');
+
+    await outboxWriter.append(tx, [
+      createEvent(
+        phoneNumberRouteChanged,
+        { phoneNumberId: input.phoneNumberId },
+        envelopeOf(actor),
+      ),
+    ]);
   });
 }
 

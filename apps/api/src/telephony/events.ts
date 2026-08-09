@@ -123,6 +123,20 @@ export const phoneNumberReleased = defineEvent(
   z.object({ phoneNumberId: z.string() }).strict(),
 );
 
+/**
+ * A number's inbound routing config changed.
+ *
+ * No routing content in the payload, on the same reasoning as every other
+ * event in this file — a route can name a forwarding target, and an outbox
+ * payload is projected into the audit log where `REDACTION_PATHS` never
+ * runs. Consumers that need the current config read the row, under RLS,
+ * with `phoneNumber:read`.
+ */
+export const phoneNumberRouteChanged = defineEvent(
+  'phone_number.route_changed',
+  z.object({ phoneNumberId: z.string() }).strict(),
+);
+
 export const callPlaced = defineEvent(
   'call.placed',
   z.object({ callId: z.string(), direction: z.enum(['inbound', 'outbound']) }).strict(),
@@ -160,6 +174,21 @@ export const consentRecorded = defineEvent(
       basis: z.string(),
     })
     .strict(),
+);
+
+/**
+ * The consent announcement finished playing (§3.5).
+ *
+ * Its own event rather than folded into `call.status_changed`, for the same
+ * reason `call.consent_recorded` is its own event: `markAnnouncementPlayed`
+ * is the write the `calls_recording_after_announcement` CHECK constraint
+ * depends on — the fact that recording was allowed to start traces back to
+ * this row, and a compliance review must be able to find it without
+ * unpacking an unrelated status transition.
+ */
+export const callAnnouncementPlayed = defineEvent(
+  'call.announcement_played',
+  z.object({ callId: z.string() }).strict(),
 );
 
 export const recordingStarted = defineEvent(
@@ -215,6 +244,20 @@ export const transcriptionCompleted = defineEvent(
  * an audit entry is a far longer-lived and more widely-readable record than the
  * message row it describes.
  * -------------------------------------------------------------------------- */
+
+/**
+ * A new SMS conversation started (§3.8).
+ *
+ * `ensureThread` reports whether it created the row or found an existing
+ * one, and this fires only on creation — a thread reused by a later message
+ * mutates nothing new, and firing on every message would make this
+ * indistinguishable from `message.sent`/`message.received`, which already
+ * exist for that.
+ */
+export const messageThreadCreated = defineEvent(
+  'message_thread.created',
+  z.object({ threadId: z.string() }).strict(),
+);
 
 export const messageSent = defineEvent(
   'message.sent',
@@ -284,3 +327,21 @@ export const spendPolicyChanged = defineEvent(
     })
     .strict(),
 );
+
+/* -------------------------------------------------------------------------- *
+ * Wave 4 — Twilio Verify (§3.12, §4)
+ *
+ * No phone number here either, for the same reason as every other event in
+ * this file — and doubly so for these three: a verification code exists to
+ * prove a *person* controls a number, which makes the number the one piece of
+ * PII an audit trail around this feature is least entitled to keep forever.
+ * -------------------------------------------------------------------------- */
+
+export const verificationStarted = defineEvent(
+  'verification.started',
+  z.object({ channel: z.enum(['sms', 'call']) }).strict(),
+);
+
+export const verificationSucceeded = defineEvent('verification.succeeded', z.object({}).strict());
+
+export const verificationFailed = defineEvent('verification.failed', z.object({}).strict());

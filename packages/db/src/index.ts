@@ -155,6 +155,8 @@ export {
   compiledPredicate,
   uuidArrayContains,
   sumWithFallback,
+  sumColumn,
+  countRows,
 } from './expressions.js';
 
 /**

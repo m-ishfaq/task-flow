@@ -102,10 +102,16 @@ apps/       api                              (arriving: worker)
               src/lib          tRPC client, session, query client, wire types
               src/components   primitives + app shell
               src/features     auth/ org/ work/ admin/
-              src/telephony  ⚠ Phase 7 Wave 1 — the ONE outbound gate
-                               (spend cap, geo, velocity, org freeze),
-                               subaccount provisioning, webhook signature
-                               verification + replay. No route registered yet.
+              src/telephony  ⚠ Phase 7 — the ONE outbound gate (spend cap,
+                               geo, velocity, org freeze), subaccount
+                               provisioning, webhook signature verification +
+                               replay (Wave 1); numbers, calls, the consent
+                               gate, recordings, transcripts, SMS threads,
+                               STOP/UNSUBSCRIBE, card-attached recordings
+                               (Waves 2–3); a spend-gated Verify capability
+                               with no caller yet, and cost-attribution
+                               reporting (Wave 4 — see status header, its
+                               MFA half is not apps/api/src/identity work)
 packages/   config, contracts, db, security, policy, events, mail, observability,
             feature-flags, guardrail-selftest, ⚠ storage, filter,
             telephony (carrier boundary + geo allowlist)          (arriving: ui)
@@ -301,11 +307,42 @@ never be left pointing at a version that no longer exists. Fixed in the test (cl
 first, delete the version rows after — "children before parents," the same ordering
 `tenancy-seed.ts`'s `clearTenant` already documents for Work), not in the schema.
 
-### Phase 7 Wave 1 — the gate that ships before the thing it gates
+### Phase 7 — Voice & Messaging: Waves 1–3 complete, Wave 4 split
 
-`packages/telephony` · `packages/security/twilio-signature.ts` · migration 0032 (`comms.*`) ·
+`packages/telephony` · `packages/security/twilio-signature.ts` · migrations 0032–0034 (`comms.*`) ·
 `apps/api/src/telephony`. Spec: [ai/phase-7-voice.md](ai/phase-7-voice.md), approved 2026-08-08.
-⚠ Human-review surface — read that spec's status header before touching any of it.
+⚠ Human-review surface — read that spec's status header before touching any of it. That header was
+itself stale for a stretch of this phase (see below), which is the same lesson Phase 3.5 and Phase 5
+already taught this file: a status marker is a claim, not a fact, and this codebase's own habit of
+correcting a wrong premise in the header rather than silently in the code is what makes it possible
+to catch.
+
+**Wave 1 (below) shipped the gate before anything could reach it. Waves 2 and 3 — numbers, calls,
+the consent gate, recordings, transcripts, SMS threads, STOP/UNSUBSCRIBE, and card-attached
+recordings — shipped in the same commit that never updated this section or the spec's own status
+line, so a later pass found a phase that read "not started" and was, by file count, mostly done.**
+Nothing wrong was found in that read-through beyond the status claim itself; what was missing was
+test coverage for it, not correctness. `call.service.test.ts` and `message.service.test.ts` closed
+the two highest-stakes gaps: the first proves `comms.calls`' `calls_recording_after_announcement`
+CHECK constraint — not the service — is what actually refuses a recording started before a required
+announcement played; the second proves `sendSms` checks the suppression list BEFORE the spend gate,
+using an org that is both suppressed and over its cap so the ORDER is what the assertion depends on,
+not just the outcome. `number.service.ts`, `recording.service.ts` and `transcript.service.ts` still
+have no dedicated test file.
+
+**Wave 4 — Twilio Verify wired into "the existing MFA path" — does not have an existing MFA path to
+wire into.** The spec's §3.12 assumed one exists in `apps/api/src/identity`; PLAN.md §3.4 is explicit
+that TOTP and this SMS/call fallback are deferred to Phase 12, itself still an unapproved draft, and
+`apps/api/src/identity` today is password and passkeys only. Building a login-time second factor here
+would be new, un-spec'd work on a second human-review surface, not "finishing" an approved phase — so
+only the capability shipped: `verify.service.ts`'s `startPhoneVerification`/`checkPhoneVerification`,
+gated through the identical `checkOutboundAllowed` chokepoint every other outbound path uses, with no
+caller, the same way Wave 1 shipped webhook verification "with no route registered yet that uses it
+for anything real." The cost-attribution half of Wave 4 — `spend-report.ts`'s `spendReport`, grouping
+`comms.spend_ledger` by kind, gated `recording:read` (the catalog's admin tier, reused rather than
+extended per §6.3) — shipped in full, with a route and a test suite.
+
+#### Wave 1 — the gate that ships before the thing it gates
 
 **Wave 1 deliberately ships nothing a user would call a feature.** The acceptance bar is "the gate
 exists and refuses correctly", proven against a `TelephonyProvider` no product surface calls yet.

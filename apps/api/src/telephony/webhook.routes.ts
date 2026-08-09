@@ -174,7 +174,7 @@ export function registerTelephonyWebhooks(app: FastifyInstance, deps: WebhookRou
       const verified = await verify(request, reply, telephony);
       if (verified === undefined) return;
 
-      await markAnnouncementPlayed(verified.orgId, request.params.callId);
+      await markAnnouncementPlayed(verified.orgId, request.params.callId, request.id);
 
       await withOrgScope(verified.orgId, async (tx) => {
         await commitWebhookNonce(tx, verified.orgId, verified.signature);
@@ -396,7 +396,9 @@ function normalizeStatus(status: string | undefined): string {
       return 'in_progress';
     case 'no-answer':
       return 'no_answer';
+    case undefined:
+      return 'failed';
     default:
-      return status ?? 'failed';
+      return status;
   }
 }

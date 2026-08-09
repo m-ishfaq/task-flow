@@ -12,6 +12,7 @@ import * as transcripts from './transcript.service.js';
 import * as messages from './message.service.js';
 import * as recordingCards from './recording-card.service.js';
 import { readSpendState } from './spend-gate.js';
+import { spendReport } from './spend-report.service.js';
 
 /**
  * Telephony routes (ai/phase-7-voice.md Wave 2).
@@ -288,6 +289,22 @@ export function createTelephonyRouter(maybeDeps: TelephonyDeps | undefined) {
           });
           return { spentCents: state.spentCents, capCents: state.capCents };
         }),
+
+      /**
+       * Cost attribution by kind (Wave 4, §5 — "admin-facing spend
+       * visibility"). `recording:read` rather than `phoneNumber:read`: this
+       * is the org's full itemized spend, not "am I about to be refused",
+       * and the tier that clears is the same one `router.ts`'s own comment
+       * names as ADMIN. There is no dedicated report permission in the
+       * catalog for the identical reason `setRoute` above reuses
+       * `phoneNumber:purchase` instead of inventing one — §6.3 has this
+       * phase consume the permission catalog rather than extend it.
+       */
+      report: route({ permission: 'recording:read' })
+        .input(z.object({ sinceDays: z.number().int().min(1).max(365).default(30) }).strict())
+        .query(async ({ ctx, input }) =>
+          spendReport(actorOf(ctx).subject.orgId, { sinceDays: input.sinceDays }),
+        ),
     }),
   });
 }

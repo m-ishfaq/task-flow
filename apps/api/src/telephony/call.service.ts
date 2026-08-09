@@ -8,7 +8,7 @@ import {
 import { createEvent, type DomainEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
 import { consentRequirementFor } from '@taskflow/telephony';
-import { callPlaced, callStatusChanged, consentRecorded } from './events.js';
+import { callAnnouncementPlayed, callPlaced, callStatusChanged, consentRecorded } from './events.js';
 import {
   loadOrgDataKey,
   openCounterparty,
@@ -17,7 +17,7 @@ import {
 } from './counterparty.js';
 import { emitRefusal, refusalMessage } from './refusal.js';
 import { checkOutboundAllowed, recordSpend } from './spend-gate.js';
-import { ensureSubaccount, type SubaccountDeps } from './subaccount.service.js';
+import { ensureSubaccount } from './subaccount.service.js';
 import { loadNumber } from './number.service.js';
 import { envelopeOf, orgOf, userOf, webhookContext, type TelephonyActor } from './shared.js';
 import type { TelephonyDeps } from './deps.js';
@@ -80,7 +80,7 @@ export async function placeCall(
   const from = await loadNumber(orgId, input.fromPhoneNumberId);
   if (from === undefined) throw errors.notFound('No such phone number.');
 
-  const account = await ensureSubaccount(actor, deps as SubaccountDeps);
+  const account = await ensureSubaccount(actor, deps);
 
   const estimatedCents = await deps.telephony.estimateCostCents({ kind: 'call', to: input.to });
 
@@ -258,12 +258,20 @@ const TERMINAL = new Set(['completed', 'busy', 'no_answer', 'failed', 'canceled'
  * markup would satisfy the constraint while proving nothing about what the
  * caller heard.
  */
-export async function markAnnouncementPlayed(orgId: OrgId, callId: string): Promise<void> {
+export async function markAnnouncementPlayed(
+  orgId: OrgId,
+  callId: string,
+  requestId: string,
+): Promise<void> {
   await withOrgScope(orgId, async (tx) => {
     await tx
       .update(schema.calls)
       .set({ announcementPlayedAt: new Date() })
       .where(eq(schema.calls.id, callId));
+
+    await outboxWriter.append(tx, [
+      createEvent(callAnnouncementPlayed, { callId }, webhookContext(orgId, requestId)),
+    ]);
   });
 }
 

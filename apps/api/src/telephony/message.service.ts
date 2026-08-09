@@ -10,6 +10,7 @@ import {
   messageDeliveryFailed,
   messageReceived,
   messageSent,
+  messageThreadCreated,
   messageThreadOptedOut,
 } from './events.js';
 import {
@@ -21,7 +22,7 @@ import {
 import { classifyOptOut, isSuppressed, suppress, unsuppress } from './suppression.js';
 import { emitRefusal, refusalMessage } from './refusal.js';
 import { checkOutboundAllowed, recordSpend } from './spend-gate.js';
-import { ensureSubaccount, type SubaccountDeps } from './subaccount.service.js';
+import { ensureSubaccount } from './subaccount.service.js';
 import { loadNumber } from './number.service.js';
 import { envelopeOf, orgOf, userOf, webhookContext, type TelephonyActor } from './shared.js';
 import type { TelephonyDeps } from './deps.js';
@@ -87,7 +88,7 @@ export async function sendSms(
     throw errors.forbidden('That recipient has opted out of messages from this organization.');
   }
 
-  const account = await ensureSubaccount(actor, deps as SubaccountDeps);
+  const account = await ensureSubaccount(actor, deps);
   const estimatedCents = await deps.telephony.estimateCostCents({ kind: 'sms', to: input.to });
 
   /* GATE TWO: spend, geo, velocity, org freeze. */
@@ -102,8 +103,6 @@ export async function sendSms(
   }
 
   const dataKey = await loadOrgDataKey(orgId, deps.keys);
-  const thread = await ensureThread(orgId, dataKey, crypto, input.fromPhoneNumberId, input.to);
-
   const messageId = newId<'MessageId'>();
 
   const result = await deps.telephony.sendSms({
@@ -114,8 +113,18 @@ export async function sendSms(
     statusCallbackUrl: `${deps.webhookOrigin ?? ''}/telephony/message-status/${messageId}`,
   });
 
-  await withOrgScope(orgId, async (tx) => {
-    await tx.insert(schema.messages).values({
+  return withOrgScope(orgId, async (tx) => {
+    const thread = await ensureThread(
+      tx,
+      orgId,
+      dataKey,
+      crypto,
+      input.fromPhoneNumberId,
+      input.to,
+      envelopeOf(actor),
+    );
+
+    await tx.insert(schema.smsMessages).values({
       id: messageId,
       orgId,
       threadId: thread.threadId,
@@ -149,9 +158,9 @@ export async function sendSms(
         envelopeOf(actor),
       ),
     ]);
-  });
 
-  return { threadId: thread.threadId, messageId };
+    return { threadId: thread.threadId, messageId };
+  });
 }
 
 /**
@@ -175,14 +184,22 @@ export async function receiveSms(
 ): Promise<{ readonly threadId: string; readonly optOut: boolean }> {
   const crypto = cryptoOf(deps);
   const dataKey = await loadOrgDataKey(orgId, deps.keys);
-  const thread = await ensureThread(orgId, dataKey, crypto, input.phoneNumberId, input.from);
-
   const intent = classifyOptOut(input.body);
   const messageId = newId<'MessageId'>();
 
-  await withOrgScope(orgId, async (tx) => {
+  return withOrgScope(orgId, async (tx) => {
+    const thread = await ensureThread(
+      tx,
+      orgId,
+      dataKey,
+      crypto,
+      input.phoneNumberId,
+      input.from,
+      webhookContext(orgId, input.requestId),
+    );
+
     await tx
-      .insert(schema.messages)
+      .insert(schema.smsMessages)
       .values({
         id: messageId,
         orgId,
@@ -201,12 +218,12 @@ export async function receiveSms(
        that is wrong produces a number nothing ever corrects, and a wrong badge
        looks exactly like a right one. */
     const unread = await tx
-      .select({ id: schema.messages.id })
-      .from(schema.messages)
+      .select({ id: schema.smsMessages.id })
+      .from(schema.smsMessages)
       .where(
         and(
-          eq(schema.messages.threadId, thread.threadId),
-          eq(schema.messages.direction, 'inbound'),
+          eq(schema.smsMessages.threadId, thread.threadId),
+          eq(schema.smsMessages.direction, 'inbound'),
         ),
       );
 
@@ -244,9 +261,9 @@ export async function receiveSms(
     }
 
     await outboxWriter.append(tx, events);
-  });
 
-  return { threadId: thread.threadId, optOut: intent === 'stop' };
+    return { threadId: thread.threadId, optOut: intent === 'stop' };
+  });
 }
 
 /** Applies a delivery status callback. Idempotent on the carrier's own sid. */
@@ -261,9 +278,9 @@ export async function applyMessageStatus(
 ): Promise<void> {
   await withOrgScope(orgId, async (tx) => {
     const rows = await tx
-      .select({ id: schema.messages.id })
-      .from(schema.messages)
-      .where(eq(schema.messages.providerSid, input.providerSid))
+      .select({ id: schema.smsMessages.id })
+      .from(schema.smsMessages)
+      .where(eq(schema.smsMessages.providerSid, input.providerSid))
       .limit(1);
 
     const message = rows[0];
@@ -272,13 +289,13 @@ export async function applyMessageStatus(
     if (message === undefined) return;
 
     await tx
-      .update(schema.messages)
+      .update(schema.smsMessages)
       .set({
         status: input.status,
         ...(input.errorCode === undefined ? {} : { errorCode: input.errorCode }),
         ...(input.status === 'delivered' ? { deliveredAt: new Date() } : {}),
       })
-      .where(eq(schema.messages.id, message.id));
+      .where(eq(schema.smsMessages.id, message.id));
 
     if (input.status === 'undelivered' || input.status === 'failed') {
       await outboxWriter.append(tx, [
@@ -334,15 +351,15 @@ export async function listMessages(
   return withOrgScope(orgId, async (tx) => {
     const rows = await tx
       .select({
-        id: schema.messages.id,
-        direction: schema.messages.direction,
-        body: schema.messages.body,
-        status: schema.messages.status,
-        createdAt: schema.messages.createdAt,
+        id: schema.smsMessages.id,
+        direction: schema.smsMessages.direction,
+        body: schema.smsMessages.body,
+        status: schema.smsMessages.status,
+        createdAt: schema.smsMessages.createdAt,
       })
-      .from(schema.messages)
-      .where(eq(schema.messages.threadId, input.threadId))
-      .orderBy(desc(schema.messages.createdAt))
+      .from(schema.smsMessages)
+      .where(eq(schema.smsMessages.threadId, input.threadId))
+      .orderBy(desc(schema.smsMessages.createdAt))
       .limit(input.limit);
 
     return rows.map((row) => ({
@@ -358,55 +375,70 @@ export async function listMessages(
 /**
  * Finds or creates the thread for a conversation.
  *
+ * Takes the caller's own transaction rather than opening one — `sendSms` and
+ * `receiveSms` each call this from inside their own `withOrgScope`, so a
+ * newly created thread is written in the SAME transaction as the message
+ * that started it. This function appends `message_thread.created` itself,
+ * exactly when it inserts a new row, rather than reporting `created` back
+ * for the caller to decide whether to emit — the event and the mutation that
+ * causes it stay next to each other instead of split across two functions
+ * that both have to independently remember the same boolean.
+ *
  * `onConflictDoNothing` then re-select, rather than select-then-insert: two
  * inbound messages arriving together would both see no thread and both insert,
  * and the unique index on (org, our number, their index, channel) is what
  * adjudicates. The loser reads the winner's row.
  */
 async function ensureThread(
+  tx: Parameters<Parameters<typeof withOrgScope>[1]>[0],
   orgId: OrgId,
   dataKey: Uint8Array,
   crypto: CounterpartyCrypto,
   phoneNumberId: string,
   counterparty: PhoneNumber,
+  eventContext: Parameters<typeof createEvent>[2],
 ): Promise<{ readonly threadId: string }> {
   const threadId = newId<'MessageThreadId'>();
   const sealed = sealCounterparty(dataKey, crypto, orgId, threadId, counterparty);
 
-  return withOrgScope(orgId, async (tx) => {
-    const inserted = await tx
-      .insert(schema.messageThreads)
-      .values({
-        id: threadId,
-        orgId,
-        channel: 'sms',
-        phoneNumberId,
-        counterpartyCiphertext: sealed.ciphertext,
-        counterpartyIndex: sealed.index,
-      })
-      .onConflictDoNothing()
-      .returning({ id: schema.messageThreads.id });
+  const inserted = await tx
+    .insert(schema.messageThreads)
+    .values({
+      id: threadId,
+      orgId,
+      channel: 'sms',
+      phoneNumberId,
+      counterpartyCiphertext: sealed.ciphertext,
+      counterpartyIndex: sealed.index,
+    })
+    .onConflictDoNothing()
+    .returning({ id: schema.messageThreads.id });
 
-    if (inserted[0] !== undefined) return { threadId: inserted[0].id };
+  const createdId = inserted[0]?.id;
+  if (createdId !== undefined) {
+    await outboxWriter.append(tx, [
+      createEvent(messageThreadCreated, { threadId: createdId }, eventContext),
+    ]);
+    return { threadId: createdId };
+  }
 
-    const existing = await tx
-      .select({ id: schema.messageThreads.id })
-      .from(schema.messageThreads)
-      .where(
-        and(
-          eq(schema.messageThreads.phoneNumberId, phoneNumberId),
-          eq(schema.messageThreads.counterpartyIndex, sealed.index),
-          eq(schema.messageThreads.channel, 'sms'),
-        ),
-      )
-      .limit(1);
+  const existing = await tx
+    .select({ id: schema.messageThreads.id })
+    .from(schema.messageThreads)
+    .where(
+      and(
+        eq(schema.messageThreads.phoneNumberId, phoneNumberId),
+        eq(schema.messageThreads.counterpartyIndex, sealed.index),
+        eq(schema.messageThreads.channel, 'sms'),
+      ),
+    )
+    .limit(1);
 
-    const row = existing[0];
-    if (row === undefined) {
-      throw errors.internal(undefined, 'Message thread could not be resolved after a conflict.');
-    }
-    return { threadId: row.id };
-  });
+  const row = existing[0];
+  if (row === undefined) {
+    throw errors.internal(undefined, 'Message thread could not be resolved after a conflict.');
+  }
+  return { threadId: row.id };
 }
 
 function cryptoOf(deps: TelephonyDeps): CounterpartyCrypto {

@@ -381,7 +381,14 @@ export const messageThreads = comms.table(
  * protection is RLS plus `sms:read` — the same protection the chat message next
  * to it in the same inbox has.
  */
-export const messages = comms.table(
+/**
+ * Exported as `smsMessages`, not `messages` — `chat.js` already exports a
+ * `messages` table (Phase 5), and `export *`-ing both from
+ * `schema/index.ts` under the same name is an ambiguity `tsc` refuses to
+ * resolve silently (TS2308). The underlying table name stays `messages`;
+ * only the JS binding differs, so the migration is unaffected.
+ */
+export const smsMessages = comms.table(
   'messages',
   {
     id: uuid('id').primaryKey(),

@@ -197,9 +197,15 @@ export async function presignRecording(
       ),
     ]);
 
-    return recording;
+    /* Rebuilt as a literal, not returned as-is: `recording.storageKey` is
+       narrowed to `string` by the check above, and reconstructing it here is
+       what carries that narrowing across the closure boundary — the
+       alternative is a type assertion at the call site, which is banned
+       (guardrail: no `as`/`!` papering over a type the compiler cannot
+       otherwise prove). */
+    return { id: recording.id, callId: recording.callId, storageKey: recording.storageKey };
   });
 
-  const url = await storage.presignDownload(row.storageKey as string, expiresInSeconds);
+  const url = await storage.presignDownload(row.storageKey, expiresInSeconds);
   return { url, expiresInSeconds };
 }

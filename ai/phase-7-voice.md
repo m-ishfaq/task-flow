@@ -1,6 +1,11 @@
 # Phase 7 — Voice & Messaging
 
-**Status: APPROVED 2026-08-08. Wave 1 COMPLETE; Waves 2–4 not started.** Written to be reviewed and argued with, the
+**Status: APPROVED 2026-08-08. Waves 1–3 COMPLETE; Wave 4 partially shipped — see its own note below.**
+This header was stale for a real stretch of this phase's life: the commit that first landed most of
+Waves 2 and 3 did not update it, so a later reader (correctly) treated "Waves 2–4 not started" as
+untrustworthy and re-verified against the actual files rather than the claim — the same lesson
+CLAUDE.md's Phase 3.5 note already draws from an identical staleness. Written to be reviewed and
+argued with, the
 same way `phase-5-chat.md` and `phase-6-docs.md` were before their own approvals, and for a sharper
 reason than either of them had: this is the first phase in the whole plan that spends real money and
 carries real regulatory exposure (call recording consent law) on every request it serves. §3 names
@@ -65,6 +70,42 @@ silently in the code:**
    column set, and growing a column outside that set fires a new `rls-exempt-table-grew-a-column`
    rule — with a fixture case proving it fires. An exemption that is only a name on a list is one
    nobody rechecks after the table changes.
+
+**What Waves 2 and 3 shipped** — migrations 0033 (numbers, calls, recordings, transcripts) and 0034
+(SMS threads, suppressions, recording-card attachment), and every service in `apps/api/src/telephony`
+except `verify.service.ts` and `spend-report.service.ts` (Wave 4, below). All of it was already in
+the codebase before this status header was corrected; what this pass added was the test coverage
+the header claimed did not exist yet: `call.service.test.ts` (the consent gate, and — the one
+assertion worth a real database — that `comms.calls`' `calls_recording_after_announcement` CHECK
+constraint, not the service, is what actually refuses a recording started before a required
+announcement played) and `message.service.test.ts` (the suppression-before-spend-gate ORDER, proven
+by an org that is both suppressed and over its cap still reporting the suppression; thread
+deduplication; STOP/START). `number.service.ts`, `recording.service.ts` and `transcript.service.ts`
+still have no dedicated test file — read-through in this pass found nothing wrong with any of the
+three, but "read and looked correct" is exactly the standard this codebase's own Wave 2/3 status
+notes (see CLAUDE.md) warn is not the same claim as a passing test.
+
+**Wave 4 is split, and only shipped in one half. §3.12's framing of "the existing MFA path" in
+`apps/api/src/identity` does not match `apps/api/src/identity` as it exists.** PLAN.md §3.4 (the row
+this phase's own §7 decisions are supposed to be checked against) is explicit that TOTP and this
+SMS/call fallback are **deferred to Phase 12**, itself still an unapproved Wave 1 draft — so there is
+no login-time second factor for Twilio Verify to be wired into today, and building one would be new,
+un-spec'd identity-surface work stacked on top of an already-approved phase rather than "finishing"
+it. Decided (2026-08-09, by the author) to ship the capability and stop at the boundary: **only
+`verify.service.ts`** — `startPhoneVerification`/`checkPhoneVerification`, spend-gated through the
+identical `checkOutboundAllowed` chokepoint every other outbound path uses, with
+`VerificationStarted`/`Succeeded`/`Failed` added to the event catalog and a Postgres-backed test
+suite proving the refusal cases leave the provider untouched, the same acceptance bar Wave 1 set for
+itself. It has no caller — Wave 1's webhook verification shipped the same way, "with no route
+registered yet that uses it for anything real" — and `apps/api/src/identity` is untouched. Phase 12
+is where a login-time SMS step gets built, and it will call these two functions rather than
+reimplement the gate; `checkPhoneVerification`'s own comment is explicit that whoever writes that
+caller still owns its own per-user attempt throttle, because Twilio Verify's own per-SID lockout is
+not the same protection. **The cost-attribution half of Wave 4 shipped in full**: `spend-report.ts`
+(`spendReport`, gated `recording:read` — reusing the catalog rather than extending it, per §6.3) and
+a new `spend.report` route, grouping `comms.spend_ledger` by kind with `COUNT`/estimated/billed
+totals, tested against real Postgres including the case that matters most — an unreconciled row
+still counting at its estimate rather than reading as free.
 
 Parent: [PLAN.md](../PLAN.md) §3.4 (Voice & Messaging), §5 (Provider Interfaces —
 `TelephonyProvider`), §8.5 (Telephony security), §9 (Real-Time Architecture), §10.6 (Domain
