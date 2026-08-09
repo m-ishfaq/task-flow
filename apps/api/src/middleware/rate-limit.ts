@@ -90,6 +90,13 @@ const OPERATION_RULES: Readonly<Record<string, RateLimitRule>> = {
      member directory by opening a conversation with everybody is slow enough
      to notice. */
   'chat.channels.openDirect': { limit: 30, windowMs: 60_000 },
+
+  /* Self-serve org creation (Phase 12 §3.4, §7 decision 3). Generous for a
+     legitimate person setting up a company and a personal workspace in the
+     same day, cheap to raise later, expensive to have shipped unset. No
+     `email` field on this route's input, so `accountOf` returns null and the
+     key falls back to `bearerScope` — per-caller, exactly what this needs. */
+  'tenancy.orgs.create': { limit: 3, windowMs: 24 * 60 * 60_000 },
 };
 
 export interface RateLimitOptions {

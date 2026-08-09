@@ -48,6 +48,23 @@ export function isDirectlyAssignable(role: Role): boolean {
 export const DIRECTLY_ASSIGNABLE_ROLES: readonly Role[] = ROLES.filter(isDirectlyAssignable);
 
 /**
+ * True when a role may RECEIVE ownership through `members.transferOwnership`
+ * (Phase 12 §3.5).
+ *
+ * Narrower than `isDirectlyAssignable`: a guest becoming Owner in one step
+ * would skip every intentional friction this module already builds into how
+ * someone reaches a real role, so `'guest'` is excluded here even though it
+ * is directly assignable. `'owner'` is excluded because transferring
+ * ownership to an existing owner is not this route's job — see
+ * `member.service.ts`'s `transferOwnership` for the full reasoning on why a
+ * pre-existing second Owner is left undisturbed rather than treated as an
+ * error.
+ */
+export function isOwnershipTransferEligible(role: Role): boolean {
+  return role === 'admin' || role === 'member';
+}
+
+/**
  * Whether two roles are the same.
  *
  * A trivial function, and it exists because guardrail 7 correctly cannot tell

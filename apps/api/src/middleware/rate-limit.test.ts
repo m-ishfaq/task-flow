@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { closeDatabase, initializeDatabase } from '@taskflow/db';
+import { connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { buildServer } from '../server.js';
+import type { DeliverableLink } from '../identity/identity.service.js';
 import { SlidingWindowLimiter } from './sliding-window.js';
 import { accountOf, proceduresOf } from './rate-limit.js';
 import { TEST_ENV } from '../testing/fixtures.js';
@@ -210,6 +212,128 @@ describe('enforcement', () => {
       expect(response.statusCode).toBe(200);
     }
   });
+});
+
+describe('org creation rate limit (Phase 12 §3.4, §7 decision 3)', () => {
+  let app: FastifyInstance;
+  let admin: AdminConnection;
+  const deliveries: DeliverableLink[] = [];
+  const limiter = new SlidingWindowLimiter();
+  const createdOrgIds: string[] = [];
+  const createdEmails: string[] = [];
+
+  // Distinguishes this run's slugs from a previous run's leftovers on a
+  // developer's persistent local database — CI gets a fresh database every
+  // time, but re-running locally without a reset must not collide with
+  // orgs this same suite created and (normally) already cleaned up.
+  const runId = Date.now().toString(36);
+
+  beforeAll(async () => {
+    initializeDatabase({ url: TEST_ENV.DATABASE_URL, applicationName: 'orgs-create-rate-test' });
+    admin = await connectAsMigrator();
+    app = await buildServer({
+      env: TEST_ENV,
+      rateLimiter: limiter,
+      deliver: (message) => {
+        deliveries.push(message);
+        return Promise.resolve();
+      },
+    });
+  });
+
+  afterAll(async () => {
+    // Children before parents — the same ordering tenancy.service.test.ts's
+    // removeOrg documents for Work.
+    for (const orgId of createdOrgIds) {
+      await admin.setOrg(orgId);
+      await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [orgId]);
+      await admin.query(`DELETE FROM identity.memberships WHERE org_id = $1`, [orgId]);
+      await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [orgId]);
+      await admin.setOrg(null);
+    }
+    if (createdEmails.length > 0) {
+      await admin.query(`DELETE FROM identity.users WHERE email = ANY($1::text[])`, [
+        createdEmails,
+      ]);
+    }
+    await admin.end();
+    await app.close();
+    await closeDatabase();
+  });
+
+  /** Registers, verifies, and logs in a real account — the same three-step
+   * flow server.test.ts's `loginFresh` uses — and returns its access token.
+   * `tenancy.orgs.create` has no `email` field, so the rate limiter's key
+   * comes from `bearerScope`, which needs a REAL token rather than a header
+   * that never authenticates. */
+  async function loginFresh(email: string): Promise<string> {
+    createdEmails.push(email);
+
+    await app.inject({
+      method: 'POST',
+      url: '/trpc/auth.register',
+      payload: { email, password: 'correct horse battery staple 42' },
+    });
+
+    const link = deliveries.find(
+      (message) => message.kind === 'verify_email' && message.email === email,
+    );
+    await app.inject({
+      method: 'POST',
+      url: '/trpc/auth.verifyEmail',
+      payload: { token: link?.token ?? '' },
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/trpc/auth.login',
+      payload: { email, password: 'correct horse battery staple 42' },
+    });
+
+    const body: { result?: { data?: { accessToken?: string } } } = response.json();
+    return body.result?.data?.accessToken ?? '';
+  }
+
+  async function createOrg(accessToken: string, slug: string): Promise<number> {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/trpc/tenancy.orgs.create',
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: { name: `Org ${slug}`, slug },
+    });
+
+    if (response.statusCode === 200) {
+      const body: { result?: { data?: { orgId?: string } } } = response.json();
+      if (body.result?.data?.orgId !== undefined) createdOrgIds.push(body.result.data.orgId);
+    }
+
+    return response.statusCode;
+  }
+
+  it('throttles a verified account after three creations in a day', async () => {
+    const accessToken = await loginFresh(`rate-limited-creator-${runId}@example.test`);
+    expect(accessToken).not.toBe('');
+
+    // The §7 decision 3 budget: three, then refused — the first three each
+    // succeed (200) since each names a distinct, unused slug.
+    for (let i = 0; i < 3; i += 1) {
+      expect(
+        await createOrg(accessToken, `rate-org-${runId}-${String(i)}`),
+        `attempt ${String(i + 1)}`,
+      ).toBe(200);
+    }
+
+    expect(await createOrg(accessToken, `rate-org-${runId}-fourth`)).toBe(429);
+  });
+
+  /* The email-verification gate itself (§3.4) is NOT tested here: login
+     already refuses an unverified account (Phase 1, identity.service.ts),
+     so there is no way to reach `tenancy.orgs.create` with an unverified
+     session through the real HTTP surface at all — the gate on `createOrg`
+     is defense in depth for a session obtained some other way, not something
+     this pipeline can produce. `tenancy.service.test.ts`'s "self-serve
+     creation guardrails" suite calls the service directly with an
+     unverified actor, which is the only way to exercise it. */
 });
 
 describe('trust proxy', () => {

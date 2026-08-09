@@ -51,6 +51,15 @@ export interface AuthenticatedPrincipal {
   readonly authenticatedAt: Date;
   /** Null when the caller has authenticated but selected no organization. */
   readonly org: OrgMembership | null;
+  /**
+   * True when `org` is null SPECIFICALLY because the requested org is
+   * suspended, rather than because the caller has no membership in it at all
+   * (Phase 12 §3.3). `requireOrg` in trpc/builder.ts reads this to choose
+   * between `ORG_SUSPENDED` and `NOT_A_MEMBER` — two different facts that
+   * would otherwise both collapse to "org is null" with no way to tell them
+   * apart at the point the error is thrown.
+   */
+  readonly orgSuspended: boolean;
 }
 
 /** A principal that has an organization — what a permission check needs. */

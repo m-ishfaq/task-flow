@@ -6,7 +6,7 @@ import { createAppRouter, type AppRouter } from './router.js';
 import { buildWorkDeps } from './work/deps.js';
 import { assertRoutesDeclarePermissions } from './trpc/manifest.js';
 import type { AuthenticatedPrincipal, RequestContext } from './trpc/context.js';
-import { ORG_HEADER, resolveOrgMembership } from './tenancy/resolve.js';
+import { ORG_HEADER, resolveOrgMembershipDetailed } from './tenancy/resolve.js';
 import {
   clearRefreshCookieOptions,
   readRefreshCookie,
@@ -204,6 +204,12 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
  * database is unreachable the caller cannot be authorized for anything anyway,
  * and the fail-closed answer is the one that does not hand an unauthenticated
  * caller a distinguishable error from a permission-bearing route.
+ *
+ * `orgSuspended` is set from the SAME lookup rather than a second query, and
+ * is what lets `requireOrg` in trpc/builder.ts throw `ORG_SUSPENDED` instead
+ * of the generic `NOT_A_MEMBER` (Phase 12 §3.3) — without it, `org` being null
+ * here is already indistinguishable from every other refusal by the time a
+ * route runs.
  */
 async function withOrgContext(
   principal: AuthenticatedPrincipal | null,
@@ -215,8 +221,14 @@ async function withOrgContext(
   if (typeof requested !== 'string' || requested.length === 0) return principal;
 
   try {
-    const org = await resolveOrgMembership(principal.userId, requested);
-    return org === null ? principal : { ...principal, org };
+    const resolution = await resolveOrgMembershipDetailed(principal.userId, requested);
+    if (resolution.kind === 'member') {
+      return { ...principal, org: resolution.membership, orgSuspended: false };
+    }
+    if (resolution.kind === 'suspended') {
+      return { ...principal, org: null, orgSuspended: true };
+    }
+    return principal;
   } catch {
     return principal;
   }

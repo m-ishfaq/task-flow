@@ -22,6 +22,7 @@ import { refresh, useSession } from './session.js';
 const TERMINAL_CODES = new Set([
   'FORBIDDEN',
   'NOT_A_MEMBER',
+  'ORG_SUSPENDED',
   'NOT_FOUND',
   'GONE',
   'VALIDATION_FAILED',

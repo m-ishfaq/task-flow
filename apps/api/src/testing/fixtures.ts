@@ -71,6 +71,7 @@ export function testPrincipal(
       role,
       tuples: [],
     },
+    orgSuspended: false,
     ...overrides,
   };
 }

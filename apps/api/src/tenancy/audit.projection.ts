@@ -69,6 +69,12 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'member.added': { type: 'member', key: 'userId' },
   'member.role_changed': { type: 'member', key: 'userId' },
   'member.removed': { type: 'member', key: 'userId' },
+  /* Phase 12 §3.5. Resolves to the NEW owner rather than the outgoing one —
+     matching `member.role_changed`'s own "the subject is the account" answer,
+     and consistent with an org's audit history being read forward: "who holds
+     this org now" is the question a reader has more often than "who gave it
+     up". */
+  'member.ownership_transferred': { type: 'member', key: 'toUserId' },
   'team.created': { type: 'team', key: 'teamId' },
   'team.member_added': { type: 'team', key: 'teamId' },
   'team.member_removed': { type: 'team', key: 'teamId' },

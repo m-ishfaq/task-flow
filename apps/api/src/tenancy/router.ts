@@ -132,6 +132,26 @@ export function createTenancyRouter() {
         .mutation(({ input, ctx }) =>
           members.removeMember(ctx.principal.org.orgId, input, actorOf(ctx)),
         ),
+
+      /**
+       * Ownership handoff, atomic (Phase 12 §3.5) — deliberately separate from
+       * `changeRole`, which cannot express this: it refuses promoting to
+       * `'owner'` via the assignable-role check and unconditionally refuses a
+       * caller changing their own role, so a handoff previously needed two
+       * calls by two different people. `member:manage` is Owner-only in the
+       * role matrix, so holding this permission already proves the caller is
+       * the one giving ownership away.
+       */
+      transferOwnership: route({ permission: 'member:manage', stepUp: true })
+        .input(
+          z
+            .object({ toUserId: UserIdSchema, selfNewRole: z.enum(['admin', 'member']) })
+            .strict(),
+        )
+        .output(z.object({ newOwnerId: z.string() }))
+        .mutation(({ input, ctx }) =>
+          members.transferOwnership(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
     }),
 
     teams: router({

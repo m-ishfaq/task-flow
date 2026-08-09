@@ -16,7 +16,7 @@ import * as grants from './grant.service.js';
 import * as authz from './authz.service.js';
 import * as audit from './audit.service.js';
 import { drainOutboxFully } from './audit.projection.js';
-import { loadTuples, resolveOrgMembership } from './resolve.js';
+import { loadTuples, resolveOrgMembership, resolveOrgMembershipDetailed } from './resolve.js';
 
 /**
  * The tenancy slice, end to end, against real Postgres (`docker compose up -d`).
@@ -58,6 +58,20 @@ async function newOrg(slug: string, owner: UserId = OWNER): Promise<OrgId> {
   const result = await orgs.createOrg({ name: `Org ${slug}`, slug }, actorOf(owner));
   created.push(result.orgId);
   return result.orgId;
+}
+
+/** Sets `identity.orgs.status` directly, the way only a database console can. */
+async function setOrgStatus(orgId: string, status: 'active' | 'suspended' | 'deleted'): Promise<void> {
+  await admin.setOrg(orgId);
+  if (status === 'deleted') {
+    await admin.query(`UPDATE identity.orgs SET status = $1, deleted_at = now() WHERE id = $2`, [
+      status,
+      orgId,
+    ]);
+  } else {
+    await admin.query(`UPDATE identity.orgs SET status = $1 WHERE id = $2`, [status, orgId]);
+  }
+  await admin.setOrg(null);
 }
 
 async function removeOrg(orgId: string): Promise<void> {
@@ -286,6 +300,181 @@ describe('membership management', () => {
 
     await members.removeMember(orgId, { userId: COLLEAGUE }, actorOf(OWNER));
     expect(await loadTuples(orgId, COLLEAGUE)).toHaveLength(0);
+  });
+});
+
+describe('transferring ownership (Phase 12 §3.5)', () => {
+  it('hands ownership to another member atomically, in one action', async () => {
+    const orgId = await newOrg('transfer-one');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'admin' },
+      actorOf(OWNER),
+    );
+
+    const result = await members.transferOwnership(
+      orgId,
+      { toUserId: COLLEAGUE, selfNewRole: 'admin' },
+      actorOf(OWNER),
+    );
+    expect(result.newOwnerId).toBe(COLLEAGUE);
+
+    // Both writes committed together — the org is never observably ownerless
+    // and never observably still held by the outgoing owner.
+    expect((await resolveOrgMembership(COLLEAGUE, orgId))?.role).toBe('owner');
+    expect((await resolveOrgMembership(OWNER, orgId))?.role).toBe('admin');
+  });
+
+  it('leaves exactly one owner in place even racing two transfers for the same target', async () => {
+    // Unlike changeRole/removeMember, transferOwnership has no check-then-write
+    // window on a shared row that could leave the org OWNERLESS — each call
+    // that succeeds always ends with the target promoted before it returns.
+    // What two callers racing the SAME target actually produces: whichever
+    // transaction commits first makes the target Owner, and the second then
+    // reads that committed state and correctly refuses — the target is no
+    // longer admin/member, it is already Owner — rather than either
+    // corrupting state or silently doing nothing.
+    const orgId = await newOrg('transfer-two');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'admin' },
+      actorOf(OWNER),
+    );
+
+    const results = await Promise.allSettled([
+      members.transferOwnership(orgId, { toUserId: COLLEAGUE, selfNewRole: 'admin' }, actorOf(OWNER)),
+      members.transferOwnership(
+        orgId,
+        { toUserId: COLLEAGUE, selfNewRole: 'member' },
+        actorOf(OWNER),
+      ),
+    ]);
+
+    const isRejected = (
+      result: PromiseSettledResult<unknown>,
+    ): result is PromiseRejectedResult => result.status === 'rejected';
+
+    const fulfilled = results.filter((result) => result.status === 'fulfilled');
+    const rejected = results.filter(isRejected);
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    // A clean, expected refusal — the target is already Owner — never a crash
+    // or an unrelated failure.
+    expect(rejected[0]?.reason).toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    expect((await resolveOrgMembership(COLLEAGUE, orgId))?.role).toBe('owner');
+    const ownerAfter = (await resolveOrgMembership(OWNER, orgId))?.role;
+    expect(['admin', 'member']).toContain(ownerAfter);
+  });
+
+  it('refuses to transfer ownership to a guest', async () => {
+    // A guest becoming Owner in one step would skip every intentional friction
+    // isDirectlyAssignable already builds into how someone reaches a real role.
+    const orgId = await newOrg('transfer-three');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'guest' },
+      actorOf(OWNER),
+    );
+
+    await expect(
+      members.transferOwnership(orgId, { toUserId: COLLEAGUE, selfNewRole: 'admin' }, actorOf(OWNER)),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+  });
+
+  it('refuses a target with no membership in this org', async () => {
+    const orgId = await newOrg('transfer-four');
+    await expect(
+      members.transferOwnership(orgId, { toUserId: OUTSIDER, selfNewRole: 'admin' }, actorOf(OWNER)),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('emits member.ownership_transferred into the outbox', async () => {
+    const orgId = await newOrg('transfer-five');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'member' },
+      actorOf(OWNER),
+    );
+    await members.transferOwnership(
+      orgId,
+      { toUserId: COLLEAGUE, selfNewRole: 'member' },
+      actorOf(OWNER),
+    );
+
+    const rows = await withOrgScope(orgId, async (tx) =>
+      tx.select({ name: schema.outbox.name }).from(schema.outbox),
+    );
+    expect(rows.map((row) => row.name)).toContain('member.ownership_transferred');
+  });
+});
+
+describe('org suspension (Phase 12 §3.3)', () => {
+  it('distinguishes a suspended org from not-a-member', async () => {
+    const orgId = await newOrg('suspend-one');
+    await setOrgStatus(orgId, 'suspended');
+
+    // The collapsed form every OTHER caller (rooms.ts, authorize.ts) uses —
+    // refuses exactly like not-a-member, with no code change needed on their
+    // side (§3.9).
+    expect(await resolveOrgMembership(OWNER, orgId)).toBeNull();
+
+    // The detailed form the HTTP layer uses to answer ORG_SUSPENDED instead of
+    // the generic NOT_A_MEMBER.
+    expect(await resolveOrgMembershipDetailed(OWNER, orgId)).toEqual({ kind: 'suspended' });
+  });
+
+  it('fails closed for every role, including the org’s own Owner', async () => {
+    const orgId = await newOrg('suspend-two');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'admin' },
+      actorOf(OWNER),
+    );
+    await setOrgStatus(orgId, 'suspended');
+
+    expect(await resolveOrgMembership(OWNER, orgId)).toBeNull();
+    expect(await resolveOrgMembership(COLLEAGUE, orgId)).toBeNull();
+  });
+
+  it('collapses a deleted org into the same refusal as not-a-member', async () => {
+    // §3.3: "that org used to exist" must not be confirmed by a distinct error
+    // to a former member — the same cross-tenant-privacy argument
+    // member.service.ts already makes for NOT_FOUND.
+    const orgId = await newOrg('suspend-three');
+    await setOrgStatus(orgId, 'deleted');
+
+    expect(await resolveOrgMembershipDetailed(OWNER, orgId)).toEqual({ kind: 'none' });
+  });
+
+  it('leaves an active org fully unaffected', async () => {
+    const orgId = await newOrg('suspend-four');
+    expect(await resolveOrgMembershipDetailed(OWNER, orgId)).toMatchObject({ kind: 'member' });
+  });
+});
+
+describe('self-serve creation guardrails (Phase 12 §3.4)', () => {
+  it('refuses to create an org for an unverified account', async () => {
+    const unverified = unsafeAsId<'UserId'>('0195dd00-0000-7000-8000-0000000000e1');
+    await admin.query(
+      `INSERT INTO identity.users (id, email, email_normalized, email_verified_at)
+       VALUES ($1, $2, $2, NULL)
+       ON CONFLICT (id) DO UPDATE SET email_verified_at = NULL`,
+      [unverified, 'unverified@tenancy.test'],
+    );
+
+    try {
+      // The check runs first inside the transaction, before either insert, so
+      // the thrown error aborts the whole transaction and leaves no
+      // half-created org behind — the same guarantee `createOrg`'s own header
+      // already claims for the unique-slug failure path.
+      await expect(
+        orgs.createOrg({ name: 'Shadow Org', slug: 'unverified-create' }, actorOf(unverified)),
+      ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    } finally {
+      await admin.setOrg(null);
+      await admin.query(`DELETE FROM identity.users WHERE id = $1`, [unverified]);
+    }
   });
 });
 

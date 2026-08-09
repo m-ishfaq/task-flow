@@ -32,6 +32,7 @@ export {
 export {
   isIndispensableRole,
   isDirectlyAssignable,
+  isOwnershipTransferEligible,
   sameRole,
   DIRECTLY_ASSIGNABLE_ROLES,
 } from './assignment.js';

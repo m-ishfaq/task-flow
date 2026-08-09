@@ -28,6 +28,11 @@ export const ERROR_CODES = [
   /* --- Authorization (§8.2) -------------------------------------------- */
   'FORBIDDEN',
   'NOT_A_MEMBER',
+  // The caller IS a member, but the org itself is suspended (Phase 12 §3.3).
+  // Distinct from NOT_A_MEMBER on purpose: that code means "you were never in
+  // this org, or you were removed"; reusing it here would tell a
+  // legitimately-still-a-member Owner the wrong thing about what happened.
+  'ORG_SUSPENDED',
 
   /* --- Resource --------------------------------------------------------- */
   // NOT_FOUND is deliberately returned for resources that exist but are not
@@ -88,6 +93,7 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
 
   FORBIDDEN: 403,
   NOT_A_MEMBER: 403,
+  ORG_SUSPENDED: 403,
 
   NOT_FOUND: 404,
   ALREADY_EXISTS: 409,
@@ -207,6 +213,14 @@ export const errors = {
    * which is an information leak across tenants (§8.7).
    */
   notFound: (message = 'Not found.') => new AppError('NOT_FOUND', message),
+
+  /**
+   * The caller has a real membership, but the org itself is suspended
+   * (Phase 12 §3.3). Kept distinct from `forbidden`/`notFound` — see the
+   * comment on the ORG_SUSPENDED code in ERROR_CODES.
+   */
+  orgSuspended: (message = 'This organization has been suspended.') =>
+    new AppError('ORG_SUSPENDED', message),
 
   conflict: (message = 'The resource was modified by someone else. Reload and try again.') =>
     new AppError('CONFLICT', message),

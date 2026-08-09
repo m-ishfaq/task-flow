@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import type { TeamId, UserId } from '@taskflow/contracts';
-import { DIRECTLY_ASSIGNABLE_ROLES, type Role } from '@taskflow/policy';
+import { DIRECTLY_ASSIGNABLE_ROLES, isOwnershipTransferEligible, type Role } from '@taskflow/policy';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useSession } from '../../lib/session.js';
@@ -182,6 +182,25 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
     },
   });
 
+  /**
+   * Ownership handoff (Phase 12 §3.5) — a distinct action from the role
+   * dropdown above, which keeps excluding `'owner'` for the reason the file
+   * header already gives: this is not a role change, it is two role changes
+   * committed together, and offering it in that dropdown would render a
+   * control that always fails.
+   */
+  const transferOwnership = useMutation({
+    mutationFn: (input: { toUserId: UserId; selfNewRole: 'admin' | 'member' }) =>
+      api.tenancy.members.transferOwnership.mutate(input),
+    onSuccess: refresh,
+    onError: (error, input) => {
+      guard(error, () => {
+        transferOwnership.mutate(input);
+      });
+    },
+  });
+  const [transferTarget, setTransferTarget] = useState<string | null>(null);
+
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('member');
 
@@ -250,12 +269,23 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
               key={member.userId}
               member={member}
               isSelf={member.userId === currentUserId}
-              busy={changeRole.isPending || remove.isPending}
+              busy={changeRole.isPending || remove.isPending || transferOwnership.isPending}
               onRoleChange={(next) => {
                 changeRole.mutate({ userId: member.userId as UserId, role: next });
               }}
               onRemove={() => {
                 remove.mutate(member.userId as UserId);
+              }}
+              showTransfer={transferTarget === member.userId}
+              onStartTransfer={() => {
+                setTransferTarget(member.userId);
+              }}
+              onCancelTransfer={() => {
+                setTransferTarget(null);
+              }}
+              onConfirmTransfer={(selfNewRole) => {
+                transferOwnership.mutate({ toUserId: member.userId as UserId, selfNewRole });
+                setTransferTarget(null);
               }}
             />
           ))}
@@ -264,6 +294,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
 
       {changeRole.isError && <ErrorText error={changeRole.error} />}
       {remove.isError && <ErrorText error={remove.error} />}
+      {transferOwnership.isError && <ErrorText error={transferOwnership.error} />}
 
       {dialog}
     </Section>
@@ -282,55 +313,168 @@ interface MemberRowProps {
   readonly busy: boolean;
   readonly onRoleChange: (role: Role) => void;
   readonly onRemove: () => void;
+  /** Whether THIS row is currently showing the transfer-ownership confirm form. */
+  readonly showTransfer: boolean;
+  readonly onStartTransfer: () => void;
+  readonly onCancelTransfer: () => void;
+  readonly onConfirmTransfer: (selfNewRole: 'admin' | 'member') => void;
 }
 
-function MemberRow({ member, isSelf, busy, onRoleChange, onRemove }: MemberRowProps) {
-  return (
-    <li className="group flex items-center gap-3 px-3 py-2 transition-colors hover:bg-surface-hover">
-      <Avatar userId={member.userId} label={member.email} />
+function MemberRow({
+  member,
+  isSelf,
+  busy,
+  onRoleChange,
+  onRemove,
+  showTransfer,
+  onStartTransfer,
+  onCancelTransfer,
+  onConfirmTransfer,
+}: MemberRowProps) {
+  /* Ownership can only be transferred TO someone already reachable through
+     the ordinary role dropdown — `isDirectlyAssignable`'s own reasoning
+     (§3.5): skipping that friction by promoting a guest straight to owner in
+     one step is exactly what the server refuses, so the control is not
+     offered here either. Never shown on the caller's own row: `changeRole`'s
+     API refuses self-changes, and this route is no exception in spirit —
+     you cannot transfer ownership to yourself. */
+  const eligible = !isSelf && isOwnershipTransferEligible(member.role as Role);
 
-      <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-1.5 truncate text-sm text-ink">
-          {member.email}
-          {isSelf && <span className="text-[11px] text-ink-faint">(you)</span>}
-        </p>
-        <p className="text-[11px] text-ink-faint">
-          {member.status !== 'active' && <span className="mr-1 text-warning">{member.status}</span>}
-          joined {formatDate(member.joinedAt)}
-        </p>
+  return (
+    <li className="group flex flex-col gap-2 px-3 py-2 transition-colors hover:bg-surface-hover">
+      <div className="flex items-center gap-3">
+        <Avatar userId={member.userId} label={member.email} />
+
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-1.5 truncate text-sm text-ink">
+            {member.email}
+            {isSelf && <span className="text-[11px] text-ink-faint">(you)</span>}
+          </p>
+          <p className="text-[11px] text-ink-faint">
+            {member.status !== 'active' && (
+              <span className="mr-1 text-warning">{member.status}</span>
+            )}
+            joined {formatDate(member.joinedAt)}
+          </p>
+        </div>
+
+        <select
+          aria-label={`Role for ${member.email}`}
+          value={member.role}
+          disabled={busy}
+          onChange={(event) => {
+            onRoleChange(event.target.value as Role);
+          }}
+          className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+        >
+          {/* The CURRENT role is always present as an option even when it is not
+              directly assignable — an owner's row would otherwise render showing
+              "admin", which is a lie about who they are. */}
+          {[...new Set<string>([member.role, ...DIRECTLY_ASSIGNABLE_ROLES])].map((entry) => (
+            <option key={entry} value={entry}>
+              {entry}
+            </option>
+          ))}
+        </select>
+
+        {eligible && !showTransfer && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onStartTransfer}
+            className={cn(
+              'rounded border border-line px-2 py-1 text-[11px] text-ink-muted hover:bg-surface-hover hover:text-ink',
+              'focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100',
+            )}
+          >
+            Make owner
+          </button>
+        )}
+
+        {/* Revealed on hover, but always reachable by keyboard — `opacity-0` still
+            takes focus, and `focus-visible:opacity-100` brings it back into view
+            when it does. A control that only exists under a pointer is a control
+            that does not exist for a keyboard. */}
+        <ConfirmButton
+          label="Remove"
+          confirmLabel={`Remove ${member.email}`}
+          disabled={busy}
+          onConfirm={onRemove}
+          className="focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+        />
       </div>
 
-      <select
-        aria-label={`Role for ${member.email}`}
-        value={member.role}
-        disabled={busy}
-        onChange={(event) => {
-          onRoleChange(event.target.value as Role);
-        }}
-        className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
-      >
-        {/* The CURRENT role is always present as an option even when it is not
-            directly assignable — an owner's row would otherwise render showing
-            "admin", which is a lie about who they are. */}
-        {[...new Set<string>([member.role, ...DIRECTLY_ASSIGNABLE_ROLES])].map((entry) => (
-          <option key={entry} value={entry}>
-            {entry}
-          </option>
-        ))}
-      </select>
-
-      {/* Revealed on hover, but always reachable by keyboard — `opacity-0` still
-          takes focus, and `focus-visible:opacity-100` brings it back into view
-          when it does. A control that only exists under a pointer is a control
-          that does not exist for a keyboard. */}
-      <ConfirmButton
-        label="Remove"
-        confirmLabel={`Remove ${member.email}`}
-        disabled={busy}
-        onConfirm={onRemove}
-        className="focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
-      />
+      {showTransfer && (
+        <TransferOwnershipForm
+          email={member.email}
+          busy={busy}
+          onCancel={onCancelTransfer}
+          onConfirm={onConfirmTransfer}
+        />
+      )}
     </li>
+  );
+}
+
+/**
+ * The confirmation step for making `email` the new owner.
+ *
+ * Names both sides of the handoff explicitly — the new owner AND the caller's
+ * own resulting role — because this is the one action on this page that
+ * changes the acting user's own permissions, and a bare "Confirm" button
+ * would not say so.
+ */
+function TransferOwnershipForm({
+  email,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  readonly email: string;
+  readonly busy: boolean;
+  readonly onCancel: () => void;
+  readonly onConfirm: (selfNewRole: 'admin' | 'member') => void;
+}) {
+  const [selfNewRole, setSelfNewRole] = useState<'admin' | 'member'>('admin');
+
+  return (
+    <div className="rounded border border-warning/40 bg-warning/10 p-2.5 text-xs">
+      <p className="text-ink">
+        Make <span className="font-medium">{email}</span> the owner of this organization. You will
+        become:
+      </p>
+      <div className="mt-1.5 flex items-center gap-2">
+        <select
+          aria-label="Your new role after the transfer"
+          value={selfNewRole}
+          disabled={busy}
+          onChange={(event) => {
+            setSelfNewRole(event.target.value as 'admin' | 'member');
+          }}
+          className="h-7 rounded border border-line bg-surface px-1.5 text-xs text-ink"
+        >
+          <option value="admin">admin</option>
+          <option value="member">member</option>
+        </select>
+        <Button
+          type="button"
+          variant="primary"
+          disabled={busy}
+          onClick={() => {
+            onConfirm(selfNewRole);
+          }}
+        >
+          Confirm transfer
+        </Button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-[11px] text-ink-muted hover:underline"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }
 

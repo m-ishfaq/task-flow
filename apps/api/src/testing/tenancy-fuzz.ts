@@ -210,6 +210,7 @@ function principalOf(org: FuzzOrg): AuthenticatedPrincipal {
     sessionId: unsafeAsId<'SessionId'>(FUZZ_SESSION_ID),
     authenticatedAt: new Date(),
     org: { orgId: org.orgId, role: org.role, tuples: org.tuples ?? [] },
+    orgSuspended: false,
   };
 }
 

@@ -69,6 +69,26 @@ export const memberRoleChanged = defineEvent(
     .strict(),
 );
 
+/**
+ * Ownership handed off in one atomic action (Phase 12 §3.5) — its own event
+ * rather than two `member.role_changed` rows, for the identical reason
+ * `ai/phase-11.5-people.md` §3.6 gives for `reportingLine.changed`: a
+ * structural, sensitive fact deserves to be independently greppable rather
+ * than requiring a reader to reconstruct "these two role changes were
+ * actually one handoff" from two unrelated-looking entries.
+ */
+export const memberOwnershipTransferred = defineEvent(
+  'member.ownership_transferred',
+  z
+    .object({
+      orgId: z.string(),
+      fromUserId: z.string(),
+      toUserId: z.string(),
+      fromNewRole: z.enum(['admin', 'member']),
+    })
+    .strict(),
+);
+
 export const memberRemoved = defineEvent(
   'member.removed',
   z.object({ membershipId: z.string(), userId: z.string(), role: z.string() }).strict(),

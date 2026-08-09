@@ -53,25 +53,67 @@ import type { OrgMembership } from '../trpc/context.js';
 export const ORG_HEADER = 'x-taskflow-org';
 
 /**
+ * The three ways resolving a caller's membership can come out, kept apart
+ * because two of them need different treatment at the HTTP layer (Phase 12
+ * §3.3).
+ *
+ * `'suspended'` is deliberately NOT folded into `'none'` here, even though
+ * `resolveOrgMembership` below folds it back in for its own callers. The
+ * distinction has to survive at least one layer up so `server.ts`'s
+ * `withOrgContext` can set `principal.orgSuspended` and `requireOrg` can throw
+ * `ORG_SUSPENDED` instead of the generic `NOT_A_MEMBER`.
+ */
+export type OrgResolution =
+  | { readonly kind: 'member'; readonly membership: OrgMembership }
+  | { readonly kind: 'suspended' }
+  | { readonly kind: 'none' };
+
+/**
  * Loads the caller's membership in `requestedOrgId`, or null.
  *
  * Null covers every failure identically — no such org, not a member, membership
- * suspended, role unrecognized — because the caller learns the same thing from
- * all four, and distinguishing them would let an outsider probe which orgs
- * exist.
+ * suspended, role unrecognized, ORG suspended or deleted — because for every
+ * caller of this function except the HTTP layer's own `withOrgContext`, the
+ * caller learns the same thing from all of them: refuse. `apps/realtime`'s
+ * `rooms.ts` and `apps/collab`'s `authorize.ts` both call this function
+ * unchanged and both already treat null as "refuse the join" — which is what
+ * makes a suspended org's live sockets refuse every NEW join or connect the
+ * moment this ships, with no code of theirs touched (ai/phase-12-admin.md
+ * §3.9). Distinguishing WHY it is null, for the one caller that needs to, is
+ * `resolveOrgMembershipDetailed` below.
  */
 export async function resolveOrgMembership(
   userId: UserId,
   requestedOrgId: string,
 ): Promise<OrgMembership | null> {
+  const resolution = await resolveOrgMembershipDetailed(userId, requestedOrgId);
+  return resolution.kind === 'member' ? resolution.membership : null;
+}
+
+/**
+ * `resolveOrgMembership`, but keeping `'suspended'` distinguishable from
+ * every other refusal. See `OrgResolution`'s own comment for why this needs
+ * to exist as a second function rather than changing the first one's return
+ * type — `rooms.ts`/`authorize.ts` must keep working, unchanged, against a
+ * plain `OrgMembership | null`.
+ */
+export async function resolveOrgMembershipDetailed(
+  userId: UserId,
+  requestedOrgId: string,
+): Promise<OrgResolution> {
   const parsed = OrgIdSchema.safeParse(requestedOrgId);
-  if (!parsed.success) return null;
+  if (!parsed.success) return { kind: 'none' };
   const orgId = parsed.data;
 
+  /* The join to identity.orgs needs no new grant or policy: `orgs_self_read`
+     (migration 0004) already allows reading an org's row, under
+     withUserScope, whenever an active membership for app.user_id exists in
+     it — exactly the row this query already requires. */
   const rows = await withUserScope(userId, async (tx) =>
     tx
-      .select({ role: schema.memberships.role })
+      .select({ role: schema.memberships.role, orgStatus: schema.orgs.status })
       .from(schema.memberships)
+      .innerJoin(schema.orgs, eq(schema.orgs.id, schema.memberships.orgId))
       .where(
         and(
           eq(schema.memberships.orgId, orgId),
@@ -86,7 +128,16 @@ export async function resolveOrgMembership(
      being asked — "is there a membership" — and keeps guardrail 7 from having
      to distinguish a presence check from an authorization decision. */
   const membership = rows[0];
-  if (membership === undefined) return null;
+  if (membership === undefined) return { kind: 'none' };
+
+  /* 'deleted' collapses into 'none', deliberately (§3.3): this wave adds no
+     route that can ever produce it, so it is reachable only by a future
+     phase or a direct database action, and the same cross-tenant-privacy
+     argument member.service.ts already makes for NOT_FOUND applies here —
+     "that org used to exist" should not be confirmed by a distinct error to
+     a former member. */
+  if (membership.orgStatus === 'deleted') return { kind: 'none' };
+  if (membership.orgStatus === 'suspended') return { kind: 'suspended' };
 
   const { role } = membership;
 
@@ -94,11 +145,11 @@ export async function resolveOrgMembership(
      decide.ts), which is safe. Refusing the membership outright is safer still:
      it turns "silently permitted nothing" into a clean NOT_A_MEMBER rather than
      a user who appears to be signed in and can do nothing. */
-  if (!isRole(role)) return null;
+  if (!isRole(role)) return { kind: 'none' };
 
   const tuples = await loadTuples(orgId, userId);
 
-  return { orgId, role, tuples };
+  return { kind: 'member', membership: { orgId, role, tuples } };
 }
 
 /**

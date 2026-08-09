@@ -227,6 +227,7 @@ function toTrpcCode(code: string): TRPCError['code'] {
     case 'EMAIL_NOT_VERIFIED':
     case 'FORBIDDEN':
     case 'NOT_A_MEMBER':
+    case 'ORG_SUSPENDED':
       return 'FORBIDDEN';
     case 'NOT_FOUND':
     case 'GONE':
@@ -450,9 +451,19 @@ function requireAuth(ctx: RequestContext, meta: RouteMeta | undefined): Authenti
  * prevent.
  */
 function requireOrg(ctx: AuthenticatedContext): OrgScopedContext {
-  const { org } = ctx.principal;
+  const { org, orgSuspended } = ctx.principal;
 
   if (org === null) {
+    /* Two different facts, two different codes (Phase 12 §3.3). `orgSuspended`
+       is set by server.ts's withOrgContext from the SAME lookup that left
+       `org` null, so this is not a second query — just reading what that
+       lookup already learned. */
+    if (orgSuspended) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        cause: new AppError('ORG_SUSPENDED', 'This organization has been suspended.'),
+      });
+    }
     throw new TRPCError({
       code: 'FORBIDDEN',
       cause: new AppError('NOT_A_MEMBER', 'You are not a member of this organization.'),

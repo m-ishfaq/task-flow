@@ -61,6 +61,25 @@ export async function createOrg(
 
   try {
     await withOrgScope(orgId, async (tx) => {
+      /* Abuse gate (Phase 12 §3.4): an unverified account could otherwise
+         create unlimited orgs. `identity.users` carries no RLS (see
+         member.service.ts's addMember for the same reasoning), so it is
+         readable inside this org-scoped transaction even though the org
+         being scoped to does not exist yet. Checked first, before either
+         insert, so an unverified caller leaves no half-created org behind. */
+      const [caller] = await tx
+        .select({ emailVerifiedAt: schema.users.emailVerifiedAt })
+        .from(schema.users)
+        .where(eq(schema.users.id, actor.userId))
+        .limit(1);
+
+      if (caller?.emailVerifiedAt == null) {
+        throw errors.validation(
+          { email: 'Verify your email address before creating an organization.' },
+          'Please verify your email address before creating an organization.',
+        );
+      }
+
       await tx.insert(schema.orgs).values({ id: orgId, name: input.name, slug: input.slug });
 
       await tx.insert(schema.memberships).values({
