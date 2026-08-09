@@ -164,6 +164,79 @@ export async function verifyTotpChallenge(
   }
 }
 
+/**
+ * OAuth authorization `state` tokens (Phase 12 Wave 2 §3.3).
+ *
+ * Signed rather than stored server-side — the state only has to survive one
+ * redirect round trip to the provider and back, so a table (and its cleanup)
+ * buys nothing a JWT doesn't already give for free. It carries the PKCE
+ * `code_verifier` the callback needs to complete the exchange, which is why
+ * it must not be guessable: unlike the TOTP challenge, this token is placed
+ * directly in a URL query parameter the provider echoes back, so its own
+ * signature — not secrecy of the value — is what stops a forged callback
+ * from being accepted as a real one.
+ *
+ * A distinct audience for the same reason `TOTP_CHALLENGE_AUDIENCE` is
+ * distinct from `AUDIENCE`: this must never be accepted as a bearer access
+ * token even though both are signed with the same secret.
+ */
+const OAUTH_STATE_AUDIENCE = 'taskflow-oauth-state';
+const OAUTH_STATE_TTL_SECONDS = 600;
+
+export interface OAuthStateClaims {
+  readonly provider: string;
+  readonly codeVerifier: string;
+  /** Set when linking a provider to an already signed-in account, rather than signing in fresh. */
+  readonly linkUserId?: string;
+}
+
+export async function signOAuthState(claims: OAuthStateClaims, config: JwtConfig): Promise<string> {
+  assertSecret(config.secret);
+
+  const { linkUserId } = claims;
+  return new SignJWT({
+    provider: claims.provider,
+    verifier: claims.codeVerifier,
+    ...(linkUserId === undefined ? {} : { link: linkUserId }),
+  })
+    .setProtectedHeader({ alg: ALGORITHM, typ: 'JWT' })
+    .setIssuer(ISSUER)
+    .setAudience(OAUTH_STATE_AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime(`${String(OAUTH_STATE_TTL_SECONDS)}s`)
+    .sign(config.secret);
+}
+
+export async function verifyOAuthState(
+  token: string,
+  config: JwtConfig,
+): Promise<OAuthStateClaims> {
+  assertSecret(config.secret);
+
+  try {
+    const { payload } = await jwtVerify(token, config.secret, {
+      issuer: ISSUER,
+      audience: OAUTH_STATE_AUDIENCE,
+      algorithms: [ALGORITHM],
+      clockTolerance: 5,
+    });
+
+    const { provider, verifier, link } = payload;
+    if (typeof provider !== 'string' || typeof verifier !== 'string') {
+      throw new InvalidTokenError();
+    }
+    if (link !== undefined && typeof link !== 'string') throw new InvalidTokenError();
+
+    return {
+      provider,
+      codeVerifier: verifier,
+      ...(link === undefined ? {} : { linkUserId: link }),
+    };
+  } catch {
+    throw new InvalidTokenError();
+  }
+}
+
 export class InvalidTokenError extends Error {
   constructor() {
     // One message for every failure. Expired, wrong audience, bad signature and

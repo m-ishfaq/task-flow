@@ -99,6 +99,15 @@ export const EnvSchema = z
     VAPID_PUBLIC_KEY: NonEmpty.optional(),
     VAPID_PRIVATE_KEY: NonEmpty.optional(),
 
+    /* OAuth sign-in (Phase 12 Wave 2 §3.3). Optional per provider, the same
+       "an unconfigured integration is a valid deployment" convention as VAPID
+       above: a provider whose client id/secret are unset simply does not
+       render its button, rather than the app failing to boot. */
+    GOOGLE_CLIENT_ID: NonEmpty.optional(),
+    GOOGLE_CLIENT_SECRET: NonEmpty.optional(),
+    GITHUB_CLIENT_ID: NonEmpty.optional(),
+    GITHUB_CLIENT_SECRET: NonEmpty.optional(),
+
     MASTER_KEY_ID: NonEmpty,
     MASTER_KEY_BASE64: Base64Key,
     JWT_SECRET: Base64Key,
@@ -248,6 +257,10 @@ const KNOWN_VARIABLES = new Set([
   'MAIL_PORT',
   'MAIL_SECURE',
   'MAIL_FROM',
+  'GOOGLE_CLIENT_ID',
+  'GOOGLE_CLIENT_SECRET',
+  'GITHUB_CLIENT_ID',
+  'GITHUB_CLIENT_SECRET',
   'MASTER_KEY_ID',
   'MASTER_KEY_BASE64',
   'JWT_SECRET',
