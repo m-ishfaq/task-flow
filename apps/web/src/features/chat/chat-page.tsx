@@ -1158,8 +1158,15 @@ function ChannelPanel({
 
   return (
     <div className="flex min-h-0 flex-1">
-      <div className="flex min-h-0 flex-1 flex-col">
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
+      {/* `min-w-0` is what makes the comment on the details panel below true.
+          A flex item's `min-width` defaults to `auto`, which is its content's
+          min-content width — so without this the message column cannot shrink
+          past its widest unbreakable content and pushes the row wider than the
+          viewport instead, which is the opposite of "the message column
+          shrinks rather than either panel overflowing the page". `min-h-0`
+          already carries the identical argument for the other axis. */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3 sm:px-4">
           {/* The only way back to the channel list below `md` — see
               `ChatPage`'s comment on the list/detail split this belongs to. */}
           <button
@@ -1220,7 +1227,12 @@ function ChannelPanel({
           </button>
         </header>
 
-        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        {/* `px-3 sm:px-4`, matched by the header, the typing line and the
+            composer below so their left edges stay on one line. 1rem of gutter
+            on each side of a phone is 8.5% of the viewport spent on nothing,
+            and it comes straight out of the message column — see the bubble's
+            own comment on where a phone's width actually goes. */}
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
           {messages.isLoading ? (
             <div className="space-y-2">
               <Skeleton className="h-10 w-3/4" />
@@ -1290,7 +1302,9 @@ function ChannelPanel({
         </div>
 
         {typingLabel !== null && (
-          <div className="h-5 shrink-0 px-4 text-xs text-ink-faint italic">{typingLabel}</div>
+          <div className="h-5 shrink-0 px-3 text-xs text-ink-faint italic sm:px-4">
+            {typingLabel}
+          </div>
         )}
 
         {/* The composer is hidden when the server says this person cannot post
@@ -1299,13 +1313,13 @@ function ChannelPanel({
             While the channel is still loading `post` is false, which shows the
             notice for a moment rather than a composer that might be refused. */}
         {channel.data !== undefined && !channel.data.capabilities.post ? (
-          <div className="shrink-0 border-t border-line px-4 py-3 text-xs text-ink-faint">
+          <div className="shrink-0 border-t border-line px-3 py-3 text-xs text-ink-faint sm:px-4">
             {channel.data.archivedAt !== null
               ? 'This channel is archived. No new messages can be posted.'
               : 'You have read-only access to this conversation.'}
           </div>
         ) : (
-          <div className="shrink-0 border-t border-line px-4 py-3">
+          <div className="shrink-0 border-t border-line px-3 py-3 sm:px-4">
             {/* Named stages rather than a spinner: "Scanning…" is the one that
               takes a noticeable moment, and saying so is the difference between
               a slow upload and a stuck one. */}
@@ -1793,7 +1807,23 @@ function MessageGroupView({
         )}
       </div>
 
-      <div className={cn('flex min-w-0 max-w-[75%] flex-col gap-0.5', isOwn && 'items-end')}>
+      {/* 85% on a phone, 75% from `sm` up.
+          A single 75% cap reads as a comfortable margin on a desktop and as a
+          cramped column on a phone, because the fixed costs around it do not
+          scale: the avatar gutter (`w-6`) and its gap take 2rem, and the list's
+          own horizontal padding takes another, before the percentage applies to
+          what's left. On a 375px viewport that is 75% of ~19rem rather than 75%
+          of the screen — bubbles a third of the width of the device, wrapping
+          every few words. Widening the cap below `sm` is what every chat
+          product does for the same arithmetic; the point of the cap at all is
+          to keep the opposite edge visible so left and right bubbles stay
+          distinguishable, and 85% still does that. */}
+      <div
+        className={cn(
+          'flex min-w-0 max-w-[85%] flex-col gap-0.5 sm:max-w-[75%]',
+          isOwn && 'items-end',
+        )}
+      >
         {/* Own bubbles skip the name — the side they're on already says who
             sent them — but every group still gets ONE relative timestamp,
             because "who and when" is what a message header is for and only
@@ -1939,7 +1969,19 @@ function MessageBubble({
       <div className={cn('flex items-end gap-1', isOwn && 'flex-row-reverse')}>
         <div
           className={cn(
-            'rounded-2xl px-3 py-1.5',
+            /* `min-w-0` because the bubble is a flex item whose automatic
+               minimum size would otherwise be its widest child, and two of
+               its children are wider than a phone: a link preview card is
+               `max-w-md` (28rem — a cap, but one no small viewport can
+               honour), and an attachment row's filename is `truncate`, which
+               is `white-space: nowrap` and therefore contributes the WHOLE
+               filename to min-content even though it renders as an ellipsis.
+               Both are clipped or capped for their own layout and neither can
+               shrink the box that contains them. Bounding the bubble here
+               instead means every child resolves against the 75% the message
+               column actually has, rather than the bubble growing to fit them
+               and taking the message list's horizontal scrollbar with it. */
+            'min-w-0 rounded-2xl px-3 py-1.5',
             isOwn ? 'bg-accent text-accent-ink' : 'bg-surface-raised text-ink',
             cornerClass,
           )}

@@ -64,7 +64,7 @@ export function Sidebar() {
     <aside
       aria-label="Workspace"
       className={cn(
-        'flex shrink-0 flex-col border-r border-line bg-surface-raised transition-[width]',
+        'flex shrink-0 flex-col border-r border-line h-[94%] bg-surface-raised transition-[width]',
         open ? 'w-72 md:w-60' : 'w-12',
       )}
     >

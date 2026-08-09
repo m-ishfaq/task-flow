@@ -280,7 +280,50 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
+/**
+ * Fields a `pg` error carries that say WHY Postgres refused, all absent from
+ * the message. `constraint` alone is usually the whole answer.
+ */
+const PG_ERROR_FIELDS = [
+  'code',
+  'detail',
+  'hint',
+  'constraint',
+  'table',
+  'schema',
+  'column',
+  'where',
+  'routine',
+] as const;
+
+/**
+ * Prints the cause chain, not just the top error.
+ *
+ * Drizzle wraps every driver failure in an error whose message is the SQL and
+ * the bound parameters, and puts the driver's own error on `cause`. `.stack`
+ * does not include a cause, so the seed's failures printed a hundred lines of
+ * statement and parameters and NOT the one line saying what Postgres objected
+ * to — which turns "read the error" into an afternoon of inference from the
+ * database's after-state. `console.error(error)` would render the chain via
+ * `util.inspect`, but it also re-prints the whole wrapped query per level; the
+ * pg fields below are the part worth reading.
+ */
+function reportFailure(error: unknown): void {
   console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
+
+  let cause: unknown = error instanceof Error ? error.cause : undefined;
+  for (let depth = 0; depth < 5 && cause !== null && cause !== undefined; depth += 1) {
+    const record = cause as Record<string, unknown>;
+    console.error(`\ncaused by: ${String(record['message'] ?? cause)}`);
+    for (const field of PG_ERROR_FIELDS) {
+      const value = record[field];
+      if (value !== undefined && value !== null) console.error(`  ${field}: ${String(value)}`);
+    }
+    cause = record['cause'];
+  }
+}
+
+main().catch((error: unknown) => {
+  reportFailure(error);
   process.exit(1);
 });

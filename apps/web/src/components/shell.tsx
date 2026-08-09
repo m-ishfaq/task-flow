@@ -150,7 +150,7 @@ export function Shell() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full overflow-y-hidden">
       {/* The drawer's backdrop, below `md` only. A click anywhere outside the
           drawer closes it — the same "tap away to dismiss" a Radix Popover
           gives for free, restated by hand because this isn't a Radix
@@ -206,7 +206,7 @@ export function Shell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <Header showMenuButton={hasOrg} />
-        <main className="min-h-0 flex-1">
+        <main className="min-h-0 flex-1 overflow-x-auto">
           <Outlet />
         </main>
       </div>

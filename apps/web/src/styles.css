@@ -1,6 +1,40 @@
 @import 'tailwindcss';
 
 /**
+ * `packages/ui` is a SOURCE of class names, and Tailwind cannot find it on its
+ * own.
+ *
+ * v4's automatic source detection roots at the directory of the CSS file doing
+ * the `@import` — here `apps/web/src` — and it explicitly never descends into
+ * `node_modules`, which is the only path by which `@taskflow/ui` is reachable
+ * from this app (pnpm symlinks it there). So the moment Waves 1-3 moved Modal,
+ * DropdownMenu and Popover out of `apps/web/src/components` and into
+ * `packages/ui/src`, every utility used ONLY by those three files stopped being
+ * compiled.
+ *
+ * The failure is worse than "the extracted components lost their styling",
+ * because a class survives if it happens to ALSO appear somewhere under
+ * `apps/web/src`. Modal's overlay kept `bg-overlay` (shell.tsx's mobile sidebar
+ * backdrop uses it) and its panel kept `max-w-4xl`, `bg-surface-raised` and
+ * `rounded-card` (a dozen files use those) — while `fixed`, `left-1/2`,
+ * `top-1/2`, `-translate-x-1/2`, `-translate-y-1/2` and `w-[calc(100vw-2rem)]`,
+ * which nothing in the app writes by hand, silently vanished. A modal with a
+ * working overlay and no positioning is not a broken-looking dialog: Radix
+ * Dialog gives Content no inline position of its own, so it became a static
+ * block at the end of `<body>`, below the fold, under a full-viewport overlay.
+ * On screen that reads as "the card doesn't open — you just get an overlay,"
+ * which sends the search to Radix, to z-index, to the query that loads the
+ * card, and never to the stylesheet.
+ *
+ * DropdownMenu and Popover hid the same defect, for a reason that is not luck:
+ * Radix positions both with Popper, which writes `position`/`transform` as
+ * INLINE styles. They only ever needed Tailwind for colour and spacing, and
+ * those class names are common enough to have survived. Modal is the one of the
+ * three whose layout was Tailwind's job.
+ */
+@source '../../../packages/ui/src';
+
+/**
  * Tailwind v4 is CSS-first: the theme is declared here rather than in a
  * JavaScript config (PLAN.md §4.1). `@theme` entries become both CSS custom
  * properties and utility classes, so `--color-accent` gives `bg-accent`,
@@ -198,6 +232,23 @@
   .rich-text {
     color: var(--color-ink);
     line-height: 1.6;
+
+    /* A pasted URL is one unbreakable token, and without this it does not
+       wrap — it overflows, and its container is sized by it.
+       `overflow-wrap: anywhere` rather than `break-word` for the second half
+       of that sentence: the two break identically once a line is being laid
+       out, but only `anywhere` also reduces the element's MIN-CONTENT width.
+       Every message bubble, comment and description sits in a flex item whose
+       `min-width` resolves to that min-content size, so with `break-word` the
+       URL still forces its ancestors wider than the viewport and the fix
+       appears not to work.
+       Chat is where this surfaced — a seeded message carrying
+       `https://status.example.com/incidents/…` gave the message list a
+       horizontal scrollbar on a phone and nothing at all on a desktop, since
+       the only thing that changed was whether the token happened to fit.
+       Every rich-text surface has the same defect; chat is just the one that
+       renders arbitrary pasted links by design. */
+    overflow-wrap: anywhere;
   }
   .rich-text p {
     margin-block: 0.5rem;
