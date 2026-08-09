@@ -67,14 +67,19 @@ async function newOrg(slug: string): Promise<OrgId> {
 }
 
 async function giveSubaccount(orgId: OrgId): Promise<void> {
+  /* A REAL wrapped data key, not a placeholder — `sendSms`/`receiveSms`
+     decrypt the counterparty number through it (`loadOrgDataKey`), and
+     `SoftwareKeyProvider` refuses to unwrap bytes it did not itself wrap.
+     `subaccount.service.ts`'s `ensureSubaccount` is the pattern this mirrors. */
+  const dataKey = await keys.generateDataKey({ orgId });
   await withOrgScope(orgId, async (tx) => {
     await tx.insert(schema.subaccounts).values({
       orgId,
       provider: 'twilio',
       subaccountSid: `AC${orgId.replace(/-/g, '')}`,
       authTokenCiphertext: Buffer.from('ciphertext'),
-      dataKeyWrapped: Buffer.from('wrapped'),
-      dataKeyMasterId: MASTER_KEY_ID,
+      dataKeyWrapped: Buffer.from(dataKey.wrapped.wrapped),
+      dataKeyMasterId: dataKey.wrapped.masterKeyId,
       status: 'active',
     });
   });
