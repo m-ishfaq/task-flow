@@ -40,6 +40,9 @@ export {
   initializeSweepDatabase,
   withSweepScope,
   hasSweepDatabase,
+  initializePlatformAdminDatabase,
+  withPlatformAdminScope,
+  hasPlatformAdminDatabase,
   type OrgId,
   type UserId,
   type DbConfig,
@@ -76,6 +79,17 @@ export {
   type NewAuditEntry,
   type ReadAuditInput,
 } from './audit-log.js';
+
+export {
+  readOperatorAuditEntries,
+  readOperatorChain,
+  insertOperatorAuditEntry,
+  appendOperatorAuditEntry,
+  type OperatorAuditEntryRow,
+  type OperatorChainRow,
+  type NewOperatorAuditEntry,
+  type ReadOperatorAuditInput,
+} from './platform-admin.js';
 
 export {
   TENANT_RLS_POLICY_SQL,

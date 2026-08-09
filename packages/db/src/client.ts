@@ -569,6 +569,83 @@ export function hasBacklinksDatabase(): boolean {
   return backlinksDb !== undefined;
 }
 
+/* -------------------------------------------------------------------------- *
+ * The platform-admin connection (Phase 12 §3.7, migration 0032)
+ * -------------------------------------------------------------------------- */
+
+let platformAdminPool: pg.Pool | undefined;
+let platformAdminDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the platform-operator console's cross-tenant pool, as
+ * `taskflow_platform_admin`.
+ *
+ * A SEVENTH role, for the identical reason `taskflow_backlinks` and
+ * `taskflow_notification_sweep` are each their own: the org directory has to
+ * see every tenant's `identity.orgs`/`identity.memberships` rows in one
+ * pass, and `withGlobalScope` is the wrong tool for a REAL tenant table —
+ * see migration 0032's own header for why. Narrower in reach than most of
+ * its precedents (no product table at all — see §2's own framing) and wider
+ * in one respect: it can `UPDATE identity.orgs.status`, which no other
+ * cross-tenant role in this system does to a tenant table other than
+ * `taskflow_collab`'s docs.* exception.
+ */
+export function initializePlatformAdminDatabase(config: DbConfig): void {
+  if (platformAdminPool) {
+    throw new Error('Platform-admin database already initialized. This is a boot-time call.');
+  }
+
+  platformAdminPool = new Pool({
+    connectionString: config.url,
+    // Small, matching every other system role: an operator console is
+    // low-traffic by nature, and extra connections here buy nothing but
+    // ways to contend.
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-platform-admin',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  platformAdminDb = drizzle(platformAdminPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_platform_admin` — the role that may read every
+ * org's `identity.orgs`/`identity.memberships` rows, write
+ * `identity.orgs.status`, and read/write `platform.flag_overrides` and the
+ * operator audit chain.
+ *
+ * ⚠ HUMAN REVIEW SURFACE (§2.2).
+ *
+ * NOT tenant-scoped, for the identical reason `withAuditScope` and
+ * `withBacklinksScope` are not: the org directory spans every tenant in one
+ * pass, so no single value of `app.org_id` is correct for it. What contains
+ * it is the role — `NOBYPASSRLS`, reaching identity.orgs and
+ * identity.memberships only through the two permissive policies migration
+ * 0032 names it in, and holding no grant at all on any product table
+ * (`work.cards`, `chat.messages`, `docs.pages`, ...).
+ */
+export async function withPlatformAdminScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!platformAdminDb) {
+    throw new Error(
+      'Platform-admin database not initialized. Call initializePlatformAdminDatabase() during ' +
+        'boot — the console must not fall back to the application role, which cannot see ' +
+        'identity.orgs across every tenant and would silently list nothing.',
+    );
+  }
+
+  return platformAdminDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the platform-admin pool has been initialized. */
+export function hasPlatformAdminDatabase(): boolean {
+  return platformAdminDb !== undefined;
+}
+
 /** Closes every pool. Shutdown only. */
 export async function closeDatabase(): Promise<void> {
   await pool?.end();
@@ -598,6 +675,10 @@ export async function closeDatabase(): Promise<void> {
   await sweepPool?.end();
   sweepPool = undefined;
   sweepDb = undefined;
+
+  await platformAdminPool?.end();
+  platformAdminPool = undefined;
+  platformAdminDb = undefined;
 }
 
 /** True when the pool is live and answering. Backs `/health/ready` (§14). */

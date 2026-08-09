@@ -18,7 +18,7 @@
 DO $$
 BEGIN
   EXECUTE format(
-    'GRANT CONNECT ON DATABASE %I TO taskflow_app, taskflow_migrator, taskflow_audit, taskflow_realtime, taskflow_collab, taskflow_backlinks, taskflow_notification_sweep',
+    'GRANT CONNECT ON DATABASE %I TO taskflow_app, taskflow_migrator, taskflow_audit, taskflow_realtime, taskflow_collab, taskflow_backlinks, taskflow_notification_sweep, taskflow_platform_admin',
     current_database()
   );
 
@@ -45,7 +45,17 @@ GRANT ALL ON SCHEMA public TO taskflow_migrator;
 --
 -- Table-level access still comes from the grants below, and row-level access
 -- still comes from RLS. This only makes the namespace visible.
-GRANT USAGE ON SCHEMA public TO taskflow_app, taskflow_audit, taskflow_realtime;
+--
+-- taskflow_audit needs this to reach public.digest() — pgcrypto installs
+-- into `public` — inside audit.chain_entry() (migration 0007).
+-- taskflow_platform_admin needs the identical thing for the identical
+-- reason: platform.operator_chain_entry() (migration 0032) calls the same
+-- function. Neither role needs an explicit EXECUTE grant on digest() itself
+-- — PostgreSQL grants EXECUTE on a new function to PUBLIC by default, so
+-- USAGE ON SCHEMA public (letting the role resolve the name at all) is the
+-- only piece missing. Discovered by a permission-denied error against real
+-- Postgres, not reasoned out in advance — see migration 0032's own header.
+GRANT USAGE ON SCHEMA public TO taskflow_app, taskflow_audit, taskflow_realtime, taskflow_platform_admin;
 
 -- Objects the migrator creates must be usable by the app role WITHOUT the app
 -- role ever being granted DDL rights. Default privileges apply to future objects;

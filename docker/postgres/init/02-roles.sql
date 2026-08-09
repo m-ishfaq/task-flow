@@ -112,6 +112,30 @@ CREATE ROLE taskflow_notification_sweep WITH LOGIN PASSWORD 'sweep-dev-secret' N
 CREATE ROLE taskflow_backlinks WITH LOGIN PASSWORD 'backlinks-dev-secret' NOSUPERUSER NOCREATEDB
   NOCREATEROLE NOBYPASSRLS;
 
+-- ---------------------------------------------------------------------------
+-- taskflow_platform_admin — the platform-operator console's cross-tenant
+-- role (Phase 12 Wave 1, ai/phase-12-admin.md §3.7, migration 0032's own
+-- header).
+--
+-- A SIXTH system role, for the identical reason taskflow_realtime,
+-- taskflow_collab, taskflow_notification_sweep and taskflow_backlinks are
+-- each their own: NOBYPASSRLS, reaching identity.orgs and
+-- identity.memberships only through the permissive policies migration 0032
+-- adds explicitly for it. Narrower in one direction than most of its
+-- precedents and wider in another: it can UPDATE identity.orgs.status (no
+-- other cross-tenant role in this system writes a tenant table at all,
+-- other than taskflow_collab's docs.* exception), but the WITH CHECK on
+-- that policy is deliberately as wide as UPDATE gets — the constraint that
+-- this role only ever sets `status` and nothing else is enforced by the
+-- APPLICATION CODE running as it (packages/db's tests assert this), not by
+-- the grant. It holds no access at all to any product table — no
+-- work.cards, no chat.messages, no docs.pages — the same structural
+-- boundary §2 of the spec documents: an operator can see that an org
+-- exists, not what is inside it.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_platform_admin WITH LOGIN PASSWORD 'platform-admin-dev-secret' NOSUPERUSER
+  NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+
 -- Baseline grants live in 03-grants.sql, NOT here.
 --
 -- Roles are cluster-wide; grants are per-database. This file creates the roles

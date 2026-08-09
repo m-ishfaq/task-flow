@@ -177,3 +177,81 @@ export function verifyAuditChain(entries: readonly StoredAuditEntry[]): ChainVer
 
   return { verified: entries.length, intact: breaks.length === 0, breaks };
 }
+
+/* -------------------------------------------------------------------------- *
+ * The platform-operator chain (Phase 12 §4) — a SECOND chain, not a second
+ * table this module pretends is the first.
+ *
+ * `platform.operator_audit_log` (migration 0032) mirrors `audit.audit_log`'s
+ * trigger-computed, length-prefixed hash chain, but over a different, smaller
+ * field list — there is no `org_id` here, because the whole point of this log
+ * is one global population of operators rather than one chain per tenant.
+ * Rather than generalize `auditEntryHash`/`verifyAuditChain` to an arbitrary
+ * field list — a real refactor of a ⚠ human-review surface with a chain
+ * already relied on in production — this duplicates their small, well-tested
+ * shape against the operator log's own fields. Three similar lines beat a
+ * premature abstraction (CLAUDE.md); revisit if a THIRD chain ever shows up.
+ * -------------------------------------------------------------------------- */
+
+/**
+ * One operator-log entry's hashed fields, in the order
+ * `platform.operator_chain_entry()` (migration 0032) concatenates them.
+ *
+ * `target` is `target::text` — Postgres's jsonb rendering — or null for a
+ * bare read call with no single resource named (`platformAdmin.orgs.list`).
+ */
+export interface OperatorChainEntry {
+  readonly seq: string;
+  /** Milliseconds since the epoch, as text — the same reasoning as `AuditChainEntry`. */
+  readonly occurredAtMs: string;
+  readonly operatorId: string;
+  readonly action: string;
+  readonly target: string | null;
+}
+
+function operatorCanonicalBytes(entry: OperatorChainEntry): Buffer {
+  const encoded = [entry.seq, entry.occurredAtMs, entry.operatorId, entry.action, entry.target]
+    .map(field)
+    .join('');
+
+  return Buffer.from(encoded, 'utf8');
+}
+
+/** Recomputes one operator-log entry's digest. */
+export function operatorEntryHash(entry: OperatorChainEntry, previousHash: Buffer): Buffer {
+  return createHash('sha256').update(previousHash).update(operatorCanonicalBytes(entry)).digest();
+}
+
+export type StoredOperatorEntry = OperatorChainEntry & {
+  readonly prevHash: Buffer | null;
+  readonly hash: Buffer;
+};
+
+/** `verifyAuditChain`'s walk, over the operator log's own entry and hash shape. */
+export function verifyOperatorChain(entries: readonly StoredOperatorEntry[]): ChainVerification {
+  const breaks: ChainBreak[] = [];
+  let previousHash: Buffer = Buffer.alloc(0);
+  let expectedSeq: bigint | null = null;
+
+  for (const entry of entries) {
+    const seq = BigInt(entry.seq);
+
+    if (expectedSeq !== null && seq !== expectedSeq) {
+      breaks.push({ seq: entry.seq, id: entry.seq, reason: 'sequence_gap' });
+    }
+    expectedSeq = seq + 1n;
+
+    const storedPrev = entry.prevHash ?? Buffer.alloc(0);
+    if (!storedPrev.equals(previousHash)) {
+      breaks.push({ seq: entry.seq, id: entry.seq, reason: 'broken_link' });
+    }
+
+    if (!operatorEntryHash(entry, previousHash).equals(entry.hash)) {
+      breaks.push({ seq: entry.seq, id: entry.seq, reason: 'hash_mismatch' });
+    }
+
+    previousHash = entry.hash;
+  }
+
+  return { verified: entries.length, intact: breaks.length === 0, breaks };
+}

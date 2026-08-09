@@ -97,10 +97,14 @@ export {
 export {
   auditEntryHash,
   verifyAuditChain,
+  operatorEntryHash,
+  verifyOperatorChain,
   type AuditChainEntry,
   type ChainBreak,
   type ChainVerification,
   type StoredAuditEntry,
+  type OperatorChainEntry,
+  type StoredOperatorEntry,
 } from './audit-chain.js';
 
 /**

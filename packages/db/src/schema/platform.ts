@@ -1,6 +1,8 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  boolean,
+  customType,
   index,
   integer,
   jsonb,
@@ -359,4 +361,90 @@ export const pushSubscriptions = platform.table(
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex('push_subscriptions_user_endpoint_key').on(table.userId, table.endpoint)],
+);
+
+/**
+ * Platform operators (migration 0032, Phase 12 §3.1).
+ *
+ * A flat flag, not a role: everyone in this table can do everything the
+ * platform-admin console offers. No RLS — this is not tenant data, the same
+ * reasoning `identity.users` rests on. `taskflow_app` holds SELECT only
+ * (`isPlatformOperator`'s own read); no role reachable from application code
+ * holds INSERT/UPDATE/DELETE, ever — see migration 0032's own header for why
+ * that is a stricter answer than every other cross-tenant role in this
+ * system gets.
+ */
+export const operators = platform.table('operators', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  grantedBy: uuid('granted_by')
+    .notNull()
+    .references(() => users.id),
+  grantedAt: timestamp('granted_at', { withTimezone: true }).notNull().defaultNow(),
+  note: text('note').notNull(),
+});
+
+/**
+ * The global feature-flag override store (migration 0032, Phase 12 §3.8).
+ *
+ * `packages/feature-flags`' evaluator has always modelled `orgOverrides` as
+ * its highest-precedence input; nothing ever persisted one anywhere. This is
+ * that missing store — global only, no per-org row shape yet (a real,
+ * named, out-of-scope follow-up, not an oversight).
+ */
+export const flagOverrides = platform.table('flag_overrides', {
+  flagName: text('flag_name').primaryKey(),
+  value: boolean('value').notNull(),
+  setBy: uuid('set_by')
+    .notNull()
+    .references(() => users.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Postgres `bytea`, which Drizzle has no first-class column type for — the identical
+ *  helper `schema/audit.ts` defines for its own hash columns, module-private there
+ *  and so redefined here rather than imported. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => 'bytea',
+});
+
+/**
+ * The operator audit chain's singleton head row (migration 0032, Phase 12
+ * §4) — mirrors `audit.chain_heads`' shape but keyed on nothing, because
+ * there is exactly one operator population to account for, not one per org.
+ */
+export const operatorChainHead = platform.table('operator_chain_head', {
+  id: boolean('id').primaryKey().default(true),
+  seq: bigint('seq', { mode: 'bigint' }).notNull(),
+  hash: bytea('hash').notNull(),
+});
+
+/**
+ * The operator accountability log (migration 0032, Phase 12 §4).
+ *
+ * Every `platformAdmin.*` call — read or write, org-scoped or not — writes a
+ * row here, in addition to whatever it writes into the target org's own
+ * `audit.audit_log` (§3.10's Audit tab is this table). `seq`, `prev_hash`
+ * and `hash` are assigned by `platform.operator_chain_entry()` under the
+ * head-row lock above, so a writer cannot choose its own position or digest
+ * — the identical guarantee `audit.audit_log`'s trigger gives migration
+ * 0007's chain.
+ */
+export const operatorAuditLog = platform.table(
+  'operator_audit_log',
+  {
+    /** Assigned entirely by the trigger, under the head-row lock — see migration 0032's own note. */
+    seq: bigint('seq', { mode: 'bigint' }).primaryKey(),
+    operatorId: uuid('operator_id')
+      .notNull()
+      .references(() => users.id),
+    action: text('action').notNull(),
+    /** `{ orgId }` or `{ userId }`, or null for a bare list call. */
+    target: jsonb('target'),
+    prevHash: bytea('prev_hash'),
+    hash: bytea('hash').notNull(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('operator_audit_log_operator_idx').on(table.operatorId, table.occurredAt.desc())],
 );
