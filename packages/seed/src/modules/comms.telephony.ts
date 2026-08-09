@@ -51,12 +51,7 @@ import { cardsModule } from './work.cards.js';
  */
 
 /** The counterparties a seeded org has talked to, as E.164. */
-const COUNTERPARTIES = [
-  '+14155550142',
-  '+14155550178',
-  '+442071838750',
-  '+14155550196',
-] as const;
+const COUNTERPARTIES = ['+14155550142', '+14155550178', '+442071838750', '+14155550196'] as const;
 
 /**
  * Always `'comms.calls'`, for calls, threads AND suppressions alike.
@@ -146,8 +141,8 @@ export const telephonyModule = defineSeedModule({
     /* Prefer a number that can actually do both, since the fixtures below
        include calls AND texts; fall back to the first owned number so an
        account holding only a voice number still seeds its call log. */
-    const chosen = owned.find((entry) => entry.capabilities.voice && entry.capabilities.sms)
-      ?? owned[0];
+    const chosen =
+      owned.find((entry) => entry.capabilities.voice && entry.capabilities.sms) ?? owned[0];
 
     if (chosen === undefined) {
       ctx.log('comms.telephony: skipped — the Twilio account holds no phone numbers.');
@@ -278,7 +273,16 @@ async function seedOrgTelephony(
   const numberId = rng.uuid(ctx.now);
   await ctx.db.insert(
     'comms.phone_numbers',
-    ['id', 'org_id', 'e164', 'provider_sid', 'iso_country', 'inbound_route::jsonb', 'purchased_by', 'purchased_at'],
+    [
+      'id',
+      'org_id',
+      'e164',
+      'provider_sid',
+      'iso_country',
+      'inbound_route::jsonb',
+      'purchased_by',
+      'purchased_at',
+    ],
     [
       [
         numberId,
@@ -313,18 +317,90 @@ async function seedOrgTelephony(
   }
 
   const plans: readonly CallPlan[] = [
-    { direction: 'outbound', status: 'completed', minutesAgo: 90, durationSeconds: 214, recorded: true },
-    { direction: 'inbound', status: 'completed', minutesAgo: 240, durationSeconds: 96, recorded: true },
-    { direction: 'outbound', status: 'no_answer', minutesAgo: 400, durationSeconds: 0, recorded: false },
-    { direction: 'inbound', status: 'completed', minutesAgo: 1500, durationSeconds: 331, recorded: false },
-    { direction: 'outbound', status: 'busy', minutesAgo: 2200, durationSeconds: 0, recorded: false },
-    { direction: 'inbound', status: 'failed', minutesAgo: 3000, durationSeconds: null, recorded: false },
-    { direction: 'outbound', status: 'completed', minutesAgo: 4300, durationSeconds: 158, recorded: true },
-    { direction: 'inbound', status: 'completed', minutesAgo: 5600, durationSeconds: 42, recorded: false },
-    { direction: 'outbound', status: 'canceled', minutesAgo: 6100, durationSeconds: null, recorded: false },
-    { direction: 'inbound', status: 'completed', minutesAgo: 7200, durationSeconds: 275, recorded: false },
-    { direction: 'outbound', status: 'completed', minutesAgo: 8800, durationSeconds: 63, recorded: false },
-    { direction: 'inbound', status: 'no_answer', minutesAgo: 9900, durationSeconds: 0, recorded: false },
+    {
+      direction: 'outbound',
+      status: 'completed',
+      minutesAgo: 90,
+      durationSeconds: 214,
+      recorded: true,
+    },
+    {
+      direction: 'inbound',
+      status: 'completed',
+      minutesAgo: 240,
+      durationSeconds: 96,
+      recorded: true,
+    },
+    {
+      direction: 'outbound',
+      status: 'no_answer',
+      minutesAgo: 400,
+      durationSeconds: 0,
+      recorded: false,
+    },
+    {
+      direction: 'inbound',
+      status: 'completed',
+      minutesAgo: 1500,
+      durationSeconds: 331,
+      recorded: false,
+    },
+    {
+      direction: 'outbound',
+      status: 'busy',
+      minutesAgo: 2200,
+      durationSeconds: 0,
+      recorded: false,
+    },
+    {
+      direction: 'inbound',
+      status: 'failed',
+      minutesAgo: 3000,
+      durationSeconds: null,
+      recorded: false,
+    },
+    {
+      direction: 'outbound',
+      status: 'completed',
+      minutesAgo: 4300,
+      durationSeconds: 158,
+      recorded: true,
+    },
+    {
+      direction: 'inbound',
+      status: 'completed',
+      minutesAgo: 5600,
+      durationSeconds: 42,
+      recorded: false,
+    },
+    {
+      direction: 'outbound',
+      status: 'canceled',
+      minutesAgo: 6100,
+      durationSeconds: null,
+      recorded: false,
+    },
+    {
+      direction: 'inbound',
+      status: 'completed',
+      minutesAgo: 7200,
+      durationSeconds: 275,
+      recorded: false,
+    },
+    {
+      direction: 'outbound',
+      status: 'completed',
+      minutesAgo: 8800,
+      durationSeconds: 63,
+      recorded: false,
+    },
+    {
+      direction: 'inbound',
+      status: 'no_answer',
+      minutesAgo: 9900,
+      durationSeconds: 0,
+      recorded: false,
+    },
   ];
 
   const callRows: unknown[][] = [];
@@ -394,7 +470,11 @@ async function seedOrgTelephony(
     }
 
     if (plan.recorded && recordingStartedAt !== null && plan.durationSeconds !== null) {
-      recorded.push({ callId, startedAt: recordingStartedAt, durationSeconds: plan.durationSeconds });
+      recorded.push({
+        callId,
+        startedAt: recordingStartedAt,
+        durationSeconds: plan.durationSeconds,
+      });
     }
   }
 
@@ -516,10 +596,22 @@ async function seedOrgTelephony(
   const threadRows: unknown[][] = [];
   const messageRows: unknown[][] = [];
 
-  const conversations: readonly (readonly { direction: 'inbound' | 'outbound'; body: string; status: string }[])[] = [
+  const conversations: readonly (readonly {
+    direction: 'inbound' | 'outbound';
+    body: string;
+    status: string;
+  }[])[] = [
     [
-      { direction: 'outbound', body: 'Hi — following up on the invoice we sent Tuesday.', status: 'delivered' },
-      { direction: 'inbound', body: 'Got it, thanks. Paying it this afternoon.', status: 'received' },
+      {
+        direction: 'outbound',
+        body: 'Hi — following up on the invoice we sent Tuesday.',
+        status: 'delivered',
+      },
+      {
+        direction: 'inbound',
+        body: 'Got it, thanks. Paying it this afternoon.',
+        status: 'received',
+      },
       { direction: 'outbound', body: 'Perfect, appreciate it.', status: 'delivered' },
     ],
     [
@@ -527,7 +619,11 @@ async function seedOrgTelephony(
       { direction: 'outbound', body: 'We are — 9 to 5.', status: 'delivered' },
     ],
     [
-      { direction: 'outbound', body: 'Your appointment is confirmed for Thursday at 14:00.', status: 'sent' },
+      {
+        direction: 'outbound',
+        body: 'Your appointment is confirmed for Thursday at 14:00.',
+        status: 'sent',
+      },
       { direction: 'inbound', body: 'STOP', status: 'received' },
     ],
   ];
