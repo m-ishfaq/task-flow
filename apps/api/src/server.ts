@@ -122,18 +122,33 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
        File uploads never pass through the API — they go straight to object
        storage through a presigned URL (§8.4). */
     bodyLimit: 1_000_000,
-    /* tRPC batches put EVERY procedure name into one path segment under
-       /trpc (`/trpc/a.b,c.d,e.f`), and Fastify's default maxParamLength of
-       100 answered 414 the moment a page's batch grew past a few procedures
-       — the app-shell batch is already ~165 characters of names, so the
-       router rejected it before authentication ever ran (server.test.ts
-       pins the regression). 4096 is generous for any real batch, sits far
-       below Node's own 16KB request-line cap, and keeps the guard against
-       absurd URLs intact. In `routerOptions` rather than the deprecated
-       top-level form, which fastify@6 removes. */
-    routerOptions: {
-      maxParamLength: 4096,
-    },
+    /* Fastify's router (find-my-way) bounds any single dynamic path segment
+       to 100 characters by default — a ReDoS-style guard that has nothing to
+       do with tRPC, and everything to do with how the fastify adapter
+       reaches it: every batched query lands on ONE route, `/trpc/:path`,
+       with every procedure name in the batch joined by commas into that
+       single segment. A page firing eight or nine queries at once (an
+       account page's own tab, a board's card panel) routinely produces a
+       path segment past 150 characters with perfectly ordinary procedure
+       names — no pathological input required — and the default answers
+       every query in the batch with `414 FST_ERR_MAX_PARAM_LENGTH`, not just
+       the one that pushed it over. `web/src/lib/trpc-client.ts`'s own
+       `MAX_BATCH_URL_LENGTH` already promises the client will split a batch
+       before its FULL url (this segment plus `?batch=1&input=...`) passes
+       2000; matching that bound here means the client's promise and the
+       server's limit describe the same guarantee instead of two independently
+       chosen numbers that happen not to collide yet.
+
+       This bug was found INDEPENDENTLY on two branches — Phase 7's line of
+       work fixed it at 4096 and Phase 12 Wave 2's at 2000, which is how the
+       two arrived at this file together. 2000 is the one kept, for the
+       client-parity reason above; both regression tests are retained below
+       in server.test.ts and pass under either bound, so the number is not
+       what either test is really pinning — the ROUTING is.
+
+       In `routerOptions` rather than the deprecated top-level form, which
+       fastify@6 removes. */
+    routerOptions: { maxParamLength: 2000 },
   });
 
   /* Registered BEFORE the tRPC plugin. Fastify hooks are inherited only by

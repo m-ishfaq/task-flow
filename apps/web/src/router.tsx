@@ -23,6 +23,7 @@ import { RegisterPage } from './features/auth/register-page.js';
 import { VerifyEmailPage } from './features/auth/verify-email-page.js';
 import { ResetPasswordPage } from './features/auth/reset-password-page.js';
 import { ForgotPasswordPage } from './features/auth/forgot-password-page.js';
+import { OAuthCallbackPage } from './features/auth/oauth-callback-page.js';
 import { AccountPage } from './features/auth/account-page.js';
 import { PeoplePage } from './features/people/people-page.js';
 import { PersonPage } from './features/people/person-page.js';
@@ -162,6 +163,32 @@ const forgotPasswordRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/forgot-password',
   component: ForgotPasswordPage,
+});
+
+/**
+ * Where every OAuth redirect lands (Phase 12 Wave 2 §3.3). `$provider` is a
+ * PATH param, not a search param, because it is also a fixed piece of the
+ * redirect URI `server.ts` registers with each provider's console — see
+ * `oauth-callback-page.tsx`'s own header on why that makes it a published
+ * contract, the same as `verifyEmailRoute`'s path below.
+ *
+ * `code`/`state` are what the provider echoes back; `error` is what it sends
+ * instead when the person declines the consent screen. All three are
+ * `.optional()` with no `.catch` — a callback missing what it needs should
+ * render "this link is incomplete," the same choice `TokenSearch` makes for
+ * a mail link, not silently attempt an empty exchange.
+ */
+const oauthCallbackRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/oauth/callback/$provider',
+  parseParams: (params) => ({ provider: z.enum(['google', 'github']).parse(params.provider) }),
+  stringifyParams: (params) => ({ provider: params.provider }),
+  validateSearch: z.object({
+    code: z.string().min(1).optional(),
+    state: z.string().min(1).optional(),
+    error: z.string().optional(),
+  }),
+  component: OAuthCallbackPage,
 });
 
 const orgsRoute = createRoute({
@@ -411,6 +438,7 @@ const routeTree = rootRoute.addChildren([
   verifyEmailRoute,
   resetPasswordRoute,
   forgotPasswordRoute,
+  oauthCallbackRoute,
   orgsRoute,
   homeRoute,
   projectsRoute,

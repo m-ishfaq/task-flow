@@ -14,6 +14,12 @@ import {
   signInWithPasskey,
 } from './passkey.js';
 import { TotpChallengeForm } from './totp-challenge.js';
+import {
+  OAUTH_PROVIDER_LABEL,
+  redirectToAuthorization,
+  useOAuthProviders,
+  type OAuthProvider,
+} from './oauth.js';
 import type { SessionBody } from '../../lib/session.js';
 
 /**
@@ -81,6 +87,14 @@ export function LoginPage() {
   const signInWithPasskeyMutation = useMutation({
     mutationFn: signInWithPasskey,
     onSuccess: (session) => afterSignIn(session),
+  });
+
+  const oauthProviders = useOAuthProviders();
+  const startOAuth = useMutation({
+    mutationFn: (provider: OAuthProvider) => api.auth.oauth.start.mutate({ provider }),
+    onSuccess: (result) => {
+      redirectToAuthorization(result.authorizationUrl);
+    },
   });
 
   if (challenge !== null) {
@@ -176,6 +190,29 @@ export function LoginPage() {
           ) : (
             <ErrorView error={signInWithPasskeyMutation.error} />
           ))}
+
+        {/* An unconfigured provider renders no button at all (§3.3) rather
+            than one that always fails — `oauthProviders.data` is undefined
+            while loading, so nothing here flashes on then off. */}
+        {(['google', 'github'] as const).map(
+          (provider) =>
+            oauthProviders.data?.[provider] === true && (
+              <Button
+                key={provider}
+                variant="secondary"
+                className="w-full"
+                disabled={startOAuth.isPending}
+                onClick={() => {
+                  startOAuth.mutate(provider);
+                }}
+              >
+                {startOAuth.isPending && startOAuth.variables === provider
+                  ? 'Redirecting…'
+                  : `Sign in with ${OAUTH_PROVIDER_LABEL[provider]}`}
+              </Button>
+            ),
+        )}
+        {startOAuth.isError && <ErrorView error={startOAuth.error} />}
       </div>
 
       <div className="flex justify-between text-sm text-ink-muted">
