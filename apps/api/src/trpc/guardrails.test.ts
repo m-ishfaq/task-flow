@@ -286,6 +286,10 @@ describe('the real application router', () => {
       'auth.register',
       'auth.requestPasswordReset',
       'auth.resetPassword',
+      /* Phase 12 Wave 2 §3.2. The caller has no session yet at this point — the
+         signed challenge token from `auth.login` IS the proof the password
+         step already succeeded, so this cannot itself require authentication. */
+      'auth.totp.verifyLogin',
       'auth.verifyEmail',
       /* Publish-to-public (ai/phase-6-docs.md §3.9, Wave 4) — the one route
          whose entire purpose is being reachable with no session, gated
@@ -319,6 +323,13 @@ describe('the real application router', () => {
       'auth.passkeys.remove',
       'auth.passkeys.rename',
       'auth.passkeys.startRegistration',
+      /* TOTP enrollment lifecycle (Phase 12 Wave 2 §3.2) — adding or removing a
+         second factor on your own account, `stepUp: true` on all three.
+         `auth.totp.verifyLogin` is NOT here: it is the public route above,
+         reached with no session yet. */
+      'auth.totp.confirmEnrollment',
+      'auth.totp.disable',
+      'auth.totp.startEnrollment',
       /* Notification preferences (Phase 9) — global per user, not per org
          (`identity.notification_prefs`; see that table's own comment in
          `packages/db/src/schema/identity.ts`), so `selfRoute` for the same
