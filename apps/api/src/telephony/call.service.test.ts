@@ -200,6 +200,47 @@ describe('placeCall', () => {
     expect(provider.calls.length).toBe(1);
   });
 
+  it('attaches each call’s provider sid to its OWN ledger row', async () => {
+    /* Every other case here places exactly ONE call into a fresh org, which is
+       precisely why this survived: the post-carrier UPDATE matched the ledger
+       row by `(org_id, kind, estimated_cents)` — a description every previously
+       placed call at the same price also satisfies. The second call therefore
+       tried to stamp its SID onto both rows and was refused by
+       `spend_ledger_provider_sid_key`, AFTER the carrier had already dialed. So
+       the assertion that matters is two calls in ONE org at the SAME price. */
+    const orgId = await readyOrg('call-ledger-sid');
+    const fromId = await givePhoneNumber(orgId);
+    const actor = await actorFor(orgId);
+
+    const first = await placeCall(actor, depsFor(), {
+      to: ALL_PARTY_TO,
+      fromPhoneNumberId: fromId,
+      record: false,
+    });
+    const second = await placeCall(actor, depsFor(), {
+      to: ALL_PARTY_TO,
+      fromPhoneNumberId: fromId,
+      record: false,
+    });
+
+    const callSids = await withOrgScope(orgId, async (tx) =>
+      tx.select({ id: schema.calls.id, providerSid: schema.calls.providerSid }).from(schema.calls),
+    );
+    const ledgerSids = await withOrgScope(orgId, async (tx) =>
+      tx
+        .select({ providerSid: schema.spendLedger.providerSid })
+        .from(schema.spendLedger)
+        .where(eq(schema.spendLedger.kind, 'call')),
+    );
+
+    const expected = [first.callId, second.callId].map(
+      (id) => callSids.find((row) => row.id === id)?.providerSid,
+    );
+    expect(expected.every((sid) => typeof sid === 'string')).toBe(true);
+    expect(new Set(expected).size).toBe(2);
+    expect(ledgerSids.map((row) => row.providerSid).sort()).toEqual([...expected].sort());
+  });
+
   it('refuses a premium destination without ever reaching the provider', async () => {
     const orgId = await readyOrg('call-geo');
     const fromId = await givePhoneNumber(orgId);

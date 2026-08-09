@@ -16,6 +16,7 @@ import {
   SkeletonRows,
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
+import { CallButton } from '../telephony/call-button.js';
 import { useToast } from '../../lib/toast-context.js';
 import {
   directoryMemberQuery,
@@ -85,12 +86,22 @@ export function PersonPage({ userId }: { readonly userId: string }) {
       </section>
 
       <Section title="Job" description="Org-scoped facts about this membership.">
-        {member.jobTitle === null && member.department === null ? (
+        {member.jobTitle === null && member.department === null && member.workPhone === null ? (
           <p className="text-sm text-ink-faint">Nothing set yet.</p>
         ) : (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {member.jobTitle !== null && <Badge>{member.jobTitle}</Badge>}
             {member.department !== null && <Badge>{member.department}</Badge>}
+            {member.workPhone !== null && (
+              <>
+                <span className="font-mono text-xs text-ink-muted">{member.workPhone}</span>
+                {/* Click-to-call from a contact — PLAN.md §3.4's second of the
+                    three surfaces it names. The button renders for everyone and
+                    the server decides; a member without `call:place` gets a real
+                    FORBIDDEN rather than a control that quietly is not there. */}
+                <CallButton orgId={orgId} to={member.workPhone} variant="primary" />
+              </>
+            )}
           </div>
         )}
       </Section>
@@ -193,6 +204,7 @@ function AdminSection({
   const [managerId, setManagerId] = useState(member.managerUserId ?? '');
   const [jobTitle, setJobTitle] = useState(member.jobTitle ?? '');
   const [department, setDepartment] = useState(member.department ?? '');
+  const [workPhone, setWorkPhone] = useState(member.workPhone ?? '');
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: keys.member(orgId, member.userId) });
@@ -254,6 +266,23 @@ function AdminSection({
             }}
           />
         </Field>
+        <Field
+          label="Work phone"
+          htmlFor="person-work-phone"
+          hint="E.164, e.g. +14155550100 — enables click-to-call"
+        >
+          <Input
+            id="person-work-phone"
+            value={workPhone}
+            maxLength={16}
+            placeholder="+14155550100"
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(event) => {
+              setWorkPhone(event.target.value);
+            }}
+          />
+        </Field>
       </div>
 
       <Field label="Manager" htmlFor="person-manager">
@@ -291,7 +320,8 @@ function AdminSection({
           Save
         </Button>
         {jobTitle.trim() !== (member.jobTitle ?? '') ||
-        department.trim() !== (member.department ?? '') ? (
+        department.trim() !== (member.department ?? '') ||
+        workPhone.trim() !== (member.workPhone ?? '') ? (
           <Button
             size="sm"
             variant="secondary"
@@ -301,6 +331,7 @@ function AdminSection({
                 userId: member.userId,
                 jobTitle: jobTitle.trim() === '' ? null : jobTitle.trim(),
                 department: department.trim() === '' ? null : department.trim(),
+                workPhone: workPhone.trim() === '' ? null : workPhone.trim(),
               });
             }}
           >

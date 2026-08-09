@@ -239,6 +239,14 @@ export const calls = comms.table(
 
     consentRule: text('consent_rule'),
     consentBasis: text('consent_basis'),
+    /**
+     * Whether recording was ASKED FOR (migration 0038). Deliberately separate
+     * from `announcementRequired`, which is the consent rule's answer: in a
+     * one-party jurisdiction a recorded call needs no announcement, so folding
+     * the two together made a recorded and an unrecorded call identical in the
+     * row — and the TwiML route, which reads this later, had nothing to go on.
+     */
+    recordRequested: boolean('record_requested').notNull().default(false),
     announcementRequired: boolean('announcement_required').notNull().default(true),
     announcementPlayedAt: timestamp('announcement_played_at', { withTimezone: true }),
     recordingStartedAt: timestamp('recording_started_at', { withTimezone: true }),

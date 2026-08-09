@@ -150,7 +150,10 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
             search.mutate();
           }}
         >
-          <div className="flex flex-wrap items-end gap-2">
+          {/* `items-start`, not `items-end` — "Area code" has a hint and
+              "Country" does not, so bottom-aligning would sit the country input
+              a line below the area-code one. See `Field`'s own note. */}
+          <div className="flex flex-wrap items-start gap-2">
             <Field label="Country" htmlFor="tel-country">
               <Input
                 id="tel-country"
@@ -173,7 +176,7 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
                 }}
               />
             </Field>
-            <Button type="submit" variant="primary" disabled={search.isPending}>
+            <Button type="submit" variant="primary" className="mt-5" disabled={search.isPending}>
               {search.isPending ? 'Searching…' : 'Search'}
             </Button>
           </div>

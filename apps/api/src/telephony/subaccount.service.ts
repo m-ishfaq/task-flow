@@ -31,13 +31,29 @@ import { envelopeOf, orgOf } from './shared.js';
  *
  * ## What the stored token is, and is not
  *
- * It is NOT how outbound calls authenticate. Those use the subaccount SID with
- * the MASTER auth token, which Twilio accepts for its children — so the
- * application can spend without ever decrypting this. It is needed for exactly
- * one thing: verifying the signature on webhooks Twilio signed with this
- * subaccount's own token, which nothing else can check. A verification key that
- * happens to also be a credential, which is why it is encrypted rather than
- * merely access-controlled.
+ * It is NOT how outbound calls authenticate — so the application can spend
+ * without ever decrypting this. It is needed for exactly one thing: verifying
+ * the signature on webhooks Twilio signed with this subaccount's own token,
+ * which nothing else can check. A verification key that happens to also be a
+ * credential, which is why it is encrypted rather than merely
+ * access-controlled.
+ *
+ * ## What outbound auth actually is, corrected
+ *
+ * This comment used to say outbound calls "use the subaccount SID with the
+ * MASTER auth token, which Twilio accepts for its children". Twilio does NOT
+ * accept that, and `twilio.ts` was written to match the claim: Basic auth
+ * demands a username and password from the SAME account, so pairing a
+ * subaccount SID with the parent's token names no account and returns
+ * 401/20003. Every number search, purchase, release, call and SMS failed
+ * against real Twilio until it was fixed; the stub-carrier suite could not see
+ * it because its own assertion had been written from this same sentence.
+ *
+ * What is true is the half that made the wrong version sound reasonable: a
+ * parent's credentials ARE authorized over its children's resources. The
+ * subaccount is named by its position in the URL PATH, and the credential
+ * presented is always the parent's own pair. See `#authorization` in
+ * `packages/telephony/src/twilio.ts`, which no longer takes a username at all.
  */
 
 export interface SubaccountDeps {

@@ -4,10 +4,16 @@ import { eq, isNull, and, schema, withOrgScope } from '@taskflow/db';
 import {
   InboundRoute,
   menuChoiceToTwiml,
+  outboundTwiml,
   routeToTwiml,
   type TwimlContext,
 } from '@taskflow/telephony';
-import { applyCallStatus, markAnnouncementPlayed, recordInboundCall } from './call.service.js';
+import {
+  applyCallStatus,
+  loadOutboundCallInstructions,
+  markAnnouncementPlayed,
+  recordInboundCall,
+} from './call.service.js';
 import { applyMessageStatus, receiveSms } from './message.service.js';
 import { registerRecording } from './recording.service.js';
 import { storeTranscript } from './transcript.service.js';
@@ -120,6 +126,59 @@ export function registerTelephonyWebhooks(app: FastifyInstance, deps: WebhookRou
             contextFor(telephony, call.callId, false, call.announcementRequired),
           ),
         );
+    },
+  );
+
+  /**
+   * The carrier is asking what to do with an OUTBOUND call it just connected.
+   *
+   * `placeCall` puts this URL in the call's `Url` parameter, and Twilio fetches
+   * it the moment the call goes live. It had no route for the whole of Waves
+   * 2-5: every outbound call was placed successfully, the carrier fetched a
+   * 404, and the call died before either party's phone rang. Nothing in the
+   * suite could see it — `placeCall` asserts on what we SEND the provider, and
+   * this is the request the provider makes back, which only a real carrier (or
+   * `scripts/dev-webhook.ts`) ever issues.
+   */
+  app.post<{ Params: { callId: string } }>(
+    '/telephony/outbound/:callId',
+    async (request, reply) => {
+      const verified = await verify(request, reply, telephony);
+      if (verified === undefined) return;
+
+      const instructions = await loadOutboundCallInstructions(
+        verified.orgId,
+        telephony,
+        request.params.callId,
+      );
+
+      /* An unknown call answers with speech and a hangup rather than a 404.
+         A 404 makes the carrier play its own generic failure at whoever is
+         holding the phone, and the person hearing it is usually our own user. */
+      if (instructions === undefined) {
+        return reply
+          .type('text/xml')
+          .send(
+            '<?xml version="1.0" encoding="UTF-8"?><Response><Say>This call could not be connected.</Say><Hangup/></Response>',
+          );
+      }
+
+      await withOrgScope(verified.orgId, async (tx) => {
+        await commitWebhookNonce(tx, verified.orgId, verified.signature);
+      });
+
+      return reply.type('text/xml').send(
+        outboundTwiml({
+          to: instructions.to,
+          callerId: instructions.callerId,
+          context: contextFor(
+            telephony,
+            request.params.callId,
+            instructions.record,
+            instructions.announcementRequired,
+          ),
+        }),
+      );
     },
   );
 

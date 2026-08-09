@@ -9,6 +9,7 @@ import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
 import { formatRelative } from '../../lib/format.js';
 import { callRecordingsQuery, callsQuery, invalidateAfterSpend, phoneNumbersQuery } from './api.js';
+import { CallButton } from './call-button.js';
 
 /**
  * Click-to-call and the call log (ai/phase-7-voice.md §3.5, §3.10, Wave 2).
@@ -53,8 +54,11 @@ function StatusPill({ status }: { readonly status: string }) {
   );
 }
 
-function durationLabel(seconds: number | null): string | null {
-  if (seconds === null) return null;
+/* Total, not `number | null -> string | null`. Both call sites already guard on
+   a null duration to decide whether to render the element at all, and a
+   nullable return made the second one interpolate `null` into a template
+   literal — the label read " · null" for a recording still being processed. */
+function durationLabel(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
   return minutes > 0 ? `${String(minutes)}m ${String(rest).padStart(2, '0')}s` : `${String(rest)}s`;
@@ -76,7 +80,15 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
     mutationFn: () =>
       api.telephony.calls.place.mutate({
         to: to.trim(),
-        fromPhoneNumberId,
+        /* `activeNumber`, NOT the raw `fromPhoneNumberId` state.
+
+           The state starts '' and only becomes a real id when the user CHANGES
+           the dropdown. `activeNumber` is what the select renders and what the
+           submit button's enabled check consults — so a caller who accepts the
+           default sees a number selected, sees an enabled button, and submits
+           an empty string, which the route refuses as `Invalid uuid`. The
+           displayed value and the submitted value have to be the same value. */
+        fromPhoneNumberId: activeNumber,
         record,
       }),
     onSuccess: async (result) => {
@@ -118,7 +130,11 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
             place.mutate();
           }}
         >
-          <div className="flex flex-wrap items-end gap-2">
+          {/* `items-start`, not `items-end` — "To" has a hint and "From" does
+              not, so bottom-aligning would sit the From select, the Record
+              checkbox and the Call button a line below the To input. See
+              `Field`'s own note. */}
+          <div className="flex flex-wrap items-start gap-2">
             <Field label="To" htmlFor="call-to" hint="E.164, e.g. +14155550100">
               <Input
                 id="call-to"
@@ -152,7 +168,7 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
               </select>
             </Field>
 
-            <label className="flex h-9 cursor-pointer items-center gap-1.5 text-xs text-ink-muted select-none">
+            <label className="mt-5 flex h-9 cursor-pointer items-center gap-1.5 text-xs text-ink-muted select-none">
               <input
                 type="checkbox"
                 checked={record}
@@ -167,6 +183,7 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
             <Button
               type="submit"
               variant="primary"
+              className="mt-5"
               disabled={place.isPending || activeNumber === '' || to.trim() === ''}
             >
               {place.isPending ? 'Calling…' : 'Call'}
@@ -276,6 +293,18 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
                     ) : (
                       <p className="text-[11px] text-ink-faint">This call was not recorded.</p>
                     )}
+                    {/* Redial lives in the expanded body, not on the row: the
+                        row IS a button, and nesting one inside it is invalid
+                        HTML that browsers resolve by dropping the inner
+                        control's activation — the click would toggle the row
+                        instead of dialling. */}
+                    <div className="mt-2 border-t border-line pt-2">
+                      <CallButton
+                        orgId={orgId}
+                        to={String(call.counterparty)}
+                        label={`Call ${String(call.counterparty)} back`}
+                      />
+                    </div>
                   </div>
                 )}
               </li>

@@ -67,6 +67,10 @@ const ProfilePatchSchema = z
     /* Wave 2 — self-service on one's own membership (§3.6). */
     jobTitle: z.string().trim().max(120).nullable().optional(),
     department: z.string().trim().max(120).nullable().optional(),
+    /* Validated as E.164 by the service, not here: the same parser every other
+       phone number in this system crosses, so a malformed value is a field
+       error rather than a geo-allowlist refusal later (migration 0039). */
+    workPhone: z.string().trim().max(16).nullable().optional(),
   })
   .strict();
 
@@ -84,6 +88,7 @@ const DirectoryMemberSchema = z
     oooMessage: z.string().nullable(),
     jobTitle: z.string().nullable(),
     department: z.string().nullable(),
+    workPhone: z.string().nullable(),
     managerUserId: z.string().nullable(),
     role: z.string(),
   })
@@ -172,6 +177,7 @@ export function createPeopleRouter(deps: PeopleRouterDeps) {
               userId: z.string().uuid(),
               jobTitle: z.string().trim().max(120).nullable().optional(),
               department: z.string().trim().max(120).nullable().optional(),
+              workPhone: z.string().trim().max(16).nullable().optional(),
             })
             .strict(),
         )
@@ -188,6 +194,7 @@ export function createPeopleRouter(deps: PeopleRouterDeps) {
             {
               ...('jobTitle' in input ? { jobTitle: input.jobTitle } : {}),
               ...('department' in input ? { department: input.department } : {}),
+              ...('workPhone' in input ? { workPhone: input.workPhone } : {}),
             },
           ),
         ),

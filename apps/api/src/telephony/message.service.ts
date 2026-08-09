@@ -16,6 +16,7 @@ import {
   type CounterpartyCrypto,
 } from './counterparty.js';
 import { classifyOptOut, isSuppressed, suppress, unsuppress } from './suppression.js';
+import { rethrowCarrierRefusal } from './carrier-error.js';
 import { emitRefusal, refusalMessage } from './refusal.js';
 import { checkOutboundAllowed, recordSpend } from './spend-gate.js';
 import { ensureSubaccount } from './subaccount.service.js';
@@ -101,13 +102,19 @@ export async function sendSms(
   const dataKey = await loadOrgDataKey(orgId, deps.keys);
   const messageId = newId<'MessageId'>();
 
-  const result = await deps.telephony.sendSms({
-    subaccountSid: account.subaccountSid,
-    from: from.e164,
-    to: input.to,
-    body: input.body,
-    statusCallbackUrl: `${deps.webhookOrigin ?? ''}/telephony/message-status/${messageId}`,
-  });
+  /* A carrier refusal is a refusal, not a fault — an unreachable destination or
+     a sending number that is not SMS-enabled must answer as precisely as the
+     suppression check above does, or the one control that CAN say what is wrong
+     reports "Something went wrong" and a 500. */
+  const result = await deps.telephony
+    .sendSms({
+      subaccountSid: account.subaccountSid,
+      from: from.e164,
+      to: input.to,
+      body: input.body,
+      statusCallbackUrl: `${deps.webhookOrigin ?? ''}/telephony/message-status/${messageId}`,
+    })
+    .catch(rethrowCarrierRefusal);
 
   return withOrgScope(orgId, async (tx) => {
     const thread = await ensureThread(

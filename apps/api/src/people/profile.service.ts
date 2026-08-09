@@ -138,6 +138,8 @@ export interface ProfilePatch {
   /** Wave 2 — self-service on one's OWN membership (ai/phase-11.5-people.md §3.6). */
   readonly jobTitle?: string | null | undefined;
   readonly department?: string | null | undefined;
+  /** E.164 work number, org-scoped like the two above (migration 0039). */
+  readonly workPhone?: string | null | undefined;
 }
 
 export interface PeopleActor {
@@ -225,16 +227,21 @@ export async function updateProfile(
      Requires an org: these fields live on the membership row, and there is no
      membership without one. A validation error names the gap honestly rather
      than silently dropping the fields. */
-  const hasMembershipFields = patch.jobTitle !== undefined || patch.department !== undefined;
+  const hasMembershipFields =
+    patch.jobTitle !== undefined ||
+    patch.department !== undefined ||
+    patch.workPhone !== undefined;
   if (hasMembershipFields) {
     if (actor.orgId === null) {
       throw errors.validation({
-        jobTitle: 'Select an organization before setting a job title or department.',
+        jobTitle:
+          'Select an organization before setting a job title, department, or work phone.',
       });
     }
     await updateMembershipProfile(actor.orgId, actor, actor.userId, {
       ...(patch.jobTitle !== undefined ? { jobTitle: patch.jobTitle } : {}),
       ...(patch.department !== undefined ? { department: patch.department } : {}),
+      ...(patch.workPhone !== undefined ? { workPhone: patch.workPhone } : {}),
     });
   }
 

@@ -85,11 +85,26 @@ export const membershipProfileUpdated = defineEvent(
       orgId: z.string(),
       userId: z.string(),
       changed: z.array(z.string()).readonly(),
+      /* `workPhone` is carried in the payload, and therefore into the audit
+         log, deliberately. It is a directory value shown to every colleague by
+         design — unlike a `comms` counterparty number, which belongs to a
+         member of the public and is encrypted and blind-indexed for exactly
+         that reason. Recording who changed someone's listed contact number,
+         and to what, is the audit entry's whole purpose; omitting the value
+         would leave "a field changed" with no way to review it. */
       before: z
-        .object({ jobTitle: z.string().nullable(), department: z.string().nullable() })
+        .object({
+          jobTitle: z.string().nullable(),
+          department: z.string().nullable(),
+          workPhone: z.string().nullable(),
+        })
         .strict(),
       after: z
-        .object({ jobTitle: z.string().nullable(), department: z.string().nullable() })
+        .object({
+          jobTitle: z.string().nullable(),
+          department: z.string().nullable(),
+          workPhone: z.string().nullable(),
+        })
         .strict(),
     })
     .strict(),

@@ -136,7 +136,22 @@ describe('TwilioTelephonyProvider', () => {
     expect(() => new TwilioTelephonyProvider(config({ authToken: '' }))).toThrow(/non-empty/);
   });
 
-  it('authenticates org actions as the SUBACCOUNT sid with the master token', async () => {
+  /**
+   * The subaccount is addressed by the URL PATH; the CREDENTIAL is always the
+   * parent's own pair.
+   *
+   * This test previously asserted the opposite — `subaccountSid:master-token` —
+   * and that is why the bug it describes survived a green suite. Twilio's Basic
+   * username and password must belong to the SAME account, so pairing a
+   * subaccount SID with the parent's token names no account at all: every
+   * number search, purchase, release, call and SMS came back 401/20003 against
+   * real Twilio, while subaccount creation, Lookup and Verify kept working
+   * because those three passed the parent SID. A stub that records the header
+   * without judging it will agree with whatever the code does, so the assertion
+   * is the only thing standing between this and a carrier that refuses
+   * everything the product exists to do.
+   */
+  it('authenticates as the PARENT account, addressing the subaccount by URL', async () => {
     const stub = stubCarrier();
     const provider = new TwilioTelephonyProvider(config({ fetch: stub.fetch }));
     const account = await provider.createSubaccount({ friendlyName: 'org' });
@@ -154,8 +169,48 @@ describe('TwilioTelephonyProvider', () => {
       .toString('utf8')
       .split(':');
 
-    expect(decoded[0]).toBe(account.sid);
+    expect(decoded[0]).toBe('ACmaster');
     expect(decoded[1]).toBe('master-token');
+    /* The subaccount is still what is being acted on — asserted here so a
+       "fix" that authenticated correctly by dropping the subaccount from the
+       path (sending every org's SMS from the parent account) fails too. */
+    expect(send?.url).toContain(`/Accounts/${account.sid}/Messages.json`);
+  });
+
+  it('uses the parent credential on every subaccount-scoped endpoint', async () => {
+    /* sendSms above is one endpoint; the bug was in all of them. Anything that
+       reintroduces a per-call username will pass the single-endpoint test and
+       fail this one. */
+    const stub = stubCarrier();
+    const provider = new TwilioTelephonyProvider(config({ fetch: stub.fetch }));
+
+    await provider.searchAvailableNumbers({
+      subaccountSid: 'ACsub',
+      isoCountry: 'US',
+      areaCode: '415',
+      limit: 10,
+    });
+    await provider.purchaseNumber({
+      subaccountSid: 'ACsub',
+      phoneNumber: PhoneNumberSchema.parse('+14155550100'),
+      voiceUrl: 'https://example.test/voice',
+      smsUrl: 'https://example.test/sms',
+    });
+    await provider.releaseNumber({ subaccountSid: 'ACsub', numberSid: 'PNnumber' });
+    await provider.placeCall({
+      subaccountSid: 'ACsub',
+      from: PhoneNumberSchema.parse('+14155550199'),
+      to: PhoneNumberSchema.parse('+14155550100'),
+      instructionsUrl: 'https://example.test/voice',
+      statusCallbackUrl: 'https://example.test/status',
+    });
+
+    const expected = `Basic ${Buffer.from('ACmaster:master-token', 'utf8').toString('base64')}`;
+    expect(stub.calls).toHaveLength(4);
+    for (const call of stub.calls) {
+      expect(call.authorization).toBe(expected);
+      expect(call.url).toContain('/Accounts/ACsub/');
+    }
   });
 
   it('posts the status callback URL so cost correction can arrive later', async () => {
@@ -261,6 +316,10 @@ describe('TwilioTelephonyProvider', () => {
       expect(error).toBeInstanceOf(TwilioApiError);
       expect((error as Error).message).not.toContain('4155550100');
       expect((error as TwilioApiError).status).toBe(400);
+      /* The code IS carried, from the same body whose `message` is withheld —
+         an integer cannot quote a phone number back, and without it a carrier
+         refusal is undiagnosable from the log alone. */
+      expect((error as TwilioApiError).code).toBe(21211);
     });
 
     it('redacts a phone number embedded in the URL path', async () => {

@@ -37,6 +37,8 @@ export interface DirectoryMember {
   readonly oooMessage: string | null;
   readonly jobTitle: string | null;
   readonly department: string | null;
+  /** E.164 work number (migration 0039) — what click-to-call dials. */
+  readonly workPhone: string | null;
   readonly managerUserId: string | null;
   readonly role: string;
 }
@@ -141,6 +143,7 @@ const MEMBER_COLUMNS = {
   oooMessage: schema.profiles.oooMessage,
   jobTitle: schema.membershipProfiles.jobTitle,
   department: schema.membershipProfiles.department,
+  workPhone: schema.membershipProfiles.workPhone,
   managerUserId: schema.membershipProfiles.managerUserId,
   role: schema.memberships.role,
 } as const;
@@ -163,6 +166,7 @@ interface MemberRow {
   readonly oooMessage: string | null;
   readonly jobTitle: string | null;
   readonly department: string | null;
+  readonly workPhone: string | null;
   readonly managerUserId: string | null;
   readonly role: string;
 }
@@ -181,6 +185,7 @@ function toMember(row: MemberRow): DirectoryMember {
     oooMessage: row.oooMessage,
     jobTitle: row.jobTitle,
     department: row.department,
+    workPhone: row.workPhone,
     managerUserId: row.managerUserId,
     role: row.role,
   };

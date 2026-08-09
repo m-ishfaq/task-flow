@@ -105,7 +105,6 @@ export class TwilioTelephonyProvider implements TelephonyProvider {
     const body = await this.#post<{ sid: string; auth_token: string; friendly_name: string }>(
       `${this.#api}/2010-04-01/Accounts.json`,
       { FriendlyName: options.friendlyName },
-      this.#config.accountSid,
     );
     return {
       sid: body.sid,
@@ -118,7 +117,6 @@ export class TwilioTelephonyProvider implements TelephonyProvider {
     await this.#post(
       `${this.#api}/2010-04-01/Accounts/${encodeURIComponent(sid)}.json`,
       { Status: status },
-      this.#config.accountSid,
     );
   }
 
@@ -144,7 +142,7 @@ export class TwilioTelephonyProvider implements TelephonyProvider {
         region: string | null;
         iso_country: string;
       }[];
-    }>(url, options.subaccountSid);
+    }>(url);
 
     return body.available_phone_numbers.map((entry) => ({
       /* Parsed, not cast. Twilio is trusted to be Twilio, not to be
@@ -173,7 +171,6 @@ export class TwilioTelephonyProvider implements TelephonyProvider {
         SmsUrl: options.smsUrl,
         SmsMethod: 'POST',
       },
-      options.subaccountSid,
     );
 
     return {
@@ -192,7 +189,6 @@ export class TwilioTelephonyProvider implements TelephonyProvider {
       `${this.#api}/2010-04-01/Accounts/${encodeURIComponent(options.subaccountSid)}` +
         `/IncomingPhoneNumbers/${encodeURIComponent(options.numberSid)}.json`,
       undefined,
-      options.subaccountSid,
     );
   }
 
@@ -214,7 +210,6 @@ export class TwilioTelephonyProvider implements TelephonyProvider {
         StatusCallback: options.statusCallbackUrl,
         StatusCallbackMethod: 'POST',
       },
-      options.subaccountSid,
     );
 
     return {
@@ -244,7 +239,6 @@ export class TwilioTelephonyProvider implements TelephonyProvider {
         Body: options.body,
         StatusCallback: options.statusCallbackUrl,
       },
-      options.subaccountSid,
     );
 
     const segments = Number.parseInt(body.num_segments ?? '1', 10);
@@ -269,7 +263,6 @@ export class TwilioTelephonyProvider implements TelephonyProvider {
       line_type_intelligence?: { type?: string | null } | null;
     }>(
       `${this.#lookups}/v2/PhoneNumbers/${encodeURIComponent(phoneNumber)}`,
-      this.#config.accountSid,
     );
 
     return {
@@ -289,7 +282,6 @@ export class TwilioTelephonyProvider implements TelephonyProvider {
     const body = await this.#post<{ sid: string; status: string }>(
       `${this.#verify}/v2/Services/${encodeURIComponent(serviceSid)}/Verifications`,
       { To: options.to, Channel: options.channel },
-      this.#config.accountSid,
     );
     return { sid: body.sid, status: body.status, costCents: FALLBACK_PRICE_CENTS.verification };
   }
@@ -302,7 +294,6 @@ export class TwilioTelephonyProvider implements TelephonyProvider {
     const body = await this.#post<{ status: string }>(
       `${this.#verify}/v2/Services/${encodeURIComponent(serviceSid)}/VerificationCheck`,
       { To: options.to, Code: options.code },
-      this.#config.accountSid,
     );
     return { approved: body.status === 'approved' };
   }
@@ -346,26 +337,52 @@ export class TwilioTelephonyProvider implements TelephonyProvider {
     return sid;
   }
 
-  #authorization(username: string): string {
-    const basic = Buffer.from(`${username}:${this.#config.authToken}`, 'utf8').toString('base64');
+  /**
+   * The Basic credential, ALWAYS the configured parent account's own pair.
+   *
+   * This took no username argument for a while, then took one, and the argument
+   * is what broke every subaccount-scoped call against real Twilio. The
+   * password half is fixed — `#config.authToken`, the parent's — so passing a
+   * subaccount SID as the username built `subaccountSid:PARENT_TOKEN`, a pair
+   * belonging to no account, and Twilio answered 401/20003 on number search,
+   * purchase, release, calls and SMS alike. Subaccount creation and the Lookup
+   * and Verify endpoints kept working, because those were the three that passed
+   * the parent SID, which is why the failure looked like a credentials problem
+   * in the operator's Twilio console rather than a bug in this file.
+   *
+   * A subaccount is addressed by its position in the URL PATH, and the parent's
+   * credentials are authorized for its own subaccounts' resources. So there is
+   * no caller for whom a different username is correct, and the parameter is
+   * gone rather than merely fixed at its call sites — a per-subaccount token
+   * would have to arrive with a matching password to mean anything, and this
+   * class holds exactly one.
+   *
+   * (`comms.subaccounts.auth_token_ciphertext` stores each subaccount's own
+   * token, and that is not this. It exists so an INBOUND webhook can be
+   * signature-verified against the credential of the subaccount that sent it.)
+   */
+  #authorization(): string {
+    const basic = Buffer.from(
+      `${this.#config.accountSid}:${this.#config.authToken}`,
+      'utf8',
+    ).toString('base64');
     return `Basic ${basic}`;
   }
 
-  async #get<T>(url: string, username: string): Promise<T> {
-    return this.#request<T>('GET', url, undefined, username);
+  async #get<T>(url: string): Promise<T> {
+    return this.#request<T>('GET', url, undefined);
   }
 
-  async #post<T>(url: string, form: Record<string, string>, username: string): Promise<T> {
-    return this.#request<T>('POST', url, form, username);
+  async #post<T>(url: string, form: Record<string, string>): Promise<T> {
+    return this.#request<T>('POST', url, form);
   }
 
   async #request<T>(
     method: string,
     url: string,
     form: Record<string, string> | undefined,
-    username: string,
   ): Promise<T> {
-    const headers: Record<string, string> = { Authorization: this.#authorization(username) };
+    const headers: Record<string, string> = { Authorization: this.#authorization() };
     let body: string | undefined;
 
     if (form !== undefined) {
@@ -387,8 +404,16 @@ export class TwilioTelephonyProvider implements TelephonyProvider {
        * REDACTION_PATHS exists to keep out of logs. An error that carries them
        * in a plain `message` string defeats that: pino redacts paths it can
        * see, never text inside a message. Status and URL are enough to
-       * diagnose, and the request id correlates the rest. */
-      throw new TwilioApiError(method, url, response.status);
+       * diagnose, and the request id correlates the rest.
+       *
+       * The one exception is `code`: an integer from Twilio's published table,
+       * which echoes no request parameter and so cannot carry PII. Without it
+       * every carrier refusal reads as a bare status, and the failures that
+       * bare status hides are configuration, not defects — a 403 on
+       * `createSubaccount` is 20008 ("not available to Test Credentials") or an
+       * account-level restriction, and the two need opposite fixes. Diagnosing
+       * that from `status: 403` alone means guessing. */
+      throw new TwilioApiError(method, url, response.status, await readErrorCode(response));
     }
 
     if (response.status === 204) return undefined as T;
@@ -398,12 +423,44 @@ export class TwilioTelephonyProvider implements TelephonyProvider {
 
 export class TwilioApiError extends Error {
   readonly status: number;
+  /**
+   * Twilio's own numeric error code, when the body carried one — the thing that
+   * says WHICH refusal this is. Looked up at twilio.com/docs/api/errors/<code>.
+   */
+  readonly code: number | undefined;
 
-  constructor(method: string, url: string, status: number) {
-    super(`Twilio ${method} ${redactUrl(url)} failed with status ${String(status)}`);
+  constructor(method: string, url: string, status: number, code?: number) {
+    super(
+      `Twilio ${method} ${redactUrl(url)} failed with status ${String(status)}` +
+        (code === undefined
+          ? ''
+          : ` (Twilio error ${String(code)} — twilio.com/docs/api/errors/${String(code)})`),
+    );
     this.name = 'TwilioApiError';
     this.status = status;
+    this.code = code;
   }
+}
+
+/**
+ * Twilio's numeric error code from a failed response, or undefined.
+ *
+ * Reads ONLY `code`. Pulling the whole body — or even `message`, which is the
+ * tempting one — would undo the redaction the thrown error exists to preserve:
+ * Twilio's `message` is where the phone number it objected to is quoted back.
+ */
+async function readErrorCode(response: Response): Promise<number | undefined> {
+  try {
+    const body: unknown = await response.json();
+    if (typeof body === 'object' && body !== null && 'code' in body) {
+      const code = (body as { readonly code: unknown }).code;
+      if (typeof code === 'number') return code;
+    }
+  } catch {
+    /* A non-JSON error body — a proxy's HTML 502, a truncated response — is not
+       itself worth reporting. The status is already in the message. */
+  }
+  return undefined;
 }
 
 /**

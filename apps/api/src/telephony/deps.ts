@@ -77,7 +77,9 @@ export function buildTelephonyDeps(env: Env): TelephonyDeps | undefined {
      required. A real SID still boots the real provider, and is LIVE — a
      separate boolean could disagree with the credentials in use, and the
      direction it would disagree in is "we thought we were in test mode". */
-  const telephony = isTestCredential(accountSid)
+  const isFake = isTestCredential(accountSid);
+
+  const telephony = isFake
     ? new FakeTelephonyProvider()
     : new TwilioTelephonyProvider({
         accountSid,
@@ -85,6 +87,38 @@ export function buildTelephonyDeps(env: Env): TelephonyDeps | undefined {
         verifyServiceSid: env.TWILIO_VERIFY_SERVICE_SID,
         isLive: true,
       });
+
+  /* TELEPHONY_WEBHOOK_ORIGIN is REQUIRED for a LIVE carrier, and this refuses
+     at boot for the same reason TELEPHONY_INDEX_KEY above does.
+
+     Every URL handed to the carrier is built as `${webhookOrigin ?? ''}/...`
+     by number.service, call.service and message.service. With no origin that
+     `??` yields a RELATIVE path, and a relative URL is not a thing a carrier
+     can call back. Twilio refuses a number purchase outright for it (error
+     21402, "invalid URL") — which is the LOUD half, and the half that is
+     harmless because nothing was bought.
+
+     The quiet half is why this is a boot check rather than a better error at
+     the purchase call site: `statusCallbackUrl` is how a call's or message's
+     ACTUAL cost ever arrives. Miss it and the carrier still places the call,
+     the spend ledger keeps `actual_cents` NULL forever, and `sumWithFallback`
+     goes on charging the cap the ESTIMATE — an instance that bills against
+     guesses indefinitely, with nothing failing to say so. That is precisely
+     the reconciliation window §3.3 refuses to leave open.
+
+     Scoped to the live provider on purpose: the fake reaches no carrier, so a
+     developer running the offline demo needs no tunnel. */
+  if (!isFake && env.TELEPHONY_WEBHOOK_ORIGIN === undefined) {
+    throw new Error(
+      'TELEPHONY_WEBHOOK_ORIGIN is required when a live Twilio account is configured — ' +
+        'it is the absolute origin every carrier callback URL is built from, and without it ' +
+        'the carrier is handed relative URLs it cannot call back (number purchase fails with ' +
+        'Twilio error 21402, and call/message status callbacks never arrive, so no spend is ' +
+        'ever reconciled against its estimate). Set it to a PUBLIC https origin that reaches ' +
+        'this API — in development, an ngrok tunnel. Use the mock account SID instead if you ' +
+        'meant to run offline.',
+    );
+  }
 
   return {
     telephony,

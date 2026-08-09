@@ -15,6 +15,7 @@ import {
   sealCounterparty,
   type CounterpartyCrypto,
 } from './counterparty.js';
+import { rethrowCarrierRefusal } from './carrier-error.js';
 import { emitRefusal, refusalMessage } from './refusal.js';
 import { checkOutboundAllowed, recordSpend } from './spend-gate.js';
 import { ensureSubaccount } from './subaccount.service.js';
@@ -106,6 +107,9 @@ export async function placeCall(
   const consent = consentRequirementFor(input.to, lookup.isoCountry);
 
   const callId = newId<'CallId'>();
+  /* Minted here rather than inline at the insert because the second transaction
+     below must name THIS ledger row to attach the carrier's SID to it. */
+  const spendId = newId<'SpendLedgerId'>();
   const dataKey = await loadOrgDataKey(orgId, deps.keys);
   const sealed = sealCounterparty(dataKey, cryptoOf(deps), orgId, callId, input.to);
 
@@ -121,11 +125,16 @@ export async function placeCall(
       placedBy: userId,
       consentRule: consent.rule,
       consentBasis: consent.basis,
+      /* Two separate facts (migration 0038). `recordRequested` is what the
+         caller asked for; `announcementRequired` is what the consent rule
+         demands given that request. Collapsing them lost the first entirely in
+         one-party jurisdictions, where the second is false either way. */
+      recordRequested: input.record,
       announcementRequired: input.record ? consent.announcementRequired : false,
     });
 
     await recordSpend(tx, orgId, {
-      id: newId<'SpendLedgerId'>(),
+      id: spendId,
       kind: 'call',
       estimatedCents,
       providerSid: undefined,
@@ -158,13 +167,23 @@ export async function placeCall(
     await outboxWriter.append(tx, events);
   });
 
-  const result = await deps.telephony.placeCall({
-    subaccountSid: account.subaccountSid,
-    from: from.e164,
-    to: input.to,
-    instructionsUrl: `${deps.webhookOrigin ?? ''}/telephony/outbound/${callId}`,
-    statusCallbackUrl: `${deps.webhookOrigin ?? ''}/telephony/status/${callId}`,
-  });
+  /* Same translation `sendSms` applies: an unreachable destination is a refusal
+     the caller can act on, not a fault. NOTE that unlike `sendSms` this runs
+     AFTER the row and its ledger entry have committed (§3.4 — the charge lands
+     before the carrier is told anything), so a refusal here leaves a `queued`
+     call that never happened, holding its estimate against the cap with no SID
+     for reconciliation to correct it by. Fixing that needs a compensating write
+     on the spend path, which is a decision for the human-review pass, not a
+     side effect of classifying the error. */
+  const result = await deps.telephony
+    .placeCall({
+      subaccountSid: account.subaccountSid,
+      from: from.e164,
+      to: input.to,
+      instructionsUrl: `${deps.webhookOrigin ?? ''}/telephony/outbound/${callId}`,
+      statusCallbackUrl: `${deps.webhookOrigin ?? ''}/telephony/status/${callId}`,
+    })
+    .catch(rethrowCarrierRefusal);
 
   await withOrgScope(orgId, async (tx) => {
     await tx
@@ -173,17 +192,17 @@ export async function placeCall(
       .where(eq(schema.calls.id, callId));
 
     /* Attach the carrier's id to the ledger row so the billing callback can
-       correct it. Matched on the row we just wrote, not appended. */
+       correct it. Matched on the row's own PRIMARY KEY, never on its shape:
+       `(org_id, kind, estimated_cents)` describes every previous call priced
+       the same, so that UPDATE stamped one SID onto the org's whole call
+       history and was refused by `spend_ledger_provider_sid_key` — after the
+       carrier had already been told to dial. The call happened, the request
+       500'd, and the ledger row stayed unattached, so reconciliation could
+       never correct the estimate either. */
     await tx
       .update(schema.spendLedger)
       .set({ providerSid: result.sid })
-      .where(
-        and(
-          eq(schema.spendLedger.orgId, orgId),
-          eq(schema.spendLedger.kind, 'call'),
-          eq(schema.spendLedger.estimatedCents, estimatedCents),
-        ),
-      );
+      .where(and(eq(schema.spendLedger.orgId, orgId), eq(schema.spendLedger.id, spendId)));
   });
 
   return { callId, announcementRequired: input.record && consent.announcementRequired };
@@ -314,6 +333,75 @@ export async function listCalls(
     durationSeconds: row.durationSeconds,
     recorded: row.recordingStartedAt !== null,
   }));
+}
+
+/** What `/telephony/outbound/:callId` needs to build the call's TwiML. */
+export interface OutboundCallInstructions {
+  readonly to: PhoneNumber;
+  readonly callerId: PhoneNumber;
+  readonly record: boolean;
+  readonly announcementRequired: boolean;
+}
+
+/**
+ * Loads the instructions for an outbound call the carrier is asking about.
+ *
+ * `placeCall` hands Twilio a `Url` and Twilio fetches it when the call
+ * connects — so this is what turns a queued call into a dialled one. Without
+ * it the carrier gets a 404 and drops the call before anyone's phone rings.
+ *
+ * Both `record` and `announcementRequired` are READ, never inferred from one
+ * another (migration 0038). They answer different questions — "was recording
+ * asked for" and "does the destination's consent rule demand an announcement"
+ * — and an earlier version that derived the first from the second silently
+ * refused to record every one-party destination, GB and CA among them.
+ */
+export async function loadOutboundCallInstructions(
+  orgId: OrgId,
+  deps: TelephonyDeps,
+  callId: string,
+): Promise<OutboundCallInstructions | undefined> {
+  const row = await withOrgScope(orgId, async (tx) => {
+    const rows = await tx
+      .select({
+        ciphertext: schema.calls.counterpartyCiphertext,
+        direction: schema.calls.direction,
+        phoneNumberId: schema.calls.phoneNumberId,
+        recordRequested: schema.calls.recordRequested,
+        announcementRequired: schema.calls.announcementRequired,
+      })
+      .from(schema.calls)
+      .where(eq(schema.calls.id, callId))
+      .limit(1);
+    return rows[0];
+  });
+
+  if (row?.direction !== 'outbound') return undefined;
+
+  /* Read after the row is known present, so the narrowing carries into the
+     query below rather than needing a non-null assertion there. */
+  const phoneNumberId = row.phoneNumberId;
+  if (phoneNumberId === null) return undefined;
+
+  const number = await withOrgScope(orgId, async (tx) => {
+    const rows = await tx
+      .select({ e164: schema.phoneNumbers.e164 })
+      .from(schema.phoneNumbers)
+      .where(eq(schema.phoneNumbers.id, phoneNumberId))
+      .limit(1);
+    return rows[0];
+  });
+
+  if (number === undefined) return undefined;
+
+  const dataKey = await loadOrgDataKey(orgId, deps.keys);
+
+  return {
+    to: openCounterparty(dataKey, orgId, callId, row.ciphertext),
+    callerId: number.e164 as PhoneNumber,
+    record: row.recordRequested,
+    announcementRequired: row.announcementRequired,
+  };
 }
 
 /**
