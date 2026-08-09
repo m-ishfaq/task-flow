@@ -71,7 +71,9 @@ export async function listUsers(input: ListUsersInput): Promise<ListUsersResult>
       .where(
         and(
           input.before === null ? undefined : lt(schema.users.id, input.before),
-          search === undefined || search === '' ? undefined : ilike(schema.users.email, `%${search}%`),
+          search === undefined || search === ''
+            ? undefined
+            : ilike(schema.users.email, `%${search}%`),
         ),
       )
       .orderBy(desc(schema.users.id))

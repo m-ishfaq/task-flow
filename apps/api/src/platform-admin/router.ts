@@ -111,7 +111,8 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
     users: router({
       /** Read-only in this wave — user suspension is a later Phase 12 wave (§2, §7 decision 5). */
       list: platformRoute({
-        platformReason: 'The user directory — read-only; this console can freeze an org, not a person.',
+        platformReason:
+          'The user directory — read-only; this console can freeze an org, not a person.',
       })
         .input(
           z
@@ -143,7 +144,9 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
     }),
 
     flags: router({
-      list: platformRoute({ platformReason: 'The flag catalog with its currently resolved values.' })
+      list: platformRoute({
+        platformReason: 'The flag catalog with its currently resolved values.',
+      })
         .output(
           z
             .array(
@@ -161,15 +164,25 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
         .query(() => flags.listFlags()),
 
       set: platformRoute({ platformReason: 'Sets a global override for one flag.' })
-        .input(z.object({ flag: z.enum(FLAG_NAMES as [FlagName, ...FlagName[]]), value: z.boolean() }).strict())
+        .input(
+          z
+            .object({ flag: z.enum(FLAG_NAMES as [FlagName, ...FlagName[]]), value: z.boolean() })
+            .strict(),
+        )
         .output(z.object({ set: z.literal(true) }))
         .mutation(async ({ input, ctx }) => {
-          await flags.setFlag(input.flag, input.value, { userId: ctx.principal.userId }, deps.events);
+          await flags.setFlag(
+            input.flag,
+            input.value,
+            { userId: ctx.principal.userId },
+            deps.events,
+          );
           return { set: true as const };
         }),
 
       clear: platformRoute({
-        platformReason: 'Clears a global override, falling back to the environment/registry default.',
+        platformReason:
+          'Clears a global override, falling back to the environment/registry default.',
       })
         .input(z.object({ flag: z.enum(FLAG_NAMES as [FlagName, ...FlagName[]]) }).strict())
         .output(z.object({ cleared: z.literal(true) }))

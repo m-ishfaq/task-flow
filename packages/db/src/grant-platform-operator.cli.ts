@@ -155,9 +155,10 @@ async function main(): Promise<void> {
       grantedById = grantedByRow['id'];
     }
 
-    const existing = await admin.query(`SELECT user_id FROM platform.operators WHERE user_id = $1`, [
-      targetRow['id'],
-    ]);
+    const existing = await admin.query(
+      `SELECT user_id FROM platform.operators WHERE user_id = $1`,
+      [targetRow['id']],
+    );
     if (existing.rows.length > 0) {
       console.warn(`${String(targetRow['email'])} is already a platform operator. Nothing to do.`);
       return;

@@ -64,6 +64,11 @@ rules:
         # whose scope is wrong reports every legitimate call and nothing else.
         - '/apps/api/src/identity/**'
         - '/packages/db/**'
+        # The platform-operator console (Phase 12 §3.6) — cross-tenant by
+        # design, matching the equivalent ESLint exemption in
+        # packages/config/eslint/security.js's `exempt-global-scope-consumers`
+        # block.
+        - '/apps/api/src/platform-admin/**'
         - '**/*.test.ts'
         # Deliberate violations, asserted by packages/guardrail-selftest.
         - '/packages/guardrail-selftest/**'

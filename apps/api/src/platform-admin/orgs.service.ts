@@ -91,10 +91,7 @@ export async function listOrgs(input: ListOrgsInput): Promise<ListOrgsResult> {
       })
       .from(schema.orgs)
       .where(
-        and(
-          input.before === null ? undefined : lt(schema.orgs.id, input.before),
-          searchClause,
-        ),
+        and(input.before === null ? undefined : lt(schema.orgs.id, input.before), searchClause),
       )
       .orderBy(desc(schema.orgs.id))
       // One extra row, never returned, only to answer "is there a next page"

@@ -61,7 +61,10 @@ async function newOrg(slug: string, owner: UserId = OWNER): Promise<OrgId> {
 }
 
 /** Sets `identity.orgs.status` directly, the way only a database console can. */
-async function setOrgStatus(orgId: string, status: 'active' | 'suspended' | 'deleted'): Promise<void> {
+async function setOrgStatus(
+  orgId: string,
+  status: 'active' | 'suspended' | 'deleted',
+): Promise<void> {
   await admin.setOrg(orgId);
   if (status === 'deleted') {
     await admin.query(`UPDATE identity.orgs SET status = $1, deleted_at = now() WHERE id = $2`, [
@@ -342,7 +345,11 @@ describe('transferring ownership (Phase 12 §3.5)', () => {
     );
 
     const results = await Promise.allSettled([
-      members.transferOwnership(orgId, { toUserId: COLLEAGUE, selfNewRole: 'admin' }, actorOf(OWNER)),
+      members.transferOwnership(
+        orgId,
+        { toUserId: COLLEAGUE, selfNewRole: 'admin' },
+        actorOf(OWNER),
+      ),
       members.transferOwnership(
         orgId,
         { toUserId: COLLEAGUE, selfNewRole: 'member' },
@@ -350,9 +357,8 @@ describe('transferring ownership (Phase 12 §3.5)', () => {
       ),
     ]);
 
-    const isRejected = (
-      result: PromiseSettledResult<unknown>,
-    ): result is PromiseRejectedResult => result.status === 'rejected';
+    const isRejected = (result: PromiseSettledResult<unknown>): result is PromiseRejectedResult =>
+      result.status === 'rejected';
 
     const fulfilled = results.filter((result) => result.status === 'fulfilled');
     const rejected = results.filter(isRejected);
@@ -378,14 +384,22 @@ describe('transferring ownership (Phase 12 §3.5)', () => {
     );
 
     await expect(
-      members.transferOwnership(orgId, { toUserId: COLLEAGUE, selfNewRole: 'admin' }, actorOf(OWNER)),
+      members.transferOwnership(
+        orgId,
+        { toUserId: COLLEAGUE, selfNewRole: 'admin' },
+        actorOf(OWNER),
+      ),
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
   });
 
   it('refuses a target with no membership in this org', async () => {
     const orgId = await newOrg('transfer-four');
     await expect(
-      members.transferOwnership(orgId, { toUserId: OUTSIDER, selfNewRole: 'admin' }, actorOf(OWNER)),
+      members.transferOwnership(
+        orgId,
+        { toUserId: OUTSIDER, selfNewRole: 'admin' },
+        actorOf(OWNER),
+      ),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 

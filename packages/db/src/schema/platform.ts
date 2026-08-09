@@ -446,5 +446,7 @@ export const operatorAuditLog = platform.table(
     hash: bytea('hash').notNull(),
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index('operator_audit_log_operator_idx').on(table.operatorId, table.occurredAt.desc())],
+  (table) => [
+    index('operator_audit_log_operator_idx').on(table.operatorId, table.occurredAt.desc()),
+  ],
 );

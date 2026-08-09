@@ -482,11 +482,7 @@ describe('Phase 12 §3.9 — a suspended org stops reaching its members', () => 
       `INSERT INTO platform.outbox
          (id, org_id, name, version, occurred_at, payload, actor_id)
        VALUES (gen_random_uuid(), $1, 'card.assigned', 1, now(), $2::jsonb, $3)`,
-      [
-        ORG,
-        JSON.stringify({ cardId: CARD, boardId: BOARD, before: [], after: [OTHER] }),
-        USER,
-      ],
+      [ORG, JSON.stringify({ cardId: CARD, boardId: BOARD, before: [], after: [OTHER] }), USER],
     );
     await admin.setOrg(null);
 
@@ -500,7 +496,10 @@ describe('Phase 12 §3.9 — a suspended org stops reaching its members', () => 
         .select({ channel: schema.notificationDeliveries.channel })
         .from(schema.notificationDeliveries)
         .where(
-          and(eq(schema.notificationDeliveries.orgId, ORG), eq(schema.notificationDeliveries.userId, OTHER)),
+          and(
+            eq(schema.notificationDeliveries.orgId, ORG),
+            eq(schema.notificationDeliveries.userId, OTHER),
+          ),
         ),
     );
     expect(deliveries).toEqual([]);

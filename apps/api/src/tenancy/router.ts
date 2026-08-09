@@ -144,9 +144,7 @@ export function createTenancyRouter() {
        */
       transferOwnership: route({ permission: 'member:manage', stepUp: true })
         .input(
-          z
-            .object({ toUserId: UserIdSchema, selfNewRole: z.enum(['admin', 'member']) })
-            .strict(),
+          z.object({ toUserId: UserIdSchema, selfNewRole: z.enum(['admin', 'member']) }).strict(),
         )
         .output(z.object({ newOwnerId: z.string() }))
         .mutation(({ input, ctx }) =>

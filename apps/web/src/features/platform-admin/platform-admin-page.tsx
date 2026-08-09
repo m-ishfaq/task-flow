@@ -44,8 +44,8 @@ export function PlatformAdminPage() {
       <div>
         <h1 className="text-lg font-semibold text-ink">Platform admin</h1>
         <p className="mt-1 text-sm text-ink-muted">
-          Cross-tenant org governance. Every action here is written to the operator
-          accountability log, including reads.
+          Cross-tenant org governance. Every action here is written to the operator accountability
+          log, including reads.
         </p>
       </div>
 
@@ -99,11 +99,16 @@ function OrgsTab() {
   const orgs = useQuery({
     queryKey: keys.platformAdminOrgs(cursor, search),
     queryFn: async () =>
-      wire(await api.platformAdmin.orgs.list.query({ limit: 50, before: cursor, search: search || null })),
+      wire(
+        await api.platformAdmin.orgs.list.query({
+          limit: 50,
+          before: cursor,
+          search: search || null,
+        }),
+      ),
   });
 
-  const refresh = () =>
-    queryClient.invalidateQueries({ queryKey: ['platform-admin', 'orgs'] });
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['platform-admin', 'orgs'] });
 
   const suspend = useMutation({
     mutationFn: (orgId: OrgId) => api.platformAdmin.orgs.suspend.mutate({ orgId }),
@@ -138,7 +143,10 @@ function OrgsTab() {
       />
 
       {(suspend.isError || reactivate.isError) && (
-        <ErrorView error={suspend.error ?? reactivate.error} title="Could not update this organization" />
+        <ErrorView
+          error={suspend.error ?? reactivate.error}
+          title="Could not update this organization"
+        />
       )}
 
       {orgs.isPending && <SkeletonRows />}
@@ -177,7 +185,9 @@ function OrgsTab() {
                         </Badge>
                       </td>
                       <td className="px-3 py-1.5 text-ink-muted">{org.memberCount}</td>
-                      <td className="px-3 py-1.5 text-ink-muted">{formatDateTime(org.createdAt)}</td>
+                      <td className="px-3 py-1.5 text-ink-muted">
+                        {formatDateTime(org.createdAt)}
+                      </td>
                       <td className="px-3 py-1.5 text-right">
                         {org.status === 'active' ? (
                           <ConfirmButton
@@ -244,7 +254,13 @@ function UsersTab() {
   const users = useQuery({
     queryKey: keys.platformAdminUsers(cursor, search),
     queryFn: async () =>
-      wire(await api.platformAdmin.users.list.query({ limit: 50, before: cursor, search: search || null })),
+      wire(
+        await api.platformAdmin.users.list.query({
+          limit: 50,
+          before: cursor,
+          search: search || null,
+        }),
+      ),
   });
 
   return (
@@ -287,7 +303,9 @@ function UsersTab() {
                         {user.emailVerifiedAt !== null ? formatDateTime(user.emailVerifiedAt) : '—'}
                       </td>
                       <td className="px-3 py-1.5 text-ink-muted">{user.orgCount}</td>
-                      <td className="px-3 py-1.5 text-ink-muted">{formatDateTime(user.createdAt)}</td>
+                      <td className="px-3 py-1.5 text-ink-muted">
+                        {formatDateTime(user.createdAt)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -334,7 +352,8 @@ function FlagsTab() {
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.platformAdminFlags() });
 
   const set = useMutation({
-    mutationFn: (input: { flag: FlagName; value: boolean }) => api.platformAdmin.flags.set.mutate(input),
+    mutationFn: (input: { flag: FlagName; value: boolean }) =>
+      api.platformAdmin.flags.set.mutate(input),
     onSuccess: refresh,
     onError: (error, input) => {
       guard(error, () => {
@@ -448,12 +467,14 @@ function AuditTab() {
   return (
     <div className="flex flex-col gap-4">
       <p className="text-xs text-ink-muted">
-        Every `platformAdmin.*` call, including reads — this is the operator
-        accountability log, not the target organization's own audit log.
+        Every `platformAdmin.*` call, including reads — this is the operator accountability log, not
+        the target organization's own audit log.
       </p>
 
       {entries.isPending && <SkeletonRows />}
-      {entries.isError && <ErrorView error={entries.error} title="Could not load the operator audit log" />}
+      {entries.isError && (
+        <ErrorView error={entries.error} title="Could not load the operator audit log" />
+      )}
 
       {entries.data !== undefined &&
         (entries.data.length === 0 ? (

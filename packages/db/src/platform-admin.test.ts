@@ -95,9 +95,10 @@ beforeAll(async () => {
     [OPERATOR],
   );
   await admin.query(`SELECT set_config('app.org_id', $1, false)`, [ORG_A]);
-  await admin.query(`INSERT INTO identity.orgs (id, name, slug) VALUES ($1, 'Platform Org', 'platform-admin-org')`, [
-    ORG_A,
-  ]);
+  await admin.query(
+    `INSERT INTO identity.orgs (id, name, slug) VALUES ($1, 'Platform Org', 'platform-admin-org')`,
+    [ORG_A],
+  );
   await admin.query(`SELECT set_config('app.org_id', '', false)`);
 
   initializeDatabase({ url: APP_URL, applicationName: 'taskflow-platform-admin-test' });
@@ -188,7 +189,9 @@ describe('platform.flag_overrides — writable only through taskflow_platform_ad
       tx.execute(sql`DELETE FROM platform.flag_overrides WHERE flag_name = 'chat'`),
     );
     const cleared = await withOrgScope(ORG_A, async (tx) =>
-      tx.execute(sql`SELECT count(*)::int AS n FROM platform.flag_overrides WHERE flag_name = 'chat'`),
+      tx.execute(
+        sql`SELECT count(*)::int AS n FROM platform.flag_overrides WHERE flag_name = 'chat'`,
+      ),
     );
     expect(cleared.rows).toEqual([{ n: 0 }]);
   });
@@ -223,7 +226,8 @@ describe('identity.orgs — taskflow_platform_admin’s reach (§3.7)', () => {
       // A DIFFERENT org than the one seeded — proves this is RLS refusing an
       // unrelated tenant, not a coincidental empty result.
       '0195ee00-0000-7000-8000-0000000000ff' as OrgId,
-      async (tx) => tx.execute(sql`SELECT count(*)::int AS n FROM identity.orgs WHERE id = ${ORG_A}::uuid`),
+      async (tx) =>
+        tx.execute(sql`SELECT count(*)::int AS n FROM identity.orgs WHERE id = ${ORG_A}::uuid`),
     );
     expect(rows.rows).toEqual([{ n: 0 }]);
   });

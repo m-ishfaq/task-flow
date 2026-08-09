@@ -65,9 +65,10 @@ beforeAll(async () => {
     [OPERATOR],
   );
   await admin.setOrg(ORG);
-  await admin.query(`INSERT INTO identity.orgs (id, name, slug) VALUES ($1, 'Console Test Org', 'console-test-org')`, [
-    ORG,
-  ]);
+  await admin.query(
+    `INSERT INTO identity.orgs (id, name, slug) VALUES ($1, 'Console Test Org', 'console-test-org')`,
+    [ORG],
+  );
   await admin.setOrg(null);
 
   initializeDatabase({
@@ -100,10 +101,12 @@ describe('platformRoute — the FORBIDDEN gate', () => {
   it('refuses every platformAdmin.* call from an authenticated non-operator', async () => {
     const caller = callerFor(NON_OPERATOR);
 
-    await expect(caller.platformAdmin.orgs.list({ limit: 10, before: null, search: null })).rejects.toThrow(
-      /permission/i,
-    );
-    await expect(caller.platformAdmin.users.list({ limit: 10, before: null, search: null })).rejects.toThrow();
+    await expect(
+      caller.platformAdmin.orgs.list({ limit: 10, before: null, search: null }),
+    ).rejects.toThrow(/permission/i);
+    await expect(
+      caller.platformAdmin.users.list({ limit: 10, before: null, search: null }),
+    ).rejects.toThrow();
     await expect(caller.platformAdmin.flags.list()).rejects.toThrow();
     await expect(caller.platformAdmin.audit.list({ limit: 10, before: null })).rejects.toThrow();
   });
@@ -111,7 +114,9 @@ describe('platformRoute — the FORBIDDEN gate', () => {
   it('answers self.check honestly for both roles, with no step-up and no FORBIDDEN', async () => {
     // self.check is deliberately NOT platformRoute (router.ts's own comment) —
     // it must never throw for an ordinary member, only report `false`.
-    await expect(callerFor(OPERATOR).platformAdmin.self.check()).resolves.toEqual({ isOperator: true });
+    await expect(callerFor(OPERATOR).platformAdmin.self.check()).resolves.toEqual({
+      isOperator: true,
+    });
     await expect(callerFor(NON_OPERATOR).platformAdmin.self.check()).resolves.toEqual({
       isOperator: false,
     });
@@ -166,12 +171,16 @@ describe('org suspend/reactivate — round trip through the router', () => {
     await expect(caller.platformAdmin.orgs.suspend({ orgId: ORG })).resolves.toEqual({
       status: 'suspended',
     });
-    await expect(caller.platformAdmin.orgs.suspend({ orgId: ORG })).rejects.toThrow(/already suspended/i);
+    await expect(caller.platformAdmin.orgs.suspend({ orgId: ORG })).rejects.toThrow(
+      /already suspended/i,
+    );
 
     await expect(caller.platformAdmin.orgs.reactivate({ orgId: ORG })).resolves.toEqual({
       status: 'active',
     });
-    await expect(caller.platformAdmin.orgs.reactivate({ orgId: ORG })).rejects.toThrow(/not suspended/i);
+    await expect(caller.platformAdmin.orgs.reactivate({ orgId: ORG })).rejects.toThrow(
+      /not suspended/i,
+    );
   });
 });
 
@@ -200,6 +209,8 @@ describe('chain-verifier agreement (§4)', () => {
     const verification = verifyOperatorChain([tampered]);
 
     expect(verification.intact).toBe(false);
-    expect(verification.breaks).toEqual([{ seq: entry.seq, id: entry.seq, reason: 'hash_mismatch' }]);
+    expect(verification.breaks).toEqual([
+      { seq: entry.seq, id: entry.seq, reason: 'hash_mismatch' },
+    ]);
   });
 });
