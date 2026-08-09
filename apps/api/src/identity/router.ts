@@ -9,7 +9,11 @@ import type { IdentityDeps, RequestMeta } from './identity.service.js';
 import * as identity from './identity.service.js';
 import * as totp from './totp.service.js';
 import type { TotpDeps } from './totp.service.js';
+import * as oauth from './oauth.service.js';
+import type { OAuthDeps } from './oauth.service.js';
 import * as people from '../people/profile.service.js';
+
+const OAuthProviderSchema = z.enum(['google', 'github']);
 
 /**
  * Identity routes (PLAN.md §8.1).
@@ -34,10 +38,13 @@ export interface IdentityRouterDeps {
   readonly passkeys: PasskeyDeps;
   /** The unwrapped identity-scoped data key (Phase 12 Wave 2 §3.2, `main.ts`'s boot-time unwrap). */
   readonly identityDataKey: Uint8Array;
+  /** OAuth sign-in (Phase 12 Wave 2 §3.3) — everything `OAuthDeps` needs except `identity`, supplied below. */
+  readonly oauth: Omit<OAuthDeps, 'identity'>;
 }
 
 export function createIdentityRouter(deps: IdentityRouterDeps) {
   const totpDeps: TotpDeps = { identity: deps.identity, identityDataKey: deps.identityDataKey };
+  const oauthDeps: OAuthDeps = { ...deps.oauth, identity: deps.identity };
   const meta = (ctx: { ip: string | null; userAgent: string | null }): RequestMeta => ({
     ip: ctx.ip,
     userAgent: ctx.userAgent,
@@ -246,6 +253,93 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
           );
           return handOff(ctx, pair);
         }),
+    }),
+
+    /**
+     * OAuth sign-in (Phase 12 Wave 2 §3.3).
+     *
+     * `start` and `callback` are `publicRoute` even for the "link a new
+     * provider to my account" path — the redirect round trip to Google or
+     * GitHub is a full browser navigation away from the app, which loses the
+     * in-memory access token (`lib/session.ts`) the same as a page reload
+     * would. `callback` is reached with no session either way; what makes the
+     * linking path different is the signed `linkUserId` carried inside
+     * `state`, set by `start` while a session DID still exist.
+     */
+    oauth: router({
+      /**
+       * Which providers this server has credentials for — read BEFORE any
+       * sign-in attempt, from the login page, which has no session to gate a
+       * `selfRoute` query behind. An unconfigured provider's button simply
+       * does not render rather than the app failing to boot (§3.3); this is
+       * how the browser learns which buttons that is.
+       */
+      providers: publicRoute({
+        publicReason: 'Read from the login page, before any session exists.',
+      })
+        .output(z.object({ google: z.boolean(), github: z.boolean() }))
+        .query(() => ({
+          google: 'google' in oauthDeps.providers,
+          github: 'github' in oauthDeps.providers,
+        })),
+
+      start: publicRoute({
+        publicReason: 'This is how a session is obtained — the same reason auth.login is public.',
+      })
+        .input(z.object({ provider: OAuthProviderSchema }).strict())
+        .output(z.object({ authorizationUrl: z.string() }))
+        .mutation(({ input }) => oauth.start(oauthDeps, { provider: input.provider })),
+
+      startLink: selfRoute({
+        selfReason: 'Linking a new provider to your own account.',
+        stepUp: true,
+      })
+        .input(z.object({ provider: OAuthProviderSchema }).strict())
+        .output(z.object({ authorizationUrl: z.string() }))
+        .mutation(({ input, ctx }) =>
+          oauth.start(oauthDeps, { provider: input.provider, linkUserId: ctx.principal.userId }),
+        ),
+
+      callback: publicRoute({
+        publicReason:
+          'Reached via a browser redirect from the provider, with no session — the signed state token carries whatever context the flow needs.',
+      })
+        .input(
+          z.object({ provider: OAuthProviderSchema, code: z.string(), state: z.string() }).strict(),
+        )
+        .output(
+          z.discriminatedUnion('kind', [
+            SessionResponse.extend({ kind: z.literal('session') }),
+            z.object({ kind: z.literal('linked'), provider: OAuthProviderSchema }).strict(),
+          ]),
+        )
+        .mutation(async ({ input, ctx }) => {
+          const result = await oauth.callback(oauthDeps, input, meta(ctx));
+          if (result.kind === 'linked') return result;
+          return { kind: 'session' as const, ...handOff(ctx, result.pair) };
+        }),
+
+      listConnected: selfRoute({
+        selfReason: 'Reading your own connected-accounts list.',
+      })
+        .output(
+          z
+            .array(
+              z.object({ provider: OAuthProviderSchema, email: z.string(), linkedAt: z.date() }),
+            )
+            .readonly(),
+        )
+        .query(({ ctx }) => oauth.listConnected(ctx.principal.userId)),
+
+      unlink: selfRoute({
+        selfReason: 'Removing a sign-in method from your own account.',
+        stepUp: true,
+      })
+        .input(z.object({ provider: OAuthProviderSchema }).strict())
+        .output(z.object({ status: z.literal('unlinked') }))
+        .mutation(({ input, ctx }) =>
+          oauth.unlink(oauthDeps, { userId: ctx.principal.userId, provider: input.provider }),
+        ),
     }),
   });
 }

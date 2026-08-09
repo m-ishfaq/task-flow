@@ -74,6 +74,9 @@ const UNMAPPED: ReadonlySet<string> = new Set([
   // way into the account, `resource_id` would repeat `actor_id`.
   'user.totp_enrolled',
   'user.totp_disabled',
+  // Phase 12 Wave 2 §3.3 — same shape again.
+  'user.oauth_linked',
+  'user.oauth_unlinked',
   'session.revoked',
   'session.token_reuse_detected',
   // Work (Phase 3 / 3.5)

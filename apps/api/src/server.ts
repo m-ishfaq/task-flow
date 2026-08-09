@@ -17,6 +17,7 @@ import {
   serializeRefreshCookie,
 } from './identity/cookies.js';
 import { buildIdentityDeps, buildPasskeyDeps } from './identity/deps.js';
+import type { OAuthDeps } from './identity/oauth.service.js';
 import { authenticate } from './identity/authenticate.js';
 import { createMailDelivery } from './identity/deliver.js';
 import { createLogger } from '@taskflow/observability';
@@ -98,6 +99,7 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
     /* Undefined when no carrier is configured. The routes exist either way and
        answer SERVICE_UNAVAILABLE — see telephony/router.ts. */
     telephony: telephonyDeps,
+    oauth: buildOAuthDeps(options.env),
   });
 
   /* Guardrail 4, second half. Before a single connection is accepted: if any
@@ -265,6 +267,31 @@ async function withOrgContext(
   } catch {
     return principal;
   }
+}
+
+/**
+ * Builds OAuth's provider config from env, per provider independently — the
+ * same "an unconfigured integration is a valid deployment" convention as
+ * `platform.vapidPublicKey` above. A provider missing either half of its
+ * client id/secret is simply absent from `providers`, and `oauth.service.ts`
+ * refuses with `NOT_FOUND` rather than the app failing to boot.
+ */
+function buildOAuthDeps(env: Env): Omit<OAuthDeps, 'identity'> {
+  return {
+    providers: {
+      ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+        ? { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } }
+        : {}),
+      ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET
+        ? { github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET } }
+        : {}),
+    },
+    /* Registered with each provider's own console ahead of time — this is the
+       one value that has to match exactly what was registered there, since
+       an OAuth authorization server refuses a redirect_uri it does not
+       recognize verbatim. */
+    redirectUri: (provider) => `${env.WEB_ORIGIN}/oauth/callback/${provider}`,
+  };
 }
 
 /**

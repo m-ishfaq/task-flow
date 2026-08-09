@@ -4,8 +4,10 @@ import {
   ACCESS_TOKEN_TTL_SECONDS,
   InvalidTokenError,
   signAccessToken,
+  signOAuthState,
   signTotpChallenge,
   verifyAccessToken,
+  verifyOAuthState,
   verifyTotpChallenge,
   type AccessTokenClaims,
 } from './jwt.js';
@@ -199,6 +201,43 @@ describe('TOTP challenge tokens', () => {
     ) as { exp: number; iat: number };
 
     expect(payload.exp - payload.iat).toBe(300);
+  });
+});
+
+describe('OAuth state tokens', () => {
+  it('round-trips provider and code verifier, omitting linkUserId when absent', async () => {
+    const token = await signOAuthState({ provider: 'google', codeVerifier: 'a-verifier' }, config);
+    const verified = await verifyOAuthState(token, config);
+
+    expect(verified).toEqual({ provider: 'google', codeVerifier: 'a-verifier' });
+    expect('linkUserId' in verified).toBe(false);
+  });
+
+  it('round-trips linkUserId when linking to an existing session', async () => {
+    const token = await signOAuthState(
+      { provider: 'github', codeVerifier: 'a-verifier', linkUserId: claims.userId },
+      config,
+    );
+
+    await expect(verifyOAuthState(token, config)).resolves.toEqual({
+      provider: 'github',
+      codeVerifier: 'a-verifier',
+      linkUserId: claims.userId,
+    });
+  });
+
+  it('rejects a token signed with a different secret', async () => {
+    const token = await signOAuthState({ provider: 'google', codeVerifier: 'v' }, other);
+    await expect(verifyOAuthState(token, config)).rejects.toThrow(InvalidTokenError);
+  });
+
+  it('is refused by the access-token and TOTP-challenge verifiers, and vice versa', async () => {
+    const state = await signOAuthState({ provider: 'google', codeVerifier: 'v' }, config);
+    await expect(verifyAccessToken(state, config)).rejects.toThrow(InvalidTokenError);
+    await expect(verifyTotpChallenge(state, config)).rejects.toThrow(InvalidTokenError);
+
+    const challenge = await signTotpChallenge({ userId: claims.userId }, config);
+    await expect(verifyOAuthState(challenge, config)).rejects.toThrow(InvalidTokenError);
   });
 });
 
