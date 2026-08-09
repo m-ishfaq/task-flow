@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  customType,
   index,
   inet,
   integer,
@@ -11,6 +12,11 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+
+/** `bytea` — Drizzle has no built-in mapping; mirrors packages/db/src/schema/platform.ts's own. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => 'bytea',
+});
 
 /**
  * Identity tables (migration 0002, PLAN.md §8.1).
@@ -205,4 +211,76 @@ export const notificationPrefs = identity.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.userId, table.category, table.channel] })],
+);
+
+/**
+ * The identity-scoped data key (Phase 12 Wave 2, migration 0033, §3.2).
+ *
+ * A singleton row, created by application code at boot — never by a
+ * migration, which has no access to KeyProvider or the master key a real
+ * wrap requires. Encrypts identity.totp_credentials.secret_encrypted and
+ * (once OAuth ships) an OAuth refresh token, if one is ever stored.
+ */
+export const secretKeys = identity.table('secret_keys', {
+  id: boolean('id').primaryKey().default(true),
+  wrappedKey: bytea('wrapped_key').notNull(),
+  masterKeyId: text('master_key_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * TOTP as a second factor (migration 0033, §3.2).
+ *
+ * `confirmedAt IS NULL` means enrolled but never proven with a real code —
+ * unusable for login or step-up. `secretEncrypted` is ciphertext under
+ * `secretKeys`' data key, never plaintext.
+ */
+export const totpCredentials = identity.table('totp_credentials', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  secretEncrypted: bytea('secret_encrypted').notNull(),
+  confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** One-time TOTP recovery codes, Argon2id-hashed like `users.passwordHash`. */
+export const totpRecoveryCodes = identity.table(
+  'totp_recovery_codes',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    codeHash: text('code_hash').notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('totp_recovery_codes_user_idx').on(table.userId)],
+);
+
+/**
+ * OAuth account linking (migration 0033, §3.3).
+ *
+ * `providerUserId` is the provider's own stable subject id, never the email
+ * — an email can change at the provider, a subject id does not.
+ */
+export const oauthIdentities = identity.table(
+  'oauth_identities',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** 'google' | 'github' — a CHECK, not an enum. */
+    provider: text('provider').notNull(),
+    providerUserId: text('provider_user_id').notNull(),
+    /** Captured at link time, display only — never re-derives `users.email`. */
+    email: text('email').notNull(),
+    linkedAt: timestamp('linked_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('oauth_identities_provider_key').on(table.provider, table.providerUserId),
+    uniqueIndex('oauth_identities_user_provider_key').on(table.userId, table.provider),
+  ],
 );
