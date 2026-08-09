@@ -99,15 +99,16 @@ deliberate deferral rather than a discovery some later reader has to make from s
 
 ### 3.1 User suspension — the direct extension of Wave 1's org suspension
 
-`identity.users.status` already has a `CHECK` constraint (`'active' | 'suspended' | 'invited'` —
-verified against migration 0002) and login/passkey auth already refuse anything but `'active'`
+`identity.users.status` already has a `CHECK` constraint (`'active' | 'suspended' | 'deleted'` —
+verified against migration 0002, `users_status_valid`) and login/passkey auth already refuse
+anything but `'active'`
 (`identity.service.ts:206`, `passkey.service.ts:218`, per Wave 1's own §1.2 finding about the
 equivalent org column). The gap is identical in shape to Wave 1's very first finding: a column
 that's real and already enforced on read, with no write path.
 
 - `platformAdmin.users.suspend` / `.reactivate` — new `platformRoute`s, same conditional-`WHERE`
   pattern as `orgs.service.ts`'s `suspendOrg`/`reactivateOrg` (`fromStatus` in the `UPDATE ...
-  WHERE`, turning a redundant call into an honest `CONFLICT` rather than a silent no-op).
+WHERE`, turning a redundant call into an honest `CONFLICT` rather than a silent no-op).
 - Suspending a user does **not** touch their `identity.sessions` rows — the next request they make
   fails at whatever route-level check reads `users.status` (already exists), and existing sessions
   age out or get revoked the same way any other session does. Force-revoking every session on
