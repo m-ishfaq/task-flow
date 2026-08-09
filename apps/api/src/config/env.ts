@@ -268,6 +268,11 @@ const KNOWN_VARIABLES = new Set([
      class as the two above: `WEB_` prefix, never read by a server, must be
      listed or it is rejected. */
   'WEB_COLLAB_ORIGIN',
+  /* Read by apps/web's vite.config.ts for `server.allowedHosts` — the hosts
+     the dev server accepts besides localhost (tunnels such as ngrok). Same
+     class as the three above: `WEB_` prefix, never read by a server, must
+     be listed or it is rejected. */
+  'WEB_ALLOWED_HOSTS',
   /* apps/realtime (Phase 4). Same reasoning as DATABASE_REALTIME_URL above —
      this set is every TaskFlow variable across ALL services, not the ones this
      app reads, so that a typo is caught wherever it is made. */

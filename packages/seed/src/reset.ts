@@ -75,8 +75,25 @@ export async function reset(options: ResetOptions): Promise<ResetResult> {
     `reset: found ${String(orgIds.length)} seeded org(s), ${String(userIds.length)} seeded user(s)`,
   );
 
+  /**
+   * `identity.users` and `people.profiles` are the two tables here with no
+   * `org_id`, so neither can go through the per-org loop below — it would ask
+   * Postgres to filter on a column that does not exist, and `people.profiles`
+   * did exactly that: `--reset` died with `column "org_id" does not exist`
+   * from the moment `people.profiles` joined a module's `tables`, while a
+   * plain `pnpm seed` kept working, so the break only surfaced for whoever
+   * reached for the flag.
+   *
+   * Both are keyed by user and both are removed by the unscoped DELETE at the
+   * end — `profiles_user_id_fkey` is `ON DELETE CASCADE`, so dropping the user
+   * takes the profile with it. Filtering rather than special-casing a DELETE
+   * for it: an explicit statement would be dead code that reads like a
+   * safeguard.
+   */
+  const GLOBAL_TABLES = new Set(['identity.users', 'people.profiles']);
+
   const tables = tablesInTeardownOrder(resolveModules(roots)).filter(
-    (table) => table !== 'identity.users',
+    (table) => !GLOBAL_TABLES.has(table),
   );
 
   for (const orgId of orgIds) {

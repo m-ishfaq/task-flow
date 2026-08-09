@@ -20,11 +20,16 @@ export default [
   ...base,
   ...security,
 
-  /* React rules, scoped to the only app that renders. Safe to place after the
-     guardrails because the block sets no `no-restricted-syntax` of its own —
-     the option array security.js builds would otherwise be replaced wholesale
-     for every file this matches. */
-  ...react.map((config) => ({ ...config, files: ['apps/web/**/*.{ts,tsx}'] })),
+  /* React rules, scoped to the app that renders plus `packages/ui`
+     (ai/phase-6.5-ui-polish.md Wave 3) — the design system extracted from it,
+     which is JSX too and gets the same hooks/a11y rules for the same reason.
+     Safe to place after the guardrails because the block sets no
+     `no-restricted-syntax` of its own — the option array security.js builds
+     would otherwise be replaced wholesale for every file this matches. */
+  ...react.map((config) => ({
+    ...config,
+    files: ['apps/web/**/*.{ts,tsx}', 'packages/ui/**/*.{ts,tsx}'],
+  })),
 
   {
     ignores: ['**/dist/**', '**/build/**', '**/coverage/**', '**/.turbo/**', 'docs/**'],

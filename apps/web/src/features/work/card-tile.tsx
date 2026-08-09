@@ -1,6 +1,13 @@
 import { useState } from 'react';
-import * as Popover from '@radix-ui/react-popover';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import {
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRoot,
+  DropdownMenuTrigger,
+  PopoverContent,
+  PopoverRoot,
+  PopoverTrigger,
+} from '@taskflow/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { BoardId, CardId, UserId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
@@ -229,50 +236,44 @@ function QuickAssignee({ orgId, card }: { readonly orgId: string; readonly card:
   };
 
   return (
-    <Popover.Root>
-      <Popover.Trigger asChild>
+    <PopoverRoot>
+      <PopoverTrigger asChild>
         <button type="button" aria-label="Quick-assign" className={ICON_BUTTON}>
           👤
         </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          align="end"
-          sideOffset={4}
-          className="w-56 rounded border border-line bg-surface-raised p-2 shadow-xl"
-        >
-          {people.length === 0 ? (
-            <p className="p-1 text-xs text-ink-faint">No members to assign.</p>
-          ) : (
-            <ul className="max-h-56 space-y-0.5 overflow-y-auto">
-              {people.map((member) => {
-                const on = selected.has(member.userId);
-                return (
-                  <li key={member.userId}>
-                    <button
-                      type="button"
-                      aria-pressed={on}
-                      onClick={() => {
-                        toggle(member.userId);
-                      }}
-                      className={cn(
-                        'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs',
-                        on
-                          ? 'bg-accent text-accent-ink'
-                          : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-                      )}
-                    >
-                      <Avatar userId={member.userId} label={member.email} size="xs" />
-                      <span className="truncate">{member.email}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-56 p-2">
+        {people.length === 0 ? (
+          <p className="p-1 text-xs text-ink-faint">No members to assign.</p>
+        ) : (
+          <ul className="max-h-56 space-y-0.5 overflow-y-auto">
+            {people.map((member) => {
+              const on = selected.has(member.userId);
+              return (
+                <li key={member.userId}>
+                  <button
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => {
+                      toggle(member.userId);
+                    }}
+                    className={cn(
+                      'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs',
+                      on
+                        ? 'bg-accent text-accent-ink'
+                        : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+                    )}
+                  >
+                    <Avatar userId={member.userId} label={member.email} size="xs" />
+                    <span className="truncate">{member.email}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </PopoverContent>
+    </PopoverRoot>
   );
 }
 
@@ -300,35 +301,29 @@ function QuickDueDate({
   const [open, setOpen] = useState(false);
 
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
+    <PopoverRoot open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
         <button type="button" aria-label="Quick due date" className={ICON_BUTTON}>
           📅
         </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          align="end"
-          sideOffset={4}
-          className="rounded border border-line bg-surface-raised p-2 shadow-xl"
-        >
-          <input
-            type="date"
-            aria-label="Due date"
-            defaultValue={card.dueDate?.slice(0, 10) ?? ''}
-            onChange={(event) => {
-              const day = event.target.value;
-              update.mutate({
-                cardId: card.cardId as CardId,
-                patch: { dueDate: day === '' ? null : new Date(`${day}T00:00:00`).toISOString() },
-              });
-              setOpen(false);
-            }}
-            className="h-8 rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
-          />
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="p-2">
+        <input
+          type="date"
+          aria-label="Due date"
+          defaultValue={card.dueDate?.slice(0, 10) ?? ''}
+          onChange={(event) => {
+            const day = event.target.value;
+            update.mutate({
+              cardId: card.cardId as CardId,
+              patch: { dueDate: day === '' ? null : new Date(`${day}T00:00:00`).toISOString() },
+            });
+            setOpen(false);
+          }}
+          className="h-8 rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+        />
+      </PopoverContent>
+    </PopoverRoot>
   );
 }
 
@@ -362,40 +357,32 @@ function QuickOverflow({
   });
 
   return (
-    <DropdownMenu.Root
+    <DropdownMenuRoot
       onOpenChange={(next) => {
         if (!next) setConfirming(false);
       }}
     >
-      <DropdownMenu.Trigger asChild>
+      <DropdownMenuTrigger asChild>
         <button type="button" aria-label="More actions" className={ICON_BUTTON}>
           ⋯
         </button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="end"
-          sideOffset={4}
-          className="min-w-36 rounded border border-line bg-surface-raised p-1 shadow-xl"
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-36">
+        <DropdownMenuItem
+          tone="muted"
+          onSelect={(event) => {
+            if (!confirming) {
+              event.preventDefault();
+              setConfirming(true);
+              return;
+            }
+            archive.mutate();
+          }}
+          className={cn('text-xs', confirming && 'text-danger')}
         >
-          <DropdownMenu.Item
-            onSelect={(event) => {
-              if (!confirming) {
-                event.preventDefault();
-                setConfirming(true);
-                return;
-              }
-              archive.mutate();
-            }}
-            className={cn(
-              'cursor-pointer rounded px-2 py-1.5 text-xs outline-none data-[highlighted]:bg-surface-hover',
-              confirming ? 'text-danger' : 'text-ink-muted',
-            )}
-          >
-            {confirming ? 'Confirm archive' : 'Archive'}
-          </DropdownMenu.Item>
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+          {confirming ? 'Confirm archive' : 'Archive'}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenuRoot>
   );
 }

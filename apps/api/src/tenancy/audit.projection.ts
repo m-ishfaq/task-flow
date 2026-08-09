@@ -328,7 +328,51 @@ export async function drainOutbox(limit = 100): Promise<DrainResult> {
     const pending = await claimPending(tx, CONSUMER, limit);
     if (pending.length === 0) return { processed: 0 };
 
-    for (const row of pending) {
+    /**
+     * ONE LOCK ORDER, or two drainers deadlock.
+     *
+     * `audit.chain_entry()` takes a per-org lock on `audit.chain_heads` for
+     * every entry — and its FIRST statement is an `INSERT ... ON CONFLICT
+     * (org_id) DO NOTHING`, which has to wait on any transaction that has
+     * already touched that head row before it can know whether the conflict
+     * is real. A claimed batch is ordered by `occurred_at`, so it walks the
+     * orgs in whatever order the events happened to interleave, and two
+     * drainers claim DISJOINT batches whose org sequences are unrelated. One
+     * ends up holding org A's head and waiting on org B's while the other
+     * holds B and waits on A, and Postgres kills one of them:
+     *
+     *   deadlock detected (40P01)
+     *   while inserting index tuple in relation "chain_heads"
+     *
+     * The relay survives that — a failed tick retries on the next one — but a
+     * `pnpm seed` run beside a running API does not, and it dies partway
+     * through with drizzle reporting only the statement, never the 40P01.
+     * That is the whole bug: two audit projections is a SUPPORTED
+     * configuration (a second API instance is the point of `SKIP LOCKED` in
+     * `claimPending`), and it was never a safe one.
+     *
+     * Sorting by org gives every writer the same acquisition order, which is
+     * what makes a cycle impossible rather than merely unlikely. The sort is
+     * STABLE, so each org's own entries keep their `occurred_at` order — the
+     * only ordering the chain actually encodes, since `seq` and `prev_hash`
+     * are per-org. Cross-org order was never meaningful and is not preserved.
+     *
+     * A retry loop was the alternative and is the wrong one: it treats a
+     * deadlock as bad luck when it is a fixed property of the lock order, so
+     * it would fire on essentially every concurrent batch and turn a
+     * correctness bug into a throughput one.
+     */
+    /* A plain code-unit comparison, never `localeCompare`: the ordering has to
+       be identical in every process that writes audit entries, and
+       `localeCompare` answers according to the runtime's ICU locale. Two API
+       instances started with different `LANG` values would sort two org ids
+       differently and reintroduce exactly the cycle this prevents — a
+       deadlock that reappears only on the machine whose locale disagrees. */
+    const ordered = [...pending].sort((left, right) =>
+      left.orgId < right.orgId ? -1 : left.orgId > right.orgId ? 1 : 0,
+    );
+
+    for (const row of ordered) {
       if (NEVER_AUDITED.has(row.name)) continue;
 
       const resource = resourceOf(row);

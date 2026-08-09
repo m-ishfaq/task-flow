@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { OrgId, PageId, PageTemplateId, SpaceId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { useUi } from '../../lib/ui-store.js';
+import { useIsDesktop } from '../../lib/use-media-query.js';
 import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
 import {
@@ -72,6 +73,12 @@ export function DocsPage() {
     void navigate({ to: '/docs', search: { space: spaceId, page: pageId } });
   };
 
+  const pageOpen = search.space !== undefined && search.page !== undefined;
+
+  /* Same list/detail split as `chat-page.tsx`'s `ChatPage`, driven by the
+     same kind of source of truth — the URL, not a separate piece of UI
+     state — for the same reason: only one thing gets to say what's on
+     screen. See that file's comment for the full reasoning. */
   return (
     <div className="flex h-full min-h-0">
       <SpaceTreePanel
@@ -79,16 +86,30 @@ export function DocsPage() {
         selectedSpace={search.space}
         selectedPage={search.page}
         onSelectPage={selectPage}
+        hideWhenPageOpen={pageOpen}
       />
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+      <div
+        className={cn(
+          'min-h-0 min-w-0 flex-1 overflow-y-auto md:block',
+          pageOpen ? 'block' : 'hidden md:block',
+        )}
+      >
         {search.space === undefined || search.page === undefined ? (
           <Empty
             title="No page open"
             description="Pick a page on the left, or create one to get started."
           />
         ) : (
-          <PagePanel key={search.page} orgId={orgId} spaceId={search.space} pageId={search.page} />
+          <PagePanel
+            key={search.page}
+            orgId={orgId}
+            spaceId={search.space}
+            pageId={search.page}
+            onBack={() => {
+              void navigate({ to: '/docs', search: { space: search.space, page: undefined } });
+            }}
+          />
         )}
       </div>
     </div>
@@ -104,11 +125,14 @@ function SpaceTreePanel({
   selectedSpace,
   selectedPage,
   onSelectPage,
+  hideWhenPageOpen,
 }: {
   readonly orgId: string;
   readonly selectedSpace: SpaceId | undefined;
   readonly selectedPage: PageId | undefined;
   readonly onSelectPage: (spaceId: SpaceId, pageId: PageId | undefined) => void;
+  /** Below `md`, hidden once a page is open — see `DocsPage`'s comment. */
+  readonly hideWhenPageOpen: boolean;
 }) {
   const spaces = useQuery({ ...spacesQuery(orgId), enabled: orgId !== '' });
   const [creatingSpace, setCreatingSpace] = useState(false);
@@ -117,8 +141,11 @@ function SpaceTreePanel({
   /* Minimizable exactly like the main sidebar: a `w-64` tree that collapses
      to a `w-12` rail holding just the toggle. State lives in ui-store (the
      same place `sidebarOpen` does) so the collapse survives navigation
-     within the session. */
-  const spacesOpen = useUi((state) => state.docsSpacesOpen);
+     within the session. Desktop-only, like the main sidebar's own collapse —
+     see `sidebar.tsx`'s `isDesktop` comment for why a rail state and a
+     mobile drawer's open/closed state can't be the same boolean. */
+  const isDesktop = useIsDesktop();
+  const spacesOpen = useUi((state) => state.docsSpacesOpen) || !isDesktop;
   const toggleSpaces = useUi((state) => state.toggleDocsSpaces);
 
   const list = spaces.data ?? [];
@@ -129,8 +156,12 @@ function SpaceTreePanel({
   return (
     <aside
       className={cn(
-        'flex shrink-0 flex-col border-r border-line bg-surface-raised transition-[width]',
-        spacesOpen ? 'w-64' : 'w-12',
+        'shrink-0 flex-col border-r border-line bg-surface-raised transition-[width] md:flex',
+        spacesOpen ? 'md:w-64' : 'md:w-12',
+        /* Same list/detail hide as `chat-page.tsx`'s `ChannelListPanel` —
+           full width when shown below `md`, `hidden` rather than shrunk to
+           nothing when a page is open there. */
+        hideWhenPageOpen ? 'hidden' : 'flex w-full',
       )}
     >
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line px-2">
@@ -147,15 +178,19 @@ function SpaceTreePanel({
               {creatingSpace ? 'Cancel' : '+ Space'}
             </Button>
           )}
-          <button
-            type="button"
-            onClick={toggleSpaces}
-            aria-label={spacesOpen ? 'Collapse spaces panel' : 'Expand spaces panel'}
-            aria-expanded={spacesOpen}
-            className="rounded px-1.5 py-1 text-xs text-ink-faint hover:bg-surface-hover hover:text-ink"
-          >
-            {spacesOpen ? '«' : '»'}
-          </button>
+          {/* Desktop-rail-only, like the main sidebar's own toggle — see
+              `sidebar.tsx`'s equivalent button for why. */}
+          {isDesktop && (
+            <button
+              type="button"
+              onClick={toggleSpaces}
+              aria-label={spacesOpen ? 'Collapse spaces panel' : 'Expand spaces panel'}
+              aria-expanded={spacesOpen}
+              className="rounded px-1.5 py-1 text-xs text-ink-faint hover:bg-surface-hover hover:text-ink"
+            >
+              {spacesOpen ? '«' : '»'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -646,10 +681,13 @@ function PagePanel({
   orgId,
   spaceId,
   pageId,
+  onBack,
 }: {
   readonly orgId: string;
   readonly spaceId: SpaceId;
   readonly pageId: PageId;
+  /** Below `md`, returns to the space tree — see `DocsPage`'s comment. */
+  readonly onBack: () => void;
 }) {
   const navigate = useNavigate();
   const pages = useQuery(pagesQuery(orgId, spaceId));
@@ -724,6 +762,16 @@ function PagePanel({
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-6">
+      {/* The only way back to the space tree below `md` — see `DocsPage`'s
+          comment on the list/detail split this belongs to. */}
+      <button
+        type="button"
+        onClick={onBack}
+        className="-ml-1.5 flex items-center gap-1 rounded p-1.5 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink md:hidden"
+      >
+        <span aria-hidden="true">←</span> Spaces
+      </button>
+
       <div className="flex items-start justify-between gap-3">
         {editingTitle ? (
           <form

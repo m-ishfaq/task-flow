@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
+import { ModalClose, ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BoardId } from '@taskflow/contracts';
 import { FilterTree } from '@taskflow/filter';
@@ -212,72 +212,69 @@ function SaveViewDialog({
   });
 
   return (
-    <Dialog.Root
+    <ModalRoot
       open
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded border border-line bg-surface-raised p-4 shadow-xl">
-          <Dialog.Title className="text-sm font-semibold text-ink">Save this view</Dialog.Title>
-          <Dialog.Description className="mt-1 text-xs text-ink-muted">
-            Saves the current layout, grouping, sort and filter under a name.
-          </Dialog.Description>
+      <ModalContent size="sm" className="p-4">
+        <ModalTitle>Save this view</ModalTitle>
+        <ModalDescription>
+          Saves the current layout, grouping, sort and filter under a name.
+        </ModalDescription>
 
-          <form
-            className="mt-3 space-y-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              save.mutate();
-            }}
-          >
-            <label className="block space-y-1">
-              <span className="text-[11px] text-ink-faint">Name</span>
-              {/* No `autoFocus`: it is a lint error here for a11y reasons, and
+        <form
+          className="mt-3 space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            save.mutate();
+          }}
+        >
+          <label className="block space-y-1">
+            <span className="text-[11px] text-ink-faint">Name</span>
+            {/* No `autoFocus`: it is a lint error here for a11y reasons, and
                   Radix already moves focus into the dialog on open — which
                   announces the dialog first rather than dropping a screen
                   reader user into an unlabelled field. */}
-              <input
-                value={name}
-                maxLength={60}
-                onChange={(event) => {
-                  setName(event.target.value);
-                }}
-                className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
-              />
-            </label>
+            <input
+              value={name}
+              maxLength={60}
+              onChange={(event) => {
+                setName(event.target.value);
+              }}
+              className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+            />
+          </label>
 
-            <label className="flex items-center gap-2 text-xs text-ink">
-              <input
-                type="checkbox"
-                checked={isShared}
-                onChange={(event) => {
-                  setIsShared(event.target.checked);
-                }}
-              />
-              Share with everyone on this board
-            </label>
+          <label className="flex items-center gap-2 text-xs text-ink">
+            <input
+              type="checkbox"
+              checked={isShared}
+              onChange={(event) => {
+                setIsShared(event.target.checked);
+              }}
+            />
+            Share with everyone on this board
+          </label>
 
-            {/* Rendered for everyone. A member without `board:update` gets a
+          {/* Rendered for everyone. A member without `board:update` gets a
                 FORBIDDEN from the server rather than a missing checkbox — the
                 UI never re-derives authorization (§8.2). */}
-            {save.isError && <ErrorText error={save.error} />}
+          {save.isError && <ErrorText error={save.error} />}
 
-            <div className="flex justify-end gap-2">
-              <Dialog.Close asChild>
-                <Button size="sm" variant="ghost" type="button">
-                  Cancel
-                </Button>
-              </Dialog.Close>
-              <Button size="sm" type="submit" disabled={name.trim() === '' || save.isPending}>
-                Save
+          <div className="flex justify-end gap-2">
+            <ModalClose asChild>
+              <Button size="sm" variant="ghost" type="button">
+                Cancel
               </Button>
-            </div>
-          </form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+            </ModalClose>
+            <Button size="sm" type="submit" disabled={name.trim() === '' || save.isPending}>
+              Save
+            </Button>
+          </div>
+        </form>
+      </ModalContent>
+    </ModalRoot>
   );
 }

@@ -1,5 +1,12 @@
 import { useState, type ReactNode } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
+import {
+  ModalClose,
+  ModalContent,
+  ModalDescription,
+  ModalRoot,
+  ModalTitle,
+  ModalTrigger,
+} from '@taskflow/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BoardId, CardId, ListId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
@@ -28,42 +35,39 @@ export function ArchivedCardsDialog({ orgId, boardId }: ArchivedCardsDialogProps
   const [open, setOpen] = useState(false);
 
   return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Trigger asChild>
+    <ModalRoot open={open} onOpenChange={setOpen}>
+      <ModalTrigger asChild>
         <Button size="sm">Archived</Button>
-      </Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 max-h-[85vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded border border-line bg-surface-raised p-4 shadow-xl">
-          <Dialog.Title className="text-sm font-semibold text-ink">Archived</Dialog.Title>
-          <Dialog.Description className="mt-1 text-xs text-ink-muted">
-            Archiving hides something from the board without deleting it — a card keeps its number,
-            comments and history. Restore one to bring it back.
-          </Dialog.Description>
+      </ModalTrigger>
+      <ModalContent size="lg" className="max-h-[85vh] overflow-y-auto p-4">
+        <ModalTitle>Archived</ModalTitle>
+        <ModalDescription>
+          Archiving hides something from the board without deleting it — a card keeps its number,
+          comments and history. Restore one to bring it back.
+        </ModalDescription>
 
-          {/* One Archive per board rather than a second dialog for columns. The
-              restore flows are identical, and somebody hunting for a column
-              they archived by mistake looks wherever archived things live —
-              not for a separate control they have never needed before. */}
-          {open && (
-            <>
-              <Section title="Cards">
-                <ArchivedCardsList orgId={orgId} boardId={boardId} />
-              </Section>
-              <Section title="Lists">
-                <ArchivedListsList orgId={orgId} boardId={boardId} />
-              </Section>
-            </>
-          )}
+        {/* One Archive per board rather than a second dialog for columns. The
+            restore flows are identical, and somebody hunting for a column
+            they archived by mistake looks wherever archived things live —
+            not for a separate control they have never needed before. */}
+        {open && (
+          <>
+            <Section title="Cards">
+              <ArchivedCardsList orgId={orgId} boardId={boardId} />
+            </Section>
+            <Section title="Lists">
+              <ArchivedListsList orgId={orgId} boardId={boardId} />
+            </Section>
+          </>
+        )}
 
-          <div className="mt-4 flex justify-end">
-            <Dialog.Close asChild>
-              <Button>Done</Button>
-            </Dialog.Close>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        <div className="mt-4 flex justify-end">
+          <ModalClose asChild>
+            <Button>Done</Button>
+          </ModalClose>
+        </div>
+      </ModalContent>
+    </ModalRoot>
   );
 }
 

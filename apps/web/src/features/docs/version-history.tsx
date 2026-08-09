@@ -2,7 +2,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PageId } from '@taskflow/contracts';
 import { useToast } from '../../lib/toast-context.js';
 import { formatRelative } from '../../lib/format.js';
-import { Badge, Button, ConfirmButton, Empty, Skeleton } from '../../components/primitives.js';
+import {
+  Avatar,
+  Badge,
+  Button,
+  ConfirmButton,
+  Empty,
+  Skeleton,
+} from '../../components/primitives.js';
 import { useMembers } from '../org/use-members.js';
 import {
   invalidatePageVersions,
@@ -137,6 +144,13 @@ function VersionRow({
     <li className="flex items-center justify-between gap-2 rounded px-1.5 py-1 hover:bg-surface-hover">
       <div className="flex min-w-0 items-center gap-2 text-xs">
         <Badge className={version.kind === 'publish' ? 'text-success' : ''}>{version.kind}</Badge>
+        {/* Same fix as `comments-suggestions.tsx` — a version's author was
+            text-only here where the identical kind of content (who did
+            this) gets a face everywhere else (ai/phase-6.5-ui-polish.md
+            Wave 4). An autosave has no human author to show a face for. */}
+        {version.createdBy !== null && authorLabel !== null && (
+          <Avatar userId={version.createdBy} label={authorLabel} size="xs" />
+        )}
         <span className="truncate text-ink-muted">
           {authorLabel ?? (version.kind === 'autosave' ? 'Autosave' : 'Unknown')}
         </span>
