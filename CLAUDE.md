@@ -307,6 +307,17 @@ never be left pointing at a version that no longer exists. Fixed in the test (cl
 first, delete the version rows after — "children before parents," the same ordering
 `tenancy-seed.ts`'s `clearTenant` already documents for Work), not in the schema.
 
+### Phase 7 — Voice & Messaging: Waves 1–4 complete (API), Wave 5 (UI) added and shipped
+
+**Every wave through Wave 4 shipped `apps/api/src/telephony` only — nothing in `apps/web` referenced
+telephony at all, despite the spec's own §2 listing click-to-call and an SMS inbox as in-scope.**
+That was a real gap against the phase's stated scope, not a deferral: Chat and Docs each shipped
+their UI inside their own phase, and this phase's spec never said Wave 5 would come later. Added and
+shipped in the same session that found the gap — `apps/web/src/features/telephony` (numbers, calls,
+messages, spend) behind a new `/calls` sidebar item, and `recording-section.tsx` for attaching a
+recording to a Work card. See `ai/phase-7-voice.md`'s own Wave 5 note for the two API-surface gaps
+this UI had to design around (no `fromPhoneNumberId` on a thread; no org-wide recording search).
+
 ### Phase 7 — Voice & Messaging: Waves 1–3 complete, Wave 4 split
 
 `packages/telephony` · `packages/security/twilio-signature.ts` · migrations 0032–0034 (`comms.*`) ·

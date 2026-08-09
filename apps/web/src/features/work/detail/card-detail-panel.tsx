@@ -17,6 +17,7 @@ import { ChecklistSection } from './checklist-section.js';
 import { CustomFieldSection } from './custom-field-section.js';
 import { CommentSection } from './comment-section.js';
 import { AttachmentSection } from './attachment-section.js';
+import { RecordingSection } from './recording-section.js';
 import { AssigneeSection } from './assignee-section.js';
 
 /**
@@ -144,6 +145,7 @@ export function CardDetailPanel({
 
                   <ChecklistSection orgId={orgId} boardId={boardId} cardId={cardId} />
                   <AttachmentSection orgId={orgId} cardId={cardId} />
+                  <RecordingSection orgId={orgId} cardId={cardId} />
                 </div>
 
                 <div className="space-y-6">

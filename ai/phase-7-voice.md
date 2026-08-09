@@ -1,6 +1,7 @@
 # Phase 7 — Voice & Messaging
 
-**Status: APPROVED 2026-08-08. Waves 1–3 COMPLETE; Wave 4 partially shipped — see its own note below.**
+**Status: APPROVED 2026-08-08. Waves 1–3 COMPLETE; Wave 4 partially shipped (see its own note
+below); Wave 5 (UI) added and shipped 2026-08-09 — not in the original wave plan.**
 This header was stale for a real stretch of this phase's life: the commit that first landed most of
 Waves 2 and 3 did not update it, so a later reader (correctly) treated "Waves 2–4 not started" as
 untrustworthy and re-verified against the actual files rather than the claim — the same lesson
@@ -106,6 +107,27 @@ not the same protection. **The cost-attribution half of Wave 4 shipped in full**
 a new `spend.report` route, grouping `comms.spend_ledger` by kind with `COUNT`/estimated/billed
 totals, tested against real Postgres including the case that matters most — an unreconciled row
 still counting at its estimate rather than reading as free.
+
+**Wave 5 — the browser UI — did not exist in any commit through Wave 4, despite §2 listing
+click-to-call, an SMS inbox, and recordings-on-cards as in-scope product surfaces.** Every wave
+through Wave 4 shipped `apps/api/src/telephony` only; nothing in `apps/web` referenced telephony at
+all. That is a real gap against this document's own stated scope, not a deferral to a later
+numbered phase — Chat (Phase 5) and Docs (Phase 6) both shipped their UI inside their own phase, and
+this phase's spec never said otherwise. Added as Wave 5 and shipped in the same session that found
+the gap: `apps/web/src/features/telephony` (numbers, calls, SMS threads, spend) behind a new `/calls`
+sidebar item, and `apps/web/src/features/work/detail/recording-section.tsx` for attaching a
+recording to a card. Per CLAUDE.md §8.2, none of it re-derives authorization — every control renders
+for every viewer and a caller without the permission gets a real FORBIDDEN from the server.
+
+Two structural notes for whoever touches this next. First, `message.service.ts`'s `ThreadRecord`
+carries the counterparty's number but not which of the org's OWN numbers owns the thread, so a
+reply with more than one number configured has no way to derive the correct `fromPhoneNumberId`
+automatically — the compose box asks, rather than guessing wrong. Second, there is no
+"browse every recording org-wide" endpoint, only `recordings.list(callId)` and
+`cards.recordings(cardId)` — so attaching a recording to a card is a two-step picker (pick a
+recorded call, then its recording), not a search box. Neither is a bug; both are honest UI
+accommodations for gaps in the read-side API surface, noted here rather than worked around
+silently in the backend.
 
 Parent: [PLAN.md](../PLAN.md) §3.4 (Voice & Messaging), §5 (Provider Interfaces —
 `TelephonyProvider`), §8.5 (Telephony security), §9 (Real-Time Architecture), §10.6 (Domain

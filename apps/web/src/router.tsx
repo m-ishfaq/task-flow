@@ -31,6 +31,7 @@ import { ProjectsPage } from './features/work/projects-page.js';
 import { HomePage } from './features/work/home-page.js';
 import { BoardPage } from './features/work/board-page.js';
 import { ChatPage } from './features/chat/chat-page.js';
+import { TelephonyPage } from './features/telephony/telephony-page.js';
 import { DocsPage } from './features/docs/docs-page.js';
 import { PublicPageView } from './features/docs/public-page.js';
 import { PermissionDebugPage } from './features/admin/permission-debug-page.js';
@@ -272,6 +273,31 @@ const chatRoute = createRoute({
 });
 
 /**
+ * Phone numbers, calls, SMS threads, and spend (Phase 7 Wave 5 — the UI
+ * consuming `apps/api/src/telephony`'s Waves 1-4).
+ *
+ * `tab`/`thread` are search params, not nested routes, on the identical
+ * reasoning `chatRoute`'s `channel` gives — the page stays mounted and a
+ * selected thread is a shareable, back-button-correct link. `tab` is not
+ * branded (there is no `TelephonyTabSchema` in @taskflow/contracts; it names
+ * a client-side view, not a server resource), so it is a plain closed enum
+ * here. `thread` is a bare uuid rather than a branded id for the same reason
+ * `router.ts`'s own inputs are — every telephony route takes
+ * `z.string().uuid()`, not a branded schema (§6.3: no relationship-tuple or
+ * ancestor component to a telephony resource, so nothing here needed one).
+ */
+const telephonyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/calls',
+  validateSearch: z.object({
+    tab: z.enum(['calls', 'numbers', 'messages', 'spend']).optional().catch(undefined),
+    thread: z.string().uuid().optional().catch(undefined),
+  }),
+  beforeLoad: () => requireOrg('/calls'),
+  component: TelephonyPage,
+});
+
+/**
  * Spaces and pages (Phase 6, ai/phase-6-docs.md §5 Wave 1 of the UI).
  *
  * `space`/`page` are search params, not nested routes — the identical
@@ -374,6 +400,7 @@ const routeTree = rootRoute.addChildren([
   peopleRoute,
   personRoute,
   chatRoute,
+  telephonyRoute,
   docsRoute,
   publicDocsPageRoute,
   settingsRoute,

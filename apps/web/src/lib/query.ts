@@ -269,6 +269,27 @@ export const keys = {
   directoryAll: (orgId: string) => ['org', orgId, 'people', 'directory'] as const,
   /** One member's detail with manager and direct reports (Phase 11.5). */
   member: (orgId: string, userId: string) => ['org', orgId, 'people', 'member', userId] as const,
+
+  /** Every phone number the org owns (Phase 7, telephony/api.ts). */
+  phoneNumbers: (orgId: string) => ['org', orgId, 'telephony', 'numbers'] as const,
+  /** The call log. */
+  calls: (orgId: string) => ['org', orgId, 'telephony', 'calls'] as const,
+  /** Recordings for one call. */
+  callRecordings: (orgId: string, callId: string) =>
+    ['org', orgId, 'telephony', 'call', callId, 'recordings'] as const,
+  /** Recordings attached to one Work card (§3.9). */
+  cardRecordings: (orgId: string, cardId: string) =>
+    ['org', orgId, 'card', cardId, 'recordings'] as const,
+  /** Every SMS thread. */
+  messageThreads: (orgId: string) => ['org', orgId, 'telephony', 'threads'] as const,
+  /** Messages in one thread. */
+  threadMessages: (orgId: string, threadId: string) =>
+    ['org', orgId, 'telephony', 'thread', threadId, 'messages'] as const,
+  /** Current spend vs. cap — the member-visible figure. */
+  spendCurrent: (orgId: string) => ['org', orgId, 'telephony', 'spend', 'current'] as const,
+  /** Cost attribution by kind (Wave 4) — the admin-visible report. */
+  spendReport: (orgId: string, sinceDays: number) =>
+    ['org', orgId, 'telephony', 'spend', 'report', sinceDays] as const,
 } as const;
 
 /** The org id every key needs, or a placeholder that matches nothing. */
