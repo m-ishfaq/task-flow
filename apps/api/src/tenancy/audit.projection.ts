@@ -260,6 +260,35 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
 export const NEVER_AUDITED: ReadonlySet<string> = new Set([
   'channel.read_advanced',
   'page.content_updated',
+  /* Every platform-admin event (Phase 12 Wave 1 §3.8, Wave 2 §3.1).
+     Different reason from the two above, same outcome: these never reach
+     THIS consumer at all. They publish through the system `EventBus`
+     (SYSTEM_ORG's own mechanism, apps/api/src/identity/identity.service.ts)
+     rather than `outboxWriter.append`, because the mutations run as
+     `taskflow_platform_admin` — a role holding no grant on `platform.outbox`
+     — and because a global fact has no target org for the outbox's
+     `NOT NULL REFERENCES identity.orgs` to point at.
+
+     "Never audited" names this projection's path, not accountability. Every
+     one of these IS recorded: `platform.operator_audit_log` for all of them,
+     and the two org events additionally write the TARGET ORG's own
+     `audit.audit_log` chain directly from `org-directory.service.ts`, so an
+     Owner sees "a platform operator suspended this org" without operator
+     access. The user events have no such second chain on purpose — a person
+     may belong to several orgs or none, so there is no single tenant chain
+     to pick (see `platform-admin/events.ts` on `userSuspended`).
+
+     Listed explicitly so the registered-event accounting test in
+     `audit.projection.test.ts` has a real answer here rather than reading as
+     an oversight — which is exactly what it WAS until Phase 12 Wave 2: that
+     test never imported `platform-admin/events.js`, so none of these were
+     ever actually checked by it. */
+  'platform.org_suspended',
+  'platform.org_reactivated',
+  'platform.operator_granted',
+  'platform.flag_override_set',
+  'platform.user_suspended',
+  'platform.user_reactivated',
 ]);
 
 interface Resource {

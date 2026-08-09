@@ -13,6 +13,12 @@ import { NEVER_AUDITED, RESOURCE_OF } from './audit.projection.js';
    grows its own `events.ts`. */
 import './events.js';
 import '../identity/events.js';
+/* Added in Phase 12 Wave 2. Its absence was a real coverage hole, not a
+   deliberate omission: none of the platform-admin events had ever been
+   checked by the accounting test below, despite the module having existed
+   since Wave 1 — the test can only account for events that something has
+   imported, so a missing line here reads as "all accounted for". */
+import '../platform-admin/events.js';
 import '../work/events.js';
 import '../chat/events.js';
 import '../docs/events.js';
