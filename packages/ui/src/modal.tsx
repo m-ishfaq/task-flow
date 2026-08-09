@@ -70,10 +70,24 @@ export function ModalContent({
       {/* `bg-overlay`, not the `bg-black/50` all seven call sites hardcoded —
           one token (`ai/phase-6.5-ui-polish.md` Wave 2) instead of six copies
           of the same magic number and a seventh that happened to also be
-          bg-black/50 by coincidence rather than by reference to anything. */}
-      <Dialog.Overlay className="ui-fade fixed inset-0 bg-overlay" />
+          bg-black/50 by coincidence rather than by reference to anything.
+
+          `z-40` on both layers is not decoration: `shell.tsx`'s mobile
+          sidebar backdrop (Wave 6) is `z-30`, an element that did not exist
+          when this component shipped with no explicit z-index at all. A
+          sibling with an explicit z-index always paints above one with the
+          default `auto`, regardless of DOM order — so without this, opening
+          a card behind an open mobile sidebar rendered the modal UNDER that
+          backdrop: present in the DOM, invisible, and non-interactive, which
+          reads as "the modal doesn't open." `z-40` clears every other
+          explicit stacking level in this codebase except Popover's `z-50`
+          (popover.tsx) — deliberately: a popover opened from inside a modal
+          (e.g. the assignee picker in card-detail-panel.tsx) has to paint
+          above the modal that contains it. */}
+      <Dialog.Overlay className="ui-fade fixed inset-0 z-40 bg-overlay" />
       <Dialog.Content
         className={cn(
+          'z-40',
           /* `w-[calc(100vw-2rem)]`, not `w-full` — `w-full` resolves against
              the CENTERING TRANSFORM's containing block, which for a
              `position: fixed` element is the viewport, so a `max-w-sm`

@@ -31,7 +31,14 @@ export function DropdownMenuContent({
       <DropdownMenuPrimitive.Content
         sideOffset={sideOffset}
         className={cn(
-          'ui-fade min-w-40 rounded border border-line bg-surface-raised p-1 shadow-lg',
+          /* Explicit z-index for the same reason modal.tsx's Content and
+             Overlay carry one: shell.tsx's mobile sidebar backdrop (Wave 6)
+             is `z-30`, and a sibling with no explicit z-index paints below
+             any sibling that has one, regardless of DOM order — this menu
+             (shell.tsx's own org switcher and account menu, among others)
+             would otherwise render behind that backdrop on a narrow
+             viewport with the sidebar open. */
+          'ui-fade z-40 min-w-40 rounded border border-line bg-surface-raised p-1 shadow-lg',
           className,
         )}
         {...props}
