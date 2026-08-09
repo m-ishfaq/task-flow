@@ -170,6 +170,11 @@ export const keys = {
   /** Personal, not org-scoped — a passkey signs into the account, not one org. */
   passkeys: () => ['auth', 'passkeys'] as const,
 
+  /** Which OAuth providers this server has credentials for (Phase 12 Wave 2 §3.3). */
+  oauthProviders: () => ['auth', 'oauth', 'providers'] as const,
+  /** The caller's own linked OAuth providers. */
+  oauthConnected: () => ['auth', 'oauth', 'connected'] as const,
+
   /** The caller's own account (`/account`) — answers with no org selected. */
   me: () => ['auth', 'me'] as const,
 

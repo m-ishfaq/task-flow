@@ -67,7 +67,14 @@ export function Shell() {
   const closeMobileNav = useUi((state) => state.closeMobileNav);
   const isDesktop = useIsDesktop();
 
-  const bare = ANONYMOUS_PATHS.has(pathname) || status !== 'authenticated';
+  const bare =
+    ANONYMOUS_PATHS.has(pathname) ||
+    // Carries a `$provider` path param, so it cannot be a literal Set entry
+    // like the others above. Reached via a full-page redirect from the OAuth
+    // provider, which loses whatever session existed before the app left —
+    // the same reasoning `router.tsx`'s own comment on that route gives.
+    pathname.startsWith('/oauth/callback/') ||
+    status !== 'authenticated';
 
   /* The org picker is authenticated but pre-org, so the tree has nothing to
      show and every query behind it would answer NOT_A_MEMBER. It keeps the

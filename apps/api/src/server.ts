@@ -116,6 +116,23 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
        File uploads never pass through the API — they go straight to object
        storage through a presigned URL (§8.4). */
     bodyLimit: 1_000_000,
+    /* Fastify's router (find-my-way) bounds any single dynamic path segment
+       to 100 characters by default — a ReDoS-style guard that has nothing to
+       do with tRPC, and everything to do with how the fastify adapter
+       reaches it: every batched query lands on ONE route, `/trpc/:path`,
+       with every procedure name in the batch joined by commas into that
+       single segment. A page firing eight or nine queries at once (an
+       account page's own tab, a board's card panel) routinely produces a
+       path segment past 150 characters with perfectly ordinary procedure
+       names — no pathological input required — and the default answers
+       every query in the batch with `414 FST_ERR_MAX_PARAM_LENGTH`, not just
+       the one that pushed it over. `web/src/lib/trpc-client.ts`'s own
+       `MAX_BATCH_URL_LENGTH` already promises the client will split a batch
+       before its FULL url (this segment plus `?batch=1&input=...`) passes
+       2000; matching that bound here means the client's promise and the
+       server's limit describe the same guarantee instead of two independently
+       chosen numbers that happen not to collide yet. */
+    routerOptions: { maxParamLength: 2000 },
   });
 
   /* Registered BEFORE the tRPC plugin. Fastify hooks are inherited only by

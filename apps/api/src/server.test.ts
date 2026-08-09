@@ -64,6 +64,43 @@ describe('tRPC surface', () => {
     expect(response.json()).toEqual({ result: { data: { status: 'ok' } } });
   });
 
+  it('serves a batch of many procedures, not just a few', async () => {
+    /* Real regression: the tRPC fastify adapter puts every batched procedure
+       name, comma-joined, into ONE dynamic path segment (`/trpc/:path`).
+       Fastify's router bounds a single segment to 100 characters by
+       default — nothing to do with tRPC, everything to do with how the
+       adapter reaches it — and an account page batching eight or nine
+       perfectly ordinary queries at once routinely produces a segment past
+       150 characters. Found by loading the actual page in a browser, not by
+       any existing test: `app.inject()` elsewhere in this file only ever
+       exercises one procedure per call. `server.ts`'s `routerOptions.
+       maxParamLength` is the fix; this asserts the failure mode it closes,
+       against the real batch shape rather than a synthetic long string. */
+    const names = [
+      'health.live',
+      'health.live',
+      'health.live',
+      'health.live',
+      'health.live',
+      'health.live',
+      'health.live',
+      'health.live',
+      'health.live',
+      'health.live',
+    ];
+    expect(names.join(',').length).toBeGreaterThan(100);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/trpc/${names.join(',')}?batch=1&input=%7B%7D`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body: unknown = response.json();
+    expect(Array.isArray(body)).toBe(true);
+    expect((body as unknown[]).length).toBe(names.length);
+  });
+
   it('returns our error code for an unknown procedure', async () => {
     const response = await app.inject({ method: 'GET', url: '/trpc/nope.nothing' });
     const body: unknown = response.json();
