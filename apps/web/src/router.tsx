@@ -37,6 +37,7 @@ import { PermissionDebugPage } from './features/admin/permission-debug-page.js';
 import { SettingsPage } from './features/admin/settings-page.js';
 import { AuditPage } from './features/admin/audit-page.js';
 import { ProjectSettingsPage } from './features/work/project-settings-page.js';
+import { PlatformAdminPage } from './features/platform-admin/platform-admin-page.js';
 
 /**
  * The route tree (PLAN.md §4.1 — typed routes and typed search params).
@@ -359,6 +360,22 @@ const auditRoute = createRoute({
   component: AuditPage,
 });
 
+/**
+ * The platform-operator console (Phase 12 §3.2).
+ *
+ * `requireSession`, not `requireOrg` — deliberately, the same reasoning as
+ * `accountRoute` above. Org governance spans every tenant, so it cannot
+ * depend on one being selected; a signed-in caller with zero memberships
+ * must still be able to reach it. Whether they may actually USE it is a
+ * server question this route never answers — see the page's own header.
+ */
+const platformAdminRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/platform-admin',
+  beforeLoad: () => requireSession('/platform-admin'),
+  component: PlatformAdminPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -380,6 +397,7 @@ const routeTree = rootRoute.addChildren([
   auditRoute,
   permissionsRoute,
   accountRoute,
+  platformAdminRoute,
 ]);
 
 export function createAppRouter(queryClient: QueryClient) {

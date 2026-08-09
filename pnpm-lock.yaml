@@ -312,6 +312,9 @@ importers:
       '@taskflow/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@taskflow/feature-flags':
+        specifier: workspace:*
+        version: link:../../packages/feature-flags
       '@taskflow/filter':
         specifier: workspace:*
         version: link:../../packages/filter

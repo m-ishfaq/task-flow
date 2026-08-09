@@ -270,6 +270,22 @@ export const keys = {
   directoryAll: (orgId: string) => ['org', orgId, 'people', 'directory'] as const,
   /** One member's detail with manager and direct reports (Phase 11.5). */
   member: (orgId: string, userId: string) => ['org', orgId, 'people', 'member', userId] as const,
+
+  /**
+   * The platform-operator console (Phase 12) — deliberately NOT under
+   * `['org', orgId, ...]` like everything above. None of it is org-scoped,
+   * and `platformAdminSelf` in particular must survive an org switch: it is
+   * the account-menu check every signed-in user's session asks once,
+   * independent of whichever org happens to be selected.
+   */
+  platformAdminSelf: () => ['platform-admin', 'self'] as const,
+  platformAdminOrgs: (cursor: string | null, search: string) =>
+    ['platform-admin', 'orgs', cursor ?? 'first', search] as const,
+  platformAdminUsers: (cursor: string | null, search: string) =>
+    ['platform-admin', 'users', cursor ?? 'first', search] as const,
+  platformAdminFlags: () => ['platform-admin', 'flags'] as const,
+  platformAdminAudit: (cursor: string | null) =>
+    ['platform-admin', 'audit', cursor ?? 'first'] as const,
 } as const;
 
 /** The org id every key needs, or a placeholder that matches nothing. */

@@ -28,6 +28,7 @@
     "@tanstack/react-router": "^1.170.18",
     "@tanstack/react-virtual": "^3.14.9",
     "@taskflow/contracts": "workspace:*",
+    "@taskflow/feature-flags": "workspace:*",
     "@taskflow/filter": "workspace:*",
     "@taskflow/policy": "workspace:*",
     "@tiptap/core": "^3.29.2",

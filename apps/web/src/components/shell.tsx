@@ -3,7 +3,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import type { OrgId } from '@taskflow/contracts';
 import { signOut, useSession } from '../lib/session.js';
-import { resetCache } from '../lib/query.js';
+import { api } from '../lib/trpc.js';
+import { keys, resetCache } from '../lib/query.js';
+import { wire } from '../lib/wire.js';
 import { disconnectSocket } from '../lib/socket.js';
 import { disconnectChatSocket } from '../lib/chat-socket.js';
 import { useUi } from '../lib/ui-store.js';
@@ -318,6 +320,24 @@ function AccountMenu() {
   const email = useSession((state) => state.email);
   const sessionId = useSession((state) => state.sessionId);
 
+  /**
+   * Whether to render the platform-admin link at all (Phase 12 §3.2).
+   *
+   * `AccountMenu` only mounts once `Shell` has already established
+   * `status === 'authenticated'` (the `bare` check above), so this fires for
+   * every signed-in user, on every page — exactly what `self.check`
+   * (`selfRoute`, not `platformRoute`) is for: no step-up, no org needed,
+   * answers `false` for the overwhelming majority of callers. §8.2's own
+   * rule still holds — a `false` here only decides whether to render a
+   * LINK; the pages behind it re-check with the real, step-up-gated
+   * `platformRoute` boundary regardless of what this said.
+   */
+  const isOperator = useQuery({
+    queryKey: keys.platformAdminSelf(),
+    queryFn: async () => wire(await api.platformAdmin.self.check.query(undefined)),
+    staleTime: 5 * 60_000,
+  });
+
   const leave = () => {
     void (async () => {
       await signOut();
@@ -378,6 +398,19 @@ function AccountMenu() {
           >
             Profile settings
           </DropdownMenu.Item>
+          {isOperator.data?.isOperator === true && (
+            <DropdownMenu.Item
+              onSelect={() => {
+                void navigate({ to: '/platform-admin' });
+              }}
+              className={cn(
+                'cursor-pointer rounded px-2 py-1.5 text-sm',
+                'text-ink outline-none data-[highlighted]:bg-surface-hover',
+              )}
+            >
+              Platform admin
+            </DropdownMenu.Item>
+          )}
           <DropdownMenu.Item
             onSelect={leave}
             className={cn(
