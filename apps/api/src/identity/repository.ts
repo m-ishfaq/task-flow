@@ -9,6 +9,7 @@ import {
   withGlobalScope,
   type GlobalDb,
 } from '@taskflow/db';
+import { newId } from '@taskflow/security';
 
 /**
  * Data access for identity (PLAN.md §8.1).
@@ -431,5 +432,104 @@ export async function consumePasswordReset(input: {
       .where(eq(schema.users.id, row.userId));
 
     return row;
+  });
+}
+
+/* -------------------------------------------------------------------------- *
+ * TOTP (Phase 12 Wave 2 §3.2)
+ * -------------------------------------------------------------------------- */
+
+export interface TotpCredentialRow {
+  userId: string;
+  secretEncrypted: Buffer;
+  confirmedAt: Date | null;
+}
+
+export async function getTotpCredential(userId: string): Promise<TotpCredentialRow | undefined> {
+  return withGlobalScope(async (tx) => {
+    const rows = await tx
+      .select({
+        userId: schema.totpCredentials.userId,
+        secretEncrypted: schema.totpCredentials.secretEncrypted,
+        confirmedAt: schema.totpCredentials.confirmedAt,
+      })
+      .from(schema.totpCredentials)
+      .where(eq(schema.totpCredentials.userId, userId));
+    return rows[0];
+  });
+}
+
+/** Overwrites any existing (necessarily unconfirmed — see `confirmTotp`) row for this user. */
+export async function upsertPendingTotp(userId: string, secretEncrypted: Buffer): Promise<void> {
+  await withGlobalScope(async (tx) => {
+    await tx
+      .insert(schema.totpCredentials)
+      .values({ userId, secretEncrypted, confirmedAt: null })
+      .onConflictDoUpdate({
+        target: schema.totpCredentials.userId,
+        set: { secretEncrypted, confirmedAt: null },
+      });
+  });
+}
+
+export async function confirmTotp(userId: string, now: Date): Promise<void> {
+  await withGlobalScope(async (tx) => {
+    await tx
+      .update(schema.totpCredentials)
+      .set({ confirmedAt: now })
+      .where(eq(schema.totpCredentials.userId, userId));
+  });
+}
+
+export async function deleteTotp(userId: string): Promise<void> {
+  await withGlobalScope(async (tx) => {
+    await tx.delete(schema.totpCredentials).where(eq(schema.totpCredentials.userId, userId));
+    await tx.delete(schema.totpRecoveryCodes).where(eq(schema.totpRecoveryCodes.userId, userId));
+  });
+}
+
+export async function insertRecoveryCodes(
+  userId: string,
+  codeHashes: readonly string[],
+): Promise<void> {
+  if (codeHashes.length === 0) return;
+  await withGlobalScope(async (tx) => {
+    await tx
+      .insert(schema.totpRecoveryCodes)
+      .values(codeHashes.map((codeHash) => ({ id: newId<'unused'>(), userId, codeHash })));
+  });
+}
+
+export interface RecoveryCodeRow {
+  id: string;
+  codeHash: string;
+}
+
+/** Every code this user has never redeemed — checked one by one against the plaintext attempt. */
+export async function findUnusedRecoveryCodes(userId: string): Promise<RecoveryCodeRow[]> {
+  return withGlobalScope(async (tx) =>
+    tx
+      .select({ id: schema.totpRecoveryCodes.id, codeHash: schema.totpRecoveryCodes.codeHash })
+      .from(schema.totpRecoveryCodes)
+      .where(
+        and(eq(schema.totpRecoveryCodes.userId, userId), isNull(schema.totpRecoveryCodes.usedAt)),
+      ),
+  );
+}
+
+/**
+ * Marks a recovery code used, conditionally — `usedAt IS NULL` in the WHERE
+ * makes two simultaneous redemptions of the same code race safely: only the
+ * first UPDATE matches a row, the second returns zero and the caller treats
+ * that as "already used", never as "used twice".
+ */
+export async function claimRecoveryCode(id: string, now: Date): Promise<boolean> {
+  return withGlobalScope(async (tx) => {
+    const claimed = await tx
+      .update(schema.totpRecoveryCodes)
+      .set({ usedAt: now })
+      .where(and(eq(schema.totpRecoveryCodes.id, id), isNull(schema.totpRecoveryCodes.usedAt)))
+      .returning({ id: schema.totpRecoveryCodes.id });
+    return claimed.length > 0;
   });
 }

@@ -75,6 +75,16 @@ export function testPrincipal(
   };
 }
 
+/**
+ * Fixed, deterministic — the same substitution `TEST_ENV.MASTER_KEY_BASE64`
+ * already makes for the real KMS-backed key. `secret-key.test.ts` proves the
+ * real `ensureIdentityDataKey` get-or-create dance against real Postgres
+ * separately; nothing in a route-level test needs the wrap/unwrap round trip
+ * itself, only a stable 32-byte key the same TOTP secret can round-trip
+ * through `encryptString`/`decryptString` under.
+ */
+export const TEST_IDENTITY_DATA_KEY = Buffer.alloc(32, 7);
+
 /** The real application router, wired with an in-test event recorder and no mail. */
 export function testAppRouter(options: { deliver?: (m: DeliverableLink) => Promise<void> } = {}) {
   const events = new RecordingEventBus();
@@ -88,6 +98,7 @@ export function testAppRouter(options: { deliver?: (m: DeliverableLink) => Promi
   return {
     router: createAppRouter({
       identity: deps,
+      identityDataKey: TEST_IDENTITY_DATA_KEY,
       passkeys,
       work: buildWorkDeps(TEST_ENV),
       platform: { vapidPublicKey: null },

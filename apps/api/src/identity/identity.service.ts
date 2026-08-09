@@ -8,6 +8,7 @@ import {
   issueToken,
   newId,
   signAccessToken,
+  signTotpChallenge,
   verifyPassword,
   type BreachResult,
 } from '@taskflow/security';
@@ -78,6 +79,22 @@ export interface TokenPair {
   readonly expiresInSeconds: number;
   readonly sessionId: string;
 }
+
+/**
+ * What `login()` returns (Phase 12 Wave 2 §3.2).
+ *
+ * Two shapes, not one, because a confirmed TOTP credential means the
+ * password alone is not enough to finish signing in. `'totp_required'`
+ * carries a signed challenge — proof the password step already
+ * succeeded — redeemable exactly once at `auth.totp.verifyLogin`, which is
+ * the only thing that can turn it into a real session. This is also how
+ * step-up gets TOTP for free: `StepUpDialog` already re-calls `auth.login`
+ * to prove a fresh credential, so an account with TOTP enabled sees the
+ * identical challenge there too.
+ */
+export type LoginResult =
+  | { readonly kind: 'session'; readonly pair: TokenPair }
+  | { readonly kind: 'totp_required'; readonly challengeToken: string };
 
 const clock = (deps: IdentityDeps): Date => (deps.now ?? (() => new Date()))();
 
@@ -172,7 +189,7 @@ export async function login(
   deps: IdentityDeps,
   input: { email: string; password: string },
   meta: RequestMeta,
-): Promise<TokenPair> {
+): Promise<LoginResult> {
   const now = clock(deps);
   const user = await repo.findUserByEmail(input.email);
 
@@ -270,6 +287,25 @@ export async function login(
     throw errors.emailNotVerified();
   }
 
+  /* Phase 12 Wave 2 §3.2. The password step just succeeded — everything
+     after this point in the function is what "finish signing in" means for
+     an account with no TOTP enrolled. For one that has a CONFIRMED
+     credential, the password alone proves only the first factor, so this
+     returns a signed challenge instead of a session; `auth.totp.verifyLogin`
+     is the only route that can turn it into one. Login failures are not
+     recorded for reaching this branch — the password was correct, so
+     `publishFailure` (which exists to record wrong GUESSES) does not apply,
+     and `clearLoginFailures`/`userLoggedIn` are deferred to the moment a
+     session is actually issued, in `totp.service.ts`'s `verifyLogin`. */
+  const totp = await repo.getTotpCredential(user.id);
+  if (totp?.confirmedAt) {
+    const challengeToken = await signTotpChallenge(
+      { userId: user.id },
+      { secret: deps.config.jwtSecret },
+    );
+    return { kind: 'totp_required', challengeToken };
+  }
+
   const pair = await issueSession(deps, user.id, now, now, meta);
 
   await deps.events.publish([
@@ -287,7 +323,7 @@ export async function login(
   ]);
 
   await repo.clearLoginFailures(user.id, now);
-  return pair;
+  return { kind: 'session', pair };
 }
 
 /* -------------------------------------------------------------------------- *

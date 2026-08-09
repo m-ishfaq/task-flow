@@ -5,6 +5,8 @@ import { api } from '../../lib/trpc.js';
 import { useSession } from '../../lib/session.js';
 import { Button, Field, Input } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
+import { TotpChallengeForm } from './totp-challenge.js';
+import type { SessionBody } from '../../lib/session.js';
 
 /**
  * Re-authenticating for a sensitive change (PLAN.md §8.1).
@@ -38,16 +40,44 @@ export function StepUpDialog({ open, onClose, onConfirmed }: StepUpDialogProps) 
 
   const [email, setEmail] = useState(known ?? '');
   const [password, setPassword] = useState('');
+  /* Set when `auth.login` answers `totp_required` — the account has a
+     confirmed second factor, so the dialog swaps to `TotpChallengeForm`
+     until that challenge is redeemed, same as the login page. */
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
+
+  const finish = (session: SessionBody) => {
+    adopt(session, email);
+    setPassword('');
+    setChallengeToken(null);
+    onClose();
+    onConfirmed();
+  };
 
   const reauthenticate = useMutation({
     mutationFn: (input: { email: string; password: string }) => api.auth.login.mutate(input),
-    onSuccess: (session, input) => {
-      adopt(session, input.email);
-      setPassword('');
-      onClose();
-      onConfirmed();
+    onSuccess: (result) => {
+      if (result.kind === 'totp_required') {
+        setChallengeToken(result.challengeToken);
+        return;
+      }
+      finish(result);
     },
   });
+
+  if (challengeToken !== null) {
+    return (
+      <ModalRoot
+        open={open}
+        onOpenChange={(next) => {
+          if (!next) onClose();
+        }}
+      >
+        <ModalContent size="sm" className="p-4">
+          <TotpChallengeForm challengeToken={challengeToken} onSuccess={finish} />
+        </ModalContent>
+      </ModalRoot>
+    );
+  }
 
   return (
     <ModalRoot

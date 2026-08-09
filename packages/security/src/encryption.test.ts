@@ -8,6 +8,7 @@ import {
   encrypt,
   encryptString,
   fieldAad,
+  identityFieldAad,
 } from './encryption.js';
 import { secureBytes } from './random.js';
 
@@ -177,6 +178,45 @@ describe('AAD binding', () => {
       fieldAad({ ...base, rowId: 'r2' }),
     ];
     expect(new Set(variants).size).toBe(5);
+  });
+});
+
+describe('identityFieldAad', () => {
+  it('round-trips, same as fieldAad', () => {
+    const k = key();
+    const aad = identityFieldAad({
+      table: 'totp_credentials',
+      column: 'secret_encrypted',
+      rowId: 'user-1',
+    });
+    expect(decryptString(k, encryptString(k, 'JBSWY3DPEHPK3PXP', aad), aad)).toBe(
+      'JBSWY3DPEHPK3PXP',
+    );
+  });
+
+  it('stops a ciphertext being moved between rows', () => {
+    const k = key();
+    const victim = identityFieldAad({
+      table: 'totp_credentials',
+      column: 'secret_encrypted',
+      rowId: 'user-victim',
+    });
+    const attacker = identityFieldAad({
+      table: 'totp_credentials',
+      column: 'secret_encrypted',
+      rowId: 'user-attacker',
+    });
+
+    const stolen = encryptString(k, 'JBSWY3DPEHPK3PXP', victim);
+    expect(() => decryptString(k, stolen, attacker)).toThrow(DecryptionError);
+  });
+
+  it('produces a distinct AAD from fieldAad for the same table/column/row', () => {
+    // The two are deliberately parallel, not shared — see the doc comment on
+    // `identityFieldAad`. A caller that accidentally mixed the two functions
+    // for the same logical field would fail closed here, not silently agree.
+    const coords = { table: 't', column: 'c', rowId: 'r' };
+    expect(identityFieldAad(coords)).not.toBe(fieldAad({ orgId: 'org-1', ...coords }));
   });
 });
 

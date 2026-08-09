@@ -1,7 +1,8 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { isDatabaseHealthy } from '@taskflow/db';
-import { newId } from '@taskflow/security';
+import { masterKeysFromBase64, newId, SoftwareKeyProvider } from '@taskflow/security';
+import { ensureIdentityDataKey } from './identity/secret-key.js';
 import { createAppRouter, type AppRouter } from './router.js';
 import { buildWorkDeps } from './work/deps.js';
 import { buildTelephonyDeps } from './telephony/deps.js';
@@ -77,8 +78,17 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
     ...(options.events === undefined ? {} : { events: options.events }),
     deliver: mail.deliver,
   });
+  const identityDataKey = await ensureIdentityDataKey(
+    new SoftwareKeyProvider({
+      masterKeys: masterKeysFromBase64({
+        [options.env.MASTER_KEY_ID]: options.env.MASTER_KEY_BASE64,
+      }),
+      currentMasterKeyId: options.env.MASTER_KEY_ID,
+    }),
+  );
   const appRouter = createAppRouter({
     identity: identityDeps,
+    identityDataKey,
     passkeys: buildPasskeyDeps(identityDeps, options.env),
     work: buildWorkDeps(options.env),
     /* VAPID keys are optional (an instance without them is a valid deployment
