@@ -61,6 +61,15 @@ AI may write anything, but changes to these need the author to read every line b
 `packages/policy` · `packages/db` · `packages/security` · `apps/api/src/identity` ·
 `apps/collab/src/auth.ts` and `authorize.ts` (Phase 6 — the collab gateway's own handshake and
 tree-permission resolution, the same severity as `apps/realtime/src/auth.ts`/`rooms.ts`) ·
+`apps/api/src/platform-admin` (Phase 12 — the platform-operator trust tier: `self.service.ts`'s
+`isPlatformOperator` check gates every `platformRoute`, and `orgs.service.ts`'s suspend/reactivate
+reaches across every tenant by design, the same severity as the identity module because a bug here
+is a cross-tenant privilege escalation rather than a bug in one org) · `apps/api/src/trpc/builder.ts`
+(the route builders themselves, `platformRoute` included) · any file with a `withGlobalScope`
+carve-out in `packages/config/eslint/security.js`'s `exempt-global-scope-consumers` block — today
+`apps/api/src/identity`, `apps/api/src/people`, and `apps/api/src/platform-admin` — since each one
+is a place a query was deliberately allowed to see across every tenant, and an accidental fourth
+consumer of that carve-out is exactly the mistake this guardrail exists to make visible in a diff ·
 any webhook signature verification · any file upload/download path · any code touching
 telephony spend.
 
