@@ -380,6 +380,12 @@ export interface PeopleMix {
   readonly jobTitleRate: number;
   /** Of those, the share carrying a department. */
   readonly departmentRate: number;
+  /**
+   * Of those, the share carrying a work phone (migration 0039) — the number
+   * click-to-call and the call-history/recordings sidebar (Phase 13) show
+   * next to a colleague's name instead of a bare digit string.
+   */
+  readonly workPhoneRate: number;
   /** Share of memberships (owner excluded — nobody above them) with a manager. */
   readonly managerRate: number;
 }
@@ -533,6 +539,7 @@ const DEMO_PEOPLE_MIX: PeopleMix = {
   membershipProfileRate: 0.9,
   jobTitleRate: 0.95,
   departmentRate: 0.8,
+  workPhoneRate: 0.6,
   managerRate: 0.75,
 };
 
@@ -810,6 +817,7 @@ const MINIMAL: Profile = {
     membershipProfileRate: 1,
     jobTitleRate: 1,
     departmentRate: 0.5,
+    workPhoneRate: 0.5,
     managerRate: 0.5,
   },
   orgs: [
@@ -884,6 +892,7 @@ const LARGE: Profile = {
     membershipProfileRate: 1,
     jobTitleRate: 0.9,
     departmentRate: 0.5,
+    workPhoneRate: 0.6,
     managerRate: 0.6,
   },
   /**

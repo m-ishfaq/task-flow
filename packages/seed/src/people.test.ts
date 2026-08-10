@@ -395,6 +395,28 @@ describe('people.membership_profiles — the org-scoped half', () => {
     expect(membershipProfiles.some((row) => row['manager_user_id'] !== null)).toBe(true);
     expect(membershipProfiles.some((row) => row['manager_user_id'] === null)).toBe(true);
   });
+
+  it('produces a mix of present and absent work phones, all E.164-valid, under the demo rates', async () => {
+    /* The CHECK constraint itself (migration 0039), not a restatement of it —
+       a passing test here and a failing INSERT against real Postgres would
+       mean this regex drifted from the one the database actually enforces. */
+    const E164 = /^\+[1-9][0-9]{1,14}$/;
+    const { membershipProfiles } = await seedPeople({ membershipProfileRate: 1 });
+    expect(membershipProfiles.some((row) => row['work_phone'] !== null)).toBe(true);
+    expect(membershipProfiles.some((row) => row['work_phone'] === null)).toBe(true);
+    for (const row of membershipProfiles) {
+      const phone = row['work_phone'];
+      if (phone !== null) expect(phone).toMatch(E164);
+    }
+  });
+
+  it('writes no work phone when workPhoneRate is 0', async () => {
+    const { membershipProfiles } = await seedPeople({
+      membershipProfileRate: 1,
+      workPhoneRate: 0,
+    });
+    expect(membershipProfiles.every((row) => row['work_phone'] === null)).toBe(true);
+  });
 });
 
 /* -------------------------------------------------------------------------- *
@@ -434,6 +456,7 @@ describe('people.profiles — events', () => {
       membershipProfileRate: 1,
       jobTitleRate: 1,
       departmentRate: 0, // every row has a title, none a department
+      workPhoneRate: 0, // ...and none a work phone
     });
     const updated = harness.events.filter((event) => event.name === 'membership_profile.updated');
     expect(updated.length).toBe(membershipProfiles.length);
@@ -461,7 +484,7 @@ describe('people.profiles — events', () => {
       const row = membershipProfiles.find((r) => r['user_id'] === payload.userId);
       expect(row?.['job_title']).toBe(payload.after.jobTitle);
       expect(payload.after.department).toBeNull();
-      expect(payload.after.workPhone).toBeNull(); // the seed writes no work phone
+      expect(payload.after.workPhone).toBeNull(); // workPhoneRate 0
       expect(event.actorId).toBe(payload.userId); // self-service (§3.6)
     }
   });

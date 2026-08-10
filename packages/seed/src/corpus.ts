@@ -307,6 +307,26 @@ export function department(rng: Rng): string {
   return rng.pick(DEPARTMENTS);
 }
 
+/* Real, recognizable area codes — not a claim any of these people live
+   there, just enough variety that a directory of work numbers doesn't read
+   as machine-generated. Paired with the NANP-reserved 555-01xx exchange
+   (RFC-equivalent for phone numbers: 555-0100 through 555-0199 are
+   permanently allocated to fiction and can never collide with a real
+   subscriber), the same convention `comms.telephony.ts`'s own COUNTERPARTIES
+   already uses for its fake counterparty numbers. */
+const AREA_CODES = ['415', '212', '312', '512', '206', '617', '404', '206'] as const;
+
+/**
+ * A fake but E.164-valid work phone number — `people.membership_profiles
+ * .work_phone`'s own CHECK constraint (migration 0039) is `^\+[1-9][0-9]
+ * {1,14}$`, which this satisfies by construction.
+ */
+export function workPhone(rng: Rng): string {
+  const areaCode = rng.pick(AREA_CODES);
+  const line = String(rng.int(0, 99)).padStart(2, '0');
+  return `+1${areaCode}55501${line}`;
+}
+
 const OOO_MESSAGES = [
   'On vacation — replies will be slow until I am back.',
   'Out of office on personal leave.',
