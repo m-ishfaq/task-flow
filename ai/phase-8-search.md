@@ -1,9 +1,11 @@
 # Phase 8 — Search & TQL
 
-Status: **APPROVED 2026-08-10 — Wave 1 (TQL parser) SHIPPED 2026-08-10; Waves 2–3 approved in
-scope, each re-reviewed when its turn comes.** Written 2026-08-10 against `pre-launch-hardening`
-HEAD, per `ai/pre-launch-hardening.md` Step 4 (each remaining priority is its own multi-week
-phase and wants its own spec written and approved before implementation).
+Status: **APPROVED 2026-08-10 — Wave 1 (TQL parser) SHIPPED 2026-08-10; Wave 2 (search
+spine) SHIPPED 2026-08-10; Wave 3 (UI) next.** Waves 2–3 were approved in scope at the
+same review, each re-reviewed when its turn comes. Written 2026-08-10 against
+`pre-launch-hardening` HEAD, per `ai/pre-launch-hardening.md` Step 4 (each remaining
+priority is its own multi-week phase and wants its own spec written and approved before
+implementation).
 
 Decisions taken at approval (2026-08-10): Wave 1 first then review; docs bodies titles-only in
 Wave 2 with body content a named follow-up; `fast-check` added as a devDependency for the
@@ -24,8 +26,71 @@ format/guardrail-selftest green, code review passed with four documentation-leve
 (addressed: pinned the `@me`-literal conflation and card-resource TQL strictness with tests;
 documented the `contains me` quoting rule and the free-text-before-NOT corner in §1.6/§1.7).
 
-Wave 2 (the search spine) is next: migration 0045, the indexer relay, the route with per-hit
-`can()`, per §2.
+### What Wave 2 shipped — the search spine, end to end
+
+Everything in §2, committed as `feat(search): Phase 8 Wave 2 …` (2026-08-10):
+
+- **Migration 0045** — `search.documents` (org-scoped projection, `(org_id,
+  entity_type, entity_id)` unique key for idempotent upserts, `metadata` jsonb for
+  permalink + authz context) in a schema with **deliberately no `ALTER DEFAULT
+  PRIVILEGES`** — the 0041 lesson, every grant explicit; RLS generated per the
+  template; GIN tsvector + trgm indexes over `coalesce(title,'') || ' ' ||
+  coalesce(body,'')` (the expression the `text` field compiles to, so a
+  title-only page is findable); the `taskflow_search` claim role on the 0016
+  recipe — SELECT/UPDATE on the outbox (WITH CHECK (false) on the mark policy,
+  the FOR UPDATE lesson of 0016), dispatch bookkeeping pinned to
+  `consumer = 'search'`, and **nothing** on `search.documents`, because indexing
+  runs per event under `withOrgScope` as `taskflow_app`. The spec's §2.3
+  assumption of a consumer CHECK to widen was read against the real migration
+  before writing: `outbox_dispatch`'s only CHECK is
+  `length(btrim(consumer)) > 0`, so no widening was needed.
+- **The indexer relay** (`apps/api/src/search/indexer.relay.ts`) — the
+  backlinks-relay shape: claim cross-tenant on its own `DATABASE_SEARCH_URL`
+  pool (optional like `DATABASE_BACKLINKS_URL`; an instance without it serves
+  requests), work per org under `withOrgScope` as the app role. Consumes the
+  §2.2 event table (cards, card comments, chat messages, channels, docs pages
+  incl. `page.content_updated` re-reading title only per §2.4, docs comments),
+  upserting on the unique key. The relay suite (`indexer.relay.test.ts`)
+  covers the full fold, redelivery idempotency, archive, delete, channel-archived
+  hiding its messages, missing-parent, title-only pages, and ordering.
+- **`SearchProvider` + `PostgresSearchProvider`** — the interface declared over
+  the TQL-compiled AST (§2.6) so the future Meilisearch implementation
+  translates the same tree; the Postgres rendering compiles against
+  `search.documents`, ranks free text by `ts_rank_cd` (first term, honest
+  rather than a made-up combined score), orders by explicit `ORDER BY` when
+  present else rank/`updated_at`, and builds a matched-term excerpt (server
+  returns text only — highlight markup is the client's job).
+- **The `search.query` route** (§2.7) — TQL TEXT is the input and the SERVER
+  is the only parser (`parse` + `validate('search', …)` at the boundary, the
+  positioned errors flowing to the UI); `search:query` is a membership floor
+  (admin + member, never guest — the matrix test updated first, per the
+  template's §2 order); the real gate is per-hit `can()` against the parent
+  row loaded through each resource's own loader (`loadCard`/`loadChannel`/
+  `loadPage`), with a stale hit (parent gone, or RLS-erased) dropped via
+  NOT_FOUND rather than 500ing the query. Bounded 50/100.
+- **Backfill** — `packages/seed/src/search-backfill.cli.ts` (runnable
+  `pnpm --filter @taskflow/seed search:backfill`), the §2.5 shape: scans the
+  four source tables per org under `withOrgScope` and upserts documents;
+  idempotent by the unique key.
+- **Wiring** — `taskflow_search` role in 02/03-roles.sql + prod password
+  bootstrap, `DATABASE_SEARCH_URL` env (validated schema, `.env.example`/
+  `.env.prod.example`), the relay started/stopped in `main.ts` alongside the
+  others.
+
+One wave-scope note: the same commit carried a few small web/telephony fixes
+(the call-composer contact picker, a phone-contacts cache invalidation, a
+sessions empty state) that surfaced while exercising the workspace — they
+belong to the Phase 7 Wave 5 follow-up thread, not to this phase, and are
+recorded as such in the commit message.
+
+Validated: `pnpm verify` 54/54 tasks green (including the new relay/route suites
+and the search field-set parity tests), guardrail-selftest green. The standing
+"aborted run seeds the next failure" lesson bit once during validation: a stale
+`work-move` org left by an aborted run hid behind FORCE RLS (a role-visible count
+returned zero rows), and was cleared from `taskflow_test` before re-running.
+
+Wave 3 (the UI) is next: the `/search` page with live per-token errors and type
+facets, saved searches, and command-palette integration, per §3.
 
 Read this header before trusting a status marker anywhere else in this file — the standing
 lesson every `ai/phase-*.md` in this repo states for itself.
