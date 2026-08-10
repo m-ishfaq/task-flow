@@ -350,6 +350,7 @@ function ActiveCallBar() {
         <RecordingConsentBar
           sessionId={sessionId}
           orgId={orgId}
+          channelId={channelId}
           selfId={selfId}
           awaiting={recording.data?.awaiting ?? []}
           consented={recording.data?.consented ?? []}
@@ -398,6 +399,7 @@ function ActiveCallBar() {
           <RecordButton
             sessionId={sessionId}
             orgId={orgId}
+            channelId={channelId}
             state={recordingState}
             capturing={capturing}
           />
@@ -474,11 +476,13 @@ function IconButton({
 function RecordButton({
   sessionId,
   orgId,
+  channelId,
   state,
   capturing,
 }: {
   readonly sessionId: string;
   readonly orgId: string;
+  readonly channelId: string | null;
   readonly state: string;
   readonly capturing: boolean;
 }) {
@@ -488,7 +492,7 @@ function RecordButton({
   const request = useMutation({
     mutationFn: () => api.rtc.recording.request.mutate({ sessionId }),
     onSuccess: async () => {
-      await invalidateCalls(queryClient, orgId, undefined, sessionId);
+      await invalidateCalls(queryClient, orgId, channelId ?? undefined, sessionId);
     },
     onError: (error) => {
       toast.failure('Recording could not be requested', error);
@@ -499,7 +503,12 @@ function RecordButton({
     mutationFn: () => endCapture(),
     onSuccess: async () => {
       toast.show('Recording saved');
-      await invalidateCalls(queryClient, orgId, undefined, sessionId);
+      /* The channel's own recording list is what closes the "started a
+         recording, cannot see it anywhere" gap — without `channelId` here,
+         `invalidateCalls` skips `rtcKeys.recordings` entirely (see its own
+         header) and the Calls tab keeps showing whatever it last loaded
+         until something unrelated happens to refetch it. */
+      await invalidateCalls(queryClient, orgId, channelId ?? undefined, sessionId);
     },
     onError: (error) => {
       /* The server has already been told to stop by `endCapture`, so the call
@@ -507,7 +516,7 @@ function RecordButton({
          because "recording failed" would suggest the audio is still being
          captured. */
       toast.failure('The recording was stopped but could not be saved', error);
-      void invalidateCalls(queryClient, orgId, undefined, sessionId);
+      void invalidateCalls(queryClient, orgId, channelId ?? undefined, sessionId);
     },
   });
 
@@ -565,12 +574,14 @@ function RecordButton({
 function RecordingConsentBar({
   sessionId,
   orgId,
+  channelId,
   selfId,
   awaiting,
   consented,
 }: {
   readonly sessionId: string;
   readonly orgId: string;
+  readonly channelId: string | null;
   readonly selfId: string | null;
   readonly awaiting: readonly string[];
   readonly consented: readonly string[];
@@ -597,7 +608,7 @@ function RecordingConsentBar({
     },
     onSettled: async () => {
       setBusy(false);
-      await invalidateCalls(queryClient, orgId, undefined, sessionId);
+      await invalidateCalls(queryClient, orgId, channelId ?? undefined, sessionId);
     },
     onError: (error) => {
       toast.failure('Your answer was not recorded', error);
