@@ -1,11 +1,15 @@
 # Pre-launch hardening
 
-**Status: Priority 1 (deployment) COMPLETE and verified against a real stack — 2026-08-10.**
-All four images built, `compose.prod.yaml` up with all seven services healthy, all 42
-migrations applied, and a real browser click-through passed (signup → verify → login → org →
-Work shell with Chat/Docs/Calls/People rendering). The smoke test found and fixed four real
-bugs that no static check could see — see the Priority 1 status header below. Priorities 2–4
-not started.
+**Status: Priorities 1 and 2 COMPLETE — 2026-08-10.** Priority 1 (deployment) is verified
+against a real stack: all four images built, `compose.prod.yaml` up with all seven services
+healthy, all 42 migrations applied, and a real browser click-through passed (signup → verify →
+login → org → Work shell with Chat/Docs/Calls/People rendering) — see the Priority 1 status
+header for the four real bugs the smoke test found and fixed. Priority 2 (adversarial security
+review of every §2.2 human-review surface) is also done: one confirmed finding — the SSRF
+blocklist in `packages/security/src/outbound-url.ts` missed 63/64 of the IPv6 link-local range
+(`fe80::/10` is first hextet `fe80`–`febf`, the check only matched `fe80`) — fixed with
+boundary tests; full write-up in `ai/security-review-priority-2.md`. Priorities 3–4 not
+started.
 
 Not a numbered roadmap phase — this is cross-cutting work found by auditing `main` directly
 (grep, file counts, CI config — not just PLAN.md) for what genuinely blocks shipping, independent
@@ -347,8 +351,30 @@ to the same tree the filter UI already produces.
 
 ## Priority 2 — Adversarial security review of the human-review surfaces
 
-Not a substitute for PLAN.md §13's third-party pentest — explicitly scoped as the review that can
-happen without hiring anyone, first. Scope is CLAUDE.md's own named list, verbatim:
+**COMPLETE — 2026-08-10.** Full read of every surface on CLAUDE.md's own §2.2 list, against
+real code, looking for each file's failure mode rather than style. The complete report is
+`ai/security-review-priority-2.md`; this section is the short version.
+
+**One confirmed finding, fixed with tests:** `packages/security/src/outbound-url.ts`'s
+`isBlockedIpv6` checked `plain.startsWith('fe80')`, but link-local is the whole `fe80::/10`
+prefix — first hextet `fe80`–`febf`, so 63/64 of the range (`fe9f::1`, `febf::1`, ...) passed
+the check and would have been fetched by the link-unfurl path despite being link-local.
+Fixed with `/^fe[89ab]/i` (the exact `/10` range), plus boundary tests asserting the range is
+blocked and the adjacent routable `fec0`–`feff` block (the rest of `fe80::/9`) is not — so the
+fix cannot drift into over-blocking, which is its own bug.
+
+**Everything else verified sound**, including the places a plausible bug was specifically
+looked for: OAuth auto-link is safe only because BOTH providers prove the email
+(GitHub requires `primary && verified`; Google requires the `email_verified: true` claim —
+checked, not assumed); `linkUserId` travels only inside the signed state token minted by the
+`selfRoute`/`stepUp` `oauth.startLink`, so it cannot be forged; the TURN gate's test asserts the
+secret was never used; the realtime relay's `to` is a roster selector, never a routing key;
+refresh-token reuse revokes the whole session; `fetchUnfurl` refuses redirects, checks every
+resolved record, sends no cookies, and bounds everything. See the report for the two accepted
+residual risks (DNS-rebinding window, no recording override).
+
+Not a substitute for PLAN.md §13's third-party pentest — it is the review that can happen
+without hiring anyone, done first. Scope was CLAUDE.md's own named list, verbatim:
 
 `packages/policy` · `packages/db` · `packages/security` · `apps/api/src/identity` ·
 `apps/api/src/telephony` (the spend gate, subaccount credentials, `webhook.ts`'s signature
@@ -357,9 +383,11 @@ and `gateway.ts`'s `rtc:signal` handler · `apps/collab/src/auth.ts` and `author
 `apps/api/src/platform-admin` · any webhook signature verification · any upload/download path ·
 any code touching telephony spend.
 
-Read every line adversarially, report findings ranked by severity (the `ReportFindings` shape:
-CONFIRMED vs PLAUSIBLE, file/line, concrete failure scenario), fix what's concretely fixable in
-the same pass, flag what needs a human call rather than guessing.
+**Do not re-run this whole pass from scratch.** What to do instead when touching any of those
+files: keep the report's "reviewed and verified correct" notes in mind (each names the load-
+bearing property that a naive change would break), and remember the standing rule this file has
+already stated twice — a green `pnpm verify` is not the same claim as "this works when you
+click it." The third-party pentest before launch is still owed.
 
 ## Priority 3 — Compliance/identity gaps (Phase 12 Wave 2's unshipped remainder)
 
