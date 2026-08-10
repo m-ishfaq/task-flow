@@ -296,7 +296,7 @@ export async function stopRecording(
 export async function presignRecordingUpload(
   actor: RtcActor,
   deps: RtcDeps,
-  input: { readonly recordingId: string },
+  input: { readonly recordingId: string; readonly bytes: number },
 ): Promise<{
   readonly url: string;
   readonly headers: Readonly<Record<string, string>>;
@@ -342,10 +342,39 @@ export async function presignRecordingUpload(
     throw errors.conflict('This recording has already been uploaded.');
   }
 
+  /* Checked here as well as at the route boundary, because this is the value
+     pinned into the SIGNATURE below — an oversized value would then be stored
+     under a signature saying it was fine. Same reasoning `chat.attachments`'
+     own presign gives for its identical check. */
+  if (input.bytes > deps.maxRecordingBytes) {
+    throw errors.validation({
+      bytes: `Recordings must be ${String(deps.maxRecordingBytes)} bytes or smaller.`,
+    });
+  }
+
+  /* `input.bytes`, not `deps.maxRecordingBytes` — this is what a presigned PUT
+   * actually binds into its signature (`packages/storage/src/s3.ts`'s own
+   * `presignUpload`: `ContentLength` is a SIGNED header). A recording's real
+   * size is not known until AFTER capture stops, unlike an attachment's,
+   * which the browser already knows before it asks to upload — so this route
+   * exists specifically to carry that number from the client, the one place
+   * that has it, to the signature that has to match it exactly.
+   *
+   * Signing the deployment CEILING instead — what this did before real
+   * recordings existed to upload — reads as the safer number and is not: the
+   * browser's own `fetch()` always sends the body's ACTUAL byte count as
+   * `Content-Length` (a forbidden header name a caller cannot override), so a
+   * signature pinned to the ceiling can only ever match a body that happens
+   * to be exactly that many bytes. Every real recording is smaller than the
+   * ceiling, so every real upload failed the signature check with a 403 —
+   * caught only once `hangUp` stopped discarding recordings and a real
+   * upload finally reached real storage. See ai/phase-13-webrtc.md's own
+   * addendum on why nothing exercised this path until then.
+   */
   const presigned = await deps.storage.presignUpload({
     key: recording.storageKey,
     contentType: recording.contentType,
-    maxBytes: deps.maxRecordingBytes,
+    maxBytes: input.bytes,
   });
 
   /* The `key` is deliberately NOT returned. The client PUTs to the URL it was
@@ -354,7 +383,7 @@ export async function presignRecordingUpload(
   return {
     url: presigned.url,
     headers: presigned.headers,
-    maxBytes: deps.maxRecordingBytes,
+    maxBytes: input.bytes,
   };
 }
 

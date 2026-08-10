@@ -283,12 +283,19 @@ export function createRtcRouter(deps: RtcDeps) {
           await recordings.stopRecording(actorOf(ctx), { sessionId: input.sessionId });
         }),
 
-      /** A presigned PUT for the captured audio. See the service on why. */
+      /**
+       * A presigned PUT for the captured audio. See the service on why
+       * `bytes` — the recording's real, now-known size — has to travel with
+       * this call rather than being read off the deployment's ceiling.
+       */
       presignUpload: route({ permission: 'channel:read' })
-        .input(z.object({ recordingId: z.string().uuid() }).strict())
+        .input(
+          z.object({ recordingId: z.string().uuid(), bytes: z.number().int().positive() }).strict(),
+        )
         .mutation(async ({ ctx, input }) =>
           recordings.presignRecordingUpload(actorOf(ctx), deps, {
             recordingId: input.recordingId,
+            bytes: input.bytes,
           }),
         ),
 

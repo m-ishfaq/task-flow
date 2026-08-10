@@ -145,17 +145,19 @@ export function startCallRecorder(input: {
         throw new Error('The recording was empty and was not uploaded.');
       }
 
+      /* `bytes` travels WITH the request, not after it. The recording's real
+         size is only known now — capture just stopped — and the server pins
+         exactly this number into the PUT's signature (`recording.service.ts`'s
+         own header on why: a signature pinned to the deployment's ceiling
+         instead matches almost no real upload, since a browser's `fetch()`
+         always sends the body's ACTUAL byte count as `Content-Length` and
+         cannot be told to send anything else). Oversized is refused HERE, by
+         the mutation itself, with a message naming the limit — the
+         alternative is an opaque 403 from storage that nothing can explain. */
       const presigned = await api.rtc.recording.presignUpload.mutate({
         recordingId: input.recordingId,
+        bytes: blob.size,
       });
-
-      if (blob.size > presigned.maxBytes) {
-        /* Refused HERE rather than by storage. The size is pinned into the
-           signature, so the PUT would fail anyway — but as an opaque 403 from
-           the storage service, with no way for the UI to say "the call was too
-           long to store". */
-        throw new Error('The recording is larger than this instance allows.');
-      }
 
       const response = await fetch(presigned.url, {
         method: 'PUT',

@@ -54,12 +54,16 @@ export interface RtcDeps {
    */
   readonly storage: StorageProvider | undefined;
   /**
-   * Ceiling on one uploaded capture, pinned into the presigned PUT's signature.
+   * Ceiling on one uploaded capture.
    *
-   * Pinned rather than checked, which is what makes it a limit rather than
-   * advice — `packages/storage/src/s3.ts`'s own note on `signableHeaders`. At
-   * roughly 32 kbit/s for Opus in a WebM container, 64 MB is about four hours;
-   * a call longer than that is not the case this bound exists for.
+   * Checked against the recording's own real size (`recording.service.ts`'s
+   * `presignRecordingUpload`) rather than pinned into the signature itself —
+   * unlike an attachment's, a recording's real size is not known until AFTER
+   * capture stops, so THAT number is what gets signed; this bound is what an
+   * oversized one gets refused against, with a message naming the limit,
+   * before a presigned URL is ever minted for it. At roughly 32 kbit/s for
+   * Opus in a WebM container, 64 MB is about four hours; a call longer than
+   * that is not the case this bound exists for.
    */
   readonly maxRecordingBytes: number;
 }
