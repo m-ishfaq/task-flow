@@ -33,6 +33,16 @@ explaining why, not disabled globally. (4) Two small lint errors in the Priority
 (`geo.ts`'s unnecessary type assertion, a test fixture's async function with no `await`) —
 both mechanical, fixed with no behavior change.
 
+**The first attempt at (2) and (3) both re-failed on the very next CI run, for two reasons
+worth remembering rather than re-discovering:** Trivy's Dockerfile linter reads only the
+instructions literally present in the file being scanned — it has no way to inspect a FROM
+base image's own layers, so swapping to `nginxinc/nginx-unprivileged` (which already runs
+unprivileged internally) still tripped AVD-DS-0002 until an explicit `USER nginx` line was
+added, purely to make it visible to static analysis. And the first `# nosemgrep:` comments
+were placed on the line ABOVE each `proxy_pass` — Semgrep only honors a suppression comment
+trailing on the SAME physical line as the match, so all four were silently ignored. Both fixed
+in a follow-up commit the same day; see that commit for the corrected placement of each.
+
 Not a numbered roadmap phase — this is cross-cutting work found by auditing `main` directly
 (grep, file counts, CI config — not just PLAN.md) for what genuinely blocks shipping, independent
 of which product phase it falls under. Four priorities, sorted by importance; each becomes its
