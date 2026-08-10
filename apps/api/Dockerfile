@@ -75,7 +75,10 @@ EXPOSE 3000
 # Two-tier, matching apps/api/src/server.ts's own routes: /health/live never
 # touches the database (did the process start), which is all a container
 # runtime needs to decide whether to keep this instance in rotation.
+# 127.0.0.1, not localhost — `localhost` resolves to ::1 first on Alpine
+# while the app listens on IPv4, so wget is refused despite the process being
+# up (the web image's first real healthcheck proved this).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD wget -q -O- http://localhost:3000/health/live || exit 1
+  CMD wget -q -O- http://127.0.0.1:3000/health/live || exit 1
 
 CMD ["pnpm", "--filter", "@taskflow/api", "start"]

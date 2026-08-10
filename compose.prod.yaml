@@ -281,7 +281,12 @@ services:
       clamav:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '-q', '-O-', 'http://localhost:3000/health/live']
+      # 127.0.0.1, not localhost — `localhost` resolves to ::1 first on
+      # Alpine while these services listen on IPv4, so wget is refused despite
+      # the process being up. Found by the first real `up`: the web image had
+      # exactly this failure, and this block (which OVERRIDES the Dockerfile's
+      # own HEALTHCHECK) carried the same bug on all three backends.
+      test: ['CMD', 'wget', '-q', '-O-', 'http://127.0.0.1:3000/health/live']
       interval: 15s
       timeout: 5s
       retries: 5
@@ -313,7 +318,9 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '-q', '-O-', 'http://localhost:3001/health/live']
+      # 127.0.0.1, not localhost — same reasoning as the api service's own
+      # healthcheck comment above.
+      test: ['CMD', 'wget', '-q', '-O-', 'http://127.0.0.1:3001/health/live']
       interval: 15s
       timeout: 5s
       retries: 5
@@ -338,7 +345,9 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '-q', '-O-', 'http://localhost:3002/']
+      # 127.0.0.1, not localhost — same reasoning as the api service's own
+      # healthcheck comment above.
+      test: ['CMD', 'wget', '-q', '-O-', 'http://127.0.0.1:3002/']
       interval: 15s
       timeout: 5s
       retries: 5

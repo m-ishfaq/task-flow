@@ -28,6 +28,26 @@ const Base64Key = z.string().refine(
   { message: 'must be 32 bytes of base64-encoded key material' },
 );
 
+/* An optional variable arrives as the EMPTY STRING whenever a compose file or
+   .env entry is present-but-blank — compose.prod.yaml passes every optional
+   variable through `${VAR:-}`, which yields '' for an unset one — and
+   present-but-empty is exactly the same thing as "not set". Rejecting it made
+   a valid deployment with unconfigured OAuth/telephony providers fail to boot
+   (found by the first real `docker compose up` of compose.prod.yaml).
+
+   Applied to every optional CONFIG string. The DATABASE_*_URL optionals
+   (DATABASE_AUDIT_URL etc.) are deliberately exempt: compose.prod.yaml always
+   builds those from a required password, so they cannot arrive empty, and a
+   blank one is a misconfiguration that should fail loudly rather than read as
+   "role disabled". */
+function optionalSetting<S extends z.ZodTypeAny>(schema: S) {
+  return z.preprocess((value) => (value === '' ? undefined : value), schema.optional());
+}
+
+const OptionalNonEmpty = optionalSetting(NonEmpty);
+const OptionalUrl = optionalSetting(z.string().url());
+const OptionalKey = optionalSetting(Base64Key);
+
 export const EnvSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -95,18 +115,18 @@ export const EnvSchema = z
        send push — the preferences UI reports that honestly instead of
        pretending the channel works. The private key is signing material and
        never leaves the server. */
-    VAPID_SUBJECT: NonEmpty.optional(),
-    VAPID_PUBLIC_KEY: NonEmpty.optional(),
-    VAPID_PRIVATE_KEY: NonEmpty.optional(),
+    VAPID_SUBJECT: OptionalNonEmpty,
+    VAPID_PUBLIC_KEY: OptionalNonEmpty,
+    VAPID_PRIVATE_KEY: OptionalNonEmpty,
 
     /* OAuth sign-in (Phase 12 Wave 2 §3.3). Optional per provider, the same
        "an unconfigured integration is a valid deployment" convention as VAPID
        above: a provider whose client id/secret are unset simply does not
        render its button, rather than the app failing to boot. */
-    GOOGLE_CLIENT_ID: NonEmpty.optional(),
-    GOOGLE_CLIENT_SECRET: NonEmpty.optional(),
-    GITHUB_CLIENT_ID: NonEmpty.optional(),
-    GITHUB_CLIENT_SECRET: NonEmpty.optional(),
+    GOOGLE_CLIENT_ID: OptionalNonEmpty,
+    GOOGLE_CLIENT_SECRET: OptionalNonEmpty,
+    GITHUB_CLIENT_ID: OptionalNonEmpty,
+    GITHUB_CLIENT_SECRET: OptionalNonEmpty,
 
     MASTER_KEY_ID: NonEmpty,
     MASTER_KEY_BASE64: Base64Key,
@@ -176,12 +196,12 @@ export const EnvSchema = z
        that serves Work and Chat is a completely valid deployment, and making a
        carrier credential a boot requirement would mean every developer needs a
        Twilio account to run the app. */
-    TWILIO_ACCOUNT_SID: NonEmpty.optional(),
-    TWILIO_AUTH_TOKEN: NonEmpty.optional(),
+    TWILIO_ACCOUNT_SID: OptionalNonEmpty,
+    TWILIO_AUTH_TOKEN: OptionalNonEmpty,
     /* Twilio Verify service, for the MFA fallback (§3.12). Separate because
        Verify is a distinct product with its own SID, and an instance can
        legitimately have telephony without it. */
-    TWILIO_VERIFY_SERVICE_SID: NonEmpty.optional(),
+    TWILIO_VERIFY_SERVICE_SID: OptionalNonEmpty,
 
     /* The per-org default spend cap in CENTS (§7.2 — 2500, roughly 12x
        PLAN.md §14's expected ~$2/month). Applied to orgs with no explicit
@@ -202,7 +222,7 @@ export const EnvSchema = z
        URLs it will sign. NOT derived from the incoming request: the signature
        covers the exact URL, and deriving it from a request means an attacker
        controlling `Host` controls what we verify against. */
-    TELEPHONY_WEBHOOK_ORIGIN: z.string().url().optional(),
+    TELEPHONY_WEBHOOK_ORIGIN: OptionalUrl,
 
     /* Blind-index key for counterparty phone numbers (Wave 2, migration 0033).
 
@@ -211,11 +231,11 @@ export const EnvSchema = z
        to confirm guesses against it. Rotating it invalidates every existing
        index — lookups stop matching, calls are still readable — so a rotation
        is a reindex, not a restart. */
-    TELEPHONY_INDEX_KEY: Base64Key.optional(),
+    TELEPHONY_INDEX_KEY: OptionalKey,
 
     /* Where call recordings land. Optional, like every telephony setting: an
        instance with no carrier has nothing to store. */
-    STORAGE_BUCKET_RECORDINGS: NonEmpty.optional(),
+    STORAGE_BUCKET_RECORDINGS: OptionalNonEmpty,
 
     /* ------------------------------------------------------------------ *
      * In-app voice / WebRTC (Phase 13 Wave 1, ai/phase-13-webrtc.md §3.3-§3.4)
@@ -227,7 +247,11 @@ export const EnvSchema = z
        a STUN server learns your public address and relays nothing, so it costs
        nothing and needs no credential. A TURN server relays every byte. */
     RTC_STUN_URLS: z.string().default('stun:localhost:3478'),
-    RTC_TURN_URLS: z.string().optional(),
+    /* OptionalNonEmpty, not z.string().optional(): the compose convention is
+       that a present-but-blank variable is unset, and a TURN list that
+       reached the browser as [''] would be a malformed `turn:` URL no
+       candidate could ever connect through. */
+    RTC_TURN_URLS: OptionalNonEmpty,
 
     /* coturn's `static-auth-secret`. OPTIONAL, and its absence is a valid
        deployment: STUN alone works on most networks. What it must never be is
@@ -237,7 +261,7 @@ export const EnvSchema = z
        Deliberately NOT Base64Key. coturn takes an arbitrary string here, and
        requiring a 32-byte base64 value would mean a secret that this app
        accepts and the TURN server was never configured with. */
-    RTC_TURN_SECRET: NonEmpty.optional(),
+    RTC_TURN_SECRET: OptionalNonEmpty,
 
     /* How long a minted credential lives. Long enough to cover ICE gathering
        and a renegotiation, short enough that a leaked pair is worthless by the

@@ -1,7 +1,11 @@
 # Pre-launch hardening
 
-**Status: Priority 1 (deployment) mostly shipped — see "Priority 1 status" below for exactly
-what's done vs. left. Priorities 2–4 not started.**
+**Status: Priority 1 (deployment) COMPLETE and verified against a real stack — 2026-08-10.**
+All four images built, `compose.prod.yaml` up with all seven services healthy, all 42
+migrations applied, and a real browser click-through passed (signup → verify → login → org →
+Work shell with Chat/Docs/Calls/People rendering). The smoke test found and fixed four real
+bugs that no static check could see — see the Priority 1 status header below. Priorities 2–4
+not started.
 
 Not a numbered roadmap phase — this is cross-cutting work found by auditing `main` directly
 (grep, file counts, CI config — not just PLAN.md) for what genuinely blocks shipping, independent
@@ -61,12 +65,14 @@ a config/secrets exercise the user does once a host exists, not code.
 
 ### Priority 1 status — read this before touching any of it
 
-**Shipped, and verified as far as `tsc`/`eslint`/YAML-parse/`docker compose config` can verify —
-NONE of it has been through a real `docker build` or `docker compose up`, because this session's
-sandbox has no Docker daemon (`docker ps` fails with "no such file or directory"). That real
-verification — the thing this file's own "Why this file exists" section calls the one lesson that
-keeps recurring across every phase in CLAUDE.md — has not happened yet for any of this. Doing it
-is the single most important remaining step; see the handoff section below.**
+**COMPLETE — verified 2026-08-10 by the first real `docker build` and `docker compose up` of
+this stack** (Docker was available in the session that picked this up, unlike the one that
+wrote the mechanism). All four images built; `compose.prod.yaml` came up with all seven
+services healthy after four real bugs were found and fixed (item 9 below; also
+`ai/deployment-runbook.md`'s failure-modes section). `pnpm format`, `pnpm verify` (54/54
+tasks) and the guardrail selftest (11/11) are green on this branch, and the runbook was
+written from the actual smoke test. Items 1–8 below are the original write-up of each shipped
+piece; item 9 is the smoke-test addendum.
 
 1. `apps/api/Dockerfile`, `apps/realtime/Dockerfile`, `apps/collab/Dockerfile` — multi-stage,
    `node:22-alpine`. Every workspace package's `package.json` is consumed as TypeScript SOURCE
@@ -120,20 +126,33 @@ is the single most important remaining step; see the handoff section below.**
 8. `.github/workflows/ci.yml`'s `trivy` job — flipped `--scanners vuln,secret` to
    `--scanners vuln,secret,misconfig`, and updated its own comment, which explicitly said to do
    this once Dockerfiles existed ("today it finds zero config files... Add it back with the IaC").
-   **Not verified** — the same no-Docker-daemon limitation blocks running Trivy locally; this will
-   run for real on the next push's CI, if `CI_SECURITY_ALWAYS` is on for that push (see ci.yml's
-   own minute-budget comment — otherwise it only runs weekly/on dispatch).
+   Not run locally (no Trivy here); it runs for real on the next push's CI, if
+   `CI_SECURITY_ALWAYS` is on for that push (see ci.yml's own minute-budget comment — otherwise
+   it only runs weekly/on dispatch).
+9. **The first real `docker build`/`up` (2026-08-10) found four bugs that no static check could
+   see — the exact failure class this file's "why" section exists to catch.** (a) The API
+   refused to boot: compose passes every optional variable through `${VAR:-}`, and an empty
+   `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`TWILIO_VERIFY_SERVICE_SID`/VAPID key failed
+   `NonEmpty.optional()` validation. `apps/api/src/config/env.ts` now treats present-but-empty
+   as unset (`OptionalNonEmpty`/`OptionalUrl`/`OptionalKey`), with tests. (b) `realtime` and
+   `collab` crash-looped with `ERR_MODULE_NOT_FOUND` — their images lacked `apps/api` source,
+   which the gateway code imports at runtime through `@taskflow/api`'s exports map (trust-proxy,
+   tenancy/resolve, work/board, chat/channel, rtc/session, docs/page, richtext). Both
+   Dockerfiles now `COPY apps/api`. (c) Every healthcheck failed on `localhost` — Alpine
+   resolves it to `::1` first while the services listen IPv4-only, so `wget localhost:PORT`
+   was refused with the process perfectly up. All four Dockerfiles AND the three compose
+   `healthcheck:` blocks (which OVERRIDE the images' own HEALTHCHECKs — a two-source-of-truth
+   trap worth knowing) now probe `127.0.0.1`. (d) `docker compose up -d` did NOT recreate
+   containers after a same-tag (`:local`) rebuild — the running container kept the old
+   healthcheck while the image carried the fixed one; the stack needed `--force-recreate`.
+   After all four fixes: all seven services healthy, and a browser click-through passed —
+   signup → verify (via psql, since the smoke-test SMTP is a dummy) → login → org creation →
+   app shell with My tasks/Chat/Docs/Calls/People rendering and no console errors, with the
+   per-IP login rate limiter firing as designed.
 
-**Left in Priority 1 — see the handoff section immediately below for exactly how to do each one:**
-
-- The runbook (`ai/deployment-runbook.md`) — not written yet.
-- Real Docker verification of everything above — not done yet, blocked on this sandbox having no
-  Docker daemon.
-- `pnpm verify` / `pnpm format` / `node packages/guardrail-selftest/verify.js` on the whole
-  repo — not re-run since the Dockerfile/compose/workflow work started (none of it touches
-  application TypeScript except `apps/realtime/src/gateway.ts`, which was checked individually,
-  but the full-repo pass hasn't run this session).
-- Committing and pushing this wave to `pre-launch-hardening` — not done yet as of this note.
+**All four "left" items from the original handoff are now done** — the runbook
+(`ai/deployment-runbook.md`), the real Docker verification (this item), the full verification
+suite, and the commit/push of this wave to `pre-launch-hardening`.
 
 ## Handoff — exactly what's left and how to do it
 
@@ -143,7 +162,15 @@ history are the concrete example of what happens when a plausible-looking change
 against a live stack. Follow this in order. Do not skip the verification steps to "save time" —
 that is exactly the failure mode this file's own "why" section documents.
 
-### Step 1 — Finish and verify Priority 1 (do this first, before anything else)
+### Step 1 — Finish and verify Priority 1 (COMPLETE — 2026-08-10)
+
+Everything in this step happened and is recorded in the Priority 1 status header and in
+`ai/deployment-runbook.md`: the full verification suite is green, the real build/up succeeded
+(after the four fixes in item 9), the browser click-through passed, the runbook was written
+from the actual run, and the wave is committed and pushed to `pre-launch-hardening`. The
+numbered instructions below are kept as the record of what was done — the parts still relevant
+to a future reader are the failure classes named in items 2–4 below and the standing
+instruction in item 5.
 
 1. **Run the full verification suite** from the repo root:
 

@@ -53,5 +53,10 @@ COPY --from=build /app/apps/web/dist /usr/share/nginx/html
 
 EXPOSE 80
 
+# 127.0.0.1, not localhost — nginx listens on 0.0.0.0:80 (IPv4 only) and
+# `localhost` resolves to ::1 first on Alpine, so busybox wget is refused
+# despite nginx serving fine. This was the first real failure found by
+# `docker compose up` of compose.prod.yaml: the host's curl worked, every
+# port was mapped, and only the in-container healthcheck could see it.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -q -O- http://localhost:80/ || exit 1
+  CMD wget -q -O- http://127.0.0.1:80/ || exit 1

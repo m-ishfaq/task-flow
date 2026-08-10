@@ -2,9 +2,17 @@
 #
 # apps/realtime — production image. Same shape as apps/api/Dockerfile; see
 # that file's header for why the workspace installs in full (no --prod) and
-# why package SOURCE, not just node_modules, has to be copied in. Scoped to
-# this service's own source plus every workspace package — not the other
-# three apps, which apps/realtime never imports from.
+# why package SOURCE, not just node_modules, has to be copied in.
+#
+# This image ALSO carries apps/api's source, and that is not a mistake: the
+# gateway imports shared authorization modules through @taskflow/api's exports
+# map (tenancy/resolve, work/board, chat/channel, rtc/session,
+# config/trust-proxy — apps/realtime/src/rooms.ts's header names why the
+# gateway reuses them rather than reimplementing them). Those resolve to
+# files under apps/api/src at runtime, exactly like a packages/* symlink, so
+# an image without them fails with ERR_MODULE_NOT_FOUND on first boot — found
+# by the first real `docker compose up` of compose.prod.yaml. apps/web and
+# apps/collab are still excluded: nothing in this service imports from them.
 
 FROM node:22-alpine AS base
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
@@ -34,6 +42,9 @@ COPY packages/ui/package.json packages/ui/package.json
 RUN pnpm install --frozen-lockfile
 
 COPY apps/realtime apps/realtime
+# apps/api — the gateway imports @taskflow/api source at runtime (see the
+# file header); without it the process dies on the first import.
+COPY apps/api apps/api
 COPY packages packages
 
 FROM node:22-alpine AS runtime
@@ -50,7 +61,14 @@ EXPOSE 3001
 # apps/realtime/src/gateway.ts carries the same two-tier /health/live and
 # /health/ready pair apps/api's server.ts does (added specifically so this
 # HEALTHCHECK has something to call — it did not exist before this wave).
+# 127.0.0.1, not localhost: the gateway listens on 0.0.0.0:3001 (IPv4 only)
+# and `localhost` resolves to ::1 first on Alpine, so wget is refused despite
+# the process being up — the same bug that made the web image's first real
+# healthcheck fail (see apps/web/Dockerfile). A comment must NOT sit inside a
+# HEALTHCHECK continuation: the parser joins those lines into the shell
+# command, where `#` comments out the whole check and leaves it passing
+# without testing anything.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD wget -q -O- http://localhost:3001/health/live || exit 1
+  CMD wget -q -O- http://127.0.0.1:3001/health/live || exit 1
 
 CMD ["pnpm", "--filter", "@taskflow/realtime", "start"]

@@ -2,9 +2,17 @@
 #
 # apps/collab — production image. Same shape as apps/api/Dockerfile; see
 # that file's header for why the workspace installs in full (no --prod) and
-# why package SOURCE, not just node_modules, has to be copied in. Scoped to
-# this service's own source plus every workspace package — not the other
-# three apps, which apps/collab never imports from.
+# why package SOURCE, not just node_modules, has to be copied in.
+#
+# This image ALSO carries apps/api's source, and that is not a mistake: the
+# gateway imports shared authorization and content-validation modules through
+# @taskflow/api's exports map (docs/page, tenancy/resolve, richtext —
+# apps/collab/src/authorize.ts's header names why it reuses them rather than
+# reimplementing them). Those resolve to files under apps/api/src at runtime,
+# exactly like a packages/* symlink, so an image without them fails with
+# ERR_MODULE_NOT_FOUND on first boot — found by the first real `docker
+# compose up` of compose.prod.yaml. apps/web and apps/realtime are still
+# excluded: nothing in this service imports from them.
 
 FROM node:22-alpine AS base
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
@@ -34,6 +42,9 @@ COPY packages/ui/package.json packages/ui/package.json
 RUN pnpm install --frozen-lockfile
 
 COPY apps/collab apps/collab
+# apps/api — the gateway imports @taskflow/api source at runtime (see the
+# file header); without it the process dies on the first import.
+COPY apps/api apps/api
 COPY packages packages
 
 FROM node:22-alpine AS runtime
@@ -59,7 +70,12 @@ EXPOSE 3002
 # health check must never be. A plain 200 on any path is a perfectly good
 # liveness signal for a gateway with no meaningful "not ready" state of its
 # own beyond "the process didn't start".
+# 127.0.0.1, not localhost: `localhost` resolves to ::1 first on Alpine and
+# Hocuspocus's server listens on IPv4, so wget would be refused despite the
+# process being up — same bug as the web image's first real healthcheck. The
+# comment sits ABOVE the instruction on purpose: inside the continuation it
+# would be joined into the shell command and `#` would comment the check out.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD wget -q -O- http://localhost:3002/ || exit 1
+  CMD wget -q -O- http://127.0.0.1:3002/ || exit 1
 
 CMD ["pnpm", "--filter", "@taskflow/collab", "start"]
