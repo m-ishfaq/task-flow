@@ -98,6 +98,68 @@ const ResolvedMemberSchema = z
   .object({ userId: z.string(), displayName: z.string().nullable(), email: z.string() })
   .strict();
 
+/* The self-serve DSAR export (Phase 12 Wave 2 §3.6) — the caller's own
+   account data, inline. Dates are `z.date()` like every other output; the
+   wire boundary serializes them to ISO strings. */
+const DataExportSchema = z
+  .object({
+    exportedAt: z.date(),
+    account: z
+      .object({
+        userId: z.string(),
+        email: z.string(),
+        displayName: z.string().nullable(),
+        status: z.string(),
+        emailVerified: z.boolean(),
+        createdAt: z.date(),
+      })
+      .strict(),
+    memberships: z
+      .array(
+        z
+          .object({
+            orgId: z.string(),
+            orgName: z.string(),
+            orgSlug: z.string(),
+            role: z.string(),
+            joinedAt: z.date(),
+          })
+          .strict(),
+      )
+      .readonly(),
+    sessions: z
+      .array(
+        z
+          .object({
+            sessionId: z.string(),
+            authenticatedAt: z.date(),
+            lastSeenAt: z.date(),
+            userAgent: z.string().nullable(),
+            ip: z.string().nullable(),
+            country: z.string().nullable(),
+          })
+          .strict(),
+      )
+      .readonly(),
+    oauthIdentities: z
+      .array(z.object({ provider: z.string(), email: z.string(), linkedAt: z.date() }).strict())
+      .readonly(),
+    profile: z
+      .object({
+        displayName: z.string().nullable(),
+        timezone: z.string().nullable(),
+        workingHoursStart: z.string().nullable(),
+        workingHoursEnd: z.string().nullable(),
+        workingDays: z.array(z.number().int()).readonly().nullable(),
+        oooFrom: z.date().nullable(),
+        oooUntil: z.date().nullable(),
+        oooMessage: z.string().nullable(),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+
 export function createPeopleRouter(deps: PeopleRouterDeps) {
   return router({
     profile: router({
@@ -124,6 +186,25 @@ export function createPeopleRouter(deps: PeopleRouterDeps) {
             },
             input,
           ),
+        ),
+
+      /* Phase 12 Wave 2 §3.6 — self-serve DSAR export: the caller's own
+         account-level data as one structured document, returned inline.
+         `selfRoute` for the same reason the two above are: the data spans
+         every org the account belongs to (the memberships join reads through
+         the self policies), and it must answer with no org selected. The
+         export's only audit fact is the event the service emits — never the
+         export's contents. */
+      exportMine: selfRoute({
+        selfReason:
+          'A user exporting their own account data — the self-serve DSAR export. No org permission describes it; the data spans every org they belong to.',
+      })
+        .output(DataExportSchema)
+        .query(({ ctx }) =>
+          profile.exportMine(deps, {
+            userId: ctx.principal.userId,
+            requestId: ctx.requestId,
+          }),
         ),
     }),
 

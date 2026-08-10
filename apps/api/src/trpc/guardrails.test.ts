@@ -386,6 +386,11 @@ describe('the real application router', () => {
          routes above — no ORG permission describes managing your own fields,
          and a guest must still be able to. `people.profile.update` also takes
          no user id in its input: the subject is always the caller. */
+      /* Self-serve DSAR export (Phase 12 Wave 2 §3.6) — the caller's own
+         account data, spanning every org they belong to, so no org permission
+         can describe it and it must answer with no org selected. A plain read
+         of your own data: no step-up, the same trust level as profile.get. */
+      'people.profile.exportMine',
       'people.profile.get',
       'people.profile.update',
       /* The operator flag check (Phase 12 Wave 1 §3.2) — deliberately

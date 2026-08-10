@@ -71,6 +71,22 @@ export const sessionRevoked = defineEvent(
 );
 
 /**
+ * The account owner exported their own data (Phase 12 Wave 2 §3.6, DSAR).
+ *
+ * Fired by `people.profile.exportMine` — the self-serve export returns the
+ * document INLINE to the caller, so the only audit fact worth recording is
+ * that the export happened, at this time, for this account. The payload
+ * deliberately carries NOTHING of the export's contents: an outbox row is
+ * replayed into a log that keeps whatever is put in it, and "this person
+ * downloaded their own data" is the compliance fact, never the data itself
+ * (the same discipline chat's `compliance.exported` documents).
+ */
+export const dataExported = defineEvent(
+  'user.data_exported',
+  z.object({ userId: z.string(), exportedAt: z.string() }).strict(),
+);
+
+/**
  * A refresh token was presented twice.
  *
  * The highest-signal event in the system. It means a token left the browser it

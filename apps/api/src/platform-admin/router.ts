@@ -131,6 +131,23 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
         .input(z.object({ orgId: OrgIdSchema }).strict())
         .output(z.object({ orgId: z.string(), status: z.literal('active') }).strict())
         .mutation(({ input, ctx }) => directory.reactivateOrg(deps, operatorOf(ctx), input.orgId)),
+
+      /* Phase 12 Wave 2 §3.5 — org deletion, the one operator action with no
+         undo. `platformRoute` already implies step-up; the two gates are the
+         org already being suspended and the operator typing the slug, both
+         enforced in the service. */
+      delete: platformRoute({
+        platformReason:
+          'Deleting an org removes every tenant row it owns — cross-tenant and irreversible; no org-scoped permission can authorize it.',
+      })
+        .input(z.object({ orgId: OrgIdSchema, confirmSlug: z.string().min(1).max(100) }).strict())
+        .output(z.object({ orgId: z.string(), slug: z.string() }).strict())
+        .mutation(({ input, ctx }) =>
+          directory.deleteOrg(deps, operatorOf(ctx), {
+            orgId: input.orgId,
+            confirmSlug: input.confirmSlug,
+          }),
+        ),
     }),
 
     users: router({

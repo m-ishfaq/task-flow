@@ -8,9 +8,10 @@ header for the four real bugs the smoke test found and fixed. Priority 2 (advers
 review of every §2.2 human-review surface) is also done: one confirmed finding — the SSRF
 blocklist in `packages/security/src/outbound-url.ts` missed 63/64 of the IPv6 link-local range
 (`fe80::/10` is first hextet `fe80`–`febf`, the check only matched `fe80`) — fixed with
-boundary tests; full write-up in `ai/security-review-priority-2.md`. Priority 3's §3.4
-(device/session inventory + impossible-travel detection) is shipped — see its status header;
-§3.5 (org deletion) and §3.6 (DSAR export) remain. Priority 4 not started.
+boundary tests; full write-up in `ai/security-review-priority-2.md`. Priority 3 is COMPLETE —
+§3.4 (device/session inventory + impossible-travel detection), §3.5 (org deletion) and §3.6
+(self-serve DSAR export) all shipped — see the Priority 3 status header. Priority 4 not
+started.
 
 Not a numbered roadmap phase — this is cross-cutting work found by auditing `main` directly
 (grep, file counts, CI config — not just PLAN.md) for what genuinely blocks shipping, independent
@@ -318,22 +319,12 @@ happen without hiring anyone, done first.
 
 ### Step 3 — Priority 3: Phase 12 Wave 2's unshipped remainder
 
-**§3.4 is COMPLETE** (device/session inventory + impossible-travel detection — see the Priority 3
-status header for what shipped and how it was validated). **§3.5 and §3.6 remain.** Design already
-exists and is approved — read `ai/phase-12-wave2.md` §3.5 and §3.6 in full before writing any code;
-this is implementation against a spec, not new design work. Grep first to reconfirm each piece is
-still actually missing (`ai/phase-12-wave2.md` may itself be stale — this whole codebase's standing
-lesson is to check the code, not just the doc):
-
-- §3.5 org deletion — real, cascading, operator-triggered, irreversible, heavily audited. The
-  riskiest single piece in this priority: before writing the delete path, do a repo-wide grep for
-  every foreign key referencing `identity.orgs` (or any table that in turn references it) to build
-  a complete cascade map — an incomplete one leaves orphaned rows in a tenant table, which is
-  exactly the kind of defect guardrail 3 exists to make impossible for ordinary queries but cannot
-  prevent for a DELETE issued by a privileged role. Note that migration 0040 (Phase 12 Wave 2's own
-  schema) already added `ON DELETE CASCADE` to a set of identity-adjacent FKs — the audit must
-  verify what remains, not start from zero.
-- §3.6 self-serve DSAR export.
+**COMPLETE — 2026-08-10.** §3.4 (device/session inventory + impossible-travel detection), §3.5
+(org deletion) and §3.6 (self-serve DSAR export) all shipped — see the Priority 3 status header
+for what landed, the two real findings the §3.5 cascade audit surfaced (0040's "audit rows go with
+it" was wrong for `audit.audit_log` — no FK possible on a RANGE-partitioned table — fixed by
+0044's SECURITY DEFINER purge trigger), and the one named residual (carrier subaccount never
+released at Twilio).
 
 Same verification bar as every other wave: `tsc`/`eslint`/`vitest` on touched packages, `pnpm
 format`, guardrail-selftest, and a real click-through against `docker compose up` (the ORIGINAL
@@ -391,13 +382,13 @@ bearing property that a naive change would break), and remember the standing rul
 already stated twice — a green `pnpm verify` is not the same claim as "this works when you
 click it." The third-party pentest before launch is still owed.
 
-## Priority 3 — Compliance/identity gaps (Phase 12 Wave 2's unshipped remainder)
-
-### Priority 3 status — §3.4 COMPLETE (2026-08-10); §3.5 and §3.6 still open
+## Priority 3 — Compliance/identity gaps (Phase 12 Wave 2's unshipped remainder)### Priority 3 status — COMPLETE (2026-08-10)
 
 Grep-verified absent, not assumed from a stale status header. Only 3 of 6 planned Wave 2 pieces
 had shipped before this priority started — user suspension (`apps/api/src/platform-admin/router.ts:153`),
-TOTP, OAuth. The design for the rest is already approved in `ai/phase-12-wave2.md`:
+TOTP, OAuth. The design for the rest was already approved in `ai/phase-12-wave2.md`; all three
+remaining pieces are now implemented and validated (`tsc`/`eslint`/`pnpm format`/guardrail-selftest,
+API 54 files/829 tests, web 32 files/302 tests, both new migrations up→down→up):
 
 - **§3.4 — Device/session inventory + impossible-travel detection — SHIPPED.** Migration 0043
   (`identity.sessions.country`, `identity.sessions.impossible_travel_at`),
@@ -407,20 +398,48 @@ TOTP, OAuth. The design for the rest is already approved in `ai/phase-12-wave2.m
   all four login paths (password, passkey, TOTP, OAuth) get it by construction,
   `auth.sessions.list`/`auth.sessions.revoke` (`selfRoute`s; revoke `stepUp: true`), and a
   Sessions section on the web account page (per-device sign out, current-session badge, "looked
-  unusual" note, push-device count). Validated: migration 0043 up→down→up, API 54 files/825 tests,
-  web 32 files/302 tests, `tsc`/`eslint`/`pnpm format`/guardrail-selftest — all green. Two design
-  decisions worth recording because they are easy to break: **the geo lookup is fail-open AT THE
-  CALL SITE, not only inside the lookup** — `countryOfIp` never throws AND `issueSession` wraps
-  whatever lookup is injected in its own try/catch, because an informational control must never sit
-  in the path that completes a sign-in (a test proves a throwing lookup still completes the login
-  and stores `country = null`); and **the country is stored on EVERY session**, flagged or not,
-  which is what lets the NEXT login compare against this one without a fresh lookup. Detection is
-  distance-over-time — haversine between country centroids divided by the hours since the previous
-  session's `authenticated_at`, flagging only a pair implying faster than 900 km/h — never
-  country-change alone.
-- **§3.5 — Org deletion — still open.** Real, cascading, operator-triggered, irreversible, heavily
-  audited — not a key-based shortcut. The riskiest single piece: a repo-wide cascade-FK audit.
-- **§3.6 — Self-serve DSAR export — still open.**
+  unusual" note, push-device count). Two design decisions worth recording because they are easy to
+  break: **the geo lookup is fail-open AT THE CALL SITE, not only inside the lookup** —
+  `countryOfIp` never throws AND `issueSession` wraps whatever lookup is injected in its own
+  try/catch, because an informational control must never sit in the path that completes a sign-in
+  (a test proves a throwing lookup still completes the login and stores `country = null`); and
+  **the country is stored on EVERY session**, flagged or not, which is what lets the NEXT login
+  compare against this one without a fresh lookup. Detection is distance-over-time — haversine
+  between country centroids divided by the hours since the previous session's `authenticated_at`,
+  flagging only a pair implying faster than 900 km/h — never country-change alone.
+- **§3.5 — Org deletion — SHIPPED.** `platformAdmin.orgs.delete` (`platformRoute`, step-up
+  baked in): the org must already be `'suspended'`, and the operator must type the org's actual
+  slug into the confirmation field (the web Orgs tab renders both gates — a Delete button on
+  suspended rows only, and a type-the-slug modal whose confirm stays disabled until the slug
+  matches). The delete is ONE statement — `DELETE FROM identity.orgs` — and Postgres fans it out
+  across Work/Chat/Docs/People/outbox through the cascading org_id foreign keys (the repo-wide
+  audit: every direct `REFERENCES identity.orgs` FK cascades, including RTC's 0041/0042; the
+  `people.membership_profiles`/`platform.outbox_dispatch` composite FKs cascade transitively).
+  **Two real findings the audit surfaced that 0040's header had missed:** `audit.audit_log` has
+  NO foreign key to `identity.orgs` at all — and cannot have one, because it is partitioned
+  `BY RANGE (occurred_at)` and Postgres requires any FK on a partitioned table to include the
+  partition key. Migration 0044 closes the gap with a narrow SECURITY DEFINER trigger
+  (`platform.purge_org_audit`, the 0036 `operator_chain_hash` precedent): owned by the migrator,
+  takes NO arguments (the org id always comes from the trigger's `OLD.id`, so no caller can aim
+  it at an org of their choice), and sets `app.org_id` from `OLD.id` itself — because
+  `audit.audit_log` is FORCE RLS keyed on `app.org_id` and the deleting path clears org context,
+  so a naive DELETE would silently match zero rows. The final accountability record is the
+  `orgs.delete` entry in the GLOBAL operator chain carrying org id, slug, member count and the
+  confirmation slug typed; `platform.org_deleted` publishes with the SYSTEM_ORG envelope (added
+  to the audit projection's NEVER_AUDITED). One residual named rather than fixed: a provisioned
+  Twilio subaccount is frozen by the preceding suspend but never RELEASED at the carrier — the
+  `comms.subaccounts` row cascades away, and releasing needs a carrier-delete capability the
+  telephony module does not yet have.
+- **§3.6 — Self-serve DSAR export — SHIPPED.** `people.profile.exportMine` (`selfRoute`)
+  returns the caller's account data inline as one structured document — `identity.users` minus
+  `passwordHash`, every membership joined with its org's name/slug (through the same
+  SELECT-only self policies the org switcher uses), active sessions' metadata (no tokens — they
+  only ever existed as hashes), linked OAuth identities (provider + email, never the provider's
+  subject id), and the `people.profiles` row — all in ONE `withUserScope` transaction. The
+  `user.data_exported` event records that the export happened, never its contents (the
+  `compliance.exported` discipline). Web: the account page's "Your data" section downloads it
+  as a JSON file. Product data the caller authored across Work/Chat/Docs is excluded per the
+  spec's own §2 scope line — named there as real follow-up work, not hidden.
 
 ## Priority 4 — Missing product surfaces: Search, then Automation, then Analytics
 

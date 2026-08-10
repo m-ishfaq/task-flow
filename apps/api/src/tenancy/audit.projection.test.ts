@@ -85,6 +85,10 @@ const UNMAPPED: ReadonlySet<string> = new Set([
   'user.oauth_unlinked',
   'session.revoked',
   'session.token_reuse_detected',
+  // Phase 12 Wave 2 §3.6 — the DSAR export event. Same shape as the login
+  // events above: the fact names the account, already in `actor_id`, and the
+  // payload carries nothing of the export's contents by design.
+  'user.data_exported',
   // Phase 12 Wave 2 §3.4 — same shape as its two siblings above: the fact
   // names the account that just signed in, which is already in `actor_id`.
   'session.impossible_travel_detected',

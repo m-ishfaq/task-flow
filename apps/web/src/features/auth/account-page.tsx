@@ -64,6 +64,7 @@ export function AccountPage() {
       <PasskeySection />
       <ConnectedAccountsSection />
       <SessionsSection />
+      <ExportDataSection />
       <OrganizationsSection />
     </div>
   );
@@ -546,6 +547,62 @@ function SessionsSection() {
         />
       </div>
       {dialog}
+    </Section>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * Data export (Phase 12 Wave 2 §3.6)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * Self-serve DSAR export — downloads the caller's own account data as one
+ * JSON document (profile, memberships across every org, active sessions,
+ * connected OAuth identities). The server returns it inline; the audit
+ * record is the `user.data_exported` event, never the document's contents.
+ */
+function ExportDataSection() {
+  const toast = useToast();
+
+  const download = useMutation({
+    mutationFn: async () => wire(await api.people.profile.exportMine.query()),
+    onSuccess: (data) => {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `taskflow-data-export-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      toast.show('Your data export is ready');
+    },
+    onError: (error) => {
+      toast.failure('Could not export your data', error);
+    },
+  });
+
+  return (
+    <Section
+      title="Your data"
+      description="Everything this account holds about you — profile, memberships, active sessions and connected accounts, as one JSON document."
+    >
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={download.isPending}
+          onClick={() => {
+            download.mutate();
+          }}
+        >
+          {download.isPending ? 'Preparing…' : 'Export my data'}
+        </Button>
+        <span className="text-xs text-ink-faint">
+          A self-serve export. Work, chat and docs you authored in organizations are not included.
+        </span>
+      </div>
     </Section>
   );
 }

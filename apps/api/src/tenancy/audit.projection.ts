@@ -285,6 +285,12 @@ export const NEVER_AUDITED: ReadonlySet<string> = new Set([
      ever actually checked by it. */
   'platform.org_suspended',
   'platform.org_reactivated',
+  /* §3.5 (Phase 12 Wave 2). Same reason and then some: the org is GONE — its
+     outbox rows deleted with it, and no outbox entry can name a row that no
+     longer exists. The one durable record is the `orgs.delete` operator-log
+     entry, and the published event carries the SYSTEM_ORG envelope (see
+     events.ts on orgDeleted). */
+  'platform.org_deleted',
   'platform.operator_granted',
   'platform.flag_override_set',
   'platform.flag_override_cleared',

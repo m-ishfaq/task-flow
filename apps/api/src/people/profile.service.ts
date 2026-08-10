@@ -1,8 +1,9 @@
-import { eq, schema, withUserScope } from '@taskflow/db';
+import { and, desc, eq, isNull, schema, withUserScope } from '@taskflow/db';
 import { readNotificationPrefsTimezone } from '@taskflow/db';
 import { errors, type OrgId, type RequestId, type UserId } from '@taskflow/contracts';
 import { createEvent, type EventBus } from '@taskflow/events';
 import { SYSTEM_ORG } from '../identity/identity.service.js';
+import * as identityEvents from '../identity/events.js';
 import { profileUpdated } from './events.js';
 import { updateMembershipProfile } from './membership.service.js';
 
@@ -243,6 +244,195 @@ export async function updateProfile(
   }
 
   return { changed: personalChanged };
+}
+
+/* -------------------------------------------------------------------------- *
+ * Self-serve DSAR export (Phase 12 Wave 2 §3.6)
+ * -------------------------------------------------------------------------- */
+
+export interface DataExportView {
+  readonly exportedAt: Date;
+  readonly account: {
+    readonly userId: string;
+    readonly email: string;
+    readonly displayName: string | null;
+    readonly status: string;
+    readonly emailVerified: boolean;
+    readonly createdAt: Date;
+  };
+  /** Every org this account belongs to, with the org's own name and slug. */
+  readonly memberships: readonly {
+    readonly orgId: string;
+    readonly orgName: string;
+    readonly orgSlug: string;
+    readonly role: string;
+    readonly joinedAt: Date;
+  }[];
+  /** Active sessions only — metadata, never a token (tokens only ever existed as hashes). */
+  readonly sessions: readonly {
+    readonly sessionId: string;
+    readonly authenticatedAt: Date;
+    readonly lastSeenAt: Date;
+    readonly userAgent: string | null;
+    readonly ip: string | null;
+    readonly country: string | null;
+  }[];
+  /** Linked OAuth identities — provider and email, never a provider token. */
+  readonly oauthIdentities: readonly {
+    readonly provider: string;
+    readonly email: string;
+    readonly linkedAt: Date;
+  }[];
+  /** The people.profiles row, or null when none exists yet (lazy row). */
+  readonly profile: {
+    readonly displayName: string | null;
+    readonly timezone: string | null;
+    readonly workingHoursStart: string | null;
+    readonly workingHoursEnd: string | null;
+    readonly workingDays: readonly number[] | null;
+    readonly oooFrom: Date | null;
+    readonly oooUntil: Date | null;
+    readonly oooMessage: string | null;
+  } | null;
+}
+
+/**
+ * The caller's own account-level data, as one structured document
+ * (Phase 12 Wave 2 §3.6) — the self-serve half of a DSAR, modeled on chat's
+ * `compliance.exported`: inline JSON, no background job, an event recording
+ * that the export happened (never its contents).
+ *
+ * One `withUserScope` transaction reads every source: `identity.users`
+ * (minus `passwordHash`), the account's memberships joined with their orgs,
+ * its active sessions' metadata, its linked OAuth identities, and its
+ * `people.profiles` row. The membership+org join works through the same
+ * self-read policies the org switcher uses (`memberships_self_read` /
+ * `orgs_self_read` — SELECT-only, no WITH CHECK), which is precisely why
+ * `withUserScope` is the right scope: the data spans every org the account
+ * belongs to, and no org is selected.
+ *
+ * Explicitly excluded, per the spec: product data the caller authored
+ * across Work/Chat/Docs. Reaching that honestly needs per-org RLS-scoped
+ * reads under each membership — real, larger work, named in §2 as a gap
+ * rather than hidden behind an export that looks complete and isn't.
+ */
+export async function exportMine(
+  deps: PeopleDeps,
+  actor: { readonly userId: UserId; readonly requestId: RequestId },
+): Promise<DataExportView> {
+  return withUserScope(actor.userId, async (tx) => {
+    const now = new Date();
+
+    const users = await tx
+      .select({
+        id: schema.users.id,
+        email: schema.users.email,
+        status: schema.users.status,
+        emailVerifiedAt: schema.users.emailVerifiedAt,
+        createdAt: schema.users.createdAt,
+      })
+      .from(schema.users)
+      .where(eq(schema.users.id, actor.userId))
+      .limit(1);
+
+    const user = users[0];
+    if (!user) throw errors.notFound();
+
+    const memberships = await tx
+      .select({
+        orgId: schema.memberships.orgId,
+        orgName: schema.orgs.name,
+        orgSlug: schema.orgs.slug,
+        role: schema.memberships.role,
+        joinedAt: schema.memberships.createdAt,
+      })
+      .from(schema.memberships)
+      .innerJoin(schema.orgs, eq(schema.orgs.id, schema.memberships.orgId))
+      .where(eq(schema.memberships.userId, actor.userId));
+
+    const sessions = await tx
+      .select({
+        sessionId: schema.sessions.id,
+        authenticatedAt: schema.sessions.authenticatedAt,
+        lastSeenAt: schema.sessions.lastSeenAt,
+        userAgent: schema.sessions.userAgent,
+        ip: schema.sessions.ip,
+        country: schema.sessions.country,
+      })
+      .from(schema.sessions)
+      .where(and(eq(schema.sessions.userId, actor.userId), isNull(schema.sessions.revokedAt)))
+      .orderBy(desc(schema.sessions.lastSeenAt));
+
+    const oauth = await tx
+      .select({
+        provider: schema.oauthIdentities.provider,
+        email: schema.oauthIdentities.email,
+        linkedAt: schema.oauthIdentities.linkedAt,
+      })
+      .from(schema.oauthIdentities)
+      .where(eq(schema.oauthIdentities.userId, actor.userId));
+
+    const profiles = await tx
+      .select({
+        displayName: schema.profiles.displayName,
+        timezone: schema.profiles.timezone,
+        workingHoursStart: schema.profiles.workingHoursStart,
+        workingHoursEnd: schema.profiles.workingHoursEnd,
+        workingDays: schema.profiles.workingDays,
+        oooFrom: schema.profiles.oooFrom,
+        oooUntil: schema.profiles.oooUntil,
+        oooMessage: schema.profiles.oooMessage,
+      })
+      .from(schema.profiles)
+      .where(eq(schema.profiles.userId, actor.userId))
+      .limit(1);
+
+    const profileRow = profiles[0];
+
+    /* Published INSIDE the scope callback, like `updateProfile`'s own event:
+       a failure rolls the read transaction back with it. The event records
+       the export happened — never its contents. */
+    await deps.events.publish([
+      createEvent(
+        identityEvents.dataExported,
+        { userId: actor.userId, exportedAt: now.toISOString() },
+        {
+          orgId: SYSTEM_ORG,
+          actorId: actor.userId,
+          requestId: actor.requestId,
+          occurredAt: now,
+        },
+      ),
+    ]);
+
+    return {
+      exportedAt: now,
+      account: {
+        userId: user.id,
+        email: user.email,
+        displayName: profileRow?.displayName ?? null,
+        status: user.status,
+        emailVerified: user.emailVerifiedAt !== null,
+        createdAt: user.createdAt,
+      },
+      memberships,
+      sessions,
+      oauthIdentities: oauth,
+      profile:
+        profileRow === undefined
+          ? null
+          : {
+              displayName: profileRow.displayName,
+              timezone: profileRow.timezone,
+              workingHoursStart: profileRow.workingHoursStart,
+              workingHoursEnd: profileRow.workingHoursEnd,
+              workingDays: profileRow.workingDays,
+              oooFrom: profileRow.oooFrom,
+              oooUntil: profileRow.oooUntil,
+              oooMessage: profileRow.oooMessage,
+            },
+    };
+  });
 }
 
 /* -------------------------------------------------------------------------- *

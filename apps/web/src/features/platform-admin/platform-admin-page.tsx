@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import type { OrgId } from '@taskflow/contracts';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
@@ -11,6 +12,8 @@ import {
   Button,
   ConfirmButton,
   Empty,
+  Field,
+  Input,
   SkeletonRows,
   Spinner,
 } from '../../components/primitives.js';
@@ -216,6 +219,32 @@ function OrgsTab({
     },
   });
 
+  /* §3.5 (Phase 12 Wave 2) — org deletion, the one action with no undo. The
+     row's Delete button only opens the modal for a SUSPENDED org (the server
+     enforces the gate too); the modal's confirm button stays disabled until
+     the operator types the org's exact slug, and the server re-checks both. */
+  const [deleteTarget, setDeleteTarget] = useState<{
+    orgId: string;
+    name: string;
+    slug: string;
+  } | null>(null);
+  const [confirmSlug, setConfirmSlug] = useState('');
+
+  const remove = useMutation({
+    mutationFn: (input: { orgId: OrgId; confirmSlug: string }) =>
+      api.platformAdmin.orgs.delete.mutate(input),
+    onSuccess: async () => {
+      setDeleteTarget(null);
+      setConfirmSlug('');
+      await queryClient.invalidateQueries({ queryKey: ['platform', 'orgs'] });
+    },
+    onError: (error, input) => {
+      guard(error, () => {
+        remove.mutate(input);
+      });
+    },
+  });
+
   if (errorCodeOf(orgs.error) === 'STEP_UP_REQUIRED') return <StepUpGate onStepUp={onStepUp} />;
 
   return (
@@ -251,16 +280,29 @@ function OrgsTab({
                   </td>
                   <td className="px-3 py-2 text-right">
                     {org.status === 'suspended' ? (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={reactivate.isPending}
-                        onClick={() => {
-                          reactivate.mutate(org.orgId as OrgId);
-                        }}
-                      >
-                        Reactivate
-                      </Button>
+                      <div className="flex justify-end gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={reactivate.isPending}
+                          onClick={() => {
+                            reactivate.mutate(org.orgId as OrgId);
+                          }}
+                        >
+                          Reactivate
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          disabled={remove.isPending}
+                          onClick={() => {
+                            setConfirmSlug('');
+                            setDeleteTarget({ orgId: org.orgId, name: org.name, slug: org.slug });
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      </div>
                     ) : (
                       <ConfirmButton
                         size="sm"
@@ -280,8 +322,81 @@ function OrgsTab({
         </div>
       )}
 
-      {(suspend.isError || reactivate.isError) && (
-        <ErrorView error={suspend.error ?? reactivate.error} title="Could not change the status" />
+      {(suspend.isError || reactivate.isError || remove.isError) && (
+        <ErrorView
+          error={suspend.error ?? reactivate.error ?? remove.error}
+          title="Could not change the status"
+        />
+      )}
+
+      {/* §3.5's type-the-slug confirmation — a single confirm-button click is
+          too cheap an action to gate the one operation in this system with no
+          undo. The button is disabled until the typed slug matches exactly;
+          the server re-checks the slug AND the suspended status. */}
+      {deleteTarget !== null && (
+        <ModalRoot
+          open
+          onOpenChange={(next) => {
+            if (!next) setDeleteTarget(null);
+          }}
+        >
+          <ModalContent size="sm" className="p-4">
+            <ModalTitle>Delete {deleteTarget.name}?</ModalTitle>
+            <ModalDescription>
+              This permanently deletes the organization and everything it owns — projects, channels,
+              documents, memberships, and its audit history. There is no undo. Type{' '}
+              <code className="rounded bg-surface-sunken px-1 font-mono text-[11px]">
+                {deleteTarget.slug}
+              </code>{' '}
+              to confirm.
+            </ModalDescription>
+
+            <form
+              className="mt-4 space-y-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (deleteTarget !== null && confirmSlug === deleteTarget.slug) {
+                  remove.mutate({
+                    orgId: deleteTarget.orgId as OrgId,
+                    confirmSlug,
+                  });
+                }
+              }}
+            >
+              <Field label="Type the organization slug" htmlFor="delete-org-slug">
+                <Input
+                  id="delete-org-slug"
+                  value={confirmSlug}
+                  autoComplete="off"
+                  placeholder={deleteTarget.slug}
+                  onChange={(event) => {
+                    setConfirmSlug(event.target.value);
+                  }}
+                />
+              </Field>
+
+              {remove.isError && <ErrorView error={remove.error} />}
+
+              <div className="flex gap-2">
+                <Button
+                  type="submit"
+                  variant="danger"
+                  disabled={remove.isPending || confirmSlug !== deleteTarget.slug}
+                >
+                  {remove.isPending ? 'Deleting…' : 'Delete forever'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setDeleteTarget(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </ModalContent>
+        </ModalRoot>
       )}
 
       {/* Keyset pagination on created_at — a directory read while orgs are

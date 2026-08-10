@@ -473,3 +473,129 @@ describe('the §9 carrier subaccount freeze (ai/phase-12-admin.md §9)', () => {
     });
   });
 });
+
+describe('org deletion (Phase 12 Wave 2 §3.5)', () => {
+  it('refuses to delete an org that is not suspended', async () => {
+    /* Deletion is a two-step operation — suspend, THEN delete. The gate is
+       the first assertion a weaker implementation would skip (checking the
+       slug only would let a one-click mistake erase a live org). */
+    const orgId = await newOrg('delete-active');
+
+    const error: unknown = await directory
+      .deleteOrg({ events: new RecordingEventBus() }, operatorOf(OPERATOR), {
+        orgId,
+        confirmSlug: 'delete-active',
+      })
+      .catch((caught: unknown) => caught);
+
+    expect((error as { code?: string }).code).toBe('VALIDATION_FAILED');
+
+    /* The org survives — nothing was deleted. */
+    const after = await directory.listOrgs(operatorOf(OPERATOR), { cursor: null, limit: 10 });
+    expect(after.orgs.some((row) => row.orgId === orgId)).toBe(true);
+  });
+
+  it('refuses to delete a suspended org when the confirmation slug does not match', async () => {
+    const orgId = await newOrg('delete-wrongslug');
+    await directory.suspendOrg({ events: new RecordingEventBus() }, operatorOf(OPERATOR), orgId);
+
+    const error: unknown = await directory
+      .deleteOrg({ events: new RecordingEventBus() }, operatorOf(OPERATOR), {
+        orgId,
+        confirmSlug: 'not-the-slug',
+      })
+      .catch((caught: unknown) => caught);
+
+    expect((error as { code?: string }).code).toBe('VALIDATION_FAILED');
+
+    /* Still suspended, still there — the wrong slug must not consume the org. */
+    const after = await directory.listOrgs(operatorOf(OPERATOR), { cursor: null, limit: 10 });
+    expect(after.orgs.find((row) => row.orgId === orgId)?.status).toBe('suspended');
+  });
+
+  it('deletes the org, its audit chain, and rows across Work, Chat, Docs, People and outbox', async () => {
+    const orgId = await newOrg('delete-cascade');
+    const events = new RecordingEventBus();
+
+    /* A suspension writes a REAL entry into the org's audit chain. That entry
+       must be purged with the org (migration 0044) — not left behind as rows
+       in a chain nobody can ever query again (the org row is gone, so every
+       org-scoped RLS policy matches nothing). The assertion below that
+       audit.audit_log is empty is what proves the trigger, not a cascade. */
+    await directory.suspendOrg({ events }, operatorOf(OPERATOR), orgId);
+
+    /* One seeded row per product schema + the outbox, each keyed on org_id
+       with a cascading FK — the §6 test that would catch a foreign key that
+       never got ON DELETE CASCADE (the migration audit says every one
+       cascades; this is the proof against a real database). */
+    await admin.setOrg(orgId);
+    await admin.query(
+      `INSERT INTO work.projects (id, org_id, name, key) VALUES ($1, $2, 'Doomed', 'DOOM')`,
+      ['0195dd00-0000-7000-8000-0000000000d1', orgId],
+    );
+    await admin.query(
+      `INSERT INTO chat.channels (id, org_id, type, name) VALUES ($1, $2, 'public', 'general')`,
+      ['0195dd00-0000-7000-8000-0000000000d2', orgId],
+    );
+    await admin.query(
+      `INSERT INTO docs.spaces (id, org_id, name) VALUES ($1, $2, 'Doomed space')`,
+      ['0195dd00-0000-7000-8000-0000000000d3', orgId],
+    );
+    await admin.query(
+      `INSERT INTO people.membership_profiles (org_id, user_id, job_title) VALUES ($1, $2, 'doomed')`,
+      [orgId, OWNER],
+    );
+    await admin.query(
+      `INSERT INTO platform.outbox (id, org_id, name, version, occurred_at, payload)
+       VALUES ($1, $2, 'test.org_deleted_probe', 1, now(), '{}'::jsonb)`,
+      ['0195dd00-0000-7000-8000-0000000000d4', orgId],
+    );
+    await admin.setOrg(null);
+
+    const result = await directory.deleteOrg({ events }, operatorOf(OPERATOR), {
+      orgId,
+      confirmSlug: 'delete-cascade',
+    });
+    expect(result.slug).toBe('delete-cascade');
+
+    /* Every count runs with app.org_id = the deleted org's id: the admin
+       connection is subject to FORCE RLS, so a count with no org set would
+       be zero whether or not rows remained — a vacuous pass. With the org
+       selected, any leftover row still matches the policy and fails. */
+    /* `identity.orgs` is the one table whose tenant column is `id`, not
+       `org_id` — the tenant IS the row. */
+    const remaining = async (table: string, where = 'org_id'): Promise<number> => {
+      const { rows } = await admin.query(
+        `SELECT count(*)::int AS n FROM ${table} WHERE ${where} = $1`,
+        [orgId],
+      );
+      return Number(rows[0]?.['n']);
+    };
+
+    await admin.setOrg(orgId);
+    expect(await remaining('identity.orgs', 'id')).toBe(0);
+    expect(await remaining('identity.memberships')).toBe(0);
+    expect(await remaining('work.projects')).toBe(0);
+    expect(await remaining('chat.channels')).toBe(0);
+    expect(await remaining('docs.spaces')).toBe(0);
+    expect(await remaining('people.membership_profiles')).toBe(0);
+    expect(await remaining('platform.outbox')).toBe(0);
+    expect(await remaining('audit.audit_log')).toBe(0);
+    expect(await remaining('audit.chain_heads')).toBe(0);
+    await admin.setOrg(null);
+
+    /* The typed event published with the SYSTEM_ORG envelope (guardrail 11). */
+    expect(events.events.some((event) => event.name === 'platform.org_deleted')).toBe(true);
+
+    /* The final accountability record — the GLOBAL operator chain, carrying
+       the confirmation slug the operator typed. */
+    const entries = await readOperatorAudit({ limit: 50, before: null });
+    const deletion = entries.find((entry) => entry.action === 'orgs.delete');
+    expect(deletion).toBeDefined();
+    expect(deletion?.target).toMatchObject({
+      orgId,
+      slug: 'delete-cascade',
+      confirmSlug: 'delete-cascade',
+    });
+  });
+});

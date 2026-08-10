@@ -21,7 +21,8 @@ import {
 import { createEvent, type EventBus } from '@taskflow/events';
 import { newId } from '@taskflow/security';
 import { setSubaccountStatus, type SubaccountDeps } from '../telephony/subaccount.service.js';
-import { orgReactivated, orgSuspended } from './events.js';
+import { SYSTEM_ORG } from '../identity/identity.service.js';
+import { orgDeleted, orgReactivated, orgSuspended } from './events.js';
 import { recordOperatorAction } from './audit.js';
 import { encodeCreatedCursor, parseCreatedCursor } from './pagination.js';
 
@@ -266,6 +267,125 @@ export async function reactivateOrg(
   }
 
   return { orgId, status: 'active' as const };
+}
+
+/**
+ * Deletes an org and everything it ever owned (Phase 12 Wave 2 §3.5) — the
+ * one operator action in this entire system with no undo.
+ *
+ * Two gates, in order: the org must already be `'suspended'` (deletion is a
+ * two-step operation — suspend, then confirm, then delete — never a single
+ * action from `'active'`, giving a real visible waiting period between
+ * "this org should go" and "this org is gone forever"), and the operator
+ * must type the org's actual slug into the confirmation field (a single
+ * confirm-button click is too cheap an action to gate irreversible
+ * deletion with).
+ *
+ * The delete itself is ONE statement: `DELETE FROM identity.orgs`. Every
+ * org_id foreign key in the schema cascades — verified by migration 0040
+ * through 0039 and re-verified for RTC's 0041/0042 here — and migration
+ * 0044 extends the cascade to the org's own audit chain via a SECURITY
+ * DEFINER trigger, because `audit.audit_log` (partitioned BY RANGE) can
+ * carry no org_id foreign key at all. Postgres fans the delete out across
+ * Work, Chat, Docs, People, outbox and audit with no maintained table list
+ * to fall out of sync with the schema.
+ *
+ * Where the records land: the org's own chain is deleted with it (that is
+ * the point — a deleted tenant's history must not linger as unreadable
+ * rows), so the final accountability record is the `orgs.delete` entry in
+ * the GLOBAL operator chain, written AFTER the delete succeeds and carrying
+ * the org id, slug, member count, and the confirmation slug the operator
+ * typed — a failure here is a missing log row, never a wrong one, and the
+ * row is the record of an action that did happen. The typed event
+ * (`platform.org_deleted`) publishes with the SYSTEM_ORG envelope for the
+ * same reason the operator row is global: there is no org left to name.
+ *
+ * One residual named rather than fixed: if the org had provisioned a carrier
+ * subaccount, a preceding `suspendOrg` froze it at Twilio (§9) but this
+ * deletion never RELEASES it — the `comms.subaccounts` row cascades away
+ * with the org, so no later code can even reach the SID, and the carrier
+ * still holds a frozen, orphaned subaccount. Releasing needs a
+ * carrier-delete capability the telephony module does not yet have; named
+ * here so it is a known follow-up rather than a surprise.
+ */
+export async function deleteOrg(
+  deps: { readonly events: EventBus },
+  operator: PlatformOperator,
+  input: { readonly orgId: OrgId; readonly confirmSlug: string },
+): Promise<{ readonly orgId: OrgId; readonly slug: string }> {
+  const now = new Date();
+
+  const { slug, memberCount } = await withPlatformAdminScope(async (tx) => {
+    const existing = await tx
+      .select({
+        id: schema.orgs.id,
+        slug: schema.orgs.slug,
+        status: schema.orgs.status,
+        memberCount: countRows(schema.memberships.id),
+      })
+      .from(schema.orgs)
+      .leftJoin(
+        schema.memberships,
+        and(eq(schema.memberships.orgId, schema.orgs.id), eq(schema.memberships.status, 'active')),
+      )
+      .groupBy(schema.orgs.id)
+      .where(eq(schema.orgs.id, input.orgId))
+      .limit(1);
+
+    const org = existing[0];
+    /* A missing org, and a deleted org, answer the same NOT_FOUND: the
+       console confirming "that org used to exist" leaks a fact the
+       cross-tenant-privacy rule keeps covered. */
+    if (!org || org.status === 'deleted') throw errors.notFound();
+
+    /* The two-step gate — see the doc above. A distinct error rather than a
+       silent no-op so the console can tell the operator what to do. */
+    if (org.status !== 'suspended') {
+      throw errors.validation({
+        confirmSlug: 'An organization must be suspended before it can be deleted.',
+      });
+    }
+
+    /* Type-the-slug confirmation. Compared against the org's slug, not its
+       name — the slug is the stable, URL-safe identifier the operator sees
+       in the directory row itself. */
+    if (input.confirmSlug !== org.slug) {
+      throw errors.validation({
+        confirmSlug: 'The confirmation does not match this organization\u2019s slug.',
+      });
+    }
+
+    /* The one statement. 0044's trigger removes the org's audit chain in
+       the same transaction; every other row cascades by foreign key. */
+    await tx.delete(schema.orgs).where(eq(schema.orgs.id, input.orgId));
+
+    return { slug: org.slug, memberCount: Number(org.memberCount) };
+  });
+
+  /* The final accountability record — global, so it survives the org. The
+     confirmation slug is part of the record: "the operator typed this" is
+     what makes a contested deletion attributable to a human decision. */
+  await recordOperatorAction(operator.userId, 'orgs.delete', {
+    orgId: input.orgId,
+    slug,
+    memberCount,
+    confirmSlug: input.confirmSlug,
+  });
+
+  await deps.events.publish([
+    createEvent(
+      orgDeleted,
+      { orgId: input.orgId, slug, operatorUserId: operator.userId, memberCount },
+      {
+        orgId: SYSTEM_ORG,
+        actorId: operator.userId,
+        requestId: operator.requestId,
+        occurredAt: now,
+      },
+    ),
+  ]);
+
+  return { orgId: input.orgId, slug };
 }
 
 /**
