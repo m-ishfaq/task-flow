@@ -391,3 +391,30 @@ group-info screen this phase never had a UI for:
   (`decline`'s own broadcast reaching the tab that just clicked it). The receiver's decline button
   was also relabelled from "Cancel" — a word that means something different when you did not place
   the call.
+
+### Reversed: hanging up now finishes a recording rather than discarding it (2026-08-10)
+
+Wave 2 shipped `hangUp()` abandoning an in-progress `MediaRecorder` (`recorder?.cancel()`) rather
+than uploading it, on the reasoning that "the person who wants the file presses stop, which
+uploads it" — a hangup that silently uploaded would store audio nobody asked to keep at the moment
+they were leaving.
+
+That reasoning did not survive contact with an actual call: a real session's API logs showed
+`recording.request` → `answer` → `start` → a normal run of `recording.status` polls, then
+`rtc.leave` with no `recording.stop`, `presignUpload`, or `confirmUpload` anywhere — the recording
+was captured correctly and the file was never uploaded, because hanging up **was** how the call
+ended, the same way it ends most calls. The row sat in `rtc.recordings` at `status: 'pending'`
+forever, which is indistinguishable from "no recording happened" to `listRecordingsForChannel` and
+therefore to the Calls tab that reads it — not a bug in that read path, a correct report of a
+capture that was thrown away.
+
+Confirmed with the project owner: losing a recording someone explicitly started because they used
+the ordinary "Hang up" button instead of a second dedicated one is worse than uploading a capture
+nobody pressed an extra button to keep — the first is unrecoverable, the second can just be
+deleted. `hangUp()` now finishes and uploads an in-progress capture before tearing down the mesh
+and local tracks (order matters — the recorder's audio graph is built from those streams, so
+stopping them first would capture silence for the last moment rather than what was actually said).
+A failed save surfaces as a dismissible notice, `recordingSaveError`, using the exact "outlives the
+call" shape §3.1's `evicted` flag already established: the call UI is gone by the time an upload
+either succeeds or fails, so the fact has to be carried past the state reset that would otherwise
+lose it.
