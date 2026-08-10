@@ -667,6 +667,11 @@ function NewChannelPopover({
   );
 }
 
+/** Matches `openDirect`'s own `z.array(UserIdSchema).min(1).max(20)` in
+ * `apps/api/src/chat/router.ts` — the caller is added server-side and is never
+ * one of these, so the cap here is on the OTHER participants, same as there. */
+const MAX_OTHER_PARTICIPANTS = 20;
+
 function NewDirectMessagePopover({
   orgId,
   onOpened,
@@ -680,12 +685,14 @@ function NewDirectMessagePopover({
   const viewerId = useSession((state) => state.userId);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [selected, setSelected] = useState<readonly UserId[]>([]);
 
   const start = useMutation({
-    mutationFn: (userId: UserId) => openDirectMessage([userId]),
+    mutationFn: (userIds: readonly UserId[]) => openDirectMessage(userIds),
     onSuccess: (result) => {
       invalidateChannels(queryClient, orgId);
       setOpen(false);
+      setSelected([]);
       onOpened(result.channelId as ChannelId);
     },
     onError: (error) => {
@@ -700,12 +707,25 @@ function NewDirectMessagePopover({
       ? candidates
       : candidates.filter((member) => member.email.toLowerCase().includes(needle));
 
+  const toggle = (userId: UserId) => {
+    setSelected((current) =>
+      current.includes(userId)
+        ? current.filter((id) => id !== userId)
+        : current.length >= MAX_OTHER_PARTICIPANTS
+          ? current
+          : [...current, userId],
+    );
+  };
+
   return (
     <PopoverRoot
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) setQuery('');
+        if (!next) {
+          setQuery('');
+          setSelected([]);
+        }
       }}
     >
       <PopoverTrigger asChild>
@@ -728,27 +748,72 @@ function NewDirectMessagePopover({
           className="h-7 text-xs"
         />
 
+        {selected.length > 0 && (
+          <ul className="flex flex-wrap gap-1">
+            {selected.map((userId) => {
+              const member = people.find((person) => person.userId === userId);
+              return (
+                <li key={userId}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      toggle(userId);
+                    }}
+                    className="flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] text-accent hover:bg-accent/20"
+                  >
+                    <span className="truncate">{member?.email ?? userId}</span>
+                    <span aria-hidden="true">×</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
         {filtered.length === 0 ? (
           <p className="p-1 text-xs text-ink-faint">No matches.</p>
         ) : (
           <ul className="max-h-56 space-y-0.5 overflow-y-auto">
-            {filtered.map((member) => (
-              <li key={member.userId}>
-                <button
-                  type="button"
-                  disabled={start.isPending}
-                  onClick={() => {
-                    start.mutate(member.userId as UserId);
-                  }}
-                  className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
-                >
-                  <Avatar userId={member.userId} label={member.email} size="xs" />
-                  <span className="truncate">{member.email}</span>
-                </button>
-              </li>
-            ))}
+            {filtered.map((member) => {
+              const isSelected = selected.includes(member.userId as UserId);
+              return (
+                <li key={member.userId}>
+                  <button
+                    type="button"
+                    disabled={start.isPending}
+                    aria-pressed={isSelected}
+                    onClick={() => {
+                      toggle(member.userId as UserId);
+                    }}
+                    className={cn(
+                      'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs',
+                      isSelected
+                        ? 'bg-accent/10 text-accent'
+                        : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+                    )}
+                  >
+                    <Avatar userId={member.userId} label={member.email} size="xs" />
+                    <span className="truncate">{member.email}</span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
+
+        <Button
+          size="sm"
+          variant="primary"
+          className="w-full"
+          disabled={selected.length === 0 || start.isPending}
+          onClick={() => {
+            start.mutate(selected);
+          }}
+        >
+          {selected.length > 1
+            ? `Start group with ${String(selected.length)} people`
+            : 'Start conversation'}
+        </Button>
       </PopoverContent>
     </PopoverRoot>
   );
