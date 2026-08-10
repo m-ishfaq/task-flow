@@ -217,6 +217,65 @@ export const EnvSchema = z
        instance with no carrier has nothing to store. */
     STORAGE_BUCKET_RECORDINGS: NonEmpty.optional(),
 
+    /* ------------------------------------------------------------------ *
+     * In-app voice / WebRTC (Phase 13 Wave 1, ai/phase-13-webrtc.md §3.3-§3.4)
+     * ------------------------------------------------------------------ */
+
+    /* ICE servers, comma-separated, in the form the browser's
+       RTCPeerConnection takes (`stun:host:3478`, `turn:host:3478?transport=udp`).
+       Two variables rather than one list because they are governed differently:
+       a STUN server learns your public address and relays nothing, so it costs
+       nothing and needs no credential. A TURN server relays every byte. */
+    RTC_STUN_URLS: z.string().default('stun:localhost:3478'),
+    RTC_TURN_URLS: z.string().optional(),
+
+    /* coturn's `static-auth-secret`. OPTIONAL, and its absence is a valid
+       deployment: STUN alone works on most networks. What it must never be is
+       present-but-shipped — this value stays server-side and only
+       `mintTurnCredential` ever sees it (§3.3).
+
+       Deliberately NOT Base64Key. coturn takes an arbitrary string here, and
+       requiring a 32-byte base64 value would mean a secret that this app
+       accepts and the TURN server was never configured with. */
+    RTC_TURN_SECRET: NonEmpty.optional(),
+
+    /* How long a minted credential lives. Long enough to cover ICE gathering
+       and a renegotiation, short enough that a leaked pair is worthless by the
+       time anyone finds it in a log. The floor is the same 30 seconds the
+       `turn_issuance_ttl_sane` CHECK enforces. */
+    RTC_TURN_TTL_SECONDS: z.coerce.number().int().min(30).max(86_400).default(600),
+
+    /* The DURABLE issuance budget, per org, over a rolling 24 hours (§3.4).
+       This is the TURN analogue of TELEPHONY_DEFAULT_SPEND_CAP_CENTS, and it
+       exists for the same reason: an open relay carries strangers' traffic on
+       this deployment's bill, and the control that actually stops it has to
+       survive a restart. */
+    RTC_TURN_ISSUANCE_CAP_PER_DAY: z.coerce.number().int().nonnegative().default(500),
+
+    /**
+     * `all` (default) or `relay`, passed through to the browser.
+     *
+     * `relay` forces every candidate through TURN. It is not the production
+     * setting — it is how the TURN path gets exercised deliberately, because
+     * STUN alone works on most developer networks and the relay path therefore
+     * stays untested until someone is behind a symmetric NAT, in production.
+     *
+     * A literal union rather than a boolean: the value is handed to
+     * `RTCPeerConnection` verbatim, and inventing a second vocabulary to
+     * translate would be a place for the translation to be wrong.
+     */
+    RTC_ICE_TRANSPORT_POLICY: z.enum(['all', 'relay']).default('all'),
+
+    /* Ceiling on one uploaded call recording, PINNED into the presigned PUT's
+       signature rather than merely checked — which is what makes it a limit
+       instead of advice (packages/storage/src/s3.ts). At roughly 32 kbit/s for
+       Opus in a WebM container, 64 MB is about four hours. */
+    RTC_MAX_RECORDING_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(64 * 1024 * 1024),
+
     /* A SEVENTH database role, for the recording-ingest sweep (Wave 2,
        migration 0033). taskflow_recording_ingest holds a COLUMN-LEVEL grant on
        comms.recordings and NOTHING on comms.calls — so the role that fetches a
@@ -281,6 +340,41 @@ export const EnvSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'MASTER_KEY_BASE64 and JWT_SECRET must be different values.',
+      });
+    }
+
+    /* A TURN URL with no secret, or a secret with no URL, is half a
+       configuration — and the half that is missing fails SILENTLY. The browser
+       is handed a `turn:` server it cannot authenticate against, ICE quietly
+       falls back to the STUN candidates that work on most networks, and the
+       relay path is discovered to be broken by the first user behind a
+       symmetric NAT. This is the TELEPHONY_WEBHOOK_ORIGIN precedent: refuse at
+       boot rather than degrade invisibly. */
+    const hasTurnUrls = (env.RTC_TURN_URLS ?? '').trim().length > 0;
+    const hasTurnSecret = env.RTC_TURN_SECRET !== undefined;
+
+    if (hasTurnUrls !== hasTurnSecret) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [hasTurnUrls ? 'RTC_TURN_SECRET' : 'RTC_TURN_URLS'],
+        message:
+          'RTC_TURN_URLS and RTC_TURN_SECRET must be set together. One without the other ' +
+          'hands the browser a relay it cannot authenticate against, and ICE falls back to ' +
+          'STUN without reporting anything.',
+      });
+    }
+
+    /* `relay` with no relay configured refuses EVERY call — the policy tells
+       the browser to discard every non-relay candidate, and there is no relay
+       to produce one. Silent again: the peer connection simply never reaches
+       `connected`. */
+    if (env.RTC_ICE_TRANSPORT_POLICY === 'relay' && !hasTurnUrls) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['RTC_ICE_TRANSPORT_POLICY'],
+        message:
+          "'relay' discards every non-relay ICE candidate, so with no RTC_TURN_URLS configured " +
+          'no call can ever connect.',
       });
     }
   });
@@ -385,6 +479,17 @@ const KNOWN_VARIABLES = new Set([
   'REALTIME_MAX_CONNECTIONS_PER_IP_PER_MINUTE',
   'REALTIME_MAX_JOINS_PER_MINUTE',
   'REALTIME_MAX_REFUSED_JOINS_PER_MINUTE',
+  /* apps/realtime's signalling limiter (Phase 13 Wave 1) — read by the gateway,
+     not by this app, and listed here for the same reason as the six above. */
+  'REALTIME_MAX_SIGNALS_PER_MINUTE',
+  /* In-app voice (Phase 13 Wave 1). */
+  'RTC_STUN_URLS',
+  'RTC_TURN_URLS',
+  'RTC_TURN_SECRET',
+  'RTC_TURN_TTL_SECONDS',
+  'RTC_TURN_ISSUANCE_CAP_PER_DAY',
+  'RTC_ICE_TRANSPORT_POLICY',
+  'RTC_MAX_RECORDING_BYTES',
 ]);
 
 /**
@@ -405,6 +510,7 @@ const TASKFLOW_PREFIXES = [
   'REALTIME_',
   'TWILIO_',
   'TELEPHONY_',
+  'RTC_',
 ];
 
 /**

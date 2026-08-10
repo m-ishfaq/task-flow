@@ -214,6 +214,37 @@ export const notificationPrefs = identity.table(
 );
 
 /**
+ * Ringing preferences (migration 0042, ai/phase-13-webrtc.md §7).
+ *
+ * GLOBAL PER USER and in `identity` rather than `rtc`, for the reason
+ * `notificationPrefs` above gives at length: every route reading it must be a
+ * `selfRoute` (no permission describes "choose your own ringtone", and a guest
+ * must be able to), and `selfRoute` resolves no org — so an org-keyed row would
+ * have no org to key it by.
+ *
+ * `ringtone` names one of a closed set the CLIENT synthesizes with Web Audio
+ * oscillators. There is deliberately no audio file anywhere in this system: no
+ * asset to host, no upload path to secure, and no way for this column to become
+ * a URL somebody's browser fetches.
+ */
+export const callPrefs = identity.table('call_prefs', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  /** One of RINGTONES — a CHECK, not an enum. See the migration. */
+  ringtone: text('ringtone').notNull().default('classic'),
+  /**
+   * Ring audibly at all.
+   *
+   * Distinct from muting notifications: somebody in an open-plan office wants
+   * the popup and not the sound, and folding the two together would make "stop
+   * the noise" mean "stop telling me".
+   */
+  ringEnabled: boolean('ring_enabled').notNull().default(true),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * The identity-scoped data key (Phase 12 Wave 2, migration 0040, §3.2).
  *
  * A singleton row, created by application code at boot — never by a

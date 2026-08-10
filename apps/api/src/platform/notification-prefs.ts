@@ -33,6 +33,11 @@ const CATEGORY_OF_KIND: Readonly<Record<string, NotificationCategory>> = {
   'card.comment_mention': 'direct',
   'card.due_soon': 'activity',
   'page.comment_mention': 'direct',
+  /* A missed call is `direct`, not `activity` — somebody tried to reach YOU,
+     personally, and the difference between the two categories is exactly that.
+     `activity` would also park it in the daily digest, which is the wrong
+     latency for "someone called you" by about a day. */
+  'call.missed': 'direct',
 };
 
 export function categoryOfKind(kind: string): NotificationCategory {

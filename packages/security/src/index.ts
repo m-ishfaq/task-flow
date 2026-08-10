@@ -202,3 +202,19 @@ export {
  * reviewed once instead of re-litigated per column.
  */
 export { blindIndex, blindIndexEquals } from './blind-index.js';
+
+/**
+ * TURN credentials — coturn's `use-auth-secret` REST scheme (Phase 13 Wave 1,
+ * ai/phase-13-webrtc.md §3.3).
+ *
+ * Here rather than in the rtc module because a static TURN secret in a client
+ * bundle is the whole vulnerability this scheme exists to remove, and because
+ * "which hash, keyed how, over what string" is a question that should be
+ * answered once, in a reviewed file, rather than inlined next to the route that
+ * needed a credential.
+ */
+export {
+  mintTurnCredential,
+  type MintTurnCredentialOptions,
+  type TurnCredential,
+} from './turn-credential.js';

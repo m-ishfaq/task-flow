@@ -1,15 +1,18 @@
 import type { Logger } from '@taskflow/observability';
 import { OrgIdSchema, BoardIdSchema, ChannelIdSchema } from '@taskflow/contracts';
 import type { OutboxRow } from '@taskflow/db';
-import { broadcastPresence } from './presence.js';
+import { broadcastPresence, broadcastRtcPeers } from './presence.js';
 import { authorizeChannelJoin, authorizeJoin } from './rooms.js';
-import { boardRoom, channelRoom } from './wire.js';
+import { authorizeRtcJoin } from './rtc-rooms.js';
+import { boardRoom, channelRoom, rtcRoom } from './wire.js';
 import type {
   ChatNamespace,
   ChatSocket,
   GatewayServer,
   GatewaySocket,
   RevocationMessage,
+  RtcNamespace,
+  RtcSocket,
 } from './socket-data.js';
 
 /**
@@ -344,4 +347,126 @@ async function leaveChannel(
     { userId: socket.data.identity.userId, channelId, reason },
     'socket left channel room',
   );
+}
+
+/* -------------------------------------------------------------------------- *
+ * In-app voice (Phase 13 Wave 1, ai/phase-13-webrtc.md §1)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * The same sweep again, over the `/rtc` namespace's sockets.
+ *
+ * A third copy rather than a generic version, for the reason `applyChatRevocation`
+ * spells out above: a generic sweep takes "which authorizer" as an argument, and
+ * passing the wrong one makes every re-check answer `no_such_call`, which fails
+ * CLOSED and therefore evicts everyone from every call on every role change in
+ * the org. An outage that looks like a working security control.
+ *
+ * ## Why a live call is the surface where this matters most
+ *
+ * On a board, a stale room means seeing card moves you should not. In a private
+ * channel it means still receiving a conversation you were removed from. In a
+ * call it means a microphone — someone removed from a channel mid-call keeps
+ * hearing it until they hang up, and the signalling room is what keeps their peer
+ * connections alive. Leaving the room is the gateway's half; the peers stop
+ * negotiating with them and the client tears the connection down.
+ *
+ * Stated honestly, because it is a real limit: leaving the signalling room does
+ * not by itself kill an already-established peer connection, which is
+ * browser-to-browser and does not pass through this process at all. What it does
+ * is remove them from every future negotiation and tell the remaining peers to
+ * drop them. A control that could positively terminate media would need an SFU,
+ * which is deferred (§2) — and that is a reason to know the limit, not to skip
+ * the eviction.
+ */
+export async function applyRtcRevocation(
+  namespace: RtcNamespace,
+  message: RevocationMessage,
+  logger: Logger,
+): Promise<void> {
+  const sockets = [...namespace.sockets.values()] as RtcSocket[];
+
+  for (const socket of sockets) {
+    switch (message.kind) {
+      case 'session': {
+        if (socket.data.identity.sessionId !== message.sessionId) break;
+        socket.emit('session:ended', { reason: message.reason });
+        logger.info(
+          { userId: socket.data.identity.userId, reason: message.reason },
+          'closing rtc socket: credential revoked',
+        );
+        socket.disconnect(true);
+        break;
+      }
+
+      case 'member_removed': {
+        if (socket.data.identity.userId !== message.userId) break;
+        for (const [sessionId, orgId] of [...socket.data.rooms]) {
+          if (orgId === message.orgId) {
+            await leaveRtcRoom(namespace, socket, sessionId, logger, 'member removed from org');
+          }
+        }
+        break;
+      }
+
+      case 'recheck_user': {
+        if (socket.data.identity.userId !== message.userId) break;
+        await recheckCalls(namespace, socket, message.orgId, logger);
+        break;
+      }
+
+      case 'recheck_org': {
+        await recheckCalls(namespace, socket, message.orgId, logger);
+        break;
+      }
+    }
+  }
+}
+
+async function recheckCalls(
+  namespace: RtcNamespace,
+  socket: RtcSocket,
+  orgId: string,
+  logger: Logger,
+): Promise<void> {
+  for (const [sessionId, roomOrgId] of [...socket.data.rooms]) {
+    if (roomOrgId !== orgId) continue;
+
+    const org = OrgIdSchema.safeParse(roomOrgId);
+    if (!org.success) {
+      await leaveRtcRoom(namespace, socket, sessionId, logger, 'unparseable room key');
+      continue;
+    }
+
+    let allowed = false;
+    try {
+      /* `authorizeRtcJoin` — the same function the join ran, which is itself
+         almost nothing but a call to `authorizeChannelJoin`. One definition of
+         who may be in a call, and it is the channel's. */
+      allowed = (await authorizeRtcJoin(socket.data.identity.userId, org.data, sessionId)).allowed;
+    } catch (error) {
+      /* Fails CLOSED, same as the two sweeps above. */
+      logger.error({ err: error, sessionId }, 'call re-check failed; leaving the room');
+    }
+
+    if (!allowed) {
+      await leaveRtcRoom(namespace, socket, sessionId, logger, 'authorization re-check failed');
+    }
+  }
+}
+
+async function leaveRtcRoom(
+  namespace: RtcNamespace,
+  socket: RtcSocket,
+  sessionId: string,
+  logger: Logger,
+  reason: string,
+): Promise<void> {
+  socket.data.rooms.delete(sessionId);
+  await socket.leave(rtcRoom(sessionId));
+  socket.emit('rtc:closed', { sessionId });
+  logger.info({ userId: socket.data.identity.userId, sessionId, reason }, 'socket left call room');
+  /* The remaining peers need to know somebody left, or they keep a peer
+     connection open to a browser that is no longer being negotiated with. */
+  await broadcastRtcPeers(namespace, sessionId);
 }

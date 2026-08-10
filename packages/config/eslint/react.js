@@ -57,6 +57,35 @@ export const react = [
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     },
   },
+
+  /**
+   * Live WebRTC audio, and the one accessibility rule that cannot apply to it.
+   *
+   * `jsx-a11y/media-has-caption` requires a `<track kind="captions">` on every
+   * `<audio>` and `<video>`. It is the right rule for recorded media, and it is
+   * unsatisfiable for a peer's live `MediaStream`: the audio is generated in
+   * another person's browser microseconds ago, so there is no caption file to
+   * point at and no transcript to have made.
+   *
+   * The alternative was an empty `<track>` element to silence it, which is
+   * WORSE than turning the rule off here — it advertises captions to assistive
+   * technology and then supplies none, so a screen-reader user is told the
+   * content is captioned when it is not.
+   *
+   * Narrowed to the one directory that holds live peer audio rather than
+   * disabled inline, per CLAUDE.md: a rule that is genuinely wrong for a
+   * surface is changed in the config with a reason, so the next `<audio>`
+   * somebody adds anywhere else in `apps/web` is still caught. Wave 3's video
+   * lands in the same directory and inherits the same argument; live captioning
+   * for calls would be a real feature, not a lint fix.
+   */
+  {
+    name: 'taskflow/react-live-media',
+    files: ['apps/web/src/features/rtc/**/*.tsx'],
+    rules: {
+      'jsx-a11y/media-has-caption': 'off',
+    },
+  },
 ];
 
 export default react;

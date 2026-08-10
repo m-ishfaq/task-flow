@@ -220,6 +220,47 @@ const USER_KEY_OF: Readonly<Record<string, string>> = {
 };
 
 /**
+ * Event name -> the payload key holding a LIST of user ids to fan out to
+ * (Phase 13, ai/phase-13-webrtc.md §7).
+ *
+ * ## Why a second table rather than widening `USER_KEY_OF`
+ *
+ * The two answer differently shaped questions and the difference is not
+ * cosmetic. `USER_KEY_OF` names a field holding ONE id, and every reader of it
+ * — `roomUserIdOf`, `gateway.ts`'s dispatch — is written around exactly one
+ * delivery. Making that field sometimes an array would mean the type at the
+ * call site is `string | string[]`, and the branch that forgets the array case
+ * delivers to nobody, silently, for the events that need it most.
+ *
+ * ## Why calls need it at all
+ *
+ * Everything else routed to a personal room is already per-person: a
+ * notification row names one recipient, so the outbox already carries one event
+ * per person. A ringing call is one FACT with several audiences, and splitting
+ * it into N events at the source would mean N audit entries for one call.
+ *
+ * ## The list is bounded at the source
+ *
+ * `MESH_PARTICIPANT_CAP` — four. This is not a mechanism for broadcasting to an
+ * org: a payload arriving here with a thousand ids would be a defect upstream,
+ * and `MAX_FANOUT` below refuses it rather than fanning it out, because the
+ * cost of being wrong is one socket message per id per gateway instance.
+ */
+const USER_LIST_KEY_OF: Readonly<Record<string, string>> = {
+  'rtc_session.started': 'invitedUserIds',
+  'rtc_session.ended': 'notifyUserIds',
+};
+
+/**
+ * The ceiling on one fan-out.
+ *
+ * Generous against `MESH_PARTICIPANT_CAP` (4) and still a hard stop. A bug that
+ * put an org's whole membership in one of these payloads would otherwise turn a
+ * single outbox row into thousands of socket writes on every instance.
+ */
+const MAX_FANOUT = 32;
+
+/**
  * Event name -> the payload key holding the call id its room is named after
  * (Phase 7 Wave 2, ai/phase-7-voice.md §3.10).
  *
@@ -345,6 +386,24 @@ export function assertRoomTableIsSafe(): void {
     }
   }
 
+  for (const name of Object.keys(USER_LIST_KEY_OF)) {
+    if (name.startsWith(NEVER_BROADCAST_PREFIX) || namesAnAttachment(name)) {
+      throw new UnsafeRoomMappingError(name, ATTACHMENT_REASON);
+    }
+    /* The same dual-room ban as every other table here, extended to the one
+       case that would otherwise slip through: an event fanned out to personal
+       rooms AND routed to a single personal room would be delivered twice to
+       whoever appears in both. */
+    if (
+      name in BOARD_KEY_OF ||
+      name in CHANNEL_KEY_OF ||
+      name in USER_KEY_OF ||
+      name in CALL_KEY_OF
+    ) {
+      throw new UnsafeRoomMappingError(name, DUAL_ROOM_REASON);
+    }
+  }
+
   for (const name of Object.keys(CALL_KEY_OF)) {
     if (name.startsWith(NEVER_BROADCAST_PREFIX) || namesAnAttachment(name)) {
       throw new UnsafeRoomMappingError(name, ATTACHMENT_REASON);
@@ -418,6 +477,36 @@ export function roomUserIdOf(name: string, payload: unknown): string | null {
 
   const value = (payload as Record<string, unknown>)[key];
   return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+/**
+ * The user ids a fan-out event should be delivered to, or an empty list.
+ *
+ * Same contract as its single-id sibling, with one addition: a list longer than
+ * `MAX_FANOUT` is refused ENTIRELY rather than truncated. Truncating would
+ * deliver to an arbitrary subset — so a defect upstream would present as "the
+ * call rang for some people", which is far harder to diagnose than a ring that
+ * did not happen at all and logged why.
+ *
+ * Non-string and empty entries are dropped rather than failing the batch: one
+ * malformed id in a list of four must not cost the other three their ring.
+ */
+export function roomUserIdsOf(name: string, payload: unknown): readonly string[] {
+  const key = USER_LIST_KEY_OF[name];
+  if (key === undefined) return [];
+
+  if (typeof payload !== 'object' || payload === null) return [];
+
+  const value = (payload as Record<string, unknown>)[key];
+  if (!Array.isArray(value)) return [];
+  if (value.length > MAX_FANOUT) return [];
+
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+}
+
+/** Every event name currently fanned out to personal rooms. */
+export function userFanoutEventNames(): readonly string[] {
+  return Object.keys(USER_LIST_KEY_OF);
 }
 
 /** Every event name currently routed to a board room. For tests and diagnostics. */

@@ -11,6 +11,8 @@ import { createPeopleRouter } from './people/router.js';
 import { createPlatformAdminRouter } from './platform-admin/router.js';
 import { createTelephonyRouter } from './telephony/router.js';
 import type { TelephonyDeps } from './telephony/deps.js';
+import { createRtcRouter } from './rtc/router.js';
+import type { RtcDeps } from './rtc/deps.js';
 
 /**
  * The root router.
@@ -43,6 +45,15 @@ export interface AppRouterDeps extends IdentityRouterDeps {
    * guarantee exists to prevent.
    */
   readonly telephony: TelephonyDeps | undefined;
+  /**
+   * In-app voice (Phase 13 Wave 1).
+   *
+   * Not optional, unlike `telephony`. An instance with STUN and no TURN is a
+   * working deployment — most networks connect peer-to-peer — so there is no
+   * "voice is not configured" state for the routes to answer with. What varies
+   * is whether `iceServers` includes a relay, which is data rather than shape.
+   */
+  readonly rtc: RtcDeps;
 }
 
 export function createAppRouter(deps: AppRouterDeps) {
@@ -152,6 +163,16 @@ export function createAppRouter(deps: AppRouterDeps) {
 
     /** Voice & Messaging (Phase 7 Wave 2). */
     telephony: createTelephonyRouter(deps.telephony),
+
+    /**
+     * In-app voice — WebRTC call sessions (Phase 13 Wave 1).
+     *
+     * Distinct from `telephony` on purpose (ai/phase-13-webrtc.md §3.7): a PSTN
+     * call carries an encrypted counterparty number and a spend-ledger row; an
+     * in-app call carries participant user ids and costs nothing per minute.
+     * One namespace for both would make every caller disambiguate.
+     */
+    rtc: createRtcRouter(deps.rtc),
 
     /**
      * Feature flags — the resolved snapshot for the client bootstrap

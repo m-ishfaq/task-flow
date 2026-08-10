@@ -16,6 +16,7 @@
     "./events/docs": "./src/docs/events.ts",
     "./events/people": "./src/people/events.ts",
     "./chat/channel": "./src/chat/shared.ts",
+    "./rtc/session": "./src/rtc/shared.ts",
     "./docs/page": "./src/docs/shared.ts",
     "./docs/page-version": "./src/docs/page-version.service.ts",
     "./docs/backlinks": "./src/docs/backlinks.ts"

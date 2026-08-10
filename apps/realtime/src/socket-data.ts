@@ -7,6 +7,8 @@ import type {
   ChatServerToClientEvents,
   ClientToServerEvents,
   ServerToClientEvents,
+  RtcClientToServerEvents,
+  RtcServerToClientEvents,
 } from './wire.js';
 
 /**
@@ -89,6 +91,34 @@ export type ChatSocket = Socket<
 export type ChatNamespace = Namespace<
   ChatClientToServerEvents & CallClientToServerEvents,
   ChatServerToClientEvents & CallServerToClientEvents,
+  InterServerEvents,
+  SocketData
+>;
+
+/**
+ * The `/rtc` namespace and its sockets (ai/phase-13-webrtc.md §3.1).
+ *
+ * `SocketData` is reused a third time, and the same property holds: a namespace
+ * connection is a distinct `Socket` with its own `data`, so an RTC socket's
+ * `rooms` map holds SESSION ids while a chat socket's holds channel ids — the
+ * same field name, three disjoint populations, no possibility of one being read
+ * as another because they are never the same object.
+ *
+ * `identity` is shared in the way that matters: the same `verifyHandshake`
+ * middleware runs here, so an RTC socket's identity is set once from the same
+ * verified token and is never assignable from an RTC message. That is what makes
+ * `rtc:signal`'s `from` field safe to fill in server-side.
+ */
+export type RtcSocket = Socket<
+  RtcClientToServerEvents,
+  RtcServerToClientEvents,
+  InterServerEvents,
+  SocketData
+>;
+
+export type RtcNamespace = Namespace<
+  RtcClientToServerEvents,
+  RtcServerToClientEvents,
   InterServerEvents,
   SocketData
 >;

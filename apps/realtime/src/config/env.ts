@@ -99,6 +99,15 @@ export const EnvSchema = z
     REALTIME_MAX_CONNECTIONS_PER_IP_PER_MINUTE: z.coerce.number().int().positive().default(30),
     REALTIME_MAX_JOINS_PER_MINUTE: z.coerce.number().int().positive().default(60),
     REALTIME_MAX_REFUSED_JOINS_PER_MINUTE: z.coerce.number().int().positive().default(10),
+
+    /* Signalling messages per socket per minute (Phase 13 Wave 1,
+       ai/phase-13-webrtc.md §3.2). Its OWN number, far above the join limit:
+       ICE trickling legitimately emits dozens of candidates per peer in the
+       first seconds of a call, so reusing REALTIME_MAX_JOINS_PER_MINUTE would
+       throttle every real call while bounding nothing an attacker cares
+       about. What this bounds is a peer using an authorized room as a
+       high-rate message channel into another participant's browser. */
+    REALTIME_MAX_SIGNALS_PER_MINUTE: z.coerce.number().int().positive().default(600),
   })
   /* NOT `.strict()`, for the identical reason apps/api's schema is not:
      `process.env` carries a few hundred variables belonging to the OS and the
@@ -199,6 +208,19 @@ const KNOWN_VARIABLES = new Set([
   'REALTIME_MAX_CONNECTIONS_PER_IP_PER_MINUTE',
   'REALTIME_MAX_JOINS_PER_MINUTE',
   'REALTIME_MAX_REFUSED_JOINS_PER_MINUTE',
+  'REALTIME_MAX_SIGNALS_PER_MINUTE',
+  /* In-app voice (Phase 13 Wave 1). Read by apps/api, never here — the gateway
+     relays signals and never mints a credential, which is §3.3's whole point.
+     Listed for the same reason as the STORAGE_ and TELEPHONY_ names above: the
+     `RTC_` prefix makes the misspelling check claim them, and an unlisted one
+     stops this process booting over a variable that is spelled correctly. */
+  'RTC_STUN_URLS',
+  'RTC_TURN_URLS',
+  'RTC_TURN_SECRET',
+  'RTC_TURN_TTL_SECONDS',
+  'RTC_TURN_ISSUANCE_CAP_PER_DAY',
+  'RTC_ICE_TRANSPORT_POLICY',
+  'RTC_MAX_RECORDING_BYTES',
 ]);
 
 const TASKFLOW_PREFIXES = [
@@ -211,6 +233,7 @@ const TASKFLOW_PREFIXES = [
   'WEB_',
   'CLAMAV_',
   'REALTIME_',
+  'RTC_',
 ];
 
 /**

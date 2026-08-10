@@ -16,6 +16,7 @@ import {
   Skeleton,
 } from '../../components/primitives.js';
 import { useMembers } from '../org/use-members.js';
+import { CallButton } from '../rtc/call-button.js';
 import { RichTextEditor, RichTextView } from '../work/detail/rich-text-editor.js';
 import { EMPTY_DOCUMENT, isEmptyDocument, type DocumentNode } from '../work/detail/rich-text.js';
 import { onTyping, startTyping, stopTyping } from '../../lib/chat-socket.js';
@@ -1210,6 +1211,14 @@ function ChannelPanel({
                 </span>
               )}
             </div>
+          )}
+          {/* In-app voice (Phase 13). Public channels cannot start a call in
+              Wave 1 — the ring list comes from the channel's member tuples and
+              a public channel has none, so the control is not offered rather
+              than offered and refused (ai/phase-13-webrtc.md §6). Everything
+              else about permission is the server's answer, not this file's. */}
+          {channel.data !== undefined && channel.data.type !== 'public' && (
+            <CallButton orgId={orgId} channelId={channelId} />
           )}
           <button
             type="button"

@@ -142,6 +142,56 @@ services:
       retries: 10
       start_period: 180s
 
+  # TURN/STUN for in-app voice (Phase 13, ai/phase-13-webrtc.md §5).
+  #
+  # `network_mode: host` rather than a port list, and it is not a shortcut.
+  # TURN allocates a fresh UDP port per relayed stream out of a wide range; a
+  # Docker port mapping would have to publish that whole range, which Docker
+  # Desktop does one userland proxy process per port for and takes minutes to
+  # start. Host networking also means the addresses coturn advertises in its
+  # ICE candidates are addresses the browser can actually reach — a relayed
+  # candidate naming a bridge-network IP is accepted by the client, tried, and
+  # silently times out, which presents as "calls do not connect" with nothing
+  # in any log.
+  #
+  # Consequence, stated because it will bite: host networking is Linux-only in
+  # its full form. On Docker Desktop, run coturn natively or accept STUN-only
+  # local development — which is what RTC_TURN_URLS being optional is for.
+  #
+  # `use-auth-secret` is the whole reason this can be developed against safely:
+  # no static user exists, so there is no credential to leak from the client
+  # bundle. The server mints a `<expiry>:<session-id>` / HMAC-SHA1 pair per
+  # call (packages/security/src/turn-credential.ts).
+  coturn:
+    image: coturn/coturn:latest
+    container_name: taskflow-coturn
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - -n
+      - --log-file=stdout
+      - --listening-port=3478
+      - --fingerprint
+      - --use-auth-secret
+      # DEV ONLY, and public on purpose like every other credential in this
+      # file. Must match RTC_TURN_SECRET in .env.
+      - --static-auth-secret=coturn-dev-secret
+      - --realm=taskflow.local
+      # A narrow relay range keeps the container's startup fast. Production
+      # wants the full default range; this is a development convenience.
+      - --min-port=49160
+      - --max-port=49200
+      # Refuse to relay to loopback, multicast and private ranges. An open TURN
+      # server is an SSRF pivot into whatever network it sits on — the relay
+      # will happily carry traffic to 127.0.0.1:5432 if allowed to.
+      - --no-multicast-peers
+      - --denied-peer-ip=0.0.0.0-0.255.255.255
+      - --denied-peer-ip=127.0.0.0-127.255.255.255
+      - --denied-peer-ip=169.254.0.0-169.254.255.255
+      - --denied-peer-ip=172.16.0.0-172.31.255.255
+      - --denied-peer-ip=192.168.0.0-192.168.255.255
+      - --denied-peer-ip=10.0.0.0-10.255.255.255
+
 volumes:
   postgres-data:
   minio-data:
