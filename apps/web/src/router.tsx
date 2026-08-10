@@ -34,6 +34,7 @@ import { BoardPage } from './features/work/board-page.js';
 import { ChatPage } from './features/chat/chat-page.js';
 import { TelephonyPage } from './features/telephony/telephony-page.js';
 import { DocsPage } from './features/docs/docs-page.js';
+import { SearchPage } from './features/search/search-page.js';
 import { PublicPageView } from './features/docs/public-page.js';
 import { PermissionDebugPage } from './features/admin/permission-debug-page.js';
 import { SettingsPage } from './features/admin/settings-page.js';
@@ -326,6 +327,29 @@ const telephonyRoute = createRoute({
 });
 
 /**
+ * Cross-product search (Phase 8 Wave 3, ai/phase-8-search.md §3.1).
+ *
+ * `q` is the raw TQL text the user typed — deliberately a plain string up to
+ * the API's own 1,000-char bound, NOT a parsed tree. The URL is a shareable
+ * query, and the server is the only parser; parsing here would validate
+ * against a second copy of the grammar and reject links the API accepts (or
+ * accept links the API rejects). An unparseable `q` just renders the page's
+ * own error state, which is the point of the live per-token errors.
+ */
+const searchRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/search',
+  validateSearch: z.object({
+    q: z.string().max(1_000).optional().catch(undefined),
+  }),
+  beforeLoad: () => requireOrg('/search'),
+  component: function SearchRoute() {
+    const { q } = searchRoute.useSearch();
+    return <SearchPage initialQuery={q ?? ''} />;
+  },
+});
+
+/**
  * Spaces and pages (Phase 6, ai/phase-6-docs.md §5 Wave 1 of the UI).
  *
  * `space`/`page` are search params, not nested routes — the identical
@@ -447,6 +471,7 @@ const routeTree = rootRoute.addChildren([
   peopleRoute,
   personRoute,
   chatRoute,
+  searchRoute,
   telephonyRoute,
   docsRoute,
   publicDocsPageRoute,

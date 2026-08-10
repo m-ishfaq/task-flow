@@ -295,6 +295,13 @@ export const keys = {
    * that key is one page per cursor, and this one is every page merged.
    */
   phoneContacts: (orgId: string) => ['org', orgId, 'telephony', 'contacts'] as const,
+  /**
+   * Search results for one trimmed TQL query (`features/search/api.ts`). The
+   * query TEXT is the key because the server is the only parser — a
+   * client-side key that hashed a parsed tree would silently re-run for every
+   * equivalent-but-different spelling of the same query.
+   */
+  search: (orgId: string, query: string) => ['org', orgId, 'search', query] as const,
   /** Every SMS thread. */
   messageThreads: (orgId: string) => ['org', orgId, 'telephony', 'threads'] as const,
   /** Messages in one thread. */

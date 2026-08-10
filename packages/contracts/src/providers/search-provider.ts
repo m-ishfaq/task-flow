@@ -65,7 +65,11 @@ export type SearchHitMetadata =
   | { readonly channel_id: string }
   | { readonly space_id: string }
   | { readonly card_id: string; readonly board_id: string }
-  | { readonly page_id: string };
+  /* A page comment carries the SPACE too — the docs permalink renders the
+     tree from `space` before it opens `page`, so { page_id } alone could
+     not build one (migration 0045's metadata contract, and the indexer's
+     own header on why the space id is re-read from the page row). */
+  | { readonly page_id: string; readonly space_id: string };
 
 export interface SearchHit {
   readonly type: SearchEntityType;

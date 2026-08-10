@@ -45,11 +45,15 @@ export function CommandPalette() {
   const setPaletteOpen = useUi((state) => state.setCommandPaletteOpen);
   const shortcutsOpen = useUi((state) => state.shortcutsOpen);
   const setShortcutsOpen = useUi((state) => state.setShortcutsOpen);
+  const navigate = useNavigate();
 
   /* The one listener for both dialogs. Cmd/Ctrl+K always wins over `?` — a
-     macOS/Windows convention no other app in this category breaks — and `?`
-     is ignored while a form field has focus, so a search box or a card title
-     can contain a literal question mark without popping a dialog over it. */
+     macOS/Windows convention no other app in this category breaks — and both
+     `?` and `/` are ignored while a form field has focus, so a search box or
+     a card title can contain a literal question mark or slash without popping
+     a dialog over it. `/` reaches search directly (§3.1 of the phase spec:
+     "`/` or the existing palette key reaches it"); the palette key reaches
+     it too, via the Search command below. */
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       const meta = event.metaKey || event.ctrlKey;
@@ -57,6 +61,12 @@ export function CommandPalette() {
       if (meta && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setPaletteOpen(true);
+        return;
+      }
+
+      if (event.key === '/' && !meta && !isTypingTarget(event.target)) {
+        event.preventDefault();
+        void navigate({ to: '/search' });
         return;
       }
 
@@ -134,8 +144,28 @@ function PaletteDialog({
         },
       }));
 
-    return [...navigation, ...projectCommands];
-  }, [navigate, projects.data, toggleSidebar]);
+    /* The palette stays "navigation and actions, not search" (§6) — it does
+       NOT become a search box. What it gains is a single entry that ROUTES to
+       the search page with the typed text prefilled, which is exactly §3.3:
+       "the palette gains a search entry that routes to /search with the typed
+       query prefilled". Per-hit can() stays the search page's job. */
+    const trimmed = query.trim();
+    const searchCommand: Command[] =
+      trimmed === ''
+        ? []
+        : [
+            {
+              id: 'search',
+              label: `Search for “${trimmed}”`,
+              hint: 'Search',
+              run: () => {
+                void navigate({ to: '/search', search: { q: trimmed } });
+              },
+            },
+          ];
+
+    return [...searchCommand, ...navigation, ...projectCommands];
+  }, [navigate, projects.data, query, toggleSidebar]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -249,6 +279,7 @@ const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
     title: 'Everywhere',
     items: [
       { keys: 'Ctrl/⌘ K', description: 'Open the command palette' },
+      { keys: '/', description: 'Search the workspace' },
       { keys: '?', description: 'Show this overlay' },
       { keys: 'Esc', description: 'Close a dialog' },
     ],

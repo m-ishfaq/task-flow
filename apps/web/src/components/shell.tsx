@@ -365,25 +365,27 @@ function Breadcrumbs() {
     ? 'Board'
     : pathname.startsWith('/home')
       ? 'My tasks'
-      : pathname.startsWith('/chat')
-        ? 'Chat'
-        : pathname.startsWith('/docs')
-          ? 'Docs'
-          : pathname.startsWith('/projects/')
-            ? 'Project'
-            : pathname.startsWith('/projects')
-              ? 'Projects'
-              : pathname.startsWith('/settings/audit')
-                ? 'Audit log'
-                : pathname.startsWith('/settings')
-                  ? 'Settings'
-                  : pathname.startsWith('/admin/permissions')
-                    ? 'Permissions'
-                    : pathname.startsWith('/platform-admin')
-                      ? 'Platform admin'
-                      : pathname.startsWith('/orgs')
-                        ? 'Organizations'
-                        : 'TaskFlow';
+      : pathname.startsWith('/search')
+        ? 'Search'
+        : pathname.startsWith('/chat')
+          ? 'Chat'
+          : pathname.startsWith('/docs')
+            ? 'Docs'
+            : pathname.startsWith('/projects/')
+              ? 'Project'
+              : pathname.startsWith('/projects')
+                ? 'Projects'
+                : pathname.startsWith('/settings/audit')
+                  ? 'Audit log'
+                  : pathname.startsWith('/settings')
+                    ? 'Settings'
+                    : pathname.startsWith('/admin/permissions')
+                      ? 'Permissions'
+                      : pathname.startsWith('/platform-admin')
+                        ? 'Platform admin'
+                        : pathname.startsWith('/orgs')
+                          ? 'Organizations'
+                          : 'TaskFlow';
 
   /* `min-w-0` is load-bearing, not decorative: a flex item's default
      min-width is `auto`, which means it will NOT shrink below its own content

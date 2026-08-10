@@ -332,7 +332,14 @@ export async function indexPage(orgId: OrgId, record: Record<string, unknown>): 
   });
 }
 
-/** Docs comments (page.comment_*) — metadata is { page_id }, unlike card comments. */
+/** Docs comments (page.comment_*) — metadata is { page_id, space_id }, unlike
+ * card comments. The SPACE id exists because the docs permalink needs it: the
+ * `/docs` route renders the page tree from `space` and opens the page from
+ * `page`, and the projection's own §2.1 contract says metadata carries what
+ * building a hit's permalink needs. It is re-read from the page row, never
+ * taken from the event payload, for the same reason card comments re-read
+ * `board_id` — the relay and the backfill cannot diverge over who supplied it.
+ */
 export async function indexPageComment(
   orgId: OrgId,
   record: Record<string, unknown>,
@@ -360,6 +367,20 @@ export async function indexPageComment(
       return true;
     }
 
+    const pages = await tx
+      .select({ spaceId: schema.pages.spaceId })
+      .from(schema.pages)
+      .where(eq(schema.pages.id, pageId))
+      .limit(1);
+    const page = pages[0];
+    /* A comment whose page is gone cannot be authorized or permalinked — the
+       route's per-hit can() loads the page and would drop the hit anyway, so
+       the document row is pure debt. Same shape as the card-comment branch. */
+    if (!page) {
+      await deleteDocument(tx, orgId, 'comment', commentId);
+      return true;
+    }
+
     await upsertDocument(tx, {
       orgId,
       entityType: 'comment',
@@ -370,7 +391,7 @@ export async function indexPageComment(
       createdAt: comment.createdAt,
       updatedAt: comment.editedAt ?? comment.createdAt,
       archived: false,
-      metadata: { page_id: pageId },
+      metadata: { page_id: pageId, space_id: page.spaceId },
     });
     return true;
   });

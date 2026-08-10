@@ -37,6 +37,23 @@ const MAX_LIMIT = 100;
 
 const TqlQuery = z.string().trim().max(1_000);
 
+/**
+ * A hit's parent context, validated on the way OUT (§2.7).
+ *
+ * Deliberately the same discriminated union `SearchHitMetadata` declares: the
+ * provider writes these shapes, the route's per-hit `can()` reads them, and
+ * this schema is what makes a wrong shape fail HERE (on the response) instead
+ * of being shipped to a client that then crashes navigating with a missing
+ * parent id. An untyped `z.unknown()` would validate nothing at all.
+ */
+const HitMetadata = z.union([
+  z.object({ board_id: z.string(), project_id: z.string() }).strict(),
+  z.object({ channel_id: z.string() }).strict(),
+  z.object({ space_id: z.string() }).strict(),
+  z.object({ card_id: z.string(), board_id: z.string() }).strict(),
+  z.object({ page_id: z.string(), space_id: z.string() }).strict(),
+]);
+
 function actorOf(ctx: { principal: Parameters<typeof subjectOf>[0] }): Subject {
   return subjectOf(ctx.principal);
 }
@@ -106,12 +123,16 @@ async function hitAllowed(subject: Subject, orgId: OrgId, hit: SearchHit): Promi
         }
 
         case 'comment': {
-          const meta = hit.metadata as
-            { readonly card_id: string; readonly board_id: string } | { readonly page_id: string };
+          const meta = hit.metadata;
           if ('page_id' in meta) {
             const page = await loadPage(tx, unsafeAsId<'PageId'>(meta.page_id));
             return can(subject, 'page:read', pageTarget(page)).allowed;
           }
+          /* A card comment. The `'card_id' in meta` check is what tells it
+             apart from every other metadata shape after the page branch was
+             taken — without it, `meta.card_id` is a claim about a union TS
+             cannot prove. */
+          if (!('card_id' in meta)) return false;
           const card = await loadCard(tx, unsafeAsId<'CardId'>(meta.card_id));
           return can(subject, 'card:read', {
             orgId: unsafeAsId<'OrgId'>(card.orgId),
@@ -172,7 +193,7 @@ export function createSearchRouter(provider: SearchProvider) {
               authorId: z.string().nullable(),
               updatedAt: z.string(),
               archived: z.boolean(),
-              metadata: z.unknown(),
+              metadata: HitMetadata,
               score: z.number(),
             }),
           )

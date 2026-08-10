@@ -105,6 +105,14 @@ export function Sidebar() {
           </Link>
 
           <Link
+            to="/search"
+            className="mb-2 block rounded px-1 py-1 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
+            activeProps={{ className: 'bg-surface-hover text-ink' }}
+          >
+            Search
+          </Link>
+
+          <Link
             to="/chat"
             className="mb-2 block rounded px-1 py-1 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
             activeProps={{ className: 'bg-surface-hover text-ink' }}
