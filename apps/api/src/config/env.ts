@@ -425,8 +425,21 @@ export type Env = z.infer<typeof EnvSchema>;
  * settings, but they are legitimately present in a developer's environment, so
  * the misspelling check has to know about them or it would reject a correct
  * setup.
+ *
+ * The list below is that catalog, and the schema's own keys are unioned into
+ * it rather than typed a second time: a variable THIS app validates cannot be
+ * a typo, so a hand-copied duplicate of it is nothing but a way for the two
+ * lists to disagree. `DATABASE_SEARCH_URL` (Phase 8 Wave 2) is what proved it
+ * — added to the schema and to .env.example, missed here, and the API then
+ * refused to boot naming a variable it parses itself, which reads as a typo in
+ * a name that is spelled correctly. `innerType()` unwraps the `.superRefine()`
+ * above; ZodEffects has no `.shape` of its own.
+ *
+ * What the catalog still carries by hand is every OTHER service's variables,
+ * which no schema in this file knows about.
  */
 const KNOWN_VARIABLES = new Set([
+  ...Object.keys(EnvSchema.innerType().shape),
   'NODE_ENV',
   'LOG_LEVEL',
   'DATABASE_URL',

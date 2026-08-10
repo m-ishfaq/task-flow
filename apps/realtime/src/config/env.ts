@@ -137,8 +137,16 @@ export type Env = z.infer<typeof EnvSchema>;
  * `apps/api/src/config/env.ts` — a developer's environment legitimately carries
  * variables this process does not read, so the misspelling check has to know
  * about them or it would reject a correct setup.
+ *
+ * The schema's own keys are unioned in for the reason the API's set gives:
+ * this process's own variables cannot be typos of anything, so listing them
+ * twice only creates a way for the two lists to disagree. `innerType()`
+ * unwraps the `.superRefine()` above, which has no `.shape` of its own. The
+ * hand-written entries are the ones no schema here knows about — every other
+ * service's.
  */
 const KNOWN_VARIABLES = new Set([
+  ...Object.keys(EnvSchema.innerType().shape),
   'NODE_ENV',
   'LOG_LEVEL',
   'DATABASE_URL',
@@ -162,6 +170,10 @@ const KNOWN_VARIABLES = new Set([
   'DATABASE_NOTIFICATION_SWEEP_URL',
   'DATABASE_PLATFORM_ADMIN_URL',
   'DATABASE_RECORDING_INGEST_URL',
+  /* The search indexer's claim role (Phase 8 Wave 2, migration 0045) — read by
+     the API's relay, never here, and the fifth variable of this exact class to
+     stop a correctly-configured process booting. */
+  'DATABASE_SEARCH_URL',
   'DATABASE_POOL_MAX',
   'STORAGE_ENDPOINT',
   'STORAGE_REGION',

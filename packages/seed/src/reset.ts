@@ -100,12 +100,26 @@ export async function reset(options: ResetOptions): Promise<ResetResult> {
    *     foreign key for any override pointing at a seeded user. Those rows are
    *     deleted explicitly below, keyed by the same user-id marker everything
    *     else in this file keys on.
+   *   - `identity.sessions`, `identity.refresh_tokens` and
+   *     `platform.push_subscriptions` are all per-USER, not per-org: a sign-in
+   *     and a browser's push registration belong to a person, not to whichever
+   *     tenant they happened to be looking at. Each references
+   *     `identity.users (id) ON DELETE CASCADE` (migrations 0002 and 0029), so
+   *     the users DELETE at the end takes them, exactly as it takes
+   *     `people.profiles`. They joined the module graph after this set was
+   *     written, which is the same way `people.profiles` broke `--reset`
+   *     before them — a table with no `org_id` reaching the per-org loop below
+   *     fails the whole reset with `column "org_id" does not exist`, naming
+   *     the column rather than the table, and only for whoever used the flag.
    */
   const GLOBAL_TABLES = new Set([
     'identity.users',
     'people.profiles',
     'platform.operators',
     'platform.flag_overrides',
+    'identity.sessions',
+    'identity.refresh_tokens',
+    'platform.push_subscriptions',
   ]);
 
   const allTables = tablesInTeardownOrder(resolveModules(roots));
@@ -114,6 +128,21 @@ export async function reset(options: ResetOptions): Promise<ResetResult> {
      whether the module is in the graph AT ALL, which is why the unfiltered
      list is kept here rather than recomputing or dropping the check. */
   const tables = allTables.filter((table) => !GLOBAL_TABLES.has(table));
+
+  /* The loop below builds its DELETE by interpolating a table name, so a
+     table with no `org_id` fails with `column "org_id" does not exist` —
+     a message naming the COLUMN and not the table that lacks it, halfway
+     through a reset that has already deleted rows. Asking the catalog first
+     turns the next occurrence into a sentence naming the table and the list
+     above, which is the only part a reader has to change. */
+  const orgless = await findTablesWithoutOrgId(connection, tables);
+  if (orgless.length > 0) {
+    throw new Error(
+      `reset: ${orgless.join(', ')} has no org_id column, so it cannot be cleaned per-org. ` +
+        'Add it to GLOBAL_TABLES in reset.ts once its cleanup path is understood — see the ' +
+        'file header.',
+    );
+  }
 
   for (const orgId of orgIds) {
     await connection.setOrg(orgId);
@@ -188,6 +217,27 @@ export async function reset(options: ResetOptions): Promise<ResetResult> {
 
   log(`reset: removed ${String(orgIds.length)} org(s) and ${String(userIds.length)} user(s)`);
   return { orgsRemoved: orgIds.length, usersRemoved: userIds.length };
+}
+
+/**
+ * `information_schema.columns` is readable by any role for the tables it owns
+ * or holds a privilege on, so this needs no scope and no extra grant — it is
+ * asking the catalog a question about shape, not reading tenant data.
+ */
+async function findTablesWithoutOrgId(
+  connection: AdminConnection,
+  tables: readonly string[],
+): Promise<readonly string[]> {
+  if (tables.length === 0) return [];
+  const result = await connection.query(
+    `SELECT table_schema || '.' || table_name AS name
+       FROM information_schema.columns
+      WHERE column_name = 'org_id'
+        AND table_schema || '.' || table_name = ANY($1::text[])`,
+    [[...tables]],
+  );
+  const withOrgId = new Set(result.rows.map((row) => String(row['name'])));
+  return tables.filter((table) => table !== 'identity.orgs' && !withOrgId.has(table));
 }
 
 async function findSeededUserIds(connection: AdminConnection): Promise<readonly string[]> {

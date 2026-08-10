@@ -164,6 +164,18 @@ export const notificationsModule = defineSeedModule({
             ['failed', 1],
             ['suppressed', 1],
           ] as const);
+          /* `reason` is a CLOSED set — 0027's
+             `notification_deliveries_reason_valid` CHECK accepts only these
+             four codes, and prose here is refused by the database rather than
+             stored as a nicer-looking string. The three below are the ones a
+             chat email can actually be suppressed by; `no_provider` belongs to
+             the SMS channel (notification.projection.ts, due-reminders.ts) and
+             would be a lie on an email row. */
+          const reason = rng.weighted([
+            ['pref_disabled', 5],
+            ['quiet_hours', 3],
+            ['digest_pending', 2],
+          ] as const);
           deliveryRows.push([
             rng.uuid(notification.createdAt),
             notification.orgId,
@@ -171,7 +183,7 @@ export const notificationsModule = defineSeedModule({
             notification.id,
             'email',
             status,
-            status === 'suppressed' ? 'recipient unsubscribed from chat email' : null,
+            status === 'suppressed' ? reason : null,
             notification.createdAt,
             notification.createdAt,
           ]);
