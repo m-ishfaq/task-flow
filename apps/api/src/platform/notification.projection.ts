@@ -116,12 +116,13 @@ type NotificationKind =
   | 'chat.thread_reply'
   | 'card.assigned'
   | 'card.comment_mention'
-  | 'page.comment_mention';
+  | 'page.comment_mention'
+  | 'call.missed';
 
 interface PlannedNotification {
   readonly userId: string;
   readonly kind: NotificationKind;
-  readonly subjectType: 'message' | 'card' | 'page';
+  readonly subjectType: 'message' | 'card' | 'page' | 'call';
   readonly subjectId: string;
   readonly title: string;
   readonly excerpt: string | null;
@@ -146,9 +147,66 @@ export function planNotifications(row: OutboxRow): readonly PlannedNotification[
       return planCardCommentMention(row);
     case 'page.comment_created':
       return planPageCommentMention(row);
+    case 'rtc_session.ended':
+      return planMissedCall(row);
     default:
       return [];
   }
+}
+
+/**
+ * "You missed a call" (Phase 13, ai/phase-13-webrtc.md §7).
+ *
+ * ## Only the MISSED one, and only from the ENDED event
+ *
+ * A notification for a call that is currently ringing would arrive alongside
+ * the live ring the socket already delivers, and would then be read minutes
+ * later as a row saying "someone is calling" about a call that ended long ago.
+ * A missed call is the durable fact; the ring is the live one, and they belong
+ * to different mechanisms.
+ *
+ * `missedUserIds` is carried on the event rather than derived here, because
+ * "was still ringing at the moment the call ended" is a fact only the ending
+ * transaction could see — by the time this projection reads the row, every
+ * participant has been settled into `missed` or `left`, and recomputing it
+ * would tell everyone who was ON the call that they missed it.
+ */
+function planMissedCall(row: OutboxRow): readonly PlannedNotification[] {
+  const record = asRecord(row.payload);
+  if (record === null) return [];
+  const fields = record as {
+    readonly sessionId?: unknown;
+    readonly channelId?: unknown;
+    readonly missedUserIds?: unknown;
+  };
+
+  const sessionId = typeof fields.sessionId === 'string' ? fields.sessionId : null;
+  const channelId = typeof fields.channelId === 'string' ? fields.channelId : null;
+  if (sessionId === null) return [];
+
+  return (
+    asIdList(fields.missedUserIds)
+      /* The caller cannot miss their own call. `add` in `planMessageSent` makes
+       the same exclusion; here it also cannot happen (the initiator is
+       `joined`, never `invited`) and is kept because "cannot happen" is a
+       property of today's join path, not of this function. */
+      .filter((userId) => userId !== row.actorId)
+      .map((userId) => ({
+        userId,
+        kind: 'call.missed' as const,
+        subjectType: 'call' as const,
+        subjectId: sessionId,
+        title: 'Missed call',
+        /* No excerpt. There is nothing to quote from a call that never
+         connected, and an excerpt field is rendered in an email — inventing
+         "you missed a call from Alice" there would put a name into a message
+         whose recipient may not be entitled to know who else is in a private
+         conversation. The client resolves the caller from the channel. */
+        excerpt: null,
+        channelId,
+        boardId: null,
+      }))
+  );
 }
 
 function planMessageSent(row: OutboxRow): readonly PlannedNotification[] {

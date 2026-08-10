@@ -219,11 +219,59 @@ export interface NotificationMessage {
   readonly notificationId: string;
 }
 
+/**
+ * "Someone is calling you" (Phase 13, ai/phase-13-webrtc.md §7).
+ *
+ * Delivered on `user:{userId}` — the room the SERVER places every socket into
+ * at connection time, so this arrives whatever page the person is on, which is
+ * the entire point of a ringing call.
+ *
+ * ## Why this one carries more than an id, unlike `NotificationMessage`
+ *
+ * Every other personal-room message in this file is deliberately minimal: an
+ * id, and the client refetches over authorized HTTP. That is right when the
+ * client's reaction is to invalidate a query. It is wrong here, because the
+ * reaction is to make a noise and show a face RIGHT NOW, and a refetch adds a
+ * round trip to the one message in this system whose whole value is latency.
+ *
+ * So it carries the three things the banner renders from and nothing else: the
+ * session to answer, the conversation it belongs to, and who is calling — as an
+ * ID, which the client resolves through the org directory it already has. No
+ * name, no avatar URL, no channel name: a room message is the easiest thing in
+ * this system to end up in a browser console, and a private channel's name is
+ * exactly what its non-members must not learn.
+ */
+export interface CallRingingMessage {
+  readonly sessionId: string;
+  readonly channelId: string;
+  readonly initiatedBy: string;
+  readonly kind: string;
+}
+
+/**
+ * "Stop ringing" — the call is over.
+ *
+ * Its own message rather than a status field on the one above, because the
+ * client's reaction is completely different (silence the tone, drop the banner)
+ * and a single handler branching on a status is the shape where the branch that
+ * never fires is the one that stops the noise.
+ */
+export interface CallEndedMessage {
+  readonly sessionId: string;
+  readonly reason: string;
+}
+
 /** Server-to-client events, named for `io.on`/`socket.on` type inference. */
 export interface ServerToClientEvents {
   ready: (message: ReadyMessage) => void;
   broadcast: (message: BroadcastMessage) => void;
   notification: (message: NotificationMessage) => void;
+  /* In-app voice ringing (Phase 13). On the DEFAULT namespace, not `/rtc`,
+     because `user:{userId}` lives here and because a phone has to ring on a
+     socket the client already holds open rather than on one it connects when
+     it opens a call — which would be after the call it is meant to announce. */
+  'call:ringing': (message: CallRingingMessage) => void;
+  'call:ended': (message: CallEndedMessage) => void;
   'room:closed': (message: RoomClosedMessage) => void;
   'session:ended': (message: SessionEndedMessage) => void;
   presence: (message: PresenceMessage) => void;
@@ -473,3 +521,162 @@ export function channelIdOfRoom(room: string): string | null {
 
 /** The namespace chat is served on. One definition, used by both sides. */
 export const CHAT_NAMESPACE = '/chat';
+
+/* -------------------------------------------------------------------------- *
+ * In-app voice signalling (Phase 13 Wave 1, ai/phase-13-webrtc.md §3.1, §3.2)
+ *
+ * Its OWN namespace and its own event maps, for the reason the chat section
+ * above gives: two maps mean an RTC signal cannot be delivered to a chat
+ * listener even by mistake. The handshake is the same `verifyHandshake`, so this
+ * phase adds zero new authentication code — the third time that sentence is
+ * true in this file, which is the point.
+ *
+ * ## THE RELAY NEVER TRUSTS A PEER ID IN THE PAYLOAD
+ *
+ * `RtcSignalRequest` carries a `to`, and it is the one field in this file that
+ * would be a vulnerability if it were used the obvious way. It is a SELECTOR
+ * over the room's roster — which the server holds — and never a routing key. See
+ * `gateway.ts`'s `rtc:signal` handler; the wrong implementation is written down
+ * there so it is recognizable.
+ *
+ * `from` is absent from the request and present on the message. That asymmetry
+ * is the whole identity rule of this file applied to a payload that genuinely
+ * has to name a person: the server fills it in from `socket.data.identity`.
+ * -------------------------------------------------------------------------- */
+
+/**
+ * "Subscribe me to this call's signalling."
+ *
+ * The same two fields and the same absence as every other join request here: an
+ * org, a resource, `.strict()`, and NO subject.
+ */
+export interface RtcJoinRequest {
+  readonly orgId: OrgId;
+  readonly sessionId: string;
+}
+
+/** Annotated rather than inferred — see the note on `JoinRequestSchema`. */
+export const RtcJoinRequestSchema: z.ZodType<
+  RtcJoinRequest,
+  z.ZodTypeDef,
+  { orgId: string; sessionId: string }
+> = z.object({ orgId: OrgIdSchema, sessionId: z.string().uuid() }).strict();
+
+export interface RtcLeaveRequest {
+  readonly sessionId: string;
+}
+
+export const RtcLeaveRequestSchema: z.ZodType<
+  RtcLeaveRequest,
+  z.ZodTypeDef,
+  { sessionId: string }
+> = z.object({ sessionId: z.string().uuid() }).strict();
+
+/**
+ * The upper bound on one signalling payload.
+ *
+ * A full SDP offer with a dozen ICE candidates runs to a few kilobytes; 32 KB is
+ * generous for that and still bounded. Unbounded, this field is a memory
+ * amplifier one authorized peer can point at another — the room already trusts
+ * them enough to deliver it, which is exactly why the size has to be checked
+ * rather than assumed.
+ */
+export const MAX_SIGNAL_CHARS = 32_768;
+
+/**
+ * One WebRTC signalling message, addressed to a peer.
+ *
+ * `data` is an opaque string, deliberately not a parsed SDP or a candidate
+ * object. The gateway has no business understanding the media negotiation it
+ * carries, and a schema that modelled SDP would have to be updated every time a
+ * browser adds a field — failing closed on a payload that was perfectly valid.
+ * It is relayed byte-for-byte and never persisted.
+ */
+export interface RtcSignalRequest {
+  readonly sessionId: string;
+  /** A user id. A SELECTOR over the room roster, never a routing key. */
+  readonly to: string;
+  readonly kind: 'offer' | 'answer' | 'candidate';
+  readonly data: string;
+}
+
+export const RtcSignalRequestSchema: z.ZodType<
+  RtcSignalRequest,
+  z.ZodTypeDef,
+  { sessionId: string; to: string; kind: 'offer' | 'answer' | 'candidate'; data: string }
+> = z
+  .object({
+    sessionId: z.string().uuid(),
+    to: z.string().uuid(),
+    kind: z.enum(['offer', 'answer', 'candidate']),
+    data: z.string().max(MAX_SIGNAL_CHARS),
+  })
+  .strict();
+
+/**
+ * A signal from another peer.
+ *
+ * `from` is filled in by the gateway from the sender's own
+ * `socket.data.identity`, never from their request — the same rule as `typing`,
+ * and load-bearing in a stronger way here: a client that could name its own
+ * `from` could impersonate another participant's offer and take over their leg
+ * of the call.
+ */
+export interface RtcSignalMessage {
+  readonly sessionId: string;
+  readonly from: string;
+  readonly kind: 'offer' | 'answer' | 'candidate';
+  readonly data: string;
+}
+
+/**
+ * Who is currently in this call's signalling room.
+ *
+ * The full list, not a delta — the same reasoning `PresenceMessage` gives. A
+ * mesh client uses it to decide which peer connections to open, and
+ * reconstructing "who is here" from a stream of joins and leaves means one
+ * missed message leaves a peer permanently unconnected to somebody.
+ *
+ * This is ROOM occupancy, not the authoritative participant list: the database
+ * is that (`rtc.participants`), and a client renders the roster from the API.
+ * Two things, deliberately not merged — one says who to negotiate with right
+ * now, the other says who was invited.
+ */
+export interface RtcPeersMessage {
+  readonly sessionId: string;
+  readonly userIds: readonly string[];
+}
+
+/** The gateway removed this socket from a call room it had joined. */
+export interface RtcClosedMessage {
+  readonly sessionId: string;
+}
+
+export interface RtcServerToClientEvents {
+  ready: (message: ReadyMessage) => void;
+  'rtc:peers': (message: RtcPeersMessage) => void;
+  'rtc:signal': (message: RtcSignalMessage) => void;
+  'rtc:closed': (message: RtcClosedMessage) => void;
+  'session:ended': (message: SessionEndedMessage) => void;
+}
+
+export interface RtcClientToServerEvents {
+  'rtc:join': (request: RtcJoinRequest, ack: (result: JoinAck) => void) => void;
+  'rtc:leave': (request: RtcLeaveRequest) => void;
+  'rtc:signal': (request: RtcSignalRequest) => void;
+}
+
+/**
+ * The Socket.io room name for a call session.
+ *
+ * Prefixed `rtc:` rather than `call:`, which Phase 7 already took for PSTN call
+ * state on the chat namespace. Two different things named `call:{uuid}` in one
+ * process is the kind of collision that only shows up when both ids happen to
+ * exist, which is to say in production.
+ */
+export function rtcRoom(sessionId: string): string {
+  return `rtc:${sessionId}`;
+}
+
+/** The namespace in-app voice signalling is served on. */
+export const RTC_NAMESPACE = '/rtc';

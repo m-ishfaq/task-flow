@@ -6,6 +6,7 @@ import { ensureIdentityDataKey } from './identity/secret-key.js';
 import { createAppRouter, type AppRouter } from './router.js';
 import { buildWorkDeps } from './work/deps.js';
 import { buildTelephonyDeps } from './telephony/deps.js';
+import { buildRtcDeps } from './rtc/deps.js';
 import { registerTelephonyWebhooks } from './telephony/webhook.routes.js';
 import { assertRoutesDeclarePermissions } from './trpc/manifest.js';
 import type { AuthenticatedPrincipal, RequestContext } from './trpc/context.js';
@@ -99,6 +100,12 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
     /* Undefined when no carrier is configured. The routes exist either way and
        answer SERVICE_UNAVAILABLE — see telephony/router.ts. */
     telephony: telephonyDeps,
+    /* Always built, unlike telephony: STUN with no TURN is a working
+       deployment, so there is no "not configured" shape to answer with.
+       Recording storage IS optional inside it — the recordings bucket is
+       telephony's, shared rather than duplicated, and an instance without one
+       answers SERVICE_UNAVAILABLE on the upload routes alone. */
+    rtc: buildRtcDeps(options.env),
     oauth: buildOAuthDeps(options.env),
   });
 

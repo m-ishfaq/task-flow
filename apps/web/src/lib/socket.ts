@@ -90,10 +90,33 @@ interface NotificationMessage {
   readonly notificationId: string;
 }
 
+/**
+ * "Someone is calling you" (Phase 13, ai/phase-13-webrtc.md §7).
+ *
+ * On `user:{userId}` — the room the gateway puts every socket into at
+ * connection time — so it arrives on whatever page this tab is showing.
+ * Unlike `NotificationMessage` it carries what the banner renders from rather
+ * than only an id, because the reaction is to make a noise NOW and a refetch
+ * would add a round trip to the one message whose whole value is latency.
+ */
+interface CallRingingMessage {
+  readonly sessionId: string;
+  readonly channelId: string;
+  readonly initiatedBy: string;
+  readonly kind: string;
+}
+
+interface CallEndedMessage {
+  readonly sessionId: string;
+  readonly reason: string;
+}
+
 interface ServerToClientEvents {
   ready: (message: ReadyMessage) => void;
   broadcast: (message: BroadcastMessage) => void;
   notification: (message: NotificationMessage) => void;
+  'call:ringing': (message: CallRingingMessage) => void;
+  'call:ended': (message: CallEndedMessage) => void;
   'room:closed': (message: RoomClosedMessage) => void;
   'session:ended': (message: SessionEndedMessage) => void;
   presence: (message: PresenceMessage) => void;
@@ -323,6 +346,32 @@ export function onNotification(handler: (message: NotificationMessage) => void):
   return () => active.off('notification', handler);
 }
 
+/**
+ * Subscribes to incoming calls, and FORCES the connection open.
+ *
+ * The one subscription in this file that connects rather than waiting for a
+ * board or channel to be opened, and the exception is deliberate. Every other
+ * live update here is an optimization over a polled query — a bell that updates
+ * a second later is fine. A phone that only rings once you happen to open a
+ * board is not a phone.
+ *
+ * The cost is one WebSocket per signed-in tab, which is what this app already
+ * holds whenever anybody has a board or a conversation open.
+ */
+export function onIncomingCall(handler: (message: CallRingingMessage) => void): () => void {
+  const active = ensureSocket();
+  if (!active.connected) active.connect();
+  active.on('call:ringing', handler);
+  return () => active.off('call:ringing', handler);
+}
+
+/** The call is over — stop ringing. See `wire.ts` on why this is its own event. */
+export function onCallEnded(handler: (message: CallEndedMessage) => void): () => void {
+  const active = ensureSocket();
+  active.on('call:ended', handler);
+  return () => active.off('call:ended', handler);
+}
+
 export function onRoomClosed(handler: (message: RoomClosedMessage) => void): () => void {
   const active = ensureSocket();
   active.on('room:closed', handler);
@@ -351,4 +400,11 @@ export function disconnectSocket(): void {
   socket = undefined;
 }
 
-export type { BroadcastMessage, NotificationMessage, PresenceMessage, RoomClosedMessage };
+export type {
+  BroadcastMessage,
+  CallEndedMessage,
+  CallRingingMessage,
+  NotificationMessage,
+  PresenceMessage,
+  RoomClosedMessage,
+};

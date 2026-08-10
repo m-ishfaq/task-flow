@@ -14,6 +14,8 @@ import { resetCache, keys } from '../lib/query.js';
 import { api } from '../lib/trpc.js';
 import { disconnectSocket } from '../lib/socket.js';
 import { disconnectChatSocket } from '../lib/chat-socket.js';
+import { disconnectRtcSocket } from '../lib/rtc-socket.js';
+import { hangUp } from '../features/rtc/use-call.js';
 import { useUi } from '../lib/ui-store.js';
 import { useIsDesktop } from '../lib/use-media-query.js';
 import { orgsQuery } from '../features/org/api.js';
@@ -22,6 +24,7 @@ import { Avatar, Button } from './primitives.js';
 import { Sidebar } from './sidebar.js';
 import { CommandPalette } from './command-palette.js';
 import { NotificationBell } from '../features/chat/notification-bell.js';
+import { CallSurface } from '../features/rtc/call-surface.js';
 
 /**
  * The application frame: the navigation tree, the org switcher, and sign-out.
@@ -227,6 +230,13 @@ export function Shell() {
       {/* Global — reached by Ctrl/⌘K and `?` from anywhere in the frame, not
           just the sidebar it visually sits near. */}
       {hasOrg && <CommandPalette />}
+
+      {/* In-app voice (Phase 13). Mounted in the FRAME, not on the chat page:
+          a ringing call has to be answerable from wherever someone happens to
+          be, and a call in progress has to survive navigating away from the
+          conversation it started in. A microphone that stops when a route
+          unmounts is not a phone. */}
+      {hasOrg && <CallSurface />}
 
       <div className="flex min-w-0 flex-1 flex-col">
         <Header showMenuButton={hasOrg} />
@@ -520,6 +530,12 @@ function AccountMenu() {
       // still carrying the previous user's token in its `auth` closure.
       disconnectSocket();
       disconnectChatSocket();
+      /* And the signalling namespace. Leaving it connected would keep a live
+         call's peer connections negotiating over a socket authenticated as
+         somebody who has just signed out — `hangUp` releases the microphone,
+         and this releases the transport that would otherwise outlive it. */
+      void hangUp({ silent: true });
+      disconnectRtcSocket();
       await navigate({ to: '/login' });
     })();
   };

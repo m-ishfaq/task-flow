@@ -71,6 +71,22 @@ export function formatBytes(bytes: number): string {
 }
 
 /**
+ * A call duration as "3m 12s", or "45s" under a minute — never "0m 12s".
+ *
+ * For a FINISHED call's length. An in-progress call ticks its own elapsed
+ * time client-side from a locally captured start instant rather than reading
+ * one from the server — see `features/rtc/call-surface.tsx`.
+ */
+export function formatCallDuration(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return minutes === 0
+    ? `${String(remainder)}s`
+    : `${String(minutes)}m ${String(remainder).padStart(2, '0')}s`;
+}
+
+/**
  * An integer-cents amount, as USD.
  *
  * Every telephony money value is `CentsSchema` — an integer, never a float

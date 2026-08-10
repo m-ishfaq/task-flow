@@ -321,3 +321,35 @@
     pointer-events: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+ * Incoming call (Phase 13, ai/phase-13-webrtc.md §7)
+ *
+ * A sweeping band across the top of the ringing banner. Motion rather than a
+ * louder colour: a ringing phone has to compete with whatever the person is
+ * reading, and a moving element wins that without the permanent visual weight
+ * of a red panel that is still there after the call is answered.
+ *
+ * Defined here rather than as an arbitrary Tailwind value because the keyframe
+ * itself has to exist somewhere, and a `@keyframes` inside a utility class is
+ * not something Tailwind generates.
+ * -------------------------------------------------------------------------- */
+@keyframes callring {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+/* Respect a stated preference for less motion. The band is decoration — the
+   banner, the tone and the buttons all still work without it — so this is a
+   case where honouring the preference costs nothing at all. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-\[callring_1\.6s_ease-in-out_infinite\] {
+    animation: none;
+    transform: translateX(0);
+    width: 100%;
+  }
+}

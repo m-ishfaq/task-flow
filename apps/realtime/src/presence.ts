@@ -1,5 +1,5 @@
-import type { ChatNamespace, GatewayServer } from './socket-data.js';
-import { boardRoom, channelRoom } from './wire.js';
+import type { ChatNamespace, GatewayServer, RtcNamespace } from './socket-data.js';
+import { boardRoom, channelRoom, rtcRoom } from './wire.js';
 
 /**
  * Presence (ai/phase-4-realtime.md §5 Wave 2, §9).
@@ -88,4 +88,49 @@ export async function broadcastChannelPresence(
 ): Promise<void> {
   const userIds = await channelPresenceMembersOf(namespace, channelId);
   namespace.to(channelRoom(channelId)).emit('presence', { channelId, userIds });
+}
+
+/* -------------------------------------------------------------------------- *
+ * In-app voice (Phase 13 Wave 1, ai/phase-13-webrtc.md §3.2)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * Distinct user ids currently in `rtc:{sessionId}`.
+ *
+ * ## This is also the ROSTER the signal relay routes against
+ *
+ * Everywhere else in this file, room membership is a nicety — an avatar stack,
+ * an "active now" dot. Here it is a security control. `rtc:signal` addresses a
+ * peer by user id, and §3.2 requires that id to be a SELECTOR over a roster the
+ * server holds rather than a routing key the client supplies. This function, and
+ * the `fetchSockets()` call inside it, is that roster.
+ *
+ * Which makes the adapter-awareness argument above load-bearing rather than
+ * forward-looking: reading `namespace.adapter.rooms` directly would see only
+ * sockets on THIS instance, so a signal addressed to a peer connected elsewhere
+ * would be silently dropped — every call between two people who happened to land
+ * on different instances would fail to negotiate, intermittently, with nothing
+ * in any log.
+ */
+export async function rtcPeersOf(
+  namespace: RtcNamespace,
+  sessionId: string,
+): Promise<readonly string[]> {
+  const sockets = await namespace.in(rtcRoom(sessionId)).fetchSockets();
+  const userIds = new Set(sockets.map((socket) => socket.data.identity.userId));
+  return [...userIds];
+}
+
+/**
+ * Tells everyone in a call who else is in it.
+ *
+ * A mesh client uses this to decide which peer connections to open, so it fires
+ * after every join, leave, disconnect and forced eviction. The full list rather
+ * than a delta, for a sharper version of the usual reason: a client that missed
+ * one delta would be permanently unconnected to one specific person, and the
+ * call would work for everyone except that pair.
+ */
+export async function broadcastRtcPeers(namespace: RtcNamespace, sessionId: string): Promise<void> {
+  const userIds = await rtcPeersOf(namespace, sessionId);
+  namespace.to(rtcRoom(sessionId)).emit('rtc:peers', { sessionId, userIds });
 }

@@ -61,6 +61,11 @@ AI may write anything, but changes to these need the author to read every line b
 `packages/policy` · `packages/db` · `packages/security` · `apps/api/src/identity` ·
 `apps/api/src/telephony` (Phase 7 — the outbound spend gate, subaccount credential handling, and
 `webhook.ts`'s signature verification; §6.1 of the phase spec named these before they existed) ·
+`apps/api/src/rtc/turn-gate.ts` and `turn.service.ts` (Phase 13 — the TURN credential gate; an
+open relay carries strangers' traffic on this deployment's bill, which makes it the WebRTC
+analogue of the telephony spend gate) · `apps/realtime/src/rtc-rooms.ts` and `gateway.ts`'s
+`rtc:signal` handler (the peer-id relay: a `to` used as a routing key rather than a roster
+selector is a cross-room message-injection primitive) ·
 `apps/collab/src/auth.ts` and `authorize.ts` (Phase 6 — the collab gateway's own handshake and
 tree-permission resolution, the same severity as `apps/realtime/src/auth.ts`/`rooms.ts`) ·
 `apps/api/src/platform-admin` (Phase 12 Wave 1 — the org-directory console that runs as
@@ -90,9 +95,15 @@ apps/       api                              (arriving: worker)
               src/platform-admin ⚠ Phase 12 Wave 1 — the org-directory console,
                                run as taskflow_platform_admin (the one role that
                                may change another org's status)
+              src/rtc        ⚠ Phase 13 — in-app voice: call sessions authorized
+                               through the CHANNEL (never a participant lookup),
+                               and the TURN credential gate (turn-gate.ts)
             realtime           Socket.io gateway — broadcast only, never writes
               src/auth.ts    ⚠ handshake: token, origin, socket.data.identity
               src/rooms.ts   ⚠ room join = a fresh can() check
+              src/rtc-rooms.ts ⚠ Phase 13 — a call room authorizes exactly like
+                               its channel; three lines and a call to
+                               authorizeChannelJoin, and it must stay that way
               src/relay.ts     the 'realtime' outbox consumer
             collab             Hocuspocus gateway (Phase 6) — the one process
                                allowed to write from a socket handler, and only
@@ -312,6 +323,92 @@ before clearing a page's published pointer, and Postgres refused it —
 never be left pointing at a version that no longer exists. Fixed in the test (clear the pointer
 first, delete the version rows after — "children before parents," the same ordering
 `tenancy-seed.ts`'s `clearTenant` already documents for Work), not in the schema.
+
+### Phase 13 Wave 1 — in-app voice (WebRTC)
+
+`packages/db/migrations/0041_rtc_wave1.*` (the `rtc` schema) · `packages/security/turn-credential.ts` ·
+`apps/api/src/rtc` · `apps/realtime`'s `/rtc` namespace · `apps/web/src/features/rtc` · `coturn` in
+`compose.yaml`. Spec: [ai/phase-13-webrtc.md](ai/phase-13-webrtc.md), approved 2026-08-10.
+⚠ Human-review surface (§2.2) — the TURN gate and the signal relay.
+
+**A call room authorizes exactly like a channel room, and `rtc-rooms.ts` is almost empty because
+of it.** `authorizeChannelJoin` already resolves membership, builds a `channelTarget` carrying
+`closed`, and asks `can()`; `authorizeRtcJoin` turns a session id into its channel id and calls
+that. DMs inherit the whole closed-target correctness argument for free. **Do not invent a second
+membership check for calls** — `rtc.participants` records what happened and must never answer "may
+this person join", which is the `participantIds.includes(userId)` shortcut Phase 5 §3.3 forbids,
+rebuilt in the one layer with no HTTP audit trail. Two authorization QUESTIONS, deliberately not
+merged: starting a call is `message:create` (making everyone's phone ring is speaking), joining one
+is `channel:read`.
+
+**The relay never trusts a peer id in the payload.** `rtc:signal` carries a `to`, and it is a
+SELECTOR over the room roster the server holds via `fetchSockets()` — never a routing key. The
+wrong implementation, `socket.to(userRoom(to)).emit(...)`, compiles, reads correctly, and hands any
+authorized socket a message-injection primitive into any browser in the deployment. `from` is
+stamped from `socket.data.identity`, so a client cannot impersonate another participant's offer.
+`rtc.integration.test.ts` boots a real gateway with real clients and asserts both refusals; nothing
+short of that distinguishes the two implementations.
+
+**TURN is a bandwidth spend surface, so the gate shipped before the thing it gates.** Same
+build-order constraint as Phase 7 Wave 1, and the same acceptance bar: the most important assertion
+in `turn-gate.test.ts` is not that a refusal is returned, it is that **the secret was never used**,
+asserted against a recording minter injected through `deps.mint`. Org freeze, then actual
+participation, then a DURABLE per-org issuance budget in `rtc.turn_issuance` — in Postgres, because
+an in-process counter forgives everyone on restart, which is the state an attacker restarts you to
+reach. One row per credential MINTED, never per request, so a refused request cannot exhaust a real
+org's allowance.
+
+**The mesh cap is a CHECK constraint.** `joined_count <= max_participants` on `rtc.sessions`, so
+the (N+1)th concurrent join is refused by the database rather than by a count-then-insert two
+callers both pass. First-answer-wins is a conditional UPDATE (`WHERE status = 'ringing'`), the
+`claimForScanning` pattern — a check-then-write lets two answers both "win" and both emit
+`rtc_session.answered`.
+
+**The `rtc` schema has NO `ALTER DEFAULT PRIVILEGES`, deliberately.** 0036's lesson generalized: a
+schema with default privileges gives `taskflow_app` full CRUD on every table a later migration
+creates there, so a migration's own "SELECT only" grant can be weaker than what the database
+already enforces. With none, every grant is explicit forever — which makes "nothing may DELETE a
+call record" and "nothing may UPDATE an issuance row" facts rather than intentions.
+
+**Wave 2 (migration 0042) added ringing, ringtones, the missed-call notification, and recording
+behind a consent gate.**
+
+**A call rings on whatever page you are on, and the poll is still the correctness guarantee.**
+`rtc_session.started` fans out to each invitee's `user:{userId}` room through a SECOND room table
+(`USER_LIST_KEY_OF`) — not a widening of `USER_KEY_OF`, because a field that is sometimes an array
+gives every call site a `string | string[]` and the branch that forgets the array case delivers to
+nobody. An oversized list is refused entirely rather than truncated: "the call rang for some
+people" is far harder to diagnose than a ring that did not happen. Phase 4's NOTIFY/poll
+relationship holds — the socket makes it instant, the six-second poll makes it correct.
+
+**Others keep ringing after the first answer.** `incomingCalls` filters on the caller's own
+participant state, deliberately NOT on `status = 'ringing'` — that would silence everybody else the
+instant one person picked up, so a three-way call could only ever have two people in it.
+
+**Ringtones are Web Audio cadences, not files.** Nothing to host, nothing that can 404, and the
+choice is a short enum with a CHECK constraint rather than a URL a browser fetches.
+`identity.call_prefs` is global per user like `notification_prefs`, for the same reason: every
+route reading it is a `selfRoute`, which resolves no org.
+
+**Recording landed with the §3.9 condition met, not waived.** Three layers, as Phase 7:
+`requestRecording` (a decision), `startRecording` (a code path), and
+`sessions_recording_needs_consent` — `CHECK (recording_state <> 'active' OR consent_count >=
+joined_count)`. A CHECK sees one row, so "everyone agreed" is a COUNTER comparison, the same trick
+the mesh cap uses. `recording.service.test.ts` asserts that layer through the migrator connection,
+bypassing the service entirely. Consequences worth knowing: somebody joining a recording call
+PAUSES it (they increment `joined_count` and not `consent_count`, so the join would otherwise be
+refused by the constraint); consent is cleared on stop, because agreeing once is not agreeing to be
+recordable for the rest of the call; and there is NO admin override, because a capability that let
+an owner record over an objection would make the gate decorative.
+
+**The browser records, because there is no server in the media path.** Mesh audio never touches
+this deployment, so the only place every stream exists together is one participant's tab. The
+honest limit: the file is only as complete as that person's connection. The database records who
+consented and when, not that the audio is forensically complete.
+
+Still not done: calls in public channels (the ring list is the channel's member tuples and a public
+channel has none), web push to a CLOSED tab, video, screen share, and any UI for browsing stored
+recordings.
 
 ### Phase 12 Wave 1 — the platform console (org directory, flag overrides, operator audit)
 

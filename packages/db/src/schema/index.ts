@@ -12,6 +12,7 @@
  *   Phase 6  docs      — spaces, pages (Wave 1: tree only, no body yet)       ✅
  *   Phase 11.5 people  — profiles, membership_profiles                        ✅
  *   Phase 7  comms     — subaccounts, spend policy + ledger, webhook nonces   ✅
+ *   Phase 13 rtc       — in-app voice sessions, participants, TURN issuance    ✅
  */
 
 export * from './identity.js';
@@ -25,3 +26,4 @@ export * from './chat.js';
 export * from './docs.js';
 export * from './people.js';
 export * from './comms.js';
+export * from './rtc.js';

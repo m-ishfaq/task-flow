@@ -350,6 +350,19 @@ export function messagePreviewsQuery(
 }
 
 /**
+ * Every file ever shared in a channel, newest first — the Files tab in the
+ * details panel. Unlike `messageAttachmentsQuery`, not bounded by which page
+ * of messages happens to be loaded — the server resolves it by `channelId`
+ * directly (`chat.attachments.listForChannel`).
+ */
+export function channelFilesQuery(orgId: string, channelId: ChannelId) {
+  return queryOptions({
+    queryKey: [...keys.messages(orgId, channelId), 'files'] as const,
+    queryFn: async () => wire(await api.chat.attachments.listForChannel.query({ channelId })),
+  });
+}
+
+/**
  * The three-step upload: presign, PUT to storage, confirm.
  *
  * Identical in shape to Work's `attachment-section.tsx`, and identical for a

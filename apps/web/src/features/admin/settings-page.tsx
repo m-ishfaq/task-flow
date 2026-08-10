@@ -237,7 +237,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
     >
       <AddPanel>
         <form
-          className="flex flex-wrap items-end gap-2 align-items-center"
+          className="flex flex-wrap gap-2 items-center"
           onSubmit={(event) => {
             event.preventDefault();
             if (email.trim() !== '') add.mutate({ email: email.trim(), role });
@@ -521,7 +521,7 @@ function TeamSection({ orgId }: { readonly orgId: string }) {
     >
       <AddPanel>
         <form
-          className="flex items-end gap-2"
+          className="flex items-center gap-2"
           onSubmit={(event) => {
             event.preventDefault();
             if (name.trim() !== '') create.mutate(name.trim());

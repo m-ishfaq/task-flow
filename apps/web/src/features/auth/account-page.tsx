@@ -25,6 +25,7 @@ import { useStepUp } from './use-step-up.js';
 import { PasskeySection } from './passkey-section.js';
 import { ConnectedAccountsSection } from './connected-accounts-section.js';
 import { NotificationPreferencesSection } from '../notifications/notification-prefs-section.js';
+import { RingtoneSection } from '../rtc/ringtone-section.js';
 import { profileQuery, updateProfile } from '../people/api.js';
 
 /**
@@ -56,6 +57,10 @@ export function AccountPage() {
       <AccountSection />
       <WorkingHoursSection />
       <NotificationPreferencesSection />
+      {/* Same kind of setting as the one above it — global per user, not per
+          org (ai/phase-13-webrtc.md §7), which is why it sits here rather than
+          in an org's settings page. */}
+      <RingtoneSection />
       <PasskeySection />
       <ConnectedAccountsSection />
       <SessionsSection />

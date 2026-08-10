@@ -28,6 +28,11 @@ export function notificationPath(input: {
       return input.boardId === null ? null : `/boards/${input.boardId}?card=${input.subjectId}`;
     case 'page':
       return `/docs?page=${input.subjectId}`;
+    /* A missed call links to the CONVERSATION, not to the call (Phase 13).
+       The call is over — there is nothing to open — and what somebody actually
+       wants after seeing "you missed a call" is the place to call back from. */
+    case 'call':
+      return input.channelId === null ? null : `/chat?channel=${input.channelId}`;
     default:
       return null;
   }

@@ -388,6 +388,13 @@ describe('the real application router', () => {
          them just to hear "no" would be a real, avoidable dead-end. The
          answer ({ isOperator }) is not sensitive on its own. */
       'platformAdmin.self.check',
+      /* A ringtone (Phase 13, ai/phase-13-webrtc.md §7) — global per user like
+         the notification prefs above, and for the same reason: no ORG
+         permission describes "how my own phone rings", and it has to be
+         readable/writable before any call this person is on has a channel to
+         resolve permissions against. */
+      'rtc.prefs.get',
+      'rtc.prefs.set',
       /* The two tenancy routes a caller with NO membership must still reach.
          Neither can be permission-bearing without a contradiction: a user who
          belongs to no organization has no role, so requiring an org permission

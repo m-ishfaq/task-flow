@@ -16,6 +16,8 @@ import {
   Skeleton,
 } from '../../components/primitives.js';
 import { useMembers } from '../org/use-members.js';
+import { CallButton } from '../rtc/call-button.js';
+import { callHistoryQuery, type CallHistoryEntry } from '../rtc/api.js';
 import { RichTextEditor, RichTextView } from '../work/detail/rich-text-editor.js';
 import { EMPTY_DOCUMENT, isEmptyDocument, type DocumentNode } from '../work/detail/rich-text.js';
 import { onTyping, startTyping, stopTyping } from '../../lib/chat-socket.js';
@@ -64,6 +66,7 @@ import {
   type SavedMessage,
 } from './api.js';
 import { ChannelDetailsPanel } from './channel-details.js';
+import { CallTimelineCard } from './channel-media.js';
 import { MessageAttachments, MessagePreviews } from './message-extras.js';
 import { matchingCommands, messageTextFor, parseCommand } from './slash-commands.js';
 import { useChannelRoom } from './use-channel-room.js';
@@ -823,6 +826,22 @@ function NewDirectMessagePopover({
  * A single channel — messages and the composer
  * -------------------------------------------------------------------------- */
 
+/** One row in the merged timeline — a group of messages or a call event,
+    ordered by `at` (an ISO instant) rather than by which query it came from. */
+type TimelineItem =
+  | {
+      readonly kind: 'messages';
+      readonly key: string;
+      readonly at: string;
+      readonly group: MessageGroup;
+    }
+  | {
+      readonly kind: 'call';
+      readonly key: string;
+      readonly at: string;
+      readonly entry: CallHistoryEntry;
+    };
+
 function ChannelPanel({
   orgId,
   channelId,
@@ -866,6 +885,11 @@ function ChannelPanel({
   const previewsByMessage = groupByMessage(previews.data ?? []);
 
   const pins = useQuery(pinsQuery(orgId, channelId));
+
+  /* Every call this conversation has had, merged into the timeline below by
+     timestamp — WhatsApp's own "Voice call · 3m 12s" / "Missed voice call"
+     placement, not a details-panel-only fact. */
+  const calls = useQuery(callHistoryQuery(orgId, channelId));
 
   /* Saved messages are ORG-wide, not per channel, so this is one query for the
      whole sidebar rather than one per conversation. The set is small by nature
@@ -1101,6 +1125,29 @@ function ChannelPanel({
   const groups = groupMessages(topLevel);
 
   /**
+   * Messages and calls, interleaved by timestamp — the WhatsApp placement
+   * §7's own "no listing UI" note left as a gap: a call happened AT A POINT
+   * in the conversation, between two messages, not off to one side. String
+   * comparison is safe here because both timestamps are the same server's
+   * `Date.prototype.toISOString()` output — fixed-width, UTC, `Z`-suffixed —
+   * so lexicographic order already agrees with chronological order.
+   */
+  const timeline: readonly TimelineItem[] = [
+    ...groups.map((group): TimelineItem => ({
+      kind: 'messages',
+      key: group.messages[0]?.messageId ?? '',
+      at: group.messages[0]?.createdAt ?? '',
+      group,
+    })),
+    ...(calls.data ?? []).map((entry): TimelineItem => ({
+      kind: 'call',
+      key: entry.sessionId,
+      at: entry.createdAt,
+      entry,
+    })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+
+  /**
    * Where the "new messages" divider goes.
    *
    * Derived from `topLevel` — the list that is actually RENDERED — and not from
@@ -1276,6 +1323,14 @@ function ChannelPanel({
               )}
             </div>
           )}
+          {/* In-app voice (Phase 13). Public channels cannot start a call in
+              Wave 1 — the ring list comes from the channel's member tuples and
+              a public channel has none, so the control is not offered rather
+              than offered and refused (ai/phase-13-webrtc.md §6). Everything
+              else about permission is the server's answer, not this file's. */}
+          {channel.data !== undefined && channel.data.type !== 'public' && (
+            <CallButton orgId={orgId} channelId={channelId} />
+          )}
           <button
             type="button"
             onClick={() => {
@@ -1303,65 +1358,78 @@ function ChannelPanel({
               <Skeleton className="h-10 w-3/4" />
               <Skeleton className="h-10 w-1/2" />
             </div>
-          ) : groups.length === 0 ? (
+          ) : timeline.length === 0 ? (
             <Empty
               title="No messages yet"
               description="Say something to get the conversation going."
             />
           ) : (
             <div className="space-y-4">
-              {groups.map((group) => (
-                <Fragment key={group.messages[0]?.messageId}>
-                  {/* The "new messages" line, placed by the read CURSOR rather
-                      than by counting back from the end. A count-based position
-                      lands somewhere plausible and wrong the moment a message
-                      is deleted or the page is partially loaded — and it does so
-                      silently, which is the worst property a divider can have. */}
-                  {firstUnreadId !== null &&
-                    group.messages.some((message) => message.messageId === firstUnreadId) && (
-                      <div className="flex items-center gap-2" role="separator">
-                        <span className="h-px flex-1 bg-danger/40" />
-                        <span className="text-[11px] font-medium text-danger">New messages</span>
-                        <span className="h-px flex-1 bg-danger/40" />
-                      </div>
-                    )}
-                  <MessageGroupView
-                    group={group}
-                    canModerate={channel.data?.capabilities.moderate ?? false}
+              {timeline.map((item) =>
+                item.kind === 'call' ? (
+                  <CallTimelineCard
+                    key={item.key}
+                    entry={item.entry}
                     viewerId={viewerId}
-                    authorLabel={group.authorId === null ? null : personOf(group.authorId).label}
-                    editingId={editing}
-                    onStartEdit={setEditing}
-                    onCancelEdit={() => {
-                      setEditing(null);
-                    }}
-                    onSaveEdit={(messageId, body) => {
-                      edit.mutate({ messageId: messageId as MessageId, body });
-                    }}
-                    editPending={edit.isPending}
-                    onDelete={(messageId) => {
-                      remove.mutate(messageId as MessageId);
-                    }}
-                    reactionsByMessage={reactionsByMessage}
-                    attachmentsByMessage={attachmentsByMessage}
-                    savedIds={savedIds}
-                    onToggleSave={(messageId, saved) => {
-                      toggleSave.mutate({ messageId: messageId as MessageId, saved });
-                    }}
-                    previewsByMessage={previewsByMessage}
                     personOf={personOf}
-                    onToggleReaction={(messageId, emoji) => {
-                      react.mutate({ messageId: messageId as MessageId, emoji });
-                    }}
-                    pinnedIds={pinnedIds}
-                    onTogglePin={(messageId, pinned) => {
-                      togglePin.mutate({ messageId: messageId as MessageId, pinned });
-                    }}
-                    replyCounts={replyCounts}
-                    onOpenThread={setOpenThreadId}
                   />
-                </Fragment>
-              ))}
+                ) : (
+                  <Fragment key={item.key}>
+                    {/* The "new messages" line, placed by the read CURSOR rather
+                        than by counting back from the end. A count-based position
+                        lands somewhere plausible and wrong the moment a message
+                        is deleted or the page is partially loaded — and it does so
+                        silently, which is the worst property a divider can have. */}
+                    {firstUnreadId !== null &&
+                      item.group.messages.some(
+                        (message) => message.messageId === firstUnreadId,
+                      ) && (
+                        <div className="flex items-center gap-2" role="separator">
+                          <span className="h-px flex-1 bg-danger/40" />
+                          <span className="text-[11px] font-medium text-danger">New messages</span>
+                          <span className="h-px flex-1 bg-danger/40" />
+                        </div>
+                      )}
+                    <MessageGroupView
+                      group={item.group}
+                      canModerate={channel.data?.capabilities.moderate ?? false}
+                      viewerId={viewerId}
+                      authorLabel={
+                        item.group.authorId === null ? null : personOf(item.group.authorId).label
+                      }
+                      editingId={editing}
+                      onStartEdit={setEditing}
+                      onCancelEdit={() => {
+                        setEditing(null);
+                      }}
+                      onSaveEdit={(messageId, body) => {
+                        edit.mutate({ messageId: messageId as MessageId, body });
+                      }}
+                      editPending={edit.isPending}
+                      onDelete={(messageId) => {
+                        remove.mutate(messageId as MessageId);
+                      }}
+                      reactionsByMessage={reactionsByMessage}
+                      attachmentsByMessage={attachmentsByMessage}
+                      savedIds={savedIds}
+                      onToggleSave={(messageId, saved) => {
+                        toggleSave.mutate({ messageId: messageId as MessageId, saved });
+                      }}
+                      previewsByMessage={previewsByMessage}
+                      personOf={personOf}
+                      onToggleReaction={(messageId, emoji) => {
+                        react.mutate({ messageId: messageId as MessageId, emoji });
+                      }}
+                      pinnedIds={pinnedIds}
+                      onTogglePin={(messageId, pinned) => {
+                        togglePin.mutate({ messageId: messageId as MessageId, pinned });
+                      }}
+                      replyCounts={replyCounts}
+                      onOpenThread={setOpenThreadId}
+                    />
+                  </Fragment>
+                ),
+              )}
             </div>
           )}
         </div>

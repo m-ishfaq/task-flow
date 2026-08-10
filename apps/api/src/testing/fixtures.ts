@@ -3,6 +3,7 @@ import { RecordingEventBus } from '@taskflow/events';
 import { createAppRouter } from '../router.js';
 import { buildIdentityDeps, buildPasskeyDeps } from '../identity/deps.js';
 import { buildWorkDeps } from '../work/deps.js';
+import { buildRtcDeps } from '../rtc/deps.js';
 import type { OAuthDeps } from '../identity/oauth.service.js';
 import type { AuthenticatedPrincipal, OrgMembership, RequestContext } from '../trpc/context.js';
 import type { DeliverableLink } from '../identity/identity.service.js';
@@ -126,6 +127,11 @@ export function testAppRouter(
          tenancy fuzz harness need them to do, since both enumerate every
          registered route. */
       telephony: undefined,
+      /* STUN only, and no TURN secret — so `iceServers` answers with the STUN
+         entry and never mints. The TURN gate has its own suite against a
+         recording minter (`turn-gate.test.ts`); this fixture deliberately
+         cannot spend, so no test that forgets to stub it can. */
+      rtc: buildRtcDeps(TEST_ENV),
       oauth: options.oauth ?? NO_OAUTH_PROVIDERS,
     }),
     events,

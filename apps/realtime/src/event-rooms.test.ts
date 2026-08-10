@@ -6,7 +6,9 @@ import {
   roomBoardIdOf,
   roomChannelIdOf,
   roomUserIdOf,
+  roomUserIdsOf,
   userBroadcastEventNames,
+  userFanoutEventNames,
 } from './event-rooms.js';
 
 /**
@@ -232,5 +234,64 @@ describe('roomUserIdOf', () => {
     for (const name of userBroadcastEventNames()) {
       expect(name.startsWith('attachment.')).toBe(false);
     }
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * Fan-out to personal rooms (Phase 13, ai/phase-13-webrtc.md §7)
+ * -------------------------------------------------------------------------- */
+
+describe('roomUserIdsOf', () => {
+  it('resolves the two call events that ring and un-ring a phone', () => {
+    expect(
+      roomUserIdsOf('rtc_session.started', {
+        sessionId: 's1',
+        channelId: 'c1',
+        invitedUserIds: ['u1', 'u2'],
+      }),
+    ).toEqual(['u1', 'u2']);
+
+    expect(
+      roomUserIdsOf('rtc_session.ended', { sessionId: 's1', notifyUserIds: ['u1', 'u2', 'u3'] }),
+    ).toEqual(['u1', 'u2', 'u3']);
+  });
+
+  it('answers empty for an event that is not fanned out', () => {
+    /* The same boundary rule the single-id table has: an unknown event is not
+       a guess, it is nothing. */
+    expect(roomUserIdsOf('card.moved', { invitedUserIds: ['u1'] })).toEqual([]);
+    expect(roomUserIdsOf('notification.created', { userId: 'u1' })).toEqual([]);
+  });
+
+  it('answers empty for a malformed payload rather than throwing', () => {
+    expect(roomUserIdsOf('rtc_session.started', null)).toEqual([]);
+    expect(roomUserIdsOf('rtc_session.started', {})).toEqual([]);
+    expect(roomUserIdsOf('rtc_session.started', { invitedUserIds: 'u1' })).toEqual([]);
+  });
+
+  it('drops a malformed id without costing the others their ring', () => {
+    /* One bad entry in a list of three must not silence the two good ones —
+       the failure mode being avoided is "the call rang for some people". */
+    expect(
+      roomUserIdsOf('rtc_session.started', { invitedUserIds: ['u1', '', 42, null, 'u2'] }),
+    ).toEqual(['u1', 'u2']);
+  });
+
+  it('refuses an oversized list ENTIRELY rather than truncating it', () => {
+    /* Truncating would deliver to an arbitrary subset, so a defect upstream
+       would present as "it rang for some people" — far harder to diagnose than
+       a ring that did not happen at all. MAX_FANOUT is 32. */
+    const tooMany = Array.from({ length: 33 }, (_, index) => `u${String(index)}`);
+    expect(roomUserIdsOf('rtc_session.started', { invitedUserIds: tooMany })).toEqual([]);
+
+    const justUnder = Array.from({ length: 32 }, (_, index) => `u${String(index)}`);
+    expect(roomUserIdsOf('rtc_session.started', { invitedUserIds: justUnder })).toHaveLength(32);
+  });
+
+  it('names both call events and nothing else', () => {
+    expect([...userFanoutEventNames()].sort()).toEqual([
+      'rtc_session.ended',
+      'rtc_session.started',
+    ]);
   });
 });

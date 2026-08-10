@@ -238,5 +238,6 @@ function iconFor(kind: string): string {
   if (kind === 'chat.direct') return '✉️';
   if (kind === 'chat.thread_reply') return '↩️';
   if (kind === 'card.assigned') return '📌';
+  if (kind === 'call.missed') return '📞';
   return '🔔';
 }

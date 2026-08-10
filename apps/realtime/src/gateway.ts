@@ -11,17 +11,32 @@ import {
   roomCallIdOf,
   roomChannelIdOf,
   roomUserIdOf,
+  roomUserIdsOf,
 } from './event-rooms.js';
-import { broadcastChannelPresence, broadcastPresence } from './presence.js';
+import { broadcastChannelPresence, broadcastPresence, broadcastRtcPeers } from './presence.js';
 import { FixedWindowLimiter } from './rate-limit.js';
 import { authorizeCallJoin, authorizeChannelJoin, authorizeJoin } from './rooms.js';
-import { applyChatRevocation, applyRevocation, revocationOf } from './revocation.js';
+import { authorizeRtcJoin } from './rtc-rooms.js';
+import {
+  applyChatRevocation,
+  applyRevocation,
+  applyRtcRevocation,
+  revocationOf,
+} from './revocation.js';
 import { startRealtimeRelay, type RelayHandle } from './relay.js';
-import type { ChatNamespace, ChatSocket, GatewayServer, GatewaySocket } from './socket-data.js';
+import type {
+  ChatNamespace,
+  ChatSocket,
+  GatewayServer,
+  GatewaySocket,
+  RtcNamespace,
+  RtcSocket,
+} from './socket-data.js';
 import {
   boardRoom,
   callRoom,
   channelRoom,
+  rtcRoom,
   userRoom,
   CallJoinRequestSchema,
   CallLeaveRequestSchema,
@@ -30,6 +45,10 @@ import {
   CHAT_NAMESPACE,
   JoinRequestSchema,
   LeaveRequestSchema,
+  RTC_NAMESPACE,
+  RtcJoinRequestSchema,
+  RtcLeaveRequestSchema,
+  RtcSignalRequestSchema,
   TypingRequestSchema,
   type JoinAck,
 } from './wire.js';
@@ -108,6 +127,10 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
   );
   const joinsPerSocket = new FixedWindowLimiter(env.REALTIME_MAX_JOINS_PER_MINUTE);
   const refusedJoinsPerSocket = new FixedWindowLimiter(env.REALTIME_MAX_REFUSED_JOINS_PER_MINUTE);
+  /* Its own budget, an order of magnitude above the join limit — ICE trickling
+     legitimately emits dozens of candidates per peer in the first seconds of a
+     call (ai/phase-13-webrtc.md §3.2). */
+  const signalsPerSocket = new FixedWindowLimiter(env.REALTIME_MAX_SIGNALS_PER_MINUTE);
 
   /* Address windows are keyed by remote address and would otherwise grow
      without bound — slowly, which is why it would be found in production rather
@@ -476,6 +499,197 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
     });
   });
 
+  /* -------------------------------------------------------------------- *
+   * The /rtc namespace — in-app voice signalling
+   * (Phase 13 Wave 1, ai/phase-13-webrtc.md §3.1, §3.2)
+   *
+   * Still broadcast-only. CLAUDE.md rule 8 holds without an exception: nothing
+   * in this block writes to the database. The call RECORD — who called, who
+   * joined, how long — goes through `apps/api`'s rtc routes, where validation,
+   * authorization, audit and the outbox already live. What rides the socket is
+   * the SDP and ICE traffic, which is ephemeral by nature and belongs to nobody
+   * once the call ends.
+   *
+   * ## No presence disclosure problem here, unlike /chat
+   *
+   * `rtc:peers` publishes who is in a call room to the people in that call. That
+   * is not the same disclosure the chat namespace's presence makes (which tells
+   * one specific person when you are reading them): being in a call is a fact
+   * the other participants can hear.
+   * -------------------------------------------------------------------- */
+  const rtc: RtcNamespace = io.of(RTC_NAMESPACE);
+  rtc.use(authenticate);
+
+  rtc.on('connection', (socket: RtcSocket) => {
+    const { userId } = socket.data.identity;
+    logger.debug({ userId }, 'rtc socket connected');
+
+    socket.emit('ready', { reauthLeadSeconds: env.REALTIME_REAUTH_LEAD_SECONDS });
+
+    socket.on('rtc:join', (request: unknown, ack?: (result: JoinAck) => void) => {
+      void (async () => {
+        const respond = (result: JoinAck): void => ack?.(result);
+
+        if (!joinsPerSocket.hit(socket.id)) {
+          logger.warn({ userId }, 'call join refused: too many joins on this socket');
+          respond({ ok: false, reason: 'rate_limited' });
+          return;
+        }
+
+        const parsed = RtcJoinRequestSchema.safeParse(request);
+        if (!parsed.success) {
+          countRtcRefusal(socket, 'invalid');
+          respond({ ok: false, reason: 'invalid' });
+          return;
+        }
+
+        const { orgId, sessionId } = parsed.data;
+
+        /* userId from socket.data — NEVER from `parsed.data`, which has no field
+           for it and must never gain one (§3.7). `authorizeRtcJoin` is almost
+           entirely a call to `authorizeChannelJoin`: a call in channel X is
+           joinable by precisely those who can read channel X, and there is no
+           second membership check anywhere on this path (§1). */
+        const outcome = await authorizeRtcJoin(userId, orgId, sessionId);
+
+        if (!outcome.allowed) {
+          logger.warn({ userId, orgId, sessionId, reason: outcome.reason }, 'call join refused');
+          countRtcRefusal(socket, 'denied');
+          /* One reason for every refusal, as everywhere else here. Telling "no
+             such call" apart from "denied" would confirm which session ids
+             exist, and a session id confirms two people were talking. */
+          respond({ ok: false, reason: 'denied' });
+          return;
+        }
+
+        await socket.join(rtcRoom(sessionId));
+        socket.data.rooms.set(sessionId, orgId);
+        logger.debug({ userId, sessionId }, 'socket joined call room');
+        respond({ ok: true });
+
+        /* After the join took effect, so a client reading its own ack alongside
+           the first roster broadcast finds itself already in the list. */
+        void broadcastRtcPeers(rtc, sessionId);
+      })();
+    });
+
+    socket.on('rtc:leave', (request: unknown) => {
+      const parsed = RtcLeaveRequestSchema.safeParse(request);
+      if (!parsed.success) return;
+
+      const { sessionId } = parsed.data;
+      socket.data.rooms.delete(sessionId);
+
+      void (async () => {
+        await socket.leave(rtcRoom(sessionId));
+        await broadcastRtcPeers(rtc, sessionId);
+      })();
+    });
+
+    /**
+     * Relay one signalling message to one peer.
+     *
+     * ==================================================================
+     * THE `to` FIELD IS A SELECTOR, NEVER A ROUTING KEY
+     * ==================================================================
+     *
+     * §3.2. This is Phase 4's "subscribe me to my own notifications" bug in a
+     * new costume, and it is the single most dangerous handler in this file.
+     *
+     * The WRONG implementation, written out so it is recognizable in a diff:
+     *
+     *     socket.to(userRoom(parsed.data.to)).emit('rtc:signal', ...)
+     *
+     * That compiles, reads fine, and delivers reliably — to that user
+     * ANYWHERE, in any tab, with no room check at all. A client that sent it a
+     * `to` of its choosing would have a cross-room message-injection primitive
+     * into any browser in the deployment, reached from a socket that proved
+     * only that it could read one channel.
+     *
+     * What happens instead:
+     *
+     *   1. The SENDER must already hold this room, from `socket.data` — meaning
+     *      it passed `authorizeRtcJoin`. Checked first, so an unauthorized
+     *      sender never reaches the roster read at all.
+     *   2. `fetchSockets()` on the room produces the roster THE SERVER HOLDS.
+     *      Adapter-aware, so it is the whole cluster's roster and not this
+     *      instance's (see `presence.ts` — that detail is load-bearing here in a
+     *      way it is not for an avatar stack).
+     *   3. `to` selects from that roster. A `to` naming somebody not in the room
+     *      matches nothing and the signal is dropped, silently: there is no ack
+     *      on this event, and answering would turn it into an oracle for who is
+     *      in which call.
+     *   4. `from` is filled in from `socket.data.identity`. A client that could
+     *      name its own `from` could impersonate another participant's offer and
+     *      take over their leg of the call.
+     *
+     * The rate limit is its own, far above the join limit: ICE trickling emits
+     * dozens of candidates per peer in the first seconds of a call, so reusing
+     * the join budget would throttle every real call. What it bounds is a peer
+     * using an authorized room as a high-rate channel into someone's browser.
+     */
+    socket.on('rtc:signal', (request: unknown) => {
+      void (async () => {
+        const parsed = RtcSignalRequestSchema.safeParse(request);
+        if (!parsed.success) return;
+
+        const { sessionId, to, kind, data } = parsed.data;
+
+        /* 1. The sender holds the room. From socket.data, which only
+              `authorizeRtcJoin` writes. */
+        if (!socket.data.rooms.has(sessionId)) return;
+
+        if (!signalsPerSocket.hit(socket.id)) {
+          logger.warn({ userId, sessionId }, 'signal dropped: rate limit');
+          return;
+        }
+
+        /* 2. The roster the SERVER holds. Never the payload. */
+        const peers = await rtc.in(rtcRoom(sessionId)).fetchSockets();
+
+        /* 3. `to` selects from it. Every socket that peer has open in this room
+              receives it — a person with two tabs in one call is two peers as
+              far as WebRTC is concerned, and delivering to only one of them
+              would negotiate with a tab that may not be the one listening. */
+        const targets = peers.filter(
+          (peer) => peer.data.identity.userId === to && peer.id !== socket.id,
+        );
+
+        for (const target of targets) {
+          /* 4. `from` from socket.data.identity, never from the request. */
+          target.emit('rtc:signal', { sessionId, from: userId, kind, data });
+        }
+      })();
+    });
+
+    socket.on('disconnect', () => {
+      joinsPerSocket.forget(socket.id);
+      refusedJoinsPerSocket.forget(socket.id);
+      signalsPerSocket.forget(socket.id);
+      logger.debug({ userId }, 'rtc socket disconnected');
+
+      /* Socket.io has already removed this socket from every room by now.
+         `socket.data.rooms` is this module's own tracking and is what still
+         remembers which calls to tell — and telling them matters more here than
+         for a board: a mesh peer that never hears about a departure keeps a
+         dead peer connection open and waits for media that will not arrive. */
+      for (const sessionId of socket.data.rooms.keys()) {
+        void broadcastRtcPeers(rtc, sessionId);
+      }
+    });
+  });
+
+  /** The rtc namespace's copy of `countRefusal` — same reasoning, same limits. */
+  function countRtcRefusal(socket: RtcSocket, kind: string): void {
+    if (refusedJoinsPerSocket.hit(socket.id)) return;
+
+    logger.warn(
+      { userId: socket.data.identity.userId, address: socket.data.address, kind },
+      'disconnecting rtc socket: sustained refused joins look like room enumeration',
+    );
+    socket.disconnect(true);
+  }
+
   /** The chat namespace's copy of `countRefusal` — same reasoning, same limits. */
   function countChatRefusal(socket: ChatSocket, kind: string): void {
     if (refusedJoinsPerSocket.hit(socket.id)) return;
@@ -519,6 +733,11 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
        member subscribed to the channel they were just removed from — the exact
        failure §3.3 names, on the surface where it matters most. */
     void applyChatRevocation(chat, message, logger);
+    /* And the call namespace. A revoked member left in a signalling room keeps
+       negotiating with a conversation they were removed from — see
+       `applyRtcRevocation`'s header, including the honest limit on what leaving
+       the room can and cannot terminate. */
+    void applyRtcRevocation(rtc, message, logger);
   });
 
   const dispatch = async (row: OutboxRow): Promise<void> => {
@@ -527,6 +746,7 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
       io.serverSideEmit('revocation', revocation);
       await applyRevocation(io, revocation, logger);
       await applyChatRevocation(chat, revocation, logger);
+      await applyRtcRevocation(rtc, revocation, logger);
       /* Falls through deliberately: a revocation event may ALSO have a room
          mapping in a later wave, and returning early here would make adding one
          silently do nothing. */
@@ -559,6 +779,56 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
           callId,
           status: fields.status,
           at: row.occurredAt.toISOString(),
+        });
+      }
+    }
+
+    /* Ringing (Phase 13, §7). Fanned out to each invitee's personal room on
+       the DEFAULT namespace — the one room a socket is in without having asked,
+       so a call rings whatever page the person is on.
+
+       Two events, two client messages, because the client's reactions are
+       opposite (start a tone, stop a tone) and a single handler branching on a
+       status is the shape where the branch that never fires is the one that
+       leaves a phone ringing after the call ended. */
+    for (const ringUserId of roomUserIdsOf(row.name, row.payload)) {
+      const fields = row.payload as {
+        readonly channelId?: unknown;
+        readonly kind?: unknown;
+        readonly reason?: unknown;
+      };
+
+      if (row.name === 'rtc_session.started') {
+        const sessionId = (row.payload as { readonly sessionId?: unknown }).sessionId;
+        /* A malformed payload is not a reason to guess — the same rule
+           `roomUserIdOf`'s own callers apply, and here the cost of guessing is
+           a ringing phone for a call that may not exist. */
+        if (
+          typeof sessionId !== 'string' ||
+          typeof fields.channelId !== 'string' ||
+          row.actorId === null
+        ) {
+          continue;
+        }
+
+        io.to(userRoom(ringUserId)).emit('call:ringing', {
+          sessionId,
+          channelId: fields.channelId,
+          /* From the event's own ACTOR, not from a payload field: the person
+             who started a call is by definition the mutation's actor, and a
+             second copy in the payload would be a second place for it to be
+             wrong. A null actor means a system-initiated call, which nothing
+             can produce today — skipped rather than rung by "somebody". */
+          initiatedBy: row.actorId,
+          kind: typeof fields.kind === 'string' ? fields.kind : 'audio',
+        });
+      } else {
+        const sessionId = (row.payload as { readonly sessionId?: unknown }).sessionId;
+        if (typeof sessionId !== 'string') continue;
+
+        io.to(userRoom(ringUserId)).emit('call:ended', {
+          sessionId,
+          reason: typeof fields.reason === 'string' ? fields.reason : 'ended',
         });
       }
     }
