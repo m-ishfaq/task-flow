@@ -31,11 +31,11 @@ documented the `contains me` quoting rule and the free-text-before-NOT corner in
 Everything in §2, committed as `feat(search): Phase 8 Wave 2 …` (2026-08-10):
 
 - **Migration 0045** — `search.documents` (org-scoped projection, `(org_id,
-  entity_type, entity_id)` unique key for idempotent upserts, `metadata` jsonb for
+entity_type, entity_id)` unique key for idempotent upserts, `metadata` jsonb for
   permalink + authz context) in a schema with **deliberately no `ALTER DEFAULT
-  PRIVILEGES`** — the 0041 lesson, every grant explicit; RLS generated per the
+PRIVILEGES`** — the 0041 lesson, every grant explicit; RLS generated per the
   template; GIN tsvector + trgm indexes over `coalesce(title,'') || ' ' ||
-  coalesce(body,'')` (the expression the `text` field compiles to, so a
+coalesce(body,'')` (the expression the `text` field compiles to, so a
   title-only page is findable); the `taskflow_search` claim role on the 0016
   recipe — SELECT/UPDATE on the outbox (WITH CHECK (false) on the mark policy,
   the FOR UPDATE lesson of 0016), dispatch bookkeeping pinned to

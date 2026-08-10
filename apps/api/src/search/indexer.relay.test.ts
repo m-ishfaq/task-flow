@@ -191,9 +191,7 @@ afterAll(async () => {
   await admin.end();
 });
 
-async function documentRows(
-  orgId: OrgId,
-): Promise<
+async function documentRows(orgId: OrgId): Promise<
   {
     entityType: string;
     entityId: string;
