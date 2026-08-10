@@ -47,14 +47,14 @@ const PUSH_SERVICES = [
   'https://push.apple.com/webpush',
 ] as const;
 
-const TOKEN_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+const URL_SAFE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
 /** A base64url-ALPHABET string of `length` characters — not a real key, just
  * something that reads like one; see the file header on why that is enough. */
 function token(rng: Rng, length: number): string {
   let out = '';
   for (let i = 0; i < length; i += 1) {
-    out += TOKEN_ALPHABET.charAt(rng.int(0, TOKEN_ALPHABET.length - 1));
+    out += URL_SAFE_ALPHABET.charAt(rng.int(0, URL_SAFE_ALPHABET.length - 1));
   }
   return out;
 }

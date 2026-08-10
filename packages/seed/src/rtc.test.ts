@@ -30,7 +30,11 @@ interface Harness {
   columnsOf(table: string): readonly string[];
 }
 
-function harnessFor(profile: Profile, channels: readonly SeededChannel[], seed = 'rtc-test'): Harness {
+function harnessFor(
+  profile: Profile,
+  channels: readonly SeededChannel[],
+  seed = 'rtc-test',
+): Harness {
   const inserts: CapturedInsert[] = [];
   let currentOrg: string | null = null;
 
@@ -91,7 +95,11 @@ function member(index: number): SeededMembership {
     membershipId: id('4d', index),
     user: {
       id: id('55', index),
-      name: { first: `First${String(index)}`, last: `Last${String(index)}`, full: `F${String(index)} L` },
+      name: {
+        first: `First${String(index)}`,
+        last: `Last${String(index)}`,
+        full: `F${String(index)} L`,
+      },
       email: `user${String(index)}@taskflow.seed.test`,
     },
     role: 'member',

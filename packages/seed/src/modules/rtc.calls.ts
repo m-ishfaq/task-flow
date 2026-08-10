@@ -62,7 +62,10 @@ function planCalls(rng: Rng, channel: SeededChannel): CallPlan[] {
   const plans: CallPlan[] = [];
 
   for (let i = 0; i < count; i += 1) {
-    const roster = rng.sample(channel.members, Math.min(MESH_PARTICIPANT_CAP, channel.members.length));
+    const roster = rng.sample(
+      channel.members,
+      Math.min(MESH_PARTICIPANT_CAP, channel.members.length),
+    );
     const initiator = rng.pick(roster);
     plans.push({
       channel,
