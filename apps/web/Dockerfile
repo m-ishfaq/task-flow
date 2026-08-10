@@ -47,16 +47,27 @@ COPY packages packages
 # as vite.config.ts's header warns against.
 RUN pnpm --filter @taskflow/web build
 
-FROM nginx:1.27-alpine AS runtime
+# nginxinc/nginx-unprivileged, not the plain nginx image — Trivy's misconfig
+# scan (AVD-DS-0002) correctly flagged this Dockerfile as the one image of
+# the four with no non-root USER. The plain nginx:alpine image can't just
+# take a `USER nginx` line: binding :80 needs a privileged port, and its
+# cache/pid directories are root-owned, so it would fail to start rather
+# than run unprivileged. This image is built for exactly that — it already
+# owns its runtime directories as the `nginx` user and listens on 8080
+# instead of 80, which is why nginx.conf's `listen` directive and this
+# file's EXPOSE/HEALTHCHECK/compose.prod.yaml's port mapping all say 8080
+# now, not 80. The host still publishes port 80 (compose.prod.yaml maps
+# '80:8080') — nothing changes for anyone hitting the app from outside.
+FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
 COPY apps/web/nginx.conf /etc/nginx/nginx.conf
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
 
-EXPOSE 80
+EXPOSE 8080
 
-# 127.0.0.1, not localhost — nginx listens on 0.0.0.0:80 (IPv4 only) and
+# 127.0.0.1, not localhost — nginx listens on 0.0.0.0:8080 (IPv4 only) and
 # `localhost` resolves to ::1 first on Alpine, so busybox wget is refused
 # despite nginx serving fine. This was the first real failure found by
 # `docker compose up` of compose.prod.yaml: the host's curl worked, every
 # port was mapped, and only the in-container healthcheck could see it.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -q -O- http://127.0.0.1:80/ || exit 1
+  CMD wget -q -O- http://127.0.0.1:8080/ || exit 1

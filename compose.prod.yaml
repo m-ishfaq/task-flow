@@ -360,10 +360,15 @@ services:
       dockerfile: apps/web/Dockerfile
     restart: unless-stopped
     ports:
-      # Plain HTTP. Put TLS termination in front of this (a managed load
+      # Host :80 -> container :8080. The container listens on 8080, not 80,
+      # because apps/web/Dockerfile runs nginx as a non-root user
+      # (nginxinc/nginx-unprivileged, per Trivy's AVD-DS-0002 finding), which
+      # can't bind a privileged port — that's purely internal, nothing
+      # changes for anyone hitting the app from outside. Plain HTTP on the
+      # host side too: put TLS termination in front of this (a managed load
       # balancer, or another reverse proxy doing ACME) — see this file's own
       # header and ai/deployment-runbook.md.
-      - '80:80'
+      - '80:8080'
     depends_on:
       - api
       - realtime

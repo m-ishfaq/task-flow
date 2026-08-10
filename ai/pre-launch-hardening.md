@@ -9,9 +9,29 @@ review of every §2.2 human-review surface) is also done: one confirmed finding 
 blocklist in `packages/security/src/outbound-url.ts` missed 63/64 of the IPv6 link-local range
 (`fe80::/10` is first hextet `fe80`–`febf`, the check only matched `fe80`) — fixed with
 boundary tests; full write-up in `ai/security-review-priority-2.md`. Priority 3 is COMPLETE —
-§3.4 (device/session inventory + impossible-travel detection), §3.5 (org deletion) and§3.6 (self-serve DSAR export) all shipped — see the Priority 3 status header. Priority 4 has
+§3.4 (device/session inventory + impossible-travel detection), §3.5 (org deletion) and §3.6
+(self-serve DSAR export) all shipped — see the Priority 3 status header. Priority 4 has
 started: Search (Phase 8) Wave 1 — the TQL parser — is SHIPPED (spec: ai/phase-8-search.md),
 with the search spine (Wave 2) next, then Automation and Analytics.
+
+**CI ran against this branch for the first time on 2026-08-10 and found four more real
+issues, all fixed the same day:** (1) `ip-address@5.9.4`, a transitive dependency of
+`geoip-lite` (pulled in by Priority 3's impossible-travel geo lookup), carried a HIGH SSRF
+CVE — reachable only through `geoip-lite`'s offline `updatedb` maintenance script, never the
+runtime lookup path, but `pnpm audit` doesn't do reachability analysis and the fix (a pnpm
+override pinning `>=10.3.1`) is trivial regardless. (2) `apps/web/Dockerfile` was the one of
+the four Dockerfiles that actually ran as root — Trivy's misconfig scan (AVD-DS-0002) caught
+it; item 1 below claiming "every image runs as non-root" was wrong until this fix swapped the
+base to `nginxinc/nginx-unprivileged` (which moves the container's internal port from 80 to
+8080 — `compose.prod.yaml` now maps `80:8080`; nothing changes for anyone hitting the app from
+outside). (3) Semgrep flagged all four `proxy_pass` lines in `apps/web/nginx.conf` as a
+"dynamic proxy host" risk — a false positive the rule can't distinguish from a real one: the
+variable is a hardcoded literal set two lines above (`set $upstream_api api:3000;`), never
+request-derived, and exists only so nginx re-resolves Docker's compose-network DNS per request
+instead of caching it at startup. Suppressed inline with `# nosemgrep:` and a comment
+explaining why, not disabled globally. (4) Two small lint errors in the Priority 3 diff
+(`geo.ts`'s unnecessary type assertion, a test fixture's async function with no `await`) —
+both mechanical, fixed with no behavior change.
 
 Not a numbered roadmap phase — this is cross-cutting work found by auditing `main` directly
 (grep, file counts, CI config — not just PLAN.md) for what genuinely blocks shipping, independent

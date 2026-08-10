@@ -53,8 +53,8 @@ let now: Date;
 let countryByIp: Record<string, string | null>;
 
 function deps(
-  lookupCountry: IdentityDeps['lookupCountry'] = async (ip) =>
-    ip === null ? null : (countryByIp[ip] ?? null),
+  lookupCountry: IdentityDeps['lookupCountry'] = (ip) =>
+    Promise.resolve(ip === null ? null : (countryByIp[ip] ?? null)),
 ): IdentityDeps {
   return {
     config: {

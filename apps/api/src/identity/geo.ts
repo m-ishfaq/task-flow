@@ -50,7 +50,7 @@ function loadLookup(): Promise<GeoLookup> {
     if (typeof mod.lookup !== 'function') {
       throw new Error('geoip-lite loaded without a lookup function');
     }
-    return mod.lookup as GeoLookup;
+    return mod.lookup;
   });
   return lookupPromise;
 }

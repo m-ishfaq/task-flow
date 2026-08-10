@@ -17,17 +17,17 @@ the history of what the smoke test found and fixed.
 
 Seven containers on one Docker host:
 
-| Service    | What it is                                                         | Exposed                                                |
-| ---------- | ------------------------------------------------------------------ | ------------------------------------------------------ |
-| `postgres` | Postgres 17, roles bootstrapped with REAL passwords (init-prod/05) | no                                                     |
-| `minio`    | S3-compatible object storage (attachments, exports, recordings)    | 9000/9001 (needs public reach + TLS before real users) |
-| `clamav`   | Attachment virus scanner (fail-closed)                             | no                                                     |
-| `migrate`  | One-shot; applies migrations. Behind the `tools` profile.          | no                                                     |
-| `api`      | Fastify + tRPC (port 3000)                                         | no                                                     |
-| `realtime` | Socket.io gateway (port 3001)                                      | no                                                     |
-| `collab`   | Hocuspocus docs gateway (port 3002)                                | no                                                     |
-| `web`      | nginx: static bundle + same-origin reverse proxy (ports 80)        | 80                                                     |
-| `coturn`   | TURN relay for in-app voice. Behind the `turn` profile. Opt-in.    | host network                                           |
+| Service    | What it is                                                          | Exposed                                                |
+| ---------- | ------------------------------------------------------------------- | ------------------------------------------------------ |
+| `postgres` | Postgres 17, roles bootstrapped with REAL passwords (init-prod/05)  | no                                                     |
+| `minio`    | S3-compatible object storage (attachments, exports, recordings)     | 9000/9001 (needs public reach + TLS before real users) |
+| `clamav`   | Attachment virus scanner (fail-closed)                              | no                                                     |
+| `migrate`  | One-shot; applies migrations. Behind the `tools` profile.           | no                                                     |
+| `api`      | Fastify + tRPC (port 3000)                                          | no                                                     |
+| `realtime` | Socket.io gateway (port 3001)                                       | no                                                     |
+| `collab`   | Hocuspocus docs gateway (port 3002)                                 | no                                                     |
+| `web`      | nginx (non-root): static bundle + same-origin reverse proxy (:8080) | 80 → container's 8080                                  |
+| `coturn`   | TURN relay for in-app voice. Behind the `turn` profile. Opt-in.     | host network                                           |
 
 All app traffic enters through `web` on port 80: `/trpc` and `/telephony` →
 `api`, `/socket.io` → `realtime`, `/collab` → `collab`. This is not a
