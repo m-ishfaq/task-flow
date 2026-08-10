@@ -28,7 +28,7 @@ export const userLoggedIn = defineEvent(
     .object({
       userId: z.string(),
       sessionId: z.string(),
-      method: z.enum(['password', 'passkey']),
+      method: z.enum(['password', 'passkey', 'totp', 'oauth']),
       ip: z.string().nullable(),
       userAgent: z.string().nullable(),
     })
@@ -150,6 +150,37 @@ export const passkeyLoginFailed = defineEvent(
       ip: z.string().nullable(),
     })
     .strict(),
+);
+
+/** TOTP enrolled or removed (Phase 12 Wave 2 §3.2) — a new way into an account either way. */
+export const totpEnrolled = defineEvent(
+  'user.totp_enrolled',
+  z.object({ userId: z.string() }).strict(),
+);
+
+export const totpDisabled = defineEvent(
+  'user.totp_disabled',
+  z.object({ userId: z.string() }).strict(),
+);
+
+/**
+ * An OAuth provider identity linked or unlinked (Phase 12 Wave 2 §3.3).
+ *
+ * Fires for all three link paths — direct sign-in creating a fresh account,
+ * auto-link to an existing account by verified email, and an explicit "link
+ * a new provider" from account settings — because all three are the same
+ * fact from an audit standpoint: this provider identity can now sign into
+ * this account. `oauthLinked` alone does not distinguish which path created
+ * it; a brand-new account also gets its own `user.registered`.
+ */
+export const oauthLinked = defineEvent(
+  'user.oauth_linked',
+  z.object({ userId: z.string(), provider: z.enum(['google', 'github']) }).strict(),
+);
+
+export const oauthUnlinked = defineEvent(
+  'user.oauth_unlinked',
+  z.object({ userId: z.string(), provider: z.enum(['google', 'github']) }).strict(),
 );
 
 export { userRef };

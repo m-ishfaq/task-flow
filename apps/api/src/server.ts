@@ -1,7 +1,8 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { isDatabaseHealthy } from '@taskflow/db';
-import { newId } from '@taskflow/security';
+import { masterKeysFromBase64, newId, SoftwareKeyProvider } from '@taskflow/security';
+import { ensureIdentityDataKey } from './identity/secret-key.js';
 import { createAppRouter, type AppRouter } from './router.js';
 import { buildWorkDeps } from './work/deps.js';
 import { buildTelephonyDeps } from './telephony/deps.js';
@@ -16,6 +17,7 @@ import {
   serializeRefreshCookie,
 } from './identity/cookies.js';
 import { buildIdentityDeps, buildPasskeyDeps } from './identity/deps.js';
+import type { OAuthDeps } from './identity/oauth.service.js';
 import { authenticate } from './identity/authenticate.js';
 import { createMailDelivery } from './identity/deliver.js';
 import { createLogger } from '@taskflow/observability';
@@ -77,8 +79,17 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
     ...(options.events === undefined ? {} : { events: options.events }),
     deliver: mail.deliver,
   });
+  const identityDataKey = await ensureIdentityDataKey(
+    new SoftwareKeyProvider({
+      masterKeys: masterKeysFromBase64({
+        [options.env.MASTER_KEY_ID]: options.env.MASTER_KEY_BASE64,
+      }),
+      currentMasterKeyId: options.env.MASTER_KEY_ID,
+    }),
+  );
   const appRouter = createAppRouter({
     identity: identityDeps,
+    identityDataKey,
     passkeys: buildPasskeyDeps(identityDeps, options.env),
     work: buildWorkDeps(options.env),
     /* VAPID keys are optional (an instance without them is a valid deployment
@@ -88,6 +99,7 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
     /* Undefined when no carrier is configured. The routes exist either way and
        answer SERVICE_UNAVAILABLE — see telephony/router.ts. */
     telephony: telephonyDeps,
+    oauth: buildOAuthDeps(options.env),
   });
 
   /* Guardrail 4, second half. Before a single connection is accepted: if any
@@ -110,18 +122,33 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
        File uploads never pass through the API — they go straight to object
        storage through a presigned URL (§8.4). */
     bodyLimit: 1_000_000,
-    /* tRPC batches put EVERY procedure name into one path segment under
-       /trpc (`/trpc/a.b,c.d,e.f`), and Fastify's default maxParamLength of
-       100 answered 414 the moment a page's batch grew past a few procedures
-       — the app-shell batch is already ~165 characters of names, so the
-       router rejected it before authentication ever ran (server.test.ts
-       pins the regression). 4096 is generous for any real batch, sits far
-       below Node's own 16KB request-line cap, and keeps the guard against
-       absurd URLs intact. In `routerOptions` rather than the deprecated
-       top-level form, which fastify@6 removes. */
-    routerOptions: {
-      maxParamLength: 4096,
-    },
+    /* Fastify's router (find-my-way) bounds any single dynamic path segment
+       to 100 characters by default — a ReDoS-style guard that has nothing to
+       do with tRPC, and everything to do with how the fastify adapter
+       reaches it: every batched query lands on ONE route, `/trpc/:path`,
+       with every procedure name in the batch joined by commas into that
+       single segment. A page firing eight or nine queries at once (an
+       account page's own tab, a board's card panel) routinely produces a
+       path segment past 150 characters with perfectly ordinary procedure
+       names — no pathological input required — and the default answers
+       every query in the batch with `414 FST_ERR_MAX_PARAM_LENGTH`, not just
+       the one that pushed it over. `web/src/lib/trpc-client.ts`'s own
+       `MAX_BATCH_URL_LENGTH` already promises the client will split a batch
+       before its FULL url (this segment plus `?batch=1&input=...`) passes
+       2000; matching that bound here means the client's promise and the
+       server's limit describe the same guarantee instead of two independently
+       chosen numbers that happen not to collide yet.
+
+       This bug was found INDEPENDENTLY on two branches — Phase 7's line of
+       work fixed it at 4096 and Phase 12 Wave 2's at 2000, which is how the
+       two arrived at this file together. 2000 is the one kept, for the
+       client-parity reason above; both regression tests are retained below
+       in server.test.ts and pass under either bound, so the number is not
+       what either test is really pinning — the ROUTING is.
+
+       In `routerOptions` rather than the deprecated top-level form, which
+       fastify@6 removes. */
+    routerOptions: { maxParamLength: 2000 },
   });
 
   /* Registered BEFORE the tRPC plugin. Fastify hooks are inherited only by
@@ -255,6 +282,31 @@ async function withOrgContext(
   } catch {
     return principal;
   }
+}
+
+/**
+ * Builds OAuth's provider config from env, per provider independently — the
+ * same "an unconfigured integration is a valid deployment" convention as
+ * `platform.vapidPublicKey` above. A provider missing either half of its
+ * client id/secret is simply absent from `providers`, and `oauth.service.ts`
+ * refuses with `NOT_FOUND` rather than the app failing to boot.
+ */
+function buildOAuthDeps(env: Env): Omit<OAuthDeps, 'identity'> {
+  return {
+    providers: {
+      ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+        ? { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } }
+        : {}),
+      ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET
+        ? { github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET } }
+        : {}),
+    },
+    /* Registered with each provider's own console ahead of time — this is the
+       one value that has to match exactly what was registered there, since
+       an OAuth authorization server refuses a redirect_uri it does not
+       recognize verbatim. */
+    redirectUri: (provider) => `${env.WEB_ORIGIN}/oauth/callback/${provider}`,
+  };
 }
 
 /**

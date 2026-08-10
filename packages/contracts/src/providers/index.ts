@@ -41,6 +41,7 @@ export type {
   SubaccountStatus,
   AvailableNumber,
   PurchasedNumber,
+  OwnedNumber,
   OutboundKind,
   PlaceCallOptions,
   CallResult,

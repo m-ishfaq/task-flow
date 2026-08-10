@@ -334,10 +334,15 @@ export async function renamePasskey(
 /**
  * Removes a passkey, unless it is the last way in.
  *
- * The check is the reason this is not a one-line delete. A passkey-only account
- * that deletes its only credential is unrecoverable: there is no password to
- * fall back on, and password reset needs an account that can accept one. Better
- * to refuse and say why.
+ * The check is the reason this is not a one-line delete. A passkey-only
+ * account that deletes its only credential is unrecoverable: there is no
+ * password to fall back on, and password reset needs an account that can
+ * accept one. Better to refuse and say why.
+ *
+ * Generalized (Phase 12 Wave 2 §3.3) to count OAuth links too — a
+ * passkey-only account with a linked Google identity is not actually
+ * unrecoverable, and the original two-way check would have refused this
+ * deletion incorrectly once OAuth existed as a third way in.
  */
 export async function deletePasskey(
   deps: PasskeyDeps,
@@ -347,9 +352,12 @@ export async function deletePasskey(
   const user = await repo.findUserById(input.userId);
   if (!user) throw errors.notFound('Passkey not found.');
 
-  const remaining = await passkeys.countCredentials(input.userId);
+  const [remaining, oauthCount] = await Promise.all([
+    passkeys.countCredentials(input.userId),
+    repo.countOAuthIdentities(input.userId),
+  ]);
 
-  if (remaining <= 1 && user.passwordHash === null) {
+  if (remaining <= 1 && user.passwordHash === null && oauthCount === 0) {
     throw errors.validation({
       id: 'This is the only way to sign in to this account. Add a password or another passkey first.',
     });

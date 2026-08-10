@@ -31,12 +31,50 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a href="/">{children}</a>,
 }));
 
+/* `vi.hoisted`, not plain `const`s — `../../lib/query.js` (imported above,
+   for `createQueryClient`) imports `./trpc.js` itself, so this factory runs
+   the moment that REAL import is evaluated: before ANY of this file's own
+   top-level statements, `adopt`/`navigate`/`search` above included. Those
+   three get away with a plain `const` only because each is read inside a
+   CLOSURE their own mock returns (`(selector) => selector({ adopt })`),
+   deferred until render; `oauthProvidersQuery`/`oauthStartMutate` are read
+   building this factory's OWN return value, immediately, so they need to
+   already exist. See account-page.test.tsx's identical comment. */
+const { oauthProvidersQuery, oauthStartMutate } = vi.hoisted(() => ({
+  oauthProvidersQuery: vi.fn<() => Promise<{ google: boolean; github: boolean }>>(),
+  oauthStartMutate: vi.fn<(input: unknown) => Promise<unknown>>(),
+}));
+
 vi.mock('../../lib/trpc.js', () => ({
-  api: { auth: { login: { mutate: vi.fn().mockRejectedValue(new Error('not used')) } } },
+  api: {
+    auth: {
+      login: { mutate: vi.fn().mockRejectedValue(new Error('not used')) },
+      oauth: {
+        providers: { query: oauthProvidersQuery },
+        start: { mutate: oauthStartMutate },
+      },
+    },
+  },
   apiErrorOf: () => null,
   errorCodeOf: () => null,
   isUnauthenticated: () => false,
 }));
+
+/* `redirectToAuthorization` assigns `window.location.href` — jsdom throws
+   "Not implemented: navigation" on a real assignment, so the setter itself
+   is what these tests spy on, the same as connected-accounts-section.test.tsx. */
+const locationAssign = vi.fn();
+Object.defineProperty(window, 'location', {
+  value: {
+    get href() {
+      return '';
+    },
+    set href(url: string) {
+      locationAssign(url);
+    },
+  },
+  writable: true,
+});
 
 const signInWithPasskey = vi.fn<() => Promise<unknown>>();
 const browserSupportsWebAuthn = vi.fn<() => boolean>(() => true);
@@ -62,10 +100,49 @@ beforeEach(() => {
   navigate.mockReset();
   signInWithPasskey.mockReset();
   browserSupportsWebAuthn.mockReturnValue(true);
+  oauthProvidersQuery.mockReset().mockResolvedValue({ google: false, github: false });
+  oauthStartMutate.mockReset();
+  locationAssign.mockReset();
   delete search.next;
 });
 
 const passkeyButton = () => screen.getByRole('button', { name: /sign in with a passkey/i });
+
+describe('OAuth sign-in', () => {
+  it('renders no button for an unconfigured provider', async () => {
+    oauthProvidersQuery.mockResolvedValue({ google: false, github: false });
+    renderPage();
+
+    // Wait for the query to settle rather than asserting immediately — a
+    // false negative here (checking before the query resolves) would pass
+    // even if the button rendered anyway once data arrived.
+    await waitFor(() => {
+      expect(oauthProvidersQuery).toHaveBeenCalled();
+    });
+    expect(screen.queryByRole('button', { name: /sign in with google/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /sign in with github/i })).not.toBeInTheDocument();
+  });
+
+  it('renders a button only for a configured provider, and redirects on click', async () => {
+    oauthProvidersQuery.mockResolvedValue({ google: true, github: false });
+    oauthStartMutate.mockResolvedValue({
+      authorizationUrl: 'https://accounts.google.example/auth',
+    });
+    renderPage();
+
+    const googleButton = await screen.findByRole('button', { name: /sign in with google/i });
+    expect(screen.queryByRole('button', { name: /sign in with github/i })).not.toBeInTheDocument();
+
+    await userEvent.click(googleButton);
+
+    await waitFor(() => {
+      expect(oauthStartMutate).toHaveBeenCalledWith({ provider: 'google' });
+    });
+    await waitFor(() => {
+      expect(locationAssign).toHaveBeenCalledWith('https://accounts.google.example/auth');
+    });
+  });
+});
 
 describe('signing in with a passkey', () => {
   it('adopts the session and navigates on success', async () => {

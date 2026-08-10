@@ -13,6 +13,12 @@ import { NEVER_AUDITED, RESOURCE_OF } from './audit.projection.js';
    grows its own `events.ts`. */
 import './events.js';
 import '../identity/events.js';
+/* Added in Phase 12 Wave 2. Its absence was a real coverage hole, not a
+   deliberate omission: none of the platform-admin events had ever been
+   checked by the accounting test below, despite the module having existed
+   since Wave 1 — the test can only account for events that something has
+   imported, so a missing line here reads as "all accounted for". */
+import '../platform-admin/events.js';
 import '../work/events.js';
 import '../chat/events.js';
 import '../docs/events.js';
@@ -70,6 +76,13 @@ const UNMAPPED: ReadonlySet<string> = new Set([
   'user.passkey_registered',
   'user.passkey_removed',
   'user.passkey_login_failed',
+  // Phase 12 Wave 2 §3.2 — same shape as the passkey pair above: a new/removed
+  // way into the account, `resource_id` would repeat `actor_id`.
+  'user.totp_enrolled',
+  'user.totp_disabled',
+  // Phase 12 Wave 2 §3.3 — same shape again.
+  'user.oauth_linked',
+  'user.oauth_unlinked',
   'session.revoked',
   'session.token_reuse_detected',
   // Work (Phase 3 / 3.5)

@@ -76,3 +76,43 @@ export const flagOverrideSet = defineEvent(
     .object({ flagName: z.string(), value: z.boolean().nullable(), operatorUserId: z.string() })
     .strict(),
 );
+
+/**
+ * A global feature-flag override was REMOVED, so the flag falls back to its
+ * compiled default (§3.8).
+ *
+ * Its own event rather than `flagOverrideSet` with a null value, even though
+ * one route (`flags.set`) produces both. "The override now says false" and
+ * "there is no longer an override" are different facts with different
+ * consequences — the first pins behaviour against a later default change,
+ * the second releases it — and a reader reconstructing why a flag behaved a
+ * certain way on a given day cannot tell them apart from a null payload
+ * alone. The route surface stays single; only the record distinguishes.
+ */
+export const flagOverrideCleared = defineEvent(
+  'platform.flag_override_cleared',
+  z.object({ flagName: z.string(), operatorUserId: z.string() }).strict(),
+);
+
+/**
+ * An account was suspended by a platform operator (Phase 12 Wave 2 §3.1,
+ * ai/phase-12-wave2.md).
+ *
+ * SYSTEM_ORG on the envelope, unlike `orgSuspended` above, and the difference
+ * is not cosmetic: a suspended ORG has exactly one audit chain that the action
+ * belongs in, so `suspendOrg` writes the target org's own `audit.audit_log`
+ * alongside the operator chain. A suspended PERSON may belong to several orgs
+ * or to none, so there is no single tenant chain to write into and no honest
+ * way to pick one — the durable record is the global
+ * `platform.operator_audit_log` alone.
+ */
+export const userSuspended = defineEvent(
+  'platform.user_suspended',
+  z.object({ userId: z.string(), operatorUserId: z.string() }).strict(),
+);
+
+/** The inverse of `userSuspended` — an operator restored the account. */
+export const userReactivated = defineEvent(
+  'platform.user_reactivated',
+  z.object({ userId: z.string(), operatorUserId: z.string() }).strict(),
+);

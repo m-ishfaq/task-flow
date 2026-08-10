@@ -11,6 +11,7 @@ import { suggestionsModule } from './docs.suggestions.js';
 import { templatesModule } from './docs.templates.js';
 import { peopleModule } from './people.profiles.js';
 import { adminModule } from './platform.admin.js';
+import { telephonyModule } from './comms.telephony.js';
 
 /**
  * The outbox, and the real hash-chained audit log it drains into.
@@ -62,6 +63,12 @@ export const auditModule = defineSeedModule({
        never runs — and a seeded database without an operator is a console
        nobody can open (see platform.admin.ts's header). */
     adminModule,
+    /* Voice & Messaging (Phase 7). Named here for the same reason as the two
+       above — nothing reads its output — and it is the one module that can
+       decide at runtime to seed nothing at all, when no carrier credentials
+       are configured. Reaching it from the root is what lets it make that
+       decision and SAY so, rather than being silently absent. */
+    telephonyModule,
   ],
   tables: ['platform.outbox'],
 

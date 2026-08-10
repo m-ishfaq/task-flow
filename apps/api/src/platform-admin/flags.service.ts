@@ -3,7 +3,7 @@ import { createEvent, type EventBus } from '@taskflow/events';
 import { FLAGS, FLAG_NAMES, type FlagName } from '@taskflow/feature-flags';
 import { SYSTEM_ORG } from '../identity/identity.service.js';
 import { buildFlags } from './flag-evaluator.js';
-import { flagOverrideSet } from './events.js';
+import { flagOverrideCleared, flagOverrideSet } from './events.js';
 import { recordOperatorAction } from './audit.js';
 import type { PlatformOperator } from './org-directory.service.js';
 
@@ -108,7 +108,15 @@ export async function setFlag(
     }
   });
 
-  await recordOperatorAction(operator.userId, 'flags.set', {
+  /* Clearing is its own action in both records, though one route produces
+     both. `null` means the override ROW IS GONE and the flag falls back to
+     its compiled default — a different fact from "the override says false",
+     with different consequences for anyone later reconstructing why a flag
+     behaved as it did. A null in a `flags.set` payload technically carries
+     that, but only to a reader who knows to interpret it. */
+  const clearing = input.value === null;
+
+  await recordOperatorAction(operator.userId, clearing ? 'flags.clear' : 'flags.set', {
     flagName: input.flagName,
     value: input.value,
   });
@@ -116,21 +124,29 @@ export async function setFlag(
   /* Guardrail 11, and the flag-governance record (see events.ts's header for
      why the bus carries the SYSTEM_ORG envelope — flag overrides are global,
      true of every org, like the table they live in). */
+  const envelope = {
+    orgId: SYSTEM_ORG,
+    actorId: operator.userId,
+    requestId: operator.requestId,
+    occurredAt: now,
+  };
+
   await deps.events.publish([
-    createEvent(
-      flagOverrideSet,
-      {
-        flagName: input.flagName,
-        value: input.value,
-        operatorUserId: operator.userId,
-      },
-      {
-        orgId: SYSTEM_ORG,
-        actorId: operator.userId,
-        requestId: operator.requestId,
-        occurredAt: now,
-      },
-    ),
+    clearing
+      ? createEvent(
+          flagOverrideCleared,
+          { flagName: input.flagName, operatorUserId: operator.userId },
+          envelope,
+        )
+      : createEvent(
+          flagOverrideSet,
+          {
+            flagName: input.flagName,
+            value: input.value,
+            operatorUserId: operator.userId,
+          },
+          envelope,
+        ),
   ]);
 
   return { flagName: input.flagName, value: input.value };

@@ -7,7 +7,7 @@ import { RecordingEventBus } from '@taskflow/events';
 import { isAppError } from '@taskflow/contracts';
 import { verifyAccessToken } from '@taskflow/security';
 import * as identity from './identity.service.js';
-import type { DeliverableLink, IdentityDeps } from './identity.service.js';
+import type { DeliverableLink, IdentityDeps, TokenPair } from './identity.service.js';
 
 /**
  * Identity integration tests (PLAN.md §8.1).
@@ -133,6 +133,22 @@ async function codeOfRejection(promise: Promise<unknown>): Promise<string> {
   );
 }
 
+/**
+ * `identity.login` returns a `LoginResult` union (Phase 12 Wave 2 §3.2) —
+ * `'session'` for the ordinary case, `'totp_required'` for an account with a
+ * confirmed second factor. Nothing in this file enrolls one, so every real
+ * call here is the `'session'` branch; this unwraps it so the rest of the
+ * suite can keep asserting directly on a `TokenPair`, the same shape it
+ * asserted on before that union existed.
+ */
+async function loginSession(...args: Parameters<typeof identity.login>): Promise<TokenPair> {
+  const result = await identity.login(...args);
+  if (result.kind !== 'session') {
+    throw new Error(`expected a session, got a TOTP challenge: ${JSON.stringify(result)}`);
+  }
+  return result.pair;
+}
+
 describe('registration', () => {
   it('creates an account and sends a verification link', async () => {
     const result = await identity.register(
@@ -180,7 +196,7 @@ describe('registration', () => {
 
     // The original password still works; the second registration changed nothing.
     await expect(
-      identity.login(deps(), { email: 'alice@example.test', password: PASSWORD }, meta),
+      loginSession(deps(), { email: 'alice@example.test', password: PASSWORD }, meta),
     ).resolves.toBeDefined();
   });
 
@@ -271,7 +287,7 @@ describe('email verification', () => {
 describe('login', () => {
   it('issues a token pair', async () => {
     const email = await registeredUser();
-    const pair = await identity.login(deps(), { email, password: PASSWORD }, meta);
+    const pair = await loginSession(deps(), { email, password: PASSWORD }, meta);
 
     expect(pair.accessToken.split('.')).toHaveLength(3);
     expect(pair.refreshToken.startsWith('tf_rt_')).toBe(true);
@@ -281,7 +297,7 @@ describe('login', () => {
 
   it('signs an access token this API accepts', async () => {
     const email = await registeredUser();
-    const pair = await identity.login(deps(), { email, password: PASSWORD }, meta);
+    const pair = await loginSession(deps(), { email, password: PASSWORD }, meta);
     const claims = await verifyAccessToken(pair.accessToken, { secret: JWT_SECRET });
 
     expect(claims.sessionId).toBe(pair.sessionId);
@@ -292,10 +308,10 @@ describe('login', () => {
     const email = await registeredUser();
 
     const wrongPassword = await codeOfRejection(
-      identity.login(deps(), { email, password: 'not the password at all' }, meta),
+      loginSession(deps(), { email, password: 'not the password at all' }, meta),
     );
     const unknownUser = await codeOfRejection(
-      identity.login(deps(), { email: 'nobody@example.test', password: PASSWORD }, meta),
+      loginSession(deps(), { email: 'nobody@example.test', password: PASSWORD }, meta),
     );
 
     expect(wrongPassword).toBe('INVALID_CREDENTIALS');
@@ -308,16 +324,12 @@ describe('login', () => {
     const email = await registeredUser();
 
     const startKnown = performance.now();
-    await codeOfRejection(identity.login(deps(), { email, password: 'wrong password here' }, meta));
+    await codeOfRejection(loginSession(deps(), { email, password: 'wrong password here' }, meta));
     const known = performance.now() - startKnown;
 
     const startUnknown = performance.now();
     await codeOfRejection(
-      identity.login(
-        deps(),
-        { email: 'nobody@example.test', password: 'wrong password here' },
-        meta,
-      ),
+      loginSession(deps(), { email: 'nobody@example.test', password: 'wrong password here' }, meta),
     );
     const unknown = performance.now() - startUnknown;
 
@@ -330,7 +342,7 @@ describe('login', () => {
     // Credential stuffing against non-existent accounts is the reconnaissance
     // phase, and it is invisible without this.
     await codeOfRejection(
-      identity.login(deps(), { email: 'nobody@example.test', password: PASSWORD }, meta),
+      loginSession(deps(), { email: 'nobody@example.test', password: PASSWORD }, meta),
     );
 
     expect(events.names()).toEqual(['user.login_failed']);
@@ -345,7 +357,7 @@ describe('login', () => {
 
     expect(
       await codeOfRejection(
-        identity.login(deps(), { email: 'carol@example.test', password: PASSWORD }, meta),
+        loginSession(deps(), { email: 'carol@example.test', password: PASSWORD }, meta),
       ),
     ).toBe('EMAIL_NOT_VERIFIED');
   });
@@ -354,7 +366,7 @@ describe('login', () => {
     const email = await registeredUser();
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      await codeOfRejection(identity.login(deps(), { email, password: 'wrong password' }, meta));
+      await codeOfRejection(loginSession(deps(), { email, password: 'wrong password' }, meta));
     }
 
     expect(events.names()).toContain('user.account_locked');
@@ -362,7 +374,7 @@ describe('login', () => {
     // The correct password is now refused too — and with the SAME error, because
     // saying "locked" confirms the account exists and tells an attacker their
     // guessing is working.
-    expect(await codeOfRejection(identity.login(deps(), { email, password: PASSWORD }, meta))).toBe(
+    expect(await codeOfRejection(loginSession(deps(), { email, password: PASSWORD }, meta))).toBe(
       'INVALID_CREDENTIALS',
     );
   });
@@ -381,7 +393,7 @@ describe('login', () => {
 
     await Promise.all(
       Array.from({ length: 6 }, () =>
-        codeOfRejection(identity.login(noLock, { email, password: 'wrong password' }, meta)),
+        codeOfRejection(loginSession(noLock, { email, password: 'wrong password' }, meta)),
       ),
     );
 
@@ -401,7 +413,7 @@ describe('login', () => {
     const email = await registeredUser();
 
     for (let attempt = 0; attempt < 6; attempt += 1) {
-      await codeOfRejection(identity.login(deps(), { email, password: 'wrong password' }, meta));
+      await codeOfRejection(loginSession(deps(), { email, password: 'wrong password' }, meta));
     }
 
     const row = await withGlobalScope(async (tx) =>
@@ -417,8 +429,8 @@ describe('login', () => {
 
   it('clears the failure count after a success', async () => {
     const email = await registeredUser();
-    await codeOfRejection(identity.login(deps(), { email, password: 'wrong password' }, meta));
-    await identity.login(deps(), { email, password: PASSWORD }, meta);
+    await codeOfRejection(loginSession(deps(), { email, password: 'wrong password' }, meta));
+    await loginSession(deps(), { email, password: PASSWORD }, meta);
 
     const row = await withGlobalScope(async (tx) =>
       tx.execute(
@@ -432,7 +444,7 @@ describe('login', () => {
 describe('refresh rotation and reuse detection', () => {
   it('rotates the token on every use', async () => {
     const email = await registeredUser();
-    const first = await identity.login(deps(), { email, password: PASSWORD }, meta);
+    const first = await loginSession(deps(), { email, password: PASSWORD }, meta);
     const second = await identity.refresh(deps(), { refreshToken: first.refreshToken }, meta);
 
     expect(second.refreshToken).not.toBe(first.refreshToken);
@@ -443,7 +455,7 @@ describe('refresh rotation and reuse detection', () => {
     // Refreshing is not proof of a credential. Treating it as one would keep a
     // stolen session permanently eligible for step-up protected operations.
     const email = await registeredUser();
-    const first = await identity.login(deps(), { email, password: PASSWORD }, meta);
+    const first = await loginSession(deps(), { email, password: PASSWORD }, meta);
     const before = (await verifyAccessToken(first.accessToken, { secret: JWT_SECRET }))
       .authenticatedAt;
 
@@ -460,7 +472,7 @@ describe('refresh rotation and reuse detection', () => {
     // which point one party presents an already-rotated token, which no
     // legitimate client can do.
     const email = await registeredUser();
-    const first = await identity.login(deps(), { email, password: PASSWORD }, meta);
+    const first = await loginSession(deps(), { email, password: PASSWORD }, meta);
     const second = await identity.refresh(deps(), { refreshToken: first.refreshToken }, meta);
 
     // The attacker replays the token they captured.
@@ -483,7 +495,7 @@ describe('refresh rotation and reuse detection', () => {
     // succeed and issue two valid chains from one token — the exact condition
     // reuse detection exists to catch, missed by the mechanism meant to catch it.
     const email = await registeredUser();
-    const first = await identity.login(deps(), { email, password: PASSWORD }, meta);
+    const first = await loginSession(deps(), { email, password: PASSWORD }, meta);
 
     const outcomes = await Promise.allSettled([
       identity.refresh(deps(), { refreshToken: first.refreshToken }, meta),
@@ -501,7 +513,7 @@ describe('refresh rotation and reuse detection', () => {
 
   it('refuses a token from a revoked session', async () => {
     const email = await registeredUser();
-    const pair = await identity.login(deps(), { email, password: PASSWORD }, meta);
+    const pair = await loginSession(deps(), { email, password: PASSWORD }, meta);
     await identity.logout(deps(), { refreshToken: pair.refreshToken });
 
     expect(
@@ -513,7 +525,7 @@ describe('refresh rotation and reuse detection', () => {
 describe('logout', () => {
   it('revokes the session and emits an event', async () => {
     const email = await registeredUser();
-    const pair = await identity.login(deps(), { email, password: PASSWORD }, meta);
+    const pair = await loginSession(deps(), { email, password: PASSWORD }, meta);
 
     await expect(identity.logout(deps(), { refreshToken: pair.refreshToken })).resolves.toEqual({
       status: 'ok',
@@ -531,8 +543,8 @@ describe('logout', () => {
 
   it('ends every session when logging out everywhere', async () => {
     const email = await registeredUser();
-    const first = await identity.login(deps(), { email, password: PASSWORD }, meta);
-    const second = await identity.login(deps(), { email, password: PASSWORD }, meta);
+    const first = await loginSession(deps(), { email, password: PASSWORD }, meta);
+    const second = await loginSession(deps(), { email, password: PASSWORD }, meta);
 
     const userId = (await verifyAccessToken(first.accessToken, { secret: JWT_SECRET })).userId;
     const result = await identity.logoutEverywhere(deps(), { userId });
@@ -558,7 +570,7 @@ describe('password reset', () => {
     ).resolves.toEqual({ status: 'reset' });
 
     await expect(
-      identity.login(deps(), { email, password: 'a brand new passphrase' }, meta),
+      loginSession(deps(), { email, password: 'a brand new passphrase' }, meta),
     ).resolves.toBeDefined();
   });
 
@@ -576,7 +588,7 @@ describe('password reset', () => {
     // they are compromised. Leaving the attacker's session alive makes the reset
     // theatre.
     const email = await registeredUser();
-    const pair = await identity.login(deps(), { email, password: PASSWORD }, meta);
+    const pair = await loginSession(deps(), { email, password: PASSWORD }, meta);
 
     await identity.requestPasswordReset(deps(), { email }, meta);
     const token = delivered.find((m) => m.kind === 'password_reset')?.token ?? '';
@@ -614,7 +626,7 @@ describe('password reset', () => {
   it('clears a lockout, so a locked-out user can recover', async () => {
     const email = await registeredUser();
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      await codeOfRejection(identity.login(deps(), { email, password: 'wrong password' }, meta));
+      await codeOfRejection(loginSession(deps(), { email, password: 'wrong password' }, meta));
     }
 
     await identity.requestPasswordReset(deps(), { email }, meta);
@@ -622,7 +634,7 @@ describe('password reset', () => {
     await identity.resetPassword(deps(), { token, password: 'a brand new passphrase' });
 
     await expect(
-      identity.login(deps(), { email, password: 'a brand new passphrase' }, meta),
+      loginSession(deps(), { email, password: 'a brand new passphrase' }, meta),
     ).resolves.toBeDefined();
   });
 });
@@ -630,7 +642,7 @@ describe('password reset', () => {
 describe('credential hygiene', () => {
   it('never stores a token in plaintext', async () => {
     const email = await registeredUser();
-    const pair = await identity.login(deps(), { email, password: PASSWORD }, meta);
+    const pair = await loginSession(deps(), { email, password: PASSWORD }, meta);
 
     const rows = await withGlobalScope(async (tx) =>
       tx.execute(sql`SELECT token_hash FROM identity.refresh_tokens`),
@@ -645,7 +657,7 @@ describe('credential hygiene', () => {
     // Events reach the audit log, the notification worker, and eventually an
     // analytics pipeline — three places a credential must never arrive.
     const email = await registeredUser();
-    const pair = await identity.login(deps(), { email, password: PASSWORD }, meta);
+    const pair = await loginSession(deps(), { email, password: PASSWORD }, meta);
 
     const serialized = JSON.stringify(events.events);
     expect(serialized).not.toContain(pair.refreshToken);

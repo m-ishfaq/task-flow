@@ -53,6 +53,7 @@ export {
   encryptString,
   decryptString,
   fieldAad,
+  identityFieldAad,
   DecryptionError,
   AES_KEY_BYTES,
 } from './encryption.js';
@@ -70,9 +71,15 @@ export { checkPasswordBreached, type BreachResult, type BreachCheckOptions } fro
 export {
   signAccessToken,
   verifyAccessToken,
+  signTotpChallenge,
+  verifyTotpChallenge,
+  signOAuthState,
+  verifyOAuthState,
   InvalidTokenError,
   ACCESS_TOKEN_TTL_SECONDS,
   type AccessTokenClaims,
+  type TotpChallengeClaims,
+  type OAuthStateClaims,
   type JwtConfig,
 } from './jwt.js';
 
@@ -135,6 +142,17 @@ export {
  * regex in whatever service happened to need one.
  */
 export { isAllowedUrl, isBlockedAddress, isIpAddress, type UrlVerdict } from './outbound-url.js';
+
+/** TOTP — a second factor (Phase 12 Wave 2 §3.2). */
+export { generateTotpSecret, totpProvisioningUri, verifyTotpCode } from './totp.js';
+
+/** OAuth sign-in (Phase 12 Wave 2 §3.3). */
+export {
+  generatePkcePair,
+  verifyGoogleIdToken,
+  type PkcePair,
+  type GoogleIdentity,
+} from './oauth.js';
 
 /**
  * Web Push — VAPID signing and RFC 8291 payload encryption (Phase 9 Wave 2,

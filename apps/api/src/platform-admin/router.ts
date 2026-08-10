@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { EventBus } from '@taskflow/events';
-import { OrgIdSchema } from '@taskflow/contracts';
+import { OrgIdSchema, UserIdSchema } from '@taskflow/contracts';
 import { isPlatformOperator } from './operator.js';
 import { FLAG_NAMES, type FlagName } from '@taskflow/feature-flags';
 import { platformRoute, router, selfRoute } from '../trpc/builder.js';
@@ -60,6 +60,10 @@ const UserRow = z
   .object({
     userId: z.string(),
     email: z.string(),
+    /* From people.profiles, and nullable because a profile row is lazy —
+       see user-directory.service.ts's own note on why not
+       identity.users.display_name. */
+    name: z.string().nullable(),
     emailVerifiedAt: z.date().nullable(),
     status: z.string(),
     orgCount: z.number().int().nonnegative(),
@@ -132,7 +136,7 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
     users: router({
       list: platformRoute({
         platformReason:
-          'The user directory — cross-tenant by definition; read-only this wave (§2, §7 decision 5).',
+          'The user directory — cross-tenant by definition; no org permission can describe it.',
       })
         .input(ListInput)
         .output(
@@ -141,6 +145,26 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
             .strict(),
         )
         .query(({ input, ctx }) => users.listUsers(operatorOf(ctx), input)),
+
+      /* Wave 1 shipped this sub-router read-only (§7 decision 5); Wave 2 §3.1
+         takes that deferral back up. An account is not an org, so these take a
+         bare UserIdSchema and write no tenant audit chain — see
+         user-directory.service.ts. */
+      suspend: platformRoute({
+        platformReason:
+          'Suspending an account is a change to identity.users, a table no org owns — no org-scoped permission can authorize it.',
+      })
+        .input(z.object({ userId: UserIdSchema }).strict())
+        .output(z.object({ userId: z.string(), status: z.literal('suspended') }).strict())
+        .mutation(({ input, ctx }) => users.suspendUser(deps, operatorOf(ctx), input.userId)),
+
+      reactivate: platformRoute({
+        platformReason:
+          'Reversing an account suspension is the same cross-tenant state change, for the same reason.',
+      })
+        .input(z.object({ userId: UserIdSchema }).strict())
+        .output(z.object({ userId: z.string(), status: z.literal('active') }).strict())
+        .mutation(({ input, ctx }) => users.reactivateUser(deps, operatorOf(ctx), input.userId)),
     }),
 
     flags: router({

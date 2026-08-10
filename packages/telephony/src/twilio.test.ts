@@ -35,6 +35,7 @@ function stubCarrier(overrides: Record<string, unknown> = {}): {
   calls: StubCall[];
 } {
   const calls: StubCall[] = [];
+  const purchased: { sid: string; phone_number: string }[] = [];
   let counter = 0;
 
   const handle = (input: string | URL | Request, init?: RequestInit): Response => {
@@ -75,8 +76,32 @@ function stubCarrier(overrides: Record<string, unknown> = {}): {
         ],
       });
     }
+    /* Stateful, unlike every other branch here, because the owned-number
+       contract is a statement about state: a number is owned BECAUSE it was
+       purchased. A stub that answered the GET from a canned list would let an
+       implementation pass while reading from somewhere the purchase never
+       reached. DELETE lands on this prefix too and must not be mistaken for a
+       purchase, hence the explicit method check rather than "not a GET". */
     if (url.includes('/IncomingPhoneNumbers')) {
-      return ok({ sid: `PN${String(counter)}`, phone_number: '+14155550100' });
+      if (method === 'POST') {
+        const created = {
+          sid: `PN${String(counter)}`,
+          phone_number: form['PhoneNumber'] ?? '+14155550100',
+        };
+        purchased.push(created);
+        return ok(created);
+      }
+      if (method === 'GET') {
+        return ok({
+          incoming_phone_numbers: purchased.map((entry) => ({
+            sid: entry.sid,
+            phone_number: entry.phone_number,
+            iso_country: 'US',
+            capabilities: { voice: true, sms: true },
+          })),
+        });
+      }
+      return ok({});
     }
     if (url.includes('/Calls.json')) {
       return ok({ sid: `CA${String(counter)}`, status: 'queued', price: null });
@@ -286,6 +311,50 @@ describe('TwilioTelephonyProvider', () => {
     await expect(
       provider.searchAvailableNumbers({ subaccountSid: 'ACsub', isoCountry: 'US', limit: 1 }),
     ).rejects.toThrow();
+  });
+
+  it('lists owned numbers with a GET against the account, spending nothing', async () => {
+    /* The seeder's entire use of this provider. Two things are asserted that
+       a "does it return numbers" test would not: the verb is GET (a POST to
+       this same path BUYS a number, so a wrong verb here is a real charge on
+       a real account), and the account defaults to the configured one, since
+       a tool holding only master credentials has no subaccount sid to pass. */
+    const stub = stubCarrier();
+    const provider = new TwilioTelephonyProvider(config({ fetch: stub.fetch }));
+
+    await provider.purchaseNumber({
+      subaccountSid: 'ACmaster',
+      phoneNumber: PhoneNumberSchema.parse('+14155550123'),
+      voiceUrl: 'https://example.test/voice',
+      smsUrl: 'https://example.test/sms',
+    });
+
+    const owned = await provider.listOwnedNumbers();
+
+    const listCall = stub.calls.at(-1);
+    expect(listCall?.method).toBe('GET');
+    expect(listCall?.url).toContain('/Accounts/ACmaster/IncomingPhoneNumbers.json');
+    expect(owned).toHaveLength(1);
+    expect(owned[0]?.phoneNumber).toBe('+14155550123');
+    expect(owned[0]?.capabilities.voice).toBe(true);
+  });
+
+  it('falls back to ZZ rather than guessing a country Twilio did not report', async () => {
+    /* A legacy number can come back with no iso_country. Defaulting to 'US'
+       would put a wrong two-letter code into comms.phone_numbers, where the
+       CHECK accepts it and the geo rules then reason about the wrong
+       jurisdiction. */
+    const stub = stubCarrier({
+      '/IncomingPhoneNumbers': {
+        incoming_phone_numbers: [{ sid: 'PNlegacy', phone_number: '+14155550199' }],
+      },
+    });
+    const provider = new TwilioTelephonyProvider(config({ fetch: stub.fetch }));
+
+    const owned = await provider.listOwnedNumbers();
+
+    expect(owned[0]?.isoCountry).toBe('ZZ');
+    expect(owned[0]?.capabilities).toEqual({ voice: false, sms: false });
   });
 
   describe('errors', () => {

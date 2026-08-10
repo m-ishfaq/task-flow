@@ -105,6 +105,138 @@ export async function signAccessToken(
     .sign(config.secret);
 }
 
+/**
+ * TOTP login challenge tokens (Phase 12 Wave 2 §3.2).
+ *
+ * Issued when `login()` verifies the password but the account also has a
+ * confirmed TOTP credential — proof that the FIRST factor succeeded, good
+ * for five minutes, redeemable exactly once at `auth.totp.verifyLogin`.
+ *
+ * A DIFFERENT audience than `AUDIENCE` above, deliberately — the one
+ * property this token must never have is being accepted anywhere an access
+ * token is, and `verifyAccessToken`'s own audience check already refuses
+ * anything not signed for `'taskflow-api'`. Sharing the audience would mean
+ * a bug in one verifier's caller could accept the other token type; a
+ * distinct audience makes that a signature failure instead of a logic bug.
+ */
+const TOTP_CHALLENGE_AUDIENCE = 'taskflow-totp-challenge';
+const TOTP_CHALLENGE_TTL_SECONDS = 300;
+
+export interface TotpChallengeClaims {
+  readonly userId: string;
+}
+
+export async function signTotpChallenge(
+  claims: TotpChallengeClaims,
+  config: JwtConfig,
+): Promise<string> {
+  assertSecret(config.secret);
+
+  return new SignJWT({ sub: claims.userId })
+    .setProtectedHeader({ alg: ALGORITHM, typ: 'JWT' })
+    .setIssuer(ISSUER)
+    .setAudience(TOTP_CHALLENGE_AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime(`${String(TOTP_CHALLENGE_TTL_SECONDS)}s`)
+    .sign(config.secret);
+}
+
+export async function verifyTotpChallenge(
+  token: string,
+  config: JwtConfig,
+): Promise<TotpChallengeClaims> {
+  assertSecret(config.secret);
+
+  try {
+    const { payload } = await jwtVerify(token, config.secret, {
+      issuer: ISSUER,
+      audience: TOTP_CHALLENGE_AUDIENCE,
+      algorithms: [ALGORITHM],
+      clockTolerance: 5,
+    });
+
+    const userId = payload.sub;
+    if (typeof userId !== 'string') throw new InvalidTokenError();
+
+    return { userId };
+  } catch {
+    throw new InvalidTokenError();
+  }
+}
+
+/**
+ * OAuth authorization `state` tokens (Phase 12 Wave 2 §3.3).
+ *
+ * Signed rather than stored server-side — the state only has to survive one
+ * redirect round trip to the provider and back, so a table (and its cleanup)
+ * buys nothing a JWT doesn't already give for free. It carries the PKCE
+ * `code_verifier` the callback needs to complete the exchange, which is why
+ * it must not be guessable: unlike the TOTP challenge, this token is placed
+ * directly in a URL query parameter the provider echoes back, so its own
+ * signature — not secrecy of the value — is what stops a forged callback
+ * from being accepted as a real one.
+ *
+ * A distinct audience for the same reason `TOTP_CHALLENGE_AUDIENCE` is
+ * distinct from `AUDIENCE`: this must never be accepted as a bearer access
+ * token even though both are signed with the same secret.
+ */
+const OAUTH_STATE_AUDIENCE = 'taskflow-oauth-state';
+const OAUTH_STATE_TTL_SECONDS = 600;
+
+export interface OAuthStateClaims {
+  readonly provider: string;
+  readonly codeVerifier: string;
+  /** Set when linking a provider to an already signed-in account, rather than signing in fresh. */
+  readonly linkUserId?: string;
+}
+
+export async function signOAuthState(claims: OAuthStateClaims, config: JwtConfig): Promise<string> {
+  assertSecret(config.secret);
+
+  const { linkUserId } = claims;
+  return new SignJWT({
+    provider: claims.provider,
+    verifier: claims.codeVerifier,
+    ...(linkUserId === undefined ? {} : { link: linkUserId }),
+  })
+    .setProtectedHeader({ alg: ALGORITHM, typ: 'JWT' })
+    .setIssuer(ISSUER)
+    .setAudience(OAUTH_STATE_AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime(`${String(OAUTH_STATE_TTL_SECONDS)}s`)
+    .sign(config.secret);
+}
+
+export async function verifyOAuthState(
+  token: string,
+  config: JwtConfig,
+): Promise<OAuthStateClaims> {
+  assertSecret(config.secret);
+
+  try {
+    const { payload } = await jwtVerify(token, config.secret, {
+      issuer: ISSUER,
+      audience: OAUTH_STATE_AUDIENCE,
+      algorithms: [ALGORITHM],
+      clockTolerance: 5,
+    });
+
+    const { provider, verifier, link } = payload;
+    if (typeof provider !== 'string' || typeof verifier !== 'string') {
+      throw new InvalidTokenError();
+    }
+    if (link !== undefined && typeof link !== 'string') throw new InvalidTokenError();
+
+    return {
+      provider,
+      codeVerifier: verifier,
+      ...(link === undefined ? {} : { linkUserId: link }),
+    };
+  } catch {
+    throw new InvalidTokenError();
+  }
+}
+
 export class InvalidTokenError extends Error {
   constructor() {
     // One message for every failure. Expired, wrong audience, bad signature and

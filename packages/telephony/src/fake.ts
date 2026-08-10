@@ -5,6 +5,7 @@ import type {
   MessageResult,
   NumberLookup,
   OutboundKind,
+  OwnedNumber,
   PhoneNumber,
   PurchasedNumber,
   SubaccountStatus,
@@ -70,6 +71,12 @@ export class FakeTelephonyProvider implements TelephonyProvider {
   readonly calls: FakeCall[] = [];
   readonly messages: FakeMessage[] = [];
   readonly purchasedNumbers: PurchasedNumber[] = [];
+  /**
+   * Numbers the account is to be treated as ALREADY holding, before any
+   * purchase — the state a real account is in on day one, which
+   * `purchasedNumbers` alone cannot express.
+   */
+  readonly ownedNumbers: OwnedNumber[] = [];
   readonly verifications = new Map<string, string>();
 
   /** Set by a test to make the next provider call throw, for fail-path cases. */
@@ -165,6 +172,31 @@ export class FakeTelephonyProvider implements TelephonyProvider {
       });
     }
     return results;
+  }
+
+  /**
+   * Whatever this fake has "bought", plus anything preloaded onto
+   * `ownedNumbers`.
+   *
+   * Answering from `purchasedNumbers` is what makes the fake obey the real
+   * contract's central distinction: a number is owned because it was
+   * purchased, never because it was merely available. A test that purchases
+   * and then lists sees its own number; one that never purchases sees only
+   * what it explicitly preloaded.
+   */
+  async listOwnedNumbers(
+    _options: { readonly accountSid?: string | undefined } = {},
+  ): Promise<readonly OwnedNumber[]> {
+    await this.#maybeFail();
+    return [
+      ...this.ownedNumbers,
+      ...this.purchasedNumbers.map((number) => ({
+        sid: number.sid,
+        phoneNumber: number.phoneNumber,
+        isoCountry: 'US',
+        capabilities: { voice: true, sms: true },
+      })),
+    ];
   }
 
   async purchaseNumber(options: {

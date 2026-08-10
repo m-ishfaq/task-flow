@@ -13,6 +13,13 @@ import {
   PasskeyCeremonyError,
   signInWithPasskey,
 } from './passkey.js';
+import { TotpChallengeForm } from './totp-challenge.js';
+import {
+  OAUTH_PROVIDER_LABEL,
+  redirectToAuthorization,
+  useOAuthProviders,
+  type OAuthProvider,
+} from './oauth.js';
 import type { SessionBody } from '../../lib/session.js';
 
 /**
@@ -45,6 +52,11 @@ export function LoginPage() {
   /* Computed once — a browser's WebAuthn support does not change over the
      component's lifetime, so there is nothing to re-derive on a later render. */
   const [passkeySupported] = useState(() => browserSupportsWebAuthn());
+  /* Set when `auth.login` answers `totp_required` instead of a session — the
+     account has a confirmed second factor, so the form beneath is swapped for
+     `TotpChallengeForm` until that challenge is redeemed. Held alongside the
+     email that produced it so the redeemed session still gets it (§8.1). */
+  const [challenge, setChallenge] = useState<{ token: string; email: string } | null>(null);
 
   const { register, handleSubmit, formState } = useForm<FormValues>({
     defaultValues: { email: '', password: '' },
@@ -63,13 +75,40 @@ export function LoginPage() {
 
   const signIn = useMutation({
     mutationFn: (values: FormValues) => api.auth.login.mutate(values),
-    onSuccess: (session, values) => afterSignIn(session, values.email),
+    onSuccess: (result, values) => {
+      if (result.kind === 'totp_required') {
+        setChallenge({ token: result.challengeToken, email: values.email });
+        return;
+      }
+      void afterSignIn(result, values.email);
+    },
   });
 
   const signInWithPasskeyMutation = useMutation({
     mutationFn: signInWithPasskey,
     onSuccess: (session) => afterSignIn(session),
   });
+
+  const oauthProviders = useOAuthProviders();
+  const startOAuth = useMutation({
+    mutationFn: (provider: OAuthProvider) => api.auth.oauth.start.mutate({ provider }),
+    onSuccess: (result) => {
+      redirectToAuthorization(result.authorizationUrl);
+    },
+  });
+
+  if (challenge !== null) {
+    return (
+      <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-6 p-6">
+        <TotpChallengeForm
+          challengeToken={challenge.token}
+          onSuccess={(session) => {
+            void afterSignIn(session, challenge.email);
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-6 p-6">
@@ -151,6 +190,29 @@ export function LoginPage() {
           ) : (
             <ErrorView error={signInWithPasskeyMutation.error} />
           ))}
+
+        {/* An unconfigured provider renders no button at all (§3.3) rather
+            than one that always fails — `oauthProviders.data` is undefined
+            while loading, so nothing here flashes on then off. */}
+        {(['google', 'github'] as const).map(
+          (provider) =>
+            oauthProviders.data?.[provider] === true && (
+              <Button
+                key={provider}
+                variant="secondary"
+                className="w-full"
+                disabled={startOAuth.isPending}
+                onClick={() => {
+                  startOAuth.mutate(provider);
+                }}
+              >
+                {startOAuth.isPending && startOAuth.variables === provider
+                  ? 'Redirecting…'
+                  : `Sign in with ${OAUTH_PROVIDER_LABEL[provider]}`}
+              </Button>
+            ),
+        )}
+        {startOAuth.isError && <ErrorView error={startOAuth.error} />}
       </div>
 
       <div className="flex justify-between text-sm text-ink-muted">

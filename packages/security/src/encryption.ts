@@ -162,3 +162,17 @@ export function fieldAad(parts: {
 }
 
 export const AES_KEY_BYTES = KEY_BYTES;
+
+/**
+ * AAD for a field encrypted under the identity-scoped data key (Phase 12
+ * Wave 2 §3.2) — a PARALLEL to `fieldAad` above, not a generalization of it.
+ *
+ * `fieldAad` binds a ciphertext to an org; this binds one to a `identity.*`
+ * row, which has no org at all by design (a TOTP secret or an OAuth token
+ * belongs to a person before any tenant is known). The two will diverge for
+ * real the day per-org KMS keys exist — sharing one function now would need
+ * un-sharing then, for a "some day" that has no code behind it yet.
+ */
+export function identityFieldAad(parts: { table: string; column: string; rowId: string }): string {
+  return `table=${parts.table}|column=${parts.column}|row=${parts.rowId}`;
+}

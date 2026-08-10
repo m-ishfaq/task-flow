@@ -1,9 +1,31 @@
 import type { DomainEvent } from '@taskflow/events';
 import type { AdminConnection } from '@taskflow/db/testing';
-import type { StorageProvider } from '@taskflow/contracts';
+import type { KeyProvider, StorageProvider, TelephonyProvider } from '@taskflow/contracts';
 import type { SeedModule } from './registry.js';
 import type { Profile } from './profiles.js';
 import type { Rng } from './rng.js';
+
+/**
+ * Everything `comms.telephony` needs that a database connection cannot supply.
+ *
+ * Assembled in `cli.ts` from the environment (guardrail 7: only a CLI entry
+ * point may read it) and handed over whole, so the module itself contains no
+ * configuration logic and cannot be run half-configured.
+ */
+export interface TelephonySeedConfig {
+  /**
+   * Used for exactly ONE call: `listOwnedNumbers`, which is read-only.
+   *
+   * Never `purchaseNumber` — a seeder that bought a number would put a real,
+   * recurring charge on a real account every time someone reset their
+   * development database.
+   */
+  readonly provider: TelephonyProvider;
+  /** Wraps the per-org data key stored in `comms.subaccounts`. */
+  readonly keys: KeyProvider;
+  /** Blind-index key for counterparty numbers — `TELEPHONY_INDEX_KEY`. */
+  readonly indexKey: Uint8Array;
+}
 
 /**
  * What a seed module is handed.
@@ -48,6 +70,17 @@ export interface SeedContext {
    * the feature.
    */
   readonly storage: StorageProvider | null;
+  /**
+   * Carrier access and key material, or null to skip telephony entirely —
+   * credentials unset, or no key material to encrypt a counterparty with.
+   *
+   * Null is "skip", never "fake it", for the same reason `storage` is: a
+   * `comms.calls` row whose counterparty ciphertext was invented decrypts to
+   * nothing the first time the UI reads it, and a `comms.phone_numbers` row
+   * naming a number the account does not hold is a number every outbound send
+   * is rejected from. Both are lies that look like data.
+   */
+  readonly telephony: TelephonySeedConfig | null;
   log(message: string): void;
   /**
    * The output of a module this one declared in `requires`.
@@ -197,6 +230,7 @@ export interface CreateContextOptions {
   readonly now: Date;
   readonly chaos: boolean;
   readonly storage: StorageProvider | null;
+  readonly telephony: TelephonySeedConfig | null;
   readonly log: (message: string) => void;
 }
 
@@ -224,6 +258,7 @@ export function createSeedContext(options: CreateContextOptions): SeedContextHan
     now: options.now,
     chaos: options.chaos,
     storage: options.storage,
+    telephony: options.telephony,
     log: options.log,
 
     use: <Out>(module: SeedModule<Out>): Out => {

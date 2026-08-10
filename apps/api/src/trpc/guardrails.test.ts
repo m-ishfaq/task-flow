@@ -277,6 +277,16 @@ describe('the real application router', () => {
     expect(paths).toEqual([
       'auth.login',
       'auth.logout',
+      /* OAuth sign-in (Phase 12 Wave 2 §3.3). Both public for the same reason
+         auth.login is — `callback` is reached via a browser redirect with no
+         session either way, whether it turns out to sign someone in or to
+         link a provider to an account they were already signed into (the
+         signed `state` token, not a header, carries that distinction). */
+      'auth.oauth.callback',
+      /* Read from the login page before any session exists, to decide which
+         provider buttons to render at all. */
+      'auth.oauth.providers',
+      'auth.oauth.start',
       /* Passkey sign-in. Public for the same reason password login is — it is
          how a session is obtained — and it is the ONE flow here that cannot be
          used to enumerate accounts, because the ceremony takes no identifier. */
@@ -286,6 +296,10 @@ describe('the real application router', () => {
       'auth.register',
       'auth.requestPasswordReset',
       'auth.resetPassword',
+      /* Phase 12 Wave 2 §3.2. The caller has no session yet at this point — the
+         signed challenge token from `auth.login` IS the proof the password
+         step already succeeded, so this cannot itself require authentication. */
+      'auth.totp.verifyLogin',
       'auth.verifyEmail',
       /* Publish-to-public (ai/phase-6-docs.md §3.9, Wave 4) — the one route
          whose entire purpose is being reachable with no session, gated
@@ -314,11 +328,25 @@ describe('the real application router', () => {
          the entire reason `/account` exists as a route independent of
          `/settings`. Not step-up: reading is not credential-adjacent. */
       'auth.me',
+      /* Connected-accounts management (Phase 12 Wave 2 §3.3) — reading and
+         changing your own account's sign-in methods. `startLink`/`unlink`
+         are step-up: adding or removing a way in is credential-adjacent the
+         same as the TOTP and passkey lifecycle routes are. */
+      'auth.oauth.listConnected',
+      'auth.oauth.startLink',
+      'auth.oauth.unlink',
       'auth.passkeys.finishRegistration',
       'auth.passkeys.list',
       'auth.passkeys.remove',
       'auth.passkeys.rename',
       'auth.passkeys.startRegistration',
+      /* TOTP enrollment lifecycle (Phase 12 Wave 2 §3.2) — adding or removing a
+         second factor on your own account, `stepUp: true` on all three.
+         `auth.totp.verifyLogin` is NOT here: it is the public route above,
+         reached with no session yet. */
+      'auth.totp.confirmEnrollment',
+      'auth.totp.disable',
+      'auth.totp.startEnrollment',
       /* The resolved feature-flag snapshot (Phase 12 Wave 1 §3.8) — the
          client bootstrap payload, and the consumer that makes the override
          store real. Self-scoped rather than public because the flags are a

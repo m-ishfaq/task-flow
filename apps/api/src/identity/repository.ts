@@ -9,6 +9,7 @@ import {
   withGlobalScope,
   type GlobalDb,
 } from '@taskflow/db';
+import { newId } from '@taskflow/security';
 
 /**
  * Data access for identity (PLAN.md §8.1).
@@ -431,5 +432,248 @@ export async function consumePasswordReset(input: {
       .where(eq(schema.users.id, row.userId));
 
     return row;
+  });
+}
+
+/* -------------------------------------------------------------------------- *
+ * TOTP (Phase 12 Wave 2 §3.2)
+ * -------------------------------------------------------------------------- */
+
+export interface TotpCredentialRow {
+  userId: string;
+  secretEncrypted: Buffer;
+  confirmedAt: Date | null;
+}
+
+export async function getTotpCredential(userId: string): Promise<TotpCredentialRow | undefined> {
+  return withGlobalScope(async (tx) => {
+    const rows = await tx
+      .select({
+        userId: schema.totpCredentials.userId,
+        secretEncrypted: schema.totpCredentials.secretEncrypted,
+        confirmedAt: schema.totpCredentials.confirmedAt,
+      })
+      .from(schema.totpCredentials)
+      .where(eq(schema.totpCredentials.userId, userId));
+    return rows[0];
+  });
+}
+
+/** Overwrites any existing (necessarily unconfirmed — see `confirmTotp`) row for this user. */
+export async function upsertPendingTotp(userId: string, secretEncrypted: Buffer): Promise<void> {
+  await withGlobalScope(async (tx) => {
+    await tx
+      .insert(schema.totpCredentials)
+      .values({ userId, secretEncrypted, confirmedAt: null })
+      .onConflictDoUpdate({
+        target: schema.totpCredentials.userId,
+        set: { secretEncrypted, confirmedAt: null },
+      });
+  });
+}
+
+export async function confirmTotp(userId: string, now: Date): Promise<void> {
+  await withGlobalScope(async (tx) => {
+    await tx
+      .update(schema.totpCredentials)
+      .set({ confirmedAt: now })
+      .where(eq(schema.totpCredentials.userId, userId));
+  });
+}
+
+export async function deleteTotp(userId: string): Promise<void> {
+  await withGlobalScope(async (tx) => {
+    await tx.delete(schema.totpCredentials).where(eq(schema.totpCredentials.userId, userId));
+    await tx.delete(schema.totpRecoveryCodes).where(eq(schema.totpRecoveryCodes.userId, userId));
+  });
+}
+
+export async function insertRecoveryCodes(
+  userId: string,
+  codeHashes: readonly string[],
+): Promise<void> {
+  if (codeHashes.length === 0) return;
+  await withGlobalScope(async (tx) => {
+    await tx
+      .insert(schema.totpRecoveryCodes)
+      .values(codeHashes.map((codeHash) => ({ id: newId<'unused'>(), userId, codeHash })));
+  });
+}
+
+export interface RecoveryCodeRow {
+  id: string;
+  codeHash: string;
+}
+
+/** Every code this user has never redeemed — checked one by one against the plaintext attempt. */
+export async function findUnusedRecoveryCodes(userId: string): Promise<RecoveryCodeRow[]> {
+  return withGlobalScope(async (tx) =>
+    tx
+      .select({ id: schema.totpRecoveryCodes.id, codeHash: schema.totpRecoveryCodes.codeHash })
+      .from(schema.totpRecoveryCodes)
+      .where(
+        and(eq(schema.totpRecoveryCodes.userId, userId), isNull(schema.totpRecoveryCodes.usedAt)),
+      ),
+  );
+}
+
+/**
+ * Marks a recovery code used, conditionally — `usedAt IS NULL` in the WHERE
+ * makes two simultaneous redemptions of the same code race safely: only the
+ * first UPDATE matches a row, the second returns zero and the caller treats
+ * that as "already used", never as "used twice".
+ */
+export async function claimRecoveryCode(id: string, now: Date): Promise<boolean> {
+  return withGlobalScope(async (tx) => {
+    const claimed = await tx
+      .update(schema.totpRecoveryCodes)
+      .set({ usedAt: now })
+      .where(and(eq(schema.totpRecoveryCodes.id, id), isNull(schema.totpRecoveryCodes.usedAt)))
+      .returning({ id: schema.totpRecoveryCodes.id });
+    return claimed.length > 0;
+  });
+}
+
+/* -------------------------------------------------------------------------- *
+ * OAuth (§3.3)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * A password-less account, its email verified immediately, linked to the
+ * OAuth identity that created it — in ONE transaction, mirroring
+ * `createUser`'s own reasoning above: a crash between "create the account"
+ * and "link the identity that proved it" would leave an account nobody can
+ * sign into (no password, no passkey, and now no working OAuth link either).
+ *
+ * No verification link, unlike `createUser` — the OAuth provider has already
+ * done its own, independent email verification, which is what
+ * `email_verified` in its token/response means.
+ *
+ * Returns undefined on a duplicate `emailNormalized`, the same
+ * check-by-constraint discipline `createUser` uses: two concurrent signups
+ * for the same address (an ordinary password registration racing an OAuth
+ * one) both pass a check-then-insert, and only the unique index is atomic.
+ */
+export async function createOAuthUserAndLink(input: {
+  userId: string;
+  email: string;
+  now: Date;
+  linkId: string;
+  provider: string;
+  providerUserId: string;
+}): Promise<UserRow | undefined> {
+  return withGlobalScope(async (tx) => {
+    const inserted = await tx
+      .insert(schema.users)
+      .values({
+        id: input.userId,
+        email: input.email.trim(),
+        emailNormalized: normalizeEmail(input.email),
+        emailVerifiedAt: input.now,
+      })
+      .onConflictDoNothing({ target: schema.users.emailNormalized })
+      .returning({ id: schema.users.id });
+
+    if (inserted.length === 0) return undefined;
+
+    await tx.insert(schema.oauthIdentities).values({
+      id: input.linkId,
+      userId: input.userId,
+      provider: input.provider,
+      providerUserId: input.providerUserId,
+      email: input.email,
+    });
+
+    return selectUser(tx, eq(schema.users.id, input.userId));
+  });
+}
+
+export interface OAuthIdentityRow {
+  id: string;
+  userId: string;
+  provider: string;
+  providerUserId: string;
+  email: string;
+  linkedAt: Date;
+}
+
+const oauthIdentityColumns = {
+  id: schema.oauthIdentities.id,
+  userId: schema.oauthIdentities.userId,
+  provider: schema.oauthIdentities.provider,
+  providerUserId: schema.oauthIdentities.providerUserId,
+  email: schema.oauthIdentities.email,
+  linkedAt: schema.oauthIdentities.linkedAt,
+};
+
+export async function findOAuthIdentity(
+  provider: string,
+  providerUserId: string,
+): Promise<OAuthIdentityRow | undefined> {
+  return withGlobalScope(async (tx) => {
+    const rows = await tx
+      .select(oauthIdentityColumns)
+      .from(schema.oauthIdentities)
+      .where(
+        and(
+          eq(schema.oauthIdentities.provider, provider),
+          eq(schema.oauthIdentities.providerUserId, providerUserId),
+        ),
+      );
+    return rows[0];
+  });
+}
+
+export async function listOAuthIdentities(userId: string): Promise<OAuthIdentityRow[]> {
+  return withGlobalScope(async (tx) =>
+    tx
+      .select(oauthIdentityColumns)
+      .from(schema.oauthIdentities)
+      .where(eq(schema.oauthIdentities.userId, userId)),
+  );
+}
+
+export async function countOAuthIdentities(userId: string): Promise<number> {
+  const rows = await listOAuthIdentities(userId);
+  return rows.length;
+}
+
+/**
+ * Links a provider identity to an account. False on either unique conflict —
+ * `(provider, providerUserId)` already linked to someone (a race between two
+ * callback requests for the same provider identity), or this account already
+ * has a link for this provider — the caller distinguishes neither case
+ * specially, since both mean "nothing to do, refuse and let the caller
+ * re-read the current state".
+ */
+export async function linkOAuthIdentity(input: {
+  id: string;
+  userId: string;
+  provider: string;
+  providerUserId: string;
+  email: string;
+}): Promise<boolean> {
+  return withGlobalScope(async (tx) => {
+    const inserted = await tx
+      .insert(schema.oauthIdentities)
+      .values(input)
+      .onConflictDoNothing()
+      .returning({ id: schema.oauthIdentities.id });
+    return inserted.length > 0;
+  });
+}
+
+export async function unlinkOAuthIdentity(userId: string, provider: string): Promise<boolean> {
+  return withGlobalScope(async (tx) => {
+    const deleted = await tx
+      .delete(schema.oauthIdentities)
+      .where(
+        and(
+          eq(schema.oauthIdentities.userId, userId),
+          eq(schema.oauthIdentities.provider, provider),
+        ),
+      )
+      .returning({ id: schema.oauthIdentities.id });
+    return deleted.length > 0;
   });
 }

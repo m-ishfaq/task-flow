@@ -72,6 +72,7 @@ function harnessFor(
     now: new Date('2026-08-06T12:00:00.000Z'),
     chaos: false,
     storage: null,
+    telephony: null,
     log: () => undefined,
     use: <Out>(module: SeedModule<Out>): Out => {
       if (!outputs.has(module)) throw new Error(`no output recorded for ${module.name}`);

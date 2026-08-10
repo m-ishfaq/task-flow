@@ -6,6 +6,7 @@ import {
   type MessageResult,
   type NumberLookup,
   type OutboundKind,
+  type OwnedNumber,
   type PhoneNumber,
   type PurchasedNumber,
   type SubaccountStatus,
@@ -152,6 +153,44 @@ export class TwilioTelephonyProvider implements TelephonyProvider {
       region: entry.region ?? undefined,
       isoCountry: entry.iso_country,
       monthlyCostCents: FALLBACK_PRICE_CENTS.number_purchase,
+    }));
+  }
+
+  async listOwnedNumbers(
+    options: { readonly accountSid?: string | undefined } = {},
+  ): Promise<readonly OwnedNumber[]> {
+    /* Defaults to the account these credentials belong to. A caller holding
+       only master credentials (the seeder) has no subaccount sid to pass and
+       wants exactly this; the org-scoped services pass one explicitly. */
+    const accountSid = options.accountSid ?? this.#config.accountSid;
+
+    const body = await this.#get<{
+      incoming_phone_numbers: {
+        sid: string;
+        phone_number: string;
+        /* Twilio omits iso_country on some legacy numbers rather than
+           sending null, hence optional rather than nullable. */
+        iso_country?: string | null;
+        capabilities?: { voice?: boolean; sms?: boolean } | null;
+      }[];
+    }>(
+      `${this.#api}/2010-04-01/Accounts/${encodeURIComponent(accountSid)}` +
+        `/IncomingPhoneNumbers.json?PageSize=50`,
+    );
+
+    return body.incoming_phone_numbers.map((entry) => ({
+      sid: entry.sid,
+      /* Parsed, not cast — the same reasoning as searchAvailableNumbers
+         above: Twilio is trusted to be Twilio, not to be well-formed. */
+      phoneNumber: PhoneNumberSchema.parse(entry.phone_number),
+      /* A number with no country reported is still a usable number; 'US' is
+         wrong to assume, so the empty answer is passed through as the
+         two-letter unknown and callers that care re-look it up. */
+      isoCountry: entry.iso_country ?? 'ZZ',
+      capabilities: {
+        voice: entry.capabilities?.voice ?? false,
+        sms: entry.capabilities?.sms ?? false,
+      },
     }));
   }
 

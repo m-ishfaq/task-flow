@@ -22,6 +22,7 @@
     "@taskflow/policy": "workspace:*",
     "@taskflow/security": "workspace:*",
     "@taskflow/storage": "workspace:*",
+    "@taskflow/telephony": "workspace:*",
     "yjs": "^13.6.32"
   },
   "devDependencies": {

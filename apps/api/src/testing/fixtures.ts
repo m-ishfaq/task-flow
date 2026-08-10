@@ -3,6 +3,7 @@ import { RecordingEventBus } from '@taskflow/events';
 import { createAppRouter } from '../router.js';
 import { buildIdentityDeps, buildPasskeyDeps } from '../identity/deps.js';
 import { buildWorkDeps } from '../work/deps.js';
+import type { OAuthDeps } from '../identity/oauth.service.js';
 import type { AuthenticatedPrincipal, OrgMembership, RequestContext } from '../trpc/context.js';
 import type { DeliverableLink } from '../identity/identity.service.js';
 import { parseEnv, type Env } from '../config/env.js';
@@ -75,8 +76,36 @@ export function testPrincipal(
   };
 }
 
+/**
+ * Fixed, deterministic — the same substitution `TEST_ENV.MASTER_KEY_BASE64`
+ * already makes for the real KMS-backed key. `secret-key.test.ts` proves the
+ * real `ensureIdentityDataKey` get-or-create dance against real Postgres
+ * separately; nothing in a route-level test needs the wrap/unwrap round trip
+ * itself, only a stable 32-byte key the same TOTP secret can round-trip
+ * through `encryptString`/`decryptString` under.
+ */
+export const TEST_IDENTITY_DATA_KEY = Buffer.alloc(32, 7);
+
+/**
+ * No providers configured by default — matching `TEST_ENV` carrying no
+ * `GOOGLE_CLIENT_ID`/`GITHUB_CLIENT_ID`, the same "an unset integration is a
+ * valid deployment" case `buildServer`'s own `buildOAuthDeps` handles.
+ * `oauth.service.test.ts` builds its own fully-configured `OAuthDeps`
+ * directly rather than through this fixture, since it also needs to inject
+ * `fetchImpl`/`verifyGoogleIdToken` stubs no router-level test needs.
+ */
+const NO_OAUTH_PROVIDERS: Omit<OAuthDeps, 'identity'> = {
+  providers: {},
+  redirectUri: (provider) => `${TEST_ENV.WEB_ORIGIN}/oauth/callback/${provider}`,
+};
+
 /** The real application router, wired with an in-test event recorder and no mail. */
-export function testAppRouter(options: { deliver?: (m: DeliverableLink) => Promise<void> } = {}) {
+export function testAppRouter(
+  options: {
+    deliver?: (m: DeliverableLink) => Promise<void>;
+    oauth?: Omit<OAuthDeps, 'identity'>;
+  } = {},
+) {
   const events = new RecordingEventBus();
   const deps = buildIdentityDeps({
     env: TEST_ENV,
@@ -88,6 +117,7 @@ export function testAppRouter(options: { deliver?: (m: DeliverableLink) => Promi
   return {
     router: createAppRouter({
       identity: deps,
+      identityDataKey: TEST_IDENTITY_DATA_KEY,
       passkeys,
       work: buildWorkDeps(TEST_ENV),
       platform: { vapidPublicKey: null },
@@ -96,6 +126,7 @@ export function testAppRouter(options: { deliver?: (m: DeliverableLink) => Promi
          tenancy fuzz harness need them to do, since both enumerate every
          registered route. */
       telephony: undefined,
+      oauth: options.oauth ?? NO_OAUTH_PROVIDERS,
     }),
     events,
     deps,
