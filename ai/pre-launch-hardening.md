@@ -486,6 +486,38 @@ Product-completeness gaps, not safety gaps — sequenced by how much a real user
 3. **Analytics (Phase 11, ~4wk).** Velocity/burndown/CFD/cycle-time/workload dashboards and
    comms-spend reporting — read-only over data that already exists.
 
+## Addendum — seed data coverage for the shipped surfaces
+
+Outside the four priorities above, but load-bearing for demonstrating them: `packages/seed`
+previously had zero coverage for in-app calling, notifications, or the device/session inventory
+this Priority 3 shipped — a freshly seeded database could not show any of the three in the web UI
+even though the backend was real. Closed as a follow-up, same verification bar as everything else
+in this file (`tsc`/`eslint`/`vitest run`/`pnpm format` on `@taskflow/seed`, plus `@taskflow/api`
+for the one new export map entry, guardrail-selftest):
+
+- **`rtc.calls`** — `rtc.sessions`/`participants`/`recordings` for `dm`/`group_dm` channels only
+  (public channels have no ring list — a still-open Phase 13 item, not a seed omission), holding
+  the mesh cap and the recording-implies-answered-and-consented invariants the real CHECK
+  constraints enforce.
+- **`platform.notifications` + `platform.push_subscriptions`** — only `chat.direct` and
+  `chat.mention` are seeded; the other five kinds the real projection derives need a card/page
+  title `SeededCardRef`/`SeededPage` do not currently export, so inventing one would be exactly the
+  "lie that looks like data" this package's other modules refuse — named in the module's own
+  header as real follow-up, not silently dropped. `push_subscriptions` is its own module because
+  its RLS is keyed on `app.user_id`, not `app.org_id`, which `ctx.orgScope` cannot express —
+  it sets `app.user_id` directly, the same pattern `reset.ts`'s `findSeededOrgIds` already used.
+- **`identity.sessions` (§3.4's device inventory)** — multiple devices per user, some revoked
+  (an old device signed out), and at least one row with `impossible_travel_at` set. The flag is
+  **computed**, not faked: the module imports the real `assessImpossibleTravel` from
+  `apps/api/src/identity/geo.ts` (newly exported as `@taskflow/api/identity/geo`) and evaluates it
+  against each user's own session list exactly as `issueSession` would, replaying
+  `mostRecentActiveSession`'s "not revoked, not yet expired, most recent by `authenticatedAt`"
+  query against the in-memory draft list. One user is guaranteed a flagged pair (two countries
+  twenty minutes apart) rather than leaving it to chance across the demo profile's draws.
+
+All three are wired into `platform.audit`'s `requires` — the pattern every leaf module in this
+package's dependency graph must follow, since only modules reachable from that root ever run.
+
 ## Verification, for every wave of every priority
 
 - `tsc --noEmit` + `eslint` + `vitest run` on touched packages, `pnpm format`, and
