@@ -58,9 +58,21 @@ RUN pnpm --filter @taskflow/web build
 # file's EXPOSE/HEALTHCHECK/compose.prod.yaml's port mapping all say 8080
 # now, not 80. The host still publishes port 80 (compose.prod.yaml maps
 # '80:8080') — nothing changes for anyone hitting the app from outside.
+#
+# `USER nginx` below is EXPLICIT even though this base image already
+# defaults to it — Trivy's Dockerfile linter (unlike the container it
+# produces) has no way to inspect a base image's own layers, only the
+# instructions literally written in THIS file, so it flagged AVD-DS-0002
+# again on the first re-scan despite the image already running unprivileged.
+# Stating it here is also just better practice regardless of the scanner: a
+# future base-image swap that quietly reverts to a root default fails loud
+# at build time (nginx refusing to bind/write as `nginx`) instead of
+# silently regressing.
 FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
 COPY apps/web/nginx.conf /etc/nginx/nginx.conf
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
+
+USER nginx
 
 EXPOSE 8080
 

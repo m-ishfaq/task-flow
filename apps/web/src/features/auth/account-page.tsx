@@ -522,7 +522,7 @@ function SessionsSection() {
         </ul>
       )}
 
-      {sessions.data !== undefined && sessions.data.sessions.length === 0 && (
+      {sessions.data?.sessions.length === 0 && (
         <Empty
           title="No active sessions"
           description="Every sign-in is listed here when one happens."
