@@ -418,3 +418,26 @@ A failed save surfaces as a dismissible notice, `recordingSaveError`, using the 
 call" shape §3.1's `evicted` flag already established: the call UI is gone by the time an upload
 either succeeds or fails, so the fact has to be carried past the state reset that would otherwise
 lose it.
+
+### Found immediately after the reversal above: every real upload 403'd (2026-08-10)
+
+The very first recording that actually reached `finish()` — because the reversal above stopped
+throwing them away — failed with a 403 from storage. `presignUpload` (§ above) signs
+`Content-Length` into the request, and `presignRecordingUpload` was signing it against
+`deps.maxRecordingBytes`, the DEPLOYMENT'S CEILING, not the capture's real size. A browser's
+`fetch()` always sends the body's actual byte count as `Content-Length` — a forbidden header name
+nothing can override — so a signature pinned to the ceiling validates only a body that happens to
+be exactly that many bytes. Every real recording is smaller than the ceiling, so every real upload
+failed the same way.
+
+This is the identical shape of bug `packages/storage/src/s3.ts`'s own header already documents
+once, for `Content-Type` — a signed value the caller does not actually control matching. It reads
+as safe ("the size is pinned, storage will reject anything else") and is backwards: `chat.attachments`
+gets this right because the browser knows a FILE's size before asking to upload, and passes it as
+`sizeBytes` in the presign request itself; a recording's real size is not known until AFTER capture
+stops, which `presignRecordingUpload` never had a field to receive. Fixed the same way attachments
+already do it: `presignUpload`'s input now carries `bytes` — the just-measured real size — and the
+service signs THAT, checking it against `maxRecordingBytes` as a validation ceiling rather than a
+signed value. Nothing caught this before because nothing had reached a real upload before: `hangUp`
+discarded every capture until the reversal above, and the explicit Stop button, the only other path
+to `finish()`, apparently never ran against a real S3-compatible backend either.
