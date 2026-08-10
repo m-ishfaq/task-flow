@@ -178,6 +178,9 @@ export const keys = {
   /** The caller's own account (`/account`) — answers with no org selected. */
   me: () => ['auth', 'me'] as const,
 
+  /** The caller's own active sessions — §3.4's device inventory (Phase 12 Wave 2). */
+  sessions: () => ['auth', 'sessions'] as const,
+
   /**
    * The caller's own merged profile (Phase 11.5, people/api.ts).
    *

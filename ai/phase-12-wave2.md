@@ -259,6 +259,17 @@ Google's ID token against Google's published JWKS) plus a plain `fetch` for GitH
 
 ### 3.4 Device inventory and impossible-travel
 
+**SHIPPED 2026-08-10** (Priority 3 of `ai/pre-launch-hardening.md`). Implementation matched this
+section with two recorded deviations: the offline geo database is **`geoip-lite@1.4.10`** (pinned
+because the 2.x line requires Node ≥ 24 and this stack runs Node 22) rather than a direct MaxMind
+GeoLite2 reader — same free/offline/country-level contract the decision below demands; and the
+event is named **`session.impossible_travel_detected`** (matching its siblings
+`session.revoked`/`session.token_reuse_detected` in `apps/api/src/identity/events.ts`) rather than
+`identity.impossibleTravelDetected` — the spec's own `identity.totpEnrolled`/`identity.oauthLinked`
+received the same treatment when they shipped (§3.2/§3.3). Both are written up in the Priority 3
+status header; the fail-open-at-the-call-site and store-country-on-every-session decisions below
+are load-bearing and tested.
+
 **No new device table** — PLAN.md's own roadmap note already settles this: "Device inventory reads
 `platform.push_subscriptions` (Phase 9) as one of its sources rather than inventing a second device
 concept." The inventory is a read-shaped view joining what already exists:

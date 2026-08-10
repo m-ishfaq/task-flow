@@ -8,8 +8,9 @@ header for the four real bugs the smoke test found and fixed. Priority 2 (advers
 review of every §2.2 human-review surface) is also done: one confirmed finding — the SSRF
 blocklist in `packages/security/src/outbound-url.ts` missed 63/64 of the IPv6 link-local range
 (`fe80::/10` is first hextet `fe80`–`febf`, the check only matched `fe80`) — fixed with
-boundary tests; full write-up in `ai/security-review-priority-2.md`. Priorities 3–4 not
-started.
+boundary tests; full write-up in `ai/security-review-priority-2.md`. Priority 3's §3.4
+(device/session inventory + impossible-travel detection) is shipped — see its status header;
+§3.5 (org deletion) and §3.6 (DSAR export) remain. Priority 4 not started.
 
 Not a numbered roadmap phase — this is cross-cutting work found by auditing `main` directly
 (grep, file counts, CI config — not just PLAN.md) for what genuinely blocks shipping, independent
@@ -317,20 +318,21 @@ happen without hiring anyone, done first.
 
 ### Step 3 — Priority 3: Phase 12 Wave 2's unshipped remainder
 
-Design already exists and is approved — read `ai/phase-12-wave2.md` §3.4, §3.5, §3.6 in full before
-writing any code; this is implementation against a spec, not new design work. Grep first to
-reconfirm each piece is still actually missing (`ai/phase-12-wave2.md` may itself be stale — this
-whole codebase's standing lesson is to check the code, not just the doc):
+**§3.4 is COMPLETE** (device/session inventory + impossible-travel detection — see the Priority 3
+status header for what shipped and how it was validated). **§3.5 and §3.6 remain.** Design already
+exists and is approved — read `ai/phase-12-wave2.md` §3.5 and §3.6 in full before writing any code;
+this is implementation against a spec, not new design work. Grep first to reconfirm each piece is
+still actually missing (`ai/phase-12-wave2.md` may itself be stale — this whole codebase's standing
+lesson is to check the code, not just the doc):
 
-- §3.4 device/session inventory + impossible-travel detection — built from `identity.sessions`,
-  `identity.refresh_tokens`, `platform.push_subscriptions`, which already exist; no new device
-  concept per that section's own instruction.
 - §3.5 org deletion — real, cascading, operator-triggered, irreversible, heavily audited. The
   riskiest single piece in this priority: before writing the delete path, do a repo-wide grep for
   every foreign key referencing `identity.orgs` (or any table that in turn references it) to build
   a complete cascade map — an incomplete one leaves orphaned rows in a tenant table, which is
   exactly the kind of defect guardrail 3 exists to make impossible for ordinary queries but cannot
-  prevent for a DELETE issued by a privileged role.
+  prevent for a DELETE issued by a privileged role. Note that migration 0040 (Phase 12 Wave 2's own
+  schema) already added `ON DELETE CASCADE` to a set of identity-adjacent FKs — the audit must
+  verify what remains, not start from zero.
 - §3.6 self-serve DSAR export.
 
 Same verification bar as every other wave: `tsc`/`eslint`/`vitest` on touched packages, `pnpm
@@ -391,16 +393,34 @@ click it." The third-party pentest before launch is still owed.
 
 ## Priority 3 — Compliance/identity gaps (Phase 12 Wave 2's unshipped remainder)
 
-Grep-verified absent, not assumed from a stale status header. Only 3 of 6 planned Wave 2 pieces
-shipped — user suspension (`apps/api/src/platform-admin/router.ts:153`), TOTP, OAuth. Missing,
-with the design already approved in `ai/phase-12-wave2.md`:
+### Priority 3 status — §3.4 COMPLETE (2026-08-10); §3.5 and §3.6 still open
 
-- **§3.4 — Device/session inventory + impossible-travel detection.** Built from data that already
-  exists (`identity.sessions`, `identity.refresh_tokens`, `platform.push_subscriptions`) — no new
-  device concept, per that section's own instruction.
-- **§3.5 — Org deletion.** Real, cascading, operator-triggered, irreversible, heavily audited —
-  not a key-based shortcut. The riskiest single piece: a repo-wide cascade-FK audit.
-- **§3.6 — Self-serve DSAR export.**
+Grep-verified absent, not assumed from a stale status header. Only 3 of 6 planned Wave 2 pieces
+had shipped before this priority started — user suspension (`apps/api/src/platform-admin/router.ts:153`),
+TOTP, OAuth. The design for the rest is already approved in `ai/phase-12-wave2.md`:
+
+- **§3.4 — Device/session inventory + impossible-travel detection — SHIPPED.** Migration 0043
+  (`identity.sessions.country`, `identity.sessions.impossible_travel_at`),
+  `apps/api/src/identity/geo.ts` (country lookup via `geoip-lite@1.4.10` — pinned because the 2.x
+  line requires Node ≥ 24 and this stack runs Node 22 — plus an embedded, diff-reviewable
+  country-centroid table and haversine), detection inside the single `issueSession` chokepoint so
+  all four login paths (password, passkey, TOTP, OAuth) get it by construction,
+  `auth.sessions.list`/`auth.sessions.revoke` (`selfRoute`s; revoke `stepUp: true`), and a
+  Sessions section on the web account page (per-device sign out, current-session badge, "looked
+  unusual" note, push-device count). Validated: migration 0043 up→down→up, API 54 files/825 tests,
+  web 32 files/302 tests, `tsc`/`eslint`/`pnpm format`/guardrail-selftest — all green. Two design
+  decisions worth recording because they are easy to break: **the geo lookup is fail-open AT THE
+  CALL SITE, not only inside the lookup** — `countryOfIp` never throws AND `issueSession` wraps
+  whatever lookup is injected in its own try/catch, because an informational control must never sit
+  in the path that completes a sign-in (a test proves a throwing lookup still completes the login
+  and stores `country = null`); and **the country is stored on EVERY session**, flagged or not,
+  which is what lets the NEXT login compare against this one without a fresh lookup. Detection is
+  distance-over-time — haversine between country centroids divided by the hours since the previous
+  session's `authenticated_at`, flagging only a pair implying faster than 900 km/h — never
+  country-change alone.
+- **§3.5 — Org deletion — still open.** Real, cascading, operator-triggered, irreversible, heavily
+  audited — not a key-based shortcut. The riskiest single piece: a repo-wide cascade-FK audit.
+- **§3.6 — Self-serve DSAR export — still open.**
 
 ## Priority 4 — Missing product surfaces: Search, then Automation, then Analytics
 

@@ -77,6 +77,27 @@ export const sessionRevoked = defineEvent(
  * was issued to, and by the time it fires the session has already been revoked
  * — the alert exists so a human finds out, not so anything is decided.
  */
+/**
+ * A sign-in was flagged by impossible-travel detection (Phase 12 Wave 2 §3.4).
+ *
+ * Informational, never blocking: the session was created either way, and
+ * `sessions.country`/`sessions.impossible_travel_at` are the durable facts
+ * (the Sessions page reads those rows, not this event). Both countries are
+ * always present — the check only fires when both the previous and the new
+ * login resolved to a known country.
+ */
+export const impossibleTravelDetected = defineEvent(
+  'session.impossible_travel_detected',
+  z
+    .object({
+      userId: z.string(),
+      sessionId: z.string(),
+      previousCountry: z.string(),
+      newCountry: z.string(),
+    })
+    .strict(),
+);
+
 export const tokenReuseDetected = defineEvent(
   'session.token_reuse_detected',
   z

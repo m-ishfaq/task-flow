@@ -340,6 +340,13 @@ describe('the real application router', () => {
       'auth.passkeys.remove',
       'auth.passkeys.rename',
       'auth.passkeys.startRegistration',
+      /* Device/session inventory (Phase 12 Wave 2 §3.4) — your own active
+         sessions. `selfRoute` for the same reason `auth.me` is (no org
+         permission describes listing your own sign-ins, and /account
+         answers with no org selected). `revoke` is `stepUp: true`, the
+         single-device version of `logoutEverywhere`'s own protection. */
+      'auth.sessions.list',
+      'auth.sessions.revoke',
       /* TOTP enrollment lifecycle (Phase 12 Wave 2 §3.2) — adding or removing a
          second factor on your own account, `stepUp: true` on all three.
          `auth.totp.verifyLogin` is NOT here: it is the public route above,
@@ -429,5 +436,14 @@ describe('the real application router', () => {
     const route = entries.find((entry) => entry.path === 'auth.logoutEverywhere');
 
     expect(route?.stepUp).toBe(true);
+  });
+
+  it('requires step-up to revoke a single session, but not to list them', () => {
+    /* §3.4 — revoking a device is the single-session version of the
+       `logoutEverywhere` protection above; listing your own sessions is a
+       plain read. */
+    const entries = routeManifest(appRouter);
+    expect(entries.find((entry) => entry.path === 'auth.sessions.revoke')?.stepUp).toBe(true);
+    expect(entries.find((entry) => entry.path === 'auth.sessions.list')?.stepUp).toBe(false);
   });
 });

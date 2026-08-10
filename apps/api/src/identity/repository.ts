@@ -1,6 +1,7 @@
 import {
   and,
   coalesce,
+  desc,
   eq,
   gt,
   increment,
@@ -241,6 +242,10 @@ export interface CreateSessionInput {
   expiresAt: Date;
   ip: string | null;
   userAgent: string | null;
+  /** ISO 3166-1 alpha-2 country of the sign-in IP, null when unknown (§3.4). */
+  country: string | null;
+  /** Set when this sign-in was flagged by impossible-travel detection (§3.4). */
+  impossibleTravelAt: Date | null;
   refreshToken: { id: string; tokenHash: string; expiresAt: Date };
 }
 
@@ -253,6 +258,8 @@ export async function createSession(input: CreateSessionInput): Promise<void> {
       expiresAt: input.expiresAt,
       ip: input.ip,
       userAgent: input.userAgent,
+      country: input.country,
+      impossibleTravelAt: input.impossibleTravelAt,
     });
 
     await tx.insert(schema.refreshTokens).values({
@@ -351,6 +358,102 @@ export async function revokeSession(sessionId: string, reason: string, now: Date
       .update(schema.sessions)
       .set({ revokedAt: now, revokedReason: reason })
       .where(and(eq(schema.sessions.id, sessionId), isNull(schema.sessions.revokedAt)));
+  });
+}
+
+export interface PreviousActiveSession {
+  id: string;
+  country: string | null;
+  authenticatedAt: Date;
+}
+
+/**
+ * The account's most recent still-active session — the comparison point for
+ * impossible-travel detection at login (§3.4). "Active" means not revoked
+ * and not expired; the session being created does not exist yet, so this is
+ * genuinely the PREVIOUS login.
+ */
+export async function mostRecentActiveSession(
+  userId: string,
+  now: Date,
+): Promise<PreviousActiveSession | undefined> {
+  return withGlobalScope(async (tx) => {
+    const rows = await tx
+      .select({
+        id: schema.sessions.id,
+        country: schema.sessions.country,
+        authenticatedAt: schema.sessions.authenticatedAt,
+      })
+      .from(schema.sessions)
+      .where(
+        and(
+          eq(schema.sessions.userId, userId),
+          isNull(schema.sessions.revokedAt),
+          gt(schema.sessions.expiresAt, now),
+        ),
+      )
+      .orderBy(desc(schema.sessions.authenticatedAt))
+      .limit(1);
+
+    return rows[0];
+  });
+}
+
+export interface SessionRow {
+  id: string;
+  authenticatedAt: Date;
+  lastSeenAt: Date;
+  userAgent: string | null;
+  ip: string | null;
+  country: string | null;
+  impossibleTravelAt: Date | null;
+}
+
+/** The caller's own active sessions, most recently seen first — §3.4's device inventory. */
+export async function listSessions(userId: string): Promise<SessionRow[]> {
+  return withGlobalScope(async (tx) =>
+    tx
+      .select({
+        id: schema.sessions.id,
+        authenticatedAt: schema.sessions.authenticatedAt,
+        lastSeenAt: schema.sessions.lastSeenAt,
+        userAgent: schema.sessions.userAgent,
+        ip: schema.sessions.ip,
+        country: schema.sessions.country,
+        impossibleTravelAt: schema.sessions.impossibleTravelAt,
+      })
+      .from(schema.sessions)
+      .where(and(eq(schema.sessions.userId, userId), isNull(schema.sessions.revokedAt)))
+      .orderBy(desc(schema.sessions.lastSeenAt)),
+  );
+}
+
+/**
+ * Revokes ONE of the caller's own sessions — the per-device half of
+ * `logoutEverywhere`. The `user_id` in the WHERE is the whole authorization:
+ * a session id that is not yours matches nothing, so guessing another
+ * person's id revokes nothing and leaks nothing about whether it exists.
+ */
+export async function revokeSessionForUser(
+  userId: string,
+  sessionId: string,
+  reason: string,
+  now: Date,
+): Promise<boolean> {
+  return withGlobalScope(async (tx) => {
+    const revoked = await tx
+      .update(schema.sessions)
+      .set({ revokedAt: now, revokedReason: reason })
+      .where(
+        and(
+          eq(schema.sessions.id, sessionId),
+          eq(schema.sessions.userId, userId),
+          isNull(schema.sessions.revokedAt),
+        ),
+      )
+      .returning({ id: schema.sessions.id });
+
+    return revoked.length > 0;
   });
 }
 
