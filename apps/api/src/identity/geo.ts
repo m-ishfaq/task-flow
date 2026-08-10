@@ -50,6 +50,9 @@ function loadLookup(): Promise<GeoLookup> {
     if (typeof mod.lookup !== 'function') {
       throw new Error('geoip-lite loaded without a lookup function');
     }
+    /* The runtime guard above narrows the module's own typings; the function
+       already satisfies `GeoLookup`, so no cast is needed (and the lint rule
+       refuses a redundant one). */
     return mod.lookup;
   });
   return lookupPromise;

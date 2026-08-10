@@ -443,8 +443,11 @@ describe('the search field set', () => {
     expect(compile('search', compare('title', 'contains', 'x')).sql).toContain(
       'search.documents.title',
     );
+    // `text` compiles to the title||body concatenation — the expression
+    // migration 0045's GIN indexes are built over, so free text matches a
+    // page's title even when its body is NULL.
     expect(compile('search', compare('text', 'contains', 'x')).sql).toContain(
-      'search.documents.body',
+      "coalesce(search.documents.title, '') || ' ' || coalesce(search.documents.body, '')",
     );
     expect(compile('search', compare('archived', 'eq', true)).sql).toContain(
       'search.documents.archived',

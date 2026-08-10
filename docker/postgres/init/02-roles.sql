@@ -151,6 +151,21 @@ CREATE ROLE taskflow_platform_admin WITH LOGIN PASSWORD 'platform-admin-dev-secr
 CREATE ROLE taskflow_recording_ingest WITH LOGIN PASSWORD 'recording-dev-secret' NOSUPERUSER
   NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 
+-- ---------------------------------------------------------------------------
+-- taskflow_search — the search indexer's outbox CLAIM role (Phase 8 Wave 2,
+-- ai/phase-8-search.md §2.3, migration 0045's own header).
+--
+-- A further consumer role on the identical pattern as every role in this
+-- file: NOBYPASSRLS, reaching across every tenant only on the tables carrying
+-- an explicit `TO taskflow_search` policy (platform.outbox and
+-- platform.outbox_dispatch, scoped to consumer = 'search'). It holds NOTHING
+-- on search.documents — the actual indexing happens afterward, per event,
+-- over the ordinary taskflow_app connection under ordinary org scoping — the
+-- same claim-only separation taskflow_backlinks has from docs.page_versions.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_search WITH LOGIN PASSWORD 'search-dev-secret' NOSUPERUSER NOCREATEDB
+  NOCREATEROLE NOBYPASSRLS;
+
 -- Baseline grants live in 03-grants.sql, NOT here.
 --
 -- Roles are cluster-wide; grants are per-database. This file creates the roles

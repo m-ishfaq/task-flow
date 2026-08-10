@@ -79,6 +79,7 @@ const EXPECTED: Readonly<Record<Role, readonly Permission[]>> = {
     'sms:read',
     'recording:read',
     'audit:read',
+    'search:query',
   ],
 
   member: [
@@ -113,6 +114,7 @@ const EXPECTED: Readonly<Record<Role, readonly Permission[]>> = {
     'call:read',
     'sms:send',
     'sms:read',
+    'search:query',
   ],
 
   guest: [],

@@ -79,6 +79,8 @@ const ADMIN: readonly Permission[] = [
   'recording:read',
 
   'audit:read',
+
+  'search:query',
 ];
 
 const MEMBER: readonly Permission[] = [
@@ -128,6 +130,8 @@ const MEMBER: readonly Permission[] = [
   'call:read',
   'sms:send',
   'sms:read',
+
+  'search:query',
 ];
 
 /**

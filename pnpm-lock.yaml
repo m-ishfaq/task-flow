@@ -454,6 +454,9 @@ importers:
 
   packages/contracts:
     dependencies:
+      '@taskflow/filter':
+        specifier: workspace:*
+        version: link:../filter
       zod:
         specifier: ^3.24.1
         version: 3.25.76
@@ -568,9 +571,6 @@ importers:
 
   packages/filter:
     dependencies:
-      '@taskflow/contracts':
-        specifier: workspace:*
-        version: link:../contracts
       zod:
         specifier: ^3.24.1
         version: 3.25.76
@@ -729,6 +729,9 @@ importers:
       '@taskflow/filter':
         specifier: workspace:*
         version: link:../filter
+      '@taskflow/observability':
+        specifier: workspace:*
+        version: link:../observability
       '@taskflow/policy':
         specifier: workspace:*
         version: link:../policy

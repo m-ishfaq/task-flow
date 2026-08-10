@@ -4,12 +4,13 @@ import { useNavigate } from '@tanstack/react-router';
 import { api } from '../../lib/trpc.js';
 import { useToast } from '../../lib/toast-context.js';
 import { useStepUp } from '../auth/use-step-up.js';
-import { Button, Empty, Field, Input, SkeletonRows } from '../../components/primitives.js';
+import { Button, Empty, Field, SkeletonRows } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
 import { formatRelative } from '../../lib/format.js';
 import { callRecordingsQuery, callsQuery, invalidateAfterSpend, phoneNumbersQuery } from './api.js';
 import { CallButton } from './call-button.js';
+import { ContactPicker } from './contact-picker.js';
 
 /**
  * Click-to-call and the call log (ai/phase-7-voice.md §3.5, §3.10, Wave 2).
@@ -135,18 +136,11 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
               checkbox and the Call button a line below the To input. See
               `Field`'s own note. */}
           <div className="flex flex-wrap items-start gap-2">
-            <Field label="To" htmlFor="call-to" hint="E.164, e.g. +14155550100">
-              <Input
-                id="call-to"
-                value={to}
-                className="w-44"
-                placeholder="+14155550100"
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(event) => {
-                  setTo(event.target.value);
-                }}
-              />
+            {/* A person OR a raw number — see `contact-picker.tsx` on why the
+                free-text field stays primary rather than becoming the fallback
+                behind a select. */}
+            <Field label="To" htmlFor="call-to" hint="Pick a person, or type E.164">
+              <ContactPicker id="call-to" orgId={orgId} value={to} onChange={setTo} />
             </Field>
 
             <Field label="From" htmlFor="call-from">

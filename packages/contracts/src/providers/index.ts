@@ -11,17 +11,22 @@
  * | StorageProvider  | MinIO / Cloudflare R2 | S3                    | past 10 GB |
  * | MailProvider     | Mailpit / Resend free | Resend paid / SES     | past 3k/month |
  * | TelephonyProvider| Twilio test creds     | Twilio live / Telnyx  | live demo |
+ * | SearchProvider   | Postgres FTS          | Meilisearch           | ~200k rows / fuzzy |
  *
  * Deferred until their phase has a real consumer, because an interface designed
  * without one is a guess:
  *   QueueProvider      Phase 4  (pg-boss, then BullMQ + Redis)
- *   SearchProvider     Phase 8  (Postgres FTS, then Meilisearch)
  *   IdentityProvider   Phase 12 (own auth, then + WorkOS SAML/SCIM)
  *
  * `TelephonyProvider` moved out of that list in Phase 7 Wave 1 — the rule it
  * was waiting on is satisfied twice over: this phase's own outbound gate, and
  * Phase 9's `sms` notification channel, which has been reporting `no_provider`
  * since it shipped (ai/phase-9-notifications.md §3.7).
+ *
+ * `SearchProvider` moved out of that list in Phase 8 Wave 2 — the command
+ * palette is the consumer §5 was waiting on, and the interface ships declared
+ * over the TQL-compiled AST (§2.6 of ai/phase-8-search.md) so Postgres and the
+ * future Meilisearch implementation translate from the same tree.
  */
 
 export type { KeyProvider, WrappedDataKey, DataKey } from './key-provider.js';
@@ -52,3 +57,11 @@ export type {
   VerificationStart,
   VerificationCheck,
 } from './telephony-provider.js';
+
+export type {
+  SearchProvider,
+  SearchQuery,
+  SearchHit,
+  SearchHitMetadata,
+  SearchEntityType,
+} from './search-provider.js';

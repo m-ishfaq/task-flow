@@ -5,6 +5,7 @@ import {
   initializeDatabase,
   initializePlatformAdminDatabase,
   initializeRecordingIngestDatabase,
+  initializeSearchDatabase,
   initializeSweepDatabase,
 } from '@taskflow/db';
 import { createLogger } from '@taskflow/observability';
@@ -19,6 +20,7 @@ import { startDueReminderSweep } from './platform/due-reminders.js';
 import { WebPushProvider } from './platform/push-provider.js';
 import { buildTelephonyDeps } from './telephony/deps.js';
 import { createCarrierFetch, startRecordingIngest } from './telephony/ingest.scheduler.js';
+import { startSearchIndexRelay } from './search/indexer.relay.js';
 
 /**
  * Process entry point.
@@ -106,6 +108,18 @@ if (env.DATABASE_PLATFORM_ADMIN_URL !== undefined) {
   });
 }
 
+/* The search indexer's claim connection, on its own role and pool (Phase 8
+   Wave 2, §2.2; migration 0045). Same optionality reasoning as every
+   consumer pool above: `taskflow_search` reads the outbox across every
+   tenant in one pass and holds NOTHING on `search.documents`, so an instance
+   without this variable serves requests and lets another drain the backlog. */
+if (env.DATABASE_SEARCH_URL !== undefined) {
+  initializeSearchDatabase({
+    url: env.DATABASE_SEARCH_URL,
+    applicationName: 'taskflow-search',
+  });
+}
+
 const telephonyDeps = buildTelephonyDeps(env);
 
 const app = await buildServer({ env });
@@ -165,6 +179,12 @@ const backlinksRelay = startBacklinksRelay({
   logger: createLogger({ name: 'backlinks-relay', level: env.LOG_LEVEL }),
 });
 
+/* Folds outbox events into search.documents (Phase 8 Wave 2, §2.2). Same
+   "belongs in apps/worker" caveat as every relay above. */
+const searchIndexRelay = startSearchIndexRelay({
+  logger: createLogger({ name: 'search-index', level: env.LOG_LEVEL }),
+});
+
 /* Deletes chat messages past their channel's retention window (Wave 4, §3.7).
    Same "belongs in apps/worker" caveat as the relay above, plus one the relay
    does NOT have: this sweep has no `SKIP LOCKED` claim, so running it in two
@@ -215,6 +235,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
       // failing partway.
       relay.stop();
       backlinksRelay.stop();
+      searchIndexRelay.stop();
       digestSweep.stop();
       dueReminderSweep.stop();
       retention?.stop();

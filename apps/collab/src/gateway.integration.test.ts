@@ -106,7 +106,12 @@ async function scaffold(): Promise<Fixture> {
   await admin.query(
     `INSERT INTO identity.users (id, email, email_normalized, email_verified_at)
      VALUES ($1, $2, $2, now())`,
-    [userId, `collab-gw-${suffix}@example.test`],
+    /* A random suffix too: the fixture counter alone is not unique across
+       runs — an aborted run leaves its collab-gw-001 behind (cleanup is by
+       id and never ran), and the next run's 001 collides on the email
+       unique index. The standing "an aborted run seeds the next failure"
+       lesson, same shape as the search relay tests' slugs. */
+    [userId, `collab-gw-${suffix}-${crypto.randomUUID().slice(0, 8)}@example.test`],
   );
 
   await admin.setOrg(orgId);

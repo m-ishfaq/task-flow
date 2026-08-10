@@ -68,6 +68,72 @@ export function cardRecordingsQuery(orgId: string, cardId: CardId) {
   });
 }
 
+/**
+ * One dialable person: a member of this org who has a work phone on their
+ * membership profile (`people.membership_profiles.work_phone`, migration 0039).
+ */
+export interface PhoneContact {
+  readonly userId: string;
+  /** Display name when there is one, the address otherwise — `use-members.ts`'s rule. */
+  readonly label: string;
+  readonly email: string;
+  /** E.164, non-null by construction: members without one are not contacts. */
+  readonly phone: string;
+}
+
+/* The directory pages at 100 rows a request and the picker wants the whole org,
+   so this walks the cursor. Capped: a picker that fires forty requests to fill a
+   dropdown is worse than one that shows the first thousand people and says so.
+   The cap is on PAGES rather than on matches because the filter is client-side —
+   a member with no work phone still costs a row. */
+const CONTACT_PAGE_LIMIT = 100;
+const CONTACT_PAGE_CAP = 10;
+
+export function phoneContactsQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.phoneContacts(orgId),
+    queryFn: async (): Promise<readonly PhoneContact[]> => {
+      const contacts: PhoneContact[] = [];
+      let cursor: string | undefined;
+
+      for (let page = 0; page < CONTACT_PAGE_CAP; page += 1) {
+        const result = wire(
+          await api.people.directory.list.query({
+            ...(cursor === undefined ? {} : { cursor }),
+            limit: CONTACT_PAGE_LIMIT,
+          }),
+        );
+
+        for (const member of result.members) {
+          /* `?? ''` would put an empty string in the To field for a member whose
+             number was cleared — an enabled Call button that dials nothing. */
+          if (member.workPhone === null || member.workPhone === '') continue;
+          contacts.push({
+            userId: member.userId,
+            label: member.displayName ?? member.email,
+            email: member.email,
+            phone: member.workPhone,
+          });
+        }
+
+        if (result.nextCursor === null) break;
+        cursor = result.nextCursor;
+      }
+
+      return contacts;
+    },
+    /* Work phones change about as often as membership does, and this list is
+       read every time the composer opens — the same minute `use-members.ts`
+       accepts for the member list, for the same reason. */
+    staleTime: 60_000,
+    /* A member without `member:read` gets FORBIDDEN here, which is not an error
+       the caller needs to see: the picker hides and the field still takes a
+       typed number. `query.ts` already classifies FORBIDDEN as terminal, so this
+       costs one refused request per stale window, not a retry storm. */
+    retry: false,
+  });
+}
+
 export function messageThreadsQuery(orgId: string) {
   return queryOptions({
     queryKey: keys.messageThreads(orgId),

@@ -209,6 +209,11 @@ function AdminSection({
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: keys.member(orgId, member.userId) });
     void queryClient.invalidateQueries({ queryKey: keys.directoryAll(orgId) });
+    /* The dialable-people list is the directory folded down by work phone
+       (`telephony/api.ts`), and it is cached under its OWN key — so setting a
+       work phone here would leave the call composer's picker without this
+       person for its full stale window unless this says so. */
+    void queryClient.invalidateQueries({ queryKey: keys.phoneContacts(orgId) });
   };
 
   const setManager = useMutation({

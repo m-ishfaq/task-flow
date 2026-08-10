@@ -13,6 +13,7 @@
  *   Phase 11.5 people  — profiles, membership_profiles                        ✅
  *   Phase 7  comms     — subaccounts, spend policy + ledger, webhook nonces   ✅
  *   Phase 13 rtc       — in-app voice sessions, participants, TURN issuance    ✅
+ *   Phase 8  search    — the cross-product documents projection               ✅
  */
 
 export * from './identity.js';
@@ -27,3 +28,4 @@ export * from './docs.js';
 export * from './people.js';
 export * from './comms.js';
 export * from './rtc.js';
+export * from './search.js';

@@ -716,6 +716,80 @@ export function hasBacklinksDatabase(): boolean {
   return backlinksDb !== undefined;
 }
 
+/* -------------------------------------------------------------------------- *
+ * The search-claim connection (ai/phase-8-search.md §2.3, Phase 8 Wave 2,
+ * migration 0045)
+ * -------------------------------------------------------------------------- */
+
+let searchPool: pg.Pool | undefined;
+let searchDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the search indexer's claim pool, as `taskflow_search`.
+ *
+ * A NINTH role, on the identical reasoning every consumer role before it
+ * exists: the claim query reads `platform.outbox` and `outbox_dispatch`
+ * across EVERY tenant in one pass, and no value of `app.org_id` is correct
+ * for it. Migration 0045 gives it exactly the 0016 recipe — SELECT on the
+ * outbox plus the UPDATE-with-`WITH CHECK (false)` policy that `FOR UPDATE`
+ * locking selects require — and nothing at all on `search.documents`: the
+ * actual indexing happens afterward, per event, over the ordinary
+ * `withOrgScope` connection as `taskflow_app`.
+ */
+export function initializeSearchDatabase(config: DbConfig): void {
+  if (searchPool) {
+    throw new Error('Search database already initialized. This is a boot-time call.');
+  }
+
+  searchPool = new Pool({
+    connectionString: config.url,
+    // Small, matching every other consumer role: one relay drains one queue.
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-search',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  searchDb = drizzle(searchPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_search` — the role that may claim outbox events
+ * under consumer name 'search' across every org, and nothing else.
+ *
+ * NOT tenant-scoped, for the identical reason every consumer scope in this
+ * file is not: one relay tick claims across every tenant, so no single value
+ * of `app.org_id` is correct for it. What contains it is the role —
+ * `NOBYPASSRLS`, reaching across orgs only on the tables carrying an
+ * explicit `TO taskflow_search` policy.
+ *
+ * Throws rather than falling back to the application role — which could not
+ * claim across every org anyway, so the fallback would silently drain
+ * nothing while looking healthy. That refusal shape is the standing lesson
+ * of Phase 4's `FOR UPDATE`-without-an-UPDATE-policy bug (migration 0016's
+ * header) and every consumer scope after it.
+ */
+export async function withSearchScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!searchDb) {
+    throw new Error(
+      'Search database not initialized. Call initializeSearchDatabase() during boot — ' +
+        'the indexer must not fall back to the application role, which cannot claim ' +
+        'outbox events across every org and would silently index nothing.',
+    );
+  }
+
+  return searchDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the search pool has been initialized. */
+export function hasSearchDatabase(): boolean {
+  return searchDb !== undefined;
+}
+
 /** Closes every pool. Shutdown only. */
 export async function closeDatabase(): Promise<void> {
   await pool?.end();
@@ -753,6 +827,10 @@ export async function closeDatabase(): Promise<void> {
   await platformAdminPool?.end();
   platformAdminPool = undefined;
   platformAdminDb = undefined;
+
+  await searchPool?.end();
+  searchPool = undefined;
+  searchDb = undefined;
 }
 
 /** True when the pool is live and answering. Backs `/health/ready` (§14). */

@@ -289,6 +289,12 @@ export const keys = {
   /** Recordings attached to one Work card (§3.9). */
   cardRecordings: (orgId: string, cardId: string) =>
     ['org', orgId, 'card', cardId, 'recordings'] as const,
+  /**
+   * Dialable people — the directory folded down to members who have a work
+   * phone (`telephony/api.ts`). Its own key rather than `directory(orgId, …)`:
+   * that key is one page per cursor, and this one is every page merged.
+   */
+  phoneContacts: (orgId: string) => ['org', orgId, 'telephony', 'contacts'] as const,
   /** Every SMS thread. */
   messageThreads: (orgId: string) => ['org', orgId, 'telephony', 'threads'] as const,
   /** Messages in one thread. */

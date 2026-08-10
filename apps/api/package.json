@@ -20,7 +20,8 @@
     "./docs/page": "./src/docs/shared.ts",
     "./docs/page-version": "./src/docs/page-version.service.ts",
     "./docs/backlinks": "./src/docs/backlinks.ts",
-    "./identity/geo": "./src/identity/geo.ts"
+    "./identity/geo": "./src/identity/geo.ts",
+    "./search/indexer": "./src/search/indexer.relay.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",

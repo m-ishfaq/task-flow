@@ -180,7 +180,16 @@ const SEARCH_FIELDS: readonly FieldDefinition[] = [
     options: ['card', 'message', 'page', 'comment'],
   },
   { name: 'title', type: 'text', sql: 'search.documents.title' },
-  { name: 'text', type: 'text', sql: 'search.documents.body' },
+  /* `text` compiles to the TITLE||BODY concatenation, not `body` alone —
+     migration 0045's two GIN indexes are built over exactly this expression,
+     and a page with no body must still be findable by its title. The trade:
+     `text IS EMPTY` is meaningless here (coalesce is never NULL), which is
+     fine — nobody filters a search on empty free text. */
+  {
+    name: 'text',
+    type: 'text',
+    sql: "coalesce(search.documents.title, '') || ' ' || coalesce(search.documents.body, '')",
+  },
   { name: 'author', type: 'uuid', sql: 'search.documents.author_id', acceptsMe: true },
   { name: 'updated', type: 'date', sql: 'search.documents.updated_at' },
   { name: 'created', type: 'date', sql: 'search.documents.created_at' },

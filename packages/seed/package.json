@@ -8,6 +8,7 @@
   },
   "scripts": {
     "seed": "tsx src/cli.ts",
+    "search:backfill": "tsx src/search-backfill.cli.ts",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
@@ -19,6 +20,7 @@
     "@taskflow/events": "workspace:*",
     "@taskflow/feature-flags": "workspace:*",
     "@taskflow/filter": "workspace:*",
+    "@taskflow/observability": "workspace:*",
     "@taskflow/policy": "workspace:*",
     "@taskflow/security": "workspace:*",
     "@taskflow/storage": "workspace:*",

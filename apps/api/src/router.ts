@@ -13,6 +13,8 @@ import { createTelephonyRouter } from './telephony/router.js';
 import type { TelephonyDeps } from './telephony/deps.js';
 import { createRtcRouter } from './rtc/router.js';
 import type { RtcDeps } from './rtc/deps.js';
+import { createSearchRouter } from './search/router.js';
+import { PostgresSearchProvider } from './search/postgres-provider.js';
 
 /**
  * The root router.
@@ -173,6 +175,14 @@ export function createAppRouter(deps: AppRouterDeps) {
      * One namespace for both would make every caller disambiguate.
      */
     rtc: createRtcRouter(deps.rtc),
+
+    /**
+     * Search (Phase 8 Wave 2) — one query over cards, messages, pages and
+     * comments, projected into `search.documents` by the indexer relay.
+     * `search:query` is the membership floor; every hit is re-checked with
+     * per-resource `can()` before it is returned (§2.7).
+     */
+    search: createSearchRouter(new PostgresSearchProvider()),
 
     /**
      * Feature flags — the resolved snapshot for the client bootstrap

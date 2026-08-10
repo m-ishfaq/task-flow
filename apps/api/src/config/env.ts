@@ -84,6 +84,18 @@ export const EnvSchema = z
        tenant's page_versions in one claim. */
     DATABASE_BACKLINKS_URL: NonEmpty.optional(),
 
+    /* A NINTH role, for the search indexer's claim (Phase 8 Wave 2,
+       ai/phase-8-search.md §2.3; migration 0045's own header).
+       taskflow_search can SELECT from platform.outbox and read/write its own
+       outbox_dispatch rows (consumer = 'search') across every tenant, and
+       holds NOTHING on search.documents — the indexing happens per event,
+       over DATABASE_URL, under ordinary org scoping. Optional, matching
+       DATABASE_BACKLINKS_URL: an instance that only serves requests does
+       not need it; the one running the relay does, and `withSearchScope`
+       throws rather than silently falling back to the application role,
+       which cannot see across every tenant's outbox in one claim. */
+    DATABASE_SEARCH_URL: NonEmpty.optional(),
+
     /* A SIXTH role, for the due-reminder sweep (Phase 9 Wave 2,
        ai/phase-9-notifications.md §3.8; migration 0029's own header).
        taskflow_notification_sweep holds a COLUMN-LEVEL grant on work.cards

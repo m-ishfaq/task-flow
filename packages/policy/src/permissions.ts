@@ -118,6 +118,17 @@ export const PERMISSIONS = [
   /* Compliance */
   'audit:read',
   'audit:export',
+
+  /* Search (Phase 8) — a membership-level floor; every hit is re-checked with
+     per-resource can() before it is returned (§2 of ai/phase-8-search.md).
+
+     Deliberately NOT a resource type in the list above: `search` is not
+     something a relationship tuple can point at — there is no search row to
+     hold a relation on, which is why migration 0005's tuples_object_type CHECK
+     does not admit it. `resourceOf('search:query')` is never invoked because
+     search has no `enforce()` layer — the route floor is `couldGrant`, and
+     the real gate is per-hit `can()` on the four real resource types. */
+  'search:query',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];

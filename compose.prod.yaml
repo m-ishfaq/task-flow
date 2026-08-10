@@ -61,6 +61,7 @@ services:
       TASKFLOW_BACKLINKS_PASSWORD: ${TASKFLOW_BACKLINKS_PASSWORD:?TASKFLOW_BACKLINKS_PASSWORD must be set}
       TASKFLOW_PLATFORM_ADMIN_PASSWORD: ${TASKFLOW_PLATFORM_ADMIN_PASSWORD:?TASKFLOW_PLATFORM_ADMIN_PASSWORD must be set}
       TASKFLOW_RECORDING_INGEST_PASSWORD: ${TASKFLOW_RECORDING_INGEST_PASSWORD:?TASKFLOW_RECORDING_INGEST_PASSWORD must be set}
+      TASKFLOW_SEARCH_PASSWORD: ${TASKFLOW_SEARCH_PASSWORD:?TASKFLOW_SEARCH_PASSWORD must be set}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       # 01-03: the same role/grant model dev uses, unmodified. 04
@@ -213,6 +214,7 @@ services:
       DATABASE_NOTIFICATION_SWEEP_URL: postgresql://taskflow_notification_sweep:${TASKFLOW_NOTIFICATION_SWEEP_PASSWORD:?TASKFLOW_NOTIFICATION_SWEEP_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_PLATFORM_ADMIN_URL: postgresql://taskflow_platform_admin:${TASKFLOW_PLATFORM_ADMIN_PASSWORD:?TASKFLOW_PLATFORM_ADMIN_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_RECORDING_INGEST_URL: postgresql://taskflow_recording_ingest:${TASKFLOW_RECORDING_INGEST_PASSWORD:?TASKFLOW_RECORDING_INGEST_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_SEARCH_URL: postgresql://taskflow_search:${TASKFLOW_SEARCH_PASSWORD:?TASKFLOW_SEARCH_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
 
       STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:?STORAGE_ENDPOINT must be set — a publicly reachable S3-compatible endpoint; see minio's own port comment}
