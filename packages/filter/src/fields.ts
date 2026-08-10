@@ -157,9 +157,44 @@ const CARD_FIELD_MAP: ReadonlyMap<string, FieldDefinition> = new Map(
   CARD_FIELDS.map((field) => [field.name, field]),
 );
 
-/** Resources that can be filtered. One entry today; Phase 8 adds more. */
+/**
+ * Cross-product search fields (Phase 8, ai/phase-8-search.md §2.1).
+ *
+ * These map onto `search.documents`' columns so the EXISTING compiler needs no
+ * changes — the projection is shaped to make the field whitelist true, not the
+ * other way around. `text` is the free-text target: bare terms in TQL desugar
+ * to `text contains <term>` (tql/parse.ts), and the search route orders by
+ * trigram similarity over the same column. `type` is the one field no single
+ * resource has, which is why cross-product search needed its own set.
+ *
+ * `archived` mirrors the projection's normalized boolean (cards archive via
+ * `archived_at`, messages via `deleted_at`, pages via `archived_at`); the
+ * indexer flattens all three into one column so one filter means the same
+ * thing across every type.
+ */
+const SEARCH_FIELDS: readonly FieldDefinition[] = [
+  {
+    name: 'type',
+    type: 'enum',
+    sql: 'search.documents.entity_type',
+    options: ['card', 'message', 'page', 'comment'],
+  },
+  { name: 'title', type: 'text', sql: 'search.documents.title' },
+  { name: 'text', type: 'text', sql: 'search.documents.body' },
+  { name: 'author', type: 'uuid', sql: 'search.documents.author_id', acceptsMe: true },
+  { name: 'updated', type: 'date', sql: 'search.documents.updated_at' },
+  { name: 'created', type: 'date', sql: 'search.documents.created_at' },
+  { name: 'archived', type: 'boolean', sql: 'search.documents.archived' },
+];
+
+const SEARCH_FIELD_MAP: ReadonlyMap<string, FieldDefinition> = new Map(
+  SEARCH_FIELDS.map((field) => [field.name, field]),
+);
+
+/** Resources that can be filtered. `card` today; `search` since Phase 8. */
 export const FIELD_SETS = {
   card: CARD_FIELD_MAP,
+  search: SEARCH_FIELD_MAP,
 } as const;
 
 export type Resource = keyof typeof FIELD_SETS;

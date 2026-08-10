@@ -1,6 +1,7 @@
 import { ME, type FilterNode, type FilterValue, type Operator } from './ast.js';
 import { findField, type FieldDefinition, type Resource } from './fields.js';
 import { validate } from './validate.js';
+import { resolveSymbolicDate } from './tql/relative-date.js';
 
 /**
  * Compiling a filter tree to parameterized SQL (PLAN.md §10.2).
@@ -40,6 +41,13 @@ export interface CompileOptions {
   readonly viewerId?: string;
   /** Placeholder number to start from, when the caller already has parameters. */
   readonly startIndex?: number;
+  /**
+   * The clock symbolic dates resolve against (`-7d`, `@today` — see
+   * tql/relative-date.ts). Defaults to the real time; tests inject one so a
+   * saved query compiles deterministically. The `@me`/`viewerId` precedent,
+   * extended with a clock.
+   */
+  readonly now?: Date;
 }
 
 export class FilterCompileError extends Error {
@@ -78,7 +86,10 @@ export function compile(
     return `$${String(params.length + offset - 1)}`;
   };
 
-  const sql = emit(resource, node, placeholder, options);
+  // One clock for the whole query, so a filter with two relative dates does
+  // not resolve each against a slightly different instant.
+  const resolvedOptions: CompileOptions = { ...options, now: options.now ?? new Date() };
+  const sql = emit(resource, node, placeholder, resolvedOptions);
   return { sql, params };
 }
 
@@ -232,9 +243,24 @@ const COMPARISON_TOKENS: Readonly<Record<ComparisonOperator, string>> = {
   gte: '>=',
 };
 
-/** Substitutes `@me`, leaving every other value untouched. */
+/**
+ * Substitutes `@me` and symbolic dates, leaving every other value untouched.
+ *
+ * Both substitutions are the same act: a value the TREE deliberately keeps
+ * symbolic (so a shared saved query means the same thing to everyone who runs
+ * it) is resolved against something only the runner knows — the viewer for
+ * `@me`, the clock for `-7d`. Refusing beats defaulting in both cases: a
+ * filter that silently resolves to nothing is a filter that quietly returns
+ * the wrong rows.
+ */
 function resolve(value: FilterValue, field: FieldDefinition, options: CompileOptions): FilterValue {
-  if (value !== ME) return value;
+  if (value !== ME) {
+    if (field.type === 'date' && typeof value === 'string') {
+      const resolved = resolveSymbolicDate(value, options.now ?? new Date());
+      if (resolved !== null) return resolved;
+    }
+    return value;
+  }
 
   if (field.acceptsMe !== true) {
     throw new FilterCompileError(`"${ME}" has no meaning for field "${field.name}".`);

@@ -57,3 +57,21 @@ export {
 } from './compile.js';
 
 export { evaluate, type EvaluableRow, type EvaluateOptions } from './evaluate.js';
+
+export {
+  parse,
+  format,
+  tokenize,
+  isSymbolicDate,
+  resolveSymbolicDate,
+  TODAY,
+  NOW,
+  type ParseResult,
+  type OrderBy,
+  type TqlError,
+  type Token,
+  type TokenKind,
+  type Keyword,
+  type TokenizeResult,
+  type LexError,
+} from './tql/index.js';

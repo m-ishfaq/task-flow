@@ -9,9 +9,9 @@ review of every §2.2 human-review surface) is also done: one confirmed finding 
 blocklist in `packages/security/src/outbound-url.ts` missed 63/64 of the IPv6 link-local range
 (`fe80::/10` is first hextet `fe80`–`febf`, the check only matched `fe80`) — fixed with
 boundary tests; full write-up in `ai/security-review-priority-2.md`. Priority 3 is COMPLETE —
-§3.4 (device/session inventory + impossible-travel detection), §3.5 (org deletion) and §3.6
-(self-serve DSAR export) all shipped — see the Priority 3 status header. Priority 4 not
-started.
+§3.4 (device/session inventory + impossible-travel detection), §3.5 (org deletion) and§3.6 (self-serve DSAR export) all shipped — see the Priority 3 status header. Priority 4 has
+started: Search (Phase 8) Wave 1 — the TQL parser — is SHIPPED (spec: ai/phase-8-search.md),
+with the search spine (Wave 2) next, then Automation and Analytics.
 
 Not a numbered roadmap phase — this is cross-cutting work found by auditing `main` directly
 (grep, file counts, CI config — not just PLAN.md) for what genuinely blocks shipping, independent
