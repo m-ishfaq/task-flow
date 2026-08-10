@@ -80,6 +80,14 @@ export interface CallState {
    * having lasted longer than anyone was actually talking.
    */
   readonly connectedAt: number | null;
+  /**
+   * Set when `hangUp` finished an in-progress recording and the upload
+   * failed. Outlives the call it refers to, the same way `evicted` does —
+   * the banner that reports it renders after `status` is already back to
+   * `idle`, and by then there is no other surface left to say the file did
+   * not make it.
+   */
+  readonly recordingSaveError: string | null;
 }
 
 const IDLE: CallState = {
@@ -92,6 +100,7 @@ const IDLE: CallState = {
   evicted: false,
   capturing: false,
   connectedAt: null,
+  recordingSaveError: null,
 };
 
 export const useCallStore = create<CallState>(() => IDLE);
@@ -151,6 +160,7 @@ export async function joinCall(input: {
     evicted: false,
     capturing: false,
     connectedAt: null,
+    recordingSaveError: null,
   });
 
   try {
@@ -218,12 +228,35 @@ export async function joinCall(input: {
 export async function hangUp(options: { readonly silent?: boolean } = {}): Promise<void> {
   const { sessionId, evicted } = useCallStore.getState();
 
-  /* Capture is abandoned rather than uploaded. Hanging up is not "save this
-     recording" — the person who wants the file presses stop, which uploads it.
-     A hangup that silently uploaded would store audio nobody asked to keep at
-     the moment they were leaving. */
-  recorder?.cancel();
-  recorder = null;
+  /**
+   * A recording in progress is FINISHED here, not discarded.
+   *
+   * This used to abandon the capture on the reasoning that "the person who
+   * wants the file presses stop, which uploads it" — but hanging up IS how
+   * most people end a call, and losing a recording somebody explicitly
+   * started because they pressed "Hang up" instead of a second, separate
+   * "Stop recording" button first is a worse failure than uploading a
+   * capture nobody pressed an extra button to keep. They can still delete
+   * it afterward; a discarded recording cannot be gotten back.
+   *
+   * Done BEFORE the mesh and local tracks are torn down: the recorder's
+   * audio graph is built from those streams (`call-recorder.ts`), and
+   * stopping them first would capture silence for the last moment instead
+   * of whatever was actually said right up to hanging up.
+   */
+  let recordingSaveError: string | null = null;
+  if (recorder !== null) {
+    try {
+      await finishCapture(sessionId);
+    } catch {
+      /* Best-effort by necessity — the mic and the call still have to be
+         released below regardless of whether the upload succeeded. Recorded
+         so `ActiveCallBar` can tell the person afterward, the same way
+         `evicted` survives past the reset to explain an otherwise-silent
+         call ending. */
+      recordingSaveError = 'The recording could not be saved.';
+    }
+  }
 
   for (const unsubscribe of unsubscribers) unsubscribe();
   unsubscribers = [];
@@ -248,12 +281,18 @@ export async function hangUp(options: { readonly silent?: boolean } = {}): Promi
     }
   }
 
-  useCallStore.setState({ ...IDLE, evicted });
+  useCallStore.setState({ ...IDLE, evicted, recordingSaveError });
 }
 
 /** Acknowledges the eviction notice, so the banner can be dismissed. */
 export function clearEviction(): void {
   useCallStore.setState({ evicted: false });
+}
+
+/** Acknowledges the recording-save-failed notice, so the banner can be
+    dismissed. */
+export function clearRecordingSaveError(): void {
+  useCallStore.setState({ recordingSaveError: null });
 }
 
 /* -------------------------------------------------------------------------- *
@@ -306,9 +345,11 @@ export async function beginCapture(): Promise<void> {
  * immediately rather than after an upload that may take a while. The upload
  * failing afterwards leaves a `pending` recording row and a thrown error for
  * the caller to report — never a session that still claims to be recording.
+ *
+ * Shared with `hangUp`, which finishes an in-progress recording rather than
+ * discarding it — see that function's own header.
  */
-export async function endCapture(): Promise<void> {
-  const { sessionId } = useCallStore.getState();
+async function finishCapture(sessionId: string | null): Promise<void> {
   const active = recorder;
   recorder = null;
   useCallStore.setState({ capturing: false });
@@ -319,6 +360,12 @@ export async function endCapture(): Promise<void> {
   if (active === null) return;
 
   await active.finish();
+}
+
+/** Stops capture and uploads — the explicit "Stop recording" button. */
+export async function endCapture(): Promise<void> {
+  const { sessionId } = useCallStore.getState();
+  await finishCapture(sessionId);
 }
 
 /**

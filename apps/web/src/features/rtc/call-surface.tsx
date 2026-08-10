@@ -13,6 +13,7 @@ import { startRingback, startRingtone, type Ringing } from './ringtone.js';
 import {
   beginCapture,
   clearEviction,
+  clearRecordingSaveError,
   endCapture,
   hangUp,
   joinCall,
@@ -289,6 +290,7 @@ function ActiveCallBar() {
   const evicted = useCallStore((state) => state.evicted);
   const capturing = useCallStore((state) => state.capturing);
   const connectedAt = useCallStore((state) => state.connectedAt);
+  const recordingSaveError = useCallStore((state) => state.recordingSaveError);
 
   useTicker(connectedAt !== null);
   const durationSeconds = connectedAt === null ? 0 : elapsedSeconds(connectedAt);
@@ -315,26 +317,47 @@ function ActiveCallBar() {
     };
   }, [waiting]);
 
-  /* The eviction notice outlives the call it refers to — `hangUp` preserves the
-     flag precisely so this can still be shown after everything else is torn
-     down. "You were removed from this conversation" is a very different thing
-     from "the call dropped", and only the server knows which happened. */
-  if (evicted && status === 'idle') {
+  /* Both notices outlive the call they refer to — `hangUp` preserves the
+     flags precisely so either can still be shown after everything else is
+     torn down. "You were removed from this conversation" and "the recording
+     could not be saved" are both facts only the moment of hanging up knew,
+     and there is no other surface left to say them from once the bar itself
+     is gone. */
+  if (status === 'idle' && (evicted || recordingSaveError !== null)) {
     return (
-      <div
-        role="alert"
-        className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-line bg-surface px-4 py-2 shadow-lg"
-      >
-        <span className="text-sm text-ink">
-          The call ended — your access to that conversation changed.
-        </span>
-        <button
-          type="button"
-          onClick={clearEviction}
-          className="ml-3 text-xs text-ink-muted underline hover:text-ink"
-        >
-          Dismiss
-        </button>
+      <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 flex-col gap-2">
+        {evicted && (
+          <div
+            role="alert"
+            className="rounded-lg border border-line bg-surface px-4 py-2 shadow-lg"
+          >
+            <span className="text-sm text-ink">
+              The call ended — your access to that conversation changed.
+            </span>
+            <button
+              type="button"
+              onClick={clearEviction}
+              className="ml-3 text-xs text-ink-muted underline hover:text-ink"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+        {recordingSaveError !== null && (
+          <div
+            role="alert"
+            className="rounded-lg border border-danger/40 bg-danger/5 px-4 py-2 shadow-lg"
+          >
+            <span className="text-sm text-ink">{recordingSaveError}</span>
+            <button
+              type="button"
+              onClick={clearRecordingSaveError}
+              className="ml-3 text-xs text-ink-muted underline hover:text-ink"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
       </div>
     );
   }
