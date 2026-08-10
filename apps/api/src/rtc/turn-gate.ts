@@ -48,10 +48,7 @@ import { envelopeOf, type RtcActor } from './shared.js';
  */
 
 export type TurnRefusalReason =
-  | 'org_suspended'
-  | 'not_a_participant'
-  | 'session_over'
-  | 'issuance_cap';
+  'org_suspended' | 'not_a_participant' | 'session_over' | 'issuance_cap';
 
 export interface TurnAllowed {
   readonly allowed: true;

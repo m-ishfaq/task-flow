@@ -61,7 +61,8 @@ export function callStatusLabel(entry: CallHistoryEntry): string {
     case null:
     default:
       if (entry.startedAt !== null && entry.endedAt !== null) {
-        const seconds = (new Date(entry.endedAt).getTime() - new Date(entry.startedAt).getTime()) / 1000;
+        const seconds =
+          (new Date(entry.endedAt).getTime() - new Date(entry.startedAt).getTime()) / 1000;
         return formatCallDuration(seconds);
       }
       return 'No answer';
@@ -181,7 +182,9 @@ function CallRow({
                 key={participant.userId}
                 className="flex items-center justify-between gap-2 text-[11px]"
               >
-                <span className="truncate text-ink-muted">{personOf(participant.userId).label}</span>
+                <span className="truncate text-ink-muted">
+                  {personOf(participant.userId).label}
+                </span>
                 <span className="shrink-0 text-ink-faint">
                   {participant.state === 'joined' && participant.joinedAt !== null
                     ? `Joined ${formatRelative(participant.joinedAt)}`

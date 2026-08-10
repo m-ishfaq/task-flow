@@ -130,10 +130,7 @@ export async function rtcPeersOf(
  * one delta would be permanently unconnected to one specific person, and the
  * call would work for everyone except that pair.
  */
-export async function broadcastRtcPeers(
-  namespace: RtcNamespace,
-  sessionId: string,
-): Promise<void> {
+export async function broadcastRtcPeers(namespace: RtcNamespace, sessionId: string): Promise<void> {
   const userIds = await rtcPeersOf(namespace, sessionId);
   namespace.to(rtcRoom(sessionId)).emit('rtc:peers', { sessionId, userIds });
 }

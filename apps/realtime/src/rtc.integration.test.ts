@@ -172,10 +172,10 @@ beforeAll(async () => {
   /* A DM — the CLOSED channel type. `member` grants `channel:read` from the role
      matrix for PUBLIC channels only, so an org member with no tuple on this row
      is refused, and that refusal is the whole §1 claim. */
-  await admin.query(
-    `INSERT INTO chat.channels (id, org_id, type) VALUES ($1, $2, 'dm')`,
-    [CHANNEL, ORG],
-  );
+  await admin.query(`INSERT INTO chat.channels (id, org_id, type) VALUES ($1, $2, 'dm')`, [
+    CHANNEL,
+    ORG,
+  ]);
   for (const userId of [ALICE, BOB]) {
     await admin.query(
       `INSERT INTO authz.relationship_tuples

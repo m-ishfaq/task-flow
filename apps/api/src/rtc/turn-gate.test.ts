@@ -276,9 +276,9 @@ describe('issueIceServers', () => {
     const bob = await actorFor(orgId, BOB);
     await sessions.declineSession(bob, { sessionId });
 
-    expect(
-      await rejectionCode(() => issueIceServers(bob, depsWithTurn(), { sessionId })),
-    ).toBe('FORBIDDEN');
+    expect(await rejectionCode(() => issueIceServers(bob, depsWithTurn(), { sessionId }))).toBe(
+      'FORBIDDEN',
+    );
 
     expect(minter.calls).toHaveLength(0);
   });

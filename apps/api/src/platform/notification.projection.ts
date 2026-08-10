@@ -184,27 +184,29 @@ function planMissedCall(row: OutboxRow): readonly PlannedNotification[] {
   const channelId = typeof fields.channelId === 'string' ? fields.channelId : null;
   if (sessionId === null) return [];
 
-  return asIdList(fields.missedUserIds)
-    /* The caller cannot miss their own call. `add` in `planMessageSent` makes
+  return (
+    asIdList(fields.missedUserIds)
+      /* The caller cannot miss their own call. `add` in `planMessageSent` makes
        the same exclusion; here it also cannot happen (the initiator is
        `joined`, never `invited`) and is kept because "cannot happen" is a
        property of today's join path, not of this function. */
-    .filter((userId) => userId !== row.actorId)
-    .map((userId) => ({
-      userId,
-      kind: 'call.missed' as const,
-      subjectType: 'call' as const,
-      subjectId: sessionId,
-      title: 'Missed call',
-      /* No excerpt. There is nothing to quote from a call that never
+      .filter((userId) => userId !== row.actorId)
+      .map((userId) => ({
+        userId,
+        kind: 'call.missed' as const,
+        subjectType: 'call' as const,
+        subjectId: sessionId,
+        title: 'Missed call',
+        /* No excerpt. There is nothing to quote from a call that never
          connected, and an excerpt field is rendered in an email — inventing
          "you missed a call from Alice" there would put a name into a message
          whose recipient may not be entitled to know who else is in a private
          conversation. The client resolves the caller from the channel. */
-      excerpt: null,
-      channelId,
-      boardId: null,
-    }));
+        excerpt: null,
+        channelId,
+        boardId: null,
+      }))
+  );
 }
 
 function planMessageSent(row: OutboxRow): readonly PlannedNotification[] {

@@ -164,12 +164,7 @@ export function leaveCallRoom(sessionId: string): void {
  * times out and is retried by the caller), and an ack on this event would tell a
  * sender whether the named peer is present — an oracle for who is in which call.
  */
-export function sendSignal(
-  sessionId: string,
-  to: string,
-  kind: SignalKind,
-  data: string,
-): void {
+export function sendSignal(sessionId: string, to: string, kind: SignalKind, data: string): void {
   socket?.emit('rtc:signal', { sessionId, to, kind, data });
 }
 

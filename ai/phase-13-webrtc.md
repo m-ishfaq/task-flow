@@ -67,12 +67,12 @@ durable record of who called whom and for how long.
 Out of scope, deliberately: an SFU (a separate deployable, and a half-SFU is worse than neither),
 recording, and PSTN bridging (joining a Twilio call to an in-app one).
 
-| Wave | Contents                                                                                                                |
-| ---- | ----------------------------------------------------------------------------------------------------------------------- |
-| 1    | Signalling spine, TURN + credential minting, 1:1 DM audio, call records, the authorization reuse                         |
-| 2    | Ringing on any screen, ringtones, ringback, the missed-call notification, join-in-progress, **recording with consent**   |
-| 3    | Video, screen share, device selection                                                                                   |
-| —    | Deferred: SFU, PSTN bridging                                                                                            |
+| Wave | Contents                                                                                                               |
+| ---- | ---------------------------------------------------------------------------------------------------------------------- |
+| 1    | Signalling spine, TURN + credential minting, 1:1 DM audio, call records, the authorization reuse                       |
+| 2    | Ringing on any screen, ringtones, ringback, the missed-call notification, join-in-progress, **recording with consent** |
+| 3    | Video, screen share, device selection                                                                                  |
+| —    | Deferred: SFU, PSTN bridging                                                                                           |
 
 Recording moved from "deferred" into Wave 2 on the author's request, with the §3.9 condition
 attached rather than waived — see that section.
@@ -303,16 +303,16 @@ Registered in `apps/api/src/rtc/events.ts`. No event here carries an SDP body, a
 a TURN credential — an outbox payload is persisted and projected into the audit log, where
 `REDACTION_PATHS` never runs. The same rule Phase 7's events file states, for the same reason.
 
-| Event                       | Payload                                    |
-| --------------------------- | ------------------------------------------ |
-| `rtc_session.started`       | sessionId, channelId, kind, invitedCount   |
-| `rtc_session.answered`      | sessionId                                  |
-| `rtc_session.joined`        | sessionId, participantCount                |
-| `rtc_session.left`          | sessionId                                  |
-| `rtc_session.declined`      | sessionId                                  |
-| `rtc_session.ended`         | sessionId, reason, durationSeconds         |
-| `turn_credential.issued`    | sessionId, ttlSeconds                      |
-| `turn_credential.refused`   | reason, issuedInWindow, capPerWindow       |
+| Event                     | Payload                                  |
+| ------------------------- | ---------------------------------------- |
+| `rtc_session.started`     | sessionId, channelId, kind, invitedCount |
+| `rtc_session.answered`    | sessionId                                |
+| `rtc_session.joined`      | sessionId, participantCount              |
+| `rtc_session.left`        | sessionId                                |
+| `rtc_session.declined`    | sessionId                                |
+| `rtc_session.ended`       | sessionId, reason, durationSeconds       |
+| `turn_credential.issued`  | sessionId, ttlSeconds                    |
+| `turn_credential.refused` | reason, issuedInWindow, capPerWindow     |
 
 `turn_credential.issued` is a READ that gets an event, the same exception `recording.downloaded`
 takes: issuing a relay capability is the moment a bandwidth bill becomes possible, and §3.4 is the

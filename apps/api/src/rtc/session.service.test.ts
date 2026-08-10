@@ -1,5 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { isAppError, unsafeAsId, type ChannelId, type OrgId, type UserId } from '@taskflow/contracts';
+import {
+  isAppError,
+  unsafeAsId,
+  type ChannelId,
+  type OrgId,
+  type UserId,
+} from '@taskflow/contracts';
 import { closeDatabase, eq, initializeDatabase, schema, withOrgScope } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import type { Subject } from '@taskflow/policy';
@@ -403,9 +409,9 @@ describe('session lifecycle', () => {
        two sessions that ring past each other — which presents to both of them
        as "the network dropped". */
     const bob = await actorFor(orgId, BOB);
-    expect(await rejectionCode(() => sessions.startSession(bob, { channelId, kind: 'audio' }))).toBe(
-      'CONFLICT',
-    );
+    expect(
+      await rejectionCode(() => sessions.startSession(bob, { channelId, kind: 'audio' })),
+    ).toBe('CONFLICT');
   });
 
   it('ends the call when the last person leaves, and frees the conversation', async () => {

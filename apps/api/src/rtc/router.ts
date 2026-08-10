@@ -146,7 +146,10 @@ export function createRtcRouter(deps: RtcDeps) {
       list: route({ permission: 'channel:read' })
         .input(
           z
-            .object({ channelId: ChannelIdSchema, limit: z.number().int().positive().max(50).default(50) })
+            .object({
+              channelId: ChannelIdSchema,
+              limit: z.number().int().positive().max(50).default(50),
+            })
             .strict(),
         )
         .query(async ({ ctx, input }) =>
@@ -297,7 +300,10 @@ export function createRtcRouter(deps: RtcDeps) {
       list: route({ permission: 'channel:read' })
         .input(
           z
-            .object({ channelId: ChannelIdSchema, limit: z.number().int().positive().max(50).default(50) })
+            .object({
+              channelId: ChannelIdSchema,
+              limit: z.number().int().positive().max(50).default(50),
+            })
             .strict(),
         )
         .query(async ({ ctx, input }) =>

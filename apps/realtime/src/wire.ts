@@ -566,8 +566,11 @@ export interface RtcLeaveRequest {
   readonly sessionId: string;
 }
 
-export const RtcLeaveRequestSchema: z.ZodType<RtcLeaveRequest, z.ZodTypeDef, { sessionId: string }> =
-  z.object({ sessionId: z.string().uuid() }).strict();
+export const RtcLeaveRequestSchema: z.ZodType<
+  RtcLeaveRequest,
+  z.ZodTypeDef,
+  { sessionId: string }
+> = z.object({ sessionId: z.string().uuid() }).strict();
 
 /**
  * The upper bound on one signalling payload.

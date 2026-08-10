@@ -151,7 +151,8 @@ function IncomingCallBanner() {
      instant, not "when this tab first noticed" — a tab that opens mid-ring
      (a reconnect, a second monitor) shows the call's real age, not zero. */
   useTicker(call !== undefined);
-  const ringingSeconds = call === undefined ? 0 : elapsedSeconds(new Date(call.createdAt).getTime());
+  const ringingSeconds =
+    call === undefined ? 0 : elapsedSeconds(new Date(call.createdAt).getTime());
 
   /* ## The tone follows the call, not the render
    *

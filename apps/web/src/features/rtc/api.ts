@@ -17,8 +17,7 @@ import { wire, type Wire } from '../../lib/wire.js';
 /** Keys are `['org', orgId, 'rtc', ...]` — the shape every other feature uses. */
 export const rtcKeys = {
   incoming: (orgId: string) => ['org', orgId, 'rtc', 'incoming'] as const,
-  active: (orgId: string, channelId: string) =>
-    ['org', orgId, 'rtc', 'active', channelId] as const,
+  active: (orgId: string, channelId: string) => ['org', orgId, 'rtc', 'active', channelId] as const,
   recording: (orgId: string, sessionId: string) =>
     ['org', orgId, 'rtc', 'recording', sessionId] as const,
   history: (orgId: string, channelId: string) =>

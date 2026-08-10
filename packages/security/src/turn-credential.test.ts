@@ -59,9 +59,9 @@ describe('mintTurnCredential', () => {
     /* An empty HMAC key is a valid HMAC key. Every forged credential would
        verify against a coturn misconfigured the same way, and nothing would
        look wrong from either side. */
-    expect(() =>
-      mintTurnCredential({ secret: '', identity: 'sess-abc', ttlSeconds: 600 }),
-    ).toThrow(/empty/i);
+    expect(() => mintTurnCredential({ secret: '', identity: 'sess-abc', ttlSeconds: 600 })).toThrow(
+      /empty/i,
+    );
   });
 
   it('refuses an identity containing a colon', () => {

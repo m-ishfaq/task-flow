@@ -764,8 +764,18 @@ function NewDirectMessagePopover({
 /** One row in the merged timeline — a group of messages or a call event,
     ordered by `at` (an ISO instant) rather than by which query it came from. */
 type TimelineItem =
-  | { readonly kind: 'messages'; readonly key: string; readonly at: string; readonly group: MessageGroup }
-  | { readonly kind: 'call'; readonly key: string; readonly at: string; readonly entry: CallHistoryEntry };
+  | {
+      readonly kind: 'messages';
+      readonly key: string;
+      readonly at: string;
+      readonly group: MessageGroup;
+    }
+  | {
+      readonly kind: 'call';
+      readonly key: string;
+      readonly at: string;
+      readonly entry: CallHistoryEntry;
+    };
 
 function ChannelPanel({
   orgId,
@@ -1058,17 +1068,18 @@ function ChannelPanel({
    * so lexicographic order already agrees with chronological order.
    */
   const timeline: readonly TimelineItem[] = [
-    ...groups.map(
-      (group): TimelineItem => ({
-        kind: 'messages',
-        key: group.messages[0]?.messageId ?? '',
-        at: group.messages[0]?.createdAt ?? '',
-        group,
-      }),
-    ),
-    ...(calls.data ?? []).map(
-      (entry): TimelineItem => ({ kind: 'call', key: entry.sessionId, at: entry.createdAt, entry }),
-    ),
+    ...groups.map((group): TimelineItem => ({
+      kind: 'messages',
+      key: group.messages[0]?.messageId ?? '',
+      at: group.messages[0]?.createdAt ?? '',
+      group,
+    })),
+    ...(calls.data ?? []).map((entry): TimelineItem => ({
+      kind: 'call',
+      key: entry.sessionId,
+      at: entry.createdAt,
+      entry,
+    })),
   ].sort((a, b) => a.at.localeCompare(b.at));
 
   /**
@@ -1291,7 +1302,12 @@ function ChannelPanel({
             <div className="space-y-4">
               {timeline.map((item) =>
                 item.kind === 'call' ? (
-                  <CallTimelineCard key={item.key} entry={item.entry} viewerId={viewerId} personOf={personOf} />
+                  <CallTimelineCard
+                    key={item.key}
+                    entry={item.entry}
+                    viewerId={viewerId}
+                    personOf={personOf}
+                  />
                 ) : (
                   <Fragment key={item.key}>
                     {/* The "new messages" line, placed by the read CURSOR rather
@@ -1300,7 +1316,9 @@ function ChannelPanel({
                         is deleted or the page is partially loaded — and it does so
                         silently, which is the worst property a divider can have. */}
                     {firstUnreadId !== null &&
-                      item.group.messages.some((message) => message.messageId === firstUnreadId) && (
+                      item.group.messages.some(
+                        (message) => message.messageId === firstUnreadId,
+                      ) && (
                         <div className="flex items-center gap-2" role="separator">
                           <span className="h-px flex-1 bg-danger/40" />
                           <span className="text-[11px] font-medium text-danger">New messages</span>

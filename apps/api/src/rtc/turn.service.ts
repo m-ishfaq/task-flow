@@ -58,8 +58,7 @@ export async function issueIceServers(
      daily allowance. */
   await enforceCanJoinSession(actor, input.sessionId);
 
-  const stun: readonly IceServer[] =
-    deps.stunUrls.length > 0 ? [{ urls: deps.stunUrls }] : [];
+  const stun: readonly IceServer[] = deps.stunUrls.length > 0 ? [{ urls: deps.stunUrls }] : [];
 
   /* No relay configured is a VALID deployment (§5): STUN alone connects on most
      networks. Answering with what exists, rather than erroring, is the honest

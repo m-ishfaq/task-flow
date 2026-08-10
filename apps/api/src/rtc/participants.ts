@@ -125,11 +125,7 @@ export async function answerRecordingConsent(
      Two tabs pressing Agree at once produce one increment. */
   const claimed = await tx
     .update(schema.rtcParticipants)
-    .set(
-      input.agreed
-        ? { recordingConsentAt: input.now }
-        : { recordingDeclinedAt: input.now },
-    )
+    .set(input.agreed ? { recordingConsentAt: input.now } : { recordingDeclinedAt: input.now })
     .where(
       and(
         eq(schema.rtcParticipants.sessionId, input.sessionId),
@@ -213,9 +209,7 @@ export async function endSessionRow(
      and "was in the call" is gone. This is what feeds the missed-call
      notification, so getting the ordering wrong would tell everyone who was on
      the call that they missed it. */
-  const missedUserIds = audience
-    .filter((row) => row.state === 'invited')
-    .map((row) => row.userId);
+  const missedUserIds = audience.filter((row) => row.state === 'invited').map((row) => row.userId);
 
   await tx
     .update(schema.rtcSessions)

@@ -200,10 +200,12 @@ export async function startSession(
     }
 
     const now = new Date();
-    await tx.insert(schema.rtcParticipants).values([
-      { sessionId, orgId, userId, state: 'joined', joinedAt: now },
-      ...invited.map((invitee) => ({ sessionId, orgId, userId: invitee, state: 'invited' })),
-    ]);
+    await tx
+      .insert(schema.rtcParticipants)
+      .values([
+        { sessionId, orgId, userId, state: 'joined', joinedAt: now },
+        ...invited.map((invitee) => ({ sessionId, orgId, userId: invitee, state: 'invited' })),
+      ]);
 
     await outboxWriter.append(tx, [
       createEvent(
@@ -405,7 +407,18 @@ export async function leaveSession(
        start — a dead call that blocks every future one. */
     if ((remaining[0]?.joinedCount ?? 0) <= 0) {
       const ended = await endSessionRow(tx, session, 'empty', now);
-      events.push(createEvent(rtcSessionEnded, { ...ended, channelId: session.channelId, notifyUserIds: [...ended.notifyUserIds], missedUserIds: [...ended.missedUserIds] }, envelopeOf(actor)));
+      events.push(
+        createEvent(
+          rtcSessionEnded,
+          {
+            ...ended,
+            channelId: session.channelId,
+            notifyUserIds: [...ended.notifyUserIds],
+            missedUserIds: [...ended.missedUserIds],
+          },
+          envelopeOf(actor),
+        ),
+      );
     }
 
     await outboxWriter.append(tx, events);
@@ -467,7 +480,18 @@ export async function declineSession(
        up on their own call by refusing it. */
     if (stillInvited.length === 0 && session.status === 'ringing') {
       const ended = await endSessionRow(tx, session, 'declined', now);
-      events.push(createEvent(rtcSessionEnded, { ...ended, channelId: session.channelId, notifyUserIds: [...ended.notifyUserIds], missedUserIds: [...ended.missedUserIds] }, envelopeOf(actor)));
+      events.push(
+        createEvent(
+          rtcSessionEnded,
+          {
+            ...ended,
+            channelId: session.channelId,
+            notifyUserIds: [...ended.notifyUserIds],
+            missedUserIds: [...ended.missedUserIds],
+          },
+          envelopeOf(actor),
+        ),
+      );
     }
 
     await outboxWriter.append(tx, events);
@@ -506,7 +530,18 @@ export async function cancelSession(
       now,
     );
 
-    await outboxWriter.append(tx, [createEvent(rtcSessionEnded, { ...ended, channelId: session.channelId, notifyUserIds: [...ended.notifyUserIds], missedUserIds: [...ended.missedUserIds] }, envelopeOf(actor))]);
+    await outboxWriter.append(tx, [
+      createEvent(
+        rtcSessionEnded,
+        {
+          ...ended,
+          channelId: session.channelId,
+          notifyUserIds: [...ended.notifyUserIds],
+          missedUserIds: [...ended.missedUserIds],
+        },
+        envelopeOf(actor),
+      ),
+    ]);
   });
 }
 

@@ -51,8 +51,7 @@ export function CallButton({
          the toast below rather than papered over, because the right recovery
          is to press the button again and join theirs. */
       const sessionId =
-        live?.sessionId ??
-        (await api.rtc.start.mutate({ channelId, kind: 'audio' })).sessionId;
+        live?.sessionId ?? (await api.rtc.start.mutate({ channelId, kind: 'audio' })).sessionId;
 
       await joinCall({ orgId, sessionId, channelId, selfId });
     },

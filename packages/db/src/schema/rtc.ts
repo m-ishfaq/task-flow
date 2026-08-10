@@ -76,13 +76,7 @@ export type RtcRecordingState = (typeof RTC_RECORDING_STATES)[number];
 export const RINGTONES = ['classic', 'chime', 'pulse', 'marimba', 'digital'] as const;
 export type Ringtone = (typeof RINGTONES)[number];
 
-export const RTC_PARTICIPANT_STATES = [
-  'invited',
-  'joined',
-  'left',
-  'declined',
-  'missed',
-] as const;
+export const RTC_PARTICIPANT_STATES = ['invited', 'joined', 'left', 'declined', 'missed'] as const;
 export type RtcParticipantState = (typeof RTC_PARTICIPANT_STATES)[number];
 
 export const rtcSessions = rtc.table(
