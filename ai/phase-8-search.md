@@ -1,8 +1,8 @@
 # Phase 8 — Search & TQL
 
 Status: **APPROVED 2026-08-10 — Wave 1 (TQL parser) SHIPPED 2026-08-10; Wave 2 (search
-spine) SHIPPED 2026-08-10; Wave 3 (UI) next.** Waves 2–3 were approved in scope at the
-same review, each re-reviewed when its turn comes. Written 2026-08-10 against
+spine) SHIPPED 2026-08-10; Wave 3 (UI) SHIPPED 2026-08-10.** Waves 2–3 were approved in
+scope at the same review, each re-reviewed when its turn comes. Written 2026-08-10 against
 `pre-launch-hardening` HEAD, per `ai/pre-launch-hardening.md` Step 4 (each remaining
 priority is its own multi-week phase and wants its own spec written and approved before
 implementation).
