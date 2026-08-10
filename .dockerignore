@@ -1,0 +1,41 @@
+# Applies to every image built from this repo root (apps/*/Dockerfile all use
+# the repo root as their build context — a pnpm workspace install needs every
+# package.json, which means the context can't be scoped to one app directory).
+#
+# Keep this in sync with .gitignore's intent: anything that shouldn't be in
+# git shouldn't be in a build context either, plus the local-only state below
+# that IS gitignored but would otherwise still get copied into the image and
+# silently shadow what the container generates fresh.
+
+node_modules
+**/node_modules
+**/dist
+**/.turbo
+**/*.tsbuildinfo
+
+# Never bake real secrets into an image layer. Production config arrives as
+# injected environment variables (compose.prod.yaml / the orchestrator), never
+# a file baked into the build.
+.env
+.env.*
+!.env.example
+
+.git
+.github
+
+# Local dev state that has no meaning inside a container.
+**/coverage
+**/.vitest-cache
+*.log
+
+# Editor/OS noise.
+.vscode
+.idea
+.DS_Store
+
+# Documentation-only — never affects a running service, and excluding it means
+# an ai/*.md edit doesn't bust every image's layer cache.
+ai
+PLAN.md
+CLAUDE.md
+README.md

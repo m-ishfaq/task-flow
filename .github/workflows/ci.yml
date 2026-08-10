@@ -342,8 +342,9 @@ jobs:
       # Reconsider if we ever add a non-npm ecosystem.
 
   # ---------------------------------------------------------------------------
-  # Filesystem/config scan. Container and IaC scanning join this job once there
-  # are Dockerfiles and Terraform to scan (Phase 0B).
+  # Filesystem/config scan, now including Dockerfile misconfiguration
+  # (ai/pre-launch-hardening.md Priority 1 added the four apps/*/Dockerfile).
+  # Terraform scanning joins this job if IaC is ever added.
   # ---------------------------------------------------------------------------
   trivy:
     name: Trivy
@@ -373,9 +374,10 @@ jobs:
       # than duplicates `pnpm audit`: Trivy covers what ships, pnpm audit covers
       # the toolchain.
       #
-      # `misconfig` is intentionally omitted until there are Dockerfiles and
-      # Terraform to scan (Phase 0B) — today it finds zero config files and only
-      # emits rego parse noise. Add it back with the IaC.
+      # `misconfig` now has something to scan: the four apps/*/Dockerfile
+      # this repo added for deployment (ai/pre-launch-hardening.md Priority
+      # 1). It was omitted until then — with zero config files present it
+      # found nothing and only emitted rego parse noise.
       - name: Trivy filesystem scan
         run: |
           mkdir -p "${{ github.workspace }}/.trivycache"
@@ -384,7 +386,7 @@ jobs:
             -v "${{ github.workspace }}/.trivycache:/root/.cache/trivy" \
             aquasec/trivy:0.58.1 \
             fs /repo \
-              --scanners vuln,secret \
+              --scanners vuln,secret,misconfig \
               --severity HIGH,CRITICAL \
               --exit-code 1 \
               --ignore-unfixed \

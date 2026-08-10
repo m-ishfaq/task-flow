@@ -1,7 +1,7 @@
 import { createServer, type Server as HttpServer } from 'node:http';
 import { Server } from 'socket.io';
 import { createAdapter } from '@socket.io/postgres-adapter';
-import { createRealtimeAdapterPool, type OutboxRow } from '@taskflow/db';
+import { createRealtimeAdapterPool, isDatabaseHealthy, type OutboxRow } from '@taskflow/db';
 import type { Logger } from '@taskflow/observability';
 import { clientAddress, HandshakeError, verifyHandshake } from './auth.js';
 import { allowedOrigins, type Env } from './config/env.js';
@@ -92,10 +92,37 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
   const origins = allowedOrigins(env);
   const jwtSecret = Buffer.from(env.JWT_SECRET, 'base64');
 
-  const http = createServer((_request, response) => {
+  const http = createServer((request, response) => {
     /* Health only. This server exists to carry WebSockets; anything else
        reaching it is a misrouted request, and answering 404 rather than
-       something friendlier keeps it from looking like an API. */
+       something friendlier keeps it from looking like an API.
+       Same two-tier shape apps/api's own health routes use: `/live` never
+       touches the database (did the process start), `/ready` does (can it
+       actually serve a connection) — a container orchestrator wants both,
+       since a process that is up but cannot reach Postgres should not receive
+       new traffic even though restarting it would not help. */
+    if (request.method === 'GET' && request.url === '/health/live') {
+      response
+        .writeHead(200, { 'content-type': 'application/json' })
+        .end(JSON.stringify({ status: 'ok' }));
+      return;
+    }
+
+    if (request.method === 'GET' && request.url === '/health/ready') {
+      isDatabaseHealthy()
+        .then((healthy) => {
+          response
+            .writeHead(healthy ? 200 : 503, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ status: healthy ? 'ready' : 'not-ready' }));
+        })
+        .catch(() => {
+          response
+            .writeHead(503, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ status: 'not-ready' }));
+        });
+      return;
+    }
+
     response.writeHead(404).end();
   });
 

@@ -1,0 +1,129 @@
+## CD — build/push images and (optionally) deploy (ai/pre-launch-hardening.md
+## Priority 1; ai/deployment-runbook.md).
+##
+## Runs after CI (`workflow_run`, gated on `conclusion == 'success'`) rather
+## than on its own `push` trigger — this repo never deploys something CI did
+## not pass, and a separate `push`-triggered workflow racing CI would make
+## that guarantee accidental instead of structural.
+##
+## Two jobs. `build-push` always runs (subject to the same CI_ENABLED kill
+## switch every workflow in this repo respects) and publishes four images to
+## GHCR, tagged with the commit SHA and `latest`. `deploy` runs after it and
+## is a NO-OP — not a failure — when DEPLOY_HOST/DEPLOY_SSH_KEY/DEPLOY_USER
+## repo secrets are unset, which is the expected state until a target host
+## exists (ai/pre-launch-hardening.md Priority 1 is explicit that pointing
+## the mechanism at a real host is a config exercise, not part of this wave).
+
+name: CD
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # No cancel-in-progress: a deploy that gets interrupted mid-`compose up`
+  # can leave the target host with a partially-recreated stack, which is a
+  # worse state than a slightly-stale queued run finishing first.
+  group: cd-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  NODE_VERSION: '22.23.1'
+  IMAGE_OWNER: ${{ github.repository_owner }}
+
+jobs:
+  build-push:
+    name: Build & push (${{ matrix.service }})
+    if: >-
+      vars.CI_ENABLED != 'false' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        service: [api, realtime, collab, web]
+    outputs:
+      sha: ${{ steps.resolve-ref.outputs.sha }}
+    steps:
+      - name: Resolve the commit CI actually verified
+        id: resolve-ref
+        run: echo "sha=${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.resolve-ref.outputs.sha }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/${{ matrix.service }}/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ env.IMAGE_OWNER }}/task-flow-${{ matrix.service }}:${{ steps.resolve-ref.outputs.sha }}
+            ghcr.io/${{ env.IMAGE_OWNER }}/task-flow-${{ matrix.service }}:latest
+          # Scoped per service — a shared cache key across four independent
+          # Dockerfiles would mean api's cache entries evicting web's.
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  deploy:
+    name: Deploy
+    needs: build-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check whether a deploy target is configured
+        id: gate
+        env:
+          HAS_HOST: ${{ secrets.DEPLOY_HOST != '' }}
+          HAS_KEY: ${{ secrets.DEPLOY_SSH_KEY != '' }}
+          HAS_USER: ${{ secrets.DEPLOY_USER != '' }}
+        run: |
+          if [ "$HAS_HOST" = 'true' ] && [ "$HAS_KEY" = 'true' ] && [ "$HAS_USER" = 'true' ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No deploy target configured (DEPLOY_HOST / DEPLOY_SSH_KEY / DEPLOY_USER repo secrets are unset) — images were pushed to GHCR and nothing more happened. See ai/deployment-runbook.md to configure a target host."
+          fi
+
+      - uses: webfactory/ssh-agent@v0.9.0
+        if: steps.gate.outputs.configured == 'true'
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      # Migrate BEFORE recreating the app containers — a migration is a
+      # deploy STEP here, never a side effect app startup triggers, per
+      # compose.prod.yaml's own header and the runbook. `--profile tools`
+      # is required: `migrate` sits behind that profile deliberately, so a
+      # plain `up -d` elsewhere in this job (there isn't one — see below)
+      # could never run it by accident.
+      - name: Migrate, then deploy over SSH
+        if: steps.gate.outputs.configured == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/taskflow' }}
+          IMAGE_TAG: ${{ needs.build-push.outputs.sha }}
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && \
+             git fetch origin main && \
+             git checkout '$IMAGE_TAG' -- compose.prod.yaml docker/postgres && \
+             IMAGE_TAG='$IMAGE_TAG' docker compose --env-file .env.prod -f compose.prod.yaml --profile tools run --rm migrate && \
+             IMAGE_TAG='$IMAGE_TAG' docker compose --env-file .env.prod -f compose.prod.yaml pull && \
+             IMAGE_TAG='$IMAGE_TAG' docker compose --env-file .env.prod -f compose.prod.yaml up -d --remove-orphans"
