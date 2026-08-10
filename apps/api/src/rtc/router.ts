@@ -137,6 +137,27 @@ export function createRtcRouter(deps: RtcDeps) {
       ),
 
     /**
+     * Every call this conversation has had, newest first (§6's listing gap).
+     * Feeds the details panel's Calls tab and the message timeline's call
+     * cards — see `session.service.ts`'s own header on why this is
+     * `channel:read` rather than a narrower "was I on this call" check.
+     */
+    history: router({
+      list: route({ permission: 'channel:read' })
+        .input(
+          z
+            .object({ channelId: ChannelIdSchema, limit: z.number().int().positive().max(50).default(50) })
+            .strict(),
+        )
+        .query(async ({ ctx, input }) =>
+          sessions.listSessionsForChannel(actorOf(ctx), {
+            channelId: input.channelId,
+            limit: input.limit,
+          }),
+        ),
+    }),
+
+    /**
      * "Is anyone ringing me?"
      *
      * Keyed on the caller's own participant rows, so it discloses nothing about
@@ -264,6 +285,38 @@ export function createRtcRouter(deps: RtcDeps) {
         .input(z.object({ recordingId: z.string().uuid() }).strict())
         .mutation(async ({ ctx, input }) =>
           recordings.presignRecordingUpload(actorOf(ctx), deps, {
+            recordingId: input.recordingId,
+          }),
+        ),
+
+      /**
+       * Every recording this conversation has, for the details panel's Calls
+       * tab (§6's listing gap — the rows and objects were always correct,
+       * only a browsing surface was missing).
+       */
+      list: route({ permission: 'channel:read' })
+        .input(
+          z
+            .object({ channelId: ChannelIdSchema, limit: z.number().int().positive().max(50).default(50) })
+            .strict(),
+        )
+        .query(async ({ ctx, input }) =>
+          recordings.listRecordingsForChannel(actorOf(ctx), {
+            channelId: input.channelId,
+            limit: input.limit,
+          }),
+        ),
+
+      /**
+       * A presigned GET for a stored recording — how attendees listen to and
+       * download it. A MUTATION, not a query: it mints a capability and
+       * writes an audit event, the same reasoning `chat.attachments.download`
+       * gives for its own shape.
+       */
+      presignDownload: route({ permission: 'channel:read' })
+        .input(z.object({ recordingId: z.string().uuid() }).strict())
+        .mutation(async ({ ctx, input }) =>
+          recordings.presignRecordingDownload(actorOf(ctx), deps, {
             recordingId: input.recordingId,
           }),
         ),

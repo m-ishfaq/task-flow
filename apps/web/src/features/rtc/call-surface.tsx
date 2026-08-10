@@ -5,6 +5,7 @@ import { useSession } from '../../lib/session.js';
 import { useToast } from '../../lib/toast-context.js';
 import { onCallEnded, onIncomingCall } from '../../lib/socket.js';
 import { cn } from '../../lib/cn.js';
+import { formatCallDuration } from '../../lib/format.js';
 import { Button } from '../../components/primitives.js';
 import { useMembers } from '../org/use-members.js';
 import { callPrefsQuery, incomingCallsQuery, invalidateCalls, recordingQuery } from './api.js';
@@ -49,6 +50,38 @@ export function CallSurface() {
   );
 }
 
+/**
+ * Forces a re-render once a second while `active`. Returns nothing —
+ * callers recompute their own duration from a fixed instant on every tick,
+ * which is simpler than threading a live number back through a second piece
+ * of state that would need to stay in sync with the first.
+ */
+function useTicker(active: boolean): void {
+  const [, forceRender] = useState(0);
+
+  useEffect(() => {
+    if (!active) return undefined;
+    const interval = setInterval(() => {
+      forceRender((value) => value + 1);
+    }, 1000);
+    return () => {
+      clearInterval(interval);
+    };
+  }, [active]);
+}
+
+/**
+ * Seconds since a captured instant, floored at zero.
+ *
+ * Kept as a plain function called FROM a render body rather than inlined —
+ * `lib/format.ts`'s own note on `oooStatus` is the precedent: the React
+ * Compiler's purity rule flags `Date.now()`/`new Date()` written directly in
+ * a component or hook, and the clock has to live one call behind that.
+ */
+function elapsedSeconds(sinceMs: number): number {
+  return Math.max(0, Math.floor((Date.now() - sinceMs) / 1000));
+}
+
 /* -------------------------------------------------------------------------- *
  * Ringing
  * -------------------------------------------------------------------------- */
@@ -64,6 +97,25 @@ function IncomingCallBanner() {
   const incoming = useQuery({ ...incomingCallsQuery(orgId), enabled: orgId !== '' });
   const prefs = useQuery({ ...callPrefsQuery(), enabled: orgId !== '' });
 
+  /* The oldest ring wins. Stacking two banners is a decision about which is on
+     top that nobody needs to make — the second call is still in the list and
+     surfaces the moment the first is dealt with. */
+  const call = (incoming.data ?? []).find((row) => row.sessionId !== currentSessionId);
+
+  /* What the banner is CURRENTLY showing, kept in a ref rather than read from
+     `call` inside the socket handler below — by the time `call:ended` fires,
+     the invalidation it triggers may have already cleared `incoming.data`,
+     and the toast needs to know who was calling a moment ago. */
+  const shownCallRef = useRef(call);
+  useEffect(() => {
+    shownCallRef.current = call;
+  }, [call]);
+
+  /* Sessions this tab explicitly declined — so the `call:ended` broadcast
+     that follows a decline (this tab is invited on it too) does not tell the
+     person who just clicked "Decline" that they missed their own decision. */
+  const selfDeclinedRef = useRef<Set<string>>(new Set());
+
   /* The live half. A `call:ringing` message means the poll's answer is already
      stale, so this refetches rather than inserting a row of its own — one
      source of truth for what is ringing, arrived at faster. */
@@ -71,19 +123,35 @@ function IncomingCallBanner() {
     const offRinging = onIncomingCall(() => {
       void invalidateCalls(queryClient, orgId);
     });
-    const offEnded = onCallEnded(() => {
+    const offEnded = onCallEnded((message) => {
+      const shown = shownCallRef.current;
+      const wasAnswering = useCallStore.getState().sessionId === message.sessionId;
+      const selfDeclined = selfDeclinedRef.current.delete(message.sessionId);
+
+      /* A missed-call toast only when THIS banner was showing that exact
+         call, this tab never answered it, and this tab is not the one that
+         just declined it. Everything else — a call somebody else answered,
+         a call this tab was never rung for — says nothing, because a toast
+         about a call the viewer already knows the outcome of is noise. */
+      if (shown?.sessionId === message.sessionId && !wasAnswering && !selfDeclined) {
+        toast.show(`Missed call from ${personOf(shown.initiatedBy).label}`);
+      }
+
       void invalidateCalls(queryClient, orgId);
     });
     return () => {
       offRinging();
       offEnded();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- personOf and toast are stable for the app's lifetime; re-subscribing on every render would tear down mid-ring
   }, [orgId, queryClient]);
 
-  /* The oldest ring wins. Stacking two banners is a decision about which is on
-     top that nobody needs to make — the second call is still in the list and
-     surfaces the moment the first is dealt with. */
-  const call = (incoming.data ?? []).find((row) => row.sessionId !== currentSessionId);
+  /* How long this has been ringing, for the receiver — ticks once a second
+     while a call is shown. `call.createdAt` is the session's own creation
+     instant, not "when this tab first noticed" — a tab that opens mid-ring
+     (a reconnect, a second monitor) shows the call's real age, not zero. */
+  useTicker(call !== undefined);
+  const ringingSeconds = call === undefined ? 0 : elapsedSeconds(new Date(call.createdAt).getTime());
 
   /* ## The tone follows the call, not the render
    *
@@ -126,6 +194,10 @@ function IncomingCallBanner() {
   const decline = useMutation({
     mutationFn: async () => {
       if (call === undefined) return;
+      /* Recorded BEFORE the request, not in `onSuccess`: the `call:ended`
+         broadcast this triggers can arrive before the mutation's own promise
+         resolves, and the ref has to be marked in time to suppress it. */
+      selfDeclinedRef.current.add(call.sessionId);
       await api.rtc.decline.mutate({ sessionId: call.sessionId });
     },
     onSuccess: async () => {
@@ -163,7 +235,8 @@ function IncomingCallBanner() {
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-ink">{caller.label}</p>
           <p className="text-xs text-ink-faint">
-            Incoming {call.kind === 'video' ? 'video' : 'voice'} call
+            Incoming {call.kind === 'video' ? 'video' : 'voice'} call ·{' '}
+            {formatCallDuration(ringingSeconds)}
             {ringEnabled ? '' : ' · silent'}
           </p>
         </div>
@@ -190,7 +263,7 @@ function IncomingCallBanner() {
             decline.mutate();
           }}
         >
-          Cancel
+          Decline
         </Button>
       </div>
     </div>
@@ -214,6 +287,10 @@ function ActiveCallBar() {
   const channelId = useCallStore((state) => state.channelId);
   const evicted = useCallStore((state) => state.evicted);
   const capturing = useCallStore((state) => state.capturing);
+  const connectedAt = useCallStore((state) => state.connectedAt);
+
+  useTicker(connectedAt !== null);
+  const durationSeconds = connectedAt === null ? 0 : elapsedSeconds(connectedAt);
 
   const recording = useQuery({
     ...recordingQuery(orgId, sessionId ?? ''),
@@ -293,7 +370,7 @@ function ActiveCallBar() {
               ? 'Connecting…'
               : others.length === 0
                 ? 'Ringing…'
-                : others.join(', ')}
+                : `${others.join(', ')} · ${formatCallDuration(durationSeconds)}`}
           </p>
           {recordingState === 'active' && (
             /* Every participant sees this, not only the person capturing. A

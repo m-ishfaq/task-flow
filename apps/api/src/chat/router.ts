@@ -364,6 +364,7 @@ export function createChatRouter(deps: ChatRouterDeps) {
                 messageId: z.string(),
                 pinnedBy: z.string().nullable(),
                 pinnedAt: z.date(),
+                excerpt: z.string().nullable(),
               }),
             )
             .readonly(),
@@ -476,6 +477,34 @@ export function createChatRouter(deps: ChatRouterDeps) {
             .readonly(),
         )
         .query(({ input, ctx }) => attachments.listForMessages(actorOf(ctx), input)),
+
+      /** Every live attachment in a channel — the details panel's Files tab. */
+      listForChannel: route({ permission: 'message:read' })
+        .input(
+          z
+            .object({
+              channelId: ChannelIdSchema,
+              limit: z.number().int().positive().max(50).default(50),
+            })
+            .strict(),
+        )
+        .output(
+          z
+            .array(
+              z.object({
+                attachmentId: z.string(),
+                messageId: z.string(),
+                filename: z.string(),
+                contentType: z.string(),
+                sizeBytes: z.number().int().nullable(),
+                status: z.string(),
+                uploadedBy: z.string().nullable(),
+                createdAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => attachments.listForChannel(actorOf(ctx), input)),
 
       delete: route({ permission: 'message:update' })
         .input(z.object({ attachmentId: AttachmentIdSchema }).strict())

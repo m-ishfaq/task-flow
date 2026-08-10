@@ -231,6 +231,20 @@ export const rtcRecordingStored = defineEvent(
     .strict(),
 );
 
+/**
+ * A stored recording was handed a download URL.
+ *
+ * A READ that gets an event — the same exception `turn_credential.issued`
+ * takes (§4's own table) and the one `apps/api/src/telephony/events.ts`'s
+ * `recordingDownloaded` takes for PSTN: issuing a link to a captured
+ * conversation is the moment a durable copy becomes possible, and "who took
+ * one" is a question only the audit trail can answer after the fact.
+ */
+export const rtcRecordingDownloaded = defineEvent(
+  'rtc_recording.downloaded',
+  z.object({ sessionId: z.string(), recordingId: z.string() }).strict(),
+);
+
 export const turnCredentialRefused = defineEvent(
   'turn_credential.refused',
   z

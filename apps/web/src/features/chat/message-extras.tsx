@@ -139,7 +139,7 @@ export function MessagePreviews({ previews }: { readonly previews: readonly Mess
 }
 
 /** Bytes as something a person reads. Null until `confirm` has measured it. */
-function formatBytes(bytes: number | null): string {
+export function formatBytes(bytes: number | null): string {
   if (bytes === null) return '';
   if (bytes < 1024) return `${String(bytes)} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;

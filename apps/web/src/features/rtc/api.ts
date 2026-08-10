@@ -1,6 +1,7 @@
 import { queryOptions, type QueryClient } from '@tanstack/react-query';
 import type { ChannelId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
+import { wire, type Wire } from '../../lib/wire.js';
 
 /**
  * Query definitions for in-app voice (ai/phase-13-webrtc.md).
@@ -20,6 +21,10 @@ export const rtcKeys = {
     ['org', orgId, 'rtc', 'active', channelId] as const,
   recording: (orgId: string, sessionId: string) =>
     ['org', orgId, 'rtc', 'recording', sessionId] as const,
+  history: (orgId: string, channelId: string) =>
+    ['org', orgId, 'rtc', 'history', channelId] as const,
+  recordings: (orgId: string, channelId: string) =>
+    ['org', orgId, 'rtc', 'recordings', channelId] as const,
   /* NOT under `['org', orgId, ...]`. A ringtone is global per user — the
      `selfRoute` shape — so keying it by org would refetch it on every org
      switch and, worse, would leave a stale copy per org in the cache. */
@@ -36,10 +41,12 @@ export const rtcKeys = {
  * Six seconds is the difference between "the phone rang" and "the phone rang a
  * moment later", which is the right thing to trade for not inventing a room.
  */
+export type IncomingCall = Wire<Awaited<ReturnType<typeof api.rtc.incoming.query>>>[number];
+
 export function incomingCallsQuery(orgId: string) {
   return queryOptions({
     queryKey: rtcKeys.incoming(orgId),
-    queryFn: () => api.rtc.incoming.query({}),
+    queryFn: async () => wire(await api.rtc.incoming.query({})),
     /* The CORRECTNESS floor, not the delivery mechanism — Phase 4's own
        NOTIFY/poll relationship. `onIncomingCall` makes the common case
        instant; this is what bounds a missed socket message to six seconds of
@@ -76,10 +83,52 @@ export async function invalidateCalls(
   await queryClient.invalidateQueries({ queryKey: rtcKeys.incoming(orgId) });
   if (channelId !== undefined) {
     await queryClient.invalidateQueries({ queryKey: rtcKeys.active(orgId, channelId) });
+    /* A call ending or a recording landing both change what the Calls tab and
+       the message timeline's call cards show — refreshed alongside the live
+       state rather than left to a manual reopen of the panel. */
+    await queryClient.invalidateQueries({ queryKey: rtcKeys.history(orgId, channelId) });
+    await queryClient.invalidateQueries({ queryKey: rtcKeys.recordings(orgId, channelId) });
   }
   if (sessionId !== undefined) {
     await queryClient.invalidateQueries({ queryKey: rtcKeys.recording(orgId, sessionId) });
   }
+}
+
+/**
+ * Every call this conversation has had, newest first — the Calls tab in the
+ * details panel and the call cards in the message timeline (§6's own "no
+ * listing UI" gap, closed).
+ */
+export type CallHistoryEntry = Wire<Awaited<ReturnType<typeof api.rtc.history.list.query>>>[number];
+
+export function callHistoryQuery(orgId: string, channelId: ChannelId) {
+  return queryOptions({
+    queryKey: rtcKeys.history(orgId, channelId),
+    queryFn: async () => wire(await api.rtc.history.list.query({ channelId })),
+  });
+}
+
+/** Every recording this conversation has, for the Calls tab. */
+export type CallRecordingSummary = Wire<
+  Awaited<ReturnType<typeof api.rtc.recording.list.query>>
+>[number];
+
+export function channelRecordingsQuery(orgId: string, channelId: ChannelId) {
+  return queryOptions({
+    queryKey: rtcKeys.recordings(orgId, channelId),
+    queryFn: async () => wire(await api.rtc.recording.list.query({ channelId })),
+  });
+}
+
+/**
+ * A short-lived listen/download URL for a stored recording — how an
+ * attendee actually gets it (§3.9). A mutation, not a query, for the same
+ * reason `downloadMessageFile` is: it mints a capability and writes an audit
+ * event, so caching or retrying it on focus would mint more than the person
+ * asked for.
+ */
+export function downloadRecording(recordingId: string) {
+  return api.rtc.recording.presignDownload.mutate({ recordingId });
 }
 
 /**

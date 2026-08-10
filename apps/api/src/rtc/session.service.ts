@@ -1,4 +1,16 @@
-import { and, asc, eq, increment, decrement, ne, outboxWriter, schema, withOrgScope } from '@taskflow/db';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  increment,
+  decrement,
+  ne,
+  outboxWriter,
+  schema,
+  withOrgScope,
+} from '@taskflow/db';
 import { errors, type ChannelId } from '@taskflow/contracts';
 import { createEvent, type DomainEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
@@ -573,6 +585,118 @@ export async function activeSessionForChannel(
 
     const found = rows[0];
     return found === undefined ? null : readSessionView(tx, found.id);
+  });
+}
+
+export interface HistoryParticipant {
+  readonly userId: string;
+  readonly state: string;
+  readonly joinedAt: Date | null;
+  readonly leftAt: Date | null;
+}
+
+export interface SessionHistoryEntry {
+  readonly sessionId: string;
+  readonly channelId: string;
+  readonly kind: string;
+  readonly status: string;
+  readonly initiatedBy: string;
+  readonly startedAt: Date | null;
+  readonly endedAt: Date | null;
+  readonly endReason: string | null;
+  readonly createdAt: Date;
+  readonly participants: readonly HistoryParticipant[];
+}
+
+/** Bounds one page of history — a details panel and a message timeline both
+    want "recent", never "every call this conversation has ever had". */
+const MAX_HISTORY_PAGE = 50;
+
+/**
+ * Every call that has happened in a conversation, newest first.
+ *
+ * Feeds two surfaces that did not exist through Wave 2: the Calls tab in the
+ * details panel and the call cards in the message timeline (§6's "recordings
+ * have no listing UI" — the same gap extends to the sessions themselves, since
+ * neither ever got a read path beyond `active`/`get`/`incoming`).
+ *
+ * `channel:read`, same as every other read in this file: a call's record is
+ * exactly as visible as the conversation it belongs to, never narrower — there
+ * is no separate "was I on this call" gate, for the reason §1 gives everywhere
+ * else: `rtc.participants` is consulted for STATE, never for permission.
+ */
+export async function listSessionsForChannel(
+  actor: RtcActor,
+  input: { readonly channelId: ChannelId; readonly limit?: number },
+): Promise<readonly SessionHistoryEntry[]> {
+  return withOrgScope(orgOf(actor), async (tx) => {
+    const channel = await loadChannel(tx, input.channelId);
+    enforceOnChannel(actor, 'channel:read', channel);
+
+    const sessions = await tx
+      .select({
+        id: schema.rtcSessions.id,
+        channelId: schema.rtcSessions.channelId,
+        kind: schema.rtcSessions.kind,
+        status: schema.rtcSessions.status,
+        initiatedBy: schema.rtcSessions.initiatedBy,
+        startedAt: schema.rtcSessions.startedAt,
+        endedAt: schema.rtcSessions.endedAt,
+        endReason: schema.rtcSessions.endReason,
+        createdAt: schema.rtcSessions.createdAt,
+      })
+      .from(schema.rtcSessions)
+      .where(eq(schema.rtcSessions.channelId, input.channelId))
+      .orderBy(desc(schema.rtcSessions.createdAt))
+      .limit(Math.min(input.limit ?? MAX_HISTORY_PAGE, MAX_HISTORY_PAGE));
+
+    if (sessions.length === 0) return [];
+
+    /* One query for every session's roster rather than one per row — the same
+       batching `listSaved`'s excerpt read uses, and for the same reason: a
+       conversation with fifty calls in its history should cost this endpoint
+       two round trips, not fifty-one. */
+    const participantRows = await tx
+      .select({
+        sessionId: schema.rtcParticipants.sessionId,
+        userId: schema.rtcParticipants.userId,
+        state: schema.rtcParticipants.state,
+        joinedAt: schema.rtcParticipants.joinedAt,
+        leftAt: schema.rtcParticipants.leftAt,
+      })
+      .from(schema.rtcParticipants)
+      .where(
+        inArray(
+          schema.rtcParticipants.sessionId,
+          sessions.map((session) => session.id),
+        ),
+      )
+      .orderBy(asc(schema.rtcParticipants.invitedAt));
+
+    const byId = new Map<string, HistoryParticipant[]>();
+    for (const row of participantRows) {
+      const list = byId.get(row.sessionId) ?? [];
+      list.push({
+        userId: row.userId,
+        state: row.state,
+        joinedAt: row.joinedAt,
+        leftAt: row.leftAt,
+      });
+      byId.set(row.sessionId, list);
+    }
+
+    return sessions.map((session) => ({
+      sessionId: session.id,
+      channelId: session.channelId,
+      kind: session.kind,
+      status: session.status,
+      initiatedBy: session.initiatedBy,
+      startedAt: session.startedAt,
+      endedAt: session.endedAt,
+      endReason: session.endReason,
+      createdAt: session.createdAt,
+      participants: byId.get(session.id) ?? [],
+    }));
   });
 }
 

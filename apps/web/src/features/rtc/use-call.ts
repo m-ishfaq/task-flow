@@ -67,6 +67,19 @@ export interface CallState {
    * would make every participant's UI think it had a file to send.
    */
   readonly capturing: boolean;
+  /**
+   * `Date.now()` of the first remote audio this tab received, or null before
+   * that. What the active-call bar's duration timer counts from.
+   *
+   * Not "when `status` became `in_call`": that flips the instant the local
+   * `getUserMedia`/signalling handshake finishes, which for the answering
+   * side can be well before the other party's audio actually arrives, and
+   * for the calling side is the moment ringing STARTS, not when anyone
+   * picked up (`waiting` below is already the ringback signal for that gap).
+   * A duration that started counting during the ring would read as the call
+   * having lasted longer than anyone was actually talking.
+   */
+  readonly connectedAt: number | null;
 }
 
 const IDLE: CallState = {
@@ -78,6 +91,7 @@ const IDLE: CallState = {
   peers: [],
   evicted: false,
   capturing: false,
+  connectedAt: null,
 };
 
 export const useCallStore = create<CallState>(() => IDLE);
@@ -93,6 +107,9 @@ let unsubscribers: (() => void)[] = [];
 function setPeer(userId: string, stream: MediaStream): void {
   useCallStore.setState((state) => ({
     peers: [...state.peers.filter((peer) => peer.userId !== userId), { userId, stream }],
+    /* Set once, on the FIRST remote stream — a second or third peer joining a
+       group call must not restart the clock for everyone already talking. */
+    connectedAt: state.connectedAt ?? Date.now(),
   }));
 
   /* A peer that arrives DURING capture joins the mix. Reachable because a join
@@ -133,6 +150,7 @@ export async function joinCall(input: {
     peers: [],
     evicted: false,
     capturing: false,
+    connectedAt: null,
   });
 
   try {

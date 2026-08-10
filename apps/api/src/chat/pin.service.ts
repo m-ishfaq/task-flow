@@ -25,6 +25,10 @@ export interface PinnedMessageRow {
   readonly messageId: string;
   readonly pinnedBy: string | null;
   readonly pinnedAt: Date;
+  /** Null when the message was since deleted — the pin still resolves, there
+      is just nothing to preview. Same rule `listAllPinned`'s own excerpt and
+      `saved.service.ts`'s `listSaved` already state. */
+  readonly excerpt: string | null;
 }
 
 /** Pins a message. Idempotent — pinning an already-pinned message is a no-op. */
@@ -115,7 +119,7 @@ export async function listPinnedMessages(
     const channel = await loadChannel(tx, input.channelId);
     enforceOnChannel(actor, 'message:read', channel);
 
-    return tx
+    const rows = await tx
       .select({
         messageId: schema.pinnedMessages.messageId,
         pinnedBy: schema.pinnedMessages.pinnedBy,
@@ -124,6 +128,39 @@ export async function listPinnedMessages(
       .from(schema.pinnedMessages)
       .where(eq(schema.pinnedMessages.channelId, input.channelId))
       .orderBy(desc(schema.pinnedMessages.pinnedAt));
+
+    if (rows.length === 0) return [];
+
+    /* One batch read for every excerpt, the same reasoning `listAllPinned`
+       and `listSaved` both give: a channel with dozens of pins should cost
+       this endpoint two round trips, not one per row. */
+    const messageRows = await tx
+      .select({
+        id: schema.messages.id,
+        bodyText: schema.messages.bodyText,
+        deletedAt: schema.messages.deletedAt,
+      })
+      .from(schema.messages)
+      .where(
+        inArray(
+          schema.messages.id,
+          rows.map((row) => row.messageId),
+        ),
+      );
+
+    const excerptById = new Map(
+      messageRows.map((row) => [
+        row.id,
+        row.deletedAt === null ? row.bodyText.slice(0, 280) : null,
+      ]),
+    );
+
+    return rows.map((row) => ({
+      messageId: row.messageId,
+      pinnedBy: row.pinnedBy,
+      pinnedAt: row.pinnedAt,
+      excerpt: excerptById.get(row.messageId) ?? null,
+    }));
   });
 }
 

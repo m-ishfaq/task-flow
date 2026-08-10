@@ -1,4 +1,4 @@
-import { and, eq, isNull, schema, withOrgScope, outboxWriter } from '@taskflow/db';
+import { and, desc, eq, isNull, schema, withOrgScope, outboxWriter } from '@taskflow/db';
 import { errors, type AttachmentId, type ChannelId, type MessageId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { isAcceptedContentType } from '@taskflow/security';
@@ -367,6 +367,52 @@ export async function listForMessages(
        `channel:read` check above. */
     const wanted = new Set<string>(input.messageIds);
     return rows.filter((row) => wanted.has(row.messageId));
+  });
+}
+
+/** Bounds one page — a Files tab wants "recent", not every attachment a
+    long-lived channel has ever held. */
+const MAX_CHANNEL_FILES_PAGE = 50;
+
+/**
+ * Every live attachment IN THIS CHANNEL, newest first — the Files tab in the
+ * details panel.
+ *
+ * Unlike `listForMessages`, this does not take a page of message ids to
+ * filter against: it joins through `messages` to select by `channelId`
+ * directly, because a details panel wants "everything ever shared here," not
+ * only what happens to be in the currently loaded scroll position.
+ */
+export async function listForChannel(
+  actor: ChatActor,
+  input: { readonly channelId: ChannelId; readonly limit?: number },
+): Promise<readonly MessageAttachmentSummary[]> {
+  return withOrgScope(orgOf(actor), async (tx) => {
+    const channel = await loadChannel(tx, input.channelId);
+    enforceOnChannel(actor, 'channel:read', channel);
+
+    return tx
+      .select({
+        attachmentId: schema.attachments.id,
+        messageId: schema.attachments.parentId,
+        filename: schema.attachments.filename,
+        contentType: schema.attachments.contentType,
+        sizeBytes: schema.attachments.sizeBytes,
+        status: schema.attachments.status,
+        uploadedBy: schema.attachments.uploadedBy,
+        createdAt: schema.attachments.createdAt,
+      })
+      .from(schema.attachments)
+      .innerJoin(schema.messages, eq(schema.messages.id, schema.attachments.parentId))
+      .where(
+        and(
+          eq(schema.attachments.parentType, 'message'),
+          isNull(schema.attachments.deletedAt),
+          eq(schema.messages.channelId, input.channelId),
+        ),
+      )
+      .orderBy(desc(schema.attachments.createdAt))
+      .limit(Math.min(input.limit ?? MAX_CHANNEL_FILES_PAGE, MAX_CHANNEL_FILES_PAGE));
   });
 }
 

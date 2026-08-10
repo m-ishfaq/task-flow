@@ -1,4 +1,4 @@
-import { and, eq, outboxWriter, schema, withOrgScope } from '@taskflow/db';
+import { and, desc, eq, outboxWriter, schema, withOrgScope } from '@taskflow/db';
 import { errors, type ChannelId } from '@taskflow/contracts';
 import { createEvent, type DomainEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
@@ -6,6 +6,7 @@ import { enforceOnChannel, loadChannel } from '../chat/shared.js';
 import {
   rtcRecordingConsented,
   rtcRecordingDeclined,
+  rtcRecordingDownloaded,
   rtcRecordingRequested,
   rtcRecordingStarted,
   rtcRecordingStopped,
@@ -440,4 +441,145 @@ export async function recordingStatus(
         .map((row) => row.userId),
     };
   });
+}
+
+/* -------------------------------------------------------------------------- *
+ * Listing and download (closes §6's "recordings have no listing or playback
+ * UI" — the rows and the objects were always correct, only a surface to
+ * browse them from was missing).
+ * -------------------------------------------------------------------------- */
+
+export interface RecordingSummary {
+  readonly recordingId: string;
+  readonly sessionId: string;
+  /** 'pending' | 'stored' | 'failed'. Only 'stored' has anything to download. */
+  readonly status: string;
+  readonly contentType: string;
+  readonly bytes: number | null;
+  readonly durationSeconds: number | null;
+  readonly createdBy: string;
+  readonly createdAt: Date;
+  readonly storedAt: Date | null;
+}
+
+/** Bounds one page — a details panel wants "recent", not "every capture this
+    conversation has ever produced". */
+const MAX_RECORDINGS_PAGE = 50;
+
+/**
+ * Every recording this conversation has, newest first.
+ *
+ * `channel:read`, the same line every other read in this file draws — see
+ * `recordingStatus`'s own shape. A recording id is not itself a capability
+ * (§ below on `presignRecordingDownload`); this is the list a Calls tab or a
+ * call card resolves one from.
+ */
+export async function listRecordingsForChannel(
+  actor: RtcActor,
+  input: { readonly channelId: ChannelId; readonly limit?: number },
+): Promise<readonly RecordingSummary[]> {
+  return withOrgScope(orgOf(actor), async (tx) => {
+    const channel = await loadChannel(tx, input.channelId);
+    enforceOnChannel(actor, 'channel:read', channel);
+
+    return tx
+      .select({
+        recordingId: schema.rtcRecordings.id,
+        sessionId: schema.rtcRecordings.sessionId,
+        status: schema.rtcRecordings.status,
+        contentType: schema.rtcRecordings.contentType,
+        bytes: schema.rtcRecordings.bytes,
+        durationSeconds: schema.rtcRecordings.durationSeconds,
+        createdBy: schema.rtcRecordings.createdBy,
+        createdAt: schema.rtcRecordings.createdAt,
+        storedAt: schema.rtcRecordings.storedAt,
+      })
+      .from(schema.rtcRecordings)
+      .innerJoin(schema.rtcSessions, eq(schema.rtcSessions.id, schema.rtcRecordings.sessionId))
+      .where(eq(schema.rtcSessions.channelId, input.channelId))
+      .orderBy(desc(schema.rtcRecordings.createdAt))
+      .limit(Math.min(input.limit ?? MAX_RECORDINGS_PAGE, MAX_RECORDINGS_PAGE));
+  });
+}
+
+/**
+ * A presigned GET for a stored recording — how a call's attendees actually
+ * get it (§3.9's own deferred question, closed here).
+ *
+ * ## Who may download: the same line every other recording route draws
+ *
+ * `channel:read` on the call's channel, not "was this person a joined
+ * participant". `recordingStatus` already shows the full consent checklist to
+ * anyone who can read the conversation; a download link follows that same
+ * line rather than inventing a second, stricter one nothing else here draws.
+ * A participant who left mid-call and a member who joined the channel
+ * afterward see the same recording a moderator reviewing the conversation
+ * would — which is the correct scope for a conversation's own recorded
+ * artifact, exactly as `chat.attachments.download` treats a shared file.
+ *
+ * ## The channel check runs INLINE, not through `authorizedSession`
+ *
+ * That helper opens its own transaction. Nesting one inside the transaction
+ * below would mean the audit write a few lines down is not provably in the
+ * same snapshot as the read that authorized it — so this repeats the two-line
+ * body instead, the same trade `presignRecordingUpload` makes for the same
+ * reason.
+ */
+export async function presignRecordingDownload(
+  actor: RtcActor,
+  deps: RtcDeps,
+  input: { readonly recordingId: string },
+): Promise<{ readonly url: string; readonly expiresInSeconds: number }> {
+  if (deps.storage === undefined) {
+    throw errors.serviceUnavailable('Call recording storage is not configured on this instance.');
+  }
+
+  /* Sixty seconds, matching attachments and telephony recordings — the window
+     is the blast radius of a leaked link, not a UX choice. */
+  const expiresInSeconds = 60;
+  const orgId = orgOf(actor);
+
+  const row = await withOrgScope(orgId, async (tx) => {
+    const rows = await tx
+      .select({
+        id: schema.rtcRecordings.id,
+        sessionId: schema.rtcRecordings.sessionId,
+        status: schema.rtcRecordings.status,
+        storageKey: schema.rtcRecordings.storageKey,
+      })
+      .from(schema.rtcRecordings)
+      .where(eq(schema.rtcRecordings.id, input.recordingId))
+      .limit(1);
+
+    const recording = rows[0];
+    if (recording === undefined) throw errors.notFound();
+
+    /* THE invariant, restated from `presignRecordingUpload`'s own: anything
+       not `stored` has either not finished landing or never will, and there
+       is nothing to hand out either way. 404 rather than a status-specific
+       message — the caller does not need to learn which. */
+    if (recording.status !== 'stored') throw errors.notFound();
+
+    const session = await loadSession(tx, recording.sessionId);
+    const channel = await loadChannel(tx, session.channelId as ChannelId);
+    enforceOnChannel(actor, 'channel:read', channel);
+
+    /* Written BEFORE the URL is issued, in the same transaction as the read
+       that authorized it — `telephony/recording.service.ts`'s own reasoning
+       for `recordingDownloaded`: a crash between the two would produce a
+       downloadable URL with no record that anyone asked for it, and "who
+       took a copy" is the question this event exists to answer. */
+    await outboxWriter.append(tx, [
+      createEvent(
+        rtcRecordingDownloaded,
+        { sessionId: recording.sessionId, recordingId: recording.id },
+        envelopeOf(actor),
+      ),
+    ]);
+
+    return { storageKey: recording.storageKey };
+  });
+
+  const url = await deps.storage.presignDownload(row.storageKey, expiresInSeconds);
+  return { url, expiresInSeconds };
 }

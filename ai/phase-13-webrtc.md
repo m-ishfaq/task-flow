@@ -347,6 +347,47 @@ Stated so a later reader does not mistake a scoped delivery for a defect:
 - **No video, screen share, or device selection.** Wave 3.
 - **No reconnect-and-resume of a live peer connection.** A dropped socket ends that participant's
   leg; they rejoin. Renegotiation across a transport drop is a Wave 3 concern.
-- **Recordings have no listing or playback UI.** The rows and the objects exist and are correct;
-  what is missing is a surface to browse them from, which belongs with a decision about retention
-  that has not been made.
+- **No retention policy for recordings.** §3.9 shipped a Files-tab-shaped browsing surface (below)
+  but never a deletion schedule — a stored capture lives forever until someone builds one, the same
+  open question Chat's own retention took a dedicated Wave 4 to answer.
+
+### Closing the listing/playback gap, and the rest of the details-panel surface (2026-08-10)
+
+**"Recordings have no listing or playback UI" is no longer true.** `apps/api/src/rtc/recording.service.ts`
+gained `listRecordingsForChannel` and `presignRecordingDownload` — the second gated on `status = 'stored'`
+exactly like `presignRecordingUpload`, and auditing every issuance as `rtc_recording.downloaded` before
+the URL is minted, the same ordering `telephony/recording.service.ts`'s own `presignDownload` uses and
+for the same reason (§4's `turn_credential.issued` precedent: a read that mints a capability gets an
+event). Authorization is `channel:read` on the call's channel, not a narrower "was this person a joined
+participant" — the same line `recordingStatus` already draws for the live consent checklist, restated
+rather than tightened for a downloaded copy.
+
+Four more surfaces landed alongside it, none of them a new wave on their own so much as the WhatsApp-shaped
+group-info screen this phase never had a UI for:
+
+- **`rtc.history.list`** (`session.service.ts`) — every call a conversation has had, with each
+  participant's join/leave times and state. Feeds a Calls tab in the details panel (expandable per
+  call, showing who joined a group call and for how long, plus the listen/download control when a
+  recording exists) and call cards interleaved into the message timeline by timestamp — "Voice call ·
+  3m 12s", "Missed voice call", "You declined this call" — a parallel resource merged into the render
+  the same way Phase 7's SMS/WhatsApp threads sit beside `chat.channels` rather than becoming a new
+  message kind (§3.8 there): a schema change to `chat.messages` for a system-authored row was not
+  worth the read-cursor and unread-count questions it would raise for a fact this file already had
+  a place to read from.
+- **Pinned and starred, scoped to one conversation.** `chat.messages.pins` gained an `excerpt` field
+  it was missing relative to its own org-wide sibling `allPins`; the Saved section filters the
+  already-cached org-wide `chat.saved.list` to the open channel rather than adding a second route for
+  a query that was already cheap.
+- **`chat.attachments.listForChannel`** — a Files tab resolved by `channelId` directly (a join through
+  `messages`, not the existing `list` route's message-id-bag shape), because a details panel wants
+  "everything ever shared here," not only whatever page of messages happens to be scrolled into view.
+- **Ringing and call duration, both ticking, and a genuine missed-call signal.** The incoming-call
+  banner now shows how long a call has been ringing (from the session's own `createdAt`, not from
+  when this tab noticed); the active-call bar shows elapsed time from the first remote stream, not
+  from `status` — the calling side's `status` flips to `in_call` the instant ringing STARTS, and
+  counting from there would show a duration nobody was talking for. A banner that disappears because
+  the call was answered elsewhere, cancelled, or timed out now says which, via a toast keyed off the
+  `call:ended` socket message's `reason` — suppressed for the one case that needs no telling
+  (`decline`'s own broadcast reaching the tab that just clicked it). The receiver's decline button
+  was also relabelled from "Cancel" — a word that means something different when you did not place
+  the call.

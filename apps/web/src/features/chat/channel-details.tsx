@@ -8,6 +8,7 @@ import { Avatar, Button, ConfirmButton, Empty, Field, Input } from '../../compon
 import { useMembers, type Person } from '../org/use-members.js';
 import { CallButton } from '../telephony/call-button.js';
 import { directoryMemberQuery } from '../people/api.js';
+import { CallsSection, FilesSection, PinnedSection, SavedSection } from './channel-media.js';
 import {
   addChannelMember,
   exportChannel,
@@ -179,6 +180,17 @@ export function ChannelDetailsPanel({
             onAdded={refresh}
           />
         )}
+
+        {/* The "just like WhatsApp" group-info surfaces — what has been
+            called, pinned, starred by you, and shared, all in this one
+            conversation. Shown for a DM exactly as for any other channel:
+            none of these four are moderation or membership controls, so
+            there is nothing about a fixed two-person roster that should
+            hide them. */}
+        <CallsSection orgId={orgId} channelId={channelId} />
+        <PinnedSection orgId={orgId} channelId={channelId} personOf={personOf} />
+        <SavedSection orgId={orgId} channelId={channelId} />
+        <FilesSection orgId={orgId} channelId={channelId} />
 
         {!isDirect && data.capabilities.manage && (
           <ComplianceAndGuests orgId={orgId} channelId={channelId} channel={data} />
