@@ -495,11 +495,29 @@ Product-completeness gaps, not safety gaps — sequenced by how much a real user
    (`telephony.recordings.transcript` had shipped in Phase 7 Wave 2 with no caller). Verified
    with `migrate:verify`, full `pnpm verify` (54/54, 854 API tests) and the guardrail selftest.
 
-2. **Automation & integrations (Phase 10, ~6wk).** Rules engine on the existing domain-event bus
-   (`@taskflow/events` — guardrail 6 already makes every mutation emit one), outbound webhooks,
-   public API + scoped tokens, Slack/GitHub connectors, importers/exporters.
-3. **Analytics (Phase 11, ~4wk).** Velocity/burndown/CFD/cycle-time/workload dashboards and
-   comms-spend reporting — read-only over data that already exists.
+2. **Automation & integrations (Phase 10, ~6wk) — SPEC DRAFTED 2026-08-11, not yet approved:**
+   [ai/phase-10-automation.md](ai/phase-10-automation.md). Rules engine on the existing
+   domain-event bus (guardrail 6 already makes every mutation emit one), outbound webhooks,
+   public API + scoped tokens, Slack/GitHub connectors, importers/exporters. The spec's own
+   "checked, not assumed" pass found this phase is better provisioned than it looks: four
+   working outbox consumers to mirror, the condition evaluator shipped in Phase 3, the SSRF
+   gate, and BOTH token kinds (`tf_pat`, `tf_whs`) already minted in
+   `packages/security/tokens.ts` with no callers — the Phase 7 Wave 1 shape again. Seven open
+   decisions, of which the sharpest are where loop-protection depth lives (the envelope is
+   `.strict()` and has no causation field) and whether cost-bearing actions are in scope at all.
+3. **Analytics (Phase 11, ~4wk) — SPEC DRAFTED 2026-08-11, not yet approved:**
+   [ai/phase-11-analytics.md](ai/phase-11-analytics.md). Velocity/burndown/CFD/cycle-time/
+   workload dashboards and comms-spend reporting. **Not "read-only over data that already
+   exists", which is what this file said before anyone checked** — `work.cards` stores only the
+   present, there is no `completed_at`, no status-transition history and no sprint concept, so
+   four of the six dashboards are questions the transactional schema cannot answer at all. The
+   phase's spine is a transitions projection off the outbox.
+
+   **The two specs share one ordering constraint, recorded in both:** Phase 11's only route to
+   historical data is replaying `card.status_changed` out of `platform.outbox`, which has never
+   been pruned. Phase 10 correctly proposes pruning it. Either Phase 11's backfill runs first,
+   or the pruner excludes those events until it has — otherwise the history is destroyed with
+   nothing failing to say so.
 
 ## Addendum — seed data coverage for the shipped surfaces
 
