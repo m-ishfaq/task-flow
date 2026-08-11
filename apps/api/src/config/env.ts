@@ -167,6 +167,13 @@ export const EnvSchema = z
       .default('false')
       .transform((value) => value === 'true'),
     MAIL_FROM: NonEmpty,
+    /* Optional: most real relays (Gmail, SendGrid, Postmark, Resend, SES SMTP)
+       require AUTH, unlike Mailpit. Absent when the relay is reachable without
+       credentials (a local/allowlisted relay) — SmtpMailer only attempts AUTH
+       when both are present, since sending an empty AUTH is rejected outright
+       by servers that do require it. */
+    MAIL_USER: OptionalNonEmpty,
+    MAIL_PASSWORD: OptionalNonEmpty,
 
     /* Object storage (§5, §8.4). MinIO locally, Cloudflare R2 on the free tier,
        S3 past 10 GB — all three speak the same API, so only these values
