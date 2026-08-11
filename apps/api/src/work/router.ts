@@ -161,6 +161,11 @@ const CardSummaryOutput = z
       statusId: z.string().nullable(),
       priority: Priority.nullable(),
       dueDate: z.date().nullable(),
+      /* The sprint this card is in — null is the backlog. Carried on the
+         summary so the sprint-picker filter can run client-side over the one
+         card query the board already fetches (sprints are a view dimension,
+         not a second card store). */
+      sprintId: z.string().nullable(),
       commentCount: z.number().int().nonnegative(),
       checklistDone: z.number().int().nonnegative(),
       checklistTotal: z.number().int().nonnegative(),
@@ -586,6 +591,7 @@ export function createWorkRouter(deps: WorkRouterDeps) {
             priority: Priority.nullable(),
             dueDate: z.date().nullable(),
             startDate: z.date().nullable(),
+            sprintId: z.string().nullable(),
             commentCount: z.number().int().nonnegative(),
             checklistDone: z.number().int().nonnegative(),
             checklistTotal: z.number().int().nonnegative(),

@@ -86,6 +86,7 @@ export interface CardSummary {
   readonly statusId: string | null;
   readonly priority: Priority | null;
   readonly dueDate: Date | null;
+  readonly sprintId: string | null;
   readonly commentCount: number;
   readonly checklistDone: number;
   readonly checklistTotal: number;
@@ -143,6 +144,10 @@ export async function listCards(
         statusId: schema.cards.statusId,
         priority: schema.cards.priority,
         dueDate: schema.cards.dueDate,
+        /* Needed by the sprint picker's client-side filter: a board filtered
+           to a sprint is the same card query, filtered in the renderer, so
+           the summary has to say which sprint each card is in. */
+        sprintId: schema.cards.sprintId,
         commentCount: schema.cards.commentCount,
         checklistDone: schema.cards.checklistDone,
         checklistTotal: schema.cards.checklistTotal,
@@ -219,6 +224,7 @@ export async function listMyCards(
         statusId: schema.cards.statusId,
         priority: schema.cards.priority,
         dueDate: schema.cards.dueDate,
+        sprintId: schema.cards.sprintId,
         commentCount: schema.cards.commentCount,
         checklistDone: schema.cards.checklistDone,
         checklistTotal: schema.cards.checklistTotal,
@@ -296,6 +302,7 @@ export async function getCard(
         priority: schema.cards.priority,
         dueDate: schema.cards.dueDate,
         startDate: schema.cards.startDate,
+        sprintId: schema.cards.sprintId,
         commentCount: schema.cards.commentCount,
         checklistDone: schema.cards.checklistDone,
         checklistTotal: schema.cards.checklistTotal,

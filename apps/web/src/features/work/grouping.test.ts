@@ -29,6 +29,7 @@ function card(overrides: Partial<CardSummary> = {}): CardSummary {
     statusId: null,
     priority: null,
     dueDate: null,
+    sprintId: null,
     commentCount: 0,
     checklistDone: 0,
     checklistTotal: 0,

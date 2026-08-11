@@ -14,6 +14,7 @@ import {
   PageIdSchema,
   ProjectIdSchema,
   SpaceIdSchema,
+  SprintIdSchema,
 } from '@taskflow/contracts';
 import { FilterTree } from '@taskflow/filter';
 import { useSession } from './lib/session.js';
@@ -256,6 +257,16 @@ const boardRoute = createRoute({
     /** View settings (`ai/phase-3.5-work-ux.md` §5.6) — also shareable, same reasoning as `filter`. */
     groupBy: z.enum(['list', 'status', 'assignee', 'priority', 'due']).catch('list').optional(),
     sortBy: z.enum(['manual', 'title', 'due', 'priority']).catch('manual').optional(),
+    /**
+     * The sprint dimension (`ai/phase-10.5-sprints.md`) — a sprint board is
+     * the same board, filtered, with a shareable link.
+     *
+     * `backlog` is the one non-id: the backlog is NOT a row (decision 4), so
+     * the URL names it literally, alongside real sprint ids. Anything else
+     * falls back to absent — All — because the URL is a suggestion and the
+     * unfiltered board is always true.
+     */
+    sprint: z.union([z.literal('backlog'), SprintIdSchema]).optional().catch(undefined),
   }),
   beforeLoad: ({ params }) => requireOrg(`/boards/${params.boardId}`),
   component: BoardPage,

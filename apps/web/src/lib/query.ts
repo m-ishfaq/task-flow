@@ -232,6 +232,8 @@ export const keys = {
     ['org', orgId, 'projects', projectId, 'labels'] as const,
   statuses: (orgId: string, projectId: string) =>
     ['org', orgId, 'projects', projectId, 'statuses'] as const,
+  sprints: (orgId: string, projectId: string) =>
+    ['org', orgId, 'projects', projectId, 'sprints'] as const,
   fields: (orgId: string, projectId: string) =>
     ['org', orgId, 'projects', projectId, 'fields'] as const,
 

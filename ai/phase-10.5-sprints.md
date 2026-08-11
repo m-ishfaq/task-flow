@@ -252,4 +252,17 @@ editability rules per status, and the permission split). Two notes:
   so `assignSprint`/`releaseSprint` follow them and don't either. Noted here rather than
   silently diverging.
 
-**Slice 3 (board picker + sprints manager + card detail field) — next.**
+**Slice 3 COMPLETE (commit TBD)** — the web surface, all one integration point: the board
+`Sprint` picker (All · Backlog · each sprint, active first, with dates and live card counts)
+writing a `sprint=` URL param, the sprints manager panel behind it (create/edit/start/complete/
+cancel, every control rendered and the server answering per §8.2), and the card detail
+`Sprint` field (Backlog plus planned/active sprints; closed ones listed but disabled because a
+card in a completed sprint is part of the shipped record). One server-side addition beyond
+the slice-2 routes: `sprintId` on the card summary and detail outputs, because a sprint board
+is the SAME card query filtered in the renderer (`filterCardsBySprint`, pure and web-tested —
+5 tests) — the backlog is `sprint_id IS NULL`, so the filter names it literally. Completing or
+cancelling a sprint from the manager invalidates the board's card caches and My Tasks, since
+the close releases cards in bulk. Web 330/330, API work 156/156.
+
+**Phase 10.5 COMPLETE** after slice 3 — the last item before Phase 11 (Analytics) and
+Phase 10 Wave 4 (Connectors) remain from Priority 4.
