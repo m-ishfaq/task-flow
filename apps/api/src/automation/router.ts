@@ -111,145 +111,141 @@ function actorOf(ctx: {
 
 export function createAutomationRouter(deps: { readonly keys: KeyProvider }) {
   return router({
-  list: route({ permission: 'automation:manage' })
-    .input(z.object({}).strict())
-    .output(z.array(AutomationSummaryOutput).readonly())
-    .query(({ ctx }) => automations.listAutomations(actorOf(ctx))),
-
-  create: route({ permission: 'automation:manage' })
-    .input(AutomationBody.strict())
-    .output(z.object({ automationId: z.string() }))
-    .mutation(({ input, ctx }) => automations.createAutomation(actorOf(ctx), input)),
-
-  update: route({ permission: 'automation:manage' })
-    .input(AutomationBody.extend({ automationId: z.string().uuid() }).strict())
-    .output(z.object({ name: z.string() }))
-    .mutation(({ input, ctx }) => automations.updateAutomation(actorOf(ctx), input)),
-
-  /**
-   * The kill switch. Its own route rather than a field on `update` so stopping
-   * a misbehaving rule does not require sending back a complete, valid rule
-   * body — which would run the emergency path through the same validation that
-   * might refuse the very rule someone is trying to stop.
-   */
-  setEnabled: route({ permission: 'automation:manage' })
-    .input(z.object({ automationId: z.string().uuid(), enabled: z.boolean() }).strict())
-    .output(z.object({ enabled: z.boolean() }))
-    .mutation(({ input, ctx }) => automations.setAutomationEnabled(actorOf(ctx), input)),
-
-  delete: route({ permission: 'automation:manage' })
-    .input(z.object({ automationId: z.string().uuid() }).strict())
-    .output(z.object({ deleted: z.literal(true) }))
-    .mutation(({ input, ctx }) => automations.deleteAutomation(actorOf(ctx), input)),
-
-  /**
-   * Run history, org tier (§9 decision 8).
-   *
-   * RLS scopes it to this org and the input has no vocabulary for asking about
-   * another one — the platform tier is a separate surface reading a separate
-   * scope, deliberately not this screen with a filter.
-   */
-  runs: route({ permission: 'automation:manage' })
-    .input(
-      z
-        .object({
-          automationId: z.string().uuid().optional(),
-          limit: z.number().int().min(1).max(200).default(50),
-        })
-        .strict(),
-    )
-    .output(
-      z
-        .array(
-          z.object({
-            runId: z.string(),
-            automationId: z.string(),
-            triggerEvent: z.string(),
-            status: z.string(),
-            reason: z.string().nullable(),
-            actionResults: z.array(z.unknown()).readonly(),
-            depth: z.number(),
-            durationMs: z.number().nullable(),
-            createdAt: z.date(),
-          }),
-        )
-        .readonly(),
-    )
-    .query(({ input, ctx }) =>
-      automations.listAutomationRuns(actorOf(ctx), {
-        limit: input.limit,
-        /* Conditional spread rather than passing `input` whole:
-           `exactOptionalPropertyTypes` makes "absent" and "present and
-           undefined" different types, and Zod's `.optional()` produces the
-           latter. The repo's idiom throughout. */
-        ...(input.automationId === undefined ? {} : { automationId: input.automationId }),
-      }),
-    ),
-
-  /**
-   * The webhook registry (Wave 2, ai/phase-10-automation.md §5) — nested here
-   * rather than top-level because it exists to be named by a rule's action,
-   * and the /automations page owns its UI. Floored on `webhook:manage`, the
-   * third of §9 decision 4's org-level permissions, so a relationship tuple
-   * can never satisfy it.
-   *
-   * The URL is stored SHAPE-checked and re-checked per redirect hop at
-   * delivery; the signing secret is minted here and shown exactly once.
-   */
-  webhooks: router({
-    list: route({ permission: 'webhook:manage' })
+    list: route({ permission: 'automation:manage' })
       .input(z.object({}).strict())
-      .output(z.array(WebhookSummaryOutput).readonly())
-      .query(({ ctx }) => webhooks.listWebhooks(actorOf(ctx))),
+      .output(z.array(AutomationSummaryOutput).readonly())
+      .query(({ ctx }) => automations.listAutomations(actorOf(ctx))),
 
-    create: route({ permission: 'webhook:manage' })
-      .input(z.object({ name: WebhookName, url: WebhookUrl }).strict())
-      /* The signing secret rides this one response and nowhere else — the
-         output schema is the full contract for "shown once". */
-      .output(z.object({ webhookId: z.string(), signingSecret: z.string() }))
-      .mutation(({ input, ctx }) =>
-        webhooks.createWebhook(actorOf(ctx), input, deps.keys),
-      ),
+    create: route({ permission: 'automation:manage' })
+      .input(AutomationBody.strict())
+      .output(z.object({ automationId: z.string() }))
+      .mutation(({ input, ctx }) => automations.createAutomation(actorOf(ctx), input)),
 
-    update: route({ permission: 'webhook:manage' })
-      .input(
-        z
-          .object({ webhookId: z.string().uuid(), name: WebhookName, url: WebhookUrl })
-          .strict(),
-      )
+    update: route({ permission: 'automation:manage' })
+      .input(AutomationBody.extend({ automationId: z.string().uuid() }).strict())
       .output(z.object({ name: z.string() }))
-      .mutation(({ input, ctx }) => webhooks.updateWebhook(actorOf(ctx), input)),
+      .mutation(({ input, ctx }) => automations.updateAutomation(actorOf(ctx), input)),
 
-    /* The kill switch, own route, same reasoning as `automation.setEnabled`. */
-    setEnabled: route({ permission: 'webhook:manage' })
-      .input(z.object({ webhookId: z.string().uuid(), enabled: z.boolean() }).strict())
+    /**
+     * The kill switch. Its own route rather than a field on `update` so stopping
+     * a misbehaving rule does not require sending back a complete, valid rule
+     * body — which would run the emergency path through the same validation that
+     * might refuse the very rule someone is trying to stop.
+     */
+    setEnabled: route({ permission: 'automation:manage' })
+      .input(z.object({ automationId: z.string().uuid(), enabled: z.boolean() }).strict())
       .output(z.object({ enabled: z.boolean() }))
-      .mutation(({ input, ctx }) => webhooks.setWebhookEnabled(actorOf(ctx), input)),
+      .mutation(({ input, ctx }) => automations.setAutomationEnabled(actorOf(ctx), input)),
 
-    delete: route({ permission: 'webhook:manage' })
-      .input(z.object({ webhookId: z.string().uuid() }).strict())
+    delete: route({ permission: 'automation:manage' })
+      .input(z.object({ automationId: z.string().uuid() }).strict())
       .output(z.object({ deleted: z.literal(true) }))
-      .mutation(({ input, ctx }) => webhooks.deleteWebhook(actorOf(ctx), input)),
+      .mutation(({ input, ctx }) => automations.deleteAutomation(actorOf(ctx), input)),
 
-    /** Recent delivery history for one endpoint — the "did it go out" read. */
-    deliveries: route({ permission: 'webhook:manage' })
+    /**
+     * Run history, org tier (§9 decision 8).
+     *
+     * RLS scopes it to this org and the input has no vocabulary for asking about
+     * another one — the platform tier is a separate surface reading a separate
+     * scope, deliberately not this screen with a filter.
+     */
+    runs: route({ permission: 'automation:manage' })
       .input(
         z
           .object({
-            webhookId: z.string().uuid(),
-            limit: z.number().int().min(1).max(100).default(25),
+            automationId: z.string().uuid().optional(),
+            limit: z.number().int().min(1).max(200).default(50),
           })
           .strict(),
       )
-      .output(z.array(WebhookDeliveryOutput).readonly())
+      .output(
+        z
+          .array(
+            z.object({
+              runId: z.string(),
+              automationId: z.string(),
+              triggerEvent: z.string(),
+              status: z.string(),
+              reason: z.string().nullable(),
+              actionResults: z.array(z.unknown()).readonly(),
+              depth: z.number(),
+              durationMs: z.number().nullable(),
+              createdAt: z.date(),
+            }),
+          )
+          .readonly(),
+      )
       .query(({ input, ctx }) =>
-        webhooks.listWebhookDeliveries(actorOf(ctx), {
-          webhookId: input.webhookId,
+        automations.listAutomationRuns(actorOf(ctx), {
           limit: input.limit,
+          /* Conditional spread rather than passing `input` whole:
+           `exactOptionalPropertyTypes` makes "absent" and "present and
+           undefined" different types, and Zod's `.optional()` produces the
+           latter. The repo's idiom throughout. */
+          ...(input.automationId === undefined ? {} : { automationId: input.automationId }),
         }),
       ),
-  }),
-});
+
+    /**
+     * The webhook registry (Wave 2, ai/phase-10-automation.md §5) — nested here
+     * rather than top-level because it exists to be named by a rule's action,
+     * and the /automations page owns its UI. Floored on `webhook:manage`, the
+     * third of §9 decision 4's org-level permissions, so a relationship tuple
+     * can never satisfy it.
+     *
+     * The URL is stored SHAPE-checked and re-checked per redirect hop at
+     * delivery; the signing secret is minted here and shown exactly once.
+     */
+    webhooks: router({
+      list: route({ permission: 'webhook:manage' })
+        .input(z.object({}).strict())
+        .output(z.array(WebhookSummaryOutput).readonly())
+        .query(({ ctx }) => webhooks.listWebhooks(actorOf(ctx))),
+
+      create: route({ permission: 'webhook:manage' })
+        .input(z.object({ name: WebhookName, url: WebhookUrl }).strict())
+        /* The signing secret rides this one response and nowhere else — the
+         output schema is the full contract for "shown once". */
+        .output(z.object({ webhookId: z.string(), signingSecret: z.string() }))
+        .mutation(({ input, ctx }) => webhooks.createWebhook(actorOf(ctx), input, deps.keys)),
+
+      update: route({ permission: 'webhook:manage' })
+        .input(
+          z.object({ webhookId: z.string().uuid(), name: WebhookName, url: WebhookUrl }).strict(),
+        )
+        .output(z.object({ name: z.string() }))
+        .mutation(({ input, ctx }) => webhooks.updateWebhook(actorOf(ctx), input)),
+
+      /* The kill switch, own route, same reasoning as `automation.setEnabled`. */
+      setEnabled: route({ permission: 'webhook:manage' })
+        .input(z.object({ webhookId: z.string().uuid(), enabled: z.boolean() }).strict())
+        .output(z.object({ enabled: z.boolean() }))
+        .mutation(({ input, ctx }) => webhooks.setWebhookEnabled(actorOf(ctx), input)),
+
+      delete: route({ permission: 'webhook:manage' })
+        .input(z.object({ webhookId: z.string().uuid() }).strict())
+        .output(z.object({ deleted: z.literal(true) }))
+        .mutation(({ input, ctx }) => webhooks.deleteWebhook(actorOf(ctx), input)),
+
+      /** Recent delivery history for one endpoint — the "did it go out" read. */
+      deliveries: route({ permission: 'webhook:manage' })
+        .input(
+          z
+            .object({
+              webhookId: z.string().uuid(),
+              limit: z.number().int().min(1).max(100).default(25),
+            })
+            .strict(),
+        )
+        .output(z.array(WebhookDeliveryOutput).readonly())
+        .query(({ input, ctx }) =>
+          webhooks.listWebhookDeliveries(actorOf(ctx), {
+            webhookId: input.webhookId,
+            limit: input.limit,
+          }),
+        ),
+    }),
+  });
 }
 
 const WebhookName = z.string().trim().min(1).max(120);

@@ -11,7 +11,7 @@ import { buildWebhookSignature, verifyWebhookSignature } from './webhook-signing
  * reason — see its own header.
  */
 
-const SECRET = 'tf_whs_0123456789abcdef0123456789abcdef';
+const SIGNING_INPUT = 'tf_whs_0123456789abcdef0123456789abcdef';
 const BODY = JSON.stringify({
   eventId: '0195ee30-0000-7000-8000-0000000000aa',
   eventName: 'card.status_changed',
@@ -22,20 +22,20 @@ const BODY = JSON.stringify({
 
 describe('buildWebhookSignature / verifyWebhookSignature', () => {
   it('round-trips: a receiver with the secret and the raw body accepts it', () => {
-    const signature = buildWebhookSignature(SECRET, BODY);
+    const signature = buildWebhookSignature(SIGNING_INPUT, BODY);
 
     /* The timestamp defaults to now, so verify with a fresh window. This is
        the shape of the receiver's own call. */
-    expect(verifyWebhookSignature({ secret: SECRET, body: BODY, signature, maxAgeSeconds: 300 })).toBe(
-      true,
-    );
+    expect(
+      verifyWebhookSignature({ secret: SIGNING_INPUT, body: BODY, signature, maxAgeSeconds: 300 }),
+    ).toBe(true);
   });
 
   it('refuses a body the sender did not sign — the tamper case', () => {
-    const signature = buildWebhookSignature(SECRET, BODY);
+    const signature = buildWebhookSignature(SIGNING_INPUT, BODY);
     expect(
       verifyWebhookSignature({
-        secret: SECRET,
+        secret: SIGNING_INPUT,
         body: BODY.replace('card.status_changed', 'card.deleted'),
         signature,
         maxAgeSeconds: 300,
@@ -45,34 +45,39 @@ describe('buildWebhookSignature / verifyWebhookSignature', () => {
 
   it('refuses a signature made with a different secret', () => {
     const signature = buildWebhookSignature('tf_whs_another-secret-entirely', BODY);
-    expect(verifyWebhookSignature({ secret: SECRET, body: BODY, signature, maxAgeSeconds: 300 })).toBe(
-      false,
-    );
+    expect(
+      verifyWebhookSignature({ secret: SIGNING_INPUT, body: BODY, signature, maxAgeSeconds: 300 }),
+    ).toBe(false);
   });
 
   it('refuses a stale timestamp — replay of an old signed body', () => {
     /* Signed an hour ago, verified now: the receiver must refuse, because a
        captured (signature, body) pair would otherwise be replayable forever. */
     const old = Math.floor(Date.now() / 1000) - 3_600;
-    const signature = buildWebhookSignature(SECRET, BODY, old);
+    const signature = buildWebhookSignature(SIGNING_INPUT, BODY, old);
 
-    expect(verifyWebhookSignature({ secret: SECRET, body: BODY, signature, maxAgeSeconds: 300 })).toBe(
-      false,
-    );
+    expect(
+      verifyWebhookSignature({ secret: SIGNING_INPUT, body: BODY, signature, maxAgeSeconds: 300 }),
+    ).toBe(false);
   });
 
   it('refuses a signature for the future — the clock-drift mirror of stale', () => {
     const future = Math.floor(Date.now() / 1000) + 3_600;
-    const signature = buildWebhookSignature(SECRET, BODY, future);
-    expect(verifyWebhookSignature({ secret: SECRET, body: BODY, signature, maxAgeSeconds: 300 })).toBe(
-      false,
-    );
+    const signature = buildWebhookSignature(SIGNING_INPUT, BODY, future);
+    expect(
+      verifyWebhookSignature({ secret: SIGNING_INPUT, body: BODY, signature, maxAgeSeconds: 300 }),
+    ).toBe(false);
   });
 
   it('refuses a malformed header outright', () => {
     for (const garbage of ['', 'not-a-signature', 't=abc,v1=xyz', 'v1=deadbeef']) {
       expect(
-        verifyWebhookSignature({ secret: SECRET, body: BODY, signature: garbage, maxAgeSeconds: 300 }),
+        verifyWebhookSignature({
+          secret: SIGNING_INPUT,
+          body: BODY,
+          signature: garbage,
+          maxAgeSeconds: 300,
+        }),
       ).toBe(false);
     }
   });
@@ -83,10 +88,16 @@ describe('buildWebhookSignature / verifyWebhookSignature', () => {
        A sender must therefore never reuse a timestamp with a different body,
        and this pins the format. */
     const at = 1_752_000_000;
-    const signature = buildWebhookSignature(SECRET, BODY, at);
+    const signature = buildWebhookSignature(SIGNING_INPUT, BODY, at);
     expect(signature.startsWith(`t=${String(at)},v1=`)).toBe(true);
-    expect(verifyWebhookSignature({ secret: SECRET, body: BODY, signature, maxAgeSeconds: 300, now: at })).toBe(
-      true,
-    );
+    expect(
+      verifyWebhookSignature({
+        secret: SIGNING_INPUT,
+        body: BODY,
+        signature,
+        maxAgeSeconds: 300,
+        now: at,
+      }),
+    ).toBe(true);
   });
 });

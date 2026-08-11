@@ -62,19 +62,38 @@ describe('taskflow_webhook — claim-only, by GRANT', () => {
     /* The recording-ingest recipe: a conditional UPDATE on `attempts` needs
        SELECT on the claim columns and UPDATE on the outcome columns, and
        nothing more. */
-    expect(await canColumn('taskflow_webhook', 'platform.webhook_deliveries', 'id', 'SELECT')).toBe(true);
-    expect(await canColumn('taskflow_webhook', 'platform.webhook_deliveries', 'attempts', 'SELECT')).toBe(true);
-    expect(await canColumn('taskflow_webhook', 'platform.webhook_deliveries', 'attempts', 'UPDATE')).toBe(true);
-    expect(await canColumn('taskflow_webhook', 'platform.webhook_deliveries', 'status', 'UPDATE')).toBe(true);
-    expect(await canColumn('taskflow_webhook', 'platform.webhook_deliveries', 'next_attempt_at', 'UPDATE')).toBe(true);
+    expect(await canColumn('taskflow_webhook', 'platform.webhook_deliveries', 'id', 'SELECT')).toBe(
+      true,
+    );
+    expect(
+      await canColumn('taskflow_webhook', 'platform.webhook_deliveries', 'attempts', 'SELECT'),
+    ).toBe(true);
+    expect(
+      await canColumn('taskflow_webhook', 'platform.webhook_deliveries', 'attempts', 'UPDATE'),
+    ).toBe(true);
+    expect(
+      await canColumn('taskflow_webhook', 'platform.webhook_deliveries', 'status', 'UPDATE'),
+    ).toBe(true);
+    expect(
+      await canColumn(
+        'taskflow_webhook',
+        'platform.webhook_deliveries',
+        'next_attempt_at',
+        'UPDATE',
+      ),
+    ).toBe(true);
   });
 
   it('cannot read the payload — the role that decides what to deliver cannot read what is being delivered', async () => {
     /* THE column-level exclusion. Without it, the role that claims rows
        across every tenant is also a cross-tenant reader of the card data the
        payloads carry. */
-    expect(await canColumn('taskflow_webhook', 'platform.webhook_deliveries', 'payload', 'SELECT')).toBe(false);
-    expect(await canColumn('taskflow_webhook', 'platform.webhook_deliveries', 'event_name', 'SELECT')).toBe(false);
+    expect(
+      await canColumn('taskflow_webhook', 'platform.webhook_deliveries', 'payload', 'SELECT'),
+    ).toBe(false);
+    expect(
+      await canColumn('taskflow_webhook', 'platform.webhook_deliveries', 'event_name', 'SELECT'),
+    ).toBe(false);
   });
 
   it('holds NOTHING on platform.webhooks — no URL, no signing key', async () => {

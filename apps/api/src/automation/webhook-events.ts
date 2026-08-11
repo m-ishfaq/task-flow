@@ -73,5 +73,7 @@ export const webhookDeliveryQueued = defineEvent(
  */
 export const webhookAutoDisabled = defineEvent(
   'webhook.auto_disabled',
-  z.object({ webhookId: z.string(), name: z.string(), failedDeliveries: z.number().int() }).strict(),
+  z
+    .object({ webhookId: z.string(), name: z.string(), failedDeliveries: z.number().int() })
+    .strict(),
 );

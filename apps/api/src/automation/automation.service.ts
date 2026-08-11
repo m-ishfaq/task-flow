@@ -112,7 +112,7 @@ const EVENTS_EMITTED_BY: Readonly<Record<string, readonly string[]>> = {
   'chat.post_message': ['message.sent'],
   /* The enqueue emits this through the service layer, so a rule triggered by
      `webhook.delivery_queued` whose action calls a webhook would feed itself. */
-  'call_webhook': ['webhook.delivery_queued'],
+  call_webhook: ['webhook.delivery_queued'],
 };
 
 const orgOf = (actor: AutomationActor): OrgId => actor.subject.orgId;
