@@ -929,6 +929,7 @@ export interface CardRow {
   readonly priority: Priority | null;
   readonly dueDate: Date | null;
   readonly startDate: Date | null;
+  readonly sprintId: string | null;
   readonly version: number;
 }
 
@@ -952,6 +953,7 @@ export async function loadCard(
       priority: schema.cards.priority,
       dueDate: schema.cards.dueDate,
       startDate: schema.cards.startDate,
+      sprintId: schema.cards.sprintId,
       version: schema.cards.version,
     })
     .from(schema.cards)

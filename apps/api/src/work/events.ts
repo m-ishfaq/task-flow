@@ -802,6 +802,40 @@ export const sprintCancelled = defineEvent(
 );
 
 /**
+ * A sprint's plan changed — name, goal, or dates.
+ *
+ * Not in the phase spec's event list (that list named the lifecycle events and
+ * membership), but guardrail 11 has no quiet category: `sprints.update` mutates
+ * state, so it emits. Same before/after shape `status.updated` established,
+ * so a consumer can say what changed without diffing two payloads.
+ */
+export const sprintUpdated = defineEvent(
+  'sprint.updated',
+  z
+    .object({
+      sprintId: z.string(),
+      projectId: z.string(),
+      before: z
+        .object({
+          name: z.string(),
+          goal: z.string().nullable(),
+          startsOn: z.string(),
+          endsOn: z.string(),
+        })
+        .strict(),
+      after: z
+        .object({
+          name: z.string(),
+          goal: z.string().nullable(),
+          startsOn: z.string(),
+          endsOn: z.string(),
+        })
+        .strict(),
+    })
+    .strict(),
+);
+
+/**
  * A card's sprint membership changed — assigned, released, or released by a
  * close (before = the sprint it left, after = the sprint it entered; null is
  * the backlog). Phase 11's projection and the picker's card counts consume it.

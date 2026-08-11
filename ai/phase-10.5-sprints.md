@@ -227,6 +227,29 @@ The sprint is a **new dimension on the existing board**, not a new board layout:
 
 ## Status
 
-**DRAFT — not approved.** Decisions 1, 2, 5 and 7 are the ones a reviewer should read
-first; decision 5 (unfinished cards return to the backlog rather than rolling forward) is
-the one product call a team could reasonably make differently.
+**APPROVED 2026-08-11** — decisions 1, 2 and 5 resolved by the author's call: unfinished
+cards return to the backlog on close, one active sprint per project, and the sprint is a
+dimension on the existing board rather than a new layout.
+
+**Slice 1 COMPLETE (commit `be421ca`)** — migration 0054 (`work.sprints` + `cards.sprint_id`
+composite FK + one-active partial index + REVOKE DELETE), the drizzle mirror, the five
+slice-1 events, and the grants/RLS suite (6 tests: REVOKE, index refusal, FK refusal, org
+confinement).
+
+**Slice 2 COMPLETE (commit `a4e4531`)** — `sprint.service.ts` (create/update/start/complete/cancel/
+list + `assignSprint`/`releaseSprint`), the routes (`sprints.*` on `project:read`/`project:update`,
+`cards.assignSprint`/`cards.releaseSprint` on `card:update`), and `sprint.service.test.ts`
+(13 tests: the lifecycle guards, one-active through the service AND the index, decision-5
+closure semantics with shipped/released counts, cancellation releasing everything, membership
+round-trips with before/after events, the composite-FK 404 for another project's sprint, the
+editability rules per status, and the permission split). Two notes:
+
+- The spec's events list named the lifecycle events and membership; guardrail 11 needed one
+  more — `sprint.updated` (before/after), because `sprints.update` mutates state and has no
+  quiet category. Same shape `status.updated` established.
+- The spec says membership changes are "version-bumped like every other card mutation";
+  `setCardStatus`/`assignCard` — the two closest precedents — do not bump `cards.version`,
+  so `assignSprint`/`releaseSprint` follow them and don't either. Noted here rather than
+  silently diverging.
+
+**Slice 3 (board picker + sprints manager + card detail field) — next.**
