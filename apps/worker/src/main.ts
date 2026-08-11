@@ -1,7 +1,9 @@
-import { closeDatabase, initializeDatabase } from '@taskflow/db';
+import { closeDatabase, initializeAutomationDatabase, initializeDatabase } from '@taskflow/db';
 import { createLogger } from '@taskflow/observability';
 import { loadEnv } from './config/env.js';
 import { createHealthServer } from './health.js';
+import { createActionExecutor } from './automation/executor.js';
+import { startAutomationEngine } from './automation/relay.js';
 
 /**
  * Process entry point for the background worker (ai/phase-10-automation.md,
@@ -43,6 +45,19 @@ initializeDatabase({
   applicationName: 'taskflow-worker-app',
 });
 
+/* The CLAIM pool, as `taskflow_automation` — a role that may read the outbox
+   and mark its own dispatch rows, and holds nothing on the automation tables or
+   any tenant table. Optional: an instance without it serves health and runs
+   nothing, and `startAutomationEngine` says so out loud rather than falling
+   back to the application role, which could not claim across orgs anyway and
+   would silently run nothing while looking healthy. */
+if (env.DATABASE_AUTOMATION_URL !== undefined) {
+  initializeAutomationDatabase({
+    url: env.DATABASE_AUTOMATION_URL,
+    applicationName: 'taskflow-worker-automation',
+  });
+}
+
 const logger = createLogger({ name: 'worker', level: env.LOG_LEVEL });
 
 const health = createHealthServer();
@@ -52,25 +67,28 @@ await new Promise<void>((resolveListen) => {
   });
 });
 
+const engine = startAutomationEngine({
+  logger,
+  executor: createActionExecutor(),
+  intervalMs: env.WORKER_POLL_INTERVAL_MS,
+});
+
 logger.info({ port: env.WORKER_PORT }, 'worker started');
 
-/* No jobs are registered yet — the engine lands in the next slice of Wave 1.
-   The process is deliberately shipped before the thing it runs, the same
-   build order Phase 7 Wave 1 and Phase 13 used for their gates: a deployable
-   with a health check and validated config is reviewable on its own, and a
-   job added to a proven container is a smaller change than both at once. */
-
 /**
- * Stop accepting probes, then close the pool.
+ * Stop the engine, stop accepting probes, then close the pools.
  *
- * The health server goes first so an orchestrator sees the process leaving
- * rotation before its database connections disappear underneath any in-flight
- * work — the same drain-rather-than-drop ordering `apps/realtime`'s shutdown
- * documents.
+ * The engine's timer is cleared FIRST so no new tick starts, then the health
+ * server so an orchestrator sees the process leaving rotation, and only then
+ * the pools — the same drain-rather-than-drop ordering `apps/realtime`'s
+ * shutdown documents. A tick already in flight finishes against a live
+ * connection rather than failing partway, which would leave its batch unmarked
+ * and every event in it redelivered.
  */
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.once(signal, () => {
     void (async () => {
+      engine.stop();
       await new Promise<void>((resolveClose) => {
         health.close(() => {
           resolveClose();

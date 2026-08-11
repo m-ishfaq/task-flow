@@ -25,6 +25,39 @@ protection and run history, outbound webhooks, a public API with scoped tokens, 
 connectors, and importers/exporters. It also builds **`apps/worker`**, which PLAN.md §6 has
 listed as "arriving" since Phase 0.
 
+### Wave 1 progress — slices 1–4 of 6 shipped 2026-08-11
+
+Deliberately granular, because "the engine" is not one reviewable change:
+
+1. **`apps/worker`** — the process, empty on purpose. Validated env, two-tier health, Dockerfile,
+   compose service. Its env schema was written `.strict()`, passed five tests fed a tidy fixture,
+   and died on first boot listing 200 OS variables — the failure `apps/api/src/config/env.ts`
+   already documents happening to IT, repeated. The regression test now feeds realistic noise.
+2. **Migration 0047** — `automations`, `automation_runs`, `automation_budget`, the
+   `taskflow_automation` claim role, `causationDepth` on the envelope. `platform` carries
+   `ALTER DEFAULT PRIVILEGES`, so `taskflow_app` had UPDATE/DELETE on run history before this
+   migration's own GRANT ran (the 0036 trap); the explicit REVOKEs fix it and
+   `automation-grants.test.ts` proves they took, by asking the database rather than reading the
+   migration.
+3. **The engine** — trigger matching, conditions through the Phase 3 evaluator, all four loop
+   layers, run recording. **Migration 0048** came out of writing the relay: 0047 put the depth on
+   the envelope and nothing persisted it, so every chain would have restarted at 0 on the far
+   side of the queue. The raw-SQL guardrail also fired, correctly, on the budget upsert written
+   inline in the worker — moved to `packages/db` as a named function.
+4. **The executor** — actions through `apps/api`'s service layer, the rule owner re-resolved on
+   every execution, and the engine started in `main.ts`. Verified by booting the worker against a
+   real database: it claimed 1,000 events and executed none, which also proves the claim role's
+   `FOR UPDATE`/`WITH CHECK (false)` policy pair, since a wrong one returns zero rows and looks
+   identical to an idle queue.
+
+Still to come: routes and the rule CRUD service (slice 5), the rule builder and run-history UI
+(slice 6).
+
+**One test was passing for the wrong reason and is worth repeating here**: a budget assertion
+read `automation_budget` with no org scope, and that table FORCEs RLS — so "no budget row" was
+true whether or not one had been written. It would have passed even if the control it tested had
+been removed entirely.
+
 Read this header before trusting a status marker anywhere else in this file — the standing
 lesson every `ai/phase-*.md` in this repo states for itself, and the one Phase 8's Wave 3 had
 to learn the hard way six commits ago.
