@@ -239,7 +239,15 @@ describe('outbox — draining side', () => {
     await withOrgScope(ORG_A, async (tx) => appendToOutbox(tx, [eventFor(ORG_A)]));
 
     await withAuditScope(async (tx) => {
-      const claimed = await claimPending(tx, 'audit');
+      // `ours()` before marking, not just before asserting: `claimPending` has
+      // no org filter, so an unfiltered `markDispatched` here would mark a
+      // PARALLEL suite's rows as delivered to 'audit' without anything ever
+      // having read them — a silent loss in whichever suite owned them, not a
+      // failure in this one. `apps/api`'s own audit-projection tests are the
+      // ones that surfaced it: their `member.added`/`team.created` events
+      // vanished from `audit.audit_log` because this test's unscoped
+      // `markDispatched` had already claimed and marked them dispatched.
+      const claimed = ours(await claimPending(tx, 'audit'));
       await markDispatched(
         tx,
         'audit',
@@ -298,7 +306,12 @@ describe('outbox — draining side', () => {
       await withOrgScope(ORG_A, async (tx) => appendToOutbox(tx, [eventFor(ORG_A)]));
 
       await withAuditScope(async (tx) => {
-        const claimed = await claimPending(tx, 'audit');
+        // `ours()` before marking — same reason as the file header and the
+        // "does not re-claim" test above: an unscoped `markDispatched` here
+        // would mark a parallel suite's rows dispatched-to-'audit' without
+        // them ever being read, which is indistinguishable from data loss to
+        // whichever suite owned them.
+        const claimed = ours(await claimPending(tx, 'audit'));
         await markDispatched(
           tx,
           'audit',
