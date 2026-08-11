@@ -151,6 +151,73 @@ CREATE ROLE taskflow_platform_admin WITH LOGIN PASSWORD 'platform-admin-dev-secr
 CREATE ROLE taskflow_recording_ingest WITH LOGIN PASSWORD 'recording-dev-secret' NOSUPERUSER
   NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 
+-- ---------------------------------------------------------------------------
+-- taskflow_search — the search indexer's outbox CLAIM role (Phase 8 Wave 2,
+-- ai/phase-8-search.md §2.3, migration 0045's own header).
+--
+-- A further consumer role on the identical pattern as every role in this
+-- file: NOBYPASSRLS, reaching across every tenant only on the tables carrying
+-- an explicit `TO taskflow_search` policy (platform.outbox and
+-- platform.outbox_dispatch, scoped to consumer = 'search'). It holds NOTHING
+-- on search.documents — the actual indexing happens afterward, per event,
+-- over the ordinary taskflow_app connection under ordinary org scoping — the
+-- same claim-only separation taskflow_backlinks has from docs.page_versions.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_search WITH LOGIN PASSWORD 'search-dev-secret' NOSUPERUSER NOCREATEDB
+  NOCREATEROLE NOBYPASSRLS;
+
+-- ---------------------------------------------------------------------------
+-- taskflow_automation — the automation engine's outbox CLAIM role (Phase 10
+-- Wave 1, ai/phase-10-automation.md §4, migration 0047's own header).
+--
+-- The same claim-only separation as taskflow_search and taskflow_backlinks,
+-- and here it carries more weight than either. This role decides WHICH events
+-- a rule might fire on; it must not be able to perform the resulting actions.
+-- Those run afterward, per event, over the ordinary taskflow_app connection
+-- inside withOrgScope, through apps/api's own service layer — so an automation
+-- writes a card by exactly the path a human does, with the same RLS, the same
+-- can() checks and the same audit trail.
+--
+-- It therefore holds NOTHING on platform.automations or automation_runs
+-- either: reading the rules and recording the outcome are both org-scoped work
+-- the app role does. What this role can reach is the queue and its own
+-- dispatch bookkeeping, scoped to consumer = 'automation', and nothing else in
+-- the database.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_automation WITH LOGIN PASSWORD 'automation-dev-secret' NOSUPERUSER
+  NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+
+-- ---------------------------------------------------------------------------
+-- taskflow_webhook — the webhook delivery loop's CLAIM role (Phase 10 Wave 2,
+-- ai/phase-10-automation.md §5, migration 0049's own header).
+--
+-- The same claim-only separation as taskflow_automation, and here it runs on
+-- COLUMN-LEVEL grants: the role that decides WHICH deliveries are due may read
+-- the claim columns of webhook_deliveries and mark outcomes, and never sees
+-- `payload` — the role that decides what to deliver cannot read what is being
+-- delivered — and holds NOTHING on platform.webhooks, so it cannot learn an
+-- endpoint's URL or read a signing key. The actual delivery happens afterward,
+-- per org, over the ordinary taskflow_app connection inside withOrgScope.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_webhook WITH LOGIN PASSWORD 'webhook-dev-secret' NOSUPERUSER NOCREATEDB
+  NOCREATEROLE NOBYPASSRLS;
+
+-- ---------------------------------------------------------------------------
+-- taskflow_api_token_auth — the API-token LOOKUP role (Phase 10 Wave 3,
+-- ai/phase-10-automation.md §6.2, migration 0050).
+--
+-- The authentication hot path resolves a presented `tf_pat` by its hash
+-- BEFORE any org is known — the token row names its org, so no value of
+-- app.org_id is correct for the read. Unlike every worker claim role above,
+-- this is not a batch consumer: it is the credential-checker, and what it may
+-- see is column-limited to the lookup — token_hash, org_id, created_by,
+-- scopes, revoked_at — never `name`, `token_prefix` or `last_used_at`: the
+-- role that decides who you are cannot read what your tokens are called or
+-- when you last used them. It holds no INSERT/UPDATE/DELETE anywhere.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_api_token_auth WITH LOGIN PASSWORD 'api-token-auth-dev-secret' NOSUPERUSER
+  NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+
 -- Baseline grants live in 03-grants.sql, NOT here.
 --
 -- Roles are cluster-wide; grants are per-database. This file creates the roles

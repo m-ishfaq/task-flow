@@ -95,6 +95,31 @@ export const flagOverrideCleared = defineEvent(
 );
 
 /**
+ * An org was deleted by a platform operator (Phase 12 Wave 2 §3.5).
+ *
+ * SYSTEM_ORG on the envelope, not the org's own id: by the time this event
+ * publishes, the org row is gone — its outbox, its audit chain, and its
+ * product data all deleted with it — and the outbox envelope's
+ * `NOT NULL REFERENCES identity.orgs` could not point at a row that no
+ * longer exists even if the role held a grant on the outbox (it does not).
+ * The one durable record of the deletion is the `orgs.delete` entry in
+ * `platform.operator_audit_log`, written before this event, carrying the
+ * same org id, slug, member count, and the confirmation slug the operator
+ * typed.
+ */
+export const orgDeleted = defineEvent(
+  'platform.org_deleted',
+  z
+    .object({
+      orgId: z.string(),
+      slug: z.string(),
+      operatorUserId: z.string(),
+      memberCount: z.number().int().nonnegative(),
+    })
+    .strict(),
+);
+
+/**
  * An account was suspended by a platform operator (Phase 12 Wave 2 §3.1,
  * ai/phase-12-wave2.md).
  *

@@ -93,6 +93,22 @@ export const sessions = identity.table(
     userAgent: text('user_agent'),
     ip: inet('ip'),
 
+    /**
+     * ISO 3166-1 alpha-2 country of the sign-in IP, when it resolves to one
+     * (migration 0043, Phase 12 Wave 2 §3.4). Null for private/reserved/
+     * documentation ranges and unknown addresses. Stored on EVERY session,
+     * not just flagged ones — that is what lets the NEXT login compare
+     * against this one without a fresh lookup.
+     */
+    country: text('country'),
+    /**
+     * Set when this sign-in was flagged by impossible-travel detection
+     * (migration 0043, §3.4); null on every normal sign-in. A stored fact
+     * about that login, never recomputed at read time, because the sessions
+     * a reader would compare against keep changing.
+     */
+    impossibleTravelAt: timestamp('impossible_travel_at', { withTimezone: true }),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

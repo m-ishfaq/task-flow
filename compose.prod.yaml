@@ -1,0 +1,422 @@
+## TaskFlow — production stack for a single VM (ai/pre-launch-hardening.md
+## Priority 1; PLAN.md §12/§13's "provider interfaces make relocating a
+## redeploy" stance — this targets any Docker host, not a specific cloud).
+##
+## This file makes the deploy MECHANISM real. It does not supply real secrets,
+## a domain, or a TLS certificate — those are an operator's config exercise
+## once a host exists (see ai/deployment-runbook.md), not something baked in
+## here. Every secret below is a required substitution variable (`${VAR:?}`)
+## so a missing one fails `docker compose config` loudly rather than booting
+## every service on an empty string.
+##
+## Usage:
+##   docker compose --env-file .env.prod -f compose.prod.yaml build
+##   docker compose --env-file .env.prod -f compose.prod.yaml --profile tools run --rm migrate
+##   docker compose --env-file .env.prod -f compose.prod.yaml up -d
+##
+## `migrate` and `coturn` sit behind compose profiles ('tools' / 'turn') so
+## neither one starts as a side effect of a plain `up -d` — a migration is an
+## explicit step (see the runbook), and TURN is opt-in per RTC_TURN_URLS/
+## RTC_TURN_SECRET being set at all. Add `--profile turn` to `up` once those
+## are configured.
+##
+## `.env.prod.example` documents every variable this file substitutes.
+##
+## What's deliberately NOT here:
+## - mailpit — production needs a real SMTP relay (MAIL_HOST etc.), not a
+##   local inbox that discards everything it catches.
+## - TLS termination — put a certificate in front of the `web` service (a
+##   managed load balancer, or Caddy/another nginx doing ACME) rather than
+##   baking cert renewal into this file; `web`'s own nginx.conf listens on
+##   plain :80, exactly like every other container here talks to its
+##   neighbours over the compose network.
+## - Postgres role passwords are the ONLY thing this file changes about
+##   docker/postgres/init's role/grant model — see
+##   docker/postgres/init-prod/05-set-passwords.sh's own header. Everything
+##   else about who can do what is the same file dev uses.
+
+name: taskflow-prod
+
+x-app-env: &app-env
+  NODE_ENV: production
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?POSTGRES_SUPERUSER_PASSWORD must be set}
+      POSTGRES_DB: taskflow
+      POSTGRES_INITDB_ARGS: '--locale=C --encoding=UTF8'
+      # Consumed by docker/postgres/init-prod/05-set-passwords.sh, which runs
+      # after the role/grant scripts below and touches nothing but passwords.
+      TASKFLOW_MIGRATOR_PASSWORD: ${TASKFLOW_MIGRATOR_PASSWORD:?TASKFLOW_MIGRATOR_PASSWORD must be set}
+      TASKFLOW_APP_PASSWORD: ${TASKFLOW_APP_PASSWORD:?TASKFLOW_APP_PASSWORD must be set}
+      TASKFLOW_AUDIT_PASSWORD: ${TASKFLOW_AUDIT_PASSWORD:?TASKFLOW_AUDIT_PASSWORD must be set}
+      TASKFLOW_REALTIME_PASSWORD: ${TASKFLOW_REALTIME_PASSWORD:?TASKFLOW_REALTIME_PASSWORD must be set}
+      TASKFLOW_COLLAB_PASSWORD: ${TASKFLOW_COLLAB_PASSWORD:?TASKFLOW_COLLAB_PASSWORD must be set}
+      TASKFLOW_NOTIFICATION_SWEEP_PASSWORD: ${TASKFLOW_NOTIFICATION_SWEEP_PASSWORD:?TASKFLOW_NOTIFICATION_SWEEP_PASSWORD must be set}
+      TASKFLOW_BACKLINKS_PASSWORD: ${TASKFLOW_BACKLINKS_PASSWORD:?TASKFLOW_BACKLINKS_PASSWORD must be set}
+      TASKFLOW_PLATFORM_ADMIN_PASSWORD: ${TASKFLOW_PLATFORM_ADMIN_PASSWORD:?TASKFLOW_PLATFORM_ADMIN_PASSWORD must be set}
+      TASKFLOW_RECORDING_INGEST_PASSWORD: ${TASKFLOW_RECORDING_INGEST_PASSWORD:?TASKFLOW_RECORDING_INGEST_PASSWORD must be set}
+      TASKFLOW_SEARCH_PASSWORD: ${TASKFLOW_SEARCH_PASSWORD:?TASKFLOW_SEARCH_PASSWORD must be set}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # 01-03: the same role/grant model dev uses, unmodified. 04
+      # (test-database) is deliberately excluded — production has no reason
+      # to carry a test database or replay grants against it. 05 is the
+      # password-rotation script above.
+      - ./docker/postgres/init/01-extensions.sql:/docker-entrypoint-initdb.d/01-extensions.sql:ro
+      - ./docker/postgres/init/02-roles.sql:/docker-entrypoint-initdb.d/02-roles.sql:ro
+      - ./docker/postgres/init/03-grants.sql:/docker-entrypoint-initdb.d/03-grants.sql:ro
+      - ./docker/postgres/init-prod/05-set-passwords.sh:/docker-entrypoint-initdb.d/05-set-passwords.sh:ro
+    command:
+      - postgres
+      - -c
+      - log_min_duration_statement=200
+      - -c
+      - max_connections=200
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d taskflow']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
+    ports:
+      # Published on the host because presigned URLs are fetched DIRECTLY by
+      # the browser (packages/storage) — STORAGE_ENDPOINT in .env.prod must
+      # be a publicly reachable URL for this host:port, or point at a real S3/
+      # R2 endpoint instead and leave this container running unused. Put TLS
+      # in front of 9000 before using this for anything but a first test
+      # deploy — an attachment upload over plain HTTP is one to fix before
+      # real users touch it.
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" &&
+      mc mb --ignore-existing local/taskflow-attachments &&
+      mc mb --ignore-existing local/taskflow-exports &&
+      mc mb --ignore-existing local/taskflow-recordings &&
+      mc anonymous set none local/taskflow-attachments &&
+      mc anonymous set none local/taskflow-exports &&
+      mc anonymous set none local/taskflow-recordings &&
+      echo 'buckets ready (private)';
+      "
+    restart: 'no'
+
+  clamav:
+    image: clamav/clamav:stable
+    restart: unless-stopped
+    volumes:
+      - clamav-data:/var/lib/clamav
+    healthcheck:
+      test: ['CMD-SHELL', 'clamdcheck.sh || exit 1']
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+
+  # TURN/STUN. Optional — RTC_TURN_URLS/RTC_TURN_SECRET are only set below if
+  # the operator supplied them in .env.prod, and the app treats an unset pair
+  # as "STUN only" rather than refusing to boot (apps/api/src/config/env.ts's
+  # own superRefine). `network_mode: host` for the identical reason
+  # compose.yaml's dev coturn uses it — a Docker port mapping cannot cover
+  # the per-call relay port RANGE without a userland proxy per port, and the
+  # advertised ICE candidates must be addresses the browser can actually
+  # reach. Linux-only in this form; see compose.yaml's own note.
+  #
+  # `${RTC_TURN_SECRET:-CHANGE_ME...}` rather than `:?`, deliberately: compose
+  # resolves EVERY service's interpolation before applying `--profile`
+  # filtering, so a `:?` here would fail a plain `up -d` with the turn
+  # profile inactive. The profile gate is what actually keeps an unconfigured
+  # coturn from running — this default only has to be loud, not enforced.
+  # Verify RTC_TURN_SECRET is real before ever passing `--profile turn`.
+  coturn:
+    image: coturn/coturn:latest
+    restart: unless-stopped
+    network_mode: host
+    profiles: ['turn']
+    command:
+      - -n
+      - --log-file=stdout
+      - --listening-port=3478
+      - --fingerprint
+      - --use-auth-secret
+      - --static-auth-secret=${RTC_TURN_SECRET:-CHANGE_ME_set_RTC_TURN_SECRET_in_env_prod}
+      - --realm=${RTC_TURN_REALM:-taskflow}
+      - --min-port=49160
+      - --max-port=49200
+      - --no-multicast-peers
+      - --denied-peer-ip=0.0.0.0-0.255.255.255
+      - --denied-peer-ip=127.0.0.0-127.255.255.255
+      - --denied-peer-ip=169.254.0.0-169.254.255.255
+      - --denied-peer-ip=172.16.0.0-172.31.255.255
+      - --denied-peer-ip=192.168.0.0-192.168.255.255
+      - --denied-peer-ip=10.0.0.0-10.255.255.255
+
+  # One-shot. NOT part of `up` — the runbook runs this explicitly, before the
+  # app services start, and never on every deploy: a migration is a step, not
+  # a rolling-deploy side effect. Reuses the api image rather than adding a
+  # fifth Dockerfile — packages/db's migrate:up is `tsx`, and the api image
+  # already carries the whole workspace source.
+  migrate:
+    image: ${REGISTRY:-ghcr.io/m-ishfaq}/task-flow-api:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    profiles: ['tools']
+    environment:
+      <<: *app-env
+      DATABASE_MIGRATION_URL: postgresql://taskflow_migrator:${TASKFLOW_MIGRATOR_PASSWORD:?TASKFLOW_MIGRATOR_PASSWORD must be set}@postgres:5432/taskflow
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ['pnpm', '--filter', '@taskflow/db', 'migrate:up']
+
+  api:
+    image: ${REGISTRY:-ghcr.io/m-ishfaq}/task-flow-api:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      DATABASE_URL: postgresql://taskflow_app:${TASKFLOW_APP_PASSWORD:?TASKFLOW_APP_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_AUDIT_URL: postgresql://taskflow_audit:${TASKFLOW_AUDIT_PASSWORD:?TASKFLOW_AUDIT_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_BACKLINKS_URL: postgresql://taskflow_backlinks:${TASKFLOW_BACKLINKS_PASSWORD:?TASKFLOW_BACKLINKS_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_NOTIFICATION_SWEEP_URL: postgresql://taskflow_notification_sweep:${TASKFLOW_NOTIFICATION_SWEEP_PASSWORD:?TASKFLOW_NOTIFICATION_SWEEP_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_PLATFORM_ADMIN_URL: postgresql://taskflow_platform_admin:${TASKFLOW_PLATFORM_ADMIN_PASSWORD:?TASKFLOW_PLATFORM_ADMIN_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_RECORDING_INGEST_URL: postgresql://taskflow_recording_ingest:${TASKFLOW_RECORDING_INGEST_PASSWORD:?TASKFLOW_RECORDING_INGEST_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_API_TOKEN_URL: postgresql://taskflow_api_token_auth:${TASKFLOW_API_TOKEN_AUTH_PASSWORD:?TASKFLOW_API_TOKEN_AUTH_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_SEARCH_URL: postgresql://taskflow_search:${TASKFLOW_SEARCH_PASSWORD:?TASKFLOW_SEARCH_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+
+      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:?STORAGE_ENDPOINT must be set — a publicly reachable S3-compatible endpoint; see minio's own port comment}
+      STORAGE_REGION: ${STORAGE_REGION:-auto}
+      STORAGE_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
+      STORAGE_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
+      STORAGE_BUCKET_ATTACHMENTS: taskflow-attachments
+      STORAGE_BUCKET_EXPORTS: taskflow-exports
+      STORAGE_BUCKET_RECORDINGS: taskflow-recordings
+      STORAGE_FORCE_PATH_STYLE: ${STORAGE_FORCE_PATH_STYLE:-true}
+      STORAGE_MAX_UPLOAD_BYTES: ${STORAGE_MAX_UPLOAD_BYTES:-26214400}
+
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: 3310
+
+      MAIL_HOST: ${MAIL_HOST:?MAIL_HOST must be set — a real SMTP relay, not mailpit}
+      MAIL_PORT: ${MAIL_PORT:?MAIL_PORT must be set}
+      MAIL_SECURE: ${MAIL_SECURE:-true}
+      MAIL_FROM: ${MAIL_FROM:?MAIL_FROM must be set}
+
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+
+      MASTER_KEY_ID: ${MASTER_KEY_ID:?MASTER_KEY_ID must be set}
+      MASTER_KEY_BASE64: ${MASTER_KEY_BASE64:?MASTER_KEY_BASE64 must be set — generate with the command in .env.prod.example, never reuse the dev value}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set — generate with the command in .env.prod.example, never reuse the dev value}
+
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_VERIFY_SERVICE_SID: ${TWILIO_VERIFY_SERVICE_SID:-}
+      TELEPHONY_DEFAULT_SPEND_CAP_CENTS: ${TELEPHONY_DEFAULT_SPEND_CAP_CENTS:-2500}
+      TELEPHONY_MAX_SPEND_CAP_CENTS: ${TELEPHONY_MAX_SPEND_CAP_CENTS:-50000}
+      TELEPHONY_WEBHOOK_ORIGIN: ${TELEPHONY_WEBHOOK_ORIGIN:-}
+      TELEPHONY_INDEX_KEY: ${TELEPHONY_INDEX_KEY:-}
+
+      RTC_STUN_URLS: ${RTC_STUN_URLS:-stun:stun.l.google.com:19302}
+      RTC_TURN_URLS: ${RTC_TURN_URLS:-}
+      RTC_TURN_SECRET: ${RTC_TURN_SECRET:-}
+      RTC_TURN_TTL_SECONDS: ${RTC_TURN_TTL_SECONDS:-600}
+      RTC_TURN_ISSUANCE_CAP_PER_DAY: ${RTC_TURN_ISSUANCE_CAP_PER_DAY:-500}
+      RTC_ICE_TRANSPORT_POLICY: ${RTC_ICE_TRANSPORT_POLICY:-all}
+      RTC_MAX_RECORDING_BYTES: ${RTC_MAX_RECORDING_BYTES:-67108864}
+      RECORDING_INGEST_ENABLED: ${RECORDING_INGEST_ENABLED:-false}
+
+      API_PORT: 3000
+      API_HOST: 0.0.0.0
+      # nginx (the `web` service) is exactly one hop in front of this
+      # service on this topology — see ai/deployment-runbook.md. Trusting a
+      # count rather than `true` is what keeps per-IP rate limits from
+      # becoming opt-out (apps/api/src/config/trust-proxy.ts).
+      API_TRUST_PROXY: ${API_TRUST_PROXY:-1}
+
+      RETENTION_SWEEP_ENABLED: ${RETENTION_SWEEP_ENABLED:-false}
+      WEB_ORIGIN: ${WEB_ORIGIN:?WEB_ORIGIN must be set to the real public origin, e.g. https://app.example.com}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
+    healthcheck:
+      # 127.0.0.1, not localhost — `localhost` resolves to ::1 first on
+      # Alpine while these services listen on IPv4, so wget is refused despite
+      # the process being up. Found by the first real `up`: the web image had
+      # exactly this failure, and this block (which OVERRIDES the Dockerfile's
+      # own HEALTHCHECK) carried the same bug on all three backends.
+      test: ['CMD', 'wget', '-q', '-O-', 'http://127.0.0.1:3000/health/live']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  realtime:
+    image: ${REGISTRY:-ghcr.io/m-ishfaq}/task-flow-realtime:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: apps/realtime/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      DATABASE_URL: postgresql://taskflow_app:${TASKFLOW_APP_PASSWORD:?TASKFLOW_APP_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_REALTIME_URL: postgresql://taskflow_realtime:${TASKFLOW_REALTIME_PASSWORD:?TASKFLOW_REALTIME_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      REALTIME_PORT: 3001
+      REALTIME_HOST: 0.0.0.0
+      REALTIME_TRUST_PROXY: ${REALTIME_TRUST_PROXY:-1}
+      WEB_ORIGIN: ${WEB_ORIGIN:?WEB_ORIGIN must be set}
+      REALTIME_REAUTH_LEAD_SECONDS: ${REALTIME_REAUTH_LEAD_SECONDS:-60}
+      REALTIME_POLL_INTERVAL_MS: ${REALTIME_POLL_INTERVAL_MS:-5000}
+      REALTIME_MAX_CONNECTIONS_PER_IP_PER_MINUTE: ${REALTIME_MAX_CONNECTIONS_PER_IP_PER_MINUTE:-30}
+      REALTIME_MAX_JOINS_PER_MINUTE: ${REALTIME_MAX_JOINS_PER_MINUTE:-60}
+      REALTIME_MAX_REFUSED_JOINS_PER_MINUTE: ${REALTIME_MAX_REFUSED_JOINS_PER_MINUTE:-10}
+      REALTIME_MAX_SIGNALS_PER_MINUTE: ${REALTIME_MAX_SIGNALS_PER_MINUTE:-600}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # 127.0.0.1, not localhost — same reasoning as the api service's own
+      # healthcheck comment above.
+      test: ['CMD', 'wget', '-q', '-O-', 'http://127.0.0.1:3001/health/live']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  collab:
+    image: ${REGISTRY:-ghcr.io/m-ishfaq}/task-flow-collab:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: apps/collab/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      DATABASE_URL: postgresql://taskflow_app:${TASKFLOW_APP_PASSWORD:?TASKFLOW_APP_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_COLLAB_URL: postgresql://taskflow_collab:${TASKFLOW_COLLAB_PASSWORD:?TASKFLOW_COLLAB_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      COLLAB_PORT: 3002
+      COLLAB_HOST: 0.0.0.0
+      WEB_ORIGIN: ${WEB_ORIGIN:?WEB_ORIGIN must be set}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # 127.0.0.1, not localhost — same reasoning as the api service's own
+      # healthcheck comment above.
+      test: ['CMD', 'wget', '-q', '-O-', 'http://127.0.0.1:3002/']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # The background worker (ai/phase-10-automation.md §9 decision 1). Runs NEW
+  # background work only — the automation engine, webhook delivery, and later
+  # the analytics rollup refresh. The seven existing loops stay inside `api`;
+  # running a second consumer process is what `FOR UPDATE SKIP LOCKED` and the
+  # per-consumer `outbox_dispatch` were built for, so the two do not contend.
+  #
+  # No `ports:` — nothing outside the compose network ever calls this service.
+  # The port it does listen on carries health probes and nothing else, which is
+  # why `web` does not depend on it and `nginx.conf` has no route to it.
+  worker:
+    image: ${REGISTRY:-ghcr.io/m-ishfaq}/task-flow-worker:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      DATABASE_URL: postgresql://taskflow_app:${TASKFLOW_APP_PASSWORD:?TASKFLOW_APP_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_AUTOMATION_URL: postgresql://taskflow_automation:${TASKFLOW_AUTOMATION_PASSWORD:?TASKFLOW_AUTOMATION_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_WEBHOOK_URL: postgresql://taskflow_webhook:${TASKFLOW_WEBHOOK_PASSWORD:?TASKFLOW_WEBHOOK_PASSWORD must be set}@postgres:5432/taskflow
+      # The worker decrypts webhook signing secrets at delivery, so it holds
+      # the same master key pair the API holds — the same variables, same
+      # meaning.
+      MASTER_KEY_ID: ${MASTER_KEY_ID:?MASTER_KEY_ID must be set}
+      MASTER_KEY_BASE64: ${MASTER_KEY_BASE64:?MASTER_KEY_BASE64 must be set — generate with the command in .env.prod.example, never reuse the dev value}
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+      WORKER_PORT: 3003
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # 127.0.0.1, not localhost — same reasoning as the api service's own
+      # healthcheck comment above.
+      test: ['CMD', 'wget', '-q', '-O-', 'http://127.0.0.1:3003/health/live']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  web:
+    image: ${REGISTRY:-ghcr.io/m-ishfaq}/task-flow-web:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    ports:
+      # Host :80 -> container :8080. The container listens on 8080, not 80,
+      # because apps/web/Dockerfile runs nginx as a non-root user
+      # (nginxinc/nginx-unprivileged, per Trivy's AVD-DS-0002 finding), which
+      # can't bind a privileged port — that's purely internal, nothing
+      # changes for anyone hitting the app from outside. Plain HTTP on the
+      # host side too: put TLS termination in front of this (a managed load
+      # balancer, or another reverse proxy doing ACME) — see this file's own
+      # header and ai/deployment-runbook.md.
+      - '80:8080'
+    depends_on:
+      - api
+      - realtime
+      - collab
+
+volumes:
+  postgres-data:
+  minio-data:
+  clamav-data:

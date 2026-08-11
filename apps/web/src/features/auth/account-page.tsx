@@ -64,6 +64,7 @@ export function AccountPage() {
       <PasskeySection />
       <ConnectedAccountsSection />
       <SessionsSection />
+      <ExportDataSection />
       <OrganizationsSection />
     </div>
   );
@@ -410,6 +411,34 @@ function SessionsSection() {
   const queryClient = useQueryClient();
   const { guard, dialog } = useStepUp();
 
+  /* §3.4 — the device inventory IS the active-sessions list. Each row is one
+     sign-in; the current one is the session this request is running in. */
+  const sessions = useQuery({
+    queryKey: keys.sessions(),
+    queryFn: async () => wire(await api.auth.sessions.list.query()),
+  });
+
+  const revoke = useMutation({
+    mutationFn: (sessionId: string) => api.auth.sessions.revoke.mutate({ sessionId }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: keys.sessions() });
+      toast.show('That device has been signed out');
+    },
+    /* `sessionId` is the mutation's second argument — the retry needs to
+       re-issue the SAME revocation after the step-up prompt, not the latest
+       one. */
+    onError: (error, sessionId) => {
+      if (
+        guard(error, () => {
+          revoke.mutate(sessionId);
+        })
+      ) {
+        return;
+      }
+      toast.failure('Could not sign that device out', error);
+    },
+  });
+
   /**
    * Ends every session, including this tab's — `logoutEverywhere` revokes ALL
    * of the caller's sessions with no exception for the one making the request
@@ -447,17 +476,133 @@ function SessionsSection() {
   return (
     <Section
       title="Sessions"
-      description="Sign out of this device and every other one where you are currently signed in."
+      count={sessions.data?.sessions.length}
+      description="Every device currently signed in as you — the device list is the session list."
     >
-      <ConfirmButton
-        label="Sign out everywhere"
-        confirmLabel="Sign out of every device, including this one"
-        disabled={signOutEverywhere.isPending}
-        onConfirm={() => {
-          signOutEverywhere.mutate();
-        }}
-      />
+      {sessions.isPending && <SkeletonRows rows={2} className="*:h-10" />}
+      {sessions.isError && (
+        <ErrorView error={sessions.error} title="Could not load your sessions" />
+      )}
+
+      {sessions.data !== undefined && (
+        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
+          {sessions.data.sessions.map((session) => (
+            <li
+              key={session.id}
+              className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+            >
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 truncate text-ink">
+                  {session.label ?? 'Unknown device'}
+                  {session.isCurrent && <Badge>This device</Badge>}
+                </p>
+                <p className="truncate text-[11px] text-ink-muted">
+                  {session.ip ?? 'No IP recorded'} · signed in {formatDate(session.authenticatedAt)}{' '}
+                  · last seen {formatDate(session.lastSeenAt)}
+                  {session.flagged && (
+                    <span className="text-warning">
+                      {' '}
+                      · unusual sign-in{session.country ? ` from ${session.country}` : ''}
+                    </span>
+                  )}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={revoke.isPending}
+                onClick={() => {
+                  revoke.mutate(session.id);
+                }}
+              >
+                {session.isCurrent ? 'Sign out' : 'Sign out'}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {sessions.data?.sessions.length === 0 && (
+        <Empty
+          title="No active sessions"
+          description="Every sign-in is listed here when one happens."
+        />
+      )}
+
+      {sessions.data !== undefined && sessions.data.pushDeviceCount > 0 && (
+        <p className="text-xs text-ink-faint">
+          Push notifications are active on {sessions.data.pushDeviceCount}{' '}
+          {sessions.data.pushDeviceCount === 1 ? 'device' : 'devices'}.
+        </p>
+      )}
+
+      <div className="mt-3">
+        <ConfirmButton
+          label="Sign out everywhere"
+          confirmLabel="Sign out of every device, including this one"
+          disabled={signOutEverywhere.isPending}
+          onConfirm={() => {
+            signOutEverywhere.mutate();
+          }}
+        />
+      </div>
       {dialog}
+    </Section>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * Data export (Phase 12 Wave 2 §3.6)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * Self-serve DSAR export — downloads the caller's own account data as one
+ * JSON document (profile, memberships across every org, active sessions,
+ * connected OAuth identities). The server returns it inline; the audit
+ * record is the `user.data_exported` event, never the document's contents.
+ */
+function ExportDataSection() {
+  const toast = useToast();
+
+  const download = useMutation({
+    mutationFn: async () => wire(await api.people.profile.exportMine.query()),
+    onSuccess: (data) => {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `taskflow-data-export-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      toast.show('Your data export is ready');
+    },
+    onError: (error) => {
+      toast.failure('Could not export your data', error);
+    },
+  });
+
+  return (
+    <Section
+      title="Your data"
+      description="Everything this account holds about you — profile, memberships, active sessions and connected accounts, as one JSON document."
+    >
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={download.isPending}
+          onClick={() => {
+            download.mutate();
+          }}
+        >
+          {download.isPending ? 'Preparing…' : 'Export my data'}
+        </Button>
+        <span className="text-xs text-ink-faint">
+          A self-serve export. Work, chat and docs you authored in organizations are not included.
+        </span>
+      </div>
     </Section>
   );
 }

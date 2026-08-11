@@ -1,0 +1,19 @@
+-- 0051 — widen `taskflow_api_token_auth`'s grant for the authentication path
+-- (ai/phase-10-automation.md §6.4, Wave 3 slice 3).
+--
+-- 0050 granted the lookup role only (token_hash, org_id, created_by, scopes,
+-- revoked_at) — enough to answer "who does this hash name". Slice 3's
+-- `authenticateWithApiToken` needs two more fields from the same read:
+--
+--   - `id` becomes the principal's `sessionId`, so audit entries have
+--     something joinable to the token row;
+--   - `created_at` becomes the principal's `authenticatedAt` — "when the
+--     credential was proved" is the moment the token was minted, since the
+--     token IS the credential (§6.4 step 5).
+--
+-- Column-level grants ACCUMULATE in Postgres, so this adds the two columns to
+-- the existing grant rather than replacing it. The exclusions 0050 established
+-- still hold: the role never sees `name`, `token_prefix` or `last_used_at` —
+-- the role that decides who you are still cannot read what your tokens are
+-- called or when you last used them.
+GRANT SELECT (id, created_at) ON platform.api_tokens TO taskflow_api_token_auth;

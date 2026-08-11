@@ -22,6 +22,14 @@ import '../platform-admin/events.js';
 import '../work/events.js';
 import '../chat/events.js';
 import '../docs/events.js';
+/* Phase 8 Wave 3 — the slice grew its own events.ts, which is exactly the
+   moment the header above says to update this list. */
+import '../search/events.js';
+/* Phase 10 Wave 1, same moment. Without this line the three automation events
+   are invisible to every assertion below and the accounting test reports "all
+   accounted for" — which is precisely how the platform-admin events went
+   unchecked from Wave 1 to Wave 2. */
+import '../automation/events.js';
 
 /**
  * The audit projection's mapping table, checked against what is actually
@@ -85,6 +93,13 @@ const UNMAPPED: ReadonlySet<string> = new Set([
   'user.oauth_unlinked',
   'session.revoked',
   'session.token_reuse_detected',
+  // Phase 12 Wave 2 §3.6 — the DSAR export event. Same shape as the login
+  // events above: the fact names the account, already in `actor_id`, and the
+  // payload carries nothing of the export's contents by design.
+  'user.data_exported',
+  // Phase 12 Wave 2 §3.4 — same shape as its two siblings above: the fact
+  // names the account that just signed in, which is already in `actor_id`.
+  'session.impossible_travel_detected',
   // Work (Phase 3 / 3.5)
   'attachment.presigned',
   'attachment.uploaded',
@@ -100,6 +115,18 @@ const UNMAPPED: ReadonlySet<string> = new Set([
   'view.deleted',
   // Chat (Phase 5)
   'message.saved',
+  /* Search (Phase 8 Wave 3). The `view.*` reason one level up, and stronger:
+     a saved search has no container BUT the org, which every audit row already
+     names in `org_id` — so `resource_id` could only repeat it. It also has no
+     resource type of its own by deliberate design: `search` is absent from
+     RESOURCE_TYPES because no relationship tuple can point at a search
+     (packages/policy/src/permissions.ts), and migration 0005's
+     `tuples_object_type` CHECK would refuse one. Mapping these would mean
+     inventing a resource type to satisfy a test, which is the tail wagging
+     the policy engine. */
+  'saved_search.created',
+  'saved_search.updated',
+  'saved_search.deleted',
 ]);
 
 /**

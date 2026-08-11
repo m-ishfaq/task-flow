@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { KeyProvider } from '@taskflow/contracts';
 import { publicRoute, router, selfRoute } from './trpc/builder.js';
 import { getResolvedFlags } from './platform-admin/flag-evaluator.js';
 import { createIdentityRouter, type IdentityRouterDeps } from './identity/router.js';
@@ -13,6 +14,10 @@ import { createTelephonyRouter } from './telephony/router.js';
 import type { TelephonyDeps } from './telephony/deps.js';
 import { createRtcRouter } from './rtc/router.js';
 import type { RtcDeps } from './rtc/deps.js';
+import { createSearchRouter } from './search/router.js';
+import { createAutomationRouter } from './automation/router.js';
+import { createApiTokenRouter } from './automation/api-token.router.js';
+import { PostgresSearchProvider } from './search/postgres-provider.js';
 
 /**
  * The root router.
@@ -25,6 +30,12 @@ import type { RtcDeps } from './rtc/deps.js';
  */
 
 export interface AppRouterDeps extends IdentityRouterDeps {
+  /**
+   * Automation (Phase 10). Only the webhook registry needs anything external
+   * — a KeyProvider to wrap the per-webhook signing secrets at rest — so the
+   * dep is exactly that, threaded through `createAutomationRouter`.
+   */
+  readonly automation: { readonly keys: KeyProvider };
   /**
    * Work's external dependencies — object storage and the virus scanner.
    *
@@ -173,6 +184,39 @@ export function createAppRouter(deps: AppRouterDeps) {
      * One namespace for both would make every caller disambiguate.
      */
     rtc: createRtcRouter(deps.rtc),
+
+    /**
+     * Search (Phase 8 Wave 2) — one query over cards, messages, pages and
+     * comments, projected into `search.documents` by the indexer relay.
+     * `search:query` is the membership floor; every hit is re-checked with
+     * per-resource `can()` before it is returned (§2.7).
+     */
+    search: createSearchRouter(new PostgresSearchProvider()),
+
+    /**
+     * Automation rules (Phase 10 Wave 1) — the surface that MANAGES rules.
+     *
+     * The engine that runs them lives in `apps/worker` and is reachable from
+     * nothing here, which is the point: a route in this process can take an
+     * authenticated request and can never execute a rule, and the worker can
+     * execute and never takes a request.
+     *
+     * `automation:manage` is org-level (§9 decision 4), so the route floor is
+     * the whole decision at this layer — safe only because the resource-aware
+     * question is asked at EXECUTION, per action, against the rule owner's
+     * live permissions.
+     */
+    automation: createAutomationRouter(deps.automation),
+
+    /**
+     * Programmatic-access tokens (Phase 10 Wave 3, §6).
+     *
+     * Top-level rather than nested under automation because a token is not an
+     * automation thing — it authenticates the whole org's API surface. The
+     * mint/revoke routes are step-up (§6.4), which is the hook the slice-3
+     * builder gate uses to refuse token principals here.
+     */
+    apiToken: createApiTokenRouter(),
 
     /**
      * Feature flags — the resolved snapshot for the client bootstrap

@@ -76,6 +76,9 @@ function ours<T extends { readonly orgId: string }>(rows: readonly T[]): readonl
 /** SQLSTATE for "new row violates row-level security policy". */
 const RLS_VIOLATION = '42501';
 
+/** SQLSTATE for "new row violates check constraint". */
+const CHECK_VIOLATION = '23514';
+
 function pgErrorCode(error: unknown): string | undefined {
   let current = error;
   for (let depth = 0; depth < 5 && current !== null && current !== undefined; depth += 1) {
@@ -628,5 +631,61 @@ describe('audit log is append-only', () => {
       tx.execute(sql`SELECT count(*)::int AS n FROM audit.audit_log`),
     );
     expect(rows.rows).toEqual([{ n: 1 }]);
+  });
+});
+
+/**
+ * Causation depth survives the queue (migration 0048, Phase 10 §4).
+ *
+ * This seam is what the automation engine's whole loop protection rests on: an
+ * action emits an event carrying its parent's depth plus one, and the engine
+ * refuses above a cap. If the depth does not survive `append` -> `claim`, every
+ * chain restarts its counter on the far side of the outbox and the cap protects
+ * nothing — silently, with no test failing and no error logged.
+ *
+ * The gap was real. 0047 added the field to the ENVELOPE and nothing persisted
+ * it; it was found by writing the relay and noticing `OutboxRow` had nowhere
+ * for it to come from. These assertions are what stop it reopening.
+ */
+describe('outbox causation depth', () => {
+  it('round-trips a non-zero depth from append to claim', async () => {
+    const event = { ...eventFor(ORG_A), causationDepth: 3 } as DomainEvent;
+    await withOrgScope(ORG_A, async (tx) => appendToOutbox(tx, [event]));
+
+    const claimed = await withAuditScope(async (tx) => claimPending(tx, 'audit', 50));
+    const mine = ours(claimed).find((row) => row.id === event.id);
+
+    expect(mine?.causationDepth).toBe(3);
+  });
+
+  it('reads a human-initiated event as depth 0', async () => {
+    /* No `causationDepth` on the envelope at all — every mutation a person
+       makes, and every row written before 0048. Both are correctly the ROOT of
+       any chain they start, and the column's DEFAULT is what makes that true
+       without a backfill. */
+    const event = eventFor(ORG_A);
+    await withOrgScope(ORG_A, async (tx) => appendToOutbox(tx, [event]));
+
+    const claimed = await withAuditScope(async (tx) => claimPending(tx, 'audit', 50));
+    const mine = ours(claimed).find((row) => row.id === event.id);
+
+    expect(mine?.causationDepth).toBe(0);
+  });
+
+  it('refuses a depth the CHECK constraint considers impossible', async () => {
+    /* A negative depth is the dangerous value: it makes the engine's
+       `depth >= MAX_DEPTH` cap unreachable, so a corrupted row could run an
+       unbounded chain. The database refuses it outright rather than relying on
+       the application's own narrowing to catch it. */
+    const event = { ...eventFor(ORG_A), causationDepth: -1 } as DomainEvent;
+
+    /* `pgErrorCode`, not a bare `.code` — Drizzle wraps the driver error, so
+       the SQLSTATE is on a nested cause. The same helper this file already uses
+       for the RLS violations above, and the reason it exists. */
+    const thrown = await withOrgScope(ORG_A, async (tx) => appendToOutbox(tx, [event])).catch(
+      (error: unknown) => error,
+    );
+
+    expect(pgErrorCode(thrown)).toBe(CHECK_VIOLATION);
   });
 });

@@ -169,7 +169,7 @@ export function createTelephonyRouter(maybeDeps: TelephonyDeps | undefined) {
        * credential proven more than five minutes ago is refused, so a stolen
        * session cannot quietly export recordings hours later.
        */
-      download: route({ permission: 'recording:export', stepUp: true })
+      download: route({ permission: 'recording:export', stepUp: true, quotaClass: 'expensive' })
         .input(z.object({ recordingId: z.string().uuid() }).strict())
         .mutation(async ({ ctx, input }) =>
           recordings.presignRecording(actorOf(ctx), deps(), { recordingId: input.recordingId }),
@@ -303,7 +303,7 @@ export function createTelephonyRouter(maybeDeps: TelephonyDeps | undefined) {
        * `phoneNumber:purchase` instead of inventing one — §6.3 has this
        * phase consume the permission catalog rather than extend it.
        */
-      report: route({ permission: 'recording:read' })
+      report: route({ permission: 'recording:read', quotaClass: 'expensive' })
         .input(z.object({ sinceDays: z.number().int().min(1).max(365).default(30) }).strict())
         .query(async ({ ctx, input }) =>
           spendReport(actorOf(ctx).subject.orgId, { sinceDays: input.sinceDays }),

@@ -14,6 +14,7 @@ import {
 } from '@taskflow/security';
 import * as repo from './repository.js';
 import * as identityEvents from './events.js';
+import { assessImpossibleTravel, countryOfIp } from './geo.js';
 
 /**
  * Identity service (PLAN.md §8.1).
@@ -58,6 +59,12 @@ export interface IdentityDeps {
   readonly checkBreached: (password: string) => Promise<BreachResult>;
   /** Delivery of verification and reset links. Mail provider arrives with Phase 1's worker. */
   readonly deliver: (message: DeliverableLink) => Promise<void>;
+  /**
+   * IP → country for impossible-travel detection (§3.4). Injectable so tests
+   * never load the geo database; defaults to `geoip-lite` via `countryOfIp`,
+   * which is lazy and never throws.
+   */
+  readonly lookupCountry?: (ip: string | null) => Promise<string | null>;
   readonly now?: () => Date;
 }
 
@@ -610,6 +617,46 @@ export async function issueSession(
   const refreshToken = issueToken('refresh');
   const expiresAt = new Date(now.getTime() + deps.config.refreshTokenTtlMs);
 
+  /* Impossible-travel detection (§3.4) — inside `issueSession`, not in the
+     four callers, because the codebase's own standing lesson is that paths
+     which mint sessions differently are how one of them ends up without the
+     control. Runs BEFORE the insert so the flag is written with the row.
+
+     The country is looked up and stored on EVERY login (not just flagged
+     ones) — that is what lets the NEXT login compare against this one
+     without a fresh lookup. The previous-session read is deferred until the
+     new country is actually known, so a login whose IP resolves to nothing
+     (private, reserved, unknown) never pays for the database read. */
+  let country: string | null = null;
+  let impossibleTravelAt: Date | null = null;
+  let previousCountry: string | null = null;
+
+  if (meta.ip !== null) {
+    const lookup = deps.lookupCountry ?? countryOfIp;
+    /* The fail-open lives HERE, at the call site, not only inside the default
+       lookup: an informational control is never allowed to sit in the path
+       that completes a sign-in, whatever lookup implementation is injected. */
+    try {
+      country = await lookup(meta.ip);
+    } catch {
+      country = null;
+    }
+    if (country !== null) {
+      const previous = await repo.mostRecentActiveSession(userId, now);
+      if (previous !== undefined && previous.country !== null && previous.country !== country) {
+        const flagged = assessImpossibleTravel({
+          previous: { country: previous.country, authenticatedAt: previous.authenticatedAt },
+          newCountry: country,
+          now,
+        });
+        if (flagged) {
+          impossibleTravelAt = now;
+          previousCountry = previous.country;
+        }
+      }
+    }
+  }
+
   await repo.createSession({
     sessionId,
     userId,
@@ -617,12 +664,24 @@ export async function issueSession(
     expiresAt,
     ip: meta.ip,
     userAgent: meta.userAgent,
+    country,
+    impossibleTravelAt,
     refreshToken: {
       id: newId<'RefreshTokenId'>(),
       tokenHash: refreshToken.hash,
       expiresAt,
     },
   });
+
+  if (impossibleTravelAt !== null && previousCountry !== null && country !== null) {
+    await deps.events.publish([
+      createEvent(
+        identityEvents.impossibleTravelDetected,
+        { userId, sessionId, previousCountry, newCountry: country },
+        { orgId: SYSTEM_ORG, actorId: null, occurredAt: now },
+      ),
+    ]);
+  }
 
   const accessToken = await signAccessToken(
     {

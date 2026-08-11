@@ -34,6 +34,12 @@ export interface ChatActor {
   /** Role and resolved tuples, from `subjectOf(ctx.principal)`. */
   readonly subject: Subject;
   readonly requestId: RequestId;
+  /**
+   * How many automation hops led to this action (Phase 10, §4). Absent for
+   * every human-initiated call — see `WorkActor.causationDepth`, which carries
+   * the full argument for why this field exists and why it is optional.
+   */
+  readonly causationDepth?: number;
 }
 
 export function orgOf(actor: ChatActor): OrgId {
@@ -49,8 +55,14 @@ export function envelopeOf(actor: ChatActor): {
   readonly orgId: OrgId;
   readonly actorId: UserId;
   readonly requestId: RequestId;
+  readonly causationDepth?: number;
 } {
-  return { orgId: actor.subject.orgId, actorId: actor.subject.userId, requestId: actor.requestId };
+  return {
+    orgId: actor.subject.orgId,
+    actorId: actor.subject.userId,
+    requestId: actor.requestId,
+    ...(actor.causationDepth === undefined ? {} : { causationDepth: actor.causationDepth }),
+  };
 }
 
 /* -------------------------------------------------------------------------- *

@@ -26,6 +26,19 @@ export interface WorkActor {
   /** Role and resolved tuples, from `subjectOf(ctx.principal)`. */
   readonly subject: Subject;
   readonly requestId: RequestId;
+  /**
+   * How many automation hops led to this action (Phase 10, §4).
+   *
+   * Absent for every human-initiated call, which is what makes a user's action
+   * the ROOT of a chain. Set only by the automation executor, to the triggering
+   * event's depth plus one, and threaded into `envelopeOf` so the events this
+   * action emits carry it forward.
+   *
+   * Without it a chain restarts its counter on the far side of the outbox and
+   * the engine's depth cap protects nothing — so this field is small, optional,
+   * and load-bearing.
+   */
+  readonly causationDepth?: number;
 }
 
 /** The org this actor is acting in. Read from the subject so there is one source. */
@@ -48,8 +61,18 @@ export function envelopeOf(actor: WorkActor): {
   readonly orgId: OrgId;
   readonly actorId: UserId;
   readonly requestId: RequestId;
+  readonly causationDepth?: number;
 } {
-  return { orgId: actor.subject.orgId, actorId: actor.subject.userId, requestId: actor.requestId };
+  return {
+    orgId: actor.subject.orgId,
+    actorId: actor.subject.userId,
+    requestId: actor.requestId,
+    /* Omitted rather than defaulted to 0, so an event carries the field only
+       when an automation set it — `exactOptionalPropertyTypes` makes "absent"
+       and "present and undefined" different, and absence is how a
+       human-initiated event is told apart from an automated one. */
+    ...(actor.causationDepth === undefined ? {} : { causationDepth: actor.causationDepth }),
+  };
 }
 
 /* -------------------------------------------------------------------------- *

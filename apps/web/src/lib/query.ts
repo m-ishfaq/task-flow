@@ -178,6 +178,9 @@ export const keys = {
   /** The caller's own account (`/account`) — answers with no org selected. */
   me: () => ['auth', 'me'] as const,
 
+  /** The caller's own active sessions — §3.4's device inventory (Phase 12 Wave 2). */
+  sessions: () => ['auth', 'sessions'] as const,
+
   /**
    * The caller's own merged profile (Phase 11.5, people/api.ts).
    *
@@ -283,9 +286,59 @@ export const keys = {
   /** Recordings for one call. */
   callRecordings: (orgId: string, callId: string) =>
     ['org', orgId, 'telephony', 'call', callId, 'recordings'] as const,
+
+  /** One recording's transcript (Phase 8 Wave 3 surfaced it; the route is Phase 7's). */
+  callTranscript: (orgId: string, recordingId: string) =>
+    ['org', orgId, 'telephony', 'recording', recordingId, 'transcript'] as const,
   /** Recordings attached to one Work card (§3.9). */
   cardRecordings: (orgId: string, cardId: string) =>
     ['org', orgId, 'card', cardId, 'recordings'] as const,
+  /**
+   * Dialable people — the directory folded down to members who have a work
+   * phone (`telephony/api.ts`). Its own key rather than `directory(orgId, …)`:
+   * that key is one page per cursor, and this one is every page merged.
+   */
+  phoneContacts: (orgId: string) => ['org', orgId, 'telephony', 'contacts'] as const,
+  /**
+   * Search results for one trimmed TQL query (`features/search/api.ts`). The
+   * query TEXT is the key because the server is the only parser — a
+   * client-side key that hashed a parsed tree would silently re-run for every
+   * equivalent-but-different spelling of the same query.
+   */
+  search: (orgId: string, query: string) => ['org', orgId, 'search', query] as const,
+
+  /**
+   * Every saved search the caller may see — shared plus their own (§3.2).
+   *
+   * Its own root segment rather than `['org', orgId, 'search', 'saved']`,
+   * which would COLLIDE with `search(orgId, 'saved')` — the results of
+   * literally searching for the word "saved". A cache key that two different
+   * queries can produce hands one of them the other's data, and the query
+   * segment here is free-form user text, so the collision is reachable by
+   * typing.
+   */
+  savedSearches: (orgId: string) => ['org', orgId, 'saved-searches'] as const,
+
+  /** Every automation rule in the org (Phase 10 Wave 1). */
+  automations: (orgId: string) => ['org', orgId, 'automations'] as const,
+  /**
+   * Run history, either for one rule or across the org.
+   *
+   * The scope is a distinct segment rather than an optional trailing one:
+   * `[... 'runs']` and `[... 'runs', id]` are different queries with different
+   * data, and a key that collapses them hands one the other's results.
+   */
+  automationRuns: (orgId: string, automationId: string | null) =>
+    ['org', orgId, 'automations', 'runs', automationId ?? 'all'] as const,
+  /** Every registered webhook endpoint (Wave 2). */
+  webhooks: (orgId: string) => ['org', orgId, 'automations', 'webhooks'] as const,
+  /** Delivery history for one endpoint. */
+  webhookDeliveries: (orgId: string, webhookId: string) =>
+    ['org', orgId, 'automations', 'webhooks', webhookId, 'deliveries'] as const,
+  /** Every programmatic-access token in the org (Wave 3, §6). */
+  apiTokens: (orgId: string) => ['org', orgId, 'automations', 'api-tokens'] as const,
+  /** The caller's currently held permissions — the scope checklist's options. */
+  apiTokenScopes: (orgId: string) => ['org', orgId, 'automations', 'api-tokens', 'scopes'] as const,
   /** Every SMS thread. */
   messageThreads: (orgId: string) => ['org', orgId, 'telephony', 'threads'] as const,
   /** Messages in one thread. */

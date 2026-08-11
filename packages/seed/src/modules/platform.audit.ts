@@ -12,6 +12,10 @@ import { templatesModule } from './docs.templates.js';
 import { peopleModule } from './people.profiles.js';
 import { adminModule } from './platform.admin.js';
 import { telephonyModule } from './comms.telephony.js';
+import { rtcModule } from './rtc.calls.js';
+import { notificationsModule } from './platform.notifications.js';
+import { pushSubscriptionsModule } from './platform.push-subscriptions.js';
+import { sessionsModule } from './identity.sessions.js';
 
 /**
  * The outbox, and the real hash-chained audit log it drains into.
@@ -69,6 +73,19 @@ export const auditModule = defineSeedModule({
        are configured. Reaching it from the root is what lets it make that
        decision and SAY so, rather than being silently absent. */
     telephonyModule,
+    /* In-app voice call history (Phase 13). Nothing reads its output either —
+       same reason as `people.profiles` and `platform.admin` above. */
+    rtcModule,
+    /* The bell/inbox and its web-push devices (Phase 9). Same reason as
+       every other module in this list — nothing else reads their output,
+       so each has to be named here or it silently never runs. */
+    notificationsModule,
+    pushSubscriptionsModule,
+    /* Device/session inventory and impossible-travel flags (Phase 12 Wave 2
+       §3.4, migration 0043). Same reason as every other module in this
+       list — nothing else reads its output, so it has to be named here or
+       it silently never runs. */
+    sessionsModule,
   ],
   tables: ['platform.outbox'],
 

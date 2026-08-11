@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@taskflow/filter": "workspace:*",
     "zod": "^3.24.1"
   },
   "devDependencies": {

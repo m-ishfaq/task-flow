@@ -30,6 +30,8 @@ const {
   logoutEverywhereMutate,
   orgsListQuery,
   passkeysListQuery,
+  sessionsListQuery,
+  sessionsRevokeMutate,
   signOut,
   navigate,
   disconnectSocket,
@@ -42,6 +44,8 @@ const {
   logoutEverywhereMutate: vi.fn<() => Promise<unknown>>(),
   orgsListQuery: vi.fn<() => Promise<unknown[]>>(),
   passkeysListQuery: vi.fn<() => Promise<unknown[]>>(),
+  sessionsListQuery: vi.fn<() => Promise<unknown>>(),
+  sessionsRevokeMutate: vi.fn<(input: unknown) => Promise<unknown>>(),
   signOut: vi.fn<() => Promise<void>>(),
   navigate: vi.fn(),
   disconnectSocket: vi.fn(),
@@ -55,6 +59,11 @@ vi.mock('../../lib/trpc.js', () => ({
       me: { query: meQuery },
       logoutEverywhere: { mutate: logoutEverywhereMutate },
       passkeys: { list: { query: passkeysListQuery } },
+      /* §3.4 — the device inventory lives on this page. */
+      sessions: {
+        list: { query: sessionsListQuery },
+        revoke: { mutate: sessionsRevokeMutate },
+      },
     },
     /* Phase 11.5: the display name and the working-hours section now write
        through people.profile — the canonical record. `auth.updateProfile`
@@ -132,6 +141,8 @@ beforeEach(() => {
   logoutEverywhereMutate.mockReset();
   orgsListQuery.mockReset().mockResolvedValue([]);
   passkeysListQuery.mockReset().mockResolvedValue([]);
+  sessionsListQuery.mockReset().mockResolvedValue({ sessions: [], pushDeviceCount: 0 });
+  sessionsRevokeMutate.mockReset().mockResolvedValue({ status: 'revoked' });
   signOut.mockReset().mockResolvedValue(undefined);
   navigate.mockReset();
   disconnectSocket.mockReset();
@@ -247,6 +258,87 @@ describe('signing out everywhere', () => {
       expect(toastFailure).toHaveBeenCalled();
     });
     expect(signOut).not.toHaveBeenCalled();
+  });
+});
+
+describe('the sessions section (§3.4 device inventory)', () => {
+  it('lists every active session with its label, current badge, and unusual-sign-in note', async () => {
+    sessionsListQuery.mockResolvedValue({
+      sessions: [
+        {
+          id: 'session_1',
+          label: 'Chrome on macOS',
+          ip: '1.1.1.1',
+          authenticatedAt: '2026-08-10T10:00:00.000Z',
+          lastSeenAt: '2026-08-10T12:00:00.000Z',
+          isCurrent: true,
+          country: 'US',
+          flagged: false,
+        },
+        {
+          id: 'session_2',
+          label: 'Firefox on Linux',
+          ip: '2.2.2.2',
+          authenticatedAt: '2026-08-10T09:00:00.000Z',
+          lastSeenAt: '2026-08-10T09:30:00.000Z',
+          isCurrent: false,
+          country: 'FR',
+          flagged: true,
+        },
+      ],
+      pushDeviceCount: 1,
+    });
+    renderPage();
+
+    expect(await screen.findByText('Chrome on macOS')).toBeInTheDocument();
+    expect(screen.getByText('Firefox on Linux')).toBeInTheDocument();
+    expect(screen.getByText('This device')).toBeInTheDocument();
+    expect(screen.getByText(/unusual sign-in from FR/i)).toBeInTheDocument();
+    expect(screen.getByText(/push notifications are active on 1 device/i)).toBeInTheDocument();
+  });
+
+  it('signs one device out, and a step-up failure re-issues the same revocation', async () => {
+    sessionsListQuery.mockResolvedValue({
+      sessions: [
+        {
+          id: 'session_1',
+          label: 'Chrome on macOS',
+          ip: '1.1.1.1',
+          authenticatedAt: '2026-08-10T10:00:00.000Z',
+          lastSeenAt: '2026-08-10T12:00:00.000Z',
+          isCurrent: false,
+          country: null,
+          flagged: false,
+        },
+      ],
+      pushDeviceCount: 0,
+    });
+    renderPage();
+    await screen.findByText('Chrome on macOS');
+
+    /* Exact name, not /sign out/i — "Sign out everywhere" would match the
+       regex and this query must hit the per-device row button only. */
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    await waitFor(() => {
+      expect(sessionsRevokeMutate).toHaveBeenCalledWith({ sessionId: 'session_1' });
+    });
+
+    // A step-up failure routes to the guard, whose retry re-issues the SAME
+    // revocation (the session id is the mutation's variable, captured per call).
+    const stepUpError = new Error('STEP_UP_REQUIRED');
+    sessionsRevokeMutate.mockRejectedValueOnce(stepUpError);
+    guard.mockReturnValue(true);
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    await waitFor(() => {
+      expect(guard).toHaveBeenCalledWith(stepUpError, expect.any(Function));
+    });
+    const retry = guard.mock.calls[0]?.[1] as () => void;
+    retry();
+    await waitFor(() => {
+      expect(sessionsRevokeMutate).toHaveBeenCalledWith({ sessionId: 'session_1' });
+    });
   });
 });
 

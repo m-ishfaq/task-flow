@@ -481,6 +481,69 @@ describe('people.membership_profiles — containment and RLS (migration 0031)', 
   });
 });
 
+describe('people.profile.exportMine — self-serve DSAR export (Phase 12 Wave 2 §3.6)', () => {
+  it('exports the caller’s account data across every org, minus credentials', async () => {
+    /* ALICE owns both orgs — the export must span them, with no org selected. */
+    await scaffold('export-a');
+    await scaffold('export-b');
+    await profile.updateProfile({ events: new RecordingEventBus() }, actor(null), {
+      displayName: 'Alice Owner',
+      timezone: 'America/New_York',
+    });
+
+    /* A live session and a linked OAuth identity — inserted as the migrator:
+       both tables carry no RLS and no service path is needed to seed them. */
+    await admin.setOrg(null);
+    await admin.query(
+      `INSERT INTO identity.sessions (id, user_id, authenticated_at, expires_at, ip, user_agent, country)
+       VALUES ($1, $2, now(), now() + interval '30 days', '203.0.113.9', 'DSAR test agent', 'US')`,
+      ['0195ee08-0000-7000-8000-0000000000d1', ALICE],
+    );
+    await admin.query(
+      `INSERT INTO identity.oauth_identities (id, user_id, provider, provider_user_id, email)
+       VALUES ($1, $2, 'google', 'google-subject-1', 'alice@gmail.com')`,
+      ['0195ee08-0000-7000-8000-0000000000d2', ALICE],
+    );
+
+    const bus = new RecordingEventBus();
+    const data = await profile.exportMine({ events: bus }, { userId: ALICE, requestId });
+
+    expect(data.account.email).toBe('alice@people.test');
+    expect(data.account.displayName).toBe('Alice Owner');
+    expect(data.account.emailVerified).toBe(true);
+
+    /* Both memberships, joined with their org names — through the same
+       self-read policies the org switcher uses. (No role assertions here:
+       inline role comparisons are the one guardrail-7 ban, and the export's
+       membership fact is the ORG list, not the role.) */
+    const orgNames = data.memberships.map((membership) => membership.orgName);
+    expect(orgNames.length).toBeGreaterThanOrEqual(2);
+    expect(orgNames).toContain('People export-a');
+    expect(orgNames).toContain('People export-b');
+
+    expect(data.sessions).toHaveLength(1);
+    expect(data.sessions[0]).toMatchObject({ ip: '203.0.113.9', country: 'US' });
+
+    /* Provider + email, never the provider's subject id. */
+    expect(data.oauthIdentities).toHaveLength(1);
+    expect(data.oauthIdentities[0]).toMatchObject({
+      provider: 'google',
+      email: 'alice@gmail.com',
+    });
+
+    expect(data.profile?.timezone).toBe('America/New_York');
+
+    /* No credentials anywhere in the document — no password hash (never
+       selected), no provider subject id (excluded by design), no token. */
+    const serialized = JSON.stringify(data);
+    expect(serialized).not.toContain('passwordHash');
+    expect(serialized).not.toContain('google-subject-1');
+
+    /* The event records that the export happened — never its contents. */
+    expect(bus.events.some((event) => event.name === 'user.data_exported')).toBe(true);
+  });
+});
+
 describe('people.membershipProfile.update — admin edits another member (Wave 2)', () => {
   it('sets another member’s job title and department', async () => {
     const orgId = await scaffold('admin-title');

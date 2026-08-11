@@ -34,12 +34,14 @@ import { BoardPage } from './features/work/board-page.js';
 import { ChatPage } from './features/chat/chat-page.js';
 import { TelephonyPage } from './features/telephony/telephony-page.js';
 import { DocsPage } from './features/docs/docs-page.js';
+import { SearchPage } from './features/search/search-page.js';
 import { PublicPageView } from './features/docs/public-page.js';
 import { PermissionDebugPage } from './features/admin/permission-debug-page.js';
 import { SettingsPage } from './features/admin/settings-page.js';
 import { AuditPage } from './features/admin/audit-page.js';
 import { ProjectSettingsPage } from './features/work/project-settings-page.js';
 import { PlatformAdminPage } from './features/platform-admin/platform-admin-page.js';
+import { AUTOMATION_TAB_IDS, AutomationsPage } from './features/automation/automations-page.js';
 
 /**
  * The route tree (PLAN.md §4.1 — typed routes and typed search params).
@@ -320,9 +322,38 @@ const telephonyRoute = createRoute({
   validateSearch: z.object({
     tab: z.enum(['calls', 'numbers', 'messages', 'spend']).optional().catch(undefined),
     thread: z.string().uuid().optional().catch(undefined),
+    /* Which call in the log opens expanded. Added by Phase 8 Wave 3 so a
+       TRANSCRIPT search hit has somewhere to land — a hit whose permalink
+       cannot open the thing it found is a result that only proves the index
+       works. `.catch(undefined)` per this file's convention: a malformed id in
+       a pasted link renders the log unexpanded, never an error page. */
+    call: z.string().uuid().optional().catch(undefined),
   }),
   beforeLoad: () => requireOrg('/calls'),
   component: TelephonyPage,
+});
+
+/**
+ * Cross-product search (Phase 8 Wave 3, ai/phase-8-search.md §3.1).
+ *
+ * `q` is the raw TQL text the user typed — deliberately a plain string up to
+ * the API's own 1,000-char bound, NOT a parsed tree. The URL is a shareable
+ * query, and the server is the only parser; parsing here would validate
+ * against a second copy of the grammar and reject links the API accepts (or
+ * accept links the API rejects). An unparseable `q` just renders the page's
+ * own error state, which is the point of the live per-token errors.
+ */
+const searchRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/search',
+  validateSearch: z.object({
+    q: z.string().max(1_000).optional().catch(undefined),
+  }),
+  beforeLoad: () => requireOrg('/search'),
+  component: function SearchRoute() {
+    const { q } = searchRoute.useSearch();
+    return <SearchPage initialQuery={q ?? ''} />;
+  },
 });
 
 /**
@@ -431,6 +462,36 @@ const platformAdminRoute = createRoute({
   component: PlatformAdminPage,
 });
 
+/**
+ * Automation rules (Phase 10 Wave 1).
+ *
+ * `requireOrg`, not `requireSession`: rules are org-scoped, and every query
+ * this page fires needs an org header. The page itself does no permission
+ * check — it renders and the server answers, so a member without
+ * `automation:manage` gets an honest FORBIDDEN rather than a hidden menu item
+ * (§8.2).
+ */
+const automationsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/automations',
+  validateSearch: z.object({
+    /* Which half of the surface is open. A search param rather than nested
+       routes, the same shape `/calls` and `/settings` use, so the open tab is
+       a shareable, back-button-correct link. `.catch(undefined)` per this
+       file's convention: a junk value renders Rules, never an error page.
+
+       The enum comes from the page itself (`AUTOMATION_TAB_IDS`), not from a
+       second copy — the first version restated `['rules', 'webhooks']` here
+       and the page later grew an API-tokens tab the router had never heard
+       of, so clicking it navigated to `?tab=apiTokens`, validation refused
+       the value, and the click did nothing. A tab that cannot open is worse
+       than a missing tab: it looks broken rather than absent. */
+    tab: z.enum(AUTOMATION_TAB_IDS).optional().catch(undefined),
+  }),
+  beforeLoad: () => requireOrg('/automations'),
+  component: AutomationsPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -447,6 +508,7 @@ const routeTree = rootRoute.addChildren([
   peopleRoute,
   personRoute,
   chatRoute,
+  searchRoute,
   telephonyRoute,
   docsRoute,
   publicDocsPageRoute,
@@ -455,6 +517,7 @@ const routeTree = rootRoute.addChildren([
   permissionsRoute,
   accountRoute,
   platformAdminRoute,
+  automationsRoute,
 ]);
 
 export function createAppRouter(queryClient: QueryClient) {

@@ -24,6 +24,7 @@ import {
   defaultValueFor,
   describe,
 } from './builder-model.js';
+import { EMPTY_GROUP, asGroup, countComparisons, draftToTql, interpretTql } from './tql-draft.js';
 
 /**
  * The visual filter builder (§10.2).
@@ -58,12 +59,15 @@ export interface FilterBuilderProps {
 
 const FIELDS = fieldsOf('card');
 
-/** An empty top-level group. `and` because a new filter narrows rather than widens. */
-const EMPTY: GroupNode = { kind: 'group', combinator: 'and', children: [] };
+/* `EMPTY`, `asGroup` and `countComparisons` moved to `tql-draft.ts` when the
+   TQL tab needed them too — one definition, so the two editors cannot disagree
+   about what "no filter" is. */
+const EMPTY = EMPTY_GROUP;
 
 export function FilterBuilder({ orgId, projectId, value, onChange }: FilterBuilderProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<GroupNode>(() => asGroup(value));
+  const [mode, setMode] = useState<'builder' | 'tql'>('builder');
 
   const result = validate('card', draft);
   const count = countComparisons(draft);
@@ -96,13 +100,36 @@ export function FilterBuilder({ orgId, projectId, value, onChange }: FilterBuild
       </PopoverTrigger>
 
       <PopoverContent align="start" sideOffset={6} className="w-[34rem] max-w-[95vw] p-3">
-        <GroupEditor
-          orgId={orgId}
-          projectId={projectId}
-          group={draft}
-          depth={0}
-          onChange={setDraft}
-        />
+        <div className="mb-2 inline-flex overflow-hidden rounded border border-line text-[11px]">
+          {(['builder', 'tql'] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={mode === value}
+              onClick={() => {
+                setMode(value);
+              }}
+              className={cn(
+                'px-2 py-0.5',
+                mode === value ? 'bg-accent text-white' : 'text-ink-muted hover:text-ink',
+              )}
+            >
+              {value === 'builder' ? 'Builder' : 'TQL'}
+            </button>
+          ))}
+        </div>
+
+        {mode === 'builder' ? (
+          <GroupEditor
+            orgId={orgId}
+            projectId={projectId}
+            group={draft}
+            depth={0}
+            onChange={setDraft}
+          />
+        ) : (
+          <TqlEditor draft={draft} onChange={setDraft} />
+        )}
 
         {!result.ok && (
           <ul className="mt-2 space-y-0.5" role="alert">
@@ -133,6 +160,91 @@ export function FilterBuilder({ orgId, projectId, value, onChange }: FilterBuild
         </div>
       </PopoverContent>
     </PopoverRoot>
+  );
+}
+
+/**
+ * The TQL half of the round trip (§3.1, PLAN.md §10.2's own promise:
+ * "dragging a filter chip regenerates the TQL text; editing the text reparses
+ * into chips").
+ *
+ * ## One tree, two editors — never two sources of truth
+ *
+ * The text is LOCAL state and the tree is the shared one. `format(draft)`
+ * seeds the box when the tab opens; every keystroke tries to parse, and a
+ * successful parse writes the TREE back. Switching to the Builder tab shows
+ * chips for exactly what was typed, because there was never a second
+ * representation to reconcile.
+ *
+ * The text is deliberately NOT re-seeded from `draft` on every render. `format`
+ * is canonical — it normalizes spacing, parenthesizes groups, quotes reserved
+ * words — so echoing it back into the box mid-typing would rewrite the user's
+ * characters under their cursor after each valid keystroke.
+ *
+ * ## Three refusals worth understanding
+ *
+ * `ORDER BY` parses (the grammar has it, for the search page) and is refused
+ * here: a board's sort is a toolbar control with its own persisted value, and
+ * silently accepting a sort inside the filter would give one board two
+ * disagreeing orderings.
+ *
+ * A BARE TERM desugars to `text contains …`, and `text` is a field on the
+ * SEARCH resource, not on cards (fields.ts) — so free text validates cleanly
+ * on the search page and cannot validate here. The generic "Unknown field
+ * text" is technically right and useless, so it is translated.
+ *
+ * Everything else is refused by `validate('card', …)` in the parent, which is
+ * the same validator the API runs. Nothing typed here reaches the server
+ * except as a tree the server re-validates anyway.
+ */
+function TqlEditor({
+  draft,
+  onChange,
+}: {
+  readonly draft: GroupNode;
+  readonly onChange: (group: GroupNode) => void;
+}) {
+  /* Seeded ONCE per mount — the tab remounts this component each time it is
+     selected, which is exactly the "re-seed on open" behaviour wanted, with
+     none of the mid-typing rewriting a `useEffect` on `draft` would cause. */
+  const [text, setText] = useState(() => draftToTql(draft));
+  const [error, setError] = useState<string | null>(null);
+
+  const commit = (next: string) => {
+    setText(next);
+
+    const result = interpretTql(next);
+    setError(result.ok ? null : result.message);
+    if (result.ok) onChange(result.group);
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <textarea
+        value={text}
+        onChange={(event) => {
+          commit(event.target.value);
+        }}
+        rows={3}
+        spellCheck={false}
+        autoComplete="off"
+        aria-label="Filter query (TQL)"
+        /* A placeholder that does not validate teaches the wrong syntax on
+           first contact — `status` holds ids and `assignee` is an array, so
+           the obvious-looking `status = todo AND assignee = me` is refused by
+           the very validator this box runs. */
+        placeholder="priority = high AND creator = me"
+        className="block w-full resize-y rounded border border-line bg-surface px-2 py-1.5 font-mono text-xs leading-5 text-ink outline-none focus:border-accent placeholder:font-sans placeholder:text-ink-faint"
+      />
+      {error !== null && (
+        <p role="alert" className="text-xs text-danger">
+          {error}
+        </p>
+      )}
+      <p className="text-[11px] text-ink-faint">
+        The same language the Search page speaks. Switch back to Builder to see it as chips.
+      </p>
+    </div>
   );
 }
 
@@ -468,14 +580,3 @@ function isValueList(value: ComparisonNode['value']): value is readonly FilterVa
 }
 
 /** Wraps a bare comparison so the builder always edits a group. */
-function asGroup(node: FilterNode | null): GroupNode {
-  if (node === null) return EMPTY;
-  if (node.kind === 'group') return node;
-  return { kind: 'group', combinator: 'and', children: [node] };
-}
-
-function countComparisons(node: FilterNode): number {
-  if (node.kind === 'comparison') return 1;
-  if (node.kind === 'not') return countComparisons(node.child);
-  return node.children.reduce((total, child) => total + countComparisons(child), 0);
-}

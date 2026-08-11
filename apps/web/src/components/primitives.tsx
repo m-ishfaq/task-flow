@@ -496,12 +496,18 @@ export function ConfirmButton({
     );
   }
 
+  /* `className` reaches BOTH states, not just the resting one. It used to be
+     applied only to the pre-confirm button, so a caller that sized the control
+     to fit a dense row got its sizing dropped the instant it was clicked — the
+     row grew, and everything below it moved while the person was aiming at
+     "Confirm". A confirmation that shifts its own target under the pointer is
+     the one moment a size change costs the most. */
   return (
     <span className="flex items-center gap-1">
       <Button
         size={size}
         variant="ghost"
-        className="text-danger"
+        className={cn('text-danger', className)}
         disabled={disabled}
         onClick={() => {
           onConfirm();
@@ -513,6 +519,7 @@ export function ConfirmButton({
       <Button
         size={size}
         variant="ghost"
+        className={className}
         onClick={() => {
           setConfirming(false);
         }}

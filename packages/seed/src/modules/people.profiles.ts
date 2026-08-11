@@ -1,7 +1,7 @@
 import { createEvent } from '@taskflow/events';
 import { membershipProfileUpdated, reportingLineChanged } from '@taskflow/api/events/people';
 import { roleGrants } from '@taskflow/policy';
-import { department, jobTitle, oooMessage, type PersonName } from '../corpus.js';
+import { department, jobTitle, oooMessage, workPhone, type PersonName } from '../corpus.js';
 import type { SeedContext } from '../context.js';
 import type { Rng } from '../rng.js';
 import type { PeopleMix } from '../profiles.js';
@@ -128,6 +128,7 @@ export interface SeededMembershipProfile {
   readonly managerUserId: string | null;
   readonly jobTitle: string | null;
   readonly department: string | null;
+  readonly workPhone: string | null;
 }
 
 export interface PeopleOutput {
@@ -233,6 +234,11 @@ export const peopleModule = defineSeedModule({
         const dept = rng.chance(mix.departmentRate) ? department(rng) : null;
         const manager = pickManager(rng, org, index, mix.managerRate);
         if (manager !== null) managerCount += 1;
+        /* Drawn last of the four, so inserting it here does not reshuffle the
+           title/department/manager draws every existing test already asserts
+           specific outcomes for — appending a new rng.chance() call to the
+           END of a membership's draw sequence changes nothing upstream of it. */
+        const phone = rng.chance(mix.workPhoneRate) ? workPhone(rng) : null;
 
         /* A profile fact is a fact about when it was set — later than the org
            (nothing here may predate the tenant, docs.spaces' rule) and earlier
@@ -245,19 +251,29 @@ export const peopleModule = defineSeedModule({
           managerUserId: manager?.user.id ?? null,
           jobTitle: title,
           department: dept,
+          workPhone: phone,
         });
-        rows.push([org.id, membership.user.id, manager?.user.id ?? null, title, dept, setAt]);
+        rows.push([
+          org.id,
+          membership.user.id,
+          manager?.user.id ?? null,
+          title,
+          dept,
+          phone,
+          setAt,
+        ]);
 
         /* Self-service fields, actor = the member; the before-half is nulls
            because this is the row's first write, exactly as the service's own
            first `updateMembershipProfile` emits it. `changed` lists only the
-           fields that actually landed — `workPhone` is carried as null in both
-           halves and absent from `changed` because this seed writes no work
-           phone (migration 0039's column stays NULL here), which is the shape
-           `updateMembershipProfile` emits for a patch that never named it. */
+           fields that actually landed — a work phone is one of them now, so
+           the click-to-call button and the Calls sidebar (Phase 13) have a
+           name to show next to a number instead of every seeded call header
+           reading as an anonymous digit string. */
         const changed = [
           ...(title !== null ? ['jobTitle'] : []),
           ...(dept !== null ? ['department'] : []),
+          ...(phone !== null ? ['workPhone'] : []),
         ];
         if (changed.length > 0) {
           ctx.emit(
@@ -268,7 +284,7 @@ export const peopleModule = defineSeedModule({
                 userId: membership.user.id,
                 changed,
                 before: { jobTitle: null, department: null, workPhone: null },
-                after: { jobTitle: title, department: dept, workPhone: null },
+                after: { jobTitle: title, department: dept, workPhone: phone },
               },
               envelopeFor(org.id, membership.user.id, setAt),
             ),
@@ -298,7 +314,15 @@ export const peopleModule = defineSeedModule({
       await ctx.orgScope(org.id, async () => {
         await ctx.db.insert(
           'people.membership_profiles',
-          ['org_id', 'user_id', 'manager_user_id', 'job_title', 'department', 'updated_at'],
+          [
+            'org_id',
+            'user_id',
+            'manager_user_id',
+            'job_title',
+            'department',
+            'work_phone',
+            'updated_at',
+          ],
           rows,
         );
       });

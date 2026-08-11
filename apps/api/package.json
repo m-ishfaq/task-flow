@@ -19,7 +19,16 @@
     "./rtc/session": "./src/rtc/shared.ts",
     "./docs/page": "./src/docs/shared.ts",
     "./docs/page-version": "./src/docs/page-version.service.ts",
-    "./docs/backlinks": "./src/docs/backlinks.ts"
+    "./docs/backlinks": "./src/docs/backlinks.ts",
+    "./identity/geo": "./src/identity/geo.ts",
+    "./search/indexer": "./src/search/indexer.relay.ts",
+    "./work/shared": "./src/work/shared.ts",
+    "./work/cards": "./src/work/card.service.ts",
+    "./work/labels": "./src/work/label.service.ts",
+    "./work/comments": "./src/work/comment.service.ts",
+    "./chat/messages": "./src/chat/message.service.ts",
+    "./automation/webhooks": "./src/automation/webhook.service.ts",
+    "./events/automation-webhooks": "./src/automation/webhook-events.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",
@@ -43,12 +52,14 @@
     "@taskflow/telephony": "workspace:*",
     "@trpc/server": "^11.18.0",
     "fastify": "^5.10.0",
+    "geoip-lite": "1.4.10",
     "pdf-lib": "^1.17.1",
     "yjs": "^13.6.32",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@taskflow/config": "workspace:*",
+    "@types/geoip-lite": "^1.4.4",
     "@types/node": "^22.10.2",
     "eslint": "^9.17.0",
     "tsx": "^4.19.2",

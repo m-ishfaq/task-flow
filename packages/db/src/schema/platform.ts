@@ -50,6 +50,15 @@ export const outbox = platform.table(
     actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
     requestId: text('request_id'),
+    /**
+     * How many automation hops produced this event (migration 0048).
+     *
+     * Envelope metadata, in its own column beside the other envelope fields
+     * rather than inside `payload` — payloads are per-event `.strict()` schemas
+     * owned by their slices, and none of them should have to learn about
+     * automation. 0 for every human-initiated mutation.
+     */
+    causationDepth: integer('causation_depth').notNull().default(0),
     payload: jsonb('payload').notNull(),
 
     /** @deprecated Superseded by `outboxDispatch`. See the table comment above. */
@@ -418,4 +427,266 @@ export const pushSubscriptions = platform.table(
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex('push_subscriptions_user_endpoint_key').on(table.userId, table.endpoint)],
+);
+
+/**
+ * Automation rules (migration 0047, ai/phase-10-automation.md Wave 1).
+ *
+ * `triggerEvent` is a domain event NAME validated against the live registry at
+ * the route, never by a CHECK — a constraint here would be a second copy of the
+ * event catalog, and its drift produces a rule that saves cleanly and never
+ * fires.
+ *
+ * `condition` is a `FilterNode` tree stored UNRESOLVED, exactly as
+ * `work.views.filter` and `search.searches.query` are, and re-validated on
+ * read. `@me` is refused at WRITE time rather than stored: a rule has no
+ * viewer, so the symbol would either throw at execution or silently resolve to
+ * whoever saved it.
+ *
+ * `createdBy` is whose permissions the actions run with — re-resolved at
+ * EXECUTION, never trusted from save time (§2). Its `ON DELETE CASCADE` is a
+ * control rather than housekeeping: a rule outliving its owner is a credential
+ * that never expires.
+ */
+export const automations = platform.table(
+  'automations',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+
+    name: text('name').notNull(),
+    description: text('description'),
+
+    /** A registered domain event name, e.g. `card.status_changed`. */
+    triggerEvent: text('trigger_event').notNull(),
+    /** A `FilterNode`, or null for "fire on every occurrence". */
+    condition: jsonb('condition'),
+    /** An array of typed action objects — never a script. 1..10, by CHECK. */
+    actions: jsonb('actions').notNull(),
+
+    /** The per-rule half of the kill switch; the org-wide half is `identity.orgs.status`. */
+    enabled: boolean('enabled').notNull().default(true),
+
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('automations_trigger_idx').on(table.orgId, table.triggerEvent, table.enabled),
+    uniqueIndex('automations_org_name_key').on(table.orgId, table.name),
+    // Mirrors the migration's `automations_org_id_key` — what the runs table's
+    // composite FK references. The migration is the source; this declaration is
+    // what lets Drizzle express the relationship at all.
+    uniqueIndex('automations_org_id_key').on(table.orgId, table.id),
+  ],
+);
+
+/**
+ * What happened on every rule execution (migration 0047, §3).
+ *
+ * A row is written even when the condition did NOT match (`skipped`), because
+ * "my rule did not fire" is the question this table exists to answer and a
+ * history of successes cannot answer it.
+ *
+ * `eventId` is deliberately NOT a foreign key into `platform.outbox`: Phase 11
+ * prunes that table on a retention window, and an FK would either block the
+ * prune or cascade away run history it has no business deleting.
+ */
+export const automationRuns = platform.table(
+  'automation_runs',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+
+    automationId: uuid('automation_id').notNull(),
+
+    /** The triggering event. Not an FK — see the header. */
+    eventId: uuid('event_id').notNull(),
+    triggerEvent: text('trigger_event').notNull(),
+
+    /** 'succeeded' | 'failed' | 'refused' | 'skipped' — a CHECK in the migration. */
+    status: text('status').notNull(),
+    /** Why a run did not proceed, e.g. 'condition_not_met', 'depth_exceeded'. */
+    reason: text('reason'),
+
+    /** Per-action outcomes in order: `[{ index, type, status, error? }]`. */
+    actionResults: jsonb('action_results').notNull().default([]),
+
+    /** Loop-protection depth at this run — so "why did my chain stop" has an answer. */
+    depth: integer('depth').notNull().default(0),
+
+    durationMs: integer('duration_ms'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('automation_runs_recent_idx').on(table.orgId, table.createdAt),
+    index('automation_runs_rule_idx').on(table.orgId, table.automationId, table.createdAt),
+  ],
+);
+
+/**
+ * The durable per-org hourly execution budget (migration 0047, §4 layer 3).
+ *
+ * In Postgres rather than in process, because an in-process counter forgives
+ * everyone on restart — which is the state an attacker restarts you to reach.
+ * The same argument Phase 13's TURN issuance budget makes.
+ *
+ * A fixed hour bucket rather than a rolling window, because a bucket is a
+ * single upsert under concurrency where a rolling window needs a
+ * count-then-write that two workers both pass.
+ */
+export const automationBudget = platform.table(
+  'automation_budget',
+  {
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    windowHour: timestamp('window_hour', { withTimezone: true }).notNull(),
+    executions: integer('executions').notNull().default(0),
+  },
+  (table) => [primaryKey({ columns: [table.orgId, table.windowHour] })],
+);
+
+/**
+ * Registered outbound-webhook endpoints (migration 0049,
+ * ai/phase-10-automation.md Wave 2).
+ *
+ * The SIGNING secret is stored encrypted at rest under a PER-WEBHOOK data key
+ * (the comms.subaccounts pattern) — the delivery loop must be able to sign,
+ * so a hash would make signing impossible, and the secret is shown to the org
+ * exactly once at creation. `signingKeyWrapped` + `signingKeyMasterId` name
+ * the wrapped key and the master key that unwraps it.
+ *
+ * `enabled`/`disabledAt` are the endpoint kill switch: the delivery loop
+ * auto-disables a dead-lettered endpoint and records when, so an operator can
+ * tell an operator's pause from an automated one. `failureCount` is the
+ * endpoint's health, kept off the (prunable) delivery history.
+ */
+export const webhooks = platform.table(
+  'webhooks',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+
+    name: text('name').notNull(),
+    url: text('url').notNull(),
+
+    enabled: boolean('enabled').notNull().default(true),
+    disabledAt: timestamp('disabled_at', { withTimezone: true }),
+    failureCount: integer('failure_count').notNull().default(0),
+
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+
+    signingKeyCiphertext: bytea('signing_key_ciphertext').notNull(),
+    signingKeyWrapped: bytea('signing_key_wrapped').notNull(),
+    signingKeyMasterId: text('signing_key_master_id').notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('webhooks_org_name_key').on(table.orgId, table.name),
+    // Mirrors the migration's `webhooks_org_id_key` — what the deliveries
+    // table's composite FK references.
+    uniqueIndex('webhooks_org_id_key').on(table.orgId, table.id),
+  ],
+);
+
+/**
+ * The delivery queue behind `call_webhook` (migration 0049).
+ *
+ * Written by the action's service-layer enqueue (emitting
+ * `webhook.delivery_queued`) and drained by a loop in apps/worker. The engine
+ * is at-least-once, so the dedupe key `(org_id, webhook_id, event_id)` is what
+ * makes a redelivered event harmless — the second insert is a no-op.
+ *
+ * `status` is a small state machine on one column: `pending -> (succeeded |
+ * dead)`. There is deliberately no 'in_flight': the claim is a conditional
+ * UPDATE on `attempts` (the recording-ingest pattern), so a worker that dies
+ * mid-attempt simply retries — at-least-once, told to deduplicate on the
+ * event id. `nextAttemptAt` is the backoff, set on failure, so a dead endpoint
+ * stops costing a claim per tick long before it is dead-lettered.
+ */
+export const webhookDeliveries = platform.table(
+  'webhook_deliveries',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    webhookId: uuid('webhook_id').notNull(),
+
+    /** The triggering event. Not an FK — the outbox is pruned in Phase 11. */
+    eventId: uuid('event_id').notNull(),
+    eventName: text('event_name').notNull(),
+
+    /** The canonical JSON body sent to the receiver, signed with the secret. */
+    payload: jsonb('payload').notNull(),
+
+    /** 'pending' | 'succeeded' | 'dead' — a CHECK in the migration. */
+    status: text('status').notNull().default('pending'),
+    /** Both the retry budget and the claim's optimistic-concurrency token. */
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
+
+    lastStatusCode: integer('last_status_code'),
+    lastError: text('last_error'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('webhook_deliveries_dedupe_key').on(table.orgId, table.webhookId, table.eventId),
+    index('webhook_deliveries_due_idx').on(table.status, table.nextAttemptAt, table.createdAt),
+  ],
+);
+
+/**
+ * Programmatic-access tokens (migration 0050, ai/phase-10-automation.md
+ * Wave 3, §6).
+ *
+ * The `tf_pat` credential: long-lived, hashed at rest — `tokenHash` is the
+ * lookup key and the plaintext exists exactly once, in the mint response —
+ * shown once, and soft-deleted by `revokedAt`. `tokenPrefix` is the first ten
+ * characters of the token body, stored at mint so the list view can tell two
+ * tokens both called "CI" apart without ever seeing a full token.
+ *
+ * `scopes` are permission strings from the closed catalog, validated at the
+ * route against the minting user's LIVE `can()` (§6.3) and enforced per
+ * request as the intersection of this list and the re-resolved `can()`
+ * answer (§6.4). A bogus stored scope is inert — which is why the migration
+ * puts no CHECK on content: the catalog lives in TypeScript.
+ */
+export const apiTokens = platform.table(
+  'api_tokens',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+
+    name: text('name').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    tokenPrefix: text('token_prefix').notNull(),
+    scopes: text('scopes').array().notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [uniqueIndex('api_tokens_hash_key').on(table.tokenHash)],
 );

@@ -259,6 +259,17 @@ Google's ID token against Google's published JWKS) plus a plain `fetch` for GitH
 
 ### 3.4 Device inventory and impossible-travel
 
+**SHIPPED 2026-08-10** (Priority 3 of `ai/pre-launch-hardening.md`). Implementation matched this
+section with two recorded deviations: the offline geo database is **`geoip-lite@1.4.10`** (pinned
+because the 2.x line requires Node ≥ 24 and this stack runs Node 22) rather than a direct MaxMind
+GeoLite2 reader — same free/offline/country-level contract the decision below demands; and the
+event is named **`session.impossible_travel_detected`** (matching its siblings
+`session.revoked`/`session.token_reuse_detected` in `apps/api/src/identity/events.ts`) rather than
+`identity.impossibleTravelDetected` — the spec's own `identity.totpEnrolled`/`identity.oauthLinked`
+received the same treatment when they shipped (§3.2/§3.3). Both are written up in the Priority 3
+status header; the fail-open-at-the-call-site and store-country-on-every-session decisions below
+are load-bearing and tested.
+
 **No new device table** — PLAN.md's own roadmap note already settles this: "Device inventory reads
 `platform.push_subscriptions` (Phase 9) as one of its sources rather than inventing a second device
 concept." The inventory is a read-shaped view joining what already exists:
@@ -295,6 +306,23 @@ sits behind) blocking a legitimate sign-in is a worse failure mode than an alert
 fires on nothing.
 
 ### 3.5 Org deletion — real, cascading, operator-triggered
+
+**SHIPPED 2026-08-10** (Priority 3 of `ai/pre-launch-hardening.md`), with two recorded
+corrections to this section. First, the cascade map the section worried about was mostly
+pre-built: migration 0040 already granted `DELETE` + policy on `identity.orgs` to
+`taskflow_platform_admin`, and every direct `REFERENCES identity.orgs` FK cascades (re-verified
+through 0043, including RTC's 0041/0042). Second — the real finding — **`audit.audit_log` has NO
+foreign key to `identity.orgs`, and cannot have one**: it is partitioned `BY RANGE (occurred_at)`
+and Postgres requires any FK on a partitioned table to include the partition key. 0040's header
+claimed "the org's audit.audit_log rows go with it"; they did not. Migration 0044 closes that with
+a narrow SECURITY DEFINER trigger (`platform.purge_org_audit`, the 0036 `operator_chain_hash`
+precedent — no arguments, `app.org_id` set from `OLD.id` because the audit log is FORCE RLS, so
+a naive delete would silently match zero rows). One named residual: a provisioned carrier
+subaccount is frozen by the preceding suspend but never released at Twilio (see the Priority 3
+status header). Everything else landed as specified — the two-step suspended-then-confirm gate,
+the type-the-slug confirmation, the single cascading DELETE statement, the final global operator
+chain entry carrying the confirmation slug, and the `platform.org_deleted` event (SYSTEM_ORG
+envelope, since there is no org left to name).
 
 Per §1: no key to shred, so this is what it looks like without one. `platformAdmin.orgs.delete` —
 new `platformRoute`, unconditional step-up (already implied by every `platformRoute`), takes
@@ -334,6 +362,17 @@ too cheap an action to gate the one operation in this entire system with no undo
   above goes global.
 
 ### 3.6 Self-serve DSAR export
+
+**SHIPPED 2026-08-10** (Priority 3 of `ai/pre-launch-hardening.md`) — `people.profile.exportMine`
+(`selfRoute`, no input) returns the caller's own account data inline as one structured JSON
+document, all in ONE `withUserScope` transaction: `identity.users` minus `passwordHash`, every
+membership joined with its org's name/slug (through the same SELECT-only self policies the org
+switcher uses), every active session's metadata (no tokens — they only ever existed as hashes),
+linked OAuth identities (provider + email, never the provider's subject id), and the
+`people.profiles` row if one exists. The `user.data_exported` event records that the export
+happened, never its contents (the `compliance.exported` discipline). Web: the account page's
+"Your data" section downloads it as a JSON file. The excluded product data this section names
+below stays excluded, unchanged.
 
 `people.profile.exportMine` — new `selfRoute`, no input, returns a structured JSON document: the
 caller's own `identity.users` row (minus `passwordHash`), every `identity.memberships` row with its

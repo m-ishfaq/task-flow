@@ -1,5 +1,6 @@
 import { ME, type FilterNode, type FilterValue } from './ast.js';
 import { findField, type FieldDefinition, type Resource } from './fields.js';
+import { resolveSymbolicDate } from './tql/relative-date.js';
 
 /**
  * The in-memory evaluator (PLAN.md §10.2).
@@ -38,6 +39,13 @@ export type EvaluableRow = Readonly<Record<string, unknown>>;
 export interface EvaluateOptions {
   /** Substituted for `@me`. */
   readonly viewerId?: string;
+  /**
+   * The clock symbolic dates resolve against — the evaluator twin of
+   * `CompileOptions.now`, so a Phase 10 rule and a board filter built from
+   * the same tree resolve `-7d` to the same instant. Defaults to the real
+   * time; tests inject one.
+   */
+  readonly now?: Date;
 }
 
 /**
@@ -52,18 +60,31 @@ export function evaluate(
   row: EvaluableRow,
   options: EvaluateOptions = {},
 ): boolean {
+  // One clock for the whole evaluation, mirroring compile() — the evaluator
+  // twin of that function's "a filter with two relative dates must not
+  // resolve each against a slightly different instant".
+  const resolvedOptions: EvaluateOptions = { ...options, now: options.now ?? new Date() };
+  return evaluateWith(resource, node, row, resolvedOptions);
+}
+
+function evaluateWith(
+  resource: Resource,
+  node: FilterNode,
+  row: EvaluableRow,
+  options: EvaluateOptions,
+): boolean {
   if (node.kind === 'group') {
     if (node.children.length === 0) return node.combinator === 'and';
 
     return node.combinator === 'and'
-      ? node.children.every((child) => evaluate(resource, child, row, options))
-      : node.children.some((child) => evaluate(resource, child, row, options));
+      ? node.children.every((child) => evaluateWith(resource, child, row, options))
+      : node.children.some((child) => evaluateWith(resource, child, row, options));
   }
 
   if (node.kind === 'not') {
     // Mirrors the compiler's `NOT COALESCE(x, FALSE)`: an unknown is not a
     // match, so its negation is.
-    return !evaluate(resource, node.child, row, options);
+    return !evaluateWith(resource, node.child, row, options);
   }
 
   const field = findField(resource, node.field);
@@ -215,7 +236,16 @@ function resolve(
   field: FieldDefinition,
   options: EvaluateOptions,
 ): FilterValue {
-  if (value !== ME) return value;
+  if (value !== ME) {
+    /* Symbolic dates resolve against the same clock compile() uses, so the two
+       backends agree by construction (the parity contract). A date field with
+       a non-symbolic string falls through untouched. */
+    if (field.type === 'date' && typeof value === 'string') {
+      const resolved = resolveSymbolicDate(value, options.now ?? new Date());
+      if (resolved !== null) return resolved;
+    }
+    return value;
+  }
   if (field.acceptsMe !== true || options.viewerId === undefined) return null;
   return options.viewerId;
 }

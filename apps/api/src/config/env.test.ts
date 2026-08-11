@@ -152,4 +152,77 @@ describe('parseEnv', () => {
     expect(() => parseEnv({ ...valid, API_PORT: '70000' })).toThrow(/API_PORT/);
     expect(() => parseEnv({ ...valid, API_PORT: '0' })).toThrow(/API_PORT/);
   });
+
+  describe('present-but-empty optional settings', () => {
+    it('treats an empty string as unset, like compose `${VAR:-}` produces', () => {
+      // compose.prod.yaml passes every optional variable through `${VAR:-}`,
+      // which yields '' when the operator left it out — and '' must mean the
+      // same thing as "not set", or a valid deployment fails to boot. Found
+      // by the first real `docker compose up` of compose.prod.yaml.
+      const env = parseEnv({
+        ...valid,
+        GOOGLE_CLIENT_ID: '',
+        GOOGLE_CLIENT_SECRET: '',
+        GITHUB_CLIENT_ID: '',
+        GITHUB_CLIENT_SECRET: '',
+        TWILIO_ACCOUNT_SID: '',
+        TWILIO_AUTH_TOKEN: '',
+        TWILIO_VERIFY_SERVICE_SID: '',
+        VAPID_SUBJECT: '',
+        VAPID_PUBLIC_KEY: '',
+        VAPID_PRIVATE_KEY: '',
+        STORAGE_BUCKET_RECORDINGS: '',
+        TELEPHONY_WEBHOOK_ORIGIN: '',
+        TELEPHONY_INDEX_KEY: '',
+        RTC_TURN_URLS: '',
+        RTC_TURN_SECRET: '',
+      });
+
+      expect(env.GOOGLE_CLIENT_ID).toBeUndefined();
+      expect(env.GOOGLE_CLIENT_SECRET).toBeUndefined();
+      expect(env.GITHUB_CLIENT_ID).toBeUndefined();
+      expect(env.TWILIO_ACCOUNT_SID).toBeUndefined();
+      expect(env.TWILIO_VERIFY_SERVICE_SID).toBeUndefined();
+      expect(env.VAPID_SUBJECT).toBeUndefined();
+      expect(env.STORAGE_BUCKET_RECORDINGS).toBeUndefined();
+      expect(env.TELEPHONY_WEBHOOK_ORIGIN).toBeUndefined();
+      expect(env.TELEPHONY_INDEX_KEY).toBeUndefined();
+      expect(env.RTC_TURN_SECRET).toBeUndefined();
+    });
+
+    it('still accepts real values for those settings', () => {
+      const env = parseEnv({
+        ...valid,
+        GOOGLE_CLIENT_ID: 'client-id.apps.googleusercontent.com',
+        GOOGLE_CLIENT_SECRET: 'gOog1e-secret',
+        TWILIO_VERIFY_SERVICE_SID: 'VA1234567890',
+        TELEPHONY_WEBHOOK_ORIGIN: 'https://app.example.com',
+        TELEPHONY_INDEX_KEY: KEY_A,
+        // A real TURN pair — the superRefine refuses a secret without a URL,
+        // so "real values" has to be a complete configuration.
+        RTC_TURN_URLS: 'turn:relay.example.com:3478',
+        RTC_TURN_SECRET: 'coturn-secret',
+      });
+
+      expect(env.GOOGLE_CLIENT_ID).toBe('client-id.apps.googleusercontent.com');
+      expect(env.GOOGLE_CLIENT_SECRET).toBe('gOog1e-secret');
+      expect(env.TWILIO_VERIFY_SERVICE_SID).toBe('VA1234567890');
+      expect(env.TELEPHONY_WEBHOOK_ORIGIN).toBe('https://app.example.com');
+      expect(env.TELEPHONY_INDEX_KEY).toBe(KEY_A);
+      expect(env.RTC_TURN_URLS).toBe('turn:relay.example.com:3478');
+      expect(env.RTC_TURN_SECRET).toBe('coturn-secret');
+    });
+
+    it('still rejects a half-configured TURN pair when both arrive empty', () => {
+      // The superRefine's "set together or not at all" check must survive the
+      // '' -> undefined preprocessing, not be bypassed by it.
+      const env = parseEnv({ ...valid, RTC_TURN_URLS: '', RTC_TURN_SECRET: '' });
+      expect(env.RTC_TURN_URLS).toBeUndefined();
+      expect(env.RTC_TURN_SECRET).toBeUndefined();
+
+      expect(() =>
+        parseEnv({ ...valid, RTC_TURN_URLS: 'turn:relay.example.com:3478', RTC_TURN_SECRET: '' }),
+      ).toThrow(/must be set together/);
+    });
+  });
 });

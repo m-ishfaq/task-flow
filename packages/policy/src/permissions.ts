@@ -118,6 +118,37 @@ export const PERMISSIONS = [
   /* Compliance */
   'audit:read',
   'audit:export',
+
+  /* Search (Phase 8) — a membership-level floor; every hit is re-checked with
+     per-resource can() before it is returned (§2 of ai/phase-8-search.md).
+
+     Deliberately NOT a resource type in the list above: `search` is not
+     something a relationship tuple can point at — there is no search row to
+     hold a relation on, which is why migration 0005's tuples_object_type CHECK
+     does not admit it. `resourceOf('search:query')` is never invoked because
+     search has no `enforce()` layer — the route floor is `couldGrant`, and
+     the real gate is per-hit `can()` on the four real resource types. */
+  'search:query',
+
+  /* Sharing a saved search with the whole org (Phase 8 Wave 3, §3.2). The
+     second half of views' two-tier split, applied at org scope: keeping a
+     PRIVATE saved search is `search:query` — if you may run a search you may
+     bookmark one — and putting one in front of every colleague is this.
+
+     It is a separate permission rather than a reuse of `org:update` because
+     the two are not the same act: renaming the organization and adding an
+     entry to a shared list have no reason to move together, and reusing one
+     for the other is how a permission ends up meaning "administrator" rather
+     than meaning something.
+
+     Deliberately NOT in `ORG_LEVEL_PERMISSIONS` below, for the reason that
+     list states about itself: it names permissions where `route()`'s pre-check
+     IS the whole decision. No route declares this one as its floor — the saved
+     search routes float on `search:query` and the service asks for this
+     separately, with no target, so it is answered by ROLE ALONE. That second
+     role-only call is exactly the shape `channel:create` uses to defeat a
+     `couldGrant` false positive. */
+  'search:manage',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -170,6 +201,21 @@ const ORG_LEVEL_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
   'audit:read',
   'apiToken:create',
   'apiToken:revoke',
+  /* Phase 10 §9 decision 4. All three were absent purely because nothing had
+     ever used them — an omission rather than a decision — and Phase 10 is the
+     first caller, so the question had to be answered before a route existed.
+     A rule, a webhook endpoint and an integration are org furniture: there is
+     no resource for a relationship tuple to point at, so a tuple must not be
+     able to satisfy the route floor.
+
+     For automations specifically this matters twice over, because the floor is
+     genuinely the whole decision at this layer: `automation.service.ts` asks no
+     second per-resource question, since the resource-aware check happens later
+     and elsewhere — at EXECUTION, against the rule owner's live permissions,
+     in the worker. */
+  'automation:manage',
+  'webhook:manage',
+  'integration:manage',
 ]);
 
 /** True when `permission` has no per-resource concept — see `ORG_LEVEL_PERMISSIONS`. */

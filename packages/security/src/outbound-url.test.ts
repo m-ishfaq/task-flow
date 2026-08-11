@@ -157,8 +157,27 @@ describe('isBlockedAddress — IPv6', () => {
     expect(isBlockedAddress('::ffff:93.184.216.34')).toBe(false);
   });
 
-  it('blocks link-local and unique-local', () => {
-    expect(isBlockedAddress('fe80::1')).toBe(true);
+  it('blocks the WHOLE link-local range (fe80::/10), not just the fe80 spelling', () => {
+    /* Link-local spans first-hextet fe80-febf. A check that only matched the
+       canonical fe80 spelling let fe9f::1 and febf::1 through — both as
+       link-local as fe80::1, and both unreachable from the public internet.
+       These are the boundary cases that keep that from regressing. */
+    for (const address of ['fe80::1', 'fe89::1', 'fe90::1', 'fe9f::1', 'fea0::1', 'febf::1']) {
+      expect(isBlockedAddress(address), address).toBe(true);
+    }
+  });
+
+  it('does NOT block the public v6 range adjacent to link-local', () => {
+    /* fe80::/10 is not the whole fe8x world — first hextet fe80-febf is
+       link-local, but fec0-feff (the rest of fe80::/9) is routable address
+       space. An over-broad blocklist is its own bug — see the IPv4 comment
+       about public addresses adjacent to private ranges. */
+    expect(isBlockedAddress('fe70::1')).toBe(false);
+    expect(isBlockedAddress('fec0::1')).toBe(false);
+    expect(isBlockedAddress('feff::1')).toBe(false);
+  });
+
+  it('blocks unique-local', () => {
     expect(isBlockedAddress('fc00::1')).toBe(true);
     expect(isBlockedAddress('fd12:3456::1')).toBe(true);
   });

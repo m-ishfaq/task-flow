@@ -1,15 +1,22 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { api } from '../../lib/trpc.js';
 import { useToast } from '../../lib/toast-context.js';
 import { useStepUp } from '../auth/use-step-up.js';
-import { Button, Empty, Field, Input, SkeletonRows } from '../../components/primitives.js';
+import { Button, Empty, Field, SkeletonRows } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
 import { formatRelative } from '../../lib/format.js';
-import { callRecordingsQuery, callsQuery, invalidateAfterSpend, phoneNumbersQuery } from './api.js';
+import {
+  callRecordingsQuery,
+  callTranscriptQuery,
+  callsQuery,
+  invalidateAfterSpend,
+  phoneNumbersQuery,
+} from './api.js';
 import { CallButton } from './call-button.js';
+import { ContactPicker } from './contact-picker.js';
 
 /**
  * Click-to-call and the call log (ai/phase-7-voice.md §3.5, §3.10, Wave 2).
@@ -74,7 +81,25 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
   const [to, setTo] = useState('');
   const [fromPhoneNumberId, setFromPhoneNumberId] = useState('');
   const [record, setRecord] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
+  /* `?call=` opens one row expanded — how a transcript search hit lands here
+     (Phase 8 Wave 3). Seeded into state rather than read directly on every
+     render, because the row must stay collapsible afterward: deriving
+     `expanded` from the URL would make the collapse chevron do nothing while
+     the param is still in the address bar. The effect re-applies it when the
+     param CHANGES, which is the navigate-onto-an-already-mounted-page case. */
+  const linkedCallId = useSearch({ from: '/calls', select: (value) => value.call });
+  const [expanded, setExpanded] = useState<string | null>(linkedCallId ?? null);
+
+  /* Adjusted DURING RENDER, not in an effect — React's own documented pattern
+     for "a piece of state derives from a prop but stays independently
+     editable", and the one the repo's lint enforces (setState inside an effect
+     body triggers a cascading render). React re-runs this component
+     immediately with the new state and renders nothing in between. */
+  const [seenLink, setSeenLink] = useState(linkedCallId);
+  if (linkedCallId !== seenLink) {
+    setSeenLink(linkedCallId);
+    if (linkedCallId !== undefined) setExpanded(linkedCallId);
+  }
 
   const place = useMutation({
     mutationFn: () =>
@@ -135,18 +160,11 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
               checkbox and the Call button a line below the To input. See
               `Field`'s own note. */}
           <div className="flex flex-wrap items-start gap-2">
-            <Field label="To" htmlFor="call-to" hint="E.164, e.g. +14155550100">
-              <Input
-                id="call-to"
-                value={to}
-                className="w-44"
-                placeholder="+14155550100"
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(event) => {
-                  setTo(event.target.value);
-                }}
-              />
+            {/* A person OR a raw number — see `contact-picker.tsx` on why the
+                free-text field stays primary rather than becoming the fallback
+                behind a select. */}
+            <Field label="To" htmlFor="call-to" hint="Pick a person, or type E.164">
+              <ContactPicker id="call-to" orgId={orgId} value={to} onChange={setTo} />
             </Field>
 
             <Field label="From" htmlFor="call-from">
@@ -350,30 +368,69 @@ function CallRecordings({ orgId, callId }: { readonly orgId: string; readonly ca
     <>
       <ul className="space-y-1">
         {recordings.data.map((recording) => (
-          <li key={recording.recordingId} className="flex items-center gap-2">
-            <span className="text-[11px] text-ink-muted">
-              {recording.status}
-              {recording.durationSeconds !== null &&
-                ` · ${durationLabel(recording.durationSeconds)}`}
-            </span>
-            {recording.status === 'stored' && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 px-1.5 text-[11px]"
-                disabled={download.isPending}
-                onClick={() => {
-                  download.mutate(recording.recordingId);
-                }}
-              >
-                Download
-              </Button>
-            )}
+          <li key={recording.recordingId} className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-ink-muted">
+                {recording.status}
+                {recording.durationSeconds !== null &&
+                  ` · ${durationLabel(recording.durationSeconds)}`}
+              </span>
+              {recording.status === 'stored' && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-1.5 text-[11px]"
+                  disabled={download.isPending}
+                  onClick={() => {
+                    download.mutate(recording.recordingId);
+                  }}
+                >
+                  Download
+                </Button>
+              )}
+            </div>
+            <Transcript orgId={orgId} recordingId={recording.recordingId} />
           </li>
         ))}
       </ul>
       {download.isError && <ErrorText error={download.error} />}
       {dialog}
     </>
+  );
+}
+
+/**
+ * A recording's transcript, which Phase 8 Wave 3 made searchable and which
+ * until now had no surface at all — `telephony.recordings.transcript` shipped
+ * in Phase 7 Wave 2 with no caller, so a transcript search hit would have
+ * navigated to a call that showed nothing.
+ *
+ * Renders NOTHING on error rather than an error box. The overwhelmingly common
+ * failure is NOT_FOUND — most calls are never transcribed — and a red panel on
+ * every un-transcribed recording would train people to ignore the one that
+ * matters. A caller lacking `recording:read` lands in the same branch, which is
+ * the honest outcome: the server decided, and the UI does not re-derive it or
+ * explain what it is not being shown (§8.7).
+ *
+ * The text is already redacted at rest (`comms.transcripts` has no unredacted
+ * column), so nothing here has to redact anything — the display is plain text
+ * for the same reason the search snippet is.
+ */
+function Transcript({
+  orgId,
+  recordingId,
+}: {
+  readonly orgId: string;
+  readonly recordingId: string;
+}) {
+  const transcript = useQuery(callTranscriptQuery(orgId, recordingId));
+
+  if (transcript.isPending || transcript.isError) return null;
+
+  return (
+    <details className="rounded border border-line bg-surface-sunken px-2 py-1">
+      <summary className="cursor-pointer text-[11px] text-ink-muted">Transcript</summary>
+      <p className="mt-1 text-xs whitespace-pre-wrap text-ink-muted">{transcript.data.text}</p>
+    </details>
   );
 }

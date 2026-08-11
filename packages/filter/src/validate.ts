@@ -1,5 +1,6 @@
 import { LIST_OPERATORS, ME, NULLARY_OPERATORS, type FilterNode, type FilterValue } from './ast.js';
 import { findField, supportsOperator, type FieldDefinition, type Resource } from './fields.js';
+import { isSymbolicDate } from './tql/relative-date.js';
 
 /**
  * Validating a filter tree against a resource's fields (PLAN.md §10.2).
@@ -119,6 +120,11 @@ function checkValue(field: FieldDefinition, value: FilterValue): string | null {
 
     case 'date': {
       if (typeof value !== 'string') return `Field "${field.name}" expects an ISO date.`;
+      /* Symbolic dates (`-7d`, `@today`) are a closed literal set from TQL
+         (tql/relative-date.ts). They pass here so a saved query can be typed
+         in TQL and re-parsed by the builder without tripping an ISO check;
+         compile/evaluate resolve them against an injectable clock. */
+      if (isSymbolicDate(value)) return null;
       return Number.isNaN(Date.parse(value)) ? `Field "${field.name}" expects an ISO date.` : null;
     }
 

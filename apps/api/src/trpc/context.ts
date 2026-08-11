@@ -47,10 +47,24 @@ export interface AuthenticatedPrincipal {
    * Step-up re-authentication (§8.1) compares against this for role changes, API
    * token creation, number purchase, and recording export. Deliberately NOT
    * advanced by a refresh — see identity.service.ts.
+   *
+   * For a token-authenticated principal this is the token's `created_at` — the
+   * token IS the credential, so this is when it was proved (§6.4 step 5).
    */
   readonly authenticatedAt: Date;
   /** Null when the caller has authenticated but selected no organization. */
   readonly org: OrgMembership | null;
+  /**
+   * The scope set of the API token this request authenticated with, or null
+   * for a session-authenticated request (ai/phase-10-automation.md §6.4).
+   *
+   * Non-null is the marker of a TOKEN principal: the builder refuses token
+   * principals on self/step-up routes, and intersects this set with the route's
+   * declared permission before the handler runs — a token scoped to
+   * `card:read` is refused on a `card:update` route even while its owner could
+   * do both.
+   */
+  readonly tokenScopes: readonly string[] | null;
 }
 
 /** A principal that has an organization — what a permission check needs. */

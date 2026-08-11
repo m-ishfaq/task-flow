@@ -46,6 +46,18 @@ export {
   initializePlatformAdminDatabase,
   withPlatformAdminScope,
   hasPlatformAdminDatabase,
+  initializeSearchDatabase,
+  withSearchScope,
+  hasSearchDatabase,
+  initializeAutomationDatabase,
+  withAutomationScope,
+  hasAutomationDatabase,
+  initializeWebhookDatabase,
+  withWebhookScope,
+  hasWebhookDatabase,
+  initializeApiTokenAuthDatabase,
+  withApiTokenAuthScope,
+  hasApiTokenAuthDatabase,
   type OrgId,
   type UserId,
   type DbConfig,
@@ -73,6 +85,7 @@ export { listenForOutboxAppends, type OutboxListener, type ListenOptions } from 
  * ordering obligation it puts on its caller.
  */
 export { resolveOrgBySubaccountSid } from './comms-directory.js';
+export { resolveApiToken } from './api-tokens.js';
 
 export {
   claimUnprocessedPageVersions,
@@ -81,6 +94,15 @@ export {
 } from './docs-backlinks.js';
 
 export { readNotificationPrefsTimezone } from './notification-prefs-timezone.js';
+
+export { consumeAutomationBudget } from './automation-budget.js';
+
+export {
+  consumeApiTokenQuota,
+  API_TOKEN_DAILY_QUOTA,
+  API_TOKEN_EXPENSIVE_DAILY_QUOTA,
+  type ApiTokenQuotaClass,
+} from './api-token-quota.js';
 
 export {
   readAuditEntries,

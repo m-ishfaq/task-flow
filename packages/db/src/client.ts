@@ -716,6 +716,308 @@ export function hasBacklinksDatabase(): boolean {
   return backlinksDb !== undefined;
 }
 
+/* -------------------------------------------------------------------------- *
+ * The search-claim connection (ai/phase-8-search.md §2.3, Phase 8 Wave 2,
+ * migration 0045)
+ * -------------------------------------------------------------------------- */
+
+let searchPool: pg.Pool | undefined;
+let searchDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the search indexer's claim pool, as `taskflow_search`.
+ *
+ * A NINTH role, on the identical reasoning every consumer role before it
+ * exists: the claim query reads `platform.outbox` and `outbox_dispatch`
+ * across EVERY tenant in one pass, and no value of `app.org_id` is correct
+ * for it. Migration 0045 gives it exactly the 0016 recipe — SELECT on the
+ * outbox plus the UPDATE-with-`WITH CHECK (false)` policy that `FOR UPDATE`
+ * locking selects require — and nothing at all on `search.documents`: the
+ * actual indexing happens afterward, per event, over the ordinary
+ * `withOrgScope` connection as `taskflow_app`.
+ */
+export function initializeSearchDatabase(config: DbConfig): void {
+  if (searchPool) {
+    throw new Error('Search database already initialized. This is a boot-time call.');
+  }
+
+  searchPool = new Pool({
+    connectionString: config.url,
+    // Small, matching every other consumer role: one relay drains one queue.
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-search',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  searchDb = drizzle(searchPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_search` — the role that may claim outbox events
+ * under consumer name 'search' across every org, and nothing else.
+ *
+ * NOT tenant-scoped, for the identical reason every consumer scope in this
+ * file is not: one relay tick claims across every tenant, so no single value
+ * of `app.org_id` is correct for it. What contains it is the role —
+ * `NOBYPASSRLS`, reaching across orgs only on the tables carrying an
+ * explicit `TO taskflow_search` policy.
+ *
+ * Throws rather than falling back to the application role — which could not
+ * claim across every org anyway, so the fallback would silently drain
+ * nothing while looking healthy. That refusal shape is the standing lesson
+ * of Phase 4's `FOR UPDATE`-without-an-UPDATE-policy bug (migration 0016's
+ * header) and every consumer scope after it.
+ */
+export async function withSearchScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!searchDb) {
+    throw new Error(
+      'Search database not initialized. Call initializeSearchDatabase() during boot — ' +
+        'the indexer must not fall back to the application role, which cannot claim ' +
+        'outbox events across every org and would silently index nothing.',
+    );
+  }
+
+  return searchDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the search pool has been initialized. */
+export function hasSearchDatabase(): boolean {
+  return searchDb !== undefined;
+}
+
+/* -------------------------------------------------------------------------- *
+ * The automation-claim connection (ai/phase-10-automation.md §4, Phase 10
+ * Wave 1, migration 0047)
+ * -------------------------------------------------------------------------- */
+
+let automationPool: pg.Pool | undefined;
+let automationDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the automation engine's claim pool, as `taskflow_automation`.
+ *
+ * A TENTH role, and the one where the claim-only separation carries the most
+ * weight. Every consumer role before it separates "find the work" from "do the
+ * work" for tidiness; here the work on the other side of the line is arbitrary
+ * mutation of tenant data, performed through `apps/api`'s own service layer.
+ *
+ * So migration 0047 gives this role the 0016 recipe — SELECT on the outbox plus
+ * the UPDATE-with-`WITH CHECK (false)` policy that `FOR UPDATE` locking selects
+ * require — and nothing whatsoever on `platform.automations`,
+ * `automation_runs` or `automation_budget`. The role that decides WHICH events
+ * might fire a rule cannot read a single rule, record a single run, or perform
+ * a single action. All of that happens afterward, per event, over the ordinary
+ * `withOrgScope` connection as `taskflow_app`, under RLS and `can()`.
+ */
+export function initializeAutomationDatabase(config: DbConfig): void {
+  if (automationPool) {
+    throw new Error('Automation database already initialized. This is a boot-time call.');
+  }
+
+  automationPool = new Pool({
+    connectionString: config.url,
+    // Small, matching every other consumer role: one relay drains one queue.
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-automation',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  automationDb = drizzle(automationPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_automation` — the role that may claim outbox events
+ * under consumer name 'automation' across every org, and nothing else.
+ *
+ * NOT tenant-scoped, for the identical reason every consumer scope in this file
+ * is not: one tick claims across every tenant, so no single value of
+ * `app.org_id` is correct for it. What contains it is the role —
+ * `NOBYPASSRLS`, reaching across orgs only on the two tables carrying an
+ * explicit `TO taskflow_automation` policy.
+ *
+ * Throws rather than falling back to the application role. The fallback would
+ * be worse here than anywhere else it has been refused: `taskflow_app` cannot
+ * claim across orgs, so the engine would drain nothing while looking healthy —
+ * Phase 4's silent-zero-rows bug — and it CAN write every tenant table it is
+ * scoped to, so a fallback would also hand the claim step privileges the design
+ * spends a whole role denying it.
+ */
+export async function withAutomationScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!automationDb) {
+    throw new Error(
+      'Automation database not initialized. Call initializeAutomationDatabase() during boot — ' +
+        'the engine must not fall back to the application role, which cannot claim outbox ' +
+        'events across every org and would silently run nothing.',
+    );
+  }
+
+  return automationDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the automation pool has been initialized. */
+export function hasAutomationDatabase(): boolean {
+  return automationDb !== undefined;
+}
+
+/* -------------------------------------------------------------------------- *
+ * The webhook-delivery claim connection (ai/phase-10-automation.md §5,
+ * Wave 2, migration 0049)
+ * -------------------------------------------------------------------------- */
+
+let webhookPool: pg.Pool | undefined;
+let webhookDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the webhook delivery loop's claim pool, as `taskflow_webhook`.
+ *
+ * An ELEVENTH role, on the same reasoning as every consumer role before it:
+ * the delivery loop claims due rows across EVERY tenant in one pass, and no
+ * value of `app.org_id` is correct for it.
+ *
+ * Migration 0049's grants are COLUMN-LEVEL and what is excluded is the point:
+ * this role never sees `webhook_deliveries.payload` — the role that decides
+ * what to deliver cannot read what is being delivered — and holds NOTHING on
+ * `platform.webhooks`, so it cannot learn an endpoint's URL or touch its
+ * signing key. The URL, the key and the payload are loaded afterward, per
+ * org, over the ordinary `withOrgScope` connection as `taskflow_app`.
+ */
+export function initializeWebhookDatabase(config: DbConfig): void {
+  if (webhookPool) {
+    throw new Error('Webhook database already initialized. This is a boot-time call.');
+  }
+
+  webhookPool = new Pool({
+    connectionString: config.url,
+    // Small, matching every other consumer role: one loop drains one queue.
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-webhook',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  webhookDb = drizzle(webhookPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_webhook` — the role that may claim due webhook
+ * deliveries and record their outcomes, across every org, and nothing else.
+ *
+ * NOT tenant-scoped, for the identical reason every consumer scope in this
+ * file is not: one tick claims across every tenant, so no single value of
+ * `app.org_id` is correct for it. What contains it is the role —
+ * `NOBYPASSRLS`, reaching across orgs only on the tables carrying an
+ * explicit `TO taskflow_webhook` policy (migration 0049), through its
+ * column-level grants.
+ *
+ * Throws rather than falling back to the application role — which cannot
+ * claim across every org anyway, so the fallback would silently deliver
+ * nothing while looking healthy. The standing refusal shape of this file.
+ */
+export async function withWebhookScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!webhookDb) {
+    throw new Error(
+      'Webhook database not initialized. Call initializeWebhookDatabase() during boot — ' +
+        'the delivery loop must not fall back to the application role, which cannot claim ' +
+        'deliveries across every org and would silently deliver nothing.',
+    );
+  }
+
+  return webhookDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the webhook pool has been initialized. */
+export function hasWebhookDatabase(): boolean {
+  return webhookDb !== undefined;
+}
+
+/* -------------------------------------------------------------------------- *
+ * The API-token auth lookup connection (ai/phase-10-automation.md §6.2,
+ * Wave 3, migration 0050)
+ * -------------------------------------------------------------------------- */
+
+let apiTokenAuthPool: pg.Pool | undefined;
+let apiTokenAuthDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the API-token auth lookup pool, as `taskflow_api_token_auth`.
+ *
+ * A TWELFTH role, and the first one on the REQUEST hot path rather than a
+ * worker loop: every token-authenticated request starts with a hash lookup,
+ * and the lookup has no org yet — the token row names its org, so no value of
+ * `app.org_id` is correct for it.
+ *
+ * Migration 0050's grant is COLUMN-LEVEL and what is excluded is the point:
+ * this role sees `token_hash, org_id, created_by, scopes, revoked_at` and
+ * never `name`, `token_prefix` or `last_used_at` — the role that decides who
+ * you are cannot read what your tokens are called or when you last used them.
+ */
+export function initializeApiTokenAuthDatabase(config: DbConfig): void {
+  if (apiTokenAuthPool) {
+    throw new Error('API-token auth database already initialized. This is a boot-time call.');
+  }
+
+  apiTokenAuthPool = new Pool({
+    connectionString: config.url,
+    // Small, matching every other narrow role: a unique-index probe per
+    // request, not a workload.
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-api-token-auth',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  apiTokenAuthDb = drizzle(apiTokenAuthPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_api_token_auth` — the role that may resolve a
+ * presented `tf_pat` by its hash, across every org, and nothing else.
+ *
+ * NOT tenant-scoped, for the identical reason every consumer scope in this
+ * file is not: the org is unknown until the token row answers, so no single
+ * value of `app.org_id` is correct. What contains it is the role —
+ * `NOBYPASSRLS`, reaching across orgs only on `platform.api_tokens`' one
+ * `TO taskflow_api_token_auth` policy, through its column-level grant.
+ *
+ * Throws rather than falling back to the application role — which cannot read
+ * across every org anyway, so the fallback would silently refuse every token
+ * while looking healthy. The standing refusal shape of this file.
+ */
+export async function withApiTokenAuthScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!apiTokenAuthDb) {
+    throw new Error(
+      'API-token auth database not initialized. Call initializeApiTokenAuthDatabase() during boot — ' +
+        'token authentication must not fall back to the application role, which cannot read ' +
+        'across every org and would silently refuse every token.',
+    );
+  }
+
+  return apiTokenAuthDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the API-token auth pool has been initialized. */
+export function hasApiTokenAuthDatabase(): boolean {
+  return apiTokenAuthDb !== undefined;
+}
+
 /** Closes every pool. Shutdown only. */
 export async function closeDatabase(): Promise<void> {
   await pool?.end();
@@ -753,6 +1055,22 @@ export async function closeDatabase(): Promise<void> {
   await platformAdminPool?.end();
   platformAdminPool = undefined;
   platformAdminDb = undefined;
+
+  await searchPool?.end();
+  searchPool = undefined;
+  searchDb = undefined;
+
+  await automationPool?.end();
+  automationPool = undefined;
+  automationDb = undefined;
+
+  await webhookPool?.end();
+  webhookPool = undefined;
+  webhookDb = undefined;
+
+  await apiTokenAuthPool?.end();
+  apiTokenAuthPool = undefined;
+  apiTokenAuthDb = undefined;
 }
 
 /** True when the pool is live and answering. Backs `/health/ready` (§14). */

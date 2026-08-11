@@ -1,12 +1,14 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
+  and,
   appendToOutbox,
-  claimPending,
   closeDatabase,
+  eq,
   initializeAuditDatabase,
   initializeDatabase,
   initializeRealtimeDatabase,
   listenForOutboxAppends,
+  schema,
   withAuditScope,
   withOrgScope,
   withRealtimeScope,
@@ -178,7 +180,8 @@ describe('startRealtimeRelay', () => {
   });
 
   it('does not consume the "audit" relay’s backlog, and vice versa', async () => {
-    await withOrgScope(ORG, async (tx) => appendToOutbox(tx, [eventFor()]));
+    const event = eventFor();
+    await withOrgScope(ORG, async (tx) => appendToOutbox(tx, [event]));
 
     const dispatch = vi.fn((_row: OutboxRow) => undefined);
     const relay = startRealtimeRelay({ logger, dispatch, pollIntervalMs: 300_000 });
@@ -190,19 +193,35 @@ describe('startRealtimeRelay', () => {
       // 'realtime' marking this event dispatched must not hide it from
       // 'audit' — the CONSUMER export is asserted to be the literal string
       // migration 0016's WITH CHECK pins, so this is the real name, not a
-      // stand-in.
+      // stand-in. Asserted by EVENT ID on the audit dispatch row rather than
+      // by a global `claimPending(tx, 'audit')`: the outbox is one queue, so a
+      // foreign backlog can starve our row out of the claim's LIMIT-100 window
+      // under turbo, exactly as the failing-test note below documents for
+      // 'realtime'. The property "audit still owes this event" is just "no
+      // dispatch row exists for (event, 'audit')" — what the claim's LEFT
+      // JOIN sees as still pending.
       expect(CONSUMER).toBe('realtime');
-      const forAudit = await withAuditScope(async (tx) => claimPending(tx, 'audit'));
-      expect(ours(forAudit)).toHaveLength(1);
+      const auditOwed = await withAuditScope((tx) =>
+        tx
+          .select({ eventId: schema.outboxDispatch.eventId })
+          .from(schema.outboxDispatch)
+          .where(
+            and(
+              eq(schema.outboxDispatch.eventId, event.id),
+              eq(schema.outboxDispatch.consumer, 'audit'),
+            ),
+          ),
+      );
+      expect(auditOwed).toHaveLength(0);
     } finally {
       await relay.stop();
     }
   });
 
   it('leaves a failing event claimable and counts the attempt, without abandoning the rest of the batch', async () => {
-    await withOrgScope(ORG, async (tx) =>
-      appendToOutbox(tx, [eventFor('card.moved'), eventFor('card.created')]),
-    );
+    const moved = eventFor('card.moved');
+    const created = eventFor('card.created');
+    await withOrgScope(ORG, async (tx) => appendToOutbox(tx, [moved, created]));
 
     // Scoped to THIS suite's own org, deliberately — the outbox is a global queue
     // (§3.5) that other suites' concurrently-running fixtures write to, and a
@@ -220,14 +239,61 @@ describe('startRealtimeRelay', () => {
       await relay.drainNow();
 
       // Both were attempted; only the non-throwing one counts as delivered.
+      // `card.moved` is asserted AT-LEAST-once, not exactly once: the relay's
+      // own LISTEN listener wakes on every suite's append to the shared test
+      // database and can re-claim the still-claimable failing event before
+      // this assertion runs — a second attempt is the relay working as
+      // designed, not a bug, so the count must not depend on the timing.
       const calls = ours(dispatch.mock.calls.map(([row]) => row));
-      expect(calls).toHaveLength(2);
+      expect(calls.filter((row) => row.name === 'card.moved').length).toBeGreaterThanOrEqual(1);
       expect(calls.filter((row) => row.name === 'card.created')).toHaveLength(1);
 
-      const retry = ours(await withRealtimeScope((tx) => claimPending(tx, CONSUMER)));
-      expect(retry).toHaveLength(1);
-      expect(retry[0]?.name).toBe('card.moved');
-      expect(retry[0]?.attempts).toBe(1);
+      // The failing event must still be OWED to this consumer — its dispatch
+      // row has dispatched_at NULL, which is exactly the predicate
+      // `claimPending` selects on — with the attempt counted. Asserted by
+      // EVENT ID, not by re-claiming the global queue: 'realtime' is drained
+      // only by this relay, so under turbo every suite's appends stay pending
+      // for it and fill claimPending's LIMIT-100 window before our row, and a
+      // concurrent LISTEN-triggered tick can hold `FOR UPDATE` on it so
+      // `SKIP LOCKED` passes it by — either way `ours()` comes back empty
+      // through no fault of the relay. This is the file header's own rule
+      // applied one level deeper: assertions must not read GLOBAL queue state.
+      const failed = await withRealtimeScope((tx) =>
+        tx
+          .select({
+            dispatchedAt: schema.outboxDispatch.dispatchedAt,
+            attempts: schema.outboxDispatch.attempts,
+          })
+          .from(schema.outboxDispatch)
+          .where(
+            and(
+              eq(schema.outboxDispatch.eventId, moved.id),
+              eq(schema.outboxDispatch.consumer, CONSUMER),
+            ),
+          ),
+      );
+      expect(failed).toHaveLength(1);
+      expect(failed[0]?.dispatchedAt).toBeNull();
+      // At-least-once for the same reason as `calls` above: a concurrent tick
+      // may have counted the failure a second time. The property is "counted",
+      // not "counted exactly once".
+      expect(failed[0]?.attempts).toBeGreaterThanOrEqual(1);
+
+      // The rest of the batch was NOT abandoned — the healthy event's own
+      // dispatch row is marked, again by id rather than by a global claim.
+      const delivered = await withRealtimeScope((tx) =>
+        tx
+          .select({ dispatchedAt: schema.outboxDispatch.dispatchedAt })
+          .from(schema.outboxDispatch)
+          .where(
+            and(
+              eq(schema.outboxDispatch.eventId, created.id),
+              eq(schema.outboxDispatch.consumer, CONSUMER),
+            ),
+          ),
+      );
+      expect(delivered).toHaveLength(1);
+      expect(delivered[0]?.dispatchedAt).not.toBeNull();
     } finally {
       await relay.stop();
     }

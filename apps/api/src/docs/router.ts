@@ -150,7 +150,9 @@ export function createDocsRouter() {
        * a rendered PDF has no independent object-storage identity to presign
        * — it is generated fresh, on demand, from a `page_versions` row.
        */
-      exportPdf: route({ permission: 'page:read' })
+      /* PDF rendering is the expensive class's poster child — generated
+         fresh from a page_versions row on demand (§6.5). */
+      exportPdf: route({ permission: 'page:read', quotaClass: 'expensive' })
         .input(
           z
             .object({ pageId: PageIdSchema, versionId: z.string().nullable().default(null) })

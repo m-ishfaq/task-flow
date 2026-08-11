@@ -11,6 +11,7 @@ import * as totp from './totp.service.js';
 import type { TotpDeps } from './totp.service.js';
 import * as oauth from './oauth.service.js';
 import type { OAuthDeps } from './oauth.service.js';
+import * as sessions from './sessions.service.js';
 import * as people from '../people/profile.service.js';
 
 const OAuthProviderSchema = z.enum(['google', 'github']);
@@ -181,6 +182,58 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
           emailVerified: view.emailVerified,
         };
       }),
+
+    /**
+     * Device/session inventory (Phase 12 Wave 2 §3.4) — your own active
+     * sessions, built from data that already exists rather than a new
+     * device concept. `selfRoute` for the same reason `auth.me` is: there
+     * is no org permission that describes listing your own sign-ins, and
+     * it must answer with no org selected. `revoke` is `stepUp: true` —
+     * the single-device version of `logoutEverywhere`'s own protection.
+     */
+    sessions: router({
+      list: selfRoute({
+        selfReason:
+          'A user reading their own active sessions — §3.4’s device inventory. No org permission describes it.',
+      })
+        .output(
+          z
+            .object({
+              sessions: z
+                .array(
+                  z
+                    .object({
+                      id: z.string(),
+                      label: z.string().nullable(),
+                      ip: z.string().nullable(),
+                      authenticatedAt: z.date(),
+                      lastSeenAt: z.date(),
+                      isCurrent: z.boolean(),
+                      country: z.string().nullable(),
+                      flagged: z.boolean(),
+                    })
+                    .strict(),
+                )
+                .readonly(),
+              pushDeviceCount: z.number().int().nonnegative(),
+            })
+            .strict(),
+        )
+        .query(({ ctx }) =>
+          sessions.list(deps.identity, ctx.principal.userId, ctx.principal.sessionId),
+        ),
+
+      revoke: selfRoute({
+        selfReason:
+          'A user signing one of their own devices out — the single-session logout (§3.4).',
+        stepUp: true,
+      })
+        .input(z.object({ sessionId: z.string().uuid() }).strict())
+        .output(z.object({ status: z.literal('revoked') }).strict())
+        .mutation(({ input, ctx }) =>
+          sessions.revoke(deps.identity, ctx.principal.userId, input.sessionId, meta(ctx)),
+        ),
+    }),
 
     /** Nested rather than merged, so the manifest reads `auth.passkeys.*`. */
     passkeys: createPasskeyRouter({ passkeys: deps.passkeys }),

@@ -148,7 +148,11 @@ function isBlockedIpv6(address: string): boolean {
   const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(plain);
   if (mapped?.[1] !== undefined) return isBlockedIpv4(mapped[1]);
 
-  if (plain.startsWith('fe80')) return true; // link-local
+  /* Link-local is fe80::/10 — the first hextet ranges fe80-febf, not just
+     fe80. A check that only matched the fe80 spelling let fe9f::1 or
+     febf::1 through, which are as link-local as fe80::1 and unreachable
+     from the public internet. */
+  if (/^fe[89ab]/i.test(plain)) return true; // link-local (fe80::/10)
   if (/^f[cd]/i.test(plain)) return true; // unique local (fc00::/7)
   if (plain.startsWith('ff')) return true; // multicast
 

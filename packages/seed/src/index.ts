@@ -78,3 +78,7 @@ export { templatesModule, type TemplateOutput } from './modules/docs.templates.j
 export { attachmentsModule } from './modules/platform.attachments.js';
 export { auditModule } from './modules/platform.audit.js';
 export { telephonyModule, type TelephonyOutput } from './modules/comms.telephony.js';
+export { rtcModule } from './modules/rtc.calls.js';
+export { notificationsModule } from './modules/platform.notifications.js';
+export { pushSubscriptionsModule } from './modules/platform.push-subscriptions.js';
+export { sessionsModule, type SessionsOutput } from './modules/identity.sessions.js';
