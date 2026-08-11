@@ -243,11 +243,9 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
       },
       createContext: async ({ req, res }): Promise<RequestContext> => ({
         requestId: req.id as RequestContext['requestId'],
-        principal: await authenticateRequest(
-          req.headers.authorization,
-          req.headers[ORG_HEADER],
-          { jwtSecret: identityDeps.config.jwtSecret },
-        ),
+        principal: await authenticateRequest(req.headers.authorization, req.headers[ORG_HEADER], {
+          jwtSecret: identityDeps.config.jwtSecret,
+        }),
         refreshToken: readRefreshCookie(req.headers.cookie),
         ip: req.ip.length > 0 ? req.ip : null,
         userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,

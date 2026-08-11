@@ -349,7 +349,11 @@ const STEP_UP_MAX_AGE_MS = 5 * 60 * 1000;
  * has the resource. See `couldGrant`'s own comment for why widening layer 1
  * this way costs nothing.
  */
-export function route(meta: { permission: Permission; stepUp?: boolean; quotaClass?: 'expensive' }) {
+export function route(meta: {
+  permission: Permission;
+  stepUp?: boolean;
+  quotaClass?: 'expensive';
+}) {
   return procedure.meta(meta).use(async ({ ctx, next, meta: routeMeta }) => {
     const scoped = requireOrg(await requireAuth(ctx, routeMeta));
 
@@ -377,10 +381,7 @@ export function route(meta: { permission: Permission; stepUp?: boolean; quotaCla
     ) {
       throw new TRPCError({
         code: 'FORBIDDEN',
-        cause: new AppError(
-          'FORBIDDEN',
-          'This token is not scoped for that action.',
-        ),
+        cause: new AppError('FORBIDDEN', 'This token is not scoped for that action.'),
       });
     }
 
@@ -410,7 +411,9 @@ export function selfRoute(meta: { selfReason: string; stepUp?: boolean }) {
       selfReason: meta.selfReason,
       ...(meta.stepUp === undefined ? {} : { stepUp: meta.stepUp }),
     })
-    .use(async ({ ctx, next, meta: routeMeta }) => next({ ctx: await requireAuth(ctx, routeMeta) }));
+    .use(async ({ ctx, next, meta: routeMeta }) =>
+      next({ ctx: await requireAuth(ctx, routeMeta) }),
+    );
 }
 
 /**
@@ -454,7 +457,10 @@ export function memberRoute(meta: { memberReason: string; stepUp?: boolean }) {
 }
 
 /** Shared gate: authentication, then step-up freshness if the route asks for it. */
-async function requireAuth(ctx: RequestContext, meta: RouteMeta | undefined): Promise<AuthenticatedContext> {
+async function requireAuth(
+  ctx: RequestContext,
+  meta: RouteMeta | undefined,
+): Promise<AuthenticatedContext> {
   if (!ctx.principal) {
     throw new TRPCError({
       code: 'UNAUTHORIZED',
@@ -472,7 +478,10 @@ async function requireAuth(ctx: RequestContext, meta: RouteMeta | undefined): Pr
      The check runs on the marker field, so slice 2's
      `stepUp: true` mint/revoke routes (and every step-up route) refuse token
      principals here without each route having to know tokens exist. */
-  if (ctx.principal.tokenScopes !== null && (meta?.selfReason !== undefined || meta?.stepUp === true)) {
+  if (
+    ctx.principal.tokenScopes !== null &&
+    (meta?.selfReason !== undefined || meta?.stepUp === true)
+  ) {
     throw new TRPCError({
       code: 'FORBIDDEN',
       cause: new AppError('FORBIDDEN', 'This token cannot be used for this action.'),
@@ -506,11 +515,9 @@ async function requireAuth(ctx: RequestContext, meta: RouteMeta | undefined): Pr
       const retryAfterSeconds = Math.max(1, Math.ceil((resetAt.getTime() - Date.now()) / 1000));
       throw new TRPCError({
         code: 'TOO_MANY_REQUESTS',
-        cause: new AppError(
-          'QUOTA_EXCEEDED',
-          'This token has reached its daily request limit.',
-          { retryAfterSeconds },
-        ),
+        cause: new AppError('QUOTA_EXCEEDED', 'This token has reached its daily request limit.', {
+          retryAfterSeconds,
+        }),
       });
     }
   }
