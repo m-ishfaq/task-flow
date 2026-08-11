@@ -869,6 +869,81 @@ export function hasAutomationDatabase(): boolean {
   return automationDb !== undefined;
 }
 
+/* -------------------------------------------------------------------------- *
+ * The webhook-delivery claim connection (ai/phase-10-automation.md §5,
+ * Wave 2, migration 0049)
+ * -------------------------------------------------------------------------- */
+
+let webhookPool: pg.Pool | undefined;
+let webhookDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the webhook delivery loop's claim pool, as `taskflow_webhook`.
+ *
+ * An ELEVENTH role, on the same reasoning as every consumer role before it:
+ * the delivery loop claims due rows across EVERY tenant in one pass, and no
+ * value of `app.org_id` is correct for it.
+ *
+ * Migration 0049's grants are COLUMN-LEVEL and what is excluded is the point:
+ * this role never sees `webhook_deliveries.payload` — the role that decides
+ * what to deliver cannot read what is being delivered — and holds NOTHING on
+ * `platform.webhooks`, so it cannot learn an endpoint's URL or touch its
+ * signing key. The URL, the key and the payload are loaded afterward, per
+ * org, over the ordinary `withOrgScope` connection as `taskflow_app`.
+ */
+export function initializeWebhookDatabase(config: DbConfig): void {
+  if (webhookPool) {
+    throw new Error('Webhook database already initialized. This is a boot-time call.');
+  }
+
+  webhookPool = new Pool({
+    connectionString: config.url,
+    // Small, matching every other consumer role: one loop drains one queue.
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-webhook',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  webhookDb = drizzle(webhookPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_webhook` — the role that may claim due webhook
+ * deliveries and record their outcomes, across every org, and nothing else.
+ *
+ * NOT tenant-scoped, for the identical reason every consumer scope in this
+ * file is not: one tick claims across every tenant, so no single value of
+ * `app.org_id` is correct for it. What contains it is the role —
+ * `NOBYPASSRLS`, reaching across orgs only on the tables carrying an
+ * explicit `TO taskflow_webhook` policy (migration 0049), through its
+ * column-level grants.
+ *
+ * Throws rather than falling back to the application role — which cannot
+ * claim across every org anyway, so the fallback would silently deliver
+ * nothing while looking healthy. The standing refusal shape of this file.
+ */
+export async function withWebhookScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!webhookDb) {
+    throw new Error(
+      'Webhook database not initialized. Call initializeWebhookDatabase() during boot — ' +
+        'the delivery loop must not fall back to the application role, which cannot claim ' +
+        'deliveries across every org and would silently deliver nothing.',
+    );
+  }
+
+  return webhookDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the webhook pool has been initialized. */
+export function hasWebhookDatabase(): boolean {
+  return webhookDb !== undefined;
+}
+
 /** Closes every pool. Shutdown only. */
 export async function closeDatabase(): Promise<void> {
   await pool?.end();
@@ -914,6 +989,10 @@ export async function closeDatabase(): Promise<void> {
   await automationPool?.end();
   automationPool = undefined;
   automationDb = undefined;
+
+  await webhookPool?.end();
+  webhookPool = undefined;
+  webhookDb = undefined;
 }
 
 /** True when the pool is live and answering. Backs `/health/ready` (§14). */

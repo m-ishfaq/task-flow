@@ -82,7 +82,12 @@ export type AutomationActionInput =
   | { readonly type: 'card.remove_label'; readonly labelId: string }
   | { readonly type: 'card.unassign'; readonly userId: string }
   | { readonly type: 'card.add_comment'; readonly body: string }
-  | { readonly type: 'chat.post_message'; readonly channelId: string; readonly body: string };
+  | { readonly type: 'chat.post_message'; readonly channelId: string; readonly body: string }
+  /* Wave 2 — the first action with an external effect. It names an
+     org-registered webhook (never a URL), so the SSRF gate lives in the
+     delivery loop instead of on the rule, and the enqueue itself is
+     authorized as `webhook:manage` (§2). */
+  | { readonly type: 'call_webhook'; readonly webhookId: string };
 
 /**
  * Events an action emits, for the save-time self-trigger check.
@@ -105,6 +110,9 @@ const EVENTS_EMITTED_BY: Readonly<Record<string, readonly string[]>> = {
   'card.unassign': ['card.assigned', 'card.updated'],
   'card.add_comment': ['comment.created', 'card.updated'],
   'chat.post_message': ['message.sent'],
+  /* The enqueue emits this through the service layer, so a rule triggered by
+     `webhook.delivery_queued` whose action calls a webhook would feed itself. */
+  'call_webhook': ['webhook.delivery_queued'],
 };
 
 const orgOf = (actor: AutomationActor): OrgId => actor.subject.orgId;

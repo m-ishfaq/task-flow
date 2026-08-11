@@ -1,5 +1,11 @@
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useSearch } from '@tanstack/react-router';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseQueryResult,
+} from '@tanstack/react-query';
 import type { FilterNode } from '@taskflow/filter';
 import type { ProjectId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
@@ -9,10 +15,21 @@ import { cn } from '../../lib/cn.js';
 import { formatRelative } from '../../lib/format.js';
 import { useToast } from '../../lib/toast-context.js';
 import type { Wire } from '../../lib/wire.js';
-import { Button, Empty, Field, SkeletonRows } from '../../components/primitives.js';
+import {
+  Button,
+  ConfirmButton,
+  Empty,
+  Field,
+  SkeletonRows,
+} from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { FilterBuilder } from '../work/filter/filter-builder.js';
-import { automationRunsQuery, automationsQuery } from './api.js';
+import {
+  automationRunsQuery,
+  automationsQuery,
+  webhookDeliveriesQuery,
+  webhooksQuery,
+} from './api.js';
 import {
   ACTION_LABELS,
   ARGUMENTS,
@@ -113,8 +130,112 @@ function draftsFrom(stored: readonly unknown[] | undefined): ActionDraft[] {
  * that is never tested.
  */
 
+const TABS = [
+  { id: 'rules', label: 'Rules' },
+  { id: 'webhooks', label: 'Webhooks' },
+] as const;
+
+type TabId = (typeof TABS)[number]['id'];
+
+/**
+ * ## Two tabs, where there used to be two stacked sections
+ *
+ * The stacked version had the rules list in a `flex-1` `<main>` with the
+ * webhook registry after it, which on any screen taller than the rule list
+ * pushed the registry to the very bottom of the viewport behind a void the
+ * height of the window. The registry was not findable by scrolling — there was
+ * nothing to scroll — and not visible without one, so it read as an empty page
+ * with something stranded at the foot of it.
+ *
+ * The earlier argument for sections over tabs was that a rule and the endpoint
+ * it calls are one surface, and `call_webhook` is meaningless until an endpoint
+ * exists to pick. That concern is real and is answered directly rather than by
+ * co-location: the tab carries a COUNT, so "you have no webhooks" is legible
+ * from the Rules tab without leaving it, and the action picker's own empty
+ * state already says "create one on the Webhooks tab" — a sentence that was
+ * describing a tab this page did not have.
+ */
 export function AutomationsPage() {
   const orgId = useSession((state) => state.orgId) ?? '';
+  const navigate = useNavigate();
+  const tab: TabId = useSearch({ from: '/automations', select: (value) => value.tab }) ?? 'rules';
+
+  const automations = useQuery({ ...automationsQuery(orgId), enabled: orgId !== '' });
+  const webhooks = useQuery({ ...webhooksQuery(orgId), enabled: orgId !== '' });
+
+  const counts: Readonly<Record<TabId, number | undefined>> = {
+    rules: automations.data?.length,
+    webhooks: webhooks.data?.length,
+  };
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="shrink-0 border-b border-line px-4 pt-4 pb-2 md:px-6">
+        <h1 className="text-base font-semibold text-ink">Automations</h1>
+        <p className="mt-0.5 text-xs text-ink-muted">
+          When something happens, check a condition, then act. Rules run with the permissions of
+          whoever created them.
+        </p>
+
+        <nav aria-label="Automation sections" className="mt-3 flex gap-1">
+          {TABS.map((item) => {
+            const count = counts[item.id];
+            return (
+              <button
+                key={item.id}
+                type="button"
+                aria-current={tab === item.id ? 'page' : undefined}
+                onClick={() => {
+                  void navigate({ to: '/automations', search: { tab: item.id } });
+                }}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                  tab === item.id
+                    ? 'bg-accent text-accent-ink shadow-sm'
+                    : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+                )}
+              >
+                {item.label}
+                {/* Deliberately rendered only once the query has settled. A
+                    zero that is really "still loading" is the one number worth
+                    not guessing at here — it is the difference between "you
+                    have no webhooks" and "we have not asked yet". */}
+                {count !== undefined && (
+                  <span
+                    className={cn(
+                      'rounded px-1 text-[10px] tabular-nums',
+                      tab === item.id ? 'bg-accent-ink/20' : 'bg-surface-sunken text-ink-faint',
+                    )}
+                  >
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-4xl p-4 md:p-6">
+          {tab === 'rules' ? (
+            <RulesPanel orgId={orgId} automations={automations} />
+          ) : (
+            <WebhooksSection orgId={orgId} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RulesPanel({
+  orgId,
+  automations,
+}: {
+  readonly orgId: string;
+  readonly automations: UseQueryResult<readonly RuleSummary[]>;
+}) {
   /* Three separate pieces of state, deliberately. The first version folded
      "which rule's runs are open" and "which rule is being edited" into one
      `editing` field, which meant opening a rule's history and editing it were
@@ -123,22 +244,19 @@ export function AutomationsPage() {
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
-  const automations = useQuery({ ...automationsQuery(orgId), enabled: orgId !== '' });
   const editingRule = automations.data?.find((rule) => rule.automationId === editingRuleId);
 
   return (
-    <div className="mx-auto flex h-full max-w-4xl flex-col gap-4 overflow-y-auto p-4 md:p-6">
-      <header className="flex shrink-0 items-start justify-between gap-3">
-        <div>
-          <h1 className="text-sm font-semibold text-ink">Automations</h1>
-          <p className="text-xs text-ink-faint">
-            When something happens, check a condition, then act. Rules run with the permissions of
-            whoever created them.
-          </p>
-        </div>
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs text-ink-faint">
+          Every rule records a run each time its trigger fires — including the times its condition
+          did not match.
+        </p>
         {!creating && editingRule === undefined && (
           <Button
             size="sm"
+            className="shrink-0"
             onClick={() => {
               setCreating(true);
               setEditingRuleId(null);
@@ -147,7 +265,7 @@ export function AutomationsPage() {
             New rule
           </Button>
         )}
-      </header>
+      </div>
 
       {creating && (
         <RuleEditor
@@ -174,37 +292,47 @@ export function AutomationsPage() {
         />
       )}
 
-      <main className="min-h-0 flex-1">
-        {automations.isPending ? (
-          <SkeletonRows rows={3} />
-        ) : automations.isError ? (
-          <ErrorView error={automations.error} title="Could not load automations" />
-        ) : automations.data.length === 0 ? (
-          <Empty
-            title="No automations yet"
-            description="A rule watches for an event — a card entering Done, a comment being added — and then does something."
-          />
-        ) : (
-          <ul className="space-y-2">
-            {automations.data.map((rule) => (
-              <li key={rule.automationId}>
-                <RuleRow
-                  orgId={orgId}
-                  rule={rule}
-                  expanded={showingRuns === rule.automationId}
-                  onToggleExpanded={() => {
-                    setShowingRuns(showingRuns === rule.automationId ? null : rule.automationId);
-                  }}
-                  onEdit={() => {
-                    setEditingRuleId(rule.automationId);
-                    setCreating(false);
-                  }}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-      </main>
+      {automations.isPending ? (
+        <SkeletonRows rows={3} />
+      ) : automations.isError ? (
+        <ErrorView error={automations.error} title="Could not load automations" />
+      ) : automations.data.length === 0 ? (
+        <Empty
+          title="No automations yet"
+          description="A rule watches for an event — a card entering Done, a comment being added — and then does something."
+          action={
+            !creating ? (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setCreating(true);
+                }}
+              >
+                New rule
+              </Button>
+            ) : undefined
+          }
+        />
+      ) : (
+        <ul className="space-y-2">
+          {automations.data.map((rule) => (
+            <li key={rule.automationId}>
+              <RuleRow
+                orgId={orgId}
+                rule={rule}
+                expanded={showingRuns === rule.automationId}
+                onToggleExpanded={() => {
+                  setShowingRuns(showingRuns === rule.automationId ? null : rule.automationId);
+                }}
+                onEdit={() => {
+                  setEditingRuleId(rule.automationId);
+                  setCreating(false);
+                }}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -260,8 +388,19 @@ function RuleRow({
   });
 
   return (
-    <div className="overflow-hidden rounded-lg border border-line">
-      <div className="flex items-center gap-2.5 bg-surface-raised px-3 py-2">
+    <div
+      className={cn(
+        'overflow-hidden rounded-lg border transition-colors',
+        rule.enabled ? 'border-line' : 'border-line/60',
+      )}
+    >
+      {/* `flex-wrap` with the actions in their own non-shrinking group. The
+          flat version put six controls and a two-line description in one
+          nowrap row, so on anything narrower than a desktop the description
+          truncated to a few characters to keep four buttons on screen — the
+          text a reader came for losing to the controls they had not asked for
+          yet. */}
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 bg-surface-raised px-3 py-2">
         <span
           aria-hidden="true"
           className={cn(
@@ -271,64 +410,81 @@ function RuleRow({
         />
         <span className="sr-only">{rule.enabled ? 'Enabled' : 'Disabled'}</span>
 
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-ink">{rule.name}</p>
+        <div className="min-w-0 flex-1 basis-48">
+          <p className="flex items-center gap-2">
+            <span className={cn('truncate text-sm font-medium', rule.enabled ? 'text-ink' : 'text-ink-muted')}>
+              {rule.name}
+            </span>
+            {rule.conditionBroken && (
+              <span
+                className="shrink-0 rounded bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger"
+                title="The stored condition no longer parses, so this rule is refused on every event"
+              >
+                Broken
+              </span>
+            )}
+          </p>
           {/* WHAT THE RULE DOES, not how many things it does. "3 actions" is a
               count of facts the reader came here to learn, and withholding
               them means opening the editor to answer "what does this rule
-              even do". */}
+              even do".
+
+              `When`/`Then` are spelled out rather than implied by an arrow
+              alone: the arrow reads as an arrow only once you already know the
+              shape, and this row is where someone learns it. */}
           <p className="truncate text-[11px] text-ink-faint">
+            <span className="text-ink-faint">When </span>
             <span className="text-ink-muted">{triggerLabel(rule.triggerEvent)}</span>
-            {rule.condition !== null && ' · if a condition matches'} →{' '}
-            {rule.actions.map((action) => describeAction(action)).join(', ')}
+            {rule.condition !== null && (
+              <span className="text-ink-faint"> and a condition matches</span>
+            )}
+            <span className="text-ink-faint"> → </span>
+            <span className="text-ink-muted">
+              {rule.actions.map((action) => describeAction(action)).join(', ')}
+            </span>
           </p>
         </div>
 
-        {rule.conditionBroken && (
-          <span
-            className="shrink-0 rounded bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger"
-            title="The stored condition no longer parses, so this rule is refused on every event"
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-1.5 text-[11px]"
+            disabled={setEnabled.isPending}
+            onClick={() => {
+              setEnabled.mutate(!rule.enabled);
+            }}
           >
-            Broken
-          </span>
-        )}
+            {rule.enabled ? 'Disable' : 'Enable'}
+          </Button>
 
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 px-1.5 text-[11px]"
-          disabled={setEnabled.isPending}
-          onClick={() => {
-            setEnabled.mutate(!rule.enabled);
-          }}
-        >
-          {rule.enabled ? 'Disable' : 'Enable'}
-        </Button>
+          <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[11px]" onClick={onEdit}>
+            Edit
+          </Button>
 
-        <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[11px]" onClick={onEdit}>
-          Edit
-        </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-1.5 text-[11px]"
+            aria-expanded={expanded}
+            onClick={onToggleExpanded}
+          >
+            Runs <span aria-hidden="true">{expanded ? '▴' : '▾'}</span>
+          </Button>
 
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 px-1.5 text-[11px]"
-          onClick={onToggleExpanded}
-        >
-          {expanded ? 'Hide runs' : 'Runs'}
-        </Button>
-
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 px-1.5 text-[11px] text-danger"
-          disabled={remove.isPending}
-          onClick={() => {
-            remove.mutate();
-          }}
-        >
-          Delete
-        </Button>
+          {/* Two clicks. A rule is deleted outright — there is no archive and
+              no restore — and it used to sit one click away from `Runs`, at
+              the end of a row of four identical ghost buttons. */}
+          <ConfirmButton
+            label="Delete"
+            confirmLabel="Delete rule"
+            disabled={remove.isPending}
+            className="h-6 px-1.5 text-[11px]"
+            onConfirm={() => {
+              remove.mutate();
+            }}
+          />
+        </div>
       </div>
 
       {expanded && <RunHistory orgId={orgId} automationId={rule.automationId} />}
@@ -734,3 +890,419 @@ function ActionRow({
     </div>
   );
 }
+
+/**
+ * The webhook registry (Wave 2, ai/phase-10-automation.md §5) — the endpoints
+ * a rule's `call_webhook` action can name.
+ *
+ * Lives on the automations page because that is where rules are built; a
+ * webhook is org furniture with no other surface. The SIGNING SECRET is shown
+ * exactly once, on create, and never again — this box is the "paste it into
+ * your receiver" moment, and a lost secret means recreating the webhook.
+ * There is no read-back route and no rotation, so the UI does not pretend
+ * there is one.
+ */
+type WebhookSummary = Wire<Awaited<ReturnType<typeof api.automation.webhooks.list.query>>>[number];
+
+function WebhooksSection({ orgId }: { readonly orgId: string }) {
+  const [creating, setCreating] = useState(false);
+  const [createdSecret, setCreatedSecret] = useState<{
+    readonly name: string;
+    readonly secret: string;
+  } | null>(null);
+  const [showingDeliveries, setShowingDeliveries] = useState<string | null>(null);
+
+  const webhooks = useQuery({ ...webhooksQuery(orgId), enabled: orgId !== '' });
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs text-ink-faint">
+          Endpoints a rule's “Call a webhook” action can reach. The receiver verifies the signature
+          header with the secret shown at creation.
+        </p>
+        {!creating && (
+          <Button
+            size="sm"
+            className="shrink-0"
+            onClick={() => {
+              setCreating(true);
+            }}
+          >
+            New webhook
+          </Button>
+        )}
+      </div>
+
+      {creating && (
+        <WebhookCreateForm
+          onCreate={(result) => {
+            setCreatedSecret(result);
+            setCreating(false);
+          }}
+          onCancel={() => {
+            setCreating(false);
+          }}
+        />
+      )}
+
+      {/* Shown once, and the dismissal is a deliberate click rather than a
+          timeout — a secret that vanished while someone was still reading it
+          is a recreated webhook. */}
+      {createdSecret !== null && (
+        <SecretReveal
+          name={createdSecret.name}
+          secret={createdSecret.secret}
+          onDismiss={() => {
+            setCreatedSecret(null);
+          }}
+        />
+      )}
+
+      {webhooks.isPending ? (
+        <SkeletonRows rows={2} />
+      ) : webhooks.isError ? (
+        <ErrorText error={webhooks.error} />
+      ) : webhooks.data.length === 0 ? (
+        <Empty
+          title="No webhooks yet"
+          description="A rule cannot call an endpoint that is not registered here. Register one, paste its signing secret into your receiver, then pick it from a rule's “Call a webhook” action."
+          action={
+            !creating ? (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setCreating(true);
+                }}
+              >
+                New webhook
+              </Button>
+            ) : undefined
+          }
+        />
+      ) : (
+        <ul className="space-y-2">
+          {webhooks.data.map((webhook) => (
+            <li key={webhook.webhookId}>
+              <WebhookRow
+                orgId={orgId}
+                webhook={webhook}
+                expanded={showingDeliveries === webhook.webhookId}
+                onToggleExpanded={() => {
+                  setShowingDeliveries(
+                    showingDeliveries === webhook.webhookId ? null : webhook.webhookId,
+                  );
+                }}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** The create form — name and URL only; the secret is minted on submit. */
+function WebhookCreateForm({
+  onCreate,
+  onCancel,
+}: {
+  readonly onCreate: (result: { name: string; secret: string }) => void;
+  readonly onCancel: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const orgId = useSession((state) => state.orgId) ?? '';
+  const toast = useToast();
+  const [name, setName] = useState('');
+  const [url, setUrl] = useState('');
+
+  const create = useMutation({
+    mutationFn: () => api.automation.webhooks.create.mutate({ name: name.trim(), url: url.trim() }),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: keys.webhooks(orgId) });
+      onCreate({ name: name.trim(), secret: result.signingSecret });
+    },
+    onError: (error: unknown) => {
+      toast.failure('The webhook could not be created', error);
+    },
+  });
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        create.mutate();
+      }}
+      className="mt-3 space-y-2 rounded-lg border border-line bg-surface-raised p-3"
+    >
+      <Field label="Name" htmlFor="webhook-name">
+        <input
+          id="webhook-name"
+          value={name}
+          onChange={(event) => { setName(event.target.value); }}
+          maxLength={120}
+          placeholder="Release notifications"
+          className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+        />
+      </Field>
+      <Field label="URL" htmlFor="webhook-url">
+        <input
+          id="webhook-url"
+          type="url"
+          value={url}
+          onChange={(event) => { setUrl(event.target.value); }}
+          maxLength={2048}
+          placeholder="https://hooks.example.com/on-release"
+          className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+        />
+        <p className="text-[11px] text-ink-faint">
+          Public endpoints only — internal and private addresses are refused, and every redirect is
+          re-checked at delivery.
+        </p>
+      </Field>
+
+      {create.isError && <ErrorText error={create.error} />}
+
+      <div className="flex items-center gap-2">
+        <Button
+          type="submit"
+          size="sm"
+          disabled={name.trim() === '' || url.trim() === '' || create.isPending}
+        >
+          {create.isPending ? 'Creating…' : 'Create webhook'}
+        </Button>
+        <button type="button" onClick={onCancel} className="text-xs text-ink-faint hover:text-ink">
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** The one-time secret reveal, with a copy button. */
+function SecretReveal({
+  name,
+  secret,
+  onDismiss,
+}: {
+  readonly name: string;
+  readonly secret: string;
+  readonly onDismiss: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div className="mt-3 space-y-1.5 rounded-lg border border-warning/40 bg-warning/5 p-3">
+      <p className="text-[11px] text-ink">
+        Signing secret for “{name}” — <span className="font-medium">shown once, never again.</span>{' '}
+        Paste it into your receiver, then click done.
+      </p>
+      <div className="flex items-center gap-2">
+        <code className="min-w-0 flex-1 truncate rounded border border-line bg-surface px-2 py-1 font-mono text-[11px] text-ink">
+          {secret}
+        </code>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-1.5 text-[11px]"
+          onClick={() => {
+            void navigator.clipboard.writeText(secret).then(() => { setCopied(true); });
+          }}
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </Button>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Done with the secret"
+          className="text-xs text-ink-faint hover:text-ink"
+        >
+          Done
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** One registered endpoint. */
+function WebhookRow({
+  orgId,
+  webhook,
+  expanded,
+  onToggleExpanded,
+}: {
+  readonly orgId: string;
+  readonly webhook: WebhookSummary;
+  readonly expanded: boolean;
+  readonly onToggleExpanded: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: keys.webhooks(orgId) });
+
+  const setEnabled = useMutation({
+    mutationFn: (enabled: boolean) =>
+      api.automation.webhooks.setEnabled.mutate({ webhookId: webhook.webhookId, enabled }),
+    onSuccess: async () => {
+      await invalidate();
+    },
+    onError: (error: unknown) => {
+      toast.failure('The webhook could not be updated', error);
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: () => api.automation.webhooks.delete.mutate({ webhookId: webhook.webhookId }),
+    onSuccess: async () => {
+      await invalidate();
+    },
+    onError: (error: unknown) => {
+      toast.failure('The webhook could not be deleted', error);
+    },
+  });
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-line">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 bg-surface-raised px-3 py-2">
+        <span
+          aria-hidden="true"
+          className={cn(
+            'size-2 shrink-0 rounded-full',
+            webhook.enabled ? 'bg-success' : 'bg-ink-faint',
+          )}
+        />
+        <span className="sr-only">{webhook.enabled ? 'Enabled' : 'Disabled'}</span>
+
+        <div className="min-w-0 flex-1 basis-48">
+          <p className="flex items-center gap-2">
+            <span
+              className={cn(
+                'truncate text-sm font-medium',
+                webhook.enabled ? 'text-ink' : 'text-ink-muted',
+              )}
+            >
+              {webhook.name}
+            </span>
+            {!webhook.enabled && webhook.disabledAt !== null && (
+              <span
+                className="shrink-0 rounded bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger"
+                title={`Auto-disabled after ${String(webhook.failureCount)} consecutive failed deliveries`}
+              >
+                Disabled by failures
+              </span>
+            )}
+          </p>
+          {/* `font-mono` because this is a URL somebody will compare character
+              by character against what they configured in their receiver, and
+              a proportional font makes `rn` and `m` the same shape. */}
+          <p className="truncate font-mono text-[11px] text-ink-faint" title={webhook.url}>
+            {webhook.url}
+          </p>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-1.5 text-[11px]"
+            disabled={setEnabled.isPending}
+            onClick={() => {
+              setEnabled.mutate(!webhook.enabled);
+            }}
+          >
+            {webhook.enabled ? 'Disable' : 'Enable'}
+          </Button>
+
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-1.5 text-[11px]"
+            aria-expanded={expanded}
+            onClick={onToggleExpanded}
+          >
+            Deliveries <span aria-hidden="true">{expanded ? '▴' : '▾'}</span>
+          </Button>
+
+          {/* Deleting an endpoint cascades its delivery queue with it, and the
+              signing secret cannot be recovered — recreating means a new secret
+              and a receiver reconfigured to match. Firmly a two-click action. */}
+          <ConfirmButton
+            label="Delete"
+            confirmLabel="Delete endpoint"
+            disabled={remove.isPending}
+            className="h-6 px-1.5 text-[11px]"
+            onConfirm={() => {
+              remove.mutate();
+            }}
+          />
+        </div>
+      </div>
+
+      {expanded && <WebhookDeliveries orgId={orgId} webhookId={webhook.webhookId} />}
+      {(setEnabled.isError || remove.isError) && (
+        <div className="border-t border-line px-3 py-2">
+          <ErrorText error={setEnabled.error ?? remove.error} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Recent deliveries for one endpoint — the "did it go out" read. */
+function WebhookDeliveries({
+  orgId,
+  webhookId,
+}: {
+  readonly orgId: string;
+  readonly webhookId: string;
+}) {
+  const deliveries = useQuery({
+    ...webhookDeliveriesQuery(orgId, webhookId),
+    enabled: orgId !== '',
+  });
+
+  if (deliveries.isPending) return <SkeletonRows rows={2} />;
+  if (deliveries.isError) return <ErrorText error={deliveries.error} />;
+  if (deliveries.data.length === 0) {
+    return (
+      <p className="border-t border-line px-3 py-2 text-[11px] text-ink-faint">
+        No deliveries yet — this endpoint appears in no rule runs.
+      </p>
+    );
+  }
+
+  return (
+    <ul className="border-t border-line">
+      {deliveries.data.map((delivery) => (
+        <li key={delivery.deliveryId} className="px-3 py-1.5 text-[11px]">
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                'w-16 shrink-0 font-medium',
+                DELIVERY_STATUS_COLOR[delivery.status] ?? 'text-ink',
+              )}
+            >
+              {delivery.status}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-ink-muted">
+              {delivery.eventName}
+              {delivery.attempts > 1 && ` · ${String(delivery.attempts)} attempts`}
+              {delivery.lastStatusCode !== null && ` · HTTP ${String(delivery.lastStatusCode)}`}
+              {delivery.lastError !== null && (
+                <span className="text-danger"> · {delivery.lastError}</span>
+              )}
+            </span>
+            <span className="shrink-0 text-ink-faint">{formatRelative(delivery.createdAt)}</span>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+const DELIVERY_STATUS_COLOR: Readonly<Record<string, string>> = {
+  succeeded: 'text-success',
+  pending: 'text-ink-faint',
+  dead: 'text-danger',
+};

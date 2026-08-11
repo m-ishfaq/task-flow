@@ -194,6 +194,16 @@ export {
 } from './twilio-signature.js';
 
 /**
+ * Outbound webhook signing (Phase 10 Wave 2, ai/phase-10-automation.md §5).
+ *
+ * The mirror image of `twilio-signature.ts`: that file verifies THEM, this
+ * one computes the signature WE send so the receiver can do the same. Same
+ * primitive — HMAC keyed by a shared secret — opposite direction, and on the
+ * human-review list for the same reason.
+ */
+export { buildWebhookSignature, verifyWebhookSignature } from './webhook-signing.js';
+
+/**
  * Blind indexes — equality lookup over an encrypted column (Phase 7 Wave 2).
  *
  * Here rather than in the slice that needs it because the tempting shortcuts

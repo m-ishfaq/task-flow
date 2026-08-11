@@ -474,6 +474,13 @@ const platformAdminRoute = createRoute({
 const automationsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/automations',
+  validateSearch: z.object({
+    /* Which half of the surface is open. A search param rather than nested
+       routes, the same shape `/calls` and `/settings` use, so the open tab is
+       a shareable, back-button-correct link. `.catch(undefined)` per this
+       file's convention: a junk value renders Rules, never an error page. */
+    tab: z.enum(['rules', 'webhooks']).optional().catch(undefined),
+  }),
   beforeLoad: () => requireOrg('/automations'),
   component: AutomationsPage,
 });

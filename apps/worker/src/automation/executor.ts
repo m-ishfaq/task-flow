@@ -4,6 +4,7 @@ import * as cards from '@taskflow/api/work/cards';
 import * as comments from '@taskflow/api/work/comments';
 import * as labels from '@taskflow/api/work/labels';
 import * as messages from '@taskflow/api/chat/messages';
+import * as webhooks from '@taskflow/api/automation/webhooks';
 import { RichTextDocument, type RichTextNode } from '@taskflow/api/richtext';
 import type { WorkActor } from '@taskflow/api/work/shared';
 /* `./chat/channel` is the existing map entry for `chat/shared.ts` — reused
@@ -275,6 +276,22 @@ async function runAction(
       await messages.sendMessage(actor, {
         channelId: unsafeAsId<'ChannelId'>(action.channelId),
         body: plainParagraph(action.body),
+      });
+      return;
+    }
+
+    case 'call_webhook': {
+      /* Wave 2 — the first action that reaches a network the org does not
+         control. The ENQUEUE goes through the service layer like every other
+         action (same outbox, same audit, same loop-protection event), and the
+         enqueue itself enforces `webhook:manage` against the rule owner's
+         live permissions (§2) — a member who cannot manage webhooks cannot
+         write a rule that calls them. The actual HTTP delivery happens later,
+         in this same process, by the delivery loop, with the SSRF gate
+         applied per redirect hop. */
+      await webhooks.enqueueWebhookDelivery(actor, {
+        webhookId: action.webhookId,
+        event: { id: event.id, name: event.name, payload: event.payload },
       });
       return;
     }

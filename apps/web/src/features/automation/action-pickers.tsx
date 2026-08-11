@@ -10,6 +10,7 @@ import {
 } from '../work/api.js';
 import { channelsQuery } from '../chat/api.js';
 import { membersQuery } from '../org/api.js';
+import { webhooksQuery } from './api.js';
 import type { ArgumentKind } from './vocabulary.js';
 
 /**
@@ -63,6 +64,8 @@ export function ArgumentPicker(props: PickerProps) {
       return <MemberPicker {...props} />;
     case 'channel':
       return <ChannelPicker {...props} />;
+    case 'webhook':
+      return <WebhookPicker {...props} />;
     case 'list':
       return <ListPicker {...props} />;
     case 'status':
@@ -141,6 +144,31 @@ function ChannelPicker({ orgId, value, onChange, label }: PickerProps) {
         .filter((channel) => channel.type !== 'dm' && channel.type !== 'group_dm')
         .map((channel) => ({ id: channel.channelId, name: `#${channel.name ?? 'channel'}` }))}
       emptyText="No channels"
+    />
+  );
+}
+
+/**
+ * Wave 2 — the registry, offered as options. Only ENABLED endpoints appear:
+ * a rule naming a disabled webhook would record a failed run at every
+ * execution, which is the outcome the picker exists to prevent. The URL is
+ * shown next to the name so two endpoints called "Ship it" are tellable
+ * apart — the one list in this builder where the stored id is not the only
+ * thing worth seeing.
+ */
+function WebhookPicker({ orgId, value, onChange, label }: PickerProps) {
+  const webhooks = useQuery({ ...webhooksQuery(orgId), enabled: orgId !== '' });
+
+  return (
+    <Choose
+      value={value}
+      onChange={onChange}
+      label={label}
+      pending={webhooks.isPending}
+      options={(webhooks.data ?? [])
+        .filter((webhook) => webhook.enabled)
+        .map((webhook) => ({ id: webhook.webhookId, name: webhook.name }))}
+      emptyText="No webhooks — create one on the Webhooks tab"
     />
   );
 }

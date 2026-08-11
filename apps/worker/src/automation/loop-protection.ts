@@ -60,6 +60,12 @@ const EVENTS_EMITTED_BY: Readonly<Record<AutomationAction['type'], readonly stri
   'card.unassign': ['card.assigned', 'card.updated'],
   'card.add_comment': ['comment.created', 'card.updated'],
   'chat.post_message': ['message.sent'],
+  /* The enqueue emits this through the service layer, so a rule triggered by
+     `webhook.delivery_queued` whose action calls a webhook would feed
+     itself. Listed conservatively, per the header: the QUEUED event, not the
+     eventual `webhook.delivery_queued` the loop might produce again — the
+     loop itself writes no outbox event of this name. */
+  'call_webhook': ['webhook.delivery_queued'],
 };
 
 export interface DepthVerdict {

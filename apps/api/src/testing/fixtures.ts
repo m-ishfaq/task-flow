@@ -1,5 +1,6 @@
 import { unsafeAsId } from '@taskflow/contracts';
 import { RecordingEventBus } from '@taskflow/events';
+import { masterKeysFromBase64, SoftwareKeyProvider } from '@taskflow/security';
 import { createAppRouter } from '../router.js';
 import { buildIdentityDeps, buildPasskeyDeps } from '../identity/deps.js';
 import { buildWorkDeps } from '../work/deps.js';
@@ -120,6 +121,17 @@ export function testAppRouter(
       identity: deps,
       identityDataKey: TEST_IDENTITY_DATA_KEY,
       passkeys,
+      /* The same fixed master key TEST_ENV carries — wrapped blobs created
+         by this provider unwrap under the identical bytes in the worker's
+         delivery-loop tests. */
+      automation: {
+        keys: new SoftwareKeyProvider({
+          masterKeys: masterKeysFromBase64({
+            [TEST_ENV.MASTER_KEY_ID]: TEST_ENV.MASTER_KEY_BASE64,
+          }),
+          currentMasterKeyId: TEST_ENV.MASTER_KEY_ID,
+        }),
+      },
       work: buildWorkDeps(TEST_ENV),
       platform: { vapidPublicKey: null },
       /* No carrier in the fixture. The telephony routes still exist and answer

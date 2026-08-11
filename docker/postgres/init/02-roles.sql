@@ -187,6 +187,21 @@ CREATE ROLE taskflow_search WITH LOGIN PASSWORD 'search-dev-secret' NOSUPERUSER 
 CREATE ROLE taskflow_automation WITH LOGIN PASSWORD 'automation-dev-secret' NOSUPERUSER
   NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 
+-- ---------------------------------------------------------------------------
+-- taskflow_webhook — the webhook delivery loop's CLAIM role (Phase 10 Wave 2,
+-- ai/phase-10-automation.md §5, migration 0049's own header).
+--
+-- The same claim-only separation as taskflow_automation, and here it runs on
+-- COLUMN-LEVEL grants: the role that decides WHICH deliveries are due may read
+-- the claim columns of webhook_deliveries and mark outcomes, and never sees
+-- `payload` — the role that decides what to deliver cannot read what is being
+-- delivered — and holds NOTHING on platform.webhooks, so it cannot learn an
+-- endpoint's URL or read a signing key. The actual delivery happens afterward,
+-- per org, over the ordinary taskflow_app connection inside withOrgScope.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_webhook WITH LOGIN PASSWORD 'webhook-dev-secret' NOSUPERUSER NOCREATEDB
+  NOCREATEROLE NOBYPASSRLS;
+
 -- Baseline grants live in 03-grants.sql, NOT here.
 --
 -- Roles are cluster-wide; grants are per-database. This file creates the roles

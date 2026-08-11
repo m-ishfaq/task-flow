@@ -88,10 +88,22 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
       currentMasterKeyId: options.env.MASTER_KEY_ID,
     }),
   );
+  /* Webhook registry keys. A separate provider from identity's (which wraps
+     the identity data key under a different AAD domain) — same env, same
+     constructor, and it keeps the two surfaces' wrapped blobs unambiguous.
+     The worker builds its own from the same variables to decrypt at
+     delivery. */
+  const automationKeys = new SoftwareKeyProvider({
+    masterKeys: masterKeysFromBase64({
+      [options.env.MASTER_KEY_ID]: options.env.MASTER_KEY_BASE64,
+    }),
+    currentMasterKeyId: options.env.MASTER_KEY_ID,
+  });
   const appRouter = createAppRouter({
     identity: identityDeps,
     identityDataKey,
     passkeys: buildPasskeyDeps(identityDeps, options.env),
+    automation: { keys: automationKeys },
     work: buildWorkDeps(options.env),
     /* VAPID keys are optional (an instance without them is a valid deployment
        that simply does not send push); null is the honest answer the

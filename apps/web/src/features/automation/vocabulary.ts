@@ -76,6 +76,7 @@ export const ACTION_LABELS: Readonly<Record<string, string>> = {
   'card.unassign': 'Remove an assignee',
   'card.add_comment': 'Add a comment to the card',
   'chat.post_message': 'Post a chat message',
+  'call_webhook': 'Call a webhook',
 };
 
 export type ActionValue =
@@ -87,7 +88,8 @@ export type ActionValue =
   | { readonly type: 'card.remove_label'; readonly labelId: string }
   | { readonly type: 'card.unassign'; readonly userId: string }
   | { readonly type: 'card.add_comment'; readonly body: string }
-  | { readonly type: 'chat.post_message'; readonly channelId: string; readonly body: string };
+  | { readonly type: 'chat.post_message'; readonly channelId: string; readonly body: string }
+  | { readonly type: 'call_webhook'; readonly webhookId: string };
 
 /**
  * How to EDIT each argument of each action.
@@ -112,6 +114,7 @@ export type ArgumentKind =
   /** Org-scoped pickers — no project needed. */
   | 'member'
   | 'channel'
+  | 'webhook'
   /** Project-scoped pickers — need a project chosen first (see PROJECT_SCOPED). */
   | 'list'
   | 'status'
@@ -138,6 +141,9 @@ export const ARGUMENTS: Readonly<Record<string, readonly ArgumentSpec[]>> = {
     { field: 'channelId', label: 'Channel', kind: 'channel' },
     { field: 'body', label: 'Message', kind: 'text' },
   ],
+  /* Wave 2 — names an org-registered webhook, so the picker offers the
+     registry and the action can never carry a bare URL. */
+  'call_webhook': [{ field: 'webhookId', label: 'Webhook', kind: 'webhook' }],
 };
 
 /**
@@ -234,6 +240,8 @@ export function blankAction(type = 'card.set_priority', key?: string): ActionDra
       return { key: identity, value: { type: 'card.add_comment', body: '' } };
     case 'chat.post_message':
       return { key: identity, value: { type: 'chat.post_message', channelId: '', body: '' } };
+    case 'call_webhook':
+      return { key: identity, value: { type: 'call_webhook', webhookId: '' } };
     default:
       return { key: identity, value: { type: 'card.set_priority', priority: 'high' } };
   }

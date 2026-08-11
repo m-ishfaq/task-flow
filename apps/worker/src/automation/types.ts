@@ -53,7 +53,12 @@ export type AutomationAction =
   | { readonly type: 'card.remove_label'; readonly labelId: string }
   | { readonly type: 'card.unassign'; readonly userId: string }
   | { readonly type: 'card.add_comment'; readonly body: string }
-  | { readonly type: 'chat.post_message'; readonly channelId: string; readonly body: string };
+  | { readonly type: 'chat.post_message'; readonly channelId: string; readonly body: string }
+  /* Wave 2 — the first action with an external effect. It names an
+     org-registered webhook (never a URL), so the SSRF gate can live in the
+     delivery loop instead of on the rule, and the enqueue itself is
+     authorized as `webhook:manage` (§2). */
+  | { readonly type: 'call_webhook'; readonly webhookId: string };
 
 /** Every action type, for the route's schema and the executor's exhaustiveness check. */
 export const ACTION_TYPES = [
@@ -66,6 +71,7 @@ export const ACTION_TYPES = [
   'card.unassign',
   'card.add_comment',
   'chat.post_message',
+  'call_webhook',
 ] as const;
 
 export type ActionType = (typeof ACTION_TYPES)[number];

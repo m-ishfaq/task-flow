@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import { FilterTree } from '@taskflow/filter';
+import type { KeyProvider } from '@taskflow/contracts';
 import { route, router } from '../trpc/builder.js';
 import { subjectOf } from '../trpc/context.js';
 import * as automations from './automation.service.js';
+import * as webhooks from './webhook.service.js';
 import type { AutomationActor } from './automation.service.js';
 
 /**
@@ -63,6 +65,11 @@ const AutomationActionSchema = z.discriminatedUnion('type', [
       body: z.string().trim().min(1).max(2_000),
     })
     .strict(),
+  /* Wave 2 — the first action that reaches a network the org does not
+     control. It names an org-registered webhook, never a URL: the URL lives
+     in the registry (floored on `webhook:manage`), the SSRF gate runs per hop
+     at DELIVERY time, and a rule can never smuggle an endpoint past either. */
+  z.object({ type: z.literal('call_webhook'), webhookId: z.string().uuid() }).strict(),
 ]);
 
 /** 1..10, mirroring migration 0047's CHECK — a rule nobody can reason about helps nobody. */
@@ -102,7 +109,8 @@ function actorOf(ctx: {
   return { subject: subjectOf(ctx.principal), requestId: ctx.requestId };
 }
 
-export const automationRouter = router({
+export function createAutomationRouter(deps: { readonly keys: KeyProvider }) {
+  return router({
   list: route({ permission: 'automation:manage' })
     .input(z.object({}).strict())
     .output(z.array(AutomationSummaryOutput).readonly())
@@ -177,4 +185,95 @@ export const automationRouter = router({
         ...(input.automationId === undefined ? {} : { automationId: input.automationId }),
       }),
     ),
+
+  /**
+   * The webhook registry (Wave 2, ai/phase-10-automation.md §5) — nested here
+   * rather than top-level because it exists to be named by a rule's action,
+   * and the /automations page owns its UI. Floored on `webhook:manage`, the
+   * third of §9 decision 4's org-level permissions, so a relationship tuple
+   * can never satisfy it.
+   *
+   * The URL is stored SHAPE-checked and re-checked per redirect hop at
+   * delivery; the signing secret is minted here and shown exactly once.
+   */
+  webhooks: router({
+    list: route({ permission: 'webhook:manage' })
+      .input(z.object({}).strict())
+      .output(z.array(WebhookSummaryOutput).readonly())
+      .query(({ ctx }) => webhooks.listWebhooks(actorOf(ctx))),
+
+    create: route({ permission: 'webhook:manage' })
+      .input(z.object({ name: WebhookName, url: WebhookUrl }).strict())
+      /* The signing secret rides this one response and nowhere else — the
+         output schema is the full contract for "shown once". */
+      .output(z.object({ webhookId: z.string(), signingSecret: z.string() }))
+      .mutation(({ input, ctx }) =>
+        webhooks.createWebhook(actorOf(ctx), input, deps.keys),
+      ),
+
+    update: route({ permission: 'webhook:manage' })
+      .input(
+        z
+          .object({ webhookId: z.string().uuid(), name: WebhookName, url: WebhookUrl })
+          .strict(),
+      )
+      .output(z.object({ name: z.string() }))
+      .mutation(({ input, ctx }) => webhooks.updateWebhook(actorOf(ctx), input)),
+
+    /* The kill switch, own route, same reasoning as `automation.setEnabled`. */
+    setEnabled: route({ permission: 'webhook:manage' })
+      .input(z.object({ webhookId: z.string().uuid(), enabled: z.boolean() }).strict())
+      .output(z.object({ enabled: z.boolean() }))
+      .mutation(({ input, ctx }) => webhooks.setWebhookEnabled(actorOf(ctx), input)),
+
+    delete: route({ permission: 'webhook:manage' })
+      .input(z.object({ webhookId: z.string().uuid() }).strict())
+      .output(z.object({ deleted: z.literal(true) }))
+      .mutation(({ input, ctx }) => webhooks.deleteWebhook(actorOf(ctx), input)),
+
+    /** Recent delivery history for one endpoint — the "did it go out" read. */
+    deliveries: route({ permission: 'webhook:manage' })
+      .input(
+        z
+          .object({
+            webhookId: z.string().uuid(),
+            limit: z.number().int().min(1).max(100).default(25),
+          })
+          .strict(),
+      )
+      .output(z.array(WebhookDeliveryOutput).readonly())
+      .query(({ input, ctx }) =>
+        webhooks.listWebhookDeliveries(actorOf(ctx), {
+          webhookId: input.webhookId,
+          limit: input.limit,
+        }),
+      ),
+  }),
+});
+}
+
+const WebhookName = z.string().trim().min(1).max(120);
+const WebhookUrl = z.string().trim().min(1).max(2048);
+
+const WebhookSummaryOutput = z.object({
+  webhookId: z.string(),
+  name: z.string(),
+  url: z.string(),
+  enabled: z.boolean(),
+  disabledAt: z.date().nullable(),
+  failureCount: z.number().int().nonnegative(),
+  createdAt: z.date(),
+});
+
+const WebhookDeliveryOutput = z.object({
+  deliveryId: z.string(),
+  webhookId: z.string(),
+  eventId: z.string(),
+  eventName: z.string(),
+  status: z.string(),
+  attempts: z.number().int().nonnegative(),
+  lastStatusCode: z.number().int().nullable(),
+  lastError: z.string().nullable(),
+  nextAttemptAt: z.date(),
+  createdAt: z.date(),
 });

@@ -374,6 +374,12 @@ services:
       <<: *app-env
       DATABASE_URL: postgresql://taskflow_app:${TASKFLOW_APP_PASSWORD:?TASKFLOW_APP_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_AUTOMATION_URL: postgresql://taskflow_automation:${TASKFLOW_AUTOMATION_PASSWORD:?TASKFLOW_AUTOMATION_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_WEBHOOK_URL: postgresql://taskflow_webhook:${TASKFLOW_WEBHOOK_PASSWORD:?TASKFLOW_WEBHOOK_PASSWORD must be set}@postgres:5432/taskflow
+      # The worker decrypts webhook signing secrets at delivery, so it holds
+      # the same master key pair the API holds — the same variables, same
+      # meaning.
+      MASTER_KEY_ID: ${MASTER_KEY_ID:?MASTER_KEY_ID must be set}
+      MASTER_KEY_BASE64: ${MASTER_KEY_BASE64:?MASTER_KEY_BASE64 must be set — generate with the command in .env.prod.example, never reuse the dev value}
       DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
       WORKER_PORT: 3003
     depends_on:

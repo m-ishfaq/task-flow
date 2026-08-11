@@ -330,6 +330,11 @@ export const keys = {
    */
   automationRuns: (orgId: string, automationId: string | null) =>
     ['org', orgId, 'automations', 'runs', automationId ?? 'all'] as const,
+  /** Every registered webhook endpoint (Wave 2). */
+  webhooks: (orgId: string) => ['org', orgId, 'automations', 'webhooks'] as const,
+  /** Delivery history for one endpoint. */
+  webhookDeliveries: (orgId: string, webhookId: string) =>
+    ['org', orgId, 'automations', 'webhooks', webhookId, 'deliveries'] as const,
   /** Every SMS thread. */
   messageThreads: (orgId: string) => ['org', orgId, 'telephony', 'threads'] as const,
   /** Messages in one thread. */

@@ -1,9 +1,16 @@
-import { closeDatabase, initializeAutomationDatabase, initializeDatabase } from '@taskflow/db';
+import {
+  closeDatabase,
+  initializeAutomationDatabase,
+  initializeDatabase,
+  initializeWebhookDatabase,
+} from '@taskflow/db';
 import { createLogger } from '@taskflow/observability';
+import { masterKeysFromBase64, SoftwareKeyProvider } from '@taskflow/security';
 import { loadEnv } from './config/env.js';
 import { createHealthServer } from './health.js';
 import { createActionExecutor } from './automation/executor.js';
 import { startAutomationEngine } from './automation/relay.js';
+import { startWebhookDeliveryLoop } from './webhooks/delivery.js';
 
 /**
  * Process entry point for the background worker (ai/phase-10-automation.md,
@@ -58,6 +65,16 @@ if (env.DATABASE_AUTOMATION_URL !== undefined) {
   });
 }
 
+/* The webhook delivery loop's claim pool, as `taskflow_webhook` (Wave 2,
+   migration 0049). Optional like the automation pool: without it the loop
+   logs a warning and stays off. */
+if (env.DATABASE_WEBHOOK_URL !== undefined) {
+  initializeWebhookDatabase({
+    url: env.DATABASE_WEBHOOK_URL,
+    applicationName: 'taskflow-worker-webhook',
+  });
+}
+
 const logger = createLogger({ name: 'worker', level: env.LOG_LEVEL });
 
 const health = createHealthServer();
@@ -70,6 +87,17 @@ await new Promise<void>((resolveListen) => {
 const engine = startAutomationEngine({
   logger,
   executor: createActionExecutor(),
+  intervalMs: env.WORKER_POLL_INTERVAL_MS,
+});
+
+/* The delivery loop shares the worker's master key — the same variables the
+   API validates, used here to unwrap per-webhook data keys at delivery. */
+const delivery = startWebhookDeliveryLoop({
+  logger,
+  keys: new SoftwareKeyProvider({
+    masterKeys: masterKeysFromBase64({ [env.MASTER_KEY_ID]: env.MASTER_KEY_BASE64 }),
+    currentMasterKeyId: env.MASTER_KEY_ID,
+  }),
   intervalMs: env.WORKER_POLL_INTERVAL_MS,
 });
 
@@ -89,6 +117,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.once(signal, () => {
     void (async () => {
       engine.stop();
+      delivery.stop();
       await new Promise<void>((resolveClose) => {
         health.close(() => {
           resolveClose();

@@ -68,6 +68,18 @@ export const EnvSchema = z.object({
      and does not start when this is unset. */
   DATABASE_AUTOMATION_URL: NonEmpty.optional(),
 
+  /* The webhook delivery loop's CLAIM role (migration 0049). Same contract as
+     DATABASE_AUTOMATION_URL: optional, and the loop declines to start when
+     unset rather than falling back to a role that cannot claim across orgs. */
+  DATABASE_WEBHOOK_URL: NonEmpty.optional(),
+
+  /* The master key pair. Required, because this process decrypts webhook
+     signing secrets at delivery — a deployment that runs the worker runs the
+     loop that signs requests, and a worker without the key could not do its
+     one new job. Same variables the API validates. */
+  MASTER_KEY_ID: NonEmpty,
+  MASTER_KEY_BASE64: NonEmpty,
+
   /** Liveness/readiness only. Nothing else is served on this port. */
   WORKER_PORT: z.coerce.number().int().positive().max(65_535).default(3003),
 
@@ -108,8 +120,11 @@ const KNOWN_VARIABLES = new Set([
   'DATABASE_PLATFORM_ADMIN_URL',
   'DATABASE_RECORDING_INGEST_URL',
   'DATABASE_SEARCH_URL',
+  'DATABASE_WEBHOOK_URL',
   'DATABASE_POOL_MAX',
   'JWT_SECRET',
+  'MASTER_KEY_ID',
+  'MASTER_KEY_BASE64',
   'WEB_ORIGIN',
   'API_PORT',
   'API_TRUST_PROXY',

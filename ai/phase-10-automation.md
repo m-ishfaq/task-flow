@@ -1,13 +1,14 @@
 # Phase 10 — Automation & integrations
 
-Status: **APPROVED 2026-08-11 — WAVE 1 SHIPPED 2026-08-11.** All nine open decisions resolved
+Status: **APPROVED 2026-08-11 — WAVES 1–2 SHIPPED 2026-08-11.** All nine open decisions resolved
 in review before building. Written 2026-08-11 against `pre-launch-hardening` HEAD, per
 `ai/pre-launch-hardening.md` Priority 4 (each remaining priority is its own multi-week phase
 and wants its own spec written and approved before implementation). Phase 8 followed this
 route and it worked; this is the same route.
 
-**Waves 2–4 (webhooks, public API, connectors + the cost-bearing actions) are NOT started.**
-Wave 1 is the engine and nothing else, which is what the wave list below says it is.
+**Waves 3–4 (public API with scoped tokens, Slack/GitHub connectors, importers/exporters, and
+wave 4's cost-bearing telephony actions behind the env flag) are NOT started.** Waves 1–2 are
+the engine and the webhook delivery path; the wave list below says exactly what shipped in each.
 
 **Two recommendations were overturned in that review, and both were overturned correctly:**
 
@@ -89,6 +90,62 @@ been removed entirely.
 Read this header before trusting a status marker anywhere else in this file — the standing
 lesson every `ai/phase-*.md` in this repo states for itself, and the one Phase 8's Wave 3 had
 to learn the hard way six commits ago.
+
+### Wave 2 — COMPLETE, 2026-08-11
+
+Outbound webhooks: the registry, the signing, the delivery loop, and the `call_webhook`
+action. Verified: lint + typecheck clean across api/worker/web/db/security; the four new
+suites — signing 7, registry service 11, delivery loop 7, grants 6; the affected suites
+(api automation 24, tenancy-fuzz + route guardrails 44, worker automation/env 44, web 325);
+`migrate:verify` up → down → up; the RLS checker; the guardrail selftest. **Not verified in a
+browser** — the standing caveat, and the reason Wave 1 shipped with gaps a single click found.
+
+1. **Migration 0049** — `platform.webhooks`, `platform.webhook_deliveries`, and the
+   `taskflow_webhook` claim role, plus the two constraint widenings delivery needs:
+   `notifications_kind_valid` gains `webhook.disabled` and `notifications_subject_type_valid`
+   gains `webhook`. 0042's `call.missed` kind was in the dev DB but not in the first CHECK
+   list — the first apply failed, the database refusing to let code and schema disagree (the
+   lesson of 0036 and Phase 6 Wave 3, on schedule). `taskflow_app` holds SELECT+INSERT on
+   deliveries and deliberately no UPDATE; the claim role's grants are column-level, and what
+   they exclude is the point — it never sees `payload`, nor `platform.webhooks` at all.
+2. **The signing primitive** (`packages/security/webhook-signing.ts`) — the mirror of
+   `twilio-signature.ts`, computing what WE send rather than verifying what they send:
+   `X-TaskFlow-Signature: t=<seconds>,v1=<HMAC-SHA256>` over the EXACT body bytes, the
+   timestamp letting a receiver refuse stale signatures, and `secureEqual` on the verify side.
+   The secret is a `tf_whs` token minted once, stored envelope-encrypted under a PER-WEBHOOK
+   data key bound by AAD to (org, webhook) — the comms.subaccounts recipe — and never
+   readable again: no read-back route exists, and the UI shows it exactly once, on create.
+3. **The registry service** (`webhook.service.ts`) — org-scoped CRUD floored on
+   `webhook:manage` at the route, and an ENQUEUE that enforces `webhook:manage` itself,
+   because it is not reached through a route: the §2 rule applied to an action with no HTTP
+   boundary. A member who cannot manage webhooks cannot write a rule that calls them.
+   Dedupe on `(webhook_id, event_id)` — the at-least-once engine enqueues once — and a
+   disabled endpoint refuses the enqueue, so run history records a failed action instead of
+   a queued delivery that can never go out.
+4. **The delivery loop** (`apps/worker/src/webhooks/delivery.ts`) — the §5 SSRF gate PER
+   REDIRECT HOP, the deliberate difference from `fetchUnfurl` (which refuses redirects
+   outright): a webhook is a standing instruction, so `redirect: 'manual'` is load-bearing
+   and every hop is re-validated and re-resolved. Backoff 30s→8m, dead-letter at 6 attempts,
+   auto-disable at 5 consecutive dead deliveries, with a `webhook.disabled` notification to
+   the endpoint's creator and a `webhook.auto_disabled` audit event. The claim is a
+   conditional UPDATE on `attempts` (the recording-ingest pattern), and the role that decides
+   what to deliver never sees the payload, the URL, or the key — those are loaded per org
+   under `withOrgScope` afterward.
+5. **The suite caught the claim off-by-one the code shipped with.** `claimDue` pushed the
+   candidate row with its PRE-increment `attempts`, contradicting its own `ClaimedRow`
+   contract — every attempt was judged one behind, so a delivery that had failed six times
+   was told to back off forever: dead-lettering and auto-disable could never fire. The
+   delivery test's dead-letter case made it visible; the fix is `attempts + 1`, and the
+   interface comment now states what the value IS. A test bug hid it for a while: `makeDue`
+   was handed the EVENT id (the helper returned the wrong one), so the backoff it "expired"
+   never moved — zero rows updated, silently, and the delivery never became due again.
+6. **The grants test** (`webhook-grants.test.ts`) asks the database rather than reading the
+   migration: the app role really cannot UPDATE a delivery, the claim role really cannot see
+   `payload`, and re-enabling really clears the wound.
+7. **The UI** — the webhooks management section on `/automations` (the endpoints a rule's
+   `call_webhook` action can name, the one-time secret reveal, a delivery-history read), and
+   the `call_webhook` action through the five-place change with a real webhook picker — no
+   pasted ids anywhere.
 
 **One thing this phase must NOT get wrong, restated at the top because it is invisible from
 inside this file:** Phase 11's only route to historical data is replaying `card.status_changed`

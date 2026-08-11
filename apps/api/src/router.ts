@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { KeyProvider } from '@taskflow/contracts';
 import { publicRoute, router, selfRoute } from './trpc/builder.js';
 import { getResolvedFlags } from './platform-admin/flag-evaluator.js';
 import { createIdentityRouter, type IdentityRouterDeps } from './identity/router.js';
@@ -14,7 +15,7 @@ import type { TelephonyDeps } from './telephony/deps.js';
 import { createRtcRouter } from './rtc/router.js';
 import type { RtcDeps } from './rtc/deps.js';
 import { createSearchRouter } from './search/router.js';
-import { automationRouter } from './automation/router.js';
+import { createAutomationRouter } from './automation/router.js';
 import { PostgresSearchProvider } from './search/postgres-provider.js';
 
 /**
@@ -28,6 +29,12 @@ import { PostgresSearchProvider } from './search/postgres-provider.js';
  */
 
 export interface AppRouterDeps extends IdentityRouterDeps {
+  /**
+   * Automation (Phase 10). Only the webhook registry needs anything external
+   * — a KeyProvider to wrap the per-webhook signing secrets at rest — so the
+   * dep is exactly that, threaded through `createAutomationRouter`.
+   */
+  readonly automation: { readonly keys: KeyProvider };
   /**
    * Work's external dependencies — object storage and the virus scanner.
    *
@@ -198,7 +205,7 @@ export function createAppRouter(deps: AppRouterDeps) {
      * question is asked at EXECUTION, per action, against the rule owner's
      * live permissions.
      */
-    automation: automationRouter,
+    automation: createAutomationRouter(deps.automation),
 
     /**
      * Feature flags — the resolved snapshot for the client bootstrap

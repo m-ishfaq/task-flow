@@ -55,18 +55,15 @@ import { FocusOnMountInput, Skeleton } from './primitives.js';
  *
  *   1. Where you start — your own work, and finding anything.
  *   2. The products you live in day to day.
- *   3. Configuration you touch occasionally and then leave alone.
  *
- * Projects and pinned boards follow below, and stay at the bottom on purpose:
- * they are a TREE that grows, so anything under them would move as the
- * workspace grows and stop being findable by muscle memory. Same reason a chat
- * app puts channels last.
+ * Configuration is NOT in this list; it lives in `CONFIG_ITEMS` below, pinned
+ * to the bottom of the rail. See that constant for why the split exists.
  *
  * Every item is shown to everyone. A member who lacks a permission gets an
  * honest refusal from the page, never a menu that quietly differs by role —
  * §8.2, because the hidden version is the one that never gets tested.
  */
-const NAV_SECTIONS: readonly {
+const PRIMARY_SECTIONS: readonly {
   readonly id: string;
   readonly items: readonly { readonly to: string; readonly label: string }[];
 }[] = [
@@ -86,14 +83,31 @@ const NAV_SECTIONS: readonly {
       { to: '/people', label: 'People' },
     ],
   },
-  {
-    id: 'configuration',
-    items: [{ to: '/automations', label: 'Automations' }],
-  },
 ];
 
 /**
- * One top-level nav item.
+ * Configuration, pinned below the tree rather than listed above it.
+ *
+ * These used to be the last flat group before the project tree, separated from
+ * it by the same 1px rule that separated every other group — so `Automations`
+ * read as the heading of the project list rather than as a peer of Chat and
+ * Docs. Two unrelated things were adjacent and nothing said they were
+ * unrelated.
+ *
+ * Moving them into a pinned footer fixes both halves at once. They are no
+ * longer touching the tree, and — because the footer does not scroll — they
+ * stay in one place at any workspace size. That is the property the tree
+ * itself cannot have: it GROWS, so anything positioned after it in a single
+ * scrolling column moves as projects are added and stops being findable by
+ * muscle memory. Slack's and Linear's rails are shaped this way for the same
+ * reason.
+ */
+const CONFIG_ITEMS: readonly { readonly to: string; readonly label: string }[] = [
+  { to: '/automations', label: 'Automations' },
+];
+
+/**
+ * The active-state contract, defined once for every navigable thing in the rail.
  *
  * ## The active state has to differ from HOVER, not just from resting
  *
@@ -102,15 +116,46 @@ const NAV_SECTIONS: readonly {
  * anything. The accent bar is the persistent signal: it survives the pointer
  * moving away, and it is the only thing on the item that hover never applies.
  *
- * The border is present-but-transparent when inactive rather than absent, so
- * becoming active does not shift the label by two pixels.
+ * ## Why a pseudo-element rather than a left border
+ *
+ * The border version had to be present-but-transparent when inactive so
+ * becoming active did not shift the label two pixels sideways — which works,
+ * and then has to be repeated on every item that wants the bar, including ones
+ * whose `<Link>` does NOT start at the row's left edge. A project link sits
+ * after a disclosure triangle, so its own left border would draw the bar in the
+ * middle of the row.
+ *
+ * `before:` is absolutely positioned against the nearest positioned ancestor —
+ * the ROW — so the bar lands at the row's left edge no matter how deep in the
+ * row the link itself begins, and it reserves no layout space to begin with.
+ * Every row that uses it is marked `relative`.
  */
+const ACTIVE_BAR =
+  'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-accent';
+
+/**
+ * The tint, applied to the ROW rather than to the link.
+ *
+ * `activeProps` can only style the `<Link>`, and a link that starts after a
+ * disclosure triangle would tint only the part of the row to the right of it —
+ * a highlight with a notch cut out of its left edge. TanStack Router stamps
+ * `data-status="active"` on the rendered anchor, so the row can ask whether it
+ * CONTAINS the active link and tint itself edge to edge.
+ */
+const ACTIVE_ROW = 'has-[a[data-status=active]]:bg-accent/10';
+
+/** One top-level nav item. */
 function NavLink({ to, label }: { readonly to: string; readonly label: string }) {
   return (
     <Link
       to={to}
-      className="mb-0.5 block rounded border-l-2 border-transparent px-1.5 py-1 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
-      activeProps={{ className: 'border-accent bg-accent/10 text-accent hover:text-accent' }}
+      className={cn(
+        'relative mb-0.5 block rounded px-2 py-1 text-xs font-medium text-ink-muted',
+        'hover:bg-surface-hover hover:text-ink',
+      )}
+      activeProps={{
+        className: cn('bg-accent/10 text-accent hover:bg-accent/10 hover:text-accent', ACTIVE_BAR),
+      }}
     >
       {label}
     </Link>
@@ -142,7 +187,16 @@ export function Sidebar() {
     <aside
       aria-label="Workspace"
       className={cn(
-        'flex shrink-0 flex-col border-r border-line h-[94%] bg-surface-raised transition-[width]',
+        /* `min-h-0 flex-1`, not a percentage. This was `h-[94%]` — a magic
+           number chosen to leave room for Shell's `SidebarFooter`, which is a
+           sibling in the same flex column and already sizes itself. The
+           percentage was both wrong (6% of the viewport is not the footer's
+           height at every window size, so the rail either overlapped it or
+           left a gap) and load-bearing in the wrong way: it is what stopped
+           an inner scroll region from ever resolving a height, because a
+           `flex-1` child inside a percentage-height parent still needs
+           `min-h-0` above it to be allowed to shrink. */
+        'flex min-h-0 flex-1 flex-col border-r border-line bg-surface-raised transition-[width]',
         open ? 'w-72 md:w-60' : 'w-12',
       )}
     >
@@ -173,51 +227,87 @@ export function Sidebar() {
           characters would produce a column of ambiguous stubs; hiding them and
           keeping the toggle is honest about what a 3rem column can show. */}
       {open && (
-        <nav aria-label="Projects" className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
-          {NAV_SECTIONS.map((section, index) => (
-            <div
-              key={section.id}
+        <>
+          {/* Fixed. These four-to-six destinations are the ones reached by
+              muscle memory, and they must be in the same place whether the
+              workspace has two projects or eighty. */}
+          <nav aria-label="Main" className="shrink-0 px-2 pt-2">
+            {PRIMARY_SECTIONS.map((section, index) => (
+              <div key={section.id} className={cn(index > 0 && 'mt-2 border-t border-line pt-2')}>
+                {section.items.map((item) => (
+                  <NavLink key={item.to} to={item.to} label={item.label} />
+                ))}
+              </div>
+            ))}
+          </nav>
+
+          {/* The ONLY scrolling region in the rail. Everything that grows with
+              the workspace lives here, and everything that must not move lives
+              outside it. */}
+          <nav
+            aria-label="Projects"
+            className="mt-2 min-h-0 flex-1 overflow-y-auto border-t border-line px-2 pt-2 pb-2"
+          >
+            <PinnedBoards />
+
+            {/* A heading that is also the link to `/projects`. It used to be a
+                bare `<p>`, which meant the projects page — the only place a
+                project is created or archived — had no representation in the
+                rail at all and no active state when you were standing on it.
+                Styled as a heading and behaving as a nav item, because it is
+                genuinely both. */}
+            <Link
+              to="/projects"
               className={cn(
-                index > 0 && 'mt-2 border-t border-line pt-2',
-                index === NAV_SECTIONS.length - 1 && 'mb-1',
+                'relative mb-1 block rounded px-2 pt-1 pb-1 text-[10px] font-semibold tracking-wide uppercase',
+                'text-ink-faint hover:bg-surface-hover hover:text-ink',
               )}
+              activeProps={{
+                className: cn(
+                  'bg-accent/10 text-accent hover:bg-accent/10 hover:text-accent',
+                  ACTIVE_BAR,
+                ),
+              }}
             >
-              {section.items.map((item) => (
-                <NavLink key={item.to} to={item.to} label={item.label} />
-              ))}
-            </div>
-          ))}
-
-          <PinnedBoards />
-
-          <p className="px-1 pt-2 pb-1 text-[10px] font-semibold tracking-wide text-ink-faint uppercase">
-            Projects
-          </p>
-
-          {projects.isPending ? (
-            <div aria-busy="true" className="space-y-1.5 px-1 py-1">
-              <Skeleton className="h-5 w-4/5" />
-              <Skeleton className="h-5 w-3/5" />
-              <Skeleton className="h-5 w-2/3" />
-            </div>
-          ) : live.length === 0 ? (
-            <Link to="/projects" className="block px-1 py-1 text-xs text-accent underline">
-              Create your first project
+              Projects
             </Link>
-          ) : (
-            <ul>
-              {live.map((project) => (
-                <ProjectNode
-                  key={project.projectId}
-                  orgId={orgId ?? ''}
-                  projectId={project.projectId as ProjectId}
-                  name={project.name}
-                  projectKey={project.key}
-                />
-              ))}
-            </ul>
-          )}
-        </nav>
+
+            {projects.isPending ? (
+              <div aria-busy="true" className="space-y-1.5 px-1 py-1">
+                <Skeleton className="h-5 w-4/5" />
+                <Skeleton className="h-5 w-3/5" />
+                <Skeleton className="h-5 w-2/3" />
+              </div>
+            ) : live.length === 0 ? (
+              <Link to="/projects" className="block px-2 py-1 text-xs text-accent underline">
+                Create your first project
+              </Link>
+            ) : (
+              <ul>
+                {live.map((project) => (
+                  <ProjectNode
+                    key={project.projectId}
+                    orgId={orgId ?? ''}
+                    projectId={project.projectId as ProjectId}
+                    name={project.name}
+                    projectKey={project.key}
+                  />
+                ))}
+              </ul>
+            )}
+          </nav>
+
+          {/* Fixed, below the tree — see CONFIG_ITEMS for why it is down here
+              rather than in the list above. */}
+          <nav
+            aria-label="Configuration"
+            className="shrink-0 border-t border-line px-2 pt-2 pb-1.5"
+          >
+            {CONFIG_ITEMS.map((item) => (
+              <NavLink key={item.to} to={item.to} label={item.label} />
+            ))}
+          </nav>
+        </>
       )}
     </aside>
   );
@@ -245,7 +335,10 @@ function ProjectNode({
 
   return (
     <li>
-      <div className="group flex items-center rounded hover:bg-surface-hover">
+      {/* `relative` so the active bar has something to pin to, and ACTIVE_ROW
+          so the tint covers the disclosure triangle too — see those constants
+          for why the styling is split across the row and the link. */}
+      <div className={cn('group relative flex items-center rounded', ACTIVE_ROW)}>
         <button
           type="button"
           onClick={() => {
@@ -253,7 +346,7 @@ function ProjectNode({
           }}
           aria-expanded={!collapsed}
           aria-label={collapsed ? `Expand ${name}` : `Collapse ${name}`}
-          className="w-5 shrink-0 py-1 text-[10px] text-ink-faint hover:text-ink"
+          className="w-5 shrink-0 py-1 text-center text-[10px] text-ink-faint hover:text-ink"
         >
           {collapsed ? '▸' : '▾'}
         </button>
@@ -261,8 +354,8 @@ function ProjectNode({
         <Link
           to="/projects/$projectId"
           params={{ projectId }}
-          className="min-w-0 flex-1 truncate py-1 text-xs text-ink-muted hover:text-ink"
-          activeProps={{ className: 'font-medium text-accent' }}
+          className="min-w-0 flex-1 truncate rounded py-1 pr-1 text-xs text-ink-muted hover:text-ink"
+          activeProps={{ className: cn('font-medium text-accent', ACTIVE_BAR) }}
           title={`${name} (${projectKey}) — open project settings`}
         >
           {name}
@@ -394,7 +487,7 @@ function BoardLink({
   const togglePinnedBoard = useUi((state) => state.togglePinnedBoard);
 
   return (
-    <li className="group flex items-center rounded hover:bg-surface-hover">
+    <li className={cn('group relative flex items-center rounded hover:bg-surface-hover', ACTIVE_ROW)}>
       <Link
         to="/boards/$boardId"
         params={{ boardId: board.boardId as BoardId }}
@@ -408,8 +501,8 @@ function BoardLink({
            un-highlights the board you are looking at. The path is what
            identifies a board; `view` and `project` are state on top of it. */
         activeOptions={{ includeSearch: false }}
-        className="min-w-0 flex-1 truncate border-l-2 border-transparent py-1 pl-1.5 text-xs text-ink-muted hover:text-ink"
-        activeProps={{ className: 'border-accent font-medium text-accent' }}
+        className="min-w-0 flex-1 truncate rounded py-1 pl-1.5 text-xs text-ink-muted hover:text-ink"
+        activeProps={{ className: cn('font-medium text-accent', ACTIVE_BAR) }}
       >
         {board.name}
       </Link>
@@ -458,7 +551,7 @@ function PinnedBoards() {
 
   return (
     <>
-      <p className="px-1 pb-1 text-[10px] font-semibold tracking-wide text-ink-faint uppercase">
+      <p className="px-2 pb-1 text-[10px] font-semibold tracking-wide text-ink-faint uppercase">
         Pinned
       </p>
       <ul>

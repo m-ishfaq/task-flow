@@ -553,3 +553,101 @@ export const automationBudget = platform.table(
   },
   (table) => [primaryKey({ columns: [table.orgId, table.windowHour] })],
 );
+
+/**
+ * Registered outbound-webhook endpoints (migration 0049,
+ * ai/phase-10-automation.md Wave 2).
+ *
+ * The SIGNING secret is stored encrypted at rest under a PER-WEBHOOK data key
+ * (the comms.subaccounts pattern) — the delivery loop must be able to sign,
+ * so a hash would make signing impossible, and the secret is shown to the org
+ * exactly once at creation. `signingKeyWrapped` + `signingKeyMasterId` name
+ * the wrapped key and the master key that unwraps it.
+ *
+ * `enabled`/`disabledAt` are the endpoint kill switch: the delivery loop
+ * auto-disables a dead-lettered endpoint and records when, so an operator can
+ * tell an operator's pause from an automated one. `failureCount` is the
+ * endpoint's health, kept off the (prunable) delivery history.
+ */
+export const webhooks = platform.table(
+  'webhooks',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+
+    name: text('name').notNull(),
+    url: text('url').notNull(),
+
+    enabled: boolean('enabled').notNull().default(true),
+    disabledAt: timestamp('disabled_at', { withTimezone: true }),
+    failureCount: integer('failure_count').notNull().default(0),
+
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+
+    signingKeyCiphertext: bytea('signing_key_ciphertext').notNull(),
+    signingKeyWrapped: bytea('signing_key_wrapped').notNull(),
+    signingKeyMasterId: text('signing_key_master_id').notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('webhooks_org_name_key').on(table.orgId, table.name),
+    // Mirrors the migration's `webhooks_org_id_key` — what the deliveries
+    // table's composite FK references.
+    uniqueIndex('webhooks_org_id_key').on(table.orgId, table.id),
+  ],
+);
+
+/**
+ * The delivery queue behind `call_webhook` (migration 0049).
+ *
+ * Written by the action's service-layer enqueue (emitting
+ * `webhook.delivery_queued`) and drained by a loop in apps/worker. The engine
+ * is at-least-once, so the dedupe key `(org_id, webhook_id, event_id)` is what
+ * makes a redelivered event harmless — the second insert is a no-op.
+ *
+ * `status` is a small state machine on one column: `pending -> (succeeded |
+ * dead)`. There is deliberately no 'in_flight': the claim is a conditional
+ * UPDATE on `attempts` (the recording-ingest pattern), so a worker that dies
+ * mid-attempt simply retries — at-least-once, told to deduplicate on the
+ * event id. `nextAttemptAt` is the backoff, set on failure, so a dead endpoint
+ * stops costing a claim per tick long before it is dead-lettered.
+ */
+export const webhookDeliveries = platform.table(
+  'webhook_deliveries',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    webhookId: uuid('webhook_id').notNull(),
+
+    /** The triggering event. Not an FK — the outbox is pruned in Phase 11. */
+    eventId: uuid('event_id').notNull(),
+    eventName: text('event_name').notNull(),
+
+    /** The canonical JSON body sent to the receiver, signed with the secret. */
+    payload: jsonb('payload').notNull(),
+
+    /** 'pending' | 'succeeded' | 'dead' — a CHECK in the migration. */
+    status: text('status').notNull().default('pending'),
+    /** Both the retry budget and the claim's optimistic-concurrency token. */
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
+
+    lastStatusCode: integer('last_status_code'),
+    lastError: text('last_error'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('webhook_deliveries_dedupe_key').on(table.orgId, table.webhookId, table.eventId),
+    index('webhook_deliveries_due_idx').on(table.status, table.nextAttemptAt, table.createdAt),
+  ],
+);

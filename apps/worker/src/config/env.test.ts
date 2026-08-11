@@ -12,6 +12,10 @@ import { assertNoMisspelledVariables as assertKnown, parseEnv } from './env.js';
 
 const valid = {
   DATABASE_URL: 'postgresql://taskflow_app:secret@localhost:5432/taskflow',
+  /* Required since Wave 2 — the delivery loop decrypts signing secrets with
+     the master key, so the worker refuses to boot without it. */
+  MASTER_KEY_ID: 'mk-test',
+  MASTER_KEY_BASE64: Buffer.alloc(32, 1).toString('base64'),
 };
 
 describe('parseEnv', () => {
@@ -38,6 +42,27 @@ describe('parseEnv', () => {
       DATABASE_AUTOMATION_URL: 'postgresql://taskflow_automation:s@localhost:5432/taskflow',
     });
     expect(configured.DATABASE_AUTOMATION_URL).toContain('taskflow_automation');
+  });
+
+  it('leaves the webhook claim role optional, and knows the master key', () => {
+    /* Same contract as the automation role: a deployment without it is valid
+       and the delivery loop declines to start with a warning. */
+    expect(parseEnv(valid).DATABASE_WEBHOOK_URL).toBeUndefined();
+
+    const configured = parseEnv({
+      ...valid,
+      DATABASE_WEBHOOK_URL: 'postgresql://taskflow_webhook:s@localhost:5432/taskflow',
+    });
+    expect(configured.DATABASE_WEBHOOK_URL).toContain('taskflow_webhook');
+    expect(configured.MASTER_KEY_ID).toBe('mk-test');
+  });
+
+  it('refuses to boot without the master key pair', () => {
+    /* The worker signs requests at delivery; a worker without the key cannot
+       do its one new job and must not start pretending it can. */
+    expect(() =>
+      parseEnv({ ...valid, MASTER_KEY_ID: undefined, MASTER_KEY_BASE64: undefined }),
+    ).toThrow(/MASTER_KEY/);
   });
 
   it('refuses a missing DATABASE_URL, naming it', () => {
@@ -77,6 +102,7 @@ describe('parseEnv', () => {
         DATABASE_RECORDING_INGEST_URL: 'x',
         DATABASE_SEARCH_URL: 'x',
         DATABASE_AUTOMATION_URL: 'x',
+        DATABASE_WEBHOOK_URL: 'x',
         DATABASE_POOL_MAX: '10',
       });
     }).not.toThrow();

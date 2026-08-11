@@ -39,3 +39,23 @@ export function automationRunsQuery(orgId: string, automationId?: string) {
     staleTime: 5_000,
   });
 }
+
+/**
+ * The webhook registry (Wave 2) — feeds both the management section and the
+ * rule builder's webhook picker. `enabled` is the endpoint kill switch; the
+ * picker filters on it, the management section renders it.
+ */
+export function webhooksQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.webhooks(orgId),
+    queryFn: async () => wire(await api.automation.webhooks.list.query({})),
+  });
+}
+
+/** Recent delivery history for one endpoint — the "did it go out" read. */
+export function webhookDeliveriesQuery(orgId: string, webhookId: string) {
+  return queryOptions({
+    queryKey: keys.webhookDeliveries(orgId, webhookId),
+    queryFn: async () => wire(await api.automation.webhooks.deliveries.query({ webhookId })),
+  });
+}
