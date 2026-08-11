@@ -27,13 +27,7 @@ export interface SprintSectionProps {
   readonly sprintId: string | null;
 }
 
-export function SprintSection({
-  orgId,
-  boardId,
-  cardId,
-  projectId,
-  sprintId,
-}: SprintSectionProps) {
+export function SprintSection({ orgId, boardId, cardId, projectId, sprintId }: SprintSectionProps) {
   const sprints = useQuery(sprintsQuery(orgId, projectId));
   const optimistic = useOptimistic();
 

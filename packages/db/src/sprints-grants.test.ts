@@ -64,10 +64,12 @@ beforeAll(async () => {
     'Sprint grants A',
     `sprint-grants-a-${crypto.randomUUID().slice(0, 8)}`,
   ]);
-  await admin.query(
-    `INSERT INTO work.projects (id, org_id, name, key) VALUES ($1, $2, $3, $4)`,
-    [PROJECT_A, ORG_A, 'Sprint project A', 'SPA'],
-  );
+  await admin.query(`INSERT INTO work.projects (id, org_id, name, key) VALUES ($1, $2, $3, $4)`, [
+    PROJECT_A,
+    ORG_A,
+    'Sprint project A',
+    'SPA',
+  ]);
   await admin.query(
     `INSERT INTO work.boards (id, org_id, project_id, name, rank) VALUES ($1, $2, $3, $4, $5)`,
     [BOARD_A, ORG_A, PROJECT_A, 'Board A', 'a0'],
@@ -98,10 +100,12 @@ beforeAll(async () => {
     'Sprint grants B',
     `sprint-grants-b-${crypto.randomUUID().slice(0, 8)}`,
   ]);
-  await admin.query(
-    `INSERT INTO work.projects (id, org_id, name, key) VALUES ($1, $2, $3, $4)`,
-    [PROJECT_B, ORG_B, 'Sprint project B', 'SPB'],
-  );
+  await admin.query(`INSERT INTO work.projects (id, org_id, name, key) VALUES ($1, $2, $3, $4)`, [
+    PROJECT_B,
+    ORG_B,
+    'Sprint project B',
+    'SPB',
+  ]);
   /* Org B has a PLANNED sprint and no active one — the second test's legal
      insert. */
   await admin.query(
@@ -138,7 +142,7 @@ afterAll(async () => {
 });
 
 describe('taskflow_app — what 0054 grants, and what it takes back', () => {
-  it('manages the project\'s sprints but never hard-deletes one', async () => {
+  it("manages the project's sprints but never hard-deletes one", async () => {
     /* THE 0036 ASSERTION for this table. ALTER DEFAULT PRIVILEGES granted
        DELETE here before 0054's REVOKE ran; the explicit REVOKE removes it.
        Delete that one line from the migration and this test fails — nothing
@@ -150,7 +154,7 @@ describe('taskflow_app — what 0054 grants, and what it takes back', () => {
   });
 });
 
-describe('the one-active-sprint invariant is the database\'s', () => {
+describe("the one-active-sprint invariant is the database's", () => {
   it('refuses a second active sprint for a project that already has one', async () => {
     await admin.setOrg(ORG_A);
     await expect(
@@ -174,7 +178,7 @@ describe('the one-active-sprint invariant is the database\'s', () => {
   });
 });
 
-describe('the composite FK — a card can never name another project\'s sprint', () => {
+describe("the composite FK — a card can never name another project's sprint", () => {
   it('refuses a sprint from another org AND project', async () => {
     await admin.setOrg(ORG_A);
     await expect(
@@ -183,7 +187,7 @@ describe('the composite FK — a card can never name another project\'s sprint',
     await admin.setOrg(null);
   });
 
-  it('accepts a sprint from the card\'s own project', async () => {
+  it("accepts a sprint from the card's own project", async () => {
     await admin.setOrg(ORG_A);
     await admin.query(`UPDATE work.cards SET sprint_id = $1 WHERE id = $2`, [
       SPRINT_A_PLANNED,
@@ -197,16 +201,12 @@ describe('the composite FK — a card can never name another project\'s sprint',
 describe('RLS — org confinement for the app role', () => {
   it('taskflow_app under org A scope sees only org A sprints', async () => {
     await withOrgScope(unsafeAsId<'OrgId'>(ORG_A), async (tx) => {
-      const result = await tx.execute(
-        `SELECT count(*)::int AS n FROM work.sprints`,
-      );
+      const result = await tx.execute(`SELECT count(*)::int AS n FROM work.sprints`);
       /* Two in org A (planned + active) — never three, never one. */
       expect(result.rows[0]?.['n']).toBe(2);
     });
     await withOrgScope(unsafeAsId<'OrgId'>(ORG_B), async (tx) => {
-      const result = await tx.execute(
-        `SELECT count(*)::int AS n FROM work.sprints`,
-      );
+      const result = await tx.execute(`SELECT count(*)::int AS n FROM work.sprints`);
       /* One in org B (planned) plus the active one the test above inserted. */
       expect(result.rows[0]?.['n']).toBe(2);
     });

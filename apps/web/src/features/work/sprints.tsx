@@ -269,8 +269,8 @@ export function SprintsManagerDialog({
       <ModalContent size="lg" className="flex max-h-[80vh] flex-col p-4">
         <ModalTitle>Sprints</ModalTitle>
         <ModalDescription>
-          Plan the project's windows. One active sprint at a time; closed sprints stay as the
-          record of what shipped.
+          Plan the project's windows. One active sprint at a time; closed sprints stay as the record
+          of what shipped.
         </ModalDescription>
 
         <div className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto">
@@ -344,8 +344,8 @@ export function SprintsManagerDialog({
 
           {(sprints.data ?? []).length === 0 ? (
             <p className="rounded border border-line p-3 text-xs text-ink-faint">
-              No sprints yet. Plan the first window above — cards join it from the card
-              panel's Sprint field.
+              No sprints yet. Plan the first window above — cards join it from the card panel's
+              Sprint field.
             </p>
           ) : (
             <ul className="divide-y divide-line rounded border border-line">
@@ -375,8 +375,8 @@ export function SprintsManagerDialog({
                           </span>
                         </div>
                         <p className="truncate text-[11px] text-ink-faint">
-                          {sprint.startsOn} → {sprint.endsOn} ·{' '}
-                          {sprint.cardCount} {sprint.cardCount === 1 ? 'card' : 'cards'}
+                          {sprint.startsOn} → {sprint.endsOn} · {sprint.cardCount}{' '}
+                          {sprint.cardCount === 1 ? 'card' : 'cards'}
                           {sprint.goal !== null && ` · ${sprint.goal}`}
                         </p>
                       </div>
@@ -499,37 +499,37 @@ function EditSprintForm({
         />
       </div>
       <div className="flex flex-wrap items-center gap-2">
-      <input
-        type="date"
-        aria-label="Starts"
-        value={draft.startsOn}
-        disabled={datesLocked}
-        onChange={(event) => {
-          onDraftChange({ ...draft, startsOn: event.target.value });
-        }}
-        className="h-7 rounded border border-line bg-surface px-1.5 text-xs text-ink disabled:opacity-50"
-      />
-      <input
-        type="date"
-        aria-label="Ends"
-        value={draft.endsOn}
-        disabled={datesLocked}
-        onChange={(event) => {
-          onDraftChange({ ...draft, endsOn: event.target.value });
-        }}
-        className="h-7 rounded border border-line bg-surface px-1.5 text-xs text-ink disabled:opacity-50"
-      />
-      <span className="text-[11px] text-ink-faint">
-        {locked ? 'Active: only the goal is editable.' : ''}
-      </span>
-      <div className="ml-auto flex items-center gap-2">
-        <Button type="submit" size="sm" variant="primary" disabled={draft.name.trim() === ''}>
-          Save
-        </Button>
-        <Button size="sm" variant="ghost" type="button" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
+        <input
+          type="date"
+          aria-label="Starts"
+          value={draft.startsOn}
+          disabled={datesLocked}
+          onChange={(event) => {
+            onDraftChange({ ...draft, startsOn: event.target.value });
+          }}
+          className="h-7 rounded border border-line bg-surface px-1.5 text-xs text-ink disabled:opacity-50"
+        />
+        <input
+          type="date"
+          aria-label="Ends"
+          value={draft.endsOn}
+          disabled={datesLocked}
+          onChange={(event) => {
+            onDraftChange({ ...draft, endsOn: event.target.value });
+          }}
+          className="h-7 rounded border border-line bg-surface px-1.5 text-xs text-ink disabled:opacity-50"
+        />
+        <span className="text-[11px] text-ink-faint">
+          {locked ? 'Active: only the goal is editable.' : ''}
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          <Button type="submit" size="sm" variant="primary" disabled={draft.name.trim() === ''}>
+            Save
+          </Button>
+          <Button size="sm" variant="ghost" type="button" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
       </div>
     </form>
   );

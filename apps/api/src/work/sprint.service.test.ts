@@ -105,7 +105,9 @@ async function removeOrg(orgId: string): Promise<void> {
 }
 
 /** The org's outbox rows, name + payload, newest last — for event assertions. */
-async function outboxFor(orgId: OrgId): Promise<{ name: string; payload: Record<string, unknown> }[]> {
+async function outboxFor(
+  orgId: OrgId,
+): Promise<{ name: string; payload: Record<string, unknown> }[]> {
   await admin.setOrg(orgId);
   const rows = await admin.query(
     `SELECT name, payload FROM platform.outbox WHERE org_id = $1 ORDER BY created_at`,
@@ -289,9 +291,9 @@ describe('lifecycle', () => {
     const { sprintId } = await makeSprint(fixture.owner, fixture);
 
     // A planned sprint cannot be completed — it was never started.
-    await expect(
-      sprints.completeSprint(fixture.owner, { sprintId }),
-    ).rejects.toMatchObject({ code: 'CONFLICT' });
+    await expect(sprints.completeSprint(fixture.owner, { sprintId })).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
 
     await expect(sprints.startSprint(fixture.owner, { sprintId })).resolves.toEqual({
       status: 'active',
@@ -303,21 +305,23 @@ describe('lifecycle', () => {
     expect(started[0]?.payload).toMatchObject({ sprintId, projectId: fixture.projectId });
 
     // An active sprint cannot be started again.
-    await expect(
-      sprints.startSprint(fixture.owner, { sprintId }),
-    ).rejects.toMatchObject({ code: 'CONFLICT' });
+    await expect(sprints.startSprint(fixture.owner, { sprintId })).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
 
-    await expect(
-      sprints.completeSprint(fixture.owner, { sprintId }),
-    ).resolves.toMatchObject({ status: 'completed', shippedCount: 0, releasedCount: 0 });
+    await expect(sprints.completeSprint(fixture.owner, { sprintId })).resolves.toMatchObject({
+      status: 'completed',
+      shippedCount: 0,
+      releasedCount: 0,
+    });
 
     // A completed sprint is a record: it cannot restart and it cannot re-close.
-    await expect(
-      sprints.startSprint(fixture.owner, { sprintId }),
-    ).rejects.toMatchObject({ code: 'CONFLICT' });
-    await expect(
-      sprints.completeSprint(fixture.owner, { sprintId }),
-    ).rejects.toMatchObject({ code: 'CONFLICT' });
+    await expect(sprints.startSprint(fixture.owner, { sprintId })).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+    await expect(sprints.completeSprint(fixture.owner, { sprintId })).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
   });
 
   it('refuses a second active sprint in the same project', async () => {
@@ -325,9 +329,11 @@ describe('lifecycle', () => {
     const first = await makeSprint(fixture.owner, fixture, 'First');
     const second = await makeSprint(fixture.owner, fixture, 'Second');
 
-    await expect(sprints.startSprint(fixture.owner, { sprintId: first.sprintId })).resolves.toEqual({
-      status: 'active',
-    });
+    await expect(sprints.startSprint(fixture.owner, { sprintId: first.sprintId })).resolves.toEqual(
+      {
+        status: 'active',
+      },
+    );
 
     // The service message...
     await expect(
@@ -383,10 +389,7 @@ describe('lifecycle', () => {
     await sprints.startSprint(fixture.owner, { sprintId: sooner.sprintId });
 
     const list = await sprints.listSprints(fixture.owner, { projectId: fixture.projectId });
-    expect(list.map((sprint) => sprint.sprintId)).toEqual([
-      sooner.sprintId,
-      later.sprintId,
-    ]);
+    expect(list.map((sprint) => sprint.sprintId)).toEqual([sooner.sprintId, later.sprintId]);
   });
 });
 
@@ -455,7 +458,10 @@ describe('closure semantics (decision 5)', () => {
 
     const done = await makeCard(fixture.owner, fixture, 'Done one');
     const other = await makeCard(fixture.owner, fixture, 'Other');
-    await cards.setCardStatus(fixture.owner, { cardId: done.cardId, statusId: fixture.doneStatusId });
+    await cards.setCardStatus(fixture.owner, {
+      cardId: done.cardId,
+      statusId: fixture.doneStatusId,
+    });
     await sprints.assignSprint(fixture.owner, { cardId: done.cardId, sprintId });
     await sprints.assignSprint(fixture.owner, { cardId: other.cardId, sprintId });
 
@@ -496,9 +502,9 @@ describe('membership', () => {
     events = await outboxFor(fixture.orgId);
     expect(events.filter((event) => event.name === cardSprintChanged.name)).toHaveLength(1);
 
-    await expect(
-      sprints.releaseSprint(fixture.owner, { cardId: card.cardId }),
-    ).resolves.toEqual({ sprintId: null });
+    await expect(sprints.releaseSprint(fixture.owner, { cardId: card.cardId })).resolves.toEqual({
+      sprintId: null,
+    });
     await expect(sprintOf(fixture.orgId, card.cardId)).resolves.toBeNull();
 
     events = await outboxFor(fixture.orgId);
@@ -616,7 +622,7 @@ describe('membership', () => {
 });
 
 describe('authorization', () => {
-  it('lets a member assign their own cards but not manage the project\'s sprints', async () => {
+  it("lets a member assign their own cards but not manage the project's sprints", async () => {
     const fixture = await scaffold('sprint-authz');
     await members.addMember(
       fixture.orgId,
@@ -629,9 +635,9 @@ describe('authorization', () => {
     const card = await makeCard(fixture.owner, fixture, 'Team card');
 
     // Moving ONE card into a sprint is editing that card — a member may.
-    await expect(
-      sprints.assignSprint(member, { cardId: card.cardId, sprintId }),
-    ).resolves.toEqual({ sprintId });
+    await expect(sprints.assignSprint(member, { cardId: card.cardId, sprintId })).resolves.toEqual({
+      sprintId,
+    });
     await expect(sprintOf(fixture.orgId, card.cardId)).resolves.toBe(sprintId);
 
     // Managing the project's planning structure is editing the project — not.

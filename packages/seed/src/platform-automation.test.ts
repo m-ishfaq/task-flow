@@ -42,7 +42,11 @@ function membership(index: number, role: SeededMembership['role']): SeededMember
     membershipId: id('4d', index),
     user: {
       id: id('55', index),
-      name: { first: `First${String(index)}`, last: `Last${String(index)}`, full: `First${String(index)} Last${String(index)}` },
+      name: {
+        first: `First${String(index)}`,
+        last: `Last${String(index)}`,
+        full: `First${String(index)} Last${String(index)}`,
+      },
       email: `user${String(index)}@taskflow.seed.test`,
     },
     role,
@@ -91,9 +95,7 @@ function seededProject(org: SeededOrg): SeededProject {
     { id: id('b1', 2), name: 'In Progress', category: 'active', isDefault: false },
     { id: id('b1', 3), name: 'Done', category: 'done', isDefault: false },
   ];
-  const labels: readonly SeededLabel[] = [
-    { id: id('c1', 1), name: 'Bug', color: '#e5484d' },
-  ];
+  const labels: readonly SeededLabel[] = [{ id: id('c1', 1), name: 'Bug', color: '#e5484d' }];
   return {
     id: id('b0', 1),
     orgId: org.id,
@@ -154,14 +156,22 @@ function fakeKeysProvider(): KeyProvider {
 
 interface Harness {
   readonly ctx: SeedContext;
-  readonly inserts: { table: string; columns: readonly string[]; rows: readonly (readonly unknown[])[]; orgId: string | null }[];
+  readonly inserts: {
+    table: string;
+    columns: readonly string[];
+    rows: readonly (readonly unknown[])[];
+    orgId: string | null;
+  }[];
   readonly queries: { text: string; values: readonly unknown[]; orgId: string | null }[];
   readonly events: DomainEvent[];
   rowsOf(table: string): readonly (readonly unknown[])[];
   columnsOf(table: string): readonly string[];
 }
 
-function harnessFor(org: SeededOrg, options?: { keys?: KeyProvider | null; cardEvents?: readonly DomainEvent[] }): Harness {
+function harnessFor(
+  org: SeededOrg,
+  options?: { keys?: KeyProvider | null; cardEvents?: readonly DomainEvent[] },
+): Harness {
   const inserts: Harness['inserts'] = [];
   const queries: Harness['queries'] = [];
   const events: DomainEvent[] = [...(options?.cardEvents ?? [])];
@@ -229,18 +239,38 @@ function harnessFor(org: SeededOrg, options?: { keys?: KeyProvider | null; cardE
 }
 
 /** Column-name → value, so assertions read as rows rather than as indices. */
-function asRecords(columns: readonly string[], rows: readonly (readonly unknown[])[]): readonly Record<string, unknown>[] {
+function asRecords(
+  columns: readonly string[],
+  rows: readonly (readonly unknown[])[],
+): readonly Record<string, unknown>[] {
   const names = columns.map((column) => column.split('::')[0] ?? column);
   return rows.map((row) => Object.fromEntries(names.map((name, index) => [name, row[index]])));
 }
 
 /** The card ids this fixture's project "has" — used for the sprint tests. */
-const CARD_IDS = [id('f1', 1), id('f1', 2), id('f1', 3), id('f1', 4), id('f1', 5), id('f1', 6), id('f1', 7), id('f1', 8), id('f1', 9)];
+const CARD_IDS = [
+  id('f1', 1),
+  id('f1', 2),
+  id('f1', 3),
+  id('f1', 4),
+  id('f1', 5),
+  id('f1', 6),
+  id('f1', 7),
+  id('f1', 8),
+  id('f1', 9),
+];
 
 function cardCreatedEvent(org: SeededOrg, cardId: string): DomainEvent {
   return createEvent(
     cardCreated,
-    { cardId, boardId: id('e1', 1), listId: id('e2', 1), projectId: id('b0', 1), reference: 'WEB-1', title: 'Seeded card' },
+    {
+      cardId,
+      boardId: id('e1', 1),
+      listId: id('e2', 1),
+      projectId: id('b0', 1),
+      reference: 'WEB-1',
+      title: 'Seeded card',
+    },
     envelopeFor(org.id, org.owner.id, org.createdAt),
   );
 }
@@ -252,7 +282,9 @@ function cardCreatedEvent(org: SeededOrg, cardId: string): DomainEvent {
 describe('work.sprints', () => {
   it('seeds exactly one sprint per lifecycle state, all scoped to the org', async () => {
     const org = seededOrg();
-    const harness = harnessFor(org, { cardEvents: CARD_IDS.map((cardId) => cardCreatedEvent(org, cardId)) });
+    const harness = harnessFor(org, {
+      cardEvents: CARD_IDS.map((cardId) => cardCreatedEvent(org, cardId)),
+    });
     const output = await sprintsModule.seed(harness.ctx);
 
     const sprints = asRecords(harness.columnsOf('work.sprints'), harness.rowsOf('work.sprints'));
@@ -285,7 +317,9 @@ describe('work.sprints', () => {
 
   it('assigns the card.created card ids to the active sprint via a scoped UPDATE', async () => {
     const org = seededOrg();
-    const harness = harnessFor(org, { cardEvents: CARD_IDS.map((cardId) => cardCreatedEvent(org, cardId)) });
+    const harness = harnessFor(org, {
+      cardEvents: CARD_IDS.map((cardId) => cardCreatedEvent(org, cardId)),
+    });
     await sprintsModule.seed(harness.ctx);
 
     // With 9 cards, the completed sprint takes 2 and the active takes 5
@@ -321,7 +355,10 @@ describe('platform.automations', () => {
     const harness = harnessFor(org);
     const output = await automationsModule.seed(harness.ctx);
 
-    const rules = asRecords(harness.columnsOf('platform.automations'), harness.rowsOf('platform.automations'));
+    const rules = asRecords(
+      harness.columnsOf('platform.automations'),
+      harness.rowsOf('platform.automations'),
+    );
     // Every project gets the priority rule; the triage and announce rules
     // need a label and a channel, which the fixture provides.
     expect(rules.length).toBeGreaterThanOrEqual(3);
@@ -377,7 +414,10 @@ describe('platform.webhooks', () => {
     const harness = harnessFor(org, { keys: fakeKeysProvider() });
     const output = await webhooksModule.seed(harness.ctx);
 
-    const hooks = asRecords(harness.columnsOf('platform.webhooks'), harness.rowsOf('platform.webhooks'));
+    const hooks = asRecords(
+      harness.columnsOf('platform.webhooks'),
+      harness.rowsOf('platform.webhooks'),
+    );
     expect(hooks).toHaveLength(1);
     const hook = hooks[0];
     expect(hook?.['org_id']).toBe(org.id);
@@ -402,7 +442,10 @@ describe('platform.api-tokens', () => {
     const harness = harnessFor(org);
     const output = await apiTokensModule.seed(harness.ctx);
 
-    const tokens = asRecords(harness.columnsOf('platform.api_tokens'), harness.rowsOf('platform.api_tokens'));
+    const tokens = asRecords(
+      harness.columnsOf('platform.api_tokens'),
+      harness.rowsOf('platform.api_tokens'),
+    );
     expect(tokens).toHaveLength(1);
     const token = tokens[0];
 

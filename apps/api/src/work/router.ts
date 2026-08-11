@@ -90,13 +90,10 @@ const Timestamp = z
 const Day = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD.')
-  .refine(
-    (value) => {
-      const parsed = new Date(`${value}T00:00:00Z`);
-      return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
-    },
-    'Use a real calendar date.',
-  );
+  .refine((value) => {
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  }, 'Use a real calendar date.');
 
 /** The four lifecycle values, mirroring 0054's CHECK (the migration enforces). */
 const SprintStatus = z.enum(['planned', 'active', 'completed', 'cancelled']);
@@ -337,7 +334,10 @@ export function createWorkRouter(deps: WorkRouterDeps) {
       cancel: route({ permission: 'project:update' })
         .input(z.object({ sprintId: SprintIdSchema }).strict())
         .output(
-          z.object({ status: z.literal('cancelled'), releasedCount: z.number().int().nonnegative() }),
+          z.object({
+            status: z.literal('cancelled'),
+            releasedCount: z.number().int().nonnegative(),
+          }),
         )
         .mutation(({ input, ctx }) => sprints.cancelSprint(actorOf(ctx), input)),
     }),
