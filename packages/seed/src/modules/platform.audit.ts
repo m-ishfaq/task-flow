@@ -16,6 +16,10 @@ import { rtcModule } from './rtc.calls.js';
 import { notificationsModule } from './platform.notifications.js';
 import { pushSubscriptionsModule } from './platform.push-subscriptions.js';
 import { sessionsModule } from './identity.sessions.js';
+import { sprintsModule } from './work.sprints.js';
+import { automationsModule } from './platform.automations.js';
+import { webhooksModule } from './platform.webhooks.js';
+import { apiTokensModule } from './platform.api-tokens.js';
 
 /**
  * The outbox, and the real hash-chained audit log it drains into.
@@ -86,6 +90,15 @@ export const auditModule = defineSeedModule({
        list — nothing else reads its output, so it has to be named here or
        it silently never runs. */
     sessionsModule,
+    /* Phase 10/10.5 surfaces with no downstream consumer: sprints (nothing
+       reads their output), automation rules (nothing does), webhooks and API
+       tokens (the CLI prints their one-time secrets after the run). Each is
+       named here for the same reason as every module in this list — or it
+       silently never runs. */
+    sprintsModule,
+    automationsModule,
+    webhooksModule,
+    apiTokensModule,
   ],
   tables: ['platform.outbox'],
 

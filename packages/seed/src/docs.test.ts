@@ -92,6 +92,7 @@ function harnessFor(profile: Profile, org: SeededOrg, seed = 'docs-test'): Harne
     chaos: false,
     storage: null,
     telephony: null,
+    keys: null,
     log: () => undefined,
     use: <Out>(module: SeedModule<Out>): Out => {
       if (!outputs.has(module)) throw new Error(`no output recorded for ${module.name}`);

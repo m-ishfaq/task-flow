@@ -4,6 +4,15 @@
 calls — unfinished cards return to the backlog on close, one active sprint per project).
 Branch: `phase-10.5-sprints`.
 
+**Seeding added 2026-08-12** (in the Phase 10 seed sweep): `packages/seed/src/modules/work.sprints.ts`
+gives every project one completed (past, with cards attached), one active (now, with cards
+assigned via a scoped `UPDATE work.cards SET sprint_id`), and one planned sprint — the
+one-active-per-project index is exercised by construction, and the close transaction's
+"done cards stay attached" half is the completed sprint's seeded shape. Card ids come from
+the `card.created` events the cards module buffers (`work.sprints` declares `work.cards` as
+an ordering-only dependency, reviewer-caught), and `--reset` nulls `cards.sprint_id` before
+the teardown loop (the `docs.pages`-cycle pattern — `cards_sprint_fk` has no cascade).
+
 **SLICE 1 (schema + events) SHIPPED 2026-08-11** — migration 0054 (`work.sprints`,
 `cards.sprint_id` with the composite project-scoped FK, the one-active partial unique
 index, RLS, `REVOKE DELETE`), the drizzle mirror, the five event definitions, and

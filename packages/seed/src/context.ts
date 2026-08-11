@@ -1,6 +1,8 @@
 import type { DomainEvent } from '@taskflow/events';
 import type { AdminConnection } from '@taskflow/db/testing';
 import type { KeyProvider, StorageProvider, TelephonyProvider } from '@taskflow/contracts';
+
+export type { KeyProvider } from '@taskflow/contracts';
 import type { SeedModule } from './registry.js';
 import type { Profile } from './profiles.js';
 import type { Rng } from './rng.js';
@@ -81,6 +83,15 @@ export interface SeedContext {
    * is rejected from. Both are lies that look like data.
    */
   readonly telephony: TelephonySeedConfig | null;
+  /**
+   * The envelope-encryption master key, or null to skip the surfaces that
+   * need one — webhook signing secrets (`platform.webhooks`). Same
+   * null-is-"skip" rule as `storage` and `telephony`: a webhook whose
+   * `signing_key_ciphertext` was invented would fail the first time the
+   * delivery loop tried to unwrap it, and `MASTER_KEY_*` is the same env
+   * pair telephony requires. Configured from the CLI, never read here.
+   */
+  readonly keys: KeyProvider | null;
   log(message: string): void;
   /**
    * The output of a module this one declared in `requires`.
@@ -231,6 +242,7 @@ export interface CreateContextOptions {
   readonly chaos: boolean;
   readonly storage: StorageProvider | null;
   readonly telephony: TelephonySeedConfig | null;
+  readonly keys: KeyProvider | null;
   readonly log: (message: string) => void;
 }
 
@@ -259,6 +271,7 @@ export function createSeedContext(options: CreateContextOptions): SeedContextHan
     chaos: options.chaos,
     storage: options.storage,
     telephony: options.telephony,
+    keys: options.keys,
     log: options.log,
 
     use: <Out>(module: SeedModule<Out>): Out => {
