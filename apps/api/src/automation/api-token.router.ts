@@ -2,7 +2,12 @@ import { z } from 'zod';
 import { PERMISSIONS } from '@taskflow/policy';
 import { route, router } from '../trpc/builder.js';
 import { subjectOf } from '../trpc/context.js';
-import { listApiTokens, mintApiToken, revokeApiToken } from './api-token.service.js';
+import {
+  heldApiTokenScopes,
+  listApiTokens,
+  mintApiToken,
+  revokeApiToken,
+} from './api-token.service.js';
 import type { AutomationActor } from './automation.service.js';
 
 /**
@@ -51,6 +56,17 @@ export function createApiTokenRouter() {
       .input(z.object({}).strict())
       .output(z.array(ApiTokenSummaryOutput).readonly())
       .query(({ ctx }) => listApiTokens(actorOf(ctx))),
+
+    /**
+     * The scope checklist's options (§6.6's "checkbox list built from the
+     * caller's live can()"). Same floor as mint, and the same `can()` call
+     * mint validates with — the form can never offer a scope the server will
+     * refuse, and a demotion shows up the next time the form loads.
+     */
+    heldScopes: route({ permission: 'apiToken:create' })
+      .input(z.object({}).strict())
+      .output(z.array(z.string()).readonly())
+      .query(({ ctx }) => heldApiTokenScopes(actorOf(ctx))),
 
     /**
      * Mint. The output schema is the "shown once" contract: the token rides

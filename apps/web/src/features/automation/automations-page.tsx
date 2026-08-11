@@ -11,14 +11,17 @@ import { formatRelative } from '../../lib/format.js';
 import { useToast } from '../../lib/toast-context.js';
 import type { Wire } from '../../lib/wire.js';
 import { Button, ConfirmButton, Empty, Field, SkeletonRows } from '../../components/primitives.js';
+import { SecretReveal } from '../../components/secret-reveal.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { FilterBuilder } from '../work/filter/filter-builder.js';
 import {
+  apiTokensQuery,
   automationRunsQuery,
   automationsQuery,
   webhookDeliveriesQuery,
   webhooksQuery,
 } from './api.js';
+import { ApiTokensSection } from './api-tokens-section.js';
 import {
   ACTION_LABELS,
   ARGUMENTS,
@@ -122,6 +125,7 @@ function draftsFrom(stored: readonly unknown[] | undefined): ActionDraft[] {
 const TABS = [
   { id: 'rules', label: 'Rules' },
   { id: 'webhooks', label: 'Webhooks' },
+  { id: 'apiTokens', label: 'API tokens' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -151,10 +155,12 @@ export function AutomationsPage() {
 
   const automations = useQuery({ ...automationsQuery(orgId), enabled: orgId !== '' });
   const webhooks = useQuery({ ...webhooksQuery(orgId), enabled: orgId !== '' });
+  const apiTokens = useQuery({ ...apiTokensQuery(orgId), enabled: orgId !== '' });
 
   const counts: Readonly<Record<TabId, number | undefined>> = {
     rules: automations.data?.length,
     webhooks: webhooks.data?.length,
+    apiTokens: apiTokens.data?.length,
   };
 
   return (
@@ -209,8 +215,10 @@ export function AutomationsPage() {
         <div className="mx-auto max-w-4xl p-4 md:p-6">
           {tab === 'rules' ? (
             <RulesPanel orgId={orgId} automations={automations} />
-          ) : (
+          ) : tab === 'webhooks' ? (
             <WebhooksSection orgId={orgId} />
+          ) : (
+            <ApiTokensSection orgId={orgId} />
           )}
         </div>
       </div>
@@ -1074,53 +1082,6 @@ function WebhookCreateForm({
         </button>
       </div>
     </form>
-  );
-}
-
-/** The one-time secret reveal, with a copy button. */
-function SecretReveal({
-  name,
-  secret,
-  onDismiss,
-}: {
-  readonly name: string;
-  readonly secret: string;
-  readonly onDismiss: () => void;
-}) {
-  const [copied, setCopied] = useState(false);
-
-  return (
-    <div className="mt-3 space-y-1.5 rounded-lg border border-warning/40 bg-warning/5 p-3">
-      <p className="text-[11px] text-ink">
-        Signing secret for “{name}” — <span className="font-medium">shown once, never again.</span>{' '}
-        Paste it into your receiver, then click done.
-      </p>
-      <div className="flex items-center gap-2">
-        <code className="min-w-0 flex-1 truncate rounded border border-line bg-surface px-2 py-1 font-mono text-[11px] text-ink">
-          {secret}
-        </code>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 px-1.5 text-[11px]"
-          onClick={() => {
-            void navigator.clipboard.writeText(secret).then(() => {
-              setCopied(true);
-            });
-          }}
-        >
-          {copied ? 'Copied' : 'Copy'}
-        </Button>
-        <button
-          type="button"
-          onClick={onDismiss}
-          aria-label="Done with the secret"
-          className="text-xs text-ink-faint hover:text-ink"
-        >
-          Done
-        </button>
-      </div>
-    </div>
   );
 }
 

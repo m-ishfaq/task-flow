@@ -7,7 +7,12 @@ import { TEST_ENV } from '../testing/fixtures.js';
 import * as orgs from '../tenancy/org.service.js';
 import * as members from '../tenancy/member.service.js';
 import { loadTuples } from '../tenancy/resolve.js';
-import { listApiTokens, mintApiToken, revokeApiToken } from './api-token.service.js';
+import {
+  heldApiTokenScopes,
+  listApiTokens,
+  mintApiToken,
+  revokeApiToken,
+} from './api-token.service.js';
 import type { AutomationActor } from './automation.service.js';
 
 /**
@@ -184,6 +189,19 @@ describe('minting — the scope subset contract', () => {
     await expect(
       mintApiToken(adminActor, { name: 'CI', scopes: ['member:manage'] }),
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+  });
+
+  it('heldApiTokenScopes offers exactly what mint accepts — the role-alone holdings', async () => {
+    const { adminActor } = await scaffold('held');
+
+    const held = heldApiTokenScopes(adminActor);
+
+    /* The route floor itself is held, so the form exists for this caller. */
+    expect(held).toContain('apiToken:create');
+    /* `member:manage` is Owner-only — the same scope the mint-refusal test
+       above refuses. The checklist must not offer what the server will
+       refuse: the two use the same `can()` call, so they cannot disagree. */
+    expect(held).not.toContain('member:manage');
   });
 
   it('dedupes repeated scopes so a token cannot claim the same capability twice', async () => {

@@ -335,6 +335,10 @@ export const keys = {
   /** Delivery history for one endpoint. */
   webhookDeliveries: (orgId: string, webhookId: string) =>
     ['org', orgId, 'automations', 'webhooks', webhookId, 'deliveries'] as const,
+  /** Every programmatic-access token in the org (Wave 3, §6). */
+  apiTokens: (orgId: string) => ['org', orgId, 'automations', 'api-tokens'] as const,
+  /** The caller's currently held permissions — the scope checklist's options. */
+  apiTokenScopes: (orgId: string) => ['org', orgId, 'automations', 'api-tokens', 'scopes'] as const,
   /** Every SMS thread. */
   messageThreads: (orgId: string) => ['org', orgId, 'telephony', 'threads'] as const,
   /** Messages in one thread. */

@@ -1,7 +1,7 @@
 import { and, desc, eq, isNull, schema, withOrgScope, outboxWriter } from '@taskflow/db';
 import { errors } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
-import { can, isPermission } from '@taskflow/policy';
+import { can, isPermission, PERMISSIONS } from '@taskflow/policy';
 import { issueToken, newId } from '@taskflow/security';
 import type { AutomationActor } from './automation.service.js';
 import { apiTokenCreated, apiTokenRevoked } from './api-token-events.js';
@@ -45,6 +45,18 @@ export interface ApiTokenSummary {
   readonly lastUsedAt: Date | null;
   readonly revokedAt: Date | null;
   readonly createdAt: Date;
+}
+
+/**
+ * The scope checklist's source (slice 5) — every permission the caller
+ * currently holds, answered by ROLE ALONE, which is exactly the set mint
+ * accepts (see mint's comment on why `can()` with no target is the right
+ * question). Computed with the SAME call mint validates with, so the create
+ * form can never offer a scope the server will refuse, and a demotion shows
+ * up the next time the form loads.
+ */
+export function heldApiTokenScopes(actor: AutomationActor): readonly string[] {
+  return PERMISSIONS.filter((permission) => can(actor.subject, permission).allowed);
 }
 
 export async function listApiTokens(actor: ApiTokenActor): Promise<readonly ApiTokenSummary[]> {

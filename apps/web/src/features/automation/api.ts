@@ -52,6 +52,30 @@ export function webhooksQuery(orgId: string) {
   });
 }
 
+/**
+ * Every programmatic-access token in the org (Wave 3, §6) — feeds the
+ * management section. `tokenPrefix` distinguishes two tokens both called
+ * "CI" without the server ever exposing a hash.
+ */
+export function apiTokensQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.apiTokens(orgId),
+    queryFn: async () => wire(await api.apiToken.list.query({})),
+  });
+}
+
+/**
+ * The scope checklist's options — the caller's held permissions, answered by
+ * the same live `can()` the mint route validates with, so the form can never
+ * offer a scope the server will refuse.
+ */
+export function heldApiTokenScopesQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.apiTokenScopes(orgId),
+    queryFn: async () => wire(await api.apiToken.heldScopes.query({})),
+  });
+}
+
 /** Recent delivery history for one endpoint — the "did it go out" read. */
 export function webhookDeliveriesQuery(orgId: string, webhookId: string) {
   return queryOptions({

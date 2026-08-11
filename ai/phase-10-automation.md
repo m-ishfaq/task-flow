@@ -460,9 +460,9 @@ Two supporting details:
 
 ## 6. Public API + scoped tokens (Wave 3)
 
-**SLICES 1–4 SHIPPED 2026-08-11** — the token store, the mint/list/revoke lifecycle, the
-full authentication path, and the durable per-token daily quota. Remaining: slice 5 (the web
-UI), slice 6 (the remaining suites, §6.6). Wave 3 is NOT yet COMPLETE.
+**SLICES 1–5 SHIPPED 2026-08-11** — the token store, the mint/list/revoke lifecycle, the
+full authentication path, the durable per-token daily quota, and the web UI. Remaining:
+slice 6 (the remaining suites, §6.6). Wave 3 is NOT yet COMPLETE.
 
 1. **Slice 1 — migration 0050** `platform.api_tokens` + the `taskflow_api_token_auth` role
    (the twelfth; column-level SELECT of `token_hash, org_id, created_by, scopes, revoked_at`,
@@ -505,6 +505,15 @@ UI), slice 6 (the remaining suites, §6.6). Wave 3 is NOT yet COMPLETE.
    rollover started `expensive_count` at 1 (the fresh-INSERT path writes 0), quietly
    shrinking the expensive allowance by one for that day — the CASE now writes
    `expensive ? 1 : 0`, the same values the INSERT does.
+6. **Slice 5 — the web UI.** A third tab on `/automations` beside Webhooks: the list
+   (name, `tf_pat_` prefix, scopes, relative last-used, revoked badge), a create form whose
+   scope checklist is built from a NEW `apiToken.heldScopes` route — the caller's holdings
+   answered by the same role-alone `can()` the mint route validates with, so the form can
+   never offer a scope the server will refuse — and the webhook's `SecretReveal` reused for
+   the one-time token reveal (extracted to `components/secret-reveal.tsx` so the two
+   surfaces share it). The checklist defaults to NOTHING selected; revoke is the same
+   two-click `ConfirmButton` discipline as webhook deletion. `SecretReveal` also gained a
+   neutral wording — it now says "secret for …" rather than webhook-specific language.
 
 **One finding from the slice-3 review that is worth stating out loud:** a suspended org's
 request originally THREW `ORG_SUSPENDED` out of `authenticateWithApiToken`, and the unit test
