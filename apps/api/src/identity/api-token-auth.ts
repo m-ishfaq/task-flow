@@ -33,9 +33,9 @@ import { bearerToken } from './authenticate.js';
  *      fails loudly instead of quietly doing nothing. The header is therefore
  *      not a WHERE filter here — it is either absent (fine: the token names
  *      its org) or equal to the token's org (fine) or a REFUSAL.   *   4. **The membership is re-resolved on every request.** `resolveOrgMembership`
-   *      reads role + tuples live — exactly the JWT path — so a demotion or a
-   *      removal takes effect on the next call, and a suspended org refuses here
-   *      too. **A token does not outlive its holder's membership.**
+ *      reads role + tuples live — exactly the JWT path — so a demotion or a
+ *      removal takes effect on the next call, and a suspended org refuses here
+ *      too. **A token does not outlive its holder's membership.**
  *   5. **The principal carries `tokenScopes`.** The builder (trpc/builder.ts)
  *      intersects this set with the route's permission and refuses token
  *      principals on self/step-up routes — see §6.4's two gate paragraphs.

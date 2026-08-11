@@ -1,11 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import {
-  createCallerFactory,
-  publicRoute,
-  route,
-  router,
-  selfRoute,
-} from '../trpc/builder.js';
+import { createCallerFactory, publicRoute, route, router, selfRoute } from '../trpc/builder.js';
 import { unsafeAsId, type OrgId, type UserId } from '@taskflow/contracts';
 import {
   API_TOKEN_DAILY_QUOTA,
@@ -154,9 +148,7 @@ describe('authenticateWithApiToken — the resolution path', () => {
 
     /* A JWT-shaped bearer is not this path's business — it belongs to
        `authenticate`, and feeding it here must not authenticate. */
-    await expect(
-      authenticateWithApiToken(`Bearer not-a-jwt`, undefined),
-    ).resolves.toBeNull();
+    await expect(authenticateWithApiToken(`Bearer not-a-jwt`, undefined)).resolves.toBeNull();
     await expect(
       authenticateWithApiToken(`Bearer ${token.replace('tf_pat_', 'tf_rt_')}`, undefined),
     ).resolves.toBeNull();
@@ -172,17 +164,13 @@ describe('authenticateWithApiToken — the resolution path', () => {
       authenticateWithApiToken(`Bearer ${revoked.token}`, undefined),
     ).resolves.toBeNull();
     /* The still-live token from the scaffold keeps working. */
-    await expect(
-      authenticateWithApiToken(`Bearer ${token}`, undefined),
-    ).resolves.not.toBeNull();
+    await expect(authenticateWithApiToken(`Bearer ${token}`, undefined)).resolves.not.toBeNull();
     expect(orgId.length).toBeGreaterThan(0);
   });
 
   it('refuses an unknown token', async () => {
     const issued = issueToken('apiToken');
-    await expect(
-      authenticateWithApiToken(`Bearer ${issued.token}`, undefined),
-    ).resolves.toBeNull();
+    await expect(authenticateWithApiToken(`Bearer ${issued.token}`, undefined)).resolves.toBeNull();
   });
 
   it('refuses a token whose holder no longer has a membership', async () => {
@@ -196,15 +184,13 @@ describe('authenticateWithApiToken — the resolution path', () => {
     /* RLS-scoped write: identity.memberships forces RLS keyed on
        app.org_id, so the delete must run under the org it targets. */
     await admin.setOrg(orgId);
-    await admin.query(
-      `DELETE FROM identity.memberships WHERE org_id = $1 AND user_id = $2`,
-      [orgId, OWNER],
-    );
+    await admin.query(`DELETE FROM identity.memberships WHERE org_id = $1 AND user_id = $2`, [
+      orgId,
+      OWNER,
+    ]);
     await admin.setOrg(null);
 
-    await expect(
-      authenticateWithApiToken(`Bearer ${token}`, undefined),
-    ).resolves.toBeNull();
+    await expect(authenticateWithApiToken(`Bearer ${token}`, undefined)).resolves.toBeNull();
   });
 
   /* NOTE on the demotion test: it lives in the BUILDER GATE section, not
@@ -230,31 +216,23 @@ describe('authenticateWithApiToken — the resolution path', () => {
     await admin.query(`UPDATE identity.orgs SET status = 'suspended' WHERE id = $1`, [orgId]);
     await admin.setOrg(null);
 
-    await expect(
-      authenticateWithApiToken(`Bearer ${token}`, undefined),
-    ).resolves.toBeNull();
+    await expect(authenticateWithApiToken(`Bearer ${token}`, undefined)).resolves.toBeNull();
   });
 
   it('accepts a header that agrees with the token org, and refuses one that does not', async () => {
     const { orgId, token } = await scaffold('header');
 
     /* Absent header: fine — the token names its org. */
-    await expect(
-      authenticateWithApiToken(`Bearer ${token}`, undefined),
-    ).resolves.not.toBeNull();
+    await expect(authenticateWithApiToken(`Bearer ${token}`, undefined)).resolves.not.toBeNull();
 
     /* Agreeing header: fine. */
-    await expect(
-      authenticateWithApiToken(`Bearer ${token}`, orgId),
-    ).resolves.not.toBeNull();
+    await expect(authenticateWithApiToken(`Bearer ${token}`, orgId)).resolves.not.toBeNull();
 
     /* Disagreeing header: REFUSED, not ignored (decision 11). A token minted
        for org A must not be steerable at org B by sending a header — and the
        refusal must be a refusal, not a silent no-op. */
     const otherOrg = unsafeAsId<'OrgId'>('0195ee30-0000-7000-8000-00000000000f');
-    await expect(
-      authenticateWithApiToken(`Bearer ${token}`, otherOrg),
-    ).resolves.toBeNull();
+    await expect(authenticateWithApiToken(`Bearer ${token}`, otherOrg)).resolves.toBeNull();
   });
 });
 
@@ -264,7 +242,9 @@ describe('authenticateWithApiToken — the resolution path', () => {
  * on the GATE rather than on some unrelated route's service.
  * ------------------------------------------------------------------------- */
 
-function tokenContext(principal: NonNullable<Awaited<ReturnType<typeof authenticateWithApiToken>>>) {
+function tokenContext(
+  principal: NonNullable<Awaited<ReturnType<typeof authenticateWithApiToken>>>,
+) {
   return testContext({ principal });
 }
 
@@ -284,7 +264,6 @@ const gateRouter = router({
 });
 
 describe('the builder gate for token principals', () => {
-
   it('lets a card:read-scoped token through a card:read route', async () => {
     const { token } = await scaffold('gate-ok');
     const principal = await authenticateWithApiToken(`Bearer ${token}`, undefined);
@@ -511,10 +490,9 @@ async function readQuota(orgId: OrgId, tokenId: string): Promise<Record<string, 
 /** The list view's "last used" — on api_tokens, not the quota row (0053). */
 async function readLastUsedAt(orgId: OrgId, tokenId: string): Promise<unknown> {
   await admin.setOrg(orgId);
-  const result = await admin.query(
-    `SELECT last_used_at FROM platform.api_tokens WHERE id = $1`,
-    [tokenId],
-  );
+  const result = await admin.query(`SELECT last_used_at FROM platform.api_tokens WHERE id = $1`, [
+    tokenId,
+  ]);
   await admin.setOrg(null);
   return result.rows[0]?.['last_used_at'] ?? null;
 }
@@ -559,9 +537,9 @@ describe('the per-token daily quota (§6.5)', () => {
     await seedQuota(orgId, exhausted.tokenId, API_TOKEN_DAILY_QUOTA, 0);
 
     const first = await principalOf(token);
-    await expect(
-      createCallerFactory(gateRouter)(tokenContext(first)).cards.read(),
-    ).resolves.toBe('read');
+    await expect(createCallerFactory(gateRouter)(tokenContext(first)).cards.read()).resolves.toBe(
+      'read',
+    );
 
     const second = await principalOf(exhausted.token);
     const error = await createCallerFactory(gateRouter)(tokenContext(second))
