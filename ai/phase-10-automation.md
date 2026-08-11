@@ -1,10 +1,13 @@
 # Phase 10 — Automation & integrations
 
-Status: **DRAFT — all nine open decisions RESOLVED 2026-08-11 in review; awaiting final
-approval to build.** Written 2026-08-11 against `pre-launch-hardening` HEAD, per
+Status: **APPROVED 2026-08-11 — WAVE 1 SHIPPED 2026-08-11.** All nine open decisions resolved
+in review before building. Written 2026-08-11 against `pre-launch-hardening` HEAD, per
 `ai/pre-launch-hardening.md` Priority 4 (each remaining priority is its own multi-week phase
 and wants its own spec written and approved before implementation). Phase 8 followed this
 route and it worked; this is the same route.
+
+**Waves 2–4 (webhooks, public API, connectors + the cost-bearing actions) are NOT started.**
+Wave 1 is the engine and nothing else, which is what the wave list below says it is.
 
 **Two recommendations were overturned in that review, and both were overturned correctly:**
 
@@ -25,7 +28,12 @@ protection and run history, outbound webhooks, a public API with scoped tokens, 
 connectors, and importers/exporters. It also builds **`apps/worker`**, which PLAN.md §6 has
 listed as "arriving" since Phase 0.
 
-### Wave 1 progress — slices 1–4 of 6 shipped 2026-08-11
+### Wave 1 — COMPLETE, all six slices, 2026-08-11
+
+Verified: `pnpm verify` **57/57 tasks**, `migrate:verify` up → down → up, the RLS checker
+across 96 migrations, and the guardrail selftest 11/11. **Not verified in a browser** — the
+standing caveat this repo keeps re-learning, and the reason the automations page shipped with
+three gaps a single click found (see the addendum below).
 
 Deliberately granular, because "the engine" is not one reviewable change:
 
@@ -50,8 +58,28 @@ Deliberately granular, because "the engine" is not one reviewable change:
    `FOR UPDATE`/`WITH CHECK (false)` policy pair, since a wrong one returns zero rows and looks
    identical to an idle queue.
 
-Still to come: routes and the rule CRUD service (slice 5), the rule builder and run-history UI
-(slice 6).
+5. **Routes and the rule CRUD service** — plus the kill switch as its OWN route, so stopping a
+   misbehaving rule does not have to pass the validation that might refuse it. `createdBy` is
+   never touched by an edit: it is whose permissions the rule acts with, so letting an update
+   move it would turn "rename this rule" into "re-point this rule at my own privileges". §9
+   decision 4 landed here too — the three `*:manage` permissions joined
+   `ORG_LEVEL_PERMISSIONS`.
+6. **The UI** — `/automations`, with the BOARD'S OWN filter builder as the condition editor.
+   Not a similar component: the same one, editing the same `FilterNode` the compiler consumes
+   and the evaluator runs. §10.2's split paying off end to end.
+
+**Addendum — the page shipped create-only, and hid what rules do.** Found by looking at it,
+not by any test:
+
+- A rule could not be EDITED. `automation.update` existed with no caller — the unreferenced-
+  route shape this repo keeps finding in older phases, introduced fresh in a new one.
+- The row said "3 actions" — a count of exactly the facts a reader opens the page for.
+- Run history showed no per-action outcome, though the engine records `action_results`
+  precisely so a partially-applied rule is diagnosable. It stops at the first failure, so
+  "action 2 failed" also means action 3 never ran, and a count hid both halves.
+
+All three fixed the same day. The lesson is the one already at the top of this file: a green
+suite is not the claim "this works when you click it."
 
 **One test was passing for the wrong reason and is worth repeating here**: a budget assertion
 read `automation_budget` with no org scope, and that table FORCEs RLS — so "no budget row" was

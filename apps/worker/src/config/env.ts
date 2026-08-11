@@ -47,7 +47,7 @@ const NonEmpty = z.string().min(1);
  * that fails if someone makes this strict again.
  *
  * The typo protection `.strict()` was reaching for is
- * `warnOnLikelyMisspellings` below, which knows which names are ours.
+ * `assertNoMisspelledVariables` below, which knows which names are ours.
  */
 export const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -142,21 +142,37 @@ export function parseEnv(source: Record<string, string | undefined>): Env {
 /** Loads and validates the real environment, or throws naming the variable. */
 export function loadEnv(): Env {
   loadDotEnvIfPresent();
-  const env = parseEnv(process.env);
-  warnOnLikelyMisspellings();
-  return env;
+  assertNoMisspelledVariables(process.env);
+  return parseEnv(process.env);
 }
 
 /**
- * A `WORKER_`/`DATABASE_` variable this schema does not know is far more likely
- * to be a typo than a deliberate extra — and a typo'd variable is silently
- * ignored, which is exactly how a setting appears to be applied and is not.
+ * Rejects a variable that looks like ours but is not one of ours.
+ *
+ * THROWS, matching `apps/api`, `apps/realtime` and `apps/collab` verbatim. The
+ * first version of this file only warned, which was an inconsistency
+ * introduced by this app rather than a considered difference — and the wrong
+ * side of it: the failure being prevented is `MASTER_KEY_BASE_64` set instead
+ * of `MASTER_KEY_BASE64`, where the real variable is therefore unset and
+ * something is running on a default it should not be. A warning scrolls past
+ * in a boot log; that is precisely the outcome this check exists to prevent.
+ *
+ * Scoped to our own prefixes rather than to everything, because "everything"
+ * includes the operating system — the schema is deliberately not `.strict()`
+ * for the same reason (see its own comment).
  */
-function warnOnLikelyMisspellings(): void {
-  for (const key of Object.keys(process.env)) {
-    if (!key.startsWith('WORKER_') && !key.startsWith('DATABASE_')) continue;
-    if (KNOWN_VARIABLES.has(key)) continue;
-    console.warn(`warning: ${key} is set but no worker setting reads it — a typo?`);
+export function assertNoMisspelledVariables(source: Record<string, string | undefined>): void {
+  const suspects = Object.keys(source).filter(
+    (key) =>
+      !KNOWN_VARIABLES.has(key) && (key.startsWith('WORKER_') || key.startsWith('DATABASE_')),
+  );
+
+  if (suspects.length > 0) {
+    throw new Error(
+      `Unrecognized TaskFlow environment variable(s): ${suspects.join(', ')}.\n` +
+        'Check the spelling against .env.example — a near-miss name means the real\n' +
+        'variable is unset and something is running on a default it should not be.',
+    );
   }
 }
 

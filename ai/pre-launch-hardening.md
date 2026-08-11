@@ -14,8 +14,10 @@ boundary tests; full write-up in `ai/security-review-priority-2.md`. Priority 3 
 underway: **Search (Phase 8) is COMPLETE as of 2026-08-11** — all three waves, spec:
 `ai/phase-8-search.md` (read its own header: Wave 3 carried a premature SHIPPED marker for a
 day, and item 1 of Priority 4 below records what was actually missing). **Automation
-(Phase 10) and Analytics (Phase 11) are the remainder of Priority 4, and both are still zero
-code.**
+(Phase 10) Wave 1 — the engine — SHIPPED 2026-08-11**, along with `apps/worker`, the process
+§6 of PLAN.md had listed as "arriving" since Phase 0. Phase 10's Waves 2–4 and Analytics
+(Phase 11) are the remainder of Priority 4, plus the new **Phase 10.5 (Sprints)** the Phase 11
+review inserted ahead of Analytics.
 
 **CI ran against this branch for the first time on 2026-08-10 and found four more real
 issues, all fixed the same day:** (1) `ip-address@5.9.4`, a transitive dependency of
@@ -495,16 +497,26 @@ Product-completeness gaps, not safety gaps — sequenced by how much a real user
    (`telephony.recordings.transcript` had shipped in Phase 7 Wave 2 with no caller). Verified
    with `migrate:verify`, full `pnpm verify` (54/54, 854 API tests) and the guardrail selftest.
 
-2. **Automation & integrations (Phase 10, ~6wk) — SPEC DRAFTED 2026-08-11, not yet approved:**
-   [ai/phase-10-automation.md](ai/phase-10-automation.md). Rules engine on the existing
-   domain-event bus (guardrail 6 already makes every mutation emit one), outbound webhooks,
-   public API + scoped tokens, Slack/GitHub connectors, importers/exporters. The spec's own
-   "checked, not assumed" pass found this phase is better provisioned than it looks: four
-   working outbox consumers to mirror, the condition evaluator shipped in Phase 3, the SSRF
-   gate, and BOTH token kinds (`tf_pat`, `tf_whs`) already minted in
-   `packages/security/tokens.ts` with no callers — the Phase 7 Wave 1 shape again. Seven open
-   decisions, of which the sharpest are where loop-protection depth lives (the envelope is
-   `.strict()` and has no causation field) and whether cost-bearing actions are in scope at all.
+2. **Automation & integrations (Phase 10, ~6wk) — WAVE 1 SHIPPED 2026-08-11.** The engine:
+   `apps/worker` (the process §6 has listed as "arriving" since Phase 0), migrations 0047–0048,
+   the rules engine with four loop-protection layers, the executor running actions through
+   `apps/api`'s own service layer as the rule owner, rule CRUD + kill switch + run history, and
+   the `/automations` page. `pnpm verify` 57/57. Waves 2–4 not started. Spec:
+   [ai/phase-10-automation.md](ai/phase-10-automation.md). Still to come in Waves 2–4: outbound
+   webhooks, public API + scoped tokens, Slack/GitHub connectors, importers/exporters, and the
+   cost-bearing telephony actions behind an off-by-default env flag plus their own spend
+   sub-budget.
+
+   The spec's "checked, not assumed" pass found the phase better provisioned than it looked —
+   four working outbox consumers to mirror, the condition evaluator shipped in Phase 3, the
+   SSRF gate, and both token kinds (`tf_pat`, `tf_whs`) already minted with no callers, the
+   Phase 7 Wave 1 shape again. What Wave 1 still had to add was the two things nothing had
+   built: a durable per-org execution budget, and a causation depth that survives the outbox.
+   The second was missing between two of its own migrations and nothing failed — 0047 put the
+   field on the envelope, nothing persisted it, and every chain would have restarted its
+   counter on the far side of the queue. Found by writing the relay, fixed by 0048, and now
+   asserted in `audit.test.ts`.
+
 3. **Analytics (Phase 11, ~4wk) — SPEC DRAFTED 2026-08-11, not yet approved:**
    [ai/phase-11-analytics.md](ai/phase-11-analytics.md). Velocity/burndown/CFD/cycle-time/
    workload dashboards and comms-spend reporting. **Not "read-only over data that already

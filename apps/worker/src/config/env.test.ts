@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { parseEnv } from './env.js';
+import { assertNoMisspelledVariables as assertKnown, parseEnv } from './env.js';
 
 /**
  * The worker's env contract (guardrail 3).
  *
  * Small on purpose — the schema is small. What is worth pinning is the part
  * that is a DECISION rather than a shape: that the automation claim role is
- * optional (a deployment without it is valid), and that `.strict()` refuses an
- * unknown variable rather than ignoring it.
+ * optional (a deployment without it is valid), and that a near-miss variable
+ * name is REFUSED rather than ignored.
  */
 
 const valid = {
@@ -42,6 +42,44 @@ describe('parseEnv', () => {
 
   it('refuses a missing DATABASE_URL, naming it', () => {
     expect(() => parseEnv({})).toThrow(/DATABASE_URL/);
+  });
+
+  it('rejects a near-miss variable name rather than ignoring it', () => {
+    /* The check that fires on `DATABASE_SERCH_URL`. It THROWS, matching the
+       other three services — a warning would scroll past in a boot log, and
+       the whole point is that a misspelled name means the REAL variable is
+       unset and something is running on a default it should not be.
+       `loadEnv` is what applies it; `parseEnv` deliberately does not, so tests
+       can feed arbitrary fixtures. */
+    expect(() => {
+      assertKnown({ ...valid, WORKER_PORTT: '3003' });
+    }).toThrow(/WORKER_PORTT/);
+    expect(() => {
+      assertKnown({ ...valid, DATABASE_SERCH_URL: 'x' });
+    }).toThrow(/DATABASE_SERCH_URL/);
+  });
+
+  it('accepts every DATABASE_ variable a real .env carries', () => {
+    /* Each of these belongs to ANOTHER service. The worker still sees them in
+       a shared `.env`, so its catalogue has to know them or a correct setup
+       fails to boot — which is exactly what happened on this app's first
+       successful start, over `DATABASE_MIGRATION_URL`. */
+    expect(() => {
+      assertKnown({
+        ...valid,
+        DATABASE_MIGRATION_URL: 'x',
+        DATABASE_AUDIT_URL: 'x',
+        DATABASE_REALTIME_URL: 'x',
+        DATABASE_COLLAB_URL: 'x',
+        DATABASE_BACKLINKS_URL: 'x',
+        DATABASE_NOTIFICATION_SWEEP_URL: 'x',
+        DATABASE_PLATFORM_ADMIN_URL: 'x',
+        DATABASE_RECORDING_INGEST_URL: 'x',
+        DATABASE_SEARCH_URL: 'x',
+        DATABASE_AUTOMATION_URL: 'x',
+        DATABASE_POOL_MAX: '10',
+      });
+    }).not.toThrow();
   });
 
   it('parses a realistic process.env-shaped object, noise and all', () => {
