@@ -235,6 +235,8 @@ services:
       MAIL_PORT: ${MAIL_PORT:?MAIL_PORT must be set}
       MAIL_SECURE: ${MAIL_SECURE:-true}
       MAIL_FROM: ${MAIL_FROM:?MAIL_FROM must be set}
+      MAIL_USER: ${MAIL_USER:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
 
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}

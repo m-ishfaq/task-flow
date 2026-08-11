@@ -53,6 +53,8 @@ export function createMailDelivery(options: MailDeliveryOptions): MailDelivery {
       port: options.env.MAIL_PORT,
       secure: options.env.MAIL_SECURE,
       from: options.env.MAIL_FROM,
+      user: options.env.MAIL_USER,
+      password: options.env.MAIL_PASSWORD,
     });
 
   const queue = new MailQueue({
