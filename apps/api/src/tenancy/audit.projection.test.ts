@@ -25,6 +25,11 @@ import '../docs/events.js';
 /* Phase 8 Wave 3 — the slice grew its own events.ts, which is exactly the
    moment the header above says to update this list. */
 import '../search/events.js';
+/* Phase 10 Wave 1, same moment. Without this line the three automation events
+   are invisible to every assertion below and the accounting test reports "all
+   accounted for" — which is precisely how the platform-admin events went
+   unchecked from Wave 1 to Wave 2. */
+import '../automation/events.js';
 
 /**
  * The audit projection's mapping table, checked against what is actually

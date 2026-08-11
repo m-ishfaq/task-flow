@@ -14,6 +14,7 @@ import type { TelephonyDeps } from './telephony/deps.js';
 import { createRtcRouter } from './rtc/router.js';
 import type { RtcDeps } from './rtc/deps.js';
 import { createSearchRouter } from './search/router.js';
+import { automationRouter } from './automation/router.js';
 import { PostgresSearchProvider } from './search/postgres-provider.js';
 
 /**
@@ -183,6 +184,21 @@ export function createAppRouter(deps: AppRouterDeps) {
      * per-resource `can()` before it is returned (§2.7).
      */
     search: createSearchRouter(new PostgresSearchProvider()),
+
+    /**
+     * Automation rules (Phase 10 Wave 1) — the surface that MANAGES rules.
+     *
+     * The engine that runs them lives in `apps/worker` and is reachable from
+     * nothing here, which is the point: a route in this process can take an
+     * authenticated request and can never execute a rule, and the worker can
+     * execute and never takes a request.
+     *
+     * `automation:manage` is org-level (§9 decision 4), so the route floor is
+     * the whole decision at this layer — safe only because the resource-aware
+     * question is asked at EXECUTION, per action, against the rule owner's
+     * live permissions.
+     */
+    automation: automationRouter,
 
     /**
      * Feature flags — the resolved snapshot for the client bootstrap

@@ -233,6 +233,22 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'page.published': { type: 'page', key: 'pageId' },
   'page.template_created': { type: 'space', key: 'spaceId' },
   'page.template_deleted': { type: 'space', key: 'spaceId' },
+
+  /* Automation (Phase 10 Wave 1). MAPPED rather than ledgered as unmapped,
+     unlike `view.*` and the saved-search events, and the difference is that
+     `automation` is a real entry in RESOURCE_TYPES — so the audit row can name
+     the rule it is about, and "show me everything that happened to this rule"
+     is a query somebody will actually run after a rule misbehaves.
+
+     These record changes to the RULES, never what the rules did. A rule's
+     executions live in `platform.automation_runs` (operational telemetry, its
+     own retention), and the ACTIONS those runs performed appear in this log
+     under their own resources, written by the service layer the executor
+     calls — so a card an automation moved is an ordinary `card.moved` entry
+     whose actor is the rule's owner. */
+  'automation.created': { type: 'automation', key: 'automationId' },
+  'automation.updated': { type: 'automation', key: 'automationId' },
+  'automation.deleted': { type: 'automation', key: 'automationId' },
 };
 
 /**

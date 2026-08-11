@@ -318,6 +318,18 @@ export const keys = {
    * typing.
    */
   savedSearches: (orgId: string) => ['org', orgId, 'saved-searches'] as const,
+
+  /** Every automation rule in the org (Phase 10 Wave 1). */
+  automations: (orgId: string) => ['org', orgId, 'automations'] as const,
+  /**
+   * Run history, either for one rule or across the org.
+   *
+   * The scope is a distinct segment rather than an optional trailing one:
+   * `[... 'runs']` and `[... 'runs', id]` are different queries with different
+   * data, and a key that collapses them hands one the other's results.
+   */
+  automationRuns: (orgId: string, automationId: string | null) =>
+    ['org', orgId, 'automations', 'runs', automationId ?? 'all'] as const,
   /** Every SMS thread. */
   messageThreads: (orgId: string) => ['org', orgId, 'telephony', 'threads'] as const,
   /** Messages in one thread. */

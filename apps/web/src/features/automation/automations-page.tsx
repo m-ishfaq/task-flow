@@ -1,0 +1,486 @@
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { FilterNode } from '@taskflow/filter';
+import { useSession } from '../../lib/session.js';
+import { api } from '../../lib/trpc.js';
+import { keys } from '../../lib/query.js';
+import { cn } from '../../lib/cn.js';
+import { formatRelative } from '../../lib/format.js';
+import { useToast } from '../../lib/toast-context.js';
+import { Button, Empty, Field, SkeletonRows } from '../../components/primitives.js';
+import { ErrorText, ErrorView } from '../../components/error-view.js';
+import { FilterBuilder } from '../work/filter/filter-builder.js';
+import { automationRunsQuery, automationsQuery } from './api.js';
+import { ACTION_LABELS, TRIGGER_OPTIONS, type ActionDraft, blankAction } from './vocabulary.js';
+
+/**
+ * Automation rules (ai/phase-10-automation.md Wave 1).
+ *
+ * ## The condition editor is the board's filter builder, unchanged
+ *
+ * Not a similar one — the same component, editing the same `FilterNode` the
+ * SQL compiler consumes and the engine's evaluator runs. That is the payoff of
+ * PLAN.md §10.2's split finally arriving: a person who has built a board filter
+ * already knows how to write an automation condition, and the TQL tab shipped
+ * in Phase 8 Wave 3 means they can type it instead if they prefer.
+ *
+ * Wave 1 conditions are evaluated against the CARD, so the builder is used with
+ * its card field set exactly as the board uses it. A condition naming a field
+ * cards do not have is refused by the server while the author is still looking
+ * at it.
+ *
+ * ## The UI never re-derives authorization
+ *
+ * There is no client-side check for `automation:manage`. The page renders, the
+ * server answers, and a member who may not manage rules gets an honest
+ * FORBIDDEN rendered in place — §8.2 is explicit that a UI reimplementing
+ * `can()` produces two models that drift, and the one users see is the one
+ * that is never tested.
+ */
+
+export function AutomationsPage() {
+  const orgId = useSession((state) => state.orgId) ?? '';
+  const [editing, setEditing] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  const automations = useQuery({ ...automationsQuery(orgId), enabled: orgId !== '' });
+
+  return (
+    <div className="mx-auto flex h-full max-w-4xl flex-col gap-4 overflow-y-auto p-4 md:p-6">
+      <header className="flex shrink-0 items-start justify-between gap-3">
+        <div>
+          <h1 className="text-sm font-semibold text-ink">Automations</h1>
+          <p className="text-xs text-ink-faint">
+            When something happens, check a condition, then act. Rules run with the permissions of
+            whoever created them.
+          </p>
+        </div>
+        {!creating && (
+          <Button
+            size="sm"
+            onClick={() => {
+              setCreating(true);
+              setEditing(null);
+            }}
+          >
+            New rule
+          </Button>
+        )}
+      </header>
+
+      {creating && (
+        <RuleEditor
+          orgId={orgId}
+          onDone={() => {
+            setCreating(false);
+          }}
+        />
+      )}
+
+      <main className="min-h-0 flex-1">
+        {automations.isPending ? (
+          <SkeletonRows rows={3} />
+        ) : automations.isError ? (
+          <ErrorView error={automations.error} title="Could not load automations" />
+        ) : automations.data.length === 0 ? (
+          <Empty
+            title="No automations yet"
+            description="A rule watches for an event — a card entering Done, a comment being added — and then does something."
+          />
+        ) : (
+          <ul className="space-y-2">
+            {automations.data.map((rule) => (
+              <li key={rule.automationId}>
+                <RuleRow
+                  orgId={orgId}
+                  rule={rule}
+                  expanded={editing === rule.automationId}
+                  onToggleExpanded={() => {
+                    setEditing(editing === rule.automationId ? null : rule.automationId);
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </main>
+    </div>
+  );
+}
+
+type RuleSummary = NonNullable<ReturnType<typeof automationsQuery>['queryFn']> extends () => Promise<
+  infer T
+>
+  ? T extends readonly (infer R)[]
+    ? R
+    : never
+  : never;
+
+function RuleRow({
+  orgId,
+  rule,
+  expanded,
+  onToggleExpanded,
+}: {
+  readonly orgId: string;
+  readonly rule: RuleSummary;
+  readonly expanded: boolean;
+  readonly onToggleExpanded: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: keys.automations(orgId) });
+
+  const setEnabled = useMutation({
+    mutationFn: (enabled: boolean) =>
+      api.automation.setEnabled.mutate({ automationId: rule.automationId, enabled }),
+    onSuccess: async () => {
+      await invalidate();
+    },
+    onError: (error: unknown) => {
+      toast.failure('The rule could not be updated', error);
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: () => api.automation.delete.mutate({ automationId: rule.automationId }),
+    onSuccess: async () => {
+      await invalidate();
+    },
+    onError: (error: unknown) => {
+      toast.failure('The rule could not be deleted', error);
+    },
+  });
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-line">
+      <div className="flex items-center gap-2.5 bg-surface-raised px-3 py-2">
+        <span
+          aria-hidden="true"
+          className={cn(
+            'size-2 shrink-0 rounded-full',
+            rule.enabled ? 'bg-success' : 'bg-ink-faint',
+          )}
+        />
+        <span className="sr-only">{rule.enabled ? 'Enabled' : 'Disabled'}</span>
+
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-ink">{rule.name}</p>
+          <p className="truncate text-[11px] text-ink-faint">
+            when <span className="font-mono">{rule.triggerEvent}</span>
+            {rule.condition !== null && ' · with a condition'} · {rule.actions.length} action
+            {rule.actions.length === 1 ? '' : 's'}
+          </p>
+        </div>
+
+        {rule.conditionBroken && (
+          <span
+            className="shrink-0 rounded bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger"
+            title="The stored condition no longer parses, so this rule is refused on every event"
+          >
+            Broken
+          </span>
+        )}
+
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-1.5 text-[11px]"
+          disabled={setEnabled.isPending}
+          onClick={() => {
+            setEnabled.mutate(!rule.enabled);
+          }}
+        >
+          {rule.enabled ? 'Disable' : 'Enable'}
+        </Button>
+
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-1.5 text-[11px]"
+          onClick={onToggleExpanded}
+        >
+          {expanded ? 'Hide runs' : 'Runs'}
+        </Button>
+
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-1.5 text-[11px] text-danger"
+          disabled={remove.isPending}
+          onClick={() => {
+            remove.mutate();
+          }}
+        >
+          Delete
+        </Button>
+      </div>
+
+      {expanded && <RunHistory orgId={orgId} automationId={rule.automationId} />}
+      {(setEnabled.isError || remove.isError) && (
+        <div className="border-t border-line px-3 py-2">
+          <ErrorText error={setEnabled.error ?? remove.error} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Run history for one rule (§3, §9 decision 8).
+ *
+ * Shows SKIPPED runs alongside successes, deliberately — "my rule did not
+ * fire" is the question this screen exists to answer, and a list of successes
+ * cannot tell "the engine never saw the event" apart from "it saw it and the
+ * condition said no". The reason column is where that answer lives.
+ */
+function RunHistory({ orgId, automationId }: { readonly orgId: string; readonly automationId: string }) {
+  const runs = useQuery({ ...automationRunsQuery(orgId, automationId), enabled: orgId !== '' });
+
+  if (runs.isPending) return <SkeletonRows rows={2} />;
+  if (runs.isError) return <ErrorText error={runs.error} />;
+  if (runs.data.length === 0) {
+    return (
+      <p className="border-t border-line px-3 py-2 text-[11px] text-ink-faint">
+        This rule has not run yet. A run is recorded every time its trigger fires — including when
+        the condition does not match.
+      </p>
+    );
+  }
+
+  return (
+    <ul className="border-t border-line">
+      {runs.data.map((run) => (
+        <li key={run.runId} className="flex items-center gap-2 px-3 py-1.5 text-[11px]">
+          <span className={cn('w-16 shrink-0 font-medium', STATUS_COLOR[run.status] ?? 'text-ink')}>
+            {run.status}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-ink-muted">
+            {run.reason ?? `${run.actionResults.length} action(s)`}
+            {run.depth > 0 && ` · depth ${String(run.depth)}`}
+          </span>
+          <span className="shrink-0 text-ink-faint">{formatRelative(run.createdAt)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+const STATUS_COLOR: Readonly<Record<string, string>> = {
+  succeeded: 'text-success',
+  failed: 'text-danger',
+  refused: 'text-warning',
+  skipped: 'text-ink-faint',
+};
+
+/**
+ * The rule builder.
+ *
+ * Trigger from a closed list, condition from the board's own filter builder,
+ * actions from a closed list. There is no free-text field anywhere that becomes
+ * behaviour — which is the UI half of §8's "a rule is data, never a script".
+ */
+function RuleEditor({ orgId, onDone }: { readonly orgId: string; readonly onDone: () => void }) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState('');
+  const [triggerEvent, setTriggerEvent] = useState(TRIGGER_OPTIONS[0]?.event ?? '');
+  const [condition, setCondition] = useState<FilterNode | null>(null);
+  const [actions, setActions] = useState<ActionDraft[]>([blankAction()]);
+
+  const create = useMutation({
+    mutationFn: () =>
+      api.automation.create.mutate({
+        name: name.trim(),
+        description: null,
+        triggerEvent,
+        condition,
+        actions: actions.map((action) => action.value) as never,
+        enabled: true,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: keys.automations(orgId) });
+      onDone();
+    },
+  });
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        create.mutate();
+      }}
+      className="shrink-0 space-y-3 rounded-lg border border-line bg-surface-raised p-3"
+    >
+      <Field label="Name">
+        <input
+          value={name}
+          onChange={(event) => {
+            setName(event.target.value);
+          }}
+          maxLength={120}
+          placeholder="Notify the team when something ships"
+          className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+        />
+      </Field>
+
+      <Field label="When">
+        <select
+          value={triggerEvent}
+          onChange={(event) => {
+            setTriggerEvent(event.target.value);
+          }}
+          className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+        >
+          {TRIGGER_OPTIONS.map((option) => (
+            <option key={option.event} value={option.event}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <Field label="If (optional)">
+        {/* The board's builder, unchanged — same component, same AST, same
+            validator. `projectId` is null because a rule is org-wide and not
+            scoped to one project's vocabulary. */}
+        <div className="flex items-center gap-2">
+          <FilterBuilder orgId={orgId} projectId={null} value={condition} onChange={setCondition} />
+          {condition === null && (
+            <span className="text-[11px] text-ink-faint">Runs every time the trigger fires.</span>
+          )}
+        </div>
+      </Field>
+
+      <Field label="Then">
+        <div className="space-y-2">
+          {actions.map((action, index) => (
+            <ActionRow
+              key={action.key}
+              action={action}
+              onChange={(next) => {
+                setActions(actions.map((item, i) => (i === index ? next : item)));
+              }}
+              onRemove={
+                actions.length > 1
+                  ? () => {
+                      setActions(actions.filter((_, i) => i !== index));
+                    }
+                  : undefined
+              }
+            />
+          ))}
+          {actions.length < 10 && (
+            <button
+              type="button"
+              onClick={() => {
+                setActions([...actions, blankAction()]);
+              }}
+              className="rounded border border-dashed border-line px-2 py-0.5 text-xs text-ink-faint hover:border-accent hover:text-accent"
+            >
+              + Add action
+            </button>
+          )}
+        </div>
+      </Field>
+
+      {create.isError && <ErrorText error={create.error} />}
+
+      <div className="flex items-center gap-2 border-t border-line pt-3">
+        <Button type="submit" size="sm" disabled={name.trim() === '' || create.isPending}>
+          {create.isPending ? 'Saving…' : 'Create rule'}
+        </Button>
+        <button
+          type="button"
+          onClick={onDone}
+          className="text-xs text-ink-faint hover:text-ink"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function ActionRow({
+  action,
+  onChange,
+  onRemove,
+}: {
+  readonly action: ActionDraft;
+  readonly onChange: (next: ActionDraft) => void;
+  readonly onRemove?: () => void;
+}) {
+  const label = ACTION_LABELS[action.value.type];
+
+  return (
+    <div className="flex items-center gap-2">
+      <select
+        value={action.value.type}
+        onChange={(event) => {
+          onChange(blankAction(event.target.value, action.key));
+        }}
+        aria-label="Action"
+        className="rounded border border-line bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent"
+      >
+        {Object.entries(ACTION_LABELS).map(([type, text]) => (
+          <option key={type} value={type}>
+            {text}
+          </option>
+        ))}
+      </select>
+
+      <input
+        value={argumentOf(action)}
+        onChange={(event) => {
+          onChange(withArgument(action, event.target.value));
+        }}
+        aria-label={`${label} value`}
+        placeholder={PLACEHOLDER[action.value.type]}
+        className="min-w-0 flex-1 rounded border border-line bg-surface px-2 py-1 font-mono text-xs text-ink outline-none focus:border-accent"
+      />
+
+      {onRemove !== undefined && (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label="Remove action"
+          className="text-xs text-ink-faint hover:text-danger"
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
+const PLACEHOLDER: Readonly<Record<string, string>> = {
+  'card.move': 'list id',
+  'card.set_status': 'status id',
+  'card.set_priority': 'urgent | high | normal | low',
+  'card.assign': 'user id',
+  'card.add_label': 'label id',
+  'chat.post_message': 'channel id',
+};
+
+/** The single editable argument of an action draft. */
+function argumentOf(action: ActionDraft): string {
+  const value = action.value as Record<string, string>;
+  const key = ARGUMENT_KEY[action.value.type];
+  return key === undefined ? '' : (value[key] ?? '');
+}
+
+function withArgument(action: ActionDraft, next: string): ActionDraft {
+  const key = ARGUMENT_KEY[action.value.type];
+  if (key === undefined) return action;
+  return { key: action.key, value: { ...action.value, [key]: next } as ActionDraft['value'] };
+}
+
+const ARGUMENT_KEY: Readonly<Record<string, string>> = {
+  'card.move': 'listId',
+  'card.set_status': 'statusId',
+  'card.set_priority': 'priority',
+  'card.assign': 'userId',
+  'card.add_label': 'labelId',
+  'chat.post_message': 'channelId',
+};

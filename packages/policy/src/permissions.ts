@@ -201,6 +201,21 @@ const ORG_LEVEL_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
   'audit:read',
   'apiToken:create',
   'apiToken:revoke',
+  /* Phase 10 §9 decision 4. All three were absent purely because nothing had
+     ever used them — an omission rather than a decision — and Phase 10 is the
+     first caller, so the question had to be answered before a route existed.
+     A rule, a webhook endpoint and an integration are org furniture: there is
+     no resource for a relationship tuple to point at, so a tuple must not be
+     able to satisfy the route floor.
+
+     For automations specifically this matters twice over, because the floor is
+     genuinely the whole decision at this layer: `automation.service.ts` asks no
+     second per-resource question, since the resource-aware check happens later
+     and elsewhere — at EXECUTION, against the rule owner's live permissions,
+     in the worker. */
+  'automation:manage',
+  'webhook:manage',
+  'integration:manage',
 ]);
 
 /** True when `permission` has no per-resource concept — see `ORG_LEVEL_PERMISSIONS`. */
