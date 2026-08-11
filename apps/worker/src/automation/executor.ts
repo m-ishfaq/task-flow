@@ -231,10 +231,10 @@ async function runAction(
 
       if (!existing.includes(removal)) return;
 
-      await labels.setCardLabels(
-        actor,
-        { cardId, labelIds: existing.filter((id) => id !== removal) },
-      );
+      await labels.setCardLabels(actor, {
+        cardId,
+        labelIds: existing.filter((id) => id !== removal),
+      });
       return;
     }
 
@@ -250,10 +250,10 @@ async function runAction(
 
       if (!existing.includes(removal)) return;
 
-      await cards.assignCard(
-        actor,
-        { cardId, assigneeIds: existing.filter((id) => id !== removal) },
-      );
+      await cards.assignCard(actor, {
+        cardId,
+        assigneeIds: existing.filter((id) => id !== removal),
+      });
       return;
     }
 
