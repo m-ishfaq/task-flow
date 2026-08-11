@@ -790,6 +790,85 @@ export function hasSearchDatabase(): boolean {
   return searchDb !== undefined;
 }
 
+/* -------------------------------------------------------------------------- *
+ * The automation-claim connection (ai/phase-10-automation.md §4, Phase 10
+ * Wave 1, migration 0047)
+ * -------------------------------------------------------------------------- */
+
+let automationPool: pg.Pool | undefined;
+let automationDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the automation engine's claim pool, as `taskflow_automation`.
+ *
+ * A TENTH role, and the one where the claim-only separation carries the most
+ * weight. Every consumer role before it separates "find the work" from "do the
+ * work" for tidiness; here the work on the other side of the line is arbitrary
+ * mutation of tenant data, performed through `apps/api`'s own service layer.
+ *
+ * So migration 0047 gives this role the 0016 recipe — SELECT on the outbox plus
+ * the UPDATE-with-`WITH CHECK (false)` policy that `FOR UPDATE` locking selects
+ * require — and nothing whatsoever on `platform.automations`,
+ * `automation_runs` or `automation_budget`. The role that decides WHICH events
+ * might fire a rule cannot read a single rule, record a single run, or perform
+ * a single action. All of that happens afterward, per event, over the ordinary
+ * `withOrgScope` connection as `taskflow_app`, under RLS and `can()`.
+ */
+export function initializeAutomationDatabase(config: DbConfig): void {
+  if (automationPool) {
+    throw new Error('Automation database already initialized. This is a boot-time call.');
+  }
+
+  automationPool = new Pool({
+    connectionString: config.url,
+    // Small, matching every other consumer role: one relay drains one queue.
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-automation',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  automationDb = drizzle(automationPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_automation` — the role that may claim outbox events
+ * under consumer name 'automation' across every org, and nothing else.
+ *
+ * NOT tenant-scoped, for the identical reason every consumer scope in this file
+ * is not: one tick claims across every tenant, so no single value of
+ * `app.org_id` is correct for it. What contains it is the role —
+ * `NOBYPASSRLS`, reaching across orgs only on the two tables carrying an
+ * explicit `TO taskflow_automation` policy.
+ *
+ * Throws rather than falling back to the application role. The fallback would
+ * be worse here than anywhere else it has been refused: `taskflow_app` cannot
+ * claim across orgs, so the engine would drain nothing while looking healthy —
+ * Phase 4's silent-zero-rows bug — and it CAN write every tenant table it is
+ * scoped to, so a fallback would also hand the claim step privileges the design
+ * spends a whole role denying it.
+ */
+export async function withAutomationScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!automationDb) {
+    throw new Error(
+      'Automation database not initialized. Call initializeAutomationDatabase() during boot — ' +
+        'the engine must not fall back to the application role, which cannot claim outbox ' +
+        'events across every org and would silently run nothing.',
+    );
+  }
+
+  return automationDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the automation pool has been initialized. */
+export function hasAutomationDatabase(): boolean {
+  return automationDb !== undefined;
+}
+
 /** Closes every pool. Shutdown only. */
 export async function closeDatabase(): Promise<void> {
   await pool?.end();
@@ -831,6 +910,10 @@ export async function closeDatabase(): Promise<void> {
   await searchPool?.end();
   searchPool = undefined;
   searchDb = undefined;
+
+  await automationPool?.end();
+  automationPool = undefined;
+  automationDb = undefined;
 }
 
 /** True when the pool is live and answering. Backs `/health/ready` (§14). */

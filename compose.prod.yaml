@@ -373,6 +373,7 @@ services:
     environment:
       <<: *app-env
       DATABASE_URL: postgresql://taskflow_app:${TASKFLOW_APP_PASSWORD:?TASKFLOW_APP_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_AUTOMATION_URL: postgresql://taskflow_automation:${TASKFLOW_AUTOMATION_PASSWORD:?TASKFLOW_AUTOMATION_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
       WORKER_PORT: 3003
     depends_on:

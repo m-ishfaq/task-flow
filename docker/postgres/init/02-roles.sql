@@ -166,6 +166,27 @@ CREATE ROLE taskflow_recording_ingest WITH LOGIN PASSWORD 'recording-dev-secret'
 CREATE ROLE taskflow_search WITH LOGIN PASSWORD 'search-dev-secret' NOSUPERUSER NOCREATEDB
   NOCREATEROLE NOBYPASSRLS;
 
+-- ---------------------------------------------------------------------------
+-- taskflow_automation — the automation engine's outbox CLAIM role (Phase 10
+-- Wave 1, ai/phase-10-automation.md §4, migration 0047's own header).
+--
+-- The same claim-only separation as taskflow_search and taskflow_backlinks,
+-- and here it carries more weight than either. This role decides WHICH events
+-- a rule might fire on; it must not be able to perform the resulting actions.
+-- Those run afterward, per event, over the ordinary taskflow_app connection
+-- inside withOrgScope, through apps/api's own service layer — so an automation
+-- writes a card by exactly the path a human does, with the same RLS, the same
+-- can() checks and the same audit trail.
+--
+-- It therefore holds NOTHING on platform.automations or automation_runs
+-- either: reading the rules and recording the outcome are both org-scoped work
+-- the app role does. What this role can reach is the queue and its own
+-- dispatch bookkeeping, scoped to consumer = 'automation', and nothing else in
+-- the database.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_automation WITH LOGIN PASSWORD 'automation-dev-secret' NOSUPERUSER
+  NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+
 -- Baseline grants live in 03-grants.sql, NOT here.
 --
 -- Roles are cluster-wide; grants are per-database. This file creates the roles

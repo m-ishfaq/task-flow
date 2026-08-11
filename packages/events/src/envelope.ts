@@ -31,6 +31,32 @@ export interface DomainEvent<Name extends string = string, Payload = unknown> {
   readonly occurredAt: string;
   /** Ties the event to the HTTP request that produced it (§14). */
   readonly requestId?: RequestId;
+  /**
+   * How many automation hops produced this event — loop protection's counter
+   * (ai/phase-10-automation.md §4, §9 decision 2).
+   *
+   * ## Why it rides on the envelope rather than in a side table
+   *
+   * Because actions execute through the ordinary service layer, EVERY action
+   * emits an event, and every event is a potential trigger. A rule whose action
+   * fires its own trigger is an infinite loop, and "when a card is updated, set
+   * a field" is a plausible thing for a person to build. The counter is what
+   * stops the two-rule mutual cycle that no single-rule check can see.
+   *
+   * It is a property of the EVENT, so every consumer can see it for free. The
+   * alternatives — a `platform.event_causation` table, or a lookup from the
+   * triggering event id — both put a join on the hot path of the one loop that
+   * must never be slow.
+   *
+   * ## Optional, and absent means zero
+   *
+   * A human action does not set it, and every event written before this field
+   * existed does not carry it. Both read as depth 0, which is correct: they are
+   * the ROOT of any chain they start. That is what makes this additive — the
+   * schema below is `.strict()`, so an optional field is safe to add and a
+   * required one would have rejected every row already in `platform.outbox`.
+   */
+  readonly causationDepth?: number;
   readonly payload: Payload;
 }
 
@@ -49,6 +75,13 @@ export const EventEnvelopeSchema = z
     actorId: UuidSchema.nullable(),
     occurredAt: z.string().datetime(),
     requestId: z.string().optional(),
+    /* Optional, so every event already sitting in `platform.outbox` still
+       validates — a required field here would have made this migration a
+       rewrite of the queue rather than an addition to it. Bounded because an
+       envelope read back off the wire is untrusted input like any other, and a
+       depth of 2^31 would be a refusal the engine computes rather than one the
+       parser catches. */
+    causationDepth: z.number().int().min(0).max(100).optional(),
     payload: z.unknown(),
   })
   .strict();
@@ -59,6 +92,13 @@ export interface EventContext {
   readonly requestId?: RequestId;
   /** Injectable for deterministic tests. Defaults to now. */
   readonly occurredAt?: Date;
+  /**
+   * Set ONLY by the automation engine, to its triggering event's depth plus
+   * one. Every human-initiated mutation omits it, which is what makes a user's
+   * action the root of a chain rather than a continuation of one. See
+   * `DomainEvent.causationDepth`.
+   */
+  readonly causationDepth?: number;
 }
 
 /**
@@ -91,6 +131,12 @@ export function createEvent<Name extends string, Schema extends z.ZodTypeAny>(
     actorId: context.actorId,
     occurredAt: (context.occurredAt ?? new Date()).toISOString(),
     ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
+    /* Omitted rather than defaulted to 0, so an event carries the field only
+       when something deliberately set it. `exactOptionalPropertyTypes` makes
+       the difference between "absent" and "present and undefined" real, and a
+       reader can tell an automation-produced event from a human one by the
+       field's presence alone. */
+    ...(context.causationDepth === undefined ? {} : { causationDepth: context.causationDepth }),
     payload: parsed,
   };
 }

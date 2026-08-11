@@ -419,3 +419,128 @@ export const pushSubscriptions = platform.table(
   },
   (table) => [uniqueIndex('push_subscriptions_user_endpoint_key').on(table.userId, table.endpoint)],
 );
+
+/**
+ * Automation rules (migration 0047, ai/phase-10-automation.md Wave 1).
+ *
+ * `triggerEvent` is a domain event NAME validated against the live registry at
+ * the route, never by a CHECK — a constraint here would be a second copy of the
+ * event catalog, and its drift produces a rule that saves cleanly and never
+ * fires.
+ *
+ * `condition` is a `FilterNode` tree stored UNRESOLVED, exactly as
+ * `work.views.filter` and `search.searches.query` are, and re-validated on
+ * read. `@me` is refused at WRITE time rather than stored: a rule has no
+ * viewer, so the symbol would either throw at execution or silently resolve to
+ * whoever saved it.
+ *
+ * `createdBy` is whose permissions the actions run with — re-resolved at
+ * EXECUTION, never trusted from save time (§2). Its `ON DELETE CASCADE` is a
+ * control rather than housekeeping: a rule outliving its owner is a credential
+ * that never expires.
+ */
+export const automations = platform.table(
+  'automations',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+
+    name: text('name').notNull(),
+    description: text('description'),
+
+    /** A registered domain event name, e.g. `card.status_changed`. */
+    triggerEvent: text('trigger_event').notNull(),
+    /** A `FilterNode`, or null for "fire on every occurrence". */
+    condition: jsonb('condition'),
+    /** An array of typed action objects — never a script. 1..10, by CHECK. */
+    actions: jsonb('actions').notNull(),
+
+    /** The per-rule half of the kill switch; the org-wide half is `identity.orgs.status`. */
+    enabled: boolean('enabled').notNull().default(true),
+
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('automations_trigger_idx').on(table.orgId, table.triggerEvent, table.enabled),
+    uniqueIndex('automations_org_name_key').on(table.orgId, table.name),
+    // Mirrors the migration's `automations_org_id_key` — what the runs table's
+    // composite FK references. The migration is the source; this declaration is
+    // what lets Drizzle express the relationship at all.
+    uniqueIndex('automations_org_id_key').on(table.orgId, table.id),
+  ],
+);
+
+/**
+ * What happened on every rule execution (migration 0047, §3).
+ *
+ * A row is written even when the condition did NOT match (`skipped`), because
+ * "my rule did not fire" is the question this table exists to answer and a
+ * history of successes cannot answer it.
+ *
+ * `eventId` is deliberately NOT a foreign key into `platform.outbox`: Phase 11
+ * prunes that table on a retention window, and an FK would either block the
+ * prune or cascade away run history it has no business deleting.
+ */
+export const automationRuns = platform.table(
+  'automation_runs',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+
+    automationId: uuid('automation_id').notNull(),
+
+    /** The triggering event. Not an FK — see the header. */
+    eventId: uuid('event_id').notNull(),
+    triggerEvent: text('trigger_event').notNull(),
+
+    /** 'succeeded' | 'failed' | 'refused' | 'skipped' — a CHECK in the migration. */
+    status: text('status').notNull(),
+    /** Why a run did not proceed, e.g. 'condition_not_met', 'depth_exceeded'. */
+    reason: text('reason'),
+
+    /** Per-action outcomes in order: `[{ index, type, status, error? }]`. */
+    actionResults: jsonb('action_results').notNull().default([]),
+
+    /** Loop-protection depth at this run — so "why did my chain stop" has an answer. */
+    depth: integer('depth').notNull().default(0),
+
+    durationMs: integer('duration_ms'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('automation_runs_recent_idx').on(table.orgId, table.createdAt),
+    index('automation_runs_rule_idx').on(table.orgId, table.automationId, table.createdAt),
+  ],
+);
+
+/**
+ * The durable per-org hourly execution budget (migration 0047, §4 layer 3).
+ *
+ * In Postgres rather than in process, because an in-process counter forgives
+ * everyone on restart — which is the state an attacker restarts you to reach.
+ * The same argument Phase 13's TURN issuance budget makes.
+ *
+ * A fixed hour bucket rather than a rolling window, because a bucket is a
+ * single upsert under concurrency where a rolling window needs a
+ * count-then-write that two workers both pass.
+ */
+export const automationBudget = platform.table(
+  'automation_budget',
+  {
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    windowHour: timestamp('window_hour', { withTimezone: true }).notNull(),
+    executions: integer('executions').notNull().default(0),
+  },
+  (table) => [primaryKey({ columns: [table.orgId, table.windowHour] })],
+);
