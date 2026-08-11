@@ -517,7 +517,67 @@ Product-completeness gaps, not safety gaps — sequenced by how much a real user
    historical data is replaying `card.status_changed` out of `platform.outbox`, which has never
    been pruned. Phase 10 correctly proposes pruning it. Either Phase 11's backfill runs first,
    or the pruner excludes those events until it has — otherwise the history is destroyed with
-   nothing failing to say so.
+   nothing failing to say so. **Resolved: Phase 10 does not prune; Phase 11 does, after its
+   backfill.**
+
+   **Both specs were reviewed 2026-08-11 and every open decision is resolved. Three answers
+   changed the plan:**
+
+   - **`apps/worker` gets built** (Phase 10 Wave 1), which PLAN.md §6 has listed as "arriving"
+     since Phase 0. The draft argued for another `setInterval` in `apps/api` and was wrong on
+     two counts: nothing requires the seven existing loops to move for new work to run
+     elsewhere, and this engine is heavier than they are — rule evaluation per event, actions
+     through the full service layer, outbound HTTP with retries, all on the thread that serves
+     requests.
+   - **Cost-bearing automation actions are in scope**, behind an off-by-default env capability
+     flag AND their own spend sub-budget, so a runaway rule cannot eat the allowance a human
+     needs for a real call. The org spend cap itself stays where it is — per-org, in
+     `comms.spend_policy`, because an env var is one value for a whole deployment and needs a
+     redeploy to change at the moment you least want one.
+   - **A new Phase 10.5 (Sprints), sequenced before Phase 11.** The single biggest roadmap
+     change from the review: burndown is per-sprint, this system has no sprint concept at all,
+     and a work tracker without them is not competitive. 2–3 weeks, its own spec, not yet
+     written.
+
+## Addendum — operator accounts should not also be tenant accounts (found 2026-08-11)
+
+Surfaced while reviewing the Phase 10/11 specs, and worth recording because the answer is
+mostly "this already works, nobody wrote it down."
+
+**Three of the four properties a separate system administrator needs already exist**, and the
+concern that the platform operator is "an org admin role given to a sysadmin" is not how it is
+built:
+
+- `platform.operators` is its own table keyed on `user_id`, granted by migration or script and
+  **never by any route** (Phase 12 §7 decision 7). It is not a role on any org.
+- `platformRoute` resolves **no org context at all** — `permission: null`, no
+  `x-taskflow-org`, and `stepUp: true` baked into every call, so a stolen session cannot use it
+  quietly hours later.
+- `platform.operator_audit_log` is a GLOBAL hash-chained log recording every operator call
+  **including reads**, and it lives outside every org's own chain, so tenants cannot see it.
+  Actions that affect a specific org additionally write that org's chain, so an Owner learns
+  "an operator suspended us" without gaining operator visibility.
+
+**The fourth is a real gap: it is the same login.** One human signs in once and is both a
+member of their org and a platform operator. Phish that account and the attacker has the
+console.
+
+**The fix needs almost no code, because the separation already works — it is a policy nobody
+has written down.** `platformRoute` requires no membership, and `/platform-admin` is gated on
+`requireSession`, not `requireOrg`. So an `ops@…` account that belongs to NO organization can
+reach the console and nothing else: every org-scoped route needs a membership it does not have.
+
+What is worth building is the enforcement, so the separation is a fact rather than a habit:
+
+- **Refuse to grant the operator flag to a user who holds any org membership, and refuse to add
+  an operator account to an org.** Mutual exclusivity in the database, not in a runbook.
+- ⚠ **Verify first that a zero-org account actually reaches `/platform-admin`.** The route
+  looks correctly exempt, but this codebase has already been bitten once by an empty-org-list
+  state hiding the very page the user needed (CLAUDE.md's note on `OrgSwitcher` returning null
+  and hiding the only route to `/orgs`). Click it before promising it.
+
+Small, and it belongs to the platform console rather than to Phase 10 — recorded here because
+this file is where cross-cutting findings live.
 
 ## Addendum — seed data coverage for the shipped surfaces
 

@@ -1,10 +1,25 @@
 # Phase 11 — Analytics
 
-Status: **DRAFT — not yet approved.** Written 2026-08-11 against `pre-launch-hardening` HEAD,
-alongside [ai/phase-10-automation.md](ai/phase-10-automation.md), per
-`ai/pre-launch-hardening.md` Priority 4. **These two specs interact in one specific way —
-see §2.4 — and approving Phase 10 decision 7 without reading it would quietly close the only
-window this phase has to reconstruct its own history.**
+Status: **DRAFT — all seven open decisions RESOLVED 2026-08-11 in review; awaiting final
+approval to build.** Written 2026-08-11 against `pre-launch-hardening` HEAD, alongside
+[ai/phase-10-automation.md](ai/phase-10-automation.md), per `ai/pre-launch-hardening.md`
+Priority 4.
+
+**The review overturned this spec's recommendation on burndown, and the correction is the
+biggest single change to the roadmap that came out of it.** The draft proposed avoiding
+sprints — burndown over an arbitrary date range — on the grounds that iterations are a Work
+feature wearing an analytics hat. That reasoning is right and the conclusion drawn from it was
+wrong: sprints are not an analytics convenience, they are **table stakes for a work tracker**.
+Jira, ClickUp and Linear all have them because teams genuinely plan in them, and a burndown
+chart that is not per-sprint is a chart no team recognizes.
+
+So sprints get built properly, as their own Work phase with its own spec —
+**Phase 10.5, sequenced BEFORE this one** — and this phase's burndown reads them. Building
+burndown twice to save three weeks is not a saving. See §7 decision 1.
+
+**These two specs also interact in one specific way — see §2.4 — and approving Phase 10
+decision 7 without reading it would quietly close the only window this phase has to
+reconstruct its own history.**
 
 Scope is PLAN.md §13's Phase 11 row and §7.3: velocity, burndown, CFD, cycle time, workload,
 chat/call volume, comms spend.
@@ -155,11 +170,18 @@ period they occur in, never from the period that counted them** — a card reope
 does not retroactively change February's number, because a chart that changes after you have
 reported it is worse than one that is slightly wrong.
 
-### 3.2 Burndown — the one that needs a decision before it needs code
+### 3.2 Burndown — per sprint, which means Phase 10.5 ships first
 
-Burndown is conventionally "remaining work in a SPRINT over the sprint's days", and **there is
-no sprint concept in this codebase**. Three options in §7 decision 1. Whatever is chosen, the
-computation is the same shape: remaining not-done count over a date range for a scope.
+Remaining not-done work in a SPRINT, over the sprint's days, against the ideal line.
+
+**This phase does not invent the sprint.** Phase 10.5 (Work — Sprints) builds it: the sprint
+record, its lifecycle, card membership, and what happens to unfinished work when one closes.
+This phase reads `sprint_id` and the sprint's start/end dates and computes the curve — which
+is a small amount of code once the concept exists, and an unrecognizable chart before it does
+(§7 decision 1).
+
+A date-range mode is still worth having for boards that do not run sprints, and falls out of
+the same computation with a different window. It is the secondary mode, not the definition.
 
 ### 3.3 Cumulative flow (CFD)
 
@@ -252,31 +274,68 @@ Three properties fixed now:
 
 ---
 
-## 7. Open decisions for approval
+## 7. Decisions — RESOLVED 2026-08-11
 
-1. **Burndown's scope, given no sprint concept.** (a) Introduce iterations as a real Work
-   concept (schema + UI + a way to assign cards); (b) burndown over an arbitrary date range for
-   a board, chosen in the UI; (c) burndown against `due_date` windows, using the dates already
-   on cards. _Recommendation: (b) for this phase._ (a) is a Work feature wearing an analytics
-   hat and belongs in a Work phase with its own spec; (c) sounds free and quietly redefines the
-   metric into something no team recognizes.
-2. **Rollup granularity.** Daily buckets only, or daily plus hourly for volume? _Recommendation:
-   daily only._ Nothing in §3 asks a sub-day question, and hourly multiplies every rollup's row
-   count by 24 for a dashboard nobody requested.
-3. **Weighted velocity.** Count cards, or add a story-point/estimate field and sum it?
-   _Recommendation: count cards._ An estimate field is a Work schema change and a product
-   decision about methodology; counting cards is honest about what the system actually knows.
-4. **`analytics:read` tier.** Admin+Owner only (recommended, §5), or Member with per-board
-   scoping? The second is defensible and roughly triples the phase.
-5. **Where the refresh loop lives** — an eighth `setInterval` in `apps/api`, or the first
-   tenant of `apps/worker`. Same decision as Phase 10 decision 1 and should be answered
-   consistently with it.
-6. **Retention of `analytics.card_transitions`.** Keep forever (it is small — one row per
-   status change), or prune with the rollups retained? _Recommendation: keep forever_, and
-   revisit if it ever approaches the size of the tables it summarizes.
-7. **Does this phase prune `platform.outbox`?** It is the phase that most benefits from the
-   outbox's accidental retention and the one best placed to replace it with a deliberate
-   store. See §2.4 — whoever answers Phase 10 decision 7 answers this one too.
+1. **Burndown's scope — RESOLVED: sprints get built, as Phase 10.5, BEFORE this phase.
+   Overturns the draft.**
+
+   The draft offered three options and recommended the cheap one: burndown over an arbitrary
+   date range, on the reasoning that introducing iterations is "a Work feature wearing an
+   analytics hat and belongs in a Work phase with its own spec." The premise was right; the
+   conclusion was not. **A work tracker without sprints is not competitive** — Jira, ClickUp
+   and Linear all have them because teams genuinely plan in them — and a burndown that is not
+   per-sprint is a chart nobody recognizes.
+
+   The resolution keeps the premise and reverses the conclusion: sprints ARE a Work feature and
+   they DO belong in their own phase, so they get one — **Phase 10.5 — Sprints**, sequenced
+   ahead of this phase. Scope named there, not here: the sprint record and its lifecycle
+   (planned → active → completed), card membership and a backlog, the decision about what
+   happens to unfinished cards when a sprint closes, the UI, events, permissions, tests.
+   Roughly the size of Phase 8.
+
+   The alternative — ship date-range burndown now and add sprint mode later — saves about
+   three weeks and costs building the metric twice. Not a saving.
+
+2. **Rollup granularity — RESOLVED: daily only.** Taken on the draft's recommendation.
+   Nothing in §3 asks a sub-day question, and hourly multiplies every rollup's row count by 24
+   for a dashboard nobody requested.
+
+3. **Weighted velocity — RESOLVED: count cards.** Taken on the draft's recommendation. An
+   estimate field is a Work schema change and a position on how teams should estimate; that is
+   a product decision, and if it is ever wanted it belongs in Phase 10.5 beside the sprint,
+   not here. Counting cards is honest about what the system actually knows.
+
+4. **`analytics:read` tier — RESOLVED: Admin and Owner of the org, and the platform operator
+   sees NONE of it.** Confirmed and sharpened in review.
+
+   Admin+Owner keeps the permission honest rather than approximate: they can already read
+   every board, so an aggregate across boards leaks nothing they could not already assemble.
+   Member-level analytics would require scoping every aggregate to the boards each caller can
+   read — correct, and roughly triples the phase. Named as the upgrade path, not built.
+
+   The sharpening is the operator half, and it is the review's own point: **a platform
+   operator has no business seeing a tenant's day-to-day work.** Velocity, cycle time and who
+   is behind on what are the tenant's private business, and every additional thing an operator
+   can see is something a compromised operator account can take. What the operator needs is
+   operational — org count, suspensions, storage, spend, queue health, error rates — which is
+   a different dashboard over different data, and it belongs to the platform console
+   (§8).
+
+5. **Where the refresh loop lives — RESOLVED: `apps/worker`.** Phase 10 decision 1 resolved to
+   build the worker in its Wave 1, and this answers consistently with it. `REFRESH MATERIALIZED
+VIEW` is exactly the kind of heavy, latency-insensitive work that should not share a thread
+   with request handling.
+
+6. **Retention of `analytics.card_transitions` — RESOLVED: keep forever.** Taken on the
+   draft's recommendation. One row per status change is small next to the tables it
+   summarizes; revisit if that ever stops being true.
+
+7. **Outbox pruning — RESOLVED: yes, this phase, and only AFTER its backfill has run.**
+   Confirmed in review, and it is the other half of Phase 10 decision 7. This phase is both the
+   one that needs the accidental hoard and the one that replaces it with a deliberate store, so
+   once `analytics.card_transitions` is populated the outbox no longer has to be an event log
+   and can be pruned on a retention window. Doing it in either order but this one loses the
+   history (§2.4).
 
 ---
 
@@ -287,6 +346,14 @@ Three properties fixed now:
   additional attack surface."_
 - Custom/user-defined dashboards or a report builder. Six fixed dashboards first.
 - Scheduled report emails — that is a Phase 10 automation action once both exist.
-- Cross-org or platform-wide analytics for operators. That is a Phase 12 console surface with
-  a different role (`taskflow_platform_admin`) and a different threat model.
+- **Tenant work metrics for the platform operator — deliberately, and this is a privacy line
+  rather than a scheduling one.** An operator does not need to know how fast a customer's team
+  closes cards; letting them see it means a compromised operator account can read it. The
+  operator's own dashboard is a Phase 12 console surface about the PLATFORM — orgs, storage,
+  spend, queue depth, error rates — running as `taskflow_platform_admin` with every read
+  recorded in the global operator audit log. Different data, different role, different threat
+  model, and no screen where one is a filter away from the other (§7 decision 4).
+- **Sprints themselves** — the record, the lifecycle, card membership, the UI. Phase 10.5
+  builds them; this phase reads them (§7 decision 1).
+- Estimates / story points. If ever wanted, they belong beside the sprint in Phase 10.5.
 - Predictive anything.
