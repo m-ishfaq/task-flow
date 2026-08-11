@@ -28,7 +28,9 @@
     "./work/comments": "./src/work/comment.service.ts",
     "./chat/messages": "./src/chat/message.service.ts",
     "./automation/webhooks": "./src/automation/webhook.service.ts",
-    "./events/automation-webhooks": "./src/automation/webhook-events.ts"
+    "./events/automation": "./src/automation/events.ts",
+    "./events/automation-webhooks": "./src/automation/webhook-events.ts",
+    "./events/api-tokens": "./src/automation/api-token-events.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",

@@ -156,6 +156,18 @@ export async function reset(options: ResetOptions): Promise<ResetResult> {
       );
     }
 
+    /* work.sprints (Phase 10.5) has the same shape as the docs cycle, with a
+       one-way edge instead of a loop: `cards.sprint_id` references sprints
+       WITHOUT a cascade (migration 0054 — the composite FK is what proves a
+       card's sprint is its own project's), and the generic loop deletes in
+       teardown order, so sprints go before cards. Clearing the reference
+       first is exactly what the docs cycle does above — and the same lesson
+       from the flag_override block: a table added to the module graph after
+       this set was written surfaces here, not in the seeder. */
+    if (tables.includes('work.sprints')) {
+      await connection.query('UPDATE work.cards SET sprint_id = NULL WHERE org_id = $1', [orgId]);
+    }
+
     for (const table of tables) {
       if (table === 'identity.orgs') {
         await connection.query('DELETE FROM identity.orgs WHERE id = $1', [orgId]);

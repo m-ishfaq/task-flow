@@ -13,6 +13,7 @@ import { isEmptyDocument, type DocumentNode } from './rich-text.js';
 import { LabelSection } from './label-section.js';
 import { LocationSection } from './location-section.js';
 import { PrioritySection, StatusSection } from './status-priority-section.js';
+import { SprintSection } from './sprint-section.js';
 import { ChecklistSection } from './checklist-section.js';
 import { CustomFieldSection } from './custom-field-section.js';
 import { CommentSection } from './comment-section.js';
@@ -167,6 +168,16 @@ export function CardDetailPanel({
                     cardId={cardId}
                     projectId={projectId}
                     statusId={card.data.statusId}
+                  />
+                )}
+
+                {projectId !== null && (
+                  <SprintSection
+                    orgId={orgId}
+                    boardId={boardId}
+                    cardId={cardId}
+                    projectId={projectId}
+                    sprintId={card.data.sprintId}
                   />
                 )}
 

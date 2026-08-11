@@ -82,3 +82,7 @@ export { rtcModule } from './modules/rtc.calls.js';
 export { notificationsModule } from './modules/platform.notifications.js';
 export { pushSubscriptionsModule } from './modules/platform.push-subscriptions.js';
 export { sessionsModule, type SessionsOutput } from './modules/identity.sessions.js';
+export { sprintsModule, type SprintsOutput } from './modules/work.sprints.js';
+export { automationsModule, type AutomationsOutput } from './modules/platform.automations.js';
+export { webhooksModule, type WebhooksOutput } from './modules/platform.webhooks.js';
+export { apiTokensModule, type ApiTokensOutput } from './modules/platform.api-tokens.js';

@@ -79,6 +79,11 @@ export interface CardSummary {
   readonly cardId: string;
   readonly listId: string;
   readonly boardId: string;
+  /* Carried so a client that reached a board WITHOUT the `project` URL param
+     (My Tasks, a pasted link) can still derive which project's vocabulary to
+     load — the board page's sprint picker and status grouping fall back to
+     the first card's project. */
+  readonly projectId: string;
   readonly reference: string;
   readonly title: string;
   readonly rank: string;
@@ -86,6 +91,7 @@ export interface CardSummary {
   readonly statusId: string | null;
   readonly priority: Priority | null;
   readonly dueDate: Date | null;
+  readonly sprintId: string | null;
   readonly commentCount: number;
   readonly checklistDone: number;
   readonly checklistTotal: number;
@@ -135,6 +141,9 @@ export async function listCards(
         cardId: schema.cards.id,
         listId: schema.cards.listId,
         boardId: schema.cards.boardId,
+        /* On the wire so a board reached without the `project` URL param can
+           still derive which project's vocabulary to load (see CardSummary). */
+        projectId: schema.cards.projectId,
         number: schema.cards.number,
         projectKey: schema.projects.key,
         title: schema.cards.title,
@@ -143,6 +152,10 @@ export async function listCards(
         statusId: schema.cards.statusId,
         priority: schema.cards.priority,
         dueDate: schema.cards.dueDate,
+        /* Needed by the sprint picker's client-side filter: a board filtered
+           to a sprint is the same card query, filtered in the renderer, so
+           the summary has to say which sprint each card is in. */
+        sprintId: schema.cards.sprintId,
         commentCount: schema.cards.commentCount,
         checklistDone: schema.cards.checklistDone,
         checklistTotal: schema.cards.checklistTotal,
@@ -219,6 +232,7 @@ export async function listMyCards(
         statusId: schema.cards.statusId,
         priority: schema.cards.priority,
         dueDate: schema.cards.dueDate,
+        sprintId: schema.cards.sprintId,
         commentCount: schema.cards.commentCount,
         checklistDone: schema.cards.checklistDone,
         checklistTotal: schema.cards.checklistTotal,
@@ -251,7 +265,7 @@ export async function listMyCards(
             ancestors: ancestorsOfCard(row),
           }).allowed,
       )
-      .map(({ number, projectKey, projectId: _projectId, ...row }) => ({
+      .map(({ number, projectKey, ...row }) => ({
         ...row,
         priority: row.priority as Priority | null,
         reference: referenceOf(projectKey, number),
@@ -296,6 +310,7 @@ export async function getCard(
         priority: schema.cards.priority,
         dueDate: schema.cards.dueDate,
         startDate: schema.cards.startDate,
+        sprintId: schema.cards.sprintId,
         commentCount: schema.cards.commentCount,
         checklistDone: schema.cards.checklistDone,
         checklistTotal: schema.cards.checklistTotal,
@@ -314,7 +329,7 @@ export async function getCard(
 
     enforceOn(actor, 'card:read', { type: 'card', id: input.cardId }, card, ancestorsOfCard(card));
 
-    const { number, projectKey, orgId: _orgId, projectId: _projectId, ...rest } = card;
+    const { number, projectKey, orgId: _orgId, ...rest } = card;
     return {
       ...rest,
       priority: rest.priority as Priority | null,
@@ -929,6 +944,7 @@ export interface CardRow {
   readonly priority: Priority | null;
   readonly dueDate: Date | null;
   readonly startDate: Date | null;
+  readonly sprintId: string | null;
   readonly version: number;
 }
 
@@ -952,6 +968,7 @@ export async function loadCard(
       priority: schema.cards.priority,
       dueDate: schema.cards.dueDate,
       startDate: schema.cards.startDate,
+      sprintId: schema.cards.sprintId,
       version: schema.cards.version,
     })
     .from(schema.cards)

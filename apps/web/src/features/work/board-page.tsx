@@ -8,6 +8,8 @@ import { Skeleton } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { useMembers } from '../org/use-members.js';
 import { cardsQuery, listsQuery, statusesQuery } from './api.js';
+import { SprintPicker } from './sprints.js';
+import { filterCardsBySprint, type SprintFilter } from './sprint-filter.js';
 import { useBoardRoom } from './use-board-room.js';
 import { BoardView } from './board-view.js';
 import { TableView } from './table-view.js';
@@ -68,10 +70,18 @@ export function BoardPage() {
   const view = search.view ?? 'board';
   const groupBy = search.groupBy ?? 'list';
   const sortBy = search.sortBy ?? 'manual';
-  const projectId = search.project ?? null;
+  const sprint: SprintFilter = search.sprint ?? null;
 
   const lists = useQuery(listsQuery(orgId, boardId));
   const cards = useQuery(cardsQuery(orgId, boardId, filter));
+
+  /* The URL's `project` is the normal source (every board link sends it), but
+     a board reached from My Tasks or a pasted link may not carry it. Every
+     card on the board knows its project, so the first card is the fallback —
+     the URL is left untouched; this only decides what vocabulary to QUERY.
+     The query gating below flips itself on the moment a card lands. Cast
+     because the fallback comes off the wire un-branded. */
+  const projectId = (search.project ?? cards.data?.[0]?.projectId ?? null) as ProjectId | null;
 
   /* Realtime spine (ai/phase-4-realtime.md §5, §9): joins this board's room
      and patches/invalidates the queries above live as the full Wave 2 event
@@ -142,11 +152,13 @@ export function BoardPage() {
      would be a second, weaker copy of a rule that is already enforced. */
   const liveLists = lists.data;
 
-  /* Pruned against what is actually on screen. A filter narrowed after cards
-     were picked would otherwise leave the bulk bar counting — and acting on —
-     rows the user can no longer see. `pruneSelection` returns the same object
-     when nothing changed, so reading it during render does not loop. */
-  const visibleIds = cards.data.map((card) => card.cardId);
+  /* The sprint dimension filters the SAME card query in the renderer — a
+     sprint board is the board, filtered, and switching between All, Backlog
+     and a sprint is instant (ai/phase-10.5-sprints.md). Selections and counts
+     are pruned against the filtered list for the same reason the filter itself
+     is: the bulk bar must never count rows the user cannot see. */
+  const sprintCards = filterCardsBySprint(cards.data, sprint);
+  const visibleIds = sprintCards.map((card) => card.cardId);
   const visibleSelection = pruneSelection(selection, visibleIds);
 
   return (
@@ -190,6 +202,21 @@ export function BoardPage() {
             }}
           />
 
+          {/* The sprint dimension — the picker writes `sprint=` and the
+              manager panel lives behind it. Only when the project is known
+              (same gating as the status vocabulary above). */}
+          {projectId !== null && (
+            <SprintPicker
+              orgId={orgId}
+              projectId={projectId}
+              boardId={boardId}
+              value={sprint}
+              onChange={(next) => {
+                setSearch({ sprint: next ?? undefined });
+              }}
+            />
+          )}
+
           {/* Grouping and sorting are view SETTINGS (§5.6) — meaningless for
               the table, which has its own columns, so they only render for
               board and list. */}
@@ -211,8 +238,9 @@ export function BoardPage() {
           )}
 
           <span className="ml-auto text-xs text-ink-faint">
-            {cards.data.length} {cards.data.length === 1 ? 'card' : 'cards'}
+            {sprintCards.length} {sprintCards.length === 1 ? 'card' : 'cards'}
             {filter !== null && ' matching'}
+            {sprint !== null && ` in ${sprint === 'backlog' ? 'backlog' : 'sprint'}`}
           </span>
 
           {othersPresent.length > 0 && (
@@ -245,7 +273,7 @@ export function BoardPage() {
             orgId={orgId}
             boardId={boardId}
             lists={liveLists}
-            cards={cards.data}
+            cards={sprintCards}
             statuses={statuses.data ?? []}
             people={people}
             groupBy={groupBy}
@@ -265,7 +293,7 @@ export function BoardPage() {
         {view === 'list' && (
           <ListView
             lists={liveLists}
-            cards={cards.data}
+            cards={sprintCards}
             statuses={statuses.data ?? []}
             people={people}
             groupBy={groupBy}
@@ -281,7 +309,7 @@ export function BoardPage() {
             orgId={orgId}
             boardId={boardId}
             lists={liveLists}
-            cards={cards.data}
+            cards={sprintCards}
             onOpenCard={(cardId) => {
               setSearch({ card: cardId as CardId });
             }}

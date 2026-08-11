@@ -6,7 +6,7 @@ import { connectAsMigrator } from '@taskflow/db/testing';
 import { S3StorageProvider } from '@taskflow/storage';
 import { TwilioTelephonyProvider } from '@taskflow/telephony';
 import { masterKeysFromBase64, SoftwareKeyProvider } from '@taskflow/security';
-import type { StorageProvider } from '@taskflow/contracts';
+import type { KeyProvider, StorageProvider } from '@taskflow/contracts';
 import { createSeedContext, type TelephonySeedConfig } from './context.js';
 import { createRng } from './rng.js';
 import {
@@ -27,6 +27,8 @@ import { orgsModule } from './modules/tenancy.orgs.js';
 // output directly.
 import { auditModule } from './modules/platform.audit.js';
 import { adminModule } from './modules/platform.admin.js';
+import { apiTokensModule } from './modules/platform.api-tokens.js';
+import { webhooksModule } from './modules/platform.webhooks.js';
 
 /**
  * `pnpm seed [--profile <name>] [--seed <value>] [--reset] [--chaos]`
@@ -240,6 +242,28 @@ function buildTelephonySeedConfig(): TelephonySeedConfig | null {
   };
 }
 
+/**
+ * The envelope-encryption master key the webhook module needs.
+ *
+ * Same env pair telephony uses (`MASTER_KEY_ID`/`MASTER_KEY_BASE64`), because
+ * it is the same key: a per-webhook data key wrapped under this master is
+ * unwrappable by the running application exactly when the application was
+ * started with the same two variables. Null when unset — the webhook module
+ * skips itself, exactly like telephony, never fakes a secret that would fail
+ * the first unwrap.
+ */
+function buildKeysProvider(): KeyProvider | null {
+  const masterKeyId = process.env['MASTER_KEY_ID'];
+  const masterKeyBase64 = process.env['MASTER_KEY_BASE64'];
+
+  if (!masterKeyId || !masterKeyBase64) return null;
+
+  return new SoftwareKeyProvider({
+    masterKeys: masterKeysFromBase64({ [masterKeyId]: masterKeyBase64 }),
+    currentMasterKeyId: masterKeyId,
+  });
+}
+
 /* ---------------------------------------------------------------------- *
  * Main
  * ---------------------------------------------------------------------- */
@@ -303,6 +327,13 @@ async function main(): Promise<void> {
       );
     }
 
+    const keys = buildKeysProvider();
+    if (!keys) {
+      console.warn(
+        'platform.webhooks: MASTER_KEY_ID/MASTER_KEY_BASE64 not set — webhooks will be skipped.',
+      );
+    }
+
     const { ctx, record } = createSeedContext({
       connection,
       rng,
@@ -311,6 +342,7 @@ async function main(): Promise<void> {
       chaos: args.chaos,
       storage,
       telephony,
+      keys,
       log: (message) => {
         console.warn(message);
       },
@@ -340,6 +372,21 @@ async function main(): Promise<void> {
     /* The console has no nav link until someone IS an operator — this is the
        only place a fresh database says who that is. */
     console.warn(`  platform operator: ${operator.email}`);
+
+    /* One-time secrets (Phase 10): the API token and the webhook signing
+       secret exist in plaintext exactly once, at mint — the same rule the
+       services follow. Printed here so a demo developer can copy them into a
+       script or a test receiver instead of having to mint fresh ones. */
+    const apiToken = ctx.use(apiTokensModule);
+    const webhook = ctx.use(webhooksModule);
+    if (apiToken.token !== null) {
+      console.warn('\nSeeded API token (shown once, like a real mint):');
+      console.warn(`  ${apiToken.token}`);
+    }
+    if (webhook.signingSecret !== null) {
+      console.warn('\nSeeded webhook signing secret (shown once, like a real creation):');
+      console.warn(`  ${webhook.signingSecret}`);
+    }
 
     console.warn('\nDone.');
   } finally {

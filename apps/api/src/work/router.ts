@@ -5,6 +5,7 @@ import {
   ListIdSchema,
   Priority,
   ProjectIdSchema,
+  SprintIdSchema,
   StatusIdSchema,
   UserIdSchema,
   ViewIdSchema,
@@ -19,6 +20,7 @@ import * as boards from './board.service.js';
 import * as lists from './list.service.js';
 import * as cards from './card.service.js';
 import * as views from './view.service.js';
+import * as sprints from './sprint.service.js';
 import { createCardDetailRouter } from './detail.router.js';
 import { createAttachmentRouter } from './attachment.router.js';
 import type { AttachmentDeps } from './attachment.service.js';
@@ -73,6 +75,32 @@ const Timestamp = z
   .transform((value) => new Date(value))
   .nullable();
 
+/**
+ * A sprint's day-granular date.
+ *
+ * Kept as the `YYYY-MM-DD` string all the way through: the column is a Postgres
+ * `date`, the driver returns the same format, and lexicographic comparison IS
+ * chronological for it — so no Date object needs to exist in the middle.
+ *
+ * The `refine` is what keeps a shape-valid-but-impossible value like
+ * `2026-13-40` from reaching Postgres, where it would 500: the round-trip
+ * through a UTC midnight also catches `2026-02-30` (the Date constructor rolls
+ * it forward to March 2, so the stringified result differs).
+ */
+const Day = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD.')
+  .refine((value) => {
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  }, 'Use a real calendar date.');
+
+/** The four lifecycle values, mirroring 0054's CHECK (the migration enforces). */
+const SprintStatus = z.enum(['planned', 'active', 'completed', 'cancelled']);
+
+/** The goal a sprint may carry — prose, like `projects.description`, not a constraint. */
+const Goal = z.string().trim().max(2000).nullable().default(null);
+
 /* ---------------------------------------------------------------------------
  * Saved views
  *
@@ -123,6 +151,9 @@ const CardSummaryOutput = z
       cardId: z.string(),
       listId: z.string(),
       boardId: z.string(),
+      /* The card's own project — see the service's CardSummary note on why it
+         travels on the wire now. */
+      projectId: z.string(),
       reference: z.string(),
       title: z.string(),
       rank: z.string(),
@@ -130,6 +161,11 @@ const CardSummaryOutput = z
       statusId: z.string().nullable(),
       priority: Priority.nullable(),
       dueDate: z.date().nullable(),
+      /* The sprint this card is in — null is the backlog. Carried on the
+         summary so the sprint-picker filter can run client-side over the one
+         card query the board already fetches (sprints are a view dimension,
+         not a second card store). */
+      sprintId: z.string().nullable(),
       commentCount: z.number().int().nonnegative(),
       checklistDone: z.number().int().nonnegative(),
       checklistTotal: z.number().int().nonnegative(),
@@ -213,6 +249,97 @@ export function createWorkRouter(deps: WorkRouterDeps) {
         .input(z.object({ projectId: ProjectIdSchema, archived: z.boolean() }).strict())
         .output(z.object({ archived: z.boolean() }))
         .mutation(({ input, ctx }) => projects.archiveProject(actorOf(ctx), input)),
+    }),
+
+    /**
+     * Sprints (`ai/phase-10.5-sprints.md`).
+     *
+     * Sprint CRUD is `project:update` — the project's planning structure
+     * changes every card in it, exactly like statuses. Membership changes
+     * (`cards.assignSprint` / `cards.releaseSprint`) are `card:update` and
+     * live in the cards sub-router below.
+     */
+    sprints: router({
+      /** The picker's options, active first. */
+      list: route({ permission: 'project:read' })
+        .input(z.object({ projectId: ProjectIdSchema }).strict())
+        .output(
+          z
+            .array(
+              z.object({
+                sprintId: z.string(),
+                projectId: z.string(),
+                name: z.string(),
+                goal: z.string().nullable(),
+                startsOn: z.string(),
+                endsOn: z.string(),
+                status: SprintStatus,
+                startedAt: z.date().nullable(),
+                completedAt: z.date().nullable(),
+                cardCount: z.number().int().nonnegative(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ input, ctx }) => sprints.listSprints(actorOf(ctx), input)),
+
+      create: route({ permission: 'project:update' })
+        .input(
+          z
+            .object({
+              projectId: ProjectIdSchema,
+              name: Name,
+              goal: Goal,
+              startsOn: Day,
+              endsOn: Day,
+            })
+            .strict(),
+        )
+        .output(z.object({ sprintId: z.string() }))
+        .mutation(({ input, ctx }) => sprints.createSprint(actorOf(ctx), input)),
+
+      /** Name, goal and dates — see the service for which are editable per status. */
+      update: route({ permission: 'project:update' })
+        .input(
+          z
+            .object({
+              sprintId: SprintIdSchema,
+              name: Name,
+              goal: Goal,
+              startsOn: Day,
+              endsOn: Day,
+            })
+            .strict(),
+        )
+        .output(z.object({ name: z.string() }))
+        .mutation(({ input, ctx }) => sprints.updateSprint(actorOf(ctx), input)),
+
+      start: route({ permission: 'project:update' })
+        .input(z.object({ sprintId: SprintIdSchema }).strict())
+        .output(z.object({ status: z.literal('active') }))
+        .mutation(({ input, ctx }) => sprints.startSprint(actorOf(ctx), input)),
+
+      /** The atomic close — see the service for the shipped/released split. */
+      complete: route({ permission: 'project:update' })
+        .input(z.object({ sprintId: SprintIdSchema }).strict())
+        .output(
+          z.object({
+            status: z.literal('completed'),
+            shippedCount: z.number().int().nonnegative(),
+            releasedCount: z.number().int().nonnegative(),
+          }),
+        )
+        .mutation(({ input, ctx }) => sprints.completeSprint(actorOf(ctx), input)),
+
+      cancel: route({ permission: 'project:update' })
+        .input(z.object({ sprintId: SprintIdSchema }).strict())
+        .output(
+          z.object({
+            status: z.literal('cancelled'),
+            releasedCount: z.number().int().nonnegative(),
+          }),
+        )
+        .mutation(({ input, ctx }) => sprints.cancelSprint(actorOf(ctx), input)),
     }),
 
     boards: router({
@@ -458,6 +585,7 @@ export function createWorkRouter(deps: WorkRouterDeps) {
             cardId: z.string(),
             listId: z.string(),
             boardId: z.string(),
+            projectId: z.string(),
             reference: z.string(),
             title: z.string(),
             description: z.unknown(),
@@ -467,6 +595,7 @@ export function createWorkRouter(deps: WorkRouterDeps) {
             priority: Priority.nullable(),
             dueDate: z.date().nullable(),
             startDate: z.date().nullable(),
+            sprintId: z.string().nullable(),
             commentCount: z.number().int().nonnegative(),
             checklistDone: z.number().int().nonnegative(),
             checklistTotal: z.number().int().nonnegative(),
@@ -564,6 +693,23 @@ export function createWorkRouter(deps: WorkRouterDeps) {
         )
         .output(z.object({ assigneeIds: z.array(z.string()).readonly() }))
         .mutation(({ input, ctx }) => cards.assignCard(actorOf(ctx), input)),
+
+      /**
+       * Sprint membership — one card in or out, `card:update` (the Phase 3
+       * split: changing ONE card, not the project's planning structure). The
+       * services live in `sprint.service.ts` because the domain is the
+       * sprint, but the route path is `cards.*` because the thing being
+       * edited is a card — the same shape as `cards.setStatus`.
+       */
+      assignSprint: route({ permission: 'card:update' })
+        .input(z.object({ cardId: CardIdSchema, sprintId: SprintIdSchema }).strict())
+        .output(z.object({ sprintId: z.string() }))
+        .mutation(({ input, ctx }) => sprints.assignSprint(actorOf(ctx), input)),
+
+      releaseSprint: route({ permission: 'card:update' })
+        .input(z.object({ cardId: CardIdSchema }).strict())
+        .output(z.object({ sprintId: z.string().nullable() }))
+        .mutation(({ input, ctx }) => sprints.releaseSprint(actorOf(ctx), input)),
 
       archive: route({ permission: 'card:delete' })
         .input(z.object({ cardId: CardIdSchema, archived: z.boolean() }).strict())

@@ -27,6 +27,7 @@ interface Outputs {
   comments: Awaited<ReturnType<typeof api.work.comments.list.query>>;
   cardLabels: Awaited<ReturnType<typeof api.work.labels.onCard.query>>;
   statuses: Awaited<ReturnType<typeof api.work.statuses.list.query>>;
+  sprints: Awaited<ReturnType<typeof api.work.sprints.list.query>>;
   views: Awaited<ReturnType<typeof api.work.views.list.query>>;
 }
 
@@ -39,6 +40,7 @@ export type Checklist = Wire<Outputs['checklists']>[number];
 export type Comment = Wire<Outputs['comments']>[number];
 export type CardLabel = Wire<Outputs['cardLabels']>[number];
 export type Status = Wire<Outputs['statuses']>[number];
+export type Sprint = Wire<Outputs['sprints']>[number];
 export type SavedView = Wire<Outputs['views']>[number];
 /** `CardSummary['priority']` on its own — used anywhere a picker needs just the enum. */
 export type Priority = NonNullable<CardSummary['priority']>;
@@ -195,6 +197,20 @@ export function statusesQuery(orgId: string, projectId: ProjectId) {
   return queryOptions({
     queryKey: keys.statuses(orgId, projectId),
     queryFn: async () => wire(await api.work.statuses.list.query({ projectId })),
+  });
+}
+
+/**
+ * The project's sprints, active first — the picker's options, and the data
+ * behind the manager panel (`ai/phase-10.5-sprints.md`).
+ *
+ * Sorted server-side, because the order is a domain rule (one active sprint
+ * floats to the top) and restating it client-side would be a second copy.
+ */
+export function sprintsQuery(orgId: string, projectId: ProjectId) {
+  return queryOptions({
+    queryKey: keys.sprints(orgId, projectId),
+    queryFn: async () => wire(await api.work.sprints.list.query({ projectId })),
   });
 }
 
