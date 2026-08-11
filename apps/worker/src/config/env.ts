@@ -29,23 +29,43 @@ import { z } from 'zod';
 
 const NonEmpty = z.string().min(1);
 
+/**
+ * NOT `.strict()`, unlike most schemas in this codebase — and this note is here
+ * because the mistake was made again on the way in.
+ *
+ * `process.env` carries a few hundred variables belonging to the OS, the shell,
+ * and whatever launched the process. Rejecting unknown keys means the worker
+ * cannot start on any real machine: it dies listing PATH, HOME, SYSTEMROOT and
+ * two hundred others as "unrecognized".
+ *
+ * `apps/api/src/config/env.ts` already documents this happening to IT, in those
+ * words, including that it survived "a unit test suite that fed it a tidy
+ * fixture object". This file's first suite did exactly that, passed all five
+ * assertions, and the process still failed on its first real boot. The
+ * regression test is now `parses a realistic process.env-shaped object`, which
+ * feeds the noise rather than the fixture — the only shape of that assertion
+ * that fails if someone makes this strict again.
+ *
+ * The typo protection `.strict()` was reaching for is
+ * `warnOnLikelyMisspellings` below, which knows which names are ours.
+ */
 export const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
 
   /* The ORDINARY application role. Every action an automation performs runs
-       through it, under RLS, inside `withOrgScope` — the same role and the same
-       service functions a human action uses. There is deliberately no
-       privileged path for the engine to write a card. */
+     through it, under RLS, inside `withOrgScope` — the same role and the same
+     service functions a human action uses. There is deliberately no privileged
+     path for the engine to write a card. */
   DATABASE_URL: NonEmpty,
   DATABASE_POOL_MAX: z.coerce.number().int().positive().max(100).default(10),
 
   /* The automation consumer's CLAIM role. Optional, and the pattern is
-       `DATABASE_BACKLINKS_URL`/`DATABASE_SEARCH_URL`'s: a deployment without it
-       is valid — the process still serves health and runs whatever else it is
-       given — and what must never happen silently is the narrow claim grant
-       being bypassed by a fallback to the application role. The engine logs a
-       warning and does not start when this is unset. */
+     `DATABASE_BACKLINKS_URL`/`DATABASE_SEARCH_URL`'s: a deployment without it
+     is valid — the process still serves health and runs whatever else it is
+     given — and what must never happen silently is the narrow claim grant being
+     bypassed by a fallback to the application role. The engine logs a warning
+     and does not start when this is unset. */
   DATABASE_AUTOMATION_URL: NonEmpty.optional(),
 
   /** Liveness/readiness only. Nothing else is served on this port. */
@@ -55,23 +75,7 @@ export const EnvSchema = z.object({
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(250).max(60_000).default(2_000),
 });
 
-/* NOT `.strict()`, and this comment is here because the mistake was made
-     again on the way in.
-
-     `process.env` carries a few hundred variables belonging to the OS, the
-     shell, and whatever launched the process. Rejecting unknown keys means the
-     worker cannot start on any real machine — it dies listing PATH, HOME,
-     SYSTEMROOT and two hundred others as "unrecognized".
-
-     `apps/api/src/config/env.ts` already documents this, including that it
-     happened there "after a unit test suite that fed it a tidy fixture object
-     had passed". This file's first test suite did exactly that, passed, and the
-     process still failed on its first real boot. The regression test is now
-     `parses a realistic process.env-shaped object`, which feeds the noise
-     rather than the fixture.
-
-     The typo protection `.strict()` was reaching for is `warnOnLikelyMisspellings`
-     below, which knows which names are ours. */ export type Env = z.infer<typeof EnvSchema>;
+export type Env = z.infer<typeof EnvSchema>;
 
 /**
  * Variables a developer's `.env` legitimately carries that this process does
