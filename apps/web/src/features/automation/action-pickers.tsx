@@ -1,13 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import type { BoardId, ProjectId } from '@taskflow/contracts';
 import { unsafeAsId } from '@taskflow/contracts';
-import {
-  boardsQuery,
-  labelsQuery,
-  listsQuery,
-  projectsQuery,
-  statusesQuery,
-} from '../work/api.js';
+import { boardsQuery, labelsQuery, listsQuery, projectsQuery, statusesQuery } from '../work/api.js';
 import { channelsQuery } from '../chat/api.js';
 import { membersQuery } from '../org/api.js';
 import { webhooksQuery } from './api.js';

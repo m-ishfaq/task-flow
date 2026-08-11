@@ -187,7 +187,10 @@ export function describeAction(action: unknown): string {
   /* A message body reads far better than an id, so a post-message or
      add-comment action is described by what it says rather than by where or
      on what it does it. */
-  if ((type === 'chat.post_message' || type === 'card.add_comment') && typeof record['body'] === 'string') {
+  if (
+    (type === 'chat.post_message' || type === 'card.add_comment') &&
+    typeof record['body'] === 'string'
+  ) {
     return `${label}: “${truncate(record['body'], 40)}”`;
   }
 
