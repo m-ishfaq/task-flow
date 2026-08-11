@@ -23,8 +23,8 @@ export function SecretReveal({
   return (
     <div className="mt-3 space-y-1.5 rounded-lg border border-warning/40 bg-warning/5 p-3">
       <p className="text-[11px] text-ink">
-        Secret for “{name}” — <span className="font-medium">shown once, never again.</span> Copy
-        it into whatever will use it, then click done.
+        Secret for “{name}” — <span className="font-medium">shown once, never again.</span> Copy it
+        into whatever will use it, then click done.
       </p>
       <div className="flex items-center gap-2">
         <code className="min-w-0 flex-1 truncate rounded border border-line bg-surface px-2 py-1 font-mono text-[11px] text-ink">

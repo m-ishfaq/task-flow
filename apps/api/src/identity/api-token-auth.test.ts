@@ -54,7 +54,10 @@ async function actorFor(
 }
 
 /** An org with an owner, and a minted token owned by that owner. */
-async function scaffold(slug: string, scopes: readonly string[] = ['card:read']): Promise<{
+async function scaffold(
+  slug: string,
+  scopes: readonly string[] = ['card:read'],
+): Promise<{
   orgId: OrgId;
   owner: AutomationActor;
   token: string;

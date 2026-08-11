@@ -41,10 +41,7 @@ import { SettingsPage } from './features/admin/settings-page.js';
 import { AuditPage } from './features/admin/audit-page.js';
 import { ProjectSettingsPage } from './features/work/project-settings-page.js';
 import { PlatformAdminPage } from './features/platform-admin/platform-admin-page.js';
-import {
-  AUTOMATION_TAB_IDS,
-  AutomationsPage,
-} from './features/automation/automations-page.js';
+import { AUTOMATION_TAB_IDS, AutomationsPage } from './features/automation/automations-page.js';
 
 /**
  * The route tree (PLAN.md §4.1 — typed routes and typed search params).

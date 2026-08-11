@@ -282,16 +282,12 @@ describe('the app role is RLS-confined where the lookup role deliberately is not
        constructor for exactly this — a value that came from `randomUUID`
        and never crossed a wire. */
     await withOrgScope(unsafeAsId<'OrgId'>(ORG_A), async (tx) => {
-      const result = await tx.execute(
-        `SELECT count(*)::int AS n FROM platform.api_tokens`,
-      );
+      const result = await tx.execute(`SELECT count(*)::int AS n FROM platform.api_tokens`);
       /* Two in org A (live + revoked) — never three, never one. */
       expect(result.rows[0]?.['n']).toBe(2);
     });
     await withOrgScope(unsafeAsId<'OrgId'>(ORG_B), async (tx) => {
-      const result = await tx.execute(
-        `SELECT count(*)::int AS n FROM platform.api_tokens`,
-      );
+      const result = await tx.execute(`SELECT count(*)::int AS n FROM platform.api_tokens`);
       expect(result.rows[0]?.['n']).toBe(1);
     });
   });

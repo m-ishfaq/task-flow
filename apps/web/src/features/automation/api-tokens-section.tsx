@@ -45,9 +45,9 @@ export function ApiTokensSection({ orgId }: { readonly orgId: string }) {
     <section className="space-y-4">
       <div className="flex items-start justify-between gap-3">
         <p className="text-xs text-ink-faint">
-          Long-lived credentials for the org's API — the same surface as webhooks, for scripts
-          and integrations. Each token is scoped to a subset of <em>your</em> current permissions,
-          and dies the moment you lose your membership.
+          Long-lived credentials for the org's API — the same surface as webhooks, for scripts and
+          integrations. Each token is scoped to a subset of <em>your</em> current permissions, and
+          dies the moment you lose your membership.
         </p>
         {!creating && (
           <Button
@@ -161,8 +161,7 @@ function TokenCreateForm({
   };
 
   const create = useMutation({
-    mutationFn: () =>
-      api.apiToken.create.mutate({ name: name.trim(), scopes: [...selected] }),
+    mutationFn: () => api.apiToken.create.mutate({ name: name.trim(), scopes: [...selected] }),
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: keys.apiTokens(orgId) });
       onCreate({ name: name.trim(), token: result.token });
@@ -210,7 +209,9 @@ function TokenCreateForm({
           ) : held.isError ? (
             <ErrorText error={held.error} />
           ) : groups.length === 0 ? (
-            <p className="text-xs text-ink-faint">No scopes available — you hold no org permissions.</p>
+            <p className="text-xs text-ink-faint">
+              No scopes available — you hold no org permissions.
+            </p>
           ) : (
             <div className="max-h-64 space-y-2 overflow-y-auto rounded border border-line bg-surface p-2">
               <label className="flex cursor-pointer items-center gap-2 px-1 text-[11px] font-medium text-ink">
@@ -280,13 +281,7 @@ function TokenCreateForm({
 }
 
 /** One credential. */
-function TokenRow({
-  orgId,
-  token,
-}: {
-  readonly orgId: string;
-  readonly token: TokenSummary;
-}) {
+function TokenRow({ orgId, token }: { readonly orgId: string; readonly token: TokenSummary }) {
   const queryClient = useQueryClient();
   const toast = useToast();
 

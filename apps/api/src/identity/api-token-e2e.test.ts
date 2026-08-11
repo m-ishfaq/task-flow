@@ -1,10 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import {
-  closeDatabase,
-  initializeApiTokenAuthDatabase,
-  initializeDatabase,
-} from '@taskflow/db';
+import { closeDatabase, initializeApiTokenAuthDatabase, initializeDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { buildServer } from '../server.js';
 import type { DeliverableLink } from '../identity/identity.service.js';
@@ -68,7 +64,10 @@ beforeAll(async () => {
      the same or every token request answers UNAUTHENTICATED — the auth
      path's lookup would fail closed, exactly as it would on an instance
      without DATABASE_API_TOKEN_URL. */
-  initializeApiTokenAuthDatabase({ url: API_TOKEN_AUTH_URL, applicationName: 'api-token-e2e-auth' });
+  initializeApiTokenAuthDatabase({
+    url: API_TOKEN_AUTH_URL,
+    applicationName: 'api-token-e2e-auth',
+  });
 
   app = await buildServer({
     env,
