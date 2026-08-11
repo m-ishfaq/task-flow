@@ -89,10 +89,7 @@ beforeAll(async () => {
      VALUES
        ($1, $2, $3, 'live', $4, 'live_pref1', ARRAY['card:read']::text[], NULL),
        ($5, $2, $3, 'revoked', $6, 'revok_pref', ARRAY['card:read']::text[], now())`,
-    [
-      crypto.randomUUID(), ORG_A, USER, LIVE_HASH,
-      crypto.randomUUID(), REVOKED_HASH,
-    ],
+    [crypto.randomUUID(), ORG_A, USER, LIVE_HASH, crypto.randomUUID(), REVOKED_HASH],
   );
 
   await admin.setOrg(ORG_B);
@@ -132,9 +129,9 @@ afterAll(async () => {
 describe('taskflow_api_token_auth — the lookup role, by GRANT', () => {
   it('may read exactly the lookup columns, across every org', async () => {
     for (const column of ['token_hash', 'org_id', 'created_by', 'scopes', 'revoked_at']) {
-      expect(await canColumn('taskflow_api_token_auth', 'platform.api_tokens', column, 'SELECT')).toBe(
-        true,
-      );
+      expect(
+        await canColumn('taskflow_api_token_auth', 'platform.api_tokens', column, 'SELECT'),
+      ).toBe(true);
     }
   });
 
@@ -165,7 +162,7 @@ describe('taskflow_api_token_auth — the lookup role, by GRANT', () => {
 });
 
 describe('taskflow_app — what 0050 grants, and what it takes back', () => {
-  it('manages the org\'s tokens but never hard-deletes one', async () => {
+  it("manages the org's tokens but never hard-deletes one", async () => {
     /* THE 0036 ASSERTION for this table. ALTER DEFAULT PRIVILEGES granted
        DELETE here before 0050's own GRANT ran; the explicit REVOKE removes
        it. Delete that one line from the migration and this test fails —
