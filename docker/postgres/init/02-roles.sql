@@ -202,6 +202,22 @@ CREATE ROLE taskflow_automation WITH LOGIN PASSWORD 'automation-dev-secret' NOSU
 CREATE ROLE taskflow_webhook WITH LOGIN PASSWORD 'webhook-dev-secret' NOSUPERUSER NOCREATEDB
   NOCREATEROLE NOBYPASSRLS;
 
+-- ---------------------------------------------------------------------------
+-- taskflow_api_token_auth — the API-token LOOKUP role (Phase 10 Wave 3,
+-- ai/phase-10-automation.md §6.2, migration 0050).
+--
+-- The authentication hot path resolves a presented `tf_pat` by its hash
+-- BEFORE any org is known — the token row names its org, so no value of
+-- app.org_id is correct for the read. Unlike every worker claim role above,
+-- this is not a batch consumer: it is the credential-checker, and what it may
+-- see is column-limited to the lookup — token_hash, org_id, created_by,
+-- scopes, revoked_at — never `name`, `token_prefix` or `last_used_at`: the
+-- role that decides who you are cannot read what your tokens are called or
+-- when you last used them. It holds no INSERT/UPDATE/DELETE anywhere.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_api_token_auth WITH LOGIN PASSWORD 'api-token-auth-dev-secret' NOSUPERUSER
+  NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+
 -- Baseline grants live in 03-grants.sql, NOT here.
 --
 -- Roles are cluster-wide; grants are per-database. This file creates the roles

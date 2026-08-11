@@ -944,6 +944,80 @@ export function hasWebhookDatabase(): boolean {
   return webhookDb !== undefined;
 }
 
+/* -------------------------------------------------------------------------- *
+ * The API-token auth lookup connection (ai/phase-10-automation.md §6.2,
+ * Wave 3, migration 0050)
+ * -------------------------------------------------------------------------- */
+
+let apiTokenAuthPool: pg.Pool | undefined;
+let apiTokenAuthDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the API-token auth lookup pool, as `taskflow_api_token_auth`.
+ *
+ * A TWELFTH role, and the first one on the REQUEST hot path rather than a
+ * worker loop: every token-authenticated request starts with a hash lookup,
+ * and the lookup has no org yet — the token row names its org, so no value of
+ * `app.org_id` is correct for it.
+ *
+ * Migration 0050's grant is COLUMN-LEVEL and what is excluded is the point:
+ * this role sees `token_hash, org_id, created_by, scopes, revoked_at` and
+ * never `name`, `token_prefix` or `last_used_at` — the role that decides who
+ * you are cannot read what your tokens are called or when you last used them.
+ */
+export function initializeApiTokenAuthDatabase(config: DbConfig): void {
+  if (apiTokenAuthPool) {
+    throw new Error('API-token auth database already initialized. This is a boot-time call.');
+  }
+
+  apiTokenAuthPool = new Pool({
+    connectionString: config.url,
+    // Small, matching every other narrow role: a unique-index probe per
+    // request, not a workload.
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-api-token-auth',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  apiTokenAuthDb = drizzle(apiTokenAuthPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_api_token_auth` — the role that may resolve a
+ * presented `tf_pat` by its hash, across every org, and nothing else.
+ *
+ * NOT tenant-scoped, for the identical reason every consumer scope in this
+ * file is not: the org is unknown until the token row answers, so no single
+ * value of `app.org_id` is correct. What contains it is the role —
+ * `NOBYPASSRLS`, reaching across orgs only on `platform.api_tokens`' one
+ * `TO taskflow_api_token_auth` policy, through its column-level grant.
+ *
+ * Throws rather than falling back to the application role — which cannot read
+ * across every org anyway, so the fallback would silently refuse every token
+ * while looking healthy. The standing refusal shape of this file.
+ */
+export async function withApiTokenAuthScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!apiTokenAuthDb) {
+    throw new Error(
+      'API-token auth database not initialized. Call initializeApiTokenAuthDatabase() during boot — ' +
+        'token authentication must not fall back to the application role, which cannot read ' +
+        'across every org and would silently refuse every token.',
+    );
+  }
+
+  return apiTokenAuthDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the API-token auth pool has been initialized. */
+export function hasApiTokenAuthDatabase(): boolean {
+  return apiTokenAuthDb !== undefined;
+}
+
 /** Closes every pool. Shutdown only. */
 export async function closeDatabase(): Promise<void> {
   await pool?.end();
@@ -993,6 +1067,10 @@ export async function closeDatabase(): Promise<void> {
   await webhookPool?.end();
   webhookPool = undefined;
   webhookDb = undefined;
+
+  await apiTokenAuthPool?.end();
+  apiTokenAuthPool = undefined;
+  apiTokenAuthDb = undefined;
 }
 
 /** True when the pool is live and answering. Backs `/health/ready` (§14). */

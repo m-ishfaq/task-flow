@@ -55,6 +55,9 @@ export {
   initializeWebhookDatabase,
   withWebhookScope,
   hasWebhookDatabase,
+  initializeApiTokenAuthDatabase,
+  withApiTokenAuthScope,
+  hasApiTokenAuthDatabase,
   type OrgId,
   type UserId,
   type DbConfig,
@@ -82,6 +85,7 @@ export { listenForOutboxAppends, type OutboxListener, type ListenOptions } from 
  * ordering obligation it puts on its caller.
  */
 export { resolveOrgBySubaccountSid } from './comms-directory.js';
+export { resolveApiToken } from './api-tokens.js';
 
 export {
   claimUnprocessedPageVersions,

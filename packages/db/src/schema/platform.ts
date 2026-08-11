@@ -651,3 +651,42 @@ export const webhookDeliveries = platform.table(
     index('webhook_deliveries_due_idx').on(table.status, table.nextAttemptAt, table.createdAt),
   ],
 );
+
+/**
+ * Programmatic-access tokens (migration 0050, ai/phase-10-automation.md
+ * Wave 3, §6).
+ *
+ * The `tf_pat` credential: long-lived, hashed at rest — `tokenHash` is the
+ * lookup key and the plaintext exists exactly once, in the mint response —
+ * shown once, and soft-deleted by `revokedAt`. `tokenPrefix` is the first ten
+ * characters of the token body, stored at mint so the list view can tell two
+ * tokens both called "CI" apart without ever seeing a full token.
+ *
+ * `scopes` are permission strings from the closed catalog, validated at the
+ * route against the minting user's LIVE `can()` (§6.3) and enforced per
+ * request as the intersection of this list and the re-resolved `can()`
+ * answer (§6.4). A bogus stored scope is inert — which is why the migration
+ * puts no CHECK on content: the catalog lives in TypeScript.
+ */
+export const apiTokens = platform.table(
+  'api_tokens',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+
+    name: text('name').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    tokenPrefix: text('token_prefix').notNull(),
+    scopes: text('scopes').array().notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [uniqueIndex('api_tokens_hash_key').on(table.tokenHash)],
+);

@@ -1,5 +1,6 @@
 import {
   closeDatabase,
+  initializeApiTokenAuthDatabase,
   initializeAuditDatabase,
   initializeBacklinksDatabase,
   initializeDatabase,
@@ -117,6 +118,21 @@ if (env.DATABASE_SEARCH_URL !== undefined) {
   initializeSearchDatabase({
     url: env.DATABASE_SEARCH_URL,
     applicationName: 'taskflow-search',
+  });
+}
+
+/* The API-token auth lookup connection, on its own role and pool (Phase 10
+   Wave 3, §6.2; migration 0050). Unlike the claim pools above this one is on
+   the REQUEST hot path — every token-authenticated call starts with a hash
+   lookup that has no org yet (the token row names its org). Optional for the
+   same reason every consumer pool is, and when it is absent
+   `withApiTokenAuthScope` throws, the auth path answers unauthenticated, and
+   every token request fails CLOSED rather than falling back to the
+   application role, which cannot read across every org. */
+if (env.DATABASE_API_TOKEN_URL !== undefined) {
+  initializeApiTokenAuthDatabase({
+    url: env.DATABASE_API_TOKEN_URL,
+    applicationName: 'taskflow-api-token-auth',
   });
 }
 

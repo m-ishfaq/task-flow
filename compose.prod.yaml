@@ -214,6 +214,7 @@ services:
       DATABASE_NOTIFICATION_SWEEP_URL: postgresql://taskflow_notification_sweep:${TASKFLOW_NOTIFICATION_SWEEP_PASSWORD:?TASKFLOW_NOTIFICATION_SWEEP_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_PLATFORM_ADMIN_URL: postgresql://taskflow_platform_admin:${TASKFLOW_PLATFORM_ADMIN_PASSWORD:?TASKFLOW_PLATFORM_ADMIN_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_RECORDING_INGEST_URL: postgresql://taskflow_recording_ingest:${TASKFLOW_RECORDING_INGEST_PASSWORD:?TASKFLOW_RECORDING_INGEST_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_API_TOKEN_URL: postgresql://taskflow_api_token_auth:${TASKFLOW_API_TOKEN_AUTH_PASSWORD:?TASKFLOW_API_TOKEN_AUTH_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_SEARCH_URL: postgresql://taskflow_search:${TASKFLOW_SEARCH_PASSWORD:?TASKFLOW_SEARCH_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
 
