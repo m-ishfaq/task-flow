@@ -1,12 +1,15 @@
+import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BoardId, ProjectId } from '@taskflow/contracts';
 import { useSession } from '../lib/session.js';
 import { pinKey, pinnedProjectIds, useUi } from '../lib/ui-store.js';
 import { useIsDesktop } from '../lib/use-media-query.js';
 import { cn } from '../lib/cn.js';
 import { boardsQuery, projectsQuery, type BoardSummary } from '../features/work/api.js';
-import { Skeleton } from './primitives.js';
+import { api } from '../lib/trpc.js';
+import { keys } from '../lib/query.js';
+import { FocusOnMountInput, Skeleton } from './primitives.js';
 
 /**
  * The navigation tree (Phase 3.5 Wave 1, ai/phase-3.5-work-ux.md §4.1).
@@ -38,6 +41,81 @@ import { Skeleton } from './primitives.js';
  * it is absent rather than hidden — §8.2's rule that the UI must not
  * reimplement `can()`. Nothing here inspects a role.
  */
+
+/**
+ * The top-level nav, as data.
+ *
+ * Nine near-identical `<Link>` blocks became one list, which is what makes the
+ * ORDER and the GROUPING reviewable — previously both were implicit in the JSX,
+ * and `Automations` landed in the middle of the daily surfaces simply because
+ * that was where the file was convenient to edit.
+ *
+ * The grouping is by how often a person opens the thing, not by which phase
+ * built it:
+ *
+ *   1. Where you start — your own work, and finding anything.
+ *   2. The products you live in day to day.
+ *   3. Configuration you touch occasionally and then leave alone.
+ *
+ * Projects and pinned boards follow below, and stay at the bottom on purpose:
+ * they are a TREE that grows, so anything under them would move as the
+ * workspace grows and stop being findable by muscle memory. Same reason a chat
+ * app puts channels last.
+ *
+ * Every item is shown to everyone. A member who lacks a permission gets an
+ * honest refusal from the page, never a menu that quietly differs by role —
+ * §8.2, because the hidden version is the one that never gets tested.
+ */
+const NAV_SECTIONS: readonly {
+  readonly id: string;
+  readonly items: readonly { readonly to: string; readonly label: string }[];
+}[] = [
+  {
+    id: 'start',
+    items: [
+      { to: '/home', label: 'My tasks' },
+      { to: '/search', label: 'Search' },
+    ],
+  },
+  {
+    id: 'products',
+    items: [
+      { to: '/chat', label: 'Chat' },
+      { to: '/docs', label: 'Docs' },
+      { to: '/calls', label: 'Calls' },
+      { to: '/people', label: 'People' },
+    ],
+  },
+  {
+    id: 'configuration',
+    items: [{ to: '/automations', label: 'Automations' }],
+  },
+];
+
+/**
+ * One top-level nav item.
+ *
+ * ## The active state has to differ from HOVER, not just from resting
+ *
+ * The first version used `bg-surface-hover` for both, so "you are here" and
+ * "your mouse is here" rendered identically — which means neither reads as
+ * anything. The accent bar is the persistent signal: it survives the pointer
+ * moving away, and it is the only thing on the item that hover never applies.
+ *
+ * The border is present-but-transparent when inactive rather than absent, so
+ * becoming active does not shift the label by two pixels.
+ */
+function NavLink({ to, label }: { readonly to: string; readonly label: string }) {
+  return (
+    <Link
+      to={to}
+      className="mb-0.5 block rounded border-l-2 border-transparent px-1.5 py-1 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
+      activeProps={{ className: 'border-accent bg-accent/10 text-accent hover:text-accent' }}
+    >
+      {label}
+    </Link>
+  );
+}
 
 export function Sidebar() {
   const orgId = useSession((state) => state.orgId);
@@ -96,66 +174,19 @@ export function Sidebar() {
           keeping the toggle is honest about what a 3rem column can show. */}
       {open && (
         <nav aria-label="Projects" className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
-          <Link
-            to="/home"
-            className="mb-2 block rounded px-1 py-1 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
-            activeProps={{ className: 'bg-surface-hover text-ink' }}
-          >
-            My tasks
-          </Link>
-
-          <Link
-            to="/search"
-            className="mb-2 block rounded px-1 py-1 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
-            activeProps={{ className: 'bg-surface-hover text-ink' }}
-          >
-            Search
-          </Link>
-
-          <Link
-            to="/chat"
-            className="mb-2 block rounded px-1 py-1 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
-            activeProps={{ className: 'bg-surface-hover text-ink' }}
-          >
-            Chat
-          </Link>
-
-          <Link
-            to="/docs"
-            className="mb-2 block rounded px-1 py-1 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
-            activeProps={{ className: 'bg-surface-hover text-ink' }}
-          >
-            Docs
-          </Link>
-
-          <Link
-            to="/calls"
-            className="mb-2 block rounded px-1 py-1 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
-            activeProps={{ className: 'bg-surface-hover text-ink' }}
-          >
-            Calls
-          </Link>
-
-          {/* Shown to everyone, like every other item here. A member without
-              `automation:manage` gets an honest FORBIDDEN from the page rather
-              than a menu that quietly differs per role — §8.2's rule that the
-              UI never re-derives authorization, because the hidden version is
-              the one that never gets tested. */}
-          <Link
-            to="/automations"
-            className="mb-2 block rounded px-1 py-1 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
-            activeProps={{ className: 'bg-surface-hover text-ink' }}
-          >
-            Automations
-          </Link>
-
-          <Link
-            to="/people"
-            className="mb-2 block rounded px-1 py-1 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
-            activeProps={{ className: 'bg-surface-hover text-ink' }}
-          >
-            People
-          </Link>
+          {NAV_SECTIONS.map((section, index) => (
+            <div
+              key={section.id}
+              className={cn(
+                index > 0 && 'mt-2 border-t border-line pt-2',
+                index === NAV_SECTIONS.length - 1 && 'mb-1',
+              )}
+            >
+              {section.items.map((item) => (
+                <NavLink key={item.to} to={item.to} label={item.label} />
+              ))}
+            </div>
+          ))}
 
           <PinnedBoards />
 
@@ -231,8 +262,8 @@ function ProjectNode({
           to="/projects/$projectId"
           params={{ projectId }}
           className="min-w-0 flex-1 truncate py-1 text-xs text-ink-muted hover:text-ink"
-          activeProps={{ className: 'text-ink font-medium' }}
-          title={`${name} (${projectKey})`}
+          activeProps={{ className: 'font-medium text-accent' }}
+          title={`${name} (${projectKey}) — open project settings`}
         >
           {name}
         </Link>
@@ -244,15 +275,110 @@ function ProjectNode({
             <li aria-busy="true" className="py-1">
               <Skeleton className="h-4 w-3/4" />
             </li>
-          ) : live.length === 0 ? (
-            <li className="py-1 text-[11px] text-ink-faint">No boards</li>
           ) : (
             live.map((board) => (
               <BoardLink key={board.boardId} board={board} projectId={projectId} />
             ))
           )}
+
+          {/* An expanded project with no boards used to read "No boards" and
+              offer nothing — a dead end on the surface people actually
+              navigate from, with the only `+ Board` button sitting on the
+              /projects page. A project without a board has nowhere to put
+              cards, so this is the one place the affordance is most needed. */}
+          {!boards.isPending && (
+            <AddBoard orgId={orgId} projectId={projectId} isFirst={live.length === 0} />
+          )}
         </ul>
       )}
+    </li>
+  );
+}
+
+/**
+ * Creating a board where the boards are.
+ *
+ * The API and the mutation already existed — `api.work.boards.create`, called
+ * from the projects page — so this adds no capability. What it adds is REACH:
+ * the board tree is where people go looking for boards, and the only button
+ * that made one lived on a different page.
+ *
+ * Deliberately not a duplicate implementation of the projects page's form:
+ * both call the same route, both invalidate the same key, and the difference
+ * between them is only how much room they have.
+ */
+function AddBoard({
+  orgId,
+  projectId,
+  isFirst,
+}: {
+  readonly orgId: string;
+  readonly projectId: ProjectId;
+  readonly isFirst: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+
+  const create = useMutation({
+    mutationFn: (boardName: string) =>
+      api.work.boards.create.mutate({ projectId, name: boardName }),
+    onSuccess: async () => {
+      setName('');
+      setAdding(false);
+      await queryClient.invalidateQueries({ queryKey: keys.boards(orgId, projectId) });
+    },
+  });
+
+  if (!adding) {
+    return (
+      <li>
+        <button
+          type="button"
+          onClick={() => {
+            setAdding(true);
+          }}
+          className="w-full rounded px-1 py-1 text-left text-[11px] text-ink-faint hover:bg-surface-hover hover:text-ink"
+        >
+          {isFirst ? '+ Add the first board' : '+ Board'}
+        </button>
+      </li>
+    );
+  }
+
+  return (
+    <li>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (name.trim() !== '') create.mutate(name.trim());
+        }}
+      >
+        {/* `FocusOnMountInput`, not `autoFocus`: the attribute is banned by
+            jsx-a11y because it steals focus on page load. This input is
+            mounted by a click, so focusing it follows the user rather than
+            surprising them — the same reasoning the projects page states. */}
+        <FocusOnMountInput
+          aria-label="New board name"
+          placeholder="Board name"
+          value={name}
+          onChange={(event) => {
+            setName(event.target.value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              setName('');
+              setAdding(false);
+            }
+          }}
+          className="h-6 w-full text-[11px]"
+        />
+        {create.isError && (
+          <p role="alert" className="px-1 py-0.5 text-[10px] text-danger">
+            Could not create that board.
+          </p>
+        )}
+      </form>
     </li>
   );
 }
@@ -276,8 +402,14 @@ function BoardLink({
            needs it for labels and custom fields, which are project-scoped
            vocabulary. A board reached without it renders a panel missing both. */
         search={{ view: 'board', project: projectId }}
-        className="min-w-0 flex-1 truncate py-1 pl-1 text-xs text-ink-muted hover:text-ink"
-        activeProps={{ className: 'text-ink font-medium' }}
+        /* `includeSearch: false` — WITHOUT it this link is active only while
+           the URL's search params still match the ones above, so switching to
+           the table view, opening a card, or applying a filter silently
+           un-highlights the board you are looking at. The path is what
+           identifies a board; `view` and `project` are state on top of it. */
+        activeOptions={{ includeSearch: false }}
+        className="min-w-0 flex-1 truncate border-l-2 border-transparent py-1 pl-1.5 text-xs text-ink-muted hover:text-ink"
+        activeProps={{ className: 'border-accent font-medium text-accent' }}
       >
         {board.name}
       </Link>

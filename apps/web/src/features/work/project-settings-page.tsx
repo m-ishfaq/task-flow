@@ -212,6 +212,7 @@ function BoardSection({
   const boards = useQuery(boardsQuery(orgId, projectId));
   const [editing, setEditing] = useState<string | null>(null);
   const [name, setName] = useState('');
+  const [newName, setNewName] = useState('');
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.boards(orgId, projectId) });
 
@@ -228,13 +229,25 @@ function BoardSection({
     onSuccess: refresh,
   });
 
+  const create = useMutation({
+    mutationFn: (boardName: string) =>
+      api.work.boards.create.mutate({ projectId, name: boardName }),
+    onSuccess: async () => {
+      setNewName('');
+      await refresh();
+    },
+  });
+
   const live = (boards.data ?? []).filter((board) => board.archivedAt === null);
 
   return (
     <Section
       title="Boards"
       count={boards.data === undefined ? undefined : live.length}
-      description="Archiving a board hides it without touching its cards. Boards are created from the projects list."
+      /* Was "Boards are created from the projects list" — a settings page
+         whose own description sends you somewhere else to do half the job.
+         Creation lives here now too, so this page manages boards completely. */
+      description="Rename, create, or archive. Archiving hides a board without touching its cards."
     >
       {boards.isPending && <SkeletonRows rows={2} className="*:h-10" />}
 
@@ -318,8 +331,34 @@ function BoardSection({
         </ul>
       )}
 
+      {/* Creation, on the page that manages boards. Previously it lived only
+          on the projects list, and this section's own description pointed
+          there — a settings page that can rename and archive a thing but not
+          make one sends you elsewhere to finish a job you started here. */}
+      <form
+        className="mt-2 flex items-center gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (newName.trim() !== '') create.mutate(newName.trim());
+        }}
+      >
+        <Input
+          aria-label="New board name"
+          placeholder="New board name"
+          value={newName}
+          onChange={(event) => {
+            setNewName(event.target.value);
+          }}
+          className="h-7 max-w-xs text-xs"
+        />
+        <Button type="submit" size="sm" disabled={create.isPending || newName.trim() === ''}>
+          {create.isPending ? 'Adding…' : 'Add board'}
+        </Button>
+      </form>
+
       {rename.isError && <ErrorText error={rename.error} />}
       {archive.isError && <ErrorText error={archive.error} />}
+      {create.isError && <ErrorText error={create.error} />}
     </Section>
   );
 }
