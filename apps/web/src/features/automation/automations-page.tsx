@@ -1,11 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type UseQueryResult,
-} from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import type { FilterNode } from '@taskflow/filter';
 import type { ProjectId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
@@ -15,13 +10,7 @@ import { cn } from '../../lib/cn.js';
 import { formatRelative } from '../../lib/format.js';
 import { useToast } from '../../lib/toast-context.js';
 import type { Wire } from '../../lib/wire.js';
-import {
-  Button,
-  ConfirmButton,
-  Empty,
-  Field,
-  SkeletonRows,
-} from '../../components/primitives.js';
+import { Button, ConfirmButton, Empty, Field, SkeletonRows } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { FilterBuilder } from '../work/filter/filter-builder.js';
 import {
@@ -412,7 +401,12 @@ function RuleRow({
 
         <div className="min-w-0 flex-1 basis-48">
           <p className="flex items-center gap-2">
-            <span className={cn('truncate text-sm font-medium', rule.enabled ? 'text-ink' : 'text-ink-muted')}>
+            <span
+              className={cn(
+                'truncate text-sm font-medium',
+                rule.enabled ? 'text-ink' : 'text-ink-muted',
+              )}
+            >
               {rule.name}
             </span>
             {rule.conditionBroken && (
@@ -1039,7 +1033,9 @@ function WebhookCreateForm({
         <input
           id="webhook-name"
           value={name}
-          onChange={(event) => { setName(event.target.value); }}
+          onChange={(event) => {
+            setName(event.target.value);
+          }}
           maxLength={120}
           placeholder="Release notifications"
           className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
@@ -1050,7 +1046,9 @@ function WebhookCreateForm({
           id="webhook-url"
           type="url"
           value={url}
-          onChange={(event) => { setUrl(event.target.value); }}
+          onChange={(event) => {
+            setUrl(event.target.value);
+          }}
           maxLength={2048}
           placeholder="https://hooks.example.com/on-release"
           className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
@@ -1106,7 +1104,9 @@ function SecretReveal({
           variant="ghost"
           className="h-6 px-1.5 text-[11px]"
           onClick={() => {
-            void navigator.clipboard.writeText(secret).then(() => { setCopied(true); });
+            void navigator.clipboard.writeText(secret).then(() => {
+              setCopied(true);
+            });
           }}
         >
           {copied ? 'Copied' : 'Copy'}

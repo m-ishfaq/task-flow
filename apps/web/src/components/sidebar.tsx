@@ -487,7 +487,9 @@ function BoardLink({
   const togglePinnedBoard = useUi((state) => state.togglePinnedBoard);
 
   return (
-    <li className={cn('group relative flex items-center rounded hover:bg-surface-hover', ACTIVE_ROW)}>
+    <li
+      className={cn('group relative flex items-center rounded hover:bg-surface-hover', ACTIVE_ROW)}
+    >
       <Link
         to="/boards/$boardId"
         params={{ boardId: board.boardId as BoardId }}
