@@ -415,7 +415,17 @@ services:
       # host side too: put TLS termination in front of this (a managed load
       # balancer, or another reverse proxy doing ACME) — see this file's own
       # header and ai/deployment-runbook.md.
-      - '80:8080'
+      #
+      # WEB_HOST_BIND defaults to every interface, matching the runbook's
+      # documented first-deploy flow (curl the bare host on :80 before TLS
+      # exists at all). Once a reverse proxy owns the public :80/:443 — Caddy,
+      # another nginx doing ACME — set WEB_HOST_BIND=127.0.0.1 so this
+      # container stops competing for the same host port and is reachable
+      # only through the proxy. Found live: a fresh `apt install caddy` and
+      # this container both trying to bind host :80 fails with "address
+      # already in use", and the loser depends on start order rather than on
+      # either config being wrong.
+      - '${WEB_HOST_BIND:-0.0.0.0}:${WEB_HOST_PORT:-80}:8080'
     depends_on:
       - api
       - realtime
