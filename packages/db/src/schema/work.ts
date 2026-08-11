@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  date,
   index,
   integer,
   jsonb,
@@ -204,6 +205,15 @@ export const cards = work.table(
      * from another project being set here.
      */
     statusId: uuid('status_id'),
+    /**
+     * The sprint this card is planned in, or null for the BACKLOG (the pool
+     * of unassigned work — there is no backlog row, the null is the backlog,
+     * ai/phase-10.5-sprints.md decision 4). The composite FK to `sprints`
+     * (org_id, project_id, sprint_id) — which Drizzle cannot express, same as
+     * `status_id` — is what stops a sprint from another project being set
+     * here.
+     */
+    sprintId: uuid('sprint_id'),
     /** One of PRIORITIES. Nullable — "no priority" is a real, common state. */
     priority: text('priority'),
 
@@ -480,6 +490,51 @@ export const statuses = work.table(
     // `statuses_project_name_key` is case-insensitive (lower(name)) and
     // `statuses_project_default_key` is partial (WHERE is_default) — both
     // expression indexes Drizzle has no builder for. Migration only.
+  ],
+);
+
+/**
+ * A sprint — a project's planning unit (migration 0054, Phase 10.5).
+ *
+ * Project-scoped like statuses, with a planned → active → completed (+cancelled)
+ * lifecycle the SERVICE owns and a CHECK keeps honest. `cards.sprintId` carries
+ * the composite FK Drizzle cannot express: (org_id, project_id, sprint_id)
+ * against (org_id, project_id, id) here, so a card can never name a sprint
+ * from another project — see the file header for why the migration wins when
+ * these two disagree.
+ */
+export const sprints = work.table(
+  'sprints',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+
+    name: text('name').notNull(),
+    /** Prose, not a constraint — nullable like `projects.description`. */
+    goal: text('goal'),
+
+    /** Day-granular by design: a sprint is a span of days, not an instant. */
+    startsOn: date('starts_on').notNull(),
+    endsOn: date('ends_on').notNull(),
+
+    /** One of planned / active / completed / cancelled. The migration's CHECK is the enforcement. */
+    status: text('status').notNull().default('planned'),
+
+    /** Written by the start/complete transitions, never inferred from the dates. */
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('sprints_org_project_id_key').on(table.orgId, table.projectId, table.id),
+    // `sprints_one_active_per_project` is PARTIAL (WHERE status = 'active') —
+    // an expression index Drizzle has no builder for. Migration only. It is
+    // the enforcement of "one active sprint per project". No status index is
+    // declared here: a project holds a handful of sprints and the unique key
+    // above already serves every (org_id, project_id) lookup.
   ],
 );
 

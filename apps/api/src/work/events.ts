@@ -728,3 +728,92 @@ export const viewDeleted = defineEvent(
     })
     .strict(),
 );
+
+/* ---------------------------------------------------------------------------
+ * Sprints (ai/phase-10.5-sprints.md, Phase 10.5, Slice 1).
+ *
+ * The lifecycle events carry the counts that make the completion readable
+ * without a follow-up query: `sprint.completed` says how many cards shipped
+ * with the sprint and how many were released back to the backlog, computed in
+ * the same transaction as the close. `card.sprint_changed` is a first-class
+ * event carrying `before`/`after` — the same shape `card.status_changed`
+ * established, for the same reason: a consumer that has to diff two
+ * `card.updated` payloads to notice a membership change is a consumer that
+ * will get it wrong, and Phase 11's projection needs to see membership
+ * changes exactly. The close emits it once per released card.
+ * ------------------------------------------------------------------------- */
+
+/** A sprint entered the project's plan. */
+export const sprintCreated = defineEvent(
+  'sprint.created',
+  z
+    .object({
+      sprintId: z.string(),
+      projectId: z.string(),
+      name: z.string(),
+      startsOn: z.string(),
+      endsOn: z.string(),
+    })
+    .strict(),
+);
+
+/** The active sprint began — the project's one-at-a-time window opened. */
+export const sprintStarted = defineEvent(
+  'sprint.started',
+  z
+    .object({
+      sprintId: z.string(),
+      projectId: z.string(),
+      startedAt: z.string(),
+    })
+    .strict(),
+);
+
+/**
+ * The sprint closed. `shippedCount` = cards whose status category is `done`
+ * that keep the sprint (the stable record Phase 11's burndown reads);
+ * `releasedCount` = unfinished cards returned to the backlog. Both are
+ * computed in the completion transaction, so the event is a statement of
+ * what the close DID, not a hint about where to look.
+ */
+export const sprintCompleted = defineEvent(
+  'sprint.completed',
+  z
+    .object({
+      sprintId: z.string(),
+      projectId: z.string(),
+      completedAt: z.string(),
+      shippedCount: z.number().int(),
+      releasedCount: z.number().int(),
+    })
+    .strict(),
+);
+
+/** The sprint was cancelled — the team decided it was not going to happen. */
+export const sprintCancelled = defineEvent(
+  'sprint.cancelled',
+  z
+    .object({
+      sprintId: z.string(),
+      projectId: z.string(),
+      releasedCount: z.number().int(),
+    })
+    .strict(),
+);
+
+/**
+ * A card's sprint membership changed — assigned, released, or released by a
+ * close (before = the sprint it left, after = the sprint it entered; null is
+ * the backlog). Phase 11's projection and the picker's card counts consume it.
+ */
+export const cardSprintChanged = defineEvent(
+  'card.sprint_changed',
+  z
+    .object({
+      cardId: z.string(),
+      boardId: z.string(),
+      before: z.string().nullable(),
+      after: z.string().nullable(),
+    })
+    .strict(),
+);
