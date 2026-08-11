@@ -76,7 +76,7 @@ export const ACTION_LABELS: Readonly<Record<string, string>> = {
   'card.unassign': 'Remove an assignee',
   'card.add_comment': 'Add a comment to the card',
   'chat.post_message': 'Post a chat message',
-  'call_webhook': 'Call a webhook',
+  call_webhook: 'Call a webhook',
 };
 
 export type ActionValue =
@@ -143,7 +143,7 @@ export const ARGUMENTS: Readonly<Record<string, readonly ArgumentSpec[]>> = {
   ],
   /* Wave 2 — names an org-registered webhook, so the picker offers the
      registry and the action can never carry a bare URL. */
-  'call_webhook': [{ field: 'webhookId', label: 'Webhook', kind: 'webhook' }],
+  call_webhook: [{ field: 'webhookId', label: 'Webhook', kind: 'webhook' }],
 };
 
 /**

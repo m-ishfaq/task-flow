@@ -10,7 +10,11 @@ import {
   withWebhookScope,
 } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
-import { masterKeysFromBase64, SoftwareKeyProvider, verifyWebhookSignature } from '@taskflow/security';
+import {
+  masterKeysFromBase64,
+  SoftwareKeyProvider,
+  verifyWebhookSignature,
+} from '@taskflow/security';
 import { createWebhook, enqueueWebhookDelivery } from '@taskflow/api/automation/webhooks';
 import { drainWebhookDeliveries, type DeliveryDeps } from './delivery.js';
 
@@ -78,7 +82,10 @@ async function scaffold(slug: string): Promise<{
   orgId: OrgId;
   webhookId: string;
   signingSecret: string;
-  owner: { readonly subject: { orgId: OrgId; userId: UserId; role: 'owner'; tuples: readonly unknown[] }; readonly requestId: typeof requestId };
+  owner: {
+    readonly subject: { orgId: OrgId; userId: UserId; role: 'owner'; tuples: readonly unknown[] };
+    readonly requestId: typeof requestId;
+  };
 }> {
   fixtureCounter += 1;
   const orgId = unsafeAsId<'OrgId'>(crypto.randomUUID());
@@ -171,11 +178,13 @@ async function webhookRow(orgId: OrgId, webhookId: string) {
   return rows[0];
 }
 
-function makeDeps(overrides: {
-  fetchImpl?: DeliveryDeps['fetchImpl'];
-  lookup?: DeliveryDeps['lookup'];
-  keys?: KeyProvider;
-} = {}): { deps: DeliveryDeps; calls: CapturedRequest[] } {
+function makeDeps(
+  overrides: {
+    fetchImpl?: DeliveryDeps['fetchImpl'];
+    lookup?: DeliveryDeps['lookup'];
+    keys?: KeyProvider;
+  } = {},
+): { deps: DeliveryDeps; calls: CapturedRequest[] } {
   const calls: CapturedRequest[] = [];
 
   const deps: DeliveryDeps = {
@@ -225,8 +234,11 @@ beforeAll(async () => {
 
   /* Sweep residue from an aborted earlier run. */
   await admin.setOrg(null);
-  await admin.query(`DELETE FROM identity.orgs WHERE id IN (
-    SELECT org_id FROM identity.memberships WHERE user_id = $1)`, [OWNER]);
+  await admin.query(
+    `DELETE FROM identity.orgs WHERE id IN (
+    SELECT org_id FROM identity.memberships WHERE user_id = $1)`,
+    [OWNER],
+  );
   await admin.query(`DELETE FROM identity.users WHERE id = $1`, [OWNER]);
 
   initializeDatabase({
@@ -304,7 +316,12 @@ describe('delivering', () => {
           body: typeof init?.body === 'string' ? init.body : '',
         });
         if (calls.length === 1) {
-          return Promise.resolve(new Response(null, { status: 302, headers: { location: 'https://hooks.example.test/final' } }));
+          return Promise.resolve(
+            new Response(null, {
+              status: 302,
+              headers: { location: 'https://hooks.example.test/final' },
+            }),
+          );
         }
         return Promise.resolve(new Response('ok', { status: 200 }));
       },
@@ -329,7 +346,12 @@ describe('delivering', () => {
         /* The classic SSRF: the first hop passes every check, and the 302
            points at the metadata endpoint. A client following redirects with
            the gate applied only once is a fully working SSRF here. */
-        return Promise.resolve(new Response(null, { status: 302, headers: { location: 'http://169.254.169.254/latest/meta-data/' } }));
+        return Promise.resolve(
+          new Response(null, {
+            status: 302,
+            headers: { location: 'http://169.254.169.254/latest/meta-data/' },
+          }),
+        );
       },
     });
 
@@ -398,7 +420,9 @@ describe('failure, backoff, dead-letter', () => {
        dead delivery crosses it — the threshold crossing is what is under
        test, not the arithmetic of the counter. */
     await admin.setOrg(fx.orgId);
-    await admin.query(`UPDATE platform.webhooks SET failure_count = 4 WHERE id = $1`, [fx.webhookId]);
+    await admin.query(`UPDATE platform.webhooks SET failure_count = 4 WHERE id = $1`, [
+      fx.webhookId,
+    ]);
     await admin.setOrg(null);
 
     for (let attempt = 0; attempt < 6; attempt += 1) {
@@ -423,9 +447,7 @@ describe('failure, backoff, dead-letter', () => {
         .from(schema.notifications)
         .where(eq(schema.notifications.subjectId, fx.webhookId)),
     );
-    expect(notifications).toEqual([
-      { userId: OWNER, kind: 'webhook.disabled' },
-    ]);
+    expect(notifications).toEqual([{ userId: OWNER, kind: 'webhook.disabled' }]);
 
     /* The audit-log fact rides the outbox. */
     const events = await withOrgScope(fx.orgId, async (tx) =>

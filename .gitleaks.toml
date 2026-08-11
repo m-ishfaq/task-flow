@@ -51,9 +51,20 @@ description = "Published test vectors and example data — not credentials"
 # `URL_SAFE_ALPHABET` so no future commit reproduces the finding, but this
 # entry stays because the old name+value pair is already in history and
 # gitleaks scans that too.
+#
+# The fixture signing input from `packages/security/src/webhook-signing.test.ts`.
+#
+# A fake outbound-webhook signing key, never issued by any real system,
+# used to exercise `buildWebhookSignature`/`verifyWebhookSignature` against
+# themselves. It was originally bound to a local const named `SECRET`, which
+# combined with the `tf_whs_` prefix's entropy is exactly what
+# `generic-api-key` flags; the identifier is now `SIGNING_INPUT` so no future
+# commit reproduces the finding, but this entry stays because the old
+# name+value pair is already in history and gitleaks scans that too.
 regexes = [
   '''5BAA61E4C9B93F3F0682250B6CF8331B7EE68FD8''',
   '''1E4C9B93F3F0682250B6CF8331B7EE68FD8''',
   '''BTBZMqHH6r4Tts7J_aSIgg''',
   '''ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_''',
+  '''tf_whs_0123456789abcdef0123456789abcdef''',
 ]
