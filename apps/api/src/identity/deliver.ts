@@ -56,9 +56,7 @@ export function createMailDelivery(options: MailDeliveryOptions): MailDelivery {
       /* exactOptionalPropertyTypes: `user?: string` rejects `string | undefined`
          explicitly assigned — the key must be absent, not present-as-undefined. */
       ...(options.env.MAIL_USER === undefined ? {} : { user: options.env.MAIL_USER }),
-      ...(options.env.MAIL_PASSWORD === undefined
-        ? {}
-        : { password: options.env.MAIL_PASSWORD }),
+      ...(options.env.MAIL_PASSWORD === undefined ? {} : { password: options.env.MAIL_PASSWORD }),
     });
 
   const queue = new MailQueue({
