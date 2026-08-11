@@ -171,9 +171,7 @@ export async function revokeApiToken(
     const updated = await tx
       .update(schema.apiTokens)
       .set({ revokedAt: new Date() })
-      .where(
-        and(eq(schema.apiTokens.id, input.tokenId), isNull(schema.apiTokens.revokedAt)),
-      );
+      .where(and(eq(schema.apiTokens.id, input.tokenId), isNull(schema.apiTokens.revokedAt)));
 
     if (updated.rowCount === 1) {
       await outboxWriter.append(tx, [

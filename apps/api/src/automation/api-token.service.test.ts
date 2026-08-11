@@ -73,7 +73,9 @@ async function scaffold(slug: string): Promise<{
   };
 }
 
-async function outboxFor(orgId: OrgId): Promise<{ name: string; payload: Record<string, unknown> }[]> {
+async function outboxFor(
+  orgId: OrgId,
+): Promise<{ name: string; payload: Record<string, unknown> }[]> {
   /* The migrator is not RLS-exempt, so the read must run under the org the
      rows belong to — the same discipline `removeOrg` already follows. */
   await admin.setOrg(orgId);
@@ -209,7 +211,11 @@ describe('minting — the scope subset contract', () => {
     const events = await outboxFor(orgId);
     const created = events.find((event) => event.name === 'api_token.created');
     expect(created).toBeDefined();
-    expect(created?.payload).toMatchObject({ tokenId: issued.tokenId, name: 'CI', scopes: ['card:read'] });
+    expect(created?.payload).toMatchObject({
+      tokenId: issued.tokenId,
+      name: 'CI',
+      scopes: ['card:read'],
+    });
 
     /* The audit log must not carry a fragment of the credential. The webhook
        events' rule applied to tokens: no token, no prefix. */
