@@ -50,6 +50,10 @@ export async function appendToOutbox(
       // unchanged; the column is a timestamptz.
       occurredAt: new Date(event.occurredAt),
       requestId: event.requestId ?? null,
+      /* Absent means 0 — the root of a chain. Every human-initiated mutation
+         omits it, and so does every event written before migration 0048; both
+         are correctly depth 0 (ai/phase-10-automation.md §4). */
+      causationDepth: event.causationDepth ?? 0,
       payload: event.payload,
     })),
   );
@@ -82,6 +86,15 @@ export interface OutboxRow {
   readonly actorId: string | null;
   readonly occurredAt: Date;
   readonly requestId: string | null;
+  /**
+   * How many automation hops produced this event (migration 0048).
+   *
+   * 0 for every human-initiated mutation and for every row written before the
+   * column existed. This is what makes the automation engine's depth cap
+   * survive the queue — without it a chain restarts its counter on the far
+   * side of the outbox, which is loop protection that protects nothing.
+   */
+  readonly causationDepth: number;
   readonly payload: unknown;
   /** This CONSUMER's attempt count — never shared with another consumer's. */
   readonly attempts: number;
@@ -90,6 +103,20 @@ export interface OutboxRow {
 /** Narrows an unknown raw-row column to text, without stringifying an object into it. */
 function text(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
+}
+
+/**
+ * Narrows the causation depth, defaulting anything unusable to 0.
+ *
+ * A NEGATIVE value would be the dangerous one: it makes the engine's `depth >=
+ * MAX_DEPTH` cap unreachable, so a corrupted or hostile row could run an
+ * unbounded chain. The column has a CHECK for the same reason (0048); this is
+ * the second copy, at the boundary where a raw row becomes a typed one.
+ */
+function depth(value: unknown): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) return 0;
+  return parsed;
 }
 
 /**
@@ -154,6 +181,7 @@ export async function claimPending(
            o.actor_id::text      AS actor_id,
            o.occurred_at          AS occurred_at,
            o.request_id           AS request_id,
+           o.causation_depth      AS causation_depth,
            o.payload              AS payload,
            coalesce(d.attempts, 0) AS attempts
       FROM platform.outbox o
@@ -175,6 +203,11 @@ export async function claimPending(
       actorId: text(record['actor_id']),
       occurredAt: instant(record['occurred_at']),
       requestId: text(record['request_id']),
+      /* `Number(null)` is 0, which is the right answer here by luck rather
+         than by design — so it is written explicitly. A row from before
+         migration 0048 has no depth and IS depth 0; relying on a coercion for
+         that would be a coincidence one refactor away from breaking. */
+      causationDepth: depth(record['causation_depth']),
       payload: record['payload'],
       attempts: Number(record['attempts']),
     };

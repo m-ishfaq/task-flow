@@ -50,6 +50,15 @@ export const outbox = platform.table(
     actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
     requestId: text('request_id'),
+    /**
+     * How many automation hops produced this event (migration 0048).
+     *
+     * Envelope metadata, in its own column beside the other envelope fields
+     * rather than inside `payload` — payloads are per-event `.strict()` schemas
+     * owned by their slices, and none of them should have to learn about
+     * automation. 0 for every human-initiated mutation.
+     */
+    causationDepth: integer('causation_depth').notNull().default(0),
     payload: jsonb('payload').notNull(),
 
     /** @deprecated Superseded by `outboxDispatch`. See the table comment above. */

@@ -88,6 +88,8 @@ export {
 
 export { readNotificationPrefsTimezone } from './notification-prefs-timezone.js';
 
+export { consumeAutomationBudget } from './automation-budget.js';
+
 export {
   readAuditEntries,
   readAuditChain,

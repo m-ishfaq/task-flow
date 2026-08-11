@@ -1,0 +1,134 @@
+import type { FilterNode } from '@taskflow/filter';
+import type { OrgId, UserId } from '@taskflow/contracts';
+
+/**
+ * The automation engine's vocabulary (ai/phase-10-automation.md §1).
+ *
+ * Everything a rule can express lives in this file, and the closed-union shape
+ * of `AutomationAction` is a security control rather than a typing preference:
+ * PLAN.md §10.3 lists actions, never scripts, and there is deliberately no
+ * variant here that evaluates a user-supplied string. A rule is data.
+ */
+
+/** One rule, as loaded from `platform.automations`. */
+export interface AutomationRule {
+  readonly id: string;
+  readonly orgId: OrgId;
+  readonly name: string;
+  /** A registered domain event name — the trigger. */
+  readonly triggerEvent: string;
+  /** The condition tree, or null for "fire on every occurrence". */
+  readonly condition: FilterNode | null;
+  readonly actions: readonly AutomationAction[];
+  readonly enabled: boolean;
+  /**
+   * Whose permissions the actions run with, re-resolved at EXECUTION (§2).
+   * Never the person whose action triggered the rule — attributing a rule's
+   * card move to whoever dragged the card would make the audit log say a person
+   * did something they did not do.
+   */
+  readonly createdBy: UserId;
+}
+
+/**
+ * The closed action union for Wave 1 — everything with no external effect and
+ * no cost.
+ *
+ * Webhooks arrive in Wave 2, and `place call` / `send SMS` in Wave 4 behind an
+ * off-by-default env flag and their own spend sub-budget (§5.5). The ordering
+ * is deliberate: the engine and its loop protection get exercised on actions
+ * that cannot cost anything or reach a network the org does not control.
+ *
+ * Every variant names a service method that already exists and the arguments it
+ * takes. Adding one is a deliberate three-place change — here, in the executor,
+ * and in the route's Zod schema — which is what keeps "a rule cannot do
+ * something a user could not" checkable by reading three files.
+ */
+export type AutomationAction =
+  | { readonly type: 'card.move'; readonly listId: string }
+  | { readonly type: 'card.set_status'; readonly statusId: string }
+  | { readonly type: 'card.set_priority'; readonly priority: string }
+  | { readonly type: 'card.assign'; readonly userId: string }
+  | { readonly type: 'card.add_label'; readonly labelId: string }
+  | { readonly type: 'chat.post_message'; readonly channelId: string; readonly body: string };
+
+/** Every action type, for the route's schema and the executor's exhaustiveness check. */
+export const ACTION_TYPES = [
+  'card.move',
+  'card.set_status',
+  'card.set_priority',
+  'card.assign',
+  'card.add_label',
+  'chat.post_message',
+] as const;
+
+export type ActionType = (typeof ACTION_TYPES)[number];
+
+/** What happened to one action, in order. Stored in `automation_runs.action_results`. */
+export interface ActionResult {
+  readonly index: number;
+  readonly type: string;
+  readonly status: 'succeeded' | 'failed';
+  readonly error?: string;
+}
+
+/** Mirrors `automation_runs.status` — the CHECK in migration 0047. */
+export type RunStatus = 'succeeded' | 'failed' | 'refused' | 'skipped';
+
+/**
+ * Why a run did not proceed.
+ *
+ * Recorded rather than inferred: "my rule did not fire" is the question the run
+ * history exists to answer, and a row with no reason answers it no better than
+ * no row at all.
+ */
+export type RunReason =
+  | 'condition_not_met'
+  | 'rule_disabled'
+  | 'org_suspended'
+  | 'depth_exceeded'
+  | 'self_trigger'
+  | 'budget_exhausted'
+  | 'unauthorized'
+  | 'condition_unusable'
+  | 'trigger_not_evaluable';
+
+/** One rule's outcome for one event — what gets written to `automation_runs`. */
+export interface RunOutcome {
+  readonly automationId: string;
+  readonly status: RunStatus;
+  readonly reason?: RunReason;
+  readonly actionResults: readonly ActionResult[];
+  readonly depth: number;
+  readonly durationMs: number;
+}
+
+/**
+ * Executes one rule's actions. Implemented in slice 4 against `apps/api`'s own
+ * service layer; injected so the decision pipeline can be tested without any
+ * of it, and so nothing can act while the loop protection is still under
+ * review.
+ *
+ * The executor is responsible for authorizing each action as the RULE OWNER
+ * (§2) — the engine decides WHETHER to run, the executor decides whether the
+ * owner may do each thing, because only it knows what resource each action
+ * names.
+ */
+export interface ActionExecutor {
+  execute(input: {
+    readonly rule: AutomationRule;
+    readonly event: TriggerEvent;
+    /** The depth the actions' own events must carry — this run's depth plus one. */
+    readonly nextDepth: number;
+  }): Promise<readonly ActionResult[]>;
+}
+
+/** The claimed outbox row, narrowed to what the engine reads. */
+export interface TriggerEvent {
+  readonly id: string;
+  readonly orgId: OrgId;
+  readonly name: string;
+  readonly payload: Record<string, unknown>;
+  /** Absent on a human-initiated event, which is depth 0 — the root of a chain. */
+  readonly causationDepth: number;
+}
