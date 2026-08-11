@@ -252,7 +252,7 @@ editability rules per status, and the permission split). Two notes:
   so `assignSprint`/`releaseSprint` follow them and don't either. Noted here rather than
   silently diverging.
 
-**Slice 3 COMPLETE (commit TBD)** — the web surface, all one integration point: the board
+**Slice 3 COMPLETE (commit `f29f9c7`)** — the web surface, all one integration point: the board
 `Sprint` picker (All · Backlog · each sprint, active first, with dates and live card counts)
 writing a `sprint=` URL param, the sprints manager panel behind it (create/edit/start/complete/
 cancel, every control rendered and the server answering per §8.2), and the card detail
