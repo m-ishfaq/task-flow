@@ -194,6 +194,16 @@ the `web` service: a managed load balancer, or another reverse proxy doing ACME
 - Put TLS in front of MinIO's port 9000 too (or point `STORAGE_ENDPOINT` at a
   real S3/R2 endpoint) before real users upload anything — an attachment upload
   over plain HTTP is not something to ship.
+- Set `WEB_HOST_BIND=127.0.0.1` in `.env.prod` before starting the reverse
+  proxy. `web`'s own port mapping defaults to every interface (`0.0.0.0`) so
+  the runbook's plain-HTTP first-deploy smoke test works with nothing else
+  running — but that means it is still holding host `:80` when a
+  freshly-installed Caddy/nginx tries to bind the same port for ACME, and one
+  of the two fails with "address already in use" depending on start order.
+  Binding `web` to loopback only frees the public port for the proxy while
+  keeping `web` reachable through it (`reverse_proxy localhost:80` in a
+  Caddyfile still resolves). `docker compose up -d --force-recreate web`
+  applies the change to an already-running stack.
 
 ## Enabling the TURN profile (in-app voice relay)
 
