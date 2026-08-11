@@ -450,6 +450,55 @@ importers:
         specifier: ^3.2.7
         version: 3.2.7(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(jsdom@30.0.1)(lightningcss@1.33.0)(tsx@4.23.1)(yaml@2.9.0)
 
+  apps/worker:
+    dependencies:
+      '@taskflow/api':
+        specifier: workspace:*
+        version: link:../api
+      '@taskflow/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@taskflow/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@taskflow/events':
+        specifier: workspace:*
+        version: link:../../packages/events
+      '@taskflow/filter':
+        specifier: workspace:*
+        version: link:../../packages/filter
+      '@taskflow/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
+      '@taskflow/policy':
+        specifier: workspace:*
+        version: link:../../packages/policy
+      '@taskflow/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+    devDependencies:
+      '@taskflow/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.1
+      eslint:
+        specifier: ^9.17.0
+        version: 9.39.5(jiti@2.7.0)
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.1
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(jsdom@30.0.1)(lightningcss@1.33.0)(tsx@4.23.1)(yaml@2.9.0)
+
   packages/config: {}
 
   packages/contracts:

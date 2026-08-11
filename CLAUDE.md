@@ -81,7 +81,7 @@ For these, a second adversarial AI pass in a fresh context is expected, not opti
 ## Layout
 
 ```
-apps/       api                              (arriving: worker)
+apps/       api
               src/identity   ⚠ auth, tokens, sessions, passkeys
               src/tenancy      orgs, memberships, teams, grants, audit projection
               src/work         projects, boards, lists, cards, ranking, rich text,
@@ -105,6 +105,13 @@ apps/       api                              (arriving: worker)
                                its channel; three lines and a call to
                                authorizeChannelJoin, and it must stay that way
               src/relay.ts     the 'realtime' outbox consumer
+            worker             background jobs (Phase 10) — takes only work
+                               added from Phase 10 onward: the automation
+                               engine, webhook delivery, the analytics rollup
+                               refresh. The seven setInterval loops already
+                               inside apps/api STAY there; a second consumer
+                               process is what FOR UPDATE SKIP LOCKED and the
+                               per-consumer outbox_dispatch were built for
             collab             Hocuspocus gateway (Phase 6) — the one process
                                allowed to write from a socket handler, and only
                                to docs.yjs_updates/docs.page_versions

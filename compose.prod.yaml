@@ -355,6 +355,38 @@ services:
       retries: 5
       start_period: 15s
 
+  # The background worker (ai/phase-10-automation.md §9 decision 1). Runs NEW
+  # background work only — the automation engine, webhook delivery, and later
+  # the analytics rollup refresh. The seven existing loops stay inside `api`;
+  # running a second consumer process is what `FOR UPDATE SKIP LOCKED` and the
+  # per-consumer `outbox_dispatch` were built for, so the two do not contend.
+  #
+  # No `ports:` — nothing outside the compose network ever calls this service.
+  # The port it does listen on carries health probes and nothing else, which is
+  # why `web` does not depend on it and `nginx.conf` has no route to it.
+  worker:
+    image: ${REGISTRY:-ghcr.io/m-ishfaq}/task-flow-worker:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      DATABASE_URL: postgresql://taskflow_app:${TASKFLOW_APP_PASSWORD:?TASKFLOW_APP_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+      WORKER_PORT: 3003
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # 127.0.0.1, not localhost — same reasoning as the api service's own
+      # healthcheck comment above.
+      test: ['CMD', 'wget', '-q', '-O-', 'http://127.0.0.1:3003/health/live']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   web:
     image: ${REGISTRY:-ghcr.io/m-ishfaq}/task-flow-web:${IMAGE_TAG:-local}
     build:
