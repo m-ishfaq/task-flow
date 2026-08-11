@@ -7,15 +7,18 @@ import {
   type ReactNode,
 } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { parse, type TqlError } from '@taskflow/filter';
 import { unsafeAsId, type SearchHit } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { cn } from '../../lib/cn.js';
+import { api } from '../../lib/trpc.js';
+import { keys } from '../../lib/query.js';
+import { useToast } from '../../lib/toast-context.js';
 import { formatRelative } from '../../lib/format.js';
-import { Empty, Skeleton } from '../../components/primitives.js';
-import { ErrorView } from '../../components/error-view.js';
-import { searchResultsQuery } from './api.js';
+import { Button, Empty, Skeleton } from '../../components/primitives.js';
+import { ErrorText, ErrorView } from '../../components/error-view.js';
+import { savedSearchesQuery, searchResultsQuery } from './api.js';
 import { freeTextTermOf, splitOnTerm } from './term.js';
 
 /**
@@ -51,6 +54,13 @@ const FACETS: readonly { id: Facet; label: string }[] = [
   { id: 'message', label: 'Messages' },
   { id: 'page', label: 'Pages' },
   { id: 'comment', label: 'Comments' },
+  /* Transcripts are indexed for everyone but returned only to a caller with
+     `recording:read` — the route drops the rest per-hit (§2.7). The chip is
+     shown to everybody anyway: hiding it would be the UI re-deriving an
+     authorization decision, which §8.2 forbids precisely because the hidden
+     version is the one that never gets tested. A member who picks it gets an
+     honest empty result. */
+  { id: 'transcript', label: 'Transcripts' },
 ];
 
 /** Appends the facet's type constraint onto the typed query. */
@@ -66,6 +76,7 @@ const TYPE_BADGE: Record<SearchHit['type'], { label: string; className: string }
   message: { label: 'Message', className: 'bg-violet-500/10 text-violet-500' },
   page: { label: 'Page', className: 'bg-emerald-500/10 text-emerald-500' },
   comment: { label: 'Comment', className: 'bg-amber-500/10 text-amber-500' },
+  transcript: { label: 'Transcript', className: 'bg-sky-500/10 text-sky-500' },
 };
 
 export function SearchPage({ initialQuery }: { readonly initialQuery: string }) {
@@ -174,6 +185,15 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
         }
         return;
       }
+      case 'transcript': {
+        /* The CALL is what opens, not the transcript — there is no transcript
+           route, because a transcript is a property of a call and the call log
+           is where it is read. `?call=` expands that row (router.tsx). */
+        if ('call_id' in meta) {
+          void navigate({ to: '/calls', search: { tab: 'calls', call: meta.call_id } });
+        }
+        return;
+      }
     }
   };
 
@@ -182,8 +202,8 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
       <header className="shrink-0">
         <h1 className="text-sm font-semibold text-ink">Search</h1>
         <p className="text-xs text-ink-faint">
-          One query across cards, messages, pages and comments — TQL, the same language the board
-          filter speaks.
+          One query across cards, messages, pages, comments and call transcripts — TQL, the same
+          language the board filter speaks.
         </p>
       </header>
 
@@ -209,6 +229,16 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
               const hit = hits[active];
               if (hit !== undefined) open(hit);
             }
+          }}
+        />
+
+        <SavedSearches
+          orgId={orgId}
+          current={text}
+          onPick={(query) => {
+            setText(query);
+            setFacet('all');
+            setActive(0);
           }}
         />
 
@@ -322,6 +352,170 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
           </ul>
         )}
       </main>
+    </div>
+  );
+}
+
+/**
+ * Saved searches (§3.2) — the list, plus saving what is currently typed.
+ *
+ * ## Sharing is offered to everyone and refused by the server
+ *
+ * The "Share with the organization" checkbox is shown to every caller, not
+ * hidden from members. §8.2 is explicit that a UI reimplementing `can()`
+ * produces two models that drift, and the one users see is the one that is
+ * never tested — so a member who ticks it gets an honest FORBIDDEN from the
+ * server, rendered here, rather than a control that silently was not there.
+ *
+ * ## A broken entry stays visible
+ *
+ * The server re-parses each stored query and marks the unusable ones; they are
+ * listed, disabled, and labelled. Dropping them from the list would leave
+ * someone with a saved search that had simply vanished, and no way to find out
+ * why or to delete it.
+ */
+function SavedSearches({
+  orgId,
+  current,
+  onPick,
+}: {
+  readonly orgId: string;
+  readonly current: string;
+  readonly onPick: (query: string) => void;
+}) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState('');
+  const [share, setShare] = useState(false);
+
+  const saved = useQuery({ ...savedSearchesQuery(orgId), enabled: orgId !== '' });
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: keys.savedSearches(orgId) });
+
+  const create = useMutation({
+    mutationFn: (input: { name: string; query: string; isShared: boolean }) =>
+      api.search.saved.create.mutate(input),
+    onSuccess: async () => {
+      setNaming(false);
+      setName('');
+      setShare(false);
+      await invalidate();
+    },
+    onError: (error: unknown) => {
+      toast.failure('The search could not be saved', error);
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: (searchId: string) => api.search.saved.delete.mutate({ searchId }),
+    onSuccess: async () => {
+      await invalidate();
+    },
+    onError: (error: unknown) => {
+      toast.failure('The saved search could not be deleted', error);
+    },
+  });
+
+  const entries = saved.data ?? [];
+  const trimmed = current.trim();
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {entries.map((entry) => (
+          <span
+            key={entry.searchId}
+            className="group inline-flex items-center rounded-full border border-line bg-surface-raised text-xs"
+          >
+            <button
+              type="button"
+              disabled={entry.broken}
+              title={entry.broken ? 'This saved search no longer parses' : entry.query}
+              onClick={() => {
+                onPick(entry.query);
+              }}
+              className="rounded-l-full py-0.5 pr-1 pl-2.5 text-ink-muted hover:text-ink disabled:text-ink-faint disabled:line-through"
+            >
+              {entry.name}
+              {entry.isShared && (
+                <span className="ml-1 text-[10px] text-ink-faint" title="Shared with everyone">
+                  ◇
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              aria-label={`Delete saved search ${entry.name}`}
+              disabled={remove.isPending}
+              onClick={() => {
+                remove.mutate(entry.searchId);
+              }}
+              className="rounded-r-full py-0.5 pr-2 pl-1 text-ink-faint hover:text-danger"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+
+        {/* Saving is offered only for a query there is something to save. */}
+        {trimmed !== '' && !naming && (
+          <button
+            type="button"
+            onClick={() => {
+              setNaming(true);
+            }}
+            className="rounded-full border border-dashed border-line px-2.5 py-0.5 text-xs text-ink-faint hover:border-accent hover:text-accent"
+          >
+            + Save this search
+          </button>
+        )}
+      </div>
+
+      {naming && (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            create.mutate({ name: name.trim(), query: trimmed, isShared: share });
+          }}
+          className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface-raised px-2.5 py-2"
+        >
+          <input
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value);
+            }}
+            maxLength={60}
+            aria-label="Name for this saved search"
+            placeholder="Name it"
+            className="min-w-32 flex-1 rounded border border-line bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent"
+          />
+          <label className="flex items-center gap-1.5 text-xs text-ink-muted">
+            <input
+              type="checkbox"
+              checked={share}
+              onChange={(event) => {
+                setShare(event.target.checked);
+              }}
+            />
+            Share with the organization
+          </label>
+          <Button type="submit" size="sm" disabled={name.trim() === '' || create.isPending}>
+            {create.isPending ? 'Saving…' : 'Save'}
+          </Button>
+          <button
+            type="button"
+            onClick={() => {
+              setNaming(false);
+              create.reset();
+            }}
+            className="text-xs text-ink-faint hover:text-ink"
+          >
+            Cancel
+          </button>
+          {create.isError && <ErrorText error={create.error} />}
+        </form>
+      )}
     </div>
   );
 }

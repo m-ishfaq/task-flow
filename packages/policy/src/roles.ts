@@ -81,6 +81,11 @@ const ADMIN: readonly Permission[] = [
   'audit:read',
 
   'search:query',
+  /* Sharing a saved search is administrative — it adds an entry to a list
+     every member sees — and stops at Admin rather than being Owner-only,
+     because unlike `recording:export` or `phoneNumber:purchase` the worst case
+     is clutter, not a bill or a leaked conversation. */
+  'search:manage',
 ];
 
 const MEMBER: readonly Permission[] = [

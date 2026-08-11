@@ -321,6 +321,12 @@ const telephonyRoute = createRoute({
   validateSearch: z.object({
     tab: z.enum(['calls', 'numbers', 'messages', 'spend']).optional().catch(undefined),
     thread: z.string().uuid().optional().catch(undefined),
+    /* Which call in the log opens expanded. Added by Phase 8 Wave 3 so a
+       TRANSCRIPT search hit has somewhere to land — a hit whose permalink
+       cannot open the thing it found is a result that only proves the index
+       works. `.catch(undefined)` per this file's convention: a malformed id in
+       a pasted link renders the log unexpanded, never an error page. */
+    call: z.string().uuid().optional().catch(undefined),
   }),
   beforeLoad: () => requireOrg('/calls'),
   component: TelephonyPage,

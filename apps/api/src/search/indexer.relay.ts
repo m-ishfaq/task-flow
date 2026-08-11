@@ -10,7 +10,7 @@ import {
   withSearchScope,
   type OutboxRow,
 } from '@taskflow/db';
-import { unsafeAsId, type OrgId } from '@taskflow/contracts';
+import { unsafeAsId, type OrgId, type SearchEntityType } from '@taskflow/contracts';
 import { newId } from '@taskflow/security';
 import type { Logger } from '@taskflow/observability';
 import {
@@ -38,6 +38,7 @@ import {
   pageCreated,
   pageUpdated,
 } from '../docs/events.js';
+import { transcriptionCompleted } from '../telephony/events.js';
 
 /**
  * The search indexer relay (ai/phase-8-search.md §2.2, migration 0045's own
@@ -398,6 +399,87 @@ export async function indexPageComment(
 }
 
 /**
+ * Call transcripts (Phase 8 Wave 3, migration 0046).
+ *
+ * The text is re-read from `comms.transcripts` rather than taken from the
+ * event, and that is not the usual "the event carries an excerpt" reason —
+ * `transcription.completed` carries NO text at all, deliberately (its own
+ * header: an outbox payload is projected into the audit log, and the redaction
+ * counts are the most it may say). The row is the only place the text exists.
+ *
+ * What lands in `body` is already redacted, because `comms.transcripts` has no
+ * unredacted form to land instead: `storeTranscript` redacts BEFORE its insert
+ * and the table has no `raw_text` column. So this projection cannot widen PII
+ * exposure past what the transcript row already is — which is the property that
+ * makes indexing a private phone call defensible at all.
+ *
+ * `title` and `author_id` stay NULL on purpose; migration 0046's header gives
+ * both reasons (a title would be a phone number in a trigram-indexed column,
+ * and a transcript has no author).
+ *
+ * Exported for the backfill, like every other indexer here.
+ */
+export async function indexTranscript(
+  orgId: OrgId,
+  record: Record<string, unknown>,
+): Promise<boolean> {
+  const transcriptId = str(record, 'transcriptId');
+  if (transcriptId === null) return false;
+
+  return withOrgScope(orgId, async (tx) => {
+    const rows = await tx
+      .select({
+        id: schema.transcripts.id,
+        recordingId: schema.transcripts.recordingId,
+        text: schema.transcripts.text,
+        createdAt: schema.transcripts.createdAt,
+      })
+      .from(schema.transcripts)
+      .where(eq(schema.transcripts.id, transcriptId))
+      .limit(1);
+
+    const transcript = rows[0];
+    if (!transcript) {
+      await deleteDocument(tx, orgId, 'transcript', transcriptId);
+      return true;
+    }
+
+    const recordings = await tx
+      .select({ callId: schema.recordings.callId })
+      .from(schema.recordings)
+      .where(eq(schema.recordings.id, transcript.recordingId))
+      .limit(1);
+    const recording = recordings[0];
+    /* A transcript whose recording is gone cannot be permalinked — the hit
+       would open a call detail for a call id nobody has. Same shape as the
+       card-comment and page-comment branches above. In practice the FK
+       cascade removes the transcript at the same moment, so this is the
+       ordering guard rather than the expected path. */
+    if (!recording) {
+      await deleteDocument(tx, orgId, 'transcript', transcriptId);
+      return true;
+    }
+
+    await upsertDocument(tx, {
+      orgId,
+      entityType: 'transcript',
+      entityId: transcript.id,
+      title: null,
+      body: transcript.text,
+      authorId: null,
+      createdAt: transcript.createdAt,
+      /* A transcript is never edited — the carrier delivers it once and the
+         unique index on (org, recording) makes a retry a no-op. There is no
+         `edited_at` to prefer, so created_at IS the update time. */
+      updatedAt: transcript.createdAt,
+      archived: false,
+      metadata: { recording_id: transcript.recordingId, call_id: recording.callId },
+    });
+    return true;
+  });
+}
+
+/**
  * Channel archive propagates to the channel's message documents (§2.2, line
  * 305). Implemented as a source-of-truth read: the message ids come from
  * `chat.messages` under RLS, never from a jsonb walk of the index — a
@@ -443,7 +525,7 @@ async function propagateChannelArchive(
 
 interface DocumentValues {
   readonly orgId: OrgId;
-  readonly entityType: 'card' | 'message' | 'page' | 'comment';
+  readonly entityType: SearchEntityType;
   readonly entityId: string;
   readonly title: string | null;
   readonly body: string | null;
@@ -485,7 +567,7 @@ async function upsertDocument(tx: SearchTx, values: DocumentValues): Promise<voi
 export async function deleteDocument(
   tx: SearchTx,
   orgId: OrgId,
-  entityType: 'card' | 'message' | 'page' | 'comment',
+  entityType: SearchEntityType,
   entityId: string,
 ): Promise<void> {
   await tx
@@ -564,6 +646,14 @@ async function handleEvent(row: OutboxRow): Promise<boolean> {
         return true;
       });
     }
+
+    /* Transcripts (Wave 3). There is no matching delete case: a transcript is
+       removed only when its recording is, and that cascade emits no event of
+       its own — so a stale transcript document is dropped by the ROUTE's
+       per-hit loader instead, which is the same "stale hit, NOT_FOUND, drop
+       it" path every other kind already relies on. */
+    case transcriptionCompleted.name:
+      return indexTranscript(orgId, record);
 
     default:
       // Not a searchable event — consumed, never an error.

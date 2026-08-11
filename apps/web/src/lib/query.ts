@@ -286,6 +286,10 @@ export const keys = {
   /** Recordings for one call. */
   callRecordings: (orgId: string, callId: string) =>
     ['org', orgId, 'telephony', 'call', callId, 'recordings'] as const,
+
+  /** One recording's transcript (Phase 8 Wave 3 surfaced it; the route is Phase 7's). */
+  callTranscript: (orgId: string, recordingId: string) =>
+    ['org', orgId, 'telephony', 'recording', recordingId, 'transcript'] as const,
   /** Recordings attached to one Work card (§3.9). */
   cardRecordings: (orgId: string, cardId: string) =>
     ['org', orgId, 'card', cardId, 'recordings'] as const,
@@ -302,6 +306,18 @@ export const keys = {
    * equivalent-but-different spelling of the same query.
    */
   search: (orgId: string, query: string) => ['org', orgId, 'search', query] as const,
+
+  /**
+   * Every saved search the caller may see — shared plus their own (§3.2).
+   *
+   * Its own root segment rather than `['org', orgId, 'search', 'saved']`,
+   * which would COLLIDE with `search(orgId, 'saved')` — the results of
+   * literally searching for the word "saved". A cache key that two different
+   * queries can produce hands one of them the other's data, and the query
+   * segment here is free-form user text, so the collision is reachable by
+   * typing.
+   */
+  savedSearches: (orgId: string) => ['org', orgId, 'saved-searches'] as const,
   /** Every SMS thread. */
   messageThreads: (orgId: string) => ['org', orgId, 'telephony', 'threads'] as const,
   /** Messages in one thread. */

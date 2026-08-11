@@ -10,9 +10,12 @@ blocklist in `packages/security/src/outbound-url.ts` missed 63/64 of the IPv6 li
 (`fe80::/10` is first hextet `fe80`–`febf`, the check only matched `fe80`) — fixed with
 boundary tests; full write-up in `ai/security-review-priority-2.md`. Priority 3 is COMPLETE —
 §3.4 (device/session inventory + impossible-travel detection), §3.5 (org deletion) and §3.6
-(self-serve DSAR export) all shipped — see the Priority 3 status header. Priority 4 has
-started: Search (Phase 8) Wave 1 — the TQL parser — is SHIPPED (spec: ai/phase-8-search.md),
-with the search spine (Wave 2) next, then Automation and Analytics.
+(self-serve DSAR export) all shipped — see the Priority 3 status header. Priority 4 is
+underway: **Search (Phase 8) is COMPLETE as of 2026-08-11** — all three waves, spec:
+`ai/phase-8-search.md` (read its own header: Wave 3 carried a premature SHIPPED marker for a
+day, and item 1 of Priority 4 below records what was actually missing). **Automation
+(Phase 10) and Analytics (Phase 11) are the remainder of Priority 4, and both are still zero
+code.**
 
 **CI ran against this branch for the first time on 2026-08-10 and found four more real
 issues, all fixed the same day:** (1) `ip-address@5.9.4`, a transitive dependency of
@@ -476,10 +479,22 @@ API 54 files/829 tests, web 32 files/302 tests, both new migrations up→down→
 Verified absent (`ls apps packages` — no `search`, `automation`, `analytics` directory anywhere).
 Product-completeness gaps, not safety gaps — sequenced by how much a real user would miss each:
 
-1. **Search (Phase 8, ~3wk).** `packages/filter`'s AST/compiler/evaluator already exists (Phase
-   3); this adds the TQL text parser onto it, cross-product indexing, saved filters, command
-   palette integration. Reuses the existing filter package rather than building parsing from
-   scratch.
+1. **Search (Phase 8, ~3wk) — ✅ COMPLETE 2026-08-11.** `packages/filter`'s AST/compiler/
+   evaluator already existed (Phase 3); this added the TQL text parser onto it, cross-product
+   indexing, saved searches and command-palette integration. Spec:
+   [ai/phase-8-search.md](ai/phase-8-search.md).
+
+   **Wave 3 was marked SHIPPED a day before it was**, and that is worth recording here rather
+   than only in the phase spec, because this file's whole premise is auditing what `main`
+   actually has instead of trusting a marker. The `/search` page landed; §3.2's saved searches,
+   the transcripts the approval decision had deferred INTO Wave 3, and §3.1's builder ↔ TQL
+   text box did not, and the spec then contradicted itself for a day ("Wave 3 is next" four
+   sections below a header saying it had shipped). All three were built 2026-08-11 —
+   migration 0046, a new `search:manage` permission, `search.searches`, `indexTranscript`, a
+   `/calls?call=` permalink and the first UI in the app that actually renders a transcript
+   (`telephony.recordings.transcript` had shipped in Phase 7 Wave 2 with no caller). Verified
+   with `migrate:verify`, full `pnpm verify` (54/54, 854 API tests) and the guardrail selftest.
+
 2. **Automation & integrations (Phase 10, ~6wk).** Rules engine on the existing domain-event bus
    (`@taskflow/events` — guardrail 6 already makes every mutation emit one), outbound webhooks,
    public API + scoped tokens, Slack/GitHub connectors, importers/exporters.

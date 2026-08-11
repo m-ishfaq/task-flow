@@ -4,6 +4,21 @@ import { wire } from '../../lib/wire.js';
 import { keys } from '../../lib/query.js';
 
 /**
+ * Saved searches (§3.2).
+ *
+ * `broken` comes from the SERVER, which re-parses the stored TQL on every
+ * list — the client does not re-derive it. Two parsers deciding independently
+ * whether a saved query is usable is exactly the drift `wire.ts` exists to
+ * prevent one level down.
+ */
+export function savedSearchesQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.savedSearches(orgId),
+    queryFn: async () => wire(await api.search.saved.list.query({})),
+  });
+}
+
+/**
  * The search page's query (ai/phase-8-search.md §3.1).
  *
  * The input is TQL TEXT and the server is the only parser — this hook sends

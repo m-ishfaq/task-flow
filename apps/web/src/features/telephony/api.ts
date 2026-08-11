@@ -61,6 +61,23 @@ export function callRecordingsQuery(orgId: string, callId: string) {
   });
 }
 
+/**
+ * One recording's transcript (`recording:read` — Admin-and-Owner).
+ *
+ * `retry: false` because the expected answer for most recordings is NOT_FOUND:
+ * transcription is a carrier callback that may never arrive, and retrying a
+ * definitive "there is no transcript" three times just delays the empty state.
+ * A caller without `recording:read` also lands here, and the panel renders the
+ * same quiet absence — the server's decision, never re-derived client-side.
+ */
+export function callTranscriptQuery(orgId: string, recordingId: string) {
+  return queryOptions({
+    queryKey: keys.callTranscript(orgId, recordingId),
+    queryFn: async () => wire(await api.telephony.recordings.transcript.query({ recordingId })),
+    retry: false,
+  });
+}
+
 export function cardRecordingsQuery(orgId: string, cardId: CardId) {
   return queryOptions({
     queryKey: keys.cardRecordings(orgId, cardId),

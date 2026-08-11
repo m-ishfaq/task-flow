@@ -177,7 +177,12 @@ const SEARCH_FIELDS: readonly FieldDefinition[] = [
     name: 'type',
     type: 'enum',
     sql: 'search.documents.entity_type',
-    options: ['card', 'message', 'page', 'comment'],
+    /* Mirrors migration 0045's `documents_entity_type_check`, widened by 0046.
+       These two lists are the same closed set said twice — in SQL, where a
+       wrong value is refused at write, and here, where `type = trascript`
+       becomes a positioned parse error instead of a query that silently
+       matches nothing. */
+    options: ['card', 'message', 'page', 'comment', 'transcript'],
   },
   { name: 'title', type: 'text', sql: 'search.documents.title' },
   /* `text` compiles to the TITLE||BODY concatenation, not `body` alone —

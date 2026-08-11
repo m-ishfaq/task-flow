@@ -16,14 +16,16 @@ import {
   indexMessage,
   indexPage,
   indexPageComment,
+  indexTranscript,
 } from '@taskflow/api/search/indexer';
 
 /**
  * Search backfill (ai/phase-8-search.md §2.5, Phase 8 Wave 2).
  *
  * The indexer relay only sees events that happen after it exists. This scans
- * the four source tables per org and upserts `search.documents` from the
- * rows already there — the same idempotency the relay relies on: every write
+ * the source tables per org (four in Wave 2, plus transcripts in Wave 3) and
+ * upserts `search.documents` from the rows already there — the same
+ * idempotency the relay relies on: every write
  * is an upsert keyed on (org_id, entity_type, entity_id), so re-running after
  * a failure is safe, and running against a live instance where the relay has
  * already indexed recent events is safe too (their rows are rewritten, never
@@ -91,6 +93,14 @@ async function backfillOrg(orgId: OrgId): Promise<number> {
       if (await indexPageComment(orgId, { commentId: comment.id, pageId: comment.pageId })) {
         written += 1;
       }
+    }
+
+    /* Transcripts (Wave 3). No `deleted_at` to filter on — comms.transcripts
+       has no soft-delete column at all; a transcript exists exactly as long as
+       its recording does, by the composite FK's cascade. */
+    const transcripts = await tx.select({ id: schema.transcripts.id }).from(schema.transcripts);
+    for (const transcript of transcripts) {
+      if (await indexTranscript(orgId, { transcriptId: transcript.id })) written += 1;
     }
 
     return written;

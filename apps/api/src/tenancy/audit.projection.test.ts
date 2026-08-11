@@ -22,6 +22,9 @@ import '../platform-admin/events.js';
 import '../work/events.js';
 import '../chat/events.js';
 import '../docs/events.js';
+/* Phase 8 Wave 3 — the slice grew its own events.ts, which is exactly the
+   moment the header above says to update this list. */
+import '../search/events.js';
 
 /**
  * The audit projection's mapping table, checked against what is actually
@@ -107,6 +110,18 @@ const UNMAPPED: ReadonlySet<string> = new Set([
   'view.deleted',
   // Chat (Phase 5)
   'message.saved',
+  /* Search (Phase 8 Wave 3). The `view.*` reason one level up, and stronger:
+     a saved search has no container BUT the org, which every audit row already
+     names in `org_id` — so `resource_id` could only repeat it. It also has no
+     resource type of its own by deliberate design: `search` is absent from
+     RESOURCE_TYPES because no relationship tuple can point at a search
+     (packages/policy/src/permissions.ts), and migration 0005's
+     `tuples_object_type` CHECK would refuse one. Mapping these would mean
+     inventing a resource type to satisfy a test, which is the tail wagging
+     the policy engine. */
+  'saved_search.created',
+  'saved_search.updated',
+  'saved_search.deleted',
 ]);
 
 /**

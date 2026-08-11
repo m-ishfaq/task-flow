@@ -1,11 +1,23 @@
 # Phase 8 — Search & TQL
 
 Status: **APPROVED 2026-08-10 — Wave 1 (TQL parser) SHIPPED 2026-08-10; Wave 2 (search
-spine) SHIPPED 2026-08-10; Wave 3 (UI) SHIPPED 2026-08-10.** Waves 2–3 were approved in
-scope at the same review, each re-reviewed when its turn comes. Written 2026-08-10 against
-`pre-launch-hardening` HEAD, per `ai/pre-launch-hardening.md` Step 4 (each remaining
-priority is its own multi-week phase and wants its own spec written and approved before
-implementation).
+spine) SHIPPED 2026-08-10; Wave 3 (UI) SHIPPED 2026-08-11 — COMPLETE.** Waves 2–3 were
+approved in scope at the same review, each re-reviewed when its turn comes. Written
+2026-08-10 against `pre-launch-hardening` HEAD, per `ai/pre-launch-hardening.md` Step 4
+(each remaining priority is its own multi-week phase and wants its own spec written and
+approved before implementation).
+
+**Wave 3's header claimed SHIPPED on 2026-08-10 while three of the things it scoped did not
+exist**, and that is the finding to read before trusting any marker in this file. The
+`/search` page, the palette entry and the `/` shortcut landed; §3.2's saved searches (no
+table, no service, no route), the transcripts the approval decision explicitly deferred INTO
+this wave, and §3.1's builder ↔ TQL text box did not. The status line was flipped in a
+docs-only commit the same minute the UI commit landed, and this file went on contradicting
+itself for a day — the body still read "Wave 3 (the UI) is next" four sections below a
+header saying it had shipped. Nothing was wrong with what DID ship. What was wrong was the
+claim about what "shipped" covered, which is the exact failure mode CLAUDE.md's own standing
+lesson describes for Phase 3.5, Phase 5 and Phase 7 in turn: **a status marker is a claim,
+not a fact.** The three missing pieces were built 2026-08-11 and are described below.
 
 Decisions taken at approval (2026-08-10): Wave 1 first then review; docs bodies titles-only in
 Wave 2 with body content a named follow-up; `fast-check` added as a devDependency for the
@@ -89,11 +101,94 @@ and the search field-set parity tests), guardrail-selftest green. The standing
 `work-move` org left by an aborted run hid behind FORCE RLS (a role-visible count
 returned zero rows), and was cleared from `taskflow_test` before re-running.
 
-Wave 3 (the UI) is next: the `/search` page with live per-token errors and type
-facets, saved searches, and command-palette integration, per §3.
+### What Wave 3 shipped
+
+In two parts, and the gap between them is the finding recorded at the top of this file.
+
+**2026-08-10 — the search surface (§3.1, §3.3).** The `/search` page: one TQL input with
+live per-token errors rendered as a mirrored underline layer, type facet chips, debounced
+queries, arrow-navigable results, and permalinks into board / chat / docs. A sidebar item, a
+command-palette entry, and the global `/` shortcut. Page-comment metadata gained `space_id`
+so its permalink can actually open the page, and the route's output schema validates
+`metadata` as the real discriminated union instead of `z.unknown()`.
+
+**2026-08-11 — the three pieces that were scoped and missing.**
+
+- **Transcripts join the projection** (migration 0046 widens 0045's `entity_type` CHECK, the
+  one-constraint swap that migration predicted). `indexTranscript` re-reads
+  `comms.transcripts` — the `transcription.completed` event carries no text at all, by
+  design, so the row is the only source; the text is ALREADY REDACTED, because that table
+  has no unredacted column for the projection to copy. `title` and `author_id` stay NULL
+  deliberately: the obvious title is a phone number, and 0033 blind-indexes counterparties
+  precisely so a number never sits in a readable column — a trigram-indexed `title` would
+  undo that in the one table built for substring matching.
+
+  The per-hit gate is the interesting half. A transcript is the ONE hit kind whose
+  permission is not resolved from a parent row: `recording:read`, asked with NO target, so
+  it is answered by role alone — exactly as `getTranscript` asks it. Search must never be a
+  cheaper door to a recorded conversation than the telephony surface it came from.
+  `router.test.ts` proves an owner gets the hit and a member does not, and that assertion was
+  checked against a deliberately broken build (permission check removed → the test fails), so
+  it is known to discriminate rather than merely pass.
+
+  Two things had to be built for the hit to lead anywhere: `/calls` gained a `call` search
+  param (a permalink that cannot open what it found only proves the index works), and the
+  call log now renders a transcript at all — `telephony.recordings.transcript` shipped in
+  Phase 7 Wave 2 with no caller, so there was no surface in the app that displayed one.
+
+- **Saved searches (§3.2)** — `search.searches` in migration 0046. The query is stored as
+  TQL **text**, not as the AST, which is the one place this deliberately diverges from
+  `work.views`: a view is built by the visual builder and has no text form to preserve,
+  while a saved search is typed, and `format(parse(text))` normalizes spacing, quoting and
+  clause order — storing the tree would hand the author back a reworded version of their own
+  query. Both forms are equally UNRESOLVED, which is the property §3.2 actually requires.
+  The stored string is re-parsed and re-validated on every read and reported as `broken`
+  rather than throwing, the `parseStoredFilter` precedent.
+
+  A new permission, `search:manage`, carries the sharing tier (catalog + roles + matrix
+  test, in that order; the matrix is 243 assertions now). It is separate from `org:update`
+  because renaming the organization and adding an entry to a shared list have no reason to
+  move together. The floor stays `search:query` — raising it would stop members keeping
+  private bookmarks — and the service asks the sharing question separately with no target,
+  which is both the intended role-only semantics and the layer that defeats a `couldGrant`
+  false positive at the floor. Private entries are author-only with NO override: an owner
+  cannot edit or even see one, the argument CLAUDE.md makes about comments.
+
+- **The builder ↔ TQL text box (§3.1's last bullet, PLAN.md §10.2's own promise)** — a TQL
+  tab in the board filter builder. One tree, two editors: `format(draft)` seeds the box on
+  mount and a successful parse writes the TREE back, so switching to Builder shows chips for
+  what was typed with no second representation to reconcile. The text is deliberately not
+  re-seeded from the draft on every render — `format` is canonical, so echoing it back would
+  rewrite the user's characters under their cursor after each valid keystroke.
+
+  The decision logic is `tql-draft.ts`, split out for the reason `term.ts` is: the
+  interesting part is a decision, and a decision inside a component is one only a browser can
+  check. It refuses two things the parser accepts happily — `ORDER BY` (a board's sort is a
+  toolbar control with its own persisted value; accepting one here gives a board two
+  orderings and shows only one) and bare free text, which desugars to `text contains …` where
+  `text` is a SEARCH field and not a card one, reported by the generic validator as
+  `Unknown field "text"` to a user who never typed the word "text".
+
+**The card and search field sets do not overlap, and assuming they do cost two test runs.**
+`assignee`, `status` and `description` are card fields with no search equivalent; `author`
+and `text` are search fields with no card equivalent; `status` holds ids, not names, and
+`assignee` is a `uuid_array` that `=` cannot compare. Both suites written this day were
+wrong on first run for exactly this, and one of them had put an invalid example in a
+placeholder — the string a user meets before they have typed anything. Worth knowing before
+writing the next TQL example anywhere.
+
+Validated: `migrate:verify` (up → down → up, including 0046's down, which must DELETE
+transcript documents before narrowing the CHECK back or the re-add fails validation against
+existing rows), the search relay (12), search route (3), saved-search service (10),
+`tql-draft` (9) and the 243-assertion policy matrix, plus full `pnpm verify` and the
+guardrail selftest.
+
+Still deliberately out (§5, unchanged): docs BODY content indexing, natural-language dates,
+`@handle` resolution, Meilisearch deployment, attachment-content search.
 
 Read this header before trusting a status marker anywhere else in this file — the standing
-lesson every `ai/phase-*.md` in this repo states for itself.
+lesson every `ai/phase-*.md` in this repo states for itself, and the one this very file
+failed on its first attempt at Wave 3.
 
 ## What already exists (checked, not assumed)
 

@@ -30,6 +30,9 @@ interface Fixture {
   readonly commentId: string;
   readonly pageCommentId: string;
   readonly channelId: string;
+  readonly callId: string;
+  readonly recordingId: string;
+  readonly transcriptId: string;
   /** Inserts a synthetic outbox event for this org. */
   readonly emit: (name: string, payload: Record<string, unknown>) => Promise<void>;
   /**
@@ -55,6 +58,9 @@ async function scaffold(slug: string): Promise<Fixture> {
   const pageId = crypto.randomUUID();
   const commentId = crypto.randomUUID();
   const pageCommentId = crypto.randomUUID();
+  const callId = crypto.randomUUID();
+  const recordingId = crypto.randomUUID();
+  const transcriptId = crypto.randomUUID();
 
   await admin.setOrg(orgId);
   await admin.query(`INSERT INTO identity.orgs (id, name, slug) VALUES ($1, $2, $3)`, [
@@ -107,6 +113,25 @@ async function scaffold(slug: string): Promise<Fixture> {
      VALUES ($1, $2, $3, '\\x01'::bytea, '\\x02'::bytea, '{}'::jsonb, 'runbook needs a rollback section')`,
     [pageCommentId, orgId, pageId],
   );
+  /* A call, its recording, and a transcript of it (Wave 3). The counterparty
+     columns are bytea because 0033 encrypts and blind-indexes the number —
+     the fixture writes opaque bytes rather than a readable number, which is
+     the same property the projection preserves by leaving `title` NULL. */
+  await admin.query(
+    `INSERT INTO comms.calls (id, org_id, direction, counterparty_ciphertext, counterparty_index, status)
+     VALUES ($1, $2, 'outbound', '\\x01'::bytea, '\\x02'::bytea, 'completed')`,
+    [callId, orgId],
+  );
+  await admin.query(
+    `INSERT INTO comms.recordings (id, org_id, call_id, provider_sid, status, storage_key, stored_at)
+     VALUES ($1, $2, $3, $4, 'stored', 'recordings/x', now())`,
+    [recordingId, orgId, callId, `RE${crypto.randomUUID().replace(/-/g, '')}`],
+  );
+  await admin.query(
+    `INSERT INTO comms.transcripts (id, org_id, recording_id, text)
+     VALUES ($1, $2, $3, 'we talked about the outage and the rollback plan')`,
+    [transcriptId, orgId, recordingId],
+  );
   await admin.setOrg(null);
   created.push(orgId);
 
@@ -118,6 +143,9 @@ async function scaffold(slug: string): Promise<Fixture> {
     commentId,
     pageCommentId,
     channelId,
+    callId,
+    recordingId,
+    transcriptId,
     emit: async (name, payload) => {
       await admin.setOrg(orgId);
       await admin.query(
@@ -149,6 +177,9 @@ async function removeOrg(orgId: string): Promise<void> {
   );
   await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM search.documents WHERE org_id = $1`, [orgId]);
+  await admin.query(`DELETE FROM comms.transcripts WHERE org_id = $1`, [orgId]);
+  await admin.query(`DELETE FROM comms.recordings WHERE org_id = $1`, [orgId]);
+  await admin.query(`DELETE FROM comms.calls WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM docs.comments WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM docs.pages WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM docs.spaces WHERE org_id = $1`, [orgId]);
@@ -198,6 +229,8 @@ async function documentRows(orgId: OrgId): Promise<
     title: string | null;
     body: string | null;
     archived: boolean;
+    authorId: string | null;
+    metadata: unknown;
   }[]
 > {
   return withOrgScope(orgId, async (tx) =>
@@ -208,6 +241,8 @@ async function documentRows(orgId: OrgId): Promise<
         title: schema.documents.title,
         body: schema.documents.body,
         archived: schema.documents.archived,
+        authorId: schema.documents.authorId,
+        metadata: schema.documents.metadata,
       })
       .from(schema.documents)
       .where(eq(schema.documents.orgId, orgId)),
@@ -317,6 +352,67 @@ describe('the indexer relay', () => {
 
     const docs = await documentRows(fx.orgId);
     expect(docs.find((row) => row.entityType === 'message')?.archived).toBe(true);
+  });
+
+  /* -------------------------------------------------------------------- *
+   * Transcripts (Wave 3, migration 0046)
+   * -------------------------------------------------------------------- */
+
+  it('indexes a call transcript, with no title and no author', async () => {
+    const fx = await scaffold('transcript');
+    /* The real event carries only ids and redaction counts — never the text.
+       That is the point of re-reading the row: the projection gets what the
+       event deliberately refuses to put in the audit log. */
+    await fx.emit('transcription.completed', {
+      recordingId: fx.recordingId,
+      transcriptId: fx.transcriptId,
+      redactionCounts: {},
+    });
+
+    await drainSearchIndexFully();
+
+    const docs = await documentRows(fx.orgId);
+    const transcript = docs.find((row) => row.entityType === 'transcript');
+    expect(transcript?.body).toBe('we talked about the outage and the rollback plan');
+
+    /* Both NULL deliberately, and both for a stated reason (migration 0046's
+       header): a title would be a phone number in a trigram-indexed column,
+       and a transcript has no author to name. */
+    expect(transcript?.title).toBeNull();
+    expect(transcript?.authorId).toBeNull();
+
+    /* The permalink context is the CALL — there is no transcript route, so a
+       hit that carried only the recording id could not open anything. */
+    expect(transcript?.metadata).toEqual({ recording_id: fx.recordingId, call_id: fx.callId });
+  });
+
+  it('finds a transcript through the same free-text query as every other type', async () => {
+    const fx = await scaffold('tsearch');
+    await fx.emit('transcription.completed', {
+      recordingId: fx.recordingId,
+      transcriptId: fx.transcriptId,
+      redactionCounts: {},
+    });
+    await drainSearchIndexFully();
+
+    /* `type = transcript` has to VALIDATE, which is the half a widened CHECK
+       in SQL does not give: `fields.ts`' enum is a second copy of the same
+       closed set, and a query naming a type the parser does not know is a
+       positioned error rather than a search that matches nothing. */
+    const parsed = parse('rollback AND type = transcript');
+    if (!parsed.ok) throw new Error(parsed.errors.map((error) => error.message).join('; '));
+    if (parsed.filter === null) throw new Error('expected a filter');
+
+    const hits = await provider.search({
+      orgId: fx.orgId,
+      filter: parsed.filter,
+      orderBy: [],
+      viewerId: unsafeAsId<'UserId'>(crypto.randomUUID()),
+      limit: 20,
+    });
+
+    expect(hits.map((hit) => hit.entityId)).toEqual([fx.transcriptId]);
+    expect(hits[0]?.type).toBe('transcript');
   });
 
   it('consumes an event whose source row is gone without erroring', async () => {

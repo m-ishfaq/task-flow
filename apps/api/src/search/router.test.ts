@@ -11,7 +11,7 @@ import * as channels from '../chat/channel.service.js';
 import * as messages from '../chat/message.service.js';
 import type { ChatActor } from '../chat/shared.js';
 import type { RichTextNode } from '../work/richtext.js';
-import { indexMessage } from './indexer.relay.js';
+import { indexMessage, indexTranscript } from './indexer.relay.js';
 
 /**
  * The search route (ai/phase-8-search.md §2.7), through the real tRPC router.
@@ -82,6 +82,9 @@ async function removeOrg(orgId: string): Promise<void> {
     'audit.chain_heads',
     'platform.outbox',
     'search.documents',
+    'comms.transcripts',
+    'comms.recordings',
+    'comms.calls',
     'chat.message_unfurls',
     'chat.messages',
     'chat.channels',
@@ -246,5 +249,67 @@ describe('the search route through the real tRPC router', () => {
     );
 
     await expect(caller.search.query({ query: 'outage' })).rejects.toThrow();
+  });
+
+  /**
+   * Transcripts (Wave 3, migration 0046) — the same per-hit discipline, asked
+   * with the one permission that has no target.
+   *
+   * A transcript is a written record of a private phone call, gated on
+   * `recording:read`, which the matrix gives Admin and Owner and withholds
+   * from Member. The failure this proves absent is the tempting one: indexing
+   * transcripts into the same projection every member queries, and letting the
+   * ROUTE FLOOR (`search:query`, which members hold) be the whole decision.
+   * That would make search a cheaper door to a recorded conversation than the
+   * telephony surface it came from — the exact "two authorization questions,
+   * deliberately not merged" failure, arrived at from the other side.
+   */
+  it('returns a call transcript to an owner and never to a member', async () => {
+    const { orgId } = await scaffold('transcript');
+
+    const callId = crypto.randomUUID();
+    const recordingId = crypto.randomUUID();
+    const transcriptId = crypto.randomUUID();
+
+    await admin.setOrg(orgId);
+    await admin.query(
+      `INSERT INTO comms.calls (id, org_id, direction, counterparty_ciphertext, counterparty_index, status)
+       VALUES ($1, $2, 'outbound', '\\x01'::bytea, '\\x02'::bytea, 'completed')`,
+      [callId, orgId],
+    );
+    await admin.query(
+      `INSERT INTO comms.recordings (id, org_id, call_id, provider_sid, status, storage_key, stored_at)
+       VALUES ($1, $2, $3, $4, 'stored', 'recordings/x', now())`,
+      [recordingId, orgId, callId, `RE${crypto.randomUUID().replace(/-/g, '')}`],
+    );
+    await admin.query(
+      `INSERT INTO comms.transcripts (id, org_id, recording_id, text)
+       VALUES ($1, $2, $3, 'we discussed the outage on the phone')`,
+      [transcriptId, orgId, recordingId],
+    );
+    await admin.setOrg(null);
+
+    expect(await indexTranscript(orgId, { transcriptId })).toBe(true);
+
+    const callerFor = (userId: UserId, role: 'owner' | 'member') =>
+      callerFactory(
+        testContext({
+          principal: testPrincipal(role, { userId, org: { orgId, role, tuples: [] } }),
+        }),
+      );
+
+    const ownerHits = await callerFor(OWNER, 'owner').search.query({ query: 'outage' });
+    expect(ownerHits.map((hit) => hit.entityId)).toContain(transcriptId);
+    /* The permalink context the client needs — a hit that could not open the
+       call would prove only that the index works. */
+    expect(ownerHits.find((hit) => hit.entityId === transcriptId)?.metadata).toEqual({
+      recording_id: recordingId,
+      call_id: callId,
+    });
+
+    /* Same org, same query, same indexed row, RLS admits it — and the member
+       does not get it, because `recording:read` is answered by role alone. */
+    const memberHits = await callerFor(MEMBER, 'member').search.query({ query: 'outage' });
+    expect(memberHits.map((hit) => hit.entityId)).not.toContain(transcriptId);
   });
 });

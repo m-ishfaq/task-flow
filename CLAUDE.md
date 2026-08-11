@@ -324,6 +324,49 @@ never be left pointing at a version that no longer exists. Fixed in the test (cl
 first, delete the version rows after — "children before parents," the same ordering
 `tenancy-seed.ts`'s `clearTenant` already documents for Work), not in the schema.
 
+### Phase 8 — Search & TQL (COMPLETE, all three waves)
+
+`packages/filter/src/tql` · `apps/api/src/search` · migrations 0045–0046 ·
+`apps/web/src/features/search`. Spec: [ai/phase-8-search.md](ai/phase-8-search.md).
+
+**The index answers WHICH ORG; it can never answer WHICH RESOURCE.** RLS admits every
+document row in the tenant, including a message in a DM between two other people — and
+`member` genuinely holds `channel:read` from the role matrix, so a route that stopped at its
+floor would return that DM with a decision trace that looks entirely correct. The real gate is
+the per-hit `can()` loop in `search/router.ts`, which loads each hit's parent through that
+resource's own loader and asks with the same Target its own routes use. Bounded at 50/100 so
+it is a bounded loop, not a fan-out. Do not "optimize" it into a join.
+
+**A transcript is the one hit kind whose permission has no target, and that is deliberate.**
+`recording:read`, answered from ROLE ALONE — exactly as `getTranscript` asks it, because
+"may see that a call happened" and "may read what was said" are two questions. Inventing a
+per-resource target here would make search a cheaper door to a recorded conversation than the
+telephony surface it came from. Its `title` and `author_id` are NULL on purpose: the obvious
+title is a phone number, and 0033 blind-indexes counterparties precisely so a number never
+sits in a readable column — a trigram-indexed `title` would undo that in the one table built
+for substring matching. The body is safe to index because `comms.transcripts` has no
+unredacted form to copy.
+
+**A saved search stores TQL TEXT; `work.views` stores the AST. Both are right.** A view is
+built by the visual builder, which has no text form to preserve. A saved search is typed, and
+`format(parse(text))` is not the identity — it normalizes spacing, quoting and clause order,
+so storing the tree hands the author back a reworded version of their own query. What both
+share is that the value stays UNRESOLVED: `@me` and `-7d` survive as characters, or a shared
+"assigned to me" means "assigned to whoever saved it."
+
+**The card and search field sets are both closed and they do NOT overlap.** `assignee`,
+`status`, `description` are card-only; `author` and `text` are search-only; `status` holds
+ids rather than names and `assignee` is a `uuid_array` that `=` cannot compare. Two test
+suites written the same day were wrong on first run for exactly this, and one shipped an
+invalid example into a placeholder. Check a TQL example against `validate()` before writing
+it anywhere a person will read it.
+
+**Wave 3's status marker said SHIPPED while three of the things it scoped did not exist** —
+saved searches, transcripts, and the builder ↔ TQL box — and the spec contradicted itself for
+a day. Nothing built was wrong; the claim about what "shipped" covered was. The header records
+it rather than quietly correcting it, which is the same habit this file documents for Phases
+3.5, 5 and 7. **A status marker is a claim, not a fact.**
+
 ### Phase 13 Wave 1 — in-app voice (WebRTC)
 
 `packages/db/migrations/0041_rtc_wave1.*` (the `rtc` schema) · `packages/security/turn-credential.ts` ·

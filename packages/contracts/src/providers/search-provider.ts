@@ -47,8 +47,8 @@ export interface SearchQuery {
   readonly limit: number;
 }
 
-/** The closed set of indexed entity kinds — migration 0045's CHECK. */
-export type SearchEntityType = 'card' | 'message' | 'page' | 'comment';
+/** The closed set of indexed entity kinds — migration 0045's CHECK, widened by 0046. */
+export type SearchEntityType = 'card' | 'message' | 'page' | 'comment' | 'transcript';
 
 /**
  * The parent context a hit's permalink and its per-hit authorization need.
@@ -69,7 +69,15 @@ export type SearchHitMetadata =
      tree from `space` before it opens `page`, so { page_id } alone could
      not build one (migration 0045's metadata contract, and the indexer's
      own header on why the space id is re-read from the page row). */
-  | { readonly page_id: string; readonly space_id: string };
+  | { readonly page_id: string; readonly space_id: string }
+  /* A transcript (Wave 3). The CALL is what the permalink opens — the
+     telephony UI has no transcript route of its own, it renders a transcript
+     inside its call detail — and the recording id is what
+     `telephony.recordings.transcript` is keyed by, so both are carried.
+     Neither is a phone number: 0033 stores counterparties as a blind index
+     precisely so a number never sits in a readable column, and this
+     projection does not become the exception. */
+  | { readonly recording_id: string; readonly call_id: string };
 
 export interface SearchHit {
   readonly type: SearchEntityType;

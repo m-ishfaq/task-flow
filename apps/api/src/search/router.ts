@@ -8,7 +8,9 @@ import { loadChannel, channelTarget } from '../chat/shared.js';
 import { loadPage, pageTarget } from '../docs/shared.js';
 import { loadCard } from '../work/card.service.js';
 import type { SearchProvider, SearchHit } from '@taskflow/contracts';
-import { withOrgScope } from '@taskflow/db';
+import { eq, schema, withOrgScope } from '@taskflow/db';
+import * as savedSearches from './saved-search.service.js';
+import type { SavedSearchActor } from './saved-search.service.js';
 
 /**
  * The search route (ai/phase-8-search.md §2.7, Phase 8 Wave 2).
@@ -52,6 +54,7 @@ const HitMetadata = z.union([
   z.object({ space_id: z.string() }).strict(),
   z.object({ card_id: z.string(), board_id: z.string() }).strict(),
   z.object({ page_id: z.string(), space_id: z.string() }).strict(),
+  z.object({ recording_id: z.string(), call_id: z.string() }).strict(),
 ]);
 
 function actorOf(ctx: { principal: Parameters<typeof subjectOf>[0] }): Subject {
@@ -144,9 +147,36 @@ async function hitAllowed(subject: Subject, orgId: OrgId, hit: SearchHit): Promi
           }).allowed;
         }
 
+        case 'transcript': {
+          /* The ONE hit kind whose permission is not resolved from a parent
+             row, and deliberately so: `getTranscript` asks for
+             `recording:read` with NO target — Admin-and-Owner by role alone,
+             because "may see that a call happened" and "may read what was
+             said" are two questions (transcript.service.ts's own header). A
+             target here would invent a per-resource question the telephony
+             surface does not ask, and search must never be the cheaper door.
+
+             `can()` with no target answers from ROLE ALONE, which is exactly
+             the semantics wanted — and is the same property that silently
+             refused every guest on every chat route in Phase 5 when it was
+             used by accident. Here it is the intent, not the accident. */
+          if (!can(subject, 'recording:read').allowed) return false;
+
+          /* Existence is still checked, and not as a permission: a transcript
+             whose row is gone (its recording deleted, cascading) leaves a
+             document behind, because the cascade emits no event for the
+             indexer to consume. This read under RLS is what drops it. */
+          const rows = await tx
+            .select({ id: schema.transcripts.id })
+            .from(schema.transcripts)
+            .where(eq(schema.transcripts.id, hit.entityId))
+            .limit(1);
+          return rows.length > 0;
+        }
+
         default:
-          // A hit type the build does not know (a transcript, added in Wave 3)
-          // is not shown — fail closed rather than guessing its permission.
+          // A hit type this build does not know is not shown — fail closed
+          // rather than guessing its permission.
           return false;
       }
     } catch (error) {
@@ -171,8 +201,77 @@ function isNotFound(error: unknown): boolean {
   );
 }
 
+/** A saved search's own name and TQL bounds — migration 0046's CHECK constraints, restated. */
+const SavedSearchName = z.string().trim().min(1).max(60);
+
+function savedSearchActorOf(ctx: {
+  principal: Parameters<typeof subjectOf>[0];
+  requestId: SavedSearchActor['requestId'];
+}): SavedSearchActor {
+  return { subject: subjectOf(ctx.principal), requestId: ctx.requestId };
+}
+
 export function createSearchRouter(provider: SearchProvider) {
   return router({
+    /**
+     * Saved searches (§3.2).
+     *
+     * Every route floors on `search:query` — if you may run a search you may
+     * keep one. SHARING is the second question, asked inside the service with
+     * no target so it is answered by role alone (`search:manage`); see that
+     * file's §1. The floor is deliberately not raised to `search:manage`,
+     * which would stop members keeping private bookmarks.
+     */
+    saved: router({
+      list: route({ permission: 'search:query' })
+        .input(z.object({}).strict())
+        .output(
+          z
+            .array(
+              z.object({
+                searchId: z.string(),
+                name: z.string(),
+                query: z.string(),
+                isShared: z.boolean(),
+                createdBy: z.string(),
+                broken: z.boolean(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ ctx }) => savedSearches.listSavedSearches(savedSearchActorOf(ctx))),
+
+      create: route({ permission: 'search:query' })
+        .input(z.object({ name: SavedSearchName, query: TqlQuery, isShared: z.boolean() }).strict())
+        .output(z.object({ searchId: z.string() }))
+        .mutation(({ input, ctx }) =>
+          savedSearches.createSavedSearch(savedSearchActorOf(ctx), input),
+        ),
+
+      update: route({ permission: 'search:query' })
+        .input(
+          z
+            .object({
+              searchId: z.string().uuid(),
+              name: SavedSearchName,
+              query: TqlQuery,
+              isShared: z.boolean(),
+            })
+            .strict(),
+        )
+        .output(z.object({ name: z.string() }))
+        .mutation(({ input, ctx }) =>
+          savedSearches.updateSavedSearch(savedSearchActorOf(ctx), input),
+        ),
+
+      delete: route({ permission: 'search:query' })
+        .input(z.object({ searchId: z.string().uuid() }).strict())
+        .output(z.object({ deleted: z.literal(true) }))
+        .mutation(({ input, ctx }) =>
+          savedSearches.deleteSavedSearch(savedSearchActorOf(ctx), input),
+        ),
+    }),
+
     query: route({ permission: 'search:query' })
       .input(
         z
@@ -186,7 +285,7 @@ export function createSearchRouter(provider: SearchProvider) {
         z
           .array(
             z.object({
-              type: z.enum(['card', 'message', 'page', 'comment']),
+              type: z.enum(['card', 'message', 'page', 'comment', 'transcript']),
               entityId: z.string(),
               title: z.string().nullable(),
               snippet: z.string().nullable(),
