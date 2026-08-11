@@ -98,6 +98,13 @@ export { readNotificationPrefsTimezone } from './notification-prefs-timezone.js'
 export { consumeAutomationBudget } from './automation-budget.js';
 
 export {
+  consumeApiTokenQuota,
+  API_TOKEN_DAILY_QUOTA,
+  API_TOKEN_EXPENSIVE_DAILY_QUOTA,
+  type ApiTokenQuotaClass,
+} from './api-token-quota.js';
+
+export {
   readAuditEntries,
   readAuditChain,
   insertAuditEntry,

@@ -1,0 +1,18 @@
+-- 0053 — one `last_used_at`, on the table the list view reads
+-- (ai/phase-10-automation.md §6.5, Wave 3 slice 4 review).
+--
+-- 0050 created `platform.api_tokens.last_used_at` and documented it as
+-- "written throttled to once per minute by the quota path (§6.5)". Slice 4
+-- then put a SECOND `last_used_at` on the new `platform.api_token_quota` row,
+-- leaving the 0050 column written by nothing — two columns for one fact, and
+-- the list view (slice 5) would have had to know to join the quota table to
+-- see "last used" at all.
+--
+-- The truth belongs on `api_tokens`: that is the row the list view already
+-- reads, and 0050 (the earlier, more foundational migration) is where the
+-- column was spec'd. The consume statement's throttled write now targets it
+-- (in the same transaction as the quota upsert); this migration removes the
+-- duplicate from the quota row, which carries only counters from here on.
+--
+-- Nothing depends on the quota column yet — slice 5 (the UI) is not built.
+ALTER TABLE platform.api_token_quota DROP COLUMN last_used_at;

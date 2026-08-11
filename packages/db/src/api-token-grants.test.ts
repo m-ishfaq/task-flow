@@ -185,6 +185,27 @@ describe('taskflow_app — what 0050 grants, and what it takes back', () => {
     expect(await can('taskflow_app', 'platform.api_tokens', 'UPDATE')).toBe(true);
     expect(await can('taskflow_app', 'platform.api_tokens', 'DELETE')).toBe(false);
   });
+
+  it('0052: consumes quota but never deletes a quota row', async () => {
+    /* The same 0036 assertion for the quota table. The consume statement is
+       an upsert (INSERT + UPDATE) and the counters are append-only by
+       design — the row dies with its token, via the ON DELETE CASCADE, and
+       nothing in the application deletes one directly. */
+    expect(await can('taskflow_app', 'platform.api_token_quota', 'SELECT')).toBe(true);
+    expect(await can('taskflow_app', 'platform.api_token_quota', 'INSERT')).toBe(true);
+    expect(await can('taskflow_app', 'platform.api_token_quota', 'UPDATE')).toBe(true);
+    expect(await can('taskflow_app', 'platform.api_token_quota', 'DELETE')).toBe(false);
+
+    /* The lookup role never touches quota: authentication reads api_tokens
+       and nothing else; the consuming statement runs as the app role inside
+       the route gate. */
+    for (const privilege of ['SELECT', 'INSERT', 'UPDATE', 'DELETE']) {
+      expect(
+        await can('taskflow_api_token_auth', 'platform.api_token_quota', privilege),
+        `taskflow_api_token_auth must not hold ${privilege} on platform.api_token_quota`,
+      ).toBe(false);
+    }
+  });
 });
 
 describe('resolveApiToken — the real lookup, as the real role', () => {

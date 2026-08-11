@@ -1,6 +1,7 @@
 import { TRPCError, initTRPC } from '@trpc/server';
 import { ZodError } from 'zod';
 import { AppError, isAppError, type ApiError } from '@taskflow/contracts';
+import { consumeApiTokenQuota } from '@taskflow/db';
 import { couldGrant, type Permission } from '@taskflow/policy';
 import { isPlatformOperator } from '../platform-admin/operator.js';
 import {
@@ -78,6 +79,14 @@ export interface RouteMeta {
   readonly platformReason?: string;
   /** Requires a recent credential proof, e.g. role changes, recording export (§8.1). */
   readonly stepUp?: boolean;
+  /**
+   * Opts the route into the tighter expensive-class quota for token
+   * principals (ai/phase-10-automation.md §6.5). A CLOSED class — search,
+   * analytics, export, telephony — whose requests count additionally against
+   * a token's daily allowance, beside the total every token request counts.
+   * Manifest-visible, like every other route property.
+   */
+  readonly quotaClass?: 'expensive';
 }
 
 const t = initTRPC
@@ -340,9 +349,9 @@ const STEP_UP_MAX_AGE_MS = 5 * 60 * 1000;
  * has the resource. See `couldGrant`'s own comment for why widening layer 1
  * this way costs nothing.
  */
-export function route(meta: { permission: Permission; stepUp?: boolean }) {
+export function route(meta: { permission: Permission; stepUp?: boolean; quotaClass?: 'expensive' }) {
   return procedure.meta(meta).use(async ({ ctx, next, meta: routeMeta }) => {
-    const scoped = requireOrg(requireAuth(ctx, routeMeta));
+    const scoped = requireOrg(await requireAuth(ctx, routeMeta));
 
     if (!couldGrant(subjectOf(scoped.principal), meta.permission)) {
       // No decision trace in the message — telling a caller which rule
@@ -401,7 +410,7 @@ export function selfRoute(meta: { selfReason: string; stepUp?: boolean }) {
       selfReason: meta.selfReason,
       ...(meta.stepUp === undefined ? {} : { stepUp: meta.stepUp }),
     })
-    .use(async ({ ctx, next, meta: routeMeta }) => next({ ctx: requireAuth(ctx, routeMeta) }));
+    .use(async ({ ctx, next, meta: routeMeta }) => next({ ctx: await requireAuth(ctx, routeMeta) }));
 }
 
 /**
@@ -440,12 +449,12 @@ export function memberRoute(meta: { memberReason: string; stepUp?: boolean }) {
       ...(meta.stepUp === undefined ? {} : { stepUp: meta.stepUp }),
     })
     .use(async ({ ctx, next, meta: routeMeta }) =>
-      next({ ctx: requireOrg(requireAuth(ctx, routeMeta)) }),
+      next({ ctx: requireOrg(await requireAuth(ctx, routeMeta)) }),
     );
 }
 
 /** Shared gate: authentication, then step-up freshness if the route asks for it. */
-function requireAuth(ctx: RequestContext, meta: RouteMeta | undefined): AuthenticatedContext {
+async function requireAuth(ctx: RequestContext, meta: RouteMeta | undefined): Promise<AuthenticatedContext> {
   if (!ctx.principal) {
     throw new TRPCError({
       code: 'UNAUTHORIZED',
@@ -468,6 +477,42 @@ function requireAuth(ctx: RequestContext, meta: RouteMeta | undefined): Authenti
       code: 'FORBIDDEN',
       cause: new AppError('FORBIDDEN', 'This token cannot be used for this action.'),
     });
+  }
+
+  /* The token's own daily allowance (§6.5), consumed here — the one point
+     every token-authenticated request passes. `route` and `memberRoute`
+     both route through this gate; a token principal never reaches a self,
+     step-up or platform route past the refusal above, and public routes
+     never authenticate. A JWT principal has `tokenScopes === null` and
+     never reaches the consumption either.
+
+     The `org` guard is a type-level courtesy, not a fallback that can
+     silently skip the quota: a token principal ALWAYS carries an org,
+     because `authenticateWithApiToken` resolves the membership or returns
+     null. Every token request counts — including one that is about to be
+     refused by `couldGrant` or the scope intersection, which is the honest
+     reading of "every request" and the reason this sits before them. */
+  if (ctx.principal.tokenScopes !== null && ctx.principal.org !== null) {
+    const consumed = await consumeApiTokenQuota(
+      ctx.principal.org.orgId,
+      ctx.principal.sessionId,
+      meta?.quotaClass ?? 'normal',
+    );
+    if (!consumed) {
+      /* The allowance resets at midnight UTC — tell the client how long
+         that is so a CI job can back off instead of retry-looping. */
+      const resetAt = new Date();
+      resetAt.setUTCHours(24, 0, 0, 0);
+      const retryAfterSeconds = Math.max(1, Math.ceil((resetAt.getTime() - Date.now()) / 1000));
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        cause: new AppError(
+          'QUOTA_EXCEEDED',
+          'This token has reached its daily request limit.',
+          { retryAfterSeconds },
+        ),
+      });
+    }
   }
 
   if (meta?.stepUp === true) {
@@ -538,7 +583,7 @@ export function platformRoute(meta: { platformReason: string }) {
       stepUp: true,
     })
     .use(async ({ ctx, next, meta: routeMeta }) => {
-      const authed = requireAuth(ctx, routeMeta);
+      const authed = await requireAuth(ctx, routeMeta);
 
       const isOperator = await isPlatformOperator(authed.principal.userId);
       if (!isOperator) {

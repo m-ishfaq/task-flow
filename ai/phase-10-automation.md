@@ -460,9 +460,9 @@ Two supporting details:
 
 ## 6. Public API + scoped tokens (Wave 3)
 
-**SLICES 1–3 SHIPPED 2026-08-11** — the token store, the mint/list/revoke lifecycle, and the
-full authentication path. Remaining: slice 4 (durable per-token daily quota, §6.5), slice 5
-(the web UI), slice 6 (the remaining suites, §6.6). Wave 3 is NOT yet COMPLETE.
+**SLICES 1–4 SHIPPED 2026-08-11** — the token store, the mint/list/revoke lifecycle, the
+full authentication path, and the durable per-token daily quota. Remaining: slice 5 (the web
+UI), slice 6 (the remaining suites, §6.6). Wave 3 is NOT yet COMPLETE.
 
 1. **Slice 1 — migration 0050** `platform.api_tokens` + the `taskflow_api_token_auth` role
    (the twelfth; column-level SELECT of `token_hash, org_id, created_by, scopes, revoked_at`,
@@ -485,6 +485,26 @@ full authentication path. Remaining: slice 4 (durable per-token daily quota, §6
    and refuses token principals on `selfRoute`/`publicRoute`/`stepUp` routes. Migration 0051
    widened the auth role's grant with `id, created_at` so `sessionId`/`authenticatedAt` can
    name the token row.
+4. **Slice 4 — the quota.** Migration 0052 `platform.api_token_quota`, one row per token
+   with TWO counters — `used_count` (every request) and `expensive_count` (the closed class)
+   — plus `quota_date` (the UTC day). The consume is a single upsert whose ceilings live in
+   the `ON CONFLICT ... WHERE` (the claim pattern), with the day-boundary rollover in the
+   same statement's CASEs: a stale `quota_date` resets both counters instead of refusing,
+   atomically. `quotaClass: 'expensive'` rides in route meta, is manifest-visible, and is
+   carried by search's `query`, docs' `exportPdf`, and telephony's `spend.report` +
+   `recordings.download`. A refusal is `QUOTA_EXCEEDED` (429) with `retryAfterSeconds` to
+   midnight UTC. Limits are TS constants (`100_000` daily, `2_000` expensive) — deployment
+   policy, not schema.
+5. **Slice 4 review — migration 0053.** Two findings landed. The first is the drift this
+   header records rather than papering over: 0050 created `platform.api_tokens.last_used_at`
+   and documented it as the quota path's throttled write, and slice 4 first put a SECOND
+   `last_used_at` on the quota row — two columns for one fact, and the list view would have
+   had to join to see it. 0053 drops the quota column; the consume's once-per-minute write
+   targets `api_tokens.last_used_at` in the same transaction as the upsert. The second is a
+   one-line off-by-one in the rollover CASE: a day that began with a NORMAL request's
+   rollover started `expensive_count` at 1 (the fresh-INSERT path writes 0), quietly
+   shrinking the expensive allowance by one for that day — the CASE now writes
+   `expensive ? 1 : 0`, the same values the INSERT does.
 
 **One finding from the slice-3 review that is worth stating out loud:** a suspended org's
 request originally THREW `ORG_SUSPENDED` out of `authenticateWithApiToken`, and the unit test
@@ -496,11 +516,21 @@ throw inside `withOrgContext` and lets the route answer NOT_A_MEMBER. The token 
 swallows it to null too — a refusal, like every other invalid credential, never a server
 error. The test asserts `resolves.toBeNull()` with the reasoning in the comment.
 
-Verified: api/db/realtime/collab typecheck + lint clean; the auth suite 12/12 (valid, wrong
-kind, revoked, unknown, deleted user, org-suspended, header mismatch, scope enforcement,
-demotion-immediately); service 10/10; grants 9/9; route manifest + fuzz 81/81 (the new routes
-auto-enrolled); guardrail selftest; the RLS checker. **Not verified in a browser** — slice 5
-is the UI.
+**Slice 4's own suite caught a real bug in the first version of the throttle:** the
+`last_used_at` CASE lived in the `DO UPDATE`, which only runs on conflict — so the FIRST
+request of a token's life (a pure INSERT) left the column NULL until a second request. The
+review's 0053 moved the column entirely; the bug is moot. The day-boundary assertion also
+survived two wrong versions before landing on `quota_date::text` in the test read:
+node-postgres parses a `date` column as LOCAL midnight, and `toISOString()` on that shifts
+the day back by the UTC offset — the rollover was working, the assertion was reading it
+through a timezone.
+
+Verified: api/db/realtime/collab typecheck + lint clean; the auth suite 18/18 (the slice-3
+set plus the five quota tests: exhaust → refused, per-token isolation, day rollover, the
+independent expensive class, the last-used throttle); service 10/10; grants 10/10 (0052's
+REVOKE DELETE asserted); route manifest + fuzz 99/99; worker automation 35/35; guardrail
+selftest; the RLS checker; `migrate:verify` up → down → up. **Not verified in a browser** —
+slice 5 is the UI.
 
 ### 6.1 The token
 

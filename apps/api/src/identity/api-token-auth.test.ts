@@ -7,7 +7,13 @@ import {
   selfRoute,
 } from '../trpc/builder.js';
 import { unsafeAsId, type OrgId, type UserId } from '@taskflow/contracts';
-import { closeDatabase, initializeApiTokenAuthDatabase, initializeDatabase } from '@taskflow/db';
+import {
+  API_TOKEN_DAILY_QUOTA,
+  API_TOKEN_EXPENSIVE_DAILY_QUOTA,
+  closeDatabase,
+  initializeApiTokenAuthDatabase,
+  initializeDatabase,
+} from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { issueToken } from '@taskflow/security';
 import { TEST_ENV, testContext } from '../testing/fixtures.js';
@@ -57,6 +63,7 @@ async function scaffold(slug: string): Promise<{
   orgId: OrgId;
   owner: AutomationActor;
   token: string;
+  tokenId: string;
 }> {
   fixtureCounter += 1;
   const uniqueSlug = `au-${fixtureCounter.toString(36)}-${slug.slice(0, 8)}-${crypto.randomUUID().slice(0, 8)}`;
@@ -68,7 +75,7 @@ async function scaffold(slug: string): Promise<{
 
   const owner = await actorFor(result.orgId, OWNER, 'owner');
   const issued = await mintApiToken(owner, { name: 'CI', scopes: ['card:read'] });
-  return { orgId: result.orgId, owner, token: issued.token };
+  return { orgId: result.orgId, owner, token: issued.token, tokenId: issued.tokenId };
 }
 
 async function removeOrg(orgId: string): Promise<void> {
@@ -260,17 +267,22 @@ function tokenContext(principal: NonNullable<Awaited<ReturnType<typeof authentic
   return testContext({ principal });
 }
 
+/* Module scope so the quota suite (below) can drive the same routes. */
+const gateRouter = router({
+  cards: router({
+    read: route({ permission: 'card:read' }).query(() => 'read'),
+    update: route({ permission: 'card:update' }).query(() => 'update'),
+  }),
+  /* `stepUp: true` — the marker slice 2's mint/revoke routes carry. */
+  admin: route({ permission: 'apiToken:create', stepUp: true }).query(() => 'mint'),
+  me: selfRoute({ selfReason: 'Reading your own profile.' }).query(() => 'me'),
+  public: publicRoute({ publicReason: 'Test fixture route.' }).query(() => 'public'),
+  /* The expensive class (§6.5): the search permission is what a real
+     expensive route declares, and the token minted below holds it. */
+  search: route({ permission: 'search:query', quotaClass: 'expensive' }).query(() => 'search'),
+});
+
 describe('the builder gate for token principals', () => {
-  const gateRouter = router({
-    cards: router({
-      read: route({ permission: 'card:read' }).query(() => 'read'),
-      update: route({ permission: 'card:update' }).query(() => 'update'),
-    }),
-    /* `stepUp: true` — the marker slice 2's mint/revoke routes carry. */
-    admin: route({ permission: 'apiToken:create', stepUp: true }).query(() => 'mint'),
-    me: selfRoute({ selfReason: 'Reading your own profile.' }).query(() => 'me'),
-    public: publicRoute({ publicReason: 'Test fixture route.' }).query(() => 'public'),
-  });
 
   it('lets a card:read-scoped token through a card:read route', async () => {
     const { token } = await scaffold('gate-ok');
@@ -368,5 +380,166 @@ describe('the builder gate for token principals', () => {
     expect(after).not.toBeNull();
     const afterCaller = createCallerFactory(auditRouter)(tokenContext(after!));
     await expect(afterCaller.audit()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * The per-token daily quota (§6.5). The counter is a Postgres row, so the
+ * durable state is seeded directly (as the migrator, under the org's own RLS
+ * scope) rather than consumed 100 000 times — and a fresh authentication on
+ * every call is what proves the refusal comes from the DATABASE, not from
+ * some in-process window a restart would forgive.
+ * ------------------------------------------------------------------------- */
+
+/** Upserts a quota row at the given counters — `daysAgo` 0 is today. */
+async function seedQuota(
+  orgId: OrgId,
+  tokenId: string,
+  used: number,
+  expensive: number,
+  daysAgo = 0,
+): Promise<void> {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - daysAgo);
+  await admin.setOrg(orgId);
+  await admin.query(
+    `INSERT INTO platform.api_token_quota (token_id, org_id, quota_date, used_count, expensive_count)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (token_id) DO UPDATE
+       SET quota_date = $3, used_count = $4, expensive_count = $5`,
+    [tokenId, orgId, date.toISOString().slice(0, 10), used, expensive],
+  );
+  await admin.setOrg(null);
+}
+
+async function readQuota(orgId: OrgId, tokenId: string): Promise<Record<string, unknown>> {
+  await admin.setOrg(orgId);
+  /* `quota_date::text` — the driver would otherwise hand back a Date parsed
+     as LOCAL midnight, and `toISOString()` on that shifts the day back by
+     the UTC offset. Text is the column's own representation and immune. */
+  const result = await admin.query(
+    `SELECT used_count, expensive_count, quota_date::text AS quota_date
+     FROM platform.api_token_quota WHERE token_id = $1`,
+    [tokenId],
+  );
+  await admin.setOrg(null);
+  return result.rows[0] ?? {};
+}
+
+/** The list view's "last used" — on api_tokens, not the quota row (0053). */
+async function readLastUsedAt(orgId: OrgId, tokenId: string): Promise<unknown> {
+  await admin.setOrg(orgId);
+  const result = await admin.query(
+    `SELECT last_used_at FROM platform.api_tokens WHERE id = $1`,
+    [tokenId],
+  );
+  await admin.setOrg(null);
+  return result.rows[0]?.['last_used_at'] ?? null;
+}
+
+describe('the per-token daily quota (§6.5)', () => {
+  async function principalOf(token: string) {
+    const principal = await authenticateWithApiToken(`Bearer ${token}`, undefined);
+    expect(principal).not.toBeNull();
+    return principal!;
+  }
+
+  it('counts every request, and refuses once the daily total is exhausted', async () => {
+    const { orgId, tokenId, token } = await scaffold('quota-exhaust');
+    const caller = createCallerFactory(gateRouter)(tokenContext(await principalOf(token)));
+
+    /* The first call consumes the row into existence. */
+    await expect(caller.cards.read()).resolves.toBe('read');
+    let row = await readQuota(orgId, tokenId);
+    expect(Number(row['used_count'])).toBe(1);
+
+    /* Push the counter to the ceiling — the durable state a day of real
+       usage would produce — and a FRESH authentication is refused, with a
+       retry hint pointing at midnight UTC when the allowance resets. */
+    await seedQuota(orgId, tokenId, API_TOKEN_DAILY_QUOTA, 0);
+    const fresh = await principalOf(token);
+    const error = await createCallerFactory(gateRouter)(tokenContext(fresh))
+      .cards.read()
+      .catch((cause: unknown) => cause);
+    const err = error as { code?: string; cause?: { code?: string; retryAfterSeconds?: number } };
+    expect(err.code).toBe('TOO_MANY_REQUESTS');
+    expect(err.cause?.code).toBe('QUOTA_EXCEEDED');
+    expect(err.cause?.retryAfterSeconds).toBeGreaterThan(0);
+
+    /* The refusal consumed nothing — the counter stays at the ceiling. */
+    row = await readQuota(orgId, tokenId);
+    expect(Number(row['used_count'])).toBe(API_TOKEN_DAILY_QUOTA);
+  });
+
+  it('is per token — an exhausted token does not exhaust its sibling', async () => {
+    const { orgId, tokenId, token, owner } = await scaffold('quota-sibling');
+    const exhausted = await mintApiToken(owner, { name: 'CI 2', scopes: ['card:read'] });
+    await seedQuota(orgId, exhausted.tokenId, API_TOKEN_DAILY_QUOTA, 0);
+
+    const first = await principalOf(token);
+    await expect(
+      createCallerFactory(gateRouter)(tokenContext(first)).cards.read(),
+    ).resolves.toBe('read');
+
+    const second = await principalOf(exhausted.token);
+    const error = await createCallerFactory(gateRouter)(tokenContext(second))
+      .cards.read()
+      .catch((cause: unknown) => cause);
+    expect((error as { code?: string }).code).toBe('TOO_MANY_REQUESTS');
+    expect(tokenId.length).toBeGreaterThan(0);
+  });
+
+  it('rolls the row over at the day boundary instead of refusing', async () => {
+    const { orgId, tokenId, token } = await scaffold('quota-rollover');
+    /* Yesterday's row, at the ceiling. */
+    await seedQuota(orgId, tokenId, API_TOKEN_DAILY_QUOTA, 0, 1);
+
+    const principal = await principalOf(token);
+    await expect(
+      createCallerFactory(gateRouter)(tokenContext(principal)).cards.read(),
+    ).resolves.toBe('read');
+
+    const row = await readQuota(orgId, tokenId);
+    expect(Number(row['used_count'])).toBe(1);
+    expect(String(row['quota_date'])).toBe(new Date().toISOString().slice(0, 10));
+  });
+
+  it('the expensive class is refused independently of the daily total', async () => {
+    const { orgId, tokenId, owner } = await scaffold('quota-expensive');
+    /* A token holding the search permission, so the scope gate passes and the
+       expensive CLASS is what refuses. */
+    const searchToken = await mintApiToken(owner, {
+      name: 'Search',
+      scopes: ['card:read', 'search:query'],
+    });
+    await seedQuota(orgId, searchToken.tokenId, 0, API_TOKEN_EXPENSIVE_DAILY_QUOTA);
+
+    const principal = await principalOf(searchToken.token);
+    const caller = createCallerFactory(gateRouter)(tokenContext(principal));
+
+    /* The expensive ceiling is reached — the search route is refused... */
+    const error = await caller.search().catch((cause: unknown) => cause);
+    expect((error as { code?: string }).code).toBe('TOO_MANY_REQUESTS');
+
+    /* ...while the daily total is untouched, so a normal route still passes. */
+    await expect(caller.cards.read()).resolves.toBe('read');
+    const row = await readQuota(orgId, searchToken.tokenId);
+    expect(Number(row['used_count'])).toBe(1);
+    expect(tokenId.length).toBeGreaterThan(0);
+  });
+
+  it('writes last_used_at on the token row, at most once per minute', async () => {
+    const { orgId, tokenId, token } = await scaffold('quota-throttle');
+    const caller = createCallerFactory(gateRouter)(tokenContext(await principalOf(token)));
+
+    await caller.cards.read();
+    const first = await readLastUsedAt(orgId, tokenId);
+    expect(first).not.toBeNull();
+
+    /* An immediate second request — the same minute by construction — keeps
+       the earlier timestamp rather than churning it. */
+    await caller.cards.read();
+    const second = await readLastUsedAt(orgId, tokenId);
+    expect(String(second)).toBe(String(first));
   });
 });

@@ -42,6 +42,13 @@ export interface RouteEntry {
   readonly platformReason?: string;
   readonly stepUp: boolean;
   /**
+   * The expensive-class quota tag (§6.5), when the route carries one — a
+   * token request to such a route counts twice: against the daily total and
+   * against the tighter expensive class. Undefined on routes that only count
+   * once.
+   */
+  readonly quotaClass?: 'expensive';
+  /**
    * Whether the route accepts caller-supplied input at all.
    *
    * Read by the tenancy fuzz test (guardrail 8), which substitutes another
@@ -141,6 +148,7 @@ export function routeManifest(appRouter: AnyRouter): readonly RouteEntry[] {
           ...(meta?.memberReason === undefined ? {} : { memberReason: meta.memberReason }),
           ...(meta?.platformReason === undefined ? {} : { platformReason: meta.platformReason }),
           stepUp: meta?.stepUp === true,
+          ...(meta?.quotaClass === undefined ? {} : { quotaClass: meta.quotaClass }),
           acceptsInput: (value._def?.inputs?.length ?? 0) > 0,
         });
         continue;

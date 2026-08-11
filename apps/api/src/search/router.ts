@@ -272,7 +272,11 @@ export function createSearchRouter(provider: SearchProvider) {
         ),
     }),
 
-    query: route({ permission: 'search:query' })
+    /* The one route in this router that is actually expensive — a TQL
+       execution scans the trigram indexes and assembles per-hit permission
+       answers. The saved-search CRUD above is ordinary bookkeeping and
+       counts only against the token's daily total (§6.5's expensive class). */
+    query: route({ permission: 'search:query', quotaClass: 'expensive' })
       .input(
         z
           .object({
