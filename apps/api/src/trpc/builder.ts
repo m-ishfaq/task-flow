@@ -354,6 +354,27 @@ export function route(meta: { permission: Permission; stepUp?: boolean }) {
       });
     }
 
+    /* The token-scope intersection (§6.4). A token principal is refused on a
+       route whose permission is not in its scope set — a token scoped to
+       `card:read` is refused on a `card:update` route even while its owner
+       could do both. This is a SECOND gate beside `couldGrant`, deliberately:
+       `couldGrant` asks "could this principal ever do this" (role + tuples),
+       the scope set asks "is this route inside what the CREDENTIAL claims".
+       The `can()` checks at layer 2 still run as always — token auth changes
+       who the caller is, never whether fail-closed checks run (decision 5). */
+    if (
+      scoped.principal.tokenScopes !== null &&
+      !scoped.principal.tokenScopes.includes(meta.permission)
+    ) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        cause: new AppError(
+          'FORBIDDEN',
+          'This token is not scoped for that action.',
+        ),
+      });
+    }
+
     return next({ ctx: scoped });
   });
 }
@@ -429,6 +450,23 @@ function requireAuth(ctx: RequestContext, meta: RouteMeta | undefined): Authenti
     throw new TRPCError({
       code: 'UNAUTHORIZED',
       cause: new AppError('UNAUTHENTICATED', 'Authentication required.'),
+    });
+  }
+
+  /* Tokens cannot satisfy self, public, or step-up routes (§6.4). A token is
+     a long-lived credential, not a re-authentication — a script must not be
+     able to revoke sessions or mint more tokens with a credential no browser
+     ceremony protected. `selfRoute` and `stepUp` are the two route kinds
+     `requireAuth` sees; `publicRoute` never calls `requireAuth` at all, so a
+     token presented there is simply ignored — the request is served exactly
+     as one with no credentials would be, and the route's floor is anonymous.
+     The check runs on the marker field, so slice 2's
+     `stepUp: true` mint/revoke routes (and every step-up route) refuse token
+     principals here without each route having to know tokens exist. */
+  if (ctx.principal.tokenScopes !== null && (meta?.selfReason !== undefined || meta?.stepUp === true)) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      cause: new AppError('FORBIDDEN', 'This token cannot be used for this action.'),
     });
   }
 

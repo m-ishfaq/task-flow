@@ -33,6 +33,16 @@ export interface ResolvedApiToken {
   readonly createdBy: string;
   /** The token's scope set, intersected with the live `can()` at the route. */
   readonly scopes: readonly string[];
+  /**
+   * The token's row id — becomes the principal's `sessionId` so audit entries
+   * have something joinable to the token row (§6.4 step 5).
+   */
+  readonly tokenId: string;
+  /**
+   * When the token was minted — becomes the principal's `authenticatedAt`:
+   * the token IS the credential, so this is when it was proved.
+   */
+  readonly createdAt: Date;
 }
 
 /**
@@ -56,6 +66,8 @@ export async function resolveApiToken(tokenHash: string): Promise<ResolvedApiTok
         orgId: apiTokens.orgId,
         createdBy: apiTokens.createdBy,
         scopes: apiTokens.scopes,
+        tokenId: apiTokens.id,
+        createdAt: apiTokens.createdAt,
       })
       .from(apiTokens)
       .where(and(eq(apiTokens.tokenHash, tokenHash), isNull(apiTokens.revokedAt)))
@@ -68,6 +80,8 @@ export async function resolveApiToken(tokenHash: string): Promise<ResolvedApiTok
       orgId: row.orgId,
       createdBy: row.createdBy,
       scopes: row.scopes,
+      tokenId: row.tokenId,
+      createdAt: row.createdAt,
     };
   });
 }

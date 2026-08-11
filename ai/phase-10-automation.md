@@ -7,9 +7,11 @@ and wants its own spec written and approved before implementation). Phase 8 foll
 route and it worked; this is the same route.
 
 **Waves 3–4 (public API with scoped tokens, Slack/GitHub connectors, importers/exporters, and
-wave 4's cost-bearing telephony actions behind the env flag) are NOT built.** Wave 3's full
-spec is §6, written 2026-08-11 and awaiting review; Waves 1–2 are the engine and the webhook
-delivery path; the wave list below says exactly what shipped in each.
+wave 4's cost-bearing telephony actions behind the env flag) are NOT complete.** Wave 3's
+slices 1–3 shipped 2026-08-11 (see the §6 status header) — the token store, the mint/list/
+revoke lifecycle, and the full authentication path — with slices 4 (quota), 5 (UI) and 6
+(remaining suites) still open. Waves 1–2 are the engine and the webhook delivery path; the
+wave list below says exactly what shipped in each.
 
 **Two recommendations were overturned in that review, and both were overturned correctly:**
 
@@ -458,11 +460,47 @@ Two supporting details:
 
 ## 6. Public API + scoped tokens (Wave 3)
 
-What this wave ships, and why it is shaped this way. §9 decision 5 fixed the surface question
-before anything was built: **one API — the existing tRPC router — with token authentication**.
-A second surface is a second place every authorization decision has to be made correctly and
-kept correct forever, and the drifted copy is always the one without tests. So this wave is
-not "build an API"; it is "let a long-lived credential stand in for a session".
+**SLICES 1–3 SHIPPED 2026-08-11** — the token store, the mint/list/revoke lifecycle, and the
+full authentication path. Remaining: slice 4 (durable per-token daily quota, §6.5), slice 5
+(the web UI), slice 6 (the remaining suites, §6.6). Wave 3 is NOT yet COMPLETE.
+
+1. **Slice 1 — migration 0050** `platform.api_tokens` + the `taskflow_api_token_auth` role
+   (the twelfth; column-level SELECT of `token_hash, org_id, created_by, scopes, revoked_at`,
+   never `name`/`token_prefix`/`last_used_at`, no writes) + `resolveApiToken`. Soft-delete
+   only: `REVOKE DELETE` from `taskflow_app`, the 0036 lesson. No scopes CHECK on purpose —
+   the catalog lives in TypeScript and a bogus scope is inert, since enforcement is the
+   intersection with live `can()`.
+2. **Slice 2 — mint/list/revoke.** Mint validates every scope against the minting user's
+   LIVE `can()` with no target — role alone, deliberately: a token authenticates org-wide,
+   so a tuple-granted per-resource capability must not become an org-wide claim. The token
+   is stored as `sha256` and returned in plaintext exactly once; `list` never exposes the
+   hash; revoke is a conditional UPDATE so two concurrent revokes emit exactly one
+   `api_token.revoked` event. Mint and revoke are `stepUp: true` — §6.4's "a script must
+   not mint more tokens" hook, which slice 3's builder gate now enforces.
+3. **Slice 3 — the authentication path.** `authenticateWithApiToken` in
+   `apps/api/src/identity` ⚠ §2.2: bearer parse → `tf_pat` kind check → hash →
+   `resolveApiToken` (revoked/unknown is null, no courtesy window) → org from the TOKEN
+   with a disagreeing header refused (decision 11) → membership re-resolved live →
+   `tokenScopes` on the principal. The builder gate intersects `permission ∈ tokenScopes`
+   and refuses token principals on `selfRoute`/`publicRoute`/`stepUp` routes. Migration 0051
+   widened the auth role's grant with `id, created_at` so `sessionId`/`authenticatedAt` can
+   name the token row.
+
+**One finding from the slice-3 review that is worth stating out loud:** a suspended org's
+request originally THREW `ORG_SUSPENDED` out of `authenticateWithApiToken`, and the unit test
+asserted the throw. That would have answered **HTTP 500** in production: an AppError escaping
+`createContext` is converted by the tRPC adapter's `getTRPCErrorFromUnknown` into
+INTERNAL_SERVER_ERROR, because the `mapErrors` middleware that maps AppErrors to their proper
+codes only wraps procedures, never the context builder. The JWT path already swallows the same
+throw inside `withOrgContext` and lets the route answer NOT_A_MEMBER. The token path now
+swallows it to null too — a refusal, like every other invalid credential, never a server
+error. The test asserts `resolves.toBeNull()` with the reasoning in the comment.
+
+Verified: api/db/realtime/collab typecheck + lint clean; the auth suite 12/12 (valid, wrong
+kind, revoked, unknown, deleted user, org-suspended, header mismatch, scope enforcement,
+demotion-immediately); service 10/10; grants 9/9; route manifest + fuzz 81/81 (the new routes
+auto-enrolled); guardrail selftest; the RLS checker. **Not verified in a browser** — slice 5
+is the UI.
 
 ### 6.1 The token
 

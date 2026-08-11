@@ -3,8 +3,8 @@ import { closeDatabase, initializeApiTokenAuthDatabase, resolveApiToken } from '
 import { applyMigrations, connectAsMigrator, type AdminConnection } from './testing/index.js';
 
 /**
- * Migration 0050's grants, asserted against a real database, plus the real
- * lookup through the real role.
+ * Migrations 0050 + 0051's grants, asserted against a real database, plus the
+ * real lookup through the real role.
  *
  * The 0036 lesson, applied to tokens: `platform` carries ALTER DEFAULT
  * PRIVILEGES from 0001, so `taskflow_app` held full CRUD on `api_tokens`
@@ -16,9 +16,12 @@ import { applyMigrations, connectAsMigrator, type AdminConnection } from './test
  * `taskflow_api_token_auth` resolves a presented `tf_pat` by its hash across
  * every tenant — the token row names its org, so no value of `app.org_id` is
  * correct for the read — and must be unable to read what its tokens are
- * called (`name`, `token_prefix`) or when they were last used. That property
- * is invisible in application code, so it needs a test, or the day someone
- * adds a convenience grant is the day it silently stops being true.
+ * called (`name`, `token_prefix`) or when they were last used. 0051 widened
+ * the grant with `id` and `created_at` — the auth path needs them as the
+ * principal's `sessionId` and `authenticatedAt` (§6.4 step 5) — but the
+ * exclusions are the point and stay asserted below. That property is
+ * invisible in application code, so it needs a test, or the day someone adds
+ * a convenience grant is the day it silently stops being true.
  */
 
 let admin: AdminConnection;
@@ -131,7 +134,17 @@ afterAll(async () => {
 
 describe('taskflow_api_token_auth — the lookup role, by GRANT', () => {
   it('may read exactly the lookup columns, across every org', async () => {
-    for (const column of ['token_hash', 'org_id', 'created_by', 'scopes', 'revoked_at']) {
+    /* 0051 added `id` and `created_at` to the grant — the auth path needs
+       them as sessionId/authenticatedAt. Everything else 0050 granted stays. */
+    for (const column of [
+      'token_hash',
+      'org_id',
+      'created_by',
+      'scopes',
+      'revoked_at',
+      'id',
+      'created_at',
+    ]) {
       expect(await canColumn('taskflow_api_token_auth', 'platform.api_tokens', column, 'SELECT')).toBe(
         true,
       );
@@ -178,13 +191,18 @@ describe('taskflow_app — what 0050 grants, and what it takes back', () => {
 });
 
 describe('resolveApiToken — the real lookup, as the real role', () => {
-  it('resolves a live token to its org, holder, and scopes', async () => {
+  it('resolves a live token to its org, holder, scopes, row id and mint time', async () => {
     const resolved = await resolveApiToken(LIVE_HASH);
-    expect(resolved).toEqual({
+    expect(resolved).toMatchObject({
       orgId: ORG_A,
       createdBy: USER,
       scopes: ['card:read'],
     });
+    /* The auth path (slice 3) uses these two as sessionId and
+       authenticatedAt — the token IS the credential, so its row id and mint
+       time are the request's session and proof-of-credential time. */
+    expect(resolved?.tokenId).toEqual(expect.any(String) as string);
+    expect(resolved?.createdAt).toBeInstanceOf(Date);
   });
 
   it('refuses a revoked token — revocation takes effect on the next request', async () => {

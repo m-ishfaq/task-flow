@@ -74,6 +74,7 @@ export function testPrincipal(
       role,
       tuples: [],
     },
+    tokenScopes: null,
     ...overrides,
   };
 }

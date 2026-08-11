@@ -87,6 +87,7 @@ export async function authenticate(
       sessionId: sessionId.data,
       authenticatedAt: new Date(claims.authenticatedAt * 1000),
       org: null,
+      tokenScopes: null,
     };
   } catch {
     // verifyAccessToken throws one error for every failure mode on purpose, so

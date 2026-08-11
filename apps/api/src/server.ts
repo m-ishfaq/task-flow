@@ -18,6 +18,7 @@ import {
   serializeRefreshCookie,
 } from './identity/cookies.js';
 import { buildIdentityDeps, buildPasskeyDeps } from './identity/deps.js';
+import { authenticateWithApiToken } from './identity/api-token-auth.js';
 import type { OAuthDeps } from './identity/oauth.service.js';
 import { authenticate } from './identity/authenticate.js';
 import { createMailDelivery } from './identity/deliver.js';
@@ -242,11 +243,10 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
       },
       createContext: async ({ req, res }): Promise<RequestContext> => ({
         requestId: req.id as RequestContext['requestId'],
-        principal: await withOrgContext(
-          await authenticate(req.headers.authorization, {
-            jwtSecret: identityDeps.config.jwtSecret,
-          }),
+        principal: await authenticateRequest(
+          req.headers.authorization,
           req.headers[ORG_HEADER],
+          { jwtSecret: identityDeps.config.jwtSecret },
         ),
         refreshToken: readRefreshCookie(req.headers.cookie),
         ip: req.ip.length > 0 ? req.ip : null,
@@ -265,6 +265,39 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
   });
 
   return app;
+}
+
+/**
+ * Dispatches a request's `Authorization` header to the right authentication
+ * path (ai/phase-10-automation.md §6.4).
+ *
+ * The bearer token's KIND is the discriminator: a `tf_pat_` token goes to
+ * `authenticateWithApiToken`, everything else goes through the JWT path.
+ *
+ * The `startsWith` here is a cheap PRE-FILTER, not the authority. A misroute
+ * lands in the token path, where `bearerToken` and `isTokenKind` re-check the
+ * parsed bearer and refuse anything that is not genuinely a `tf_pat` — and a
+ * session JWT whose base64url body happened to begin with the literal
+ * characters `tf_pat_` is refused there too, rather than silently served, so
+ * the two paths agree on what a bearer even is, fail-closed.
+ *
+ * The org resolution differs between the two paths and that is the point:
+ *
+ *  - the JWT path resolves the org from the `x-taskflow-org` header, because
+ *    a session carries no org of its own;
+ *  - the token path takes the org from the TOKEN and refuses a disagreeing
+ *    header (decision 11) — a token is minted FOR an org, so the header is at
+ *    most a confirmation, never a selector.
+ */
+async function authenticateRequest(
+  authorization: string | undefined,
+  orgHeader: string | string[] | undefined,
+  config: { jwtSecret: Uint8Array },
+): Promise<AuthenticatedPrincipal | null> {
+  if (typeof authorization === 'string' && authorization.trim().startsWith('tf_pat_')) {
+    return authenticateWithApiToken(authorization, orgHeader);
+  }
+  return withOrgContext(await authenticate(authorization, config), orgHeader);
 }
 
 /**
