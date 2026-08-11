@@ -7,8 +7,9 @@ and wants its own spec written and approved before implementation). Phase 8 foll
 route and it worked; this is the same route.
 
 **Waves 3–4 (public API with scoped tokens, Slack/GitHub connectors, importers/exporters, and
-wave 4's cost-bearing telephony actions behind the env flag) are NOT started.** Waves 1–2 are
-the engine and the webhook delivery path; the wave list below says exactly what shipped in each.
+wave 4's cost-bearing telephony actions behind the env flag) are NOT built.** Wave 3's full
+spec is §6, written 2026-08-11 and awaiting review; Waves 1–2 are the engine and the webhook
+delivery path; the wave list below says exactly what shipped in each.
 
 **Two recommendations were overturned in that review, and both were overturned correctly:**
 
@@ -261,7 +262,7 @@ thing it gates.
 - **Wave 3 — the public API and scoped tokens.** `tf_pat` tokens with per-token scopes, a
   quota-based rate limit (PLAN.md §627 names analytics/search/export/telephony as the
   quota tier). §9 decision 5 resolved the surface question: one API, the existing tRPC
-  router with token auth.
+  router with token auth. **Fully spec'd in §6, 2026-08-11 — not built.**
 - **Wave 4 — connectors, import/export, and the cost-bearing actions.** Slack and GitHub as
   the two named integrations, plus CSV/JSON importers and exporters. A connector is a webhook
   with a known shape and an OAuth credential, so everything here is built on Waves 2–3's
@@ -457,15 +458,149 @@ Two supporting details:
 
 ## 6. Public API + scoped tokens (Wave 3)
 
-- `tf_pat` tokens, hashed at rest (`tokens.ts` already returns `{ token, hash }` and its own
-  comment says the plaintext must never be logged, persisted, or audited).
-- **Scopes are a SUBSET of the holder's permissions, never a superset**, re-resolved per
-  request against the current membership — the §2 argument applied to a credential instead of
-  a rule.
-- **Quota-based rate limiting**, per PLAN.md §627. The existing per-IP/per-account sliding
-  windows are the wrong shape for a token that legitimately makes ten thousand calls a day.
-- A token is shown once, listable by prefix and last-used, and revocable — `apiToken:revoke`
-  already exists for this.
+What this wave ships, and why it is shaped this way. §9 decision 5 fixed the surface question
+before anything was built: **one API — the existing tRPC router — with token authentication**.
+A second surface is a second place every authorization decision has to be made correctly and
+kept correct forever, and the drifted copy is always the one without tests. So this wave is
+not "build an API"; it is "let a long-lived credential stand in for a session".
+
+### 6.1 The token
+
+- `tf_pat` (`apiToken` in `tokens.ts`), 256 bits of CSPRNG output, **hashed at rest** —
+  `issueToken` returns `{ token, hash }` and its header already forbids logging, persisting
+  or auditing the plaintext. The token exists in plaintext exactly once, in the response
+  that mints it.
+- The row stores `token_hash` (the lookup key), `token_prefix` (the first ten characters of
+  the body, stored at mint for the list view — a partial that is useless to whoever reads
+  the table, the same deal `describeAction`'s truncated ids make), the minting user, the
+  org, the scopes, and revocation state.
+- **A token is shown once.** No read-back route, and no rotation in this wave — a lost token
+  is a revoked token and a fresh mint, the same deal the webhook secret makes.
+- Revocation is a soft delete (`revoked_at`): the audit trail keeps the row, the auth lookup
+  refuses it. `apiToken:revoke` already exists in the catalog and the matrix (owner/admin)
+  and `decide.test.ts` already proves no relationship tuple can satisfy it.
+
+### 6.2 The table, the role, and the lookup
+
+- **Migration 0050** — `platform.api_tokens`, org-scoped and RLS-FORCED like every tenant
+  table, with org-scoped policies for `taskflow_app` (SELECT/INSERT/UPDATE; no DELETE —
+  revoke is the operation). The `scopes` column gets NO CHECK constraint, deliberately: a
+  bogus scope is inert (enforcement is the intersection of the token's scopes and the live
+  `can()` answer, so a stored scope no one can hold matches nothing), the catalog lives in
+  TypeScript where every permission addition would otherwise demand a migration, and the
+  write boundary is the route's Zod schema — the same place automation action types close.
+- **The auth lookup is a cross-org read, and gets the claim-role treatment, not the
+  directory treatment.** The inbound-webhook precedent (`comms-directory.ts`) reads a table
+  with NO RLS — safe because it carries only a SID and an org id. The token table cannot
+  do that: scopes and revocation ARE the security state, and a no-RLS copy would drift the
+  instant anything else touched it — a revoked token that still authenticates is the exact
+  failure a sidecar table makes possible. So the lookup runs as a NEW narrow role
+  (`taskflow_api_token_auth`, the twelfth), with column-level SELECT of exactly
+  `(token_hash, org_id, created_by, scopes, revoked_at)` — never `name`, `token_prefix` or
+  `last_used_at` — and a `FOR SELECT USING (true)` policy, the recording-ingest recipe
+  applied to the authentication path. **The role that decides who you are cannot read what
+  your tokens are called or when you last used them.**
+- The helper lives in `packages/db` (`api-tokens.ts`): `resolveApiToken(hash)` →
+  `{ orgId, userId, scopes } | undefined`, `WHERE token_hash = $1 AND revoked_at IS NULL`,
+  the same "one query with no org yet, readable in one sitting" argument as
+  `comms-directory.ts`. Revocation takes effect on the next request — the lookup carries
+  no cache to outlive it.
+
+### 6.3 Minting — scopes are a subset, checked twice
+
+- The mint route is floored on `apiToken:create`. Who holds that permission is the shipped
+  matrix — owner/admin — and widening it is §9 decision 10.
+- Every requested scope is validated against the minting user's LIVE `can()`: a scope the
+  user does not currently hold is refused at the form. That is the "subset, never a
+  superset" rule at mint time. It is re-checked at REQUEST time (§6.4) because membership
+  changes: a demotion weakens every token the person holds, immediately.
+- Scopes are permission strings from the closed catalog, chosen by checkbox in the UI from
+  what the caller can currently do — no free text, the same "a rule is data, never a
+  script" discipline applied to credentials.
+
+### 6.4 The authentication path
+
+- `authenticateWithApiToken(header)` in `apps/api/src/identity` — ⚠ HUMAN REVIEW SURFACE
+  (§2.2): the second function that decides who a request is, and it gets the same
+  read-every-line treatment as `authenticate`:
+  1. `bearerToken` parse; refuse anything not `tf_pat`-prefixed (the kind is part of the
+     contract — `isTokenKind`);
+  2. hash the presented token, `resolveApiToken` by hash — revoked, disabled, or unknown
+     is `null`, so the request is UNAUTHENTICATED and fail-closed routes refuse it. The
+     "stale credential may still call auth.login" courtesy JWT has does not extend here: a
+     token either resolves or it does not;
+  3. **the org comes from the TOKEN, never from the `x-taskflow-org` header.** A token
+     minted for org A must not be steerable at org B by sending a header — the header is
+     attacker-controlled — and a token request whose header disagrees with the token's org
+     is REFUSED rather than ignored, so a script that copied a browser's header fails
+     loudly instead of quietly doing nothing (decision 11);
+  4. the membership is resolved (`withUserScope`) exactly as a JWT request resolves it:
+     role + tuples, live. No longer a member → null → unauthenticated. Org suspended →
+     `resolveOrgMembership` already refuses it. **A token does not outlive its holder's
+     membership** — the demotion guarantee stated as an identity fact;
+  5. the principal carries `tokenScopes` (the row's scope set) beside the usual fields;
+     `sessionId` is the token's row id so audit entries have something joinable, and
+     `authenticatedAt` is the token's `created_at` — the token IS the credential.
+- **The route gate intersects.** `route({ permission })` runs its `can()` check as always —
+  token auth changes who the caller is, never whether the fail-closed check runs (decision
+  5's sentence) — and a token-authenticated principal is additionally refused when
+  `permission ∉ tokenScopes`. A token scoped to `card:read` is refused on `card:update`
+  routes even while its owner could do both.
+- **Tokens cannot satisfy self, public, or step-up routes.** A token principal on a
+  `selfRoute`, `publicRoute`, or `stepUp: true` route is FORBIDDEN in the builder — a
+  long-lived credential is not re-authentication, and a script must not be able to revoke
+  sessions or mint more tokens with a credential no browser ceremony protected. A builder
+  assertion, manifest-visible like the access kinds.
+
+### 6.5 Quota — durable, per token, per day (PLAN.md §627)
+
+- Every token request counts toward the token's daily total (generous default — the point
+  of a token is programmatic volume), and a CLOSED CLASS of expensive routes (PLAN.md §627
+  names search, analytics, export, telephony) counts additionally against a tighter
+  per-token daily quota. A route opts into the class by declaring `quotaClass` in its meta
+  — manifest-visible, like every other route property.
+- The counter is a row in Postgres (`platform.api_token_quota`), not an in-process window:
+  a restart must not forgive a quota, the same argument the automation budget and the TURN
+  issuance ledger make. Consuming is a conditional UPDATE (`WHERE used < quota`), the
+  claim pattern — two parallel requests cannot both pass a one-slot quota.
+- `last_used_at` is written on the same row, throttled to once per minute per token (a
+  minute-level guard in the UPDATE's WHERE) — the list view's "last used" without a write
+  on every request. The per-IP and per-account windows stay in front of everything; the
+  quota is the token's own allowance on top (decision 12).
+
+### 6.6 The routes, the UI, and the tests
+
+- Routes: `apiToken.create` (mint — returns the token exactly once), `apiToken.list`
+  (name, prefix, scopes, last-used, revoked), `apiToken.revoke`. All floored on their
+  matrix permission.
+- UI: an "API tokens" section on `/automations` beside webhooks — the same developer
+  surface, since that page already holds the org's programmatic endpoints. Create is a name
+  plus a scope checkbox list built from the caller's live `can()`; the one-time secret
+  reveal is the webhook's `SecretReveal` reused. A dedicated developer page waits for Wave
+  4's connectors, which are the same audience.
+- Events: `apiToken.created`, `apiToken.revoked` — typed domain events through the outbox
+  like every other mutation, so audit and notifications get the fact for free.
+- Guardrail 8 enrols the new routes automatically from the manifest — cross-tenant fuzz
+  against a second org's ids, no remembering to add them.
+- The suites: mint/list/revoke service tests; the auth path against real Postgres (valid
+  token, wrong kind, revoked, unknown, deleted user, org-suspended, header mismatch);
+  scope enforcement (a `card:read`-scoped token refused on `card:update`; a demotion
+  weakening an existing token IMMEDIATELY — mint with `audit:read` as admin, demote to
+  member, the token now fails); quota (exhaust → refused; the counter survives a
+  reconnect); grants (the auth role really cannot read `name`, `token_prefix` or
+  `last_used_at`); the matrix (a member cannot mint).
+
+### 6.7 Wave slices
+
+1. Migration 0050 + the `taskflow_api_token_auth` role + schema + the `packages/db` lookup
+   helper.
+2. The token service + routes: scope validation against live `can()`, the events, the
+   minted-once contract.
+3. The authentication path and the builder gate: token principal, org from token + header
+   refusal, scope ∩ `can()`, self/step-up refusal.
+4. Quota: the table, the consume helper, `quotaClass` wiring.
+5. The UI section.
+6. The test suites named in §6.6, plus the grants test and the fuzz enrolment.
 
 ---
 
@@ -622,6 +757,34 @@ what was weighed. Two (1 and 3) overturned the draft's own recommendation.
    recorded here because the review surfaced it; the work itself belongs to the platform
    console, not to this phase.** See the addendum in
    [ai/pre-launch-hardening.md](ai/pre-launch-hardening.md).
+
+10. **Who may mint tokens — RESOLVED: owner/admin, the matrix as shipped. (Wave 3, §6.3.)**
+
+    The draft considered widening `apiToken:create` to members — a member's token is capped
+    at their own permissions by the subset rule, so the security argument is already
+    settled either way. The resolution is the standing-credential argument instead: a token
+    is org furniture, like a webhook or an automation, and the org's owners decide who may
+    mint and revoke them. Widening later is a one-line matrix change plus a UI label; the
+    decision is recorded so that later edit knows it is a product call, not an oversight.
+
+11. **A disagreeing `x-taskflow-org` header — RESOLVED: refused, not ignored. (Wave 3,
+    §6.4.)**
+
+    Ignoring is friendlier — a script that copied a browser's header still works. But
+    "your token is for org A and you asked for org B" is either a bug in the script or an
+    attempt to steer a credential; both deserve a loud refusal, and a quiet no-op that
+    reads as success is how a token ends up minted for the wrong org and discovered a
+    year later. The header must be absent or equal to the token's org.
+
+12. **Quota shape — RESOLVED: a durable per-token daily total plus a closed expensive
+    class with tighter caps. (Wave 3, §6.5.)**
+
+    Counting only the expensive endpoints would leave the rest of the API unquotated
+    against a stolen token; counting only a total would make "search is expensive"
+    unenforceable. Both counters live in Postgres (a restart must not forgive a quota),
+    both consume via the conditional-UPDATE claim pattern, and the per-IP/per-account
+    sliding windows stay in front of both — a token gets a generous allowance on top of
+    them, never an exemption from them.
 
 ---
 
