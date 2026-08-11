@@ -12,7 +12,53 @@ import { Button, Empty, Field, SkeletonRows } from '../../components/primitives.
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { FilterBuilder } from '../work/filter/filter-builder.js';
 import { automationRunsQuery, automationsQuery } from './api.js';
-import { ACTION_LABELS, TRIGGER_OPTIONS, type ActionDraft, blankAction } from './vocabulary.js';
+import {
+  ACTION_LABELS,
+  ARGUMENT_KEYS,
+  TRIGGER_OPTIONS,
+  type ActionDraft,
+  blankAction,
+  describeAction,
+} from './vocabulary.js';
+
+/** The trigger's human label, falling back to its event name for one this build does not offer. */
+function triggerLabel(event: string): string {
+  return TRIGGER_OPTIONS.find((option) => option.event === event)?.label ?? event;
+}
+
+/**
+ * Turns a rule's stored actions back into editable drafts.
+ *
+ * The stored value is jsonb off the wire, so every field is narrowed rather
+ * than trusted: a rule written by a NEWER build can name an action type this
+ * one does not offer, and the editor must not crash on it.
+ *
+ * An unrecognized action degrades to a blank of the default type, which is a
+ * DESTRUCTIVE fallback — saving would replace it. That is why the row for it
+ * is not silently identical to a normal one; the trade is accepted because the
+ * alternative is refusing to open the editor at all for a rule that is
+ * otherwise fine, and a build that cannot show a rule also cannot fix it.
+ */
+function draftsFrom(stored: readonly unknown[] | undefined): ActionDraft[] {
+  if (stored === undefined || stored.length === 0) return [blankAction()];
+
+  return stored.map((entry) => {
+    if (typeof entry !== 'object' || entry === null) return blankAction();
+
+    const record = entry as Record<string, unknown>;
+    const type = typeof record['type'] === 'string' ? record['type'] : '';
+    const key = ARGUMENT_KEYS[type];
+    if (key === undefined) return blankAction();
+
+    const draft = blankAction(type);
+    const value = typeof record[key] === 'string' ? record[key] : '';
+
+    return {
+      key: draft.key,
+      value: { ...draft.value, [key]: value },
+    };
+  });
+}
 
 /**
  * Automation rules (ai/phase-10-automation.md Wave 1).
@@ -41,10 +87,16 @@ import { ACTION_LABELS, TRIGGER_OPTIONS, type ActionDraft, blankAction } from '.
 
 export function AutomationsPage() {
   const orgId = useSession((state) => state.orgId) ?? '';
-  const [editing, setEditing] = useState<string | null>(null);
+  /* Three separate pieces of state, deliberately. The first version folded
+     "which rule's runs are open" and "which rule is being edited" into one
+     `editing` field, which meant opening a rule's history and editing it were
+     the same click and neither could be done without the other. */
+  const [showingRuns, setShowingRuns] = useState<string | null>(null);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
   const automations = useQuery({ ...automationsQuery(orgId), enabled: orgId !== '' });
+  const editingRule = automations.data?.find((rule) => rule.automationId === editingRuleId);
 
   return (
     <div className="mx-auto flex h-full max-w-4xl flex-col gap-4 overflow-y-auto p-4 md:p-6">
@@ -56,12 +108,12 @@ export function AutomationsPage() {
             whoever created them.
           </p>
         </div>
-        {!creating && (
+        {!creating && editingRule === undefined && (
           <Button
             size="sm"
             onClick={() => {
               setCreating(true);
-              setEditing(null);
+              setEditingRuleId(null);
             }}
           >
             New rule
@@ -74,6 +126,22 @@ export function AutomationsPage() {
           orgId={orgId}
           onDone={() => {
             setCreating(false);
+          }}
+        />
+      )}
+
+      {editingRule !== undefined && (
+        /* `key` remounts the editor when a different rule is picked. Without
+           it, React keeps the previous rule's form state — you would open rule
+           B and be editing it with rule A's name and actions still in the
+           fields, which is the shape of an edit that silently overwrites the
+           wrong thing. */
+        <RuleEditor
+          key={editingRule.automationId}
+          orgId={orgId}
+          initial={editingRule}
+          onDone={() => {
+            setEditingRuleId(null);
           }}
         />
       )}
@@ -95,9 +163,13 @@ export function AutomationsPage() {
                 <RuleRow
                   orgId={orgId}
                   rule={rule}
-                  expanded={editing === rule.automationId}
+                  expanded={showingRuns === rule.automationId}
                   onToggleExpanded={() => {
-                    setEditing(editing === rule.automationId ? null : rule.automationId);
+                    setShowingRuns(showingRuns === rule.automationId ? null : rule.automationId);
+                  }}
+                  onEdit={() => {
+                    setEditingRuleId(rule.automationId);
+                    setCreating(false);
                   }}
                 />
               </li>
@@ -125,11 +197,13 @@ function RuleRow({
   rule,
   expanded,
   onToggleExpanded,
+  onEdit,
 }: {
   readonly orgId: string;
   readonly rule: RuleSummary;
   readonly expanded: boolean;
   readonly onToggleExpanded: () => void;
+  readonly onEdit: () => void;
 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -171,10 +245,14 @@ function RuleRow({
 
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-ink">{rule.name}</p>
+          {/* WHAT THE RULE DOES, not how many things it does. "3 actions" is a
+              count of facts the reader came here to learn, and withholding
+              them means opening the editor to answer "what does this rule
+              even do". */}
           <p className="truncate text-[11px] text-ink-faint">
-            when <span className="font-mono">{rule.triggerEvent}</span>
-            {rule.condition !== null && ' · with a condition'} · {rule.actions.length} action
-            {rule.actions.length === 1 ? '' : 's'}
+            <span className="text-ink-muted">{triggerLabel(rule.triggerEvent)}</span>
+            {rule.condition !== null && ' · if a condition matches'} →{' '}
+            {rule.actions.map((action) => describeAction(action)).join(', ')}
           </p>
         </div>
 
@@ -197,6 +275,10 @@ function RuleRow({
           }}
         >
           {rule.enabled ? 'Disable' : 'Enable'}
+        </Button>
+
+        <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[11px]" onClick={onEdit}>
+          Edit
         </Button>
 
         <Button
@@ -262,20 +344,91 @@ function RunHistory({
   return (
     <ul className="border-t border-line">
       {runs.data.map((run) => (
-        <li key={run.runId} className="flex items-center gap-2 px-3 py-1.5 text-[11px]">
-          <span className={cn('w-16 shrink-0 font-medium', STATUS_COLOR[run.status] ?? 'text-ink')}>
-            {run.status}
-          </span>
-          <span className="min-w-0 flex-1 truncate text-ink-muted">
-            {run.reason ?? `${String(run.actionResults.length)} action(s)`}
-            {run.depth > 0 && ` · depth ${String(run.depth)}`}
-          </span>
-          <span className="shrink-0 text-ink-faint">{formatRelative(run.createdAt)}</span>
+        <li key={run.runId} className="px-3 py-1.5 text-[11px]">
+          <div className="flex items-center gap-2">
+            <span
+              className={cn('w-16 shrink-0 font-medium', STATUS_COLOR[run.status] ?? 'text-ink')}
+            >
+              {run.status}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-ink-muted">
+              {run.reason === null ? EXPLAIN_STATUS[run.status] : explainReason(run.reason)}
+              {run.depth > 0 && ` · ${String(run.depth)} automation hop(s) deep`}
+            </span>
+            <span className="shrink-0 text-ink-faint">{formatRelative(run.createdAt)}</span>
+          </div>
+
+          {/* WHAT ACTUALLY HAPPENED, per action, in order. The engine records
+              this precisely so a partially-applied rule is diagnosable — it
+              stops at the first failure (§9 decision 6), so "action 2 failed"
+              also means action 3 never ran, and showing only a count hides
+              both facts. */}
+          {run.actionResults.length > 0 && (
+            <ol className="mt-0.5 ml-16 space-y-0.5">
+              {run.actionResults.map((result, index) => (
+                <ActionOutcome key={index} result={result} />
+              ))}
+            </ol>
+          )}
         </li>
       ))}
     </ul>
   );
 }
+
+/** One action's outcome, as the engine recorded it. */
+function ActionOutcome({ result }: { readonly result: unknown }) {
+  if (typeof result !== 'object' || result === null) return null;
+
+  const record = result as Record<string, unknown>;
+  const type = typeof record['type'] === 'string' ? record['type'] : 'unknown';
+  const failed = record['status'] === 'failed';
+  const error = typeof record['error'] === 'string' ? record['error'] : null;
+
+  return (
+    <li className="flex items-start gap-1.5">
+      <span aria-hidden="true" className={failed ? 'text-danger' : 'text-success'}>
+        {failed ? '✕' : '✓'}
+      </span>
+      <span className="sr-only">{failed ? 'Failed' : 'Succeeded'}:</span>
+      <span className="min-w-0 flex-1 text-ink-faint">
+        {ACTION_LABELS[type] ?? type}
+        {error !== null && <span className="text-danger"> — {error}</span>}
+      </span>
+    </li>
+  );
+}
+
+/**
+ * The engine's refusal codes, in words.
+ *
+ * The stored `reason` is a stable machine code (`depth_exceeded`) because a run
+ * row is data other things read. Showing it raw makes a person guess, and the
+ * ones worth explaining are exactly the ones that look like the system is
+ * broken when it is working as designed.
+ */
+const REASON_TEXT: Readonly<Record<string, string>> = {
+  condition_not_met: 'the condition did not match, so nothing ran',
+  rule_disabled: 'the rule was disabled',
+  org_suspended: 'this organization is suspended',
+  depth_exceeded: 'too many automations fired in a chain — stopped to prevent a loop',
+  self_trigger: "this rule's own action would re-trigger it",
+  budget_exhausted: 'this organization hit its hourly automation limit',
+  unauthorized: 'the rule owner no longer has permission to do this',
+  condition_unusable: 'the saved condition no longer parses — edit the rule to fix it',
+  trigger_not_evaluable: 'this trigger has no card for the condition to check',
+};
+
+function explainReason(reason: string): string {
+  return REASON_TEXT[reason] ?? reason;
+}
+
+const EXPLAIN_STATUS: Readonly<Record<string, string>> = {
+  succeeded: 'ran successfully',
+  failed: 'an action failed',
+  refused: 'refused',
+  skipped: 'skipped',
+};
 
 const STATUS_COLOR: Readonly<Record<string, string>> = {
   succeeded: 'text-success',
@@ -291,23 +444,56 @@ const STATUS_COLOR: Readonly<Record<string, string>> = {
  * actions from a closed list. There is no free-text field anywhere that becomes
  * behaviour — which is the UI half of §8's "a rule is data, never a script".
  */
-function RuleEditor({ orgId, onDone }: { readonly orgId: string; readonly onDone: () => void }) {
+function RuleEditor({
+  orgId,
+  initial,
+  onDone,
+}: {
+  readonly orgId: string;
+  /** Present when editing an existing rule; absent when creating one. */
+  readonly initial?: RuleSummary;
+  readonly onDone: () => void;
+}) {
   const queryClient = useQueryClient();
-  const [name, setName] = useState('');
-  const [triggerEvent, setTriggerEvent] = useState(TRIGGER_OPTIONS[0]?.event ?? '');
-  const [condition, setCondition] = useState<FilterNode | null>(null);
-  const [actions, setActions] = useState<ActionDraft[]>([blankAction()]);
+  const editing = initial !== undefined;
 
-  const create = useMutation({
-    mutationFn: () =>
-      api.automation.create.mutate({
+  /* Seeded from the rule ONCE, at mount. The page gives this component a `key`
+     of the rule's id, so picking a different rule remounts it and re-seeds —
+     which is what keeps someone from opening rule B and editing it with rule
+     A's fields still filled in. */
+  const [name, setName] = useState(initial?.name ?? '');
+  const [triggerEvent, setTriggerEvent] = useState(
+    initial?.triggerEvent ?? TRIGGER_OPTIONS[0]?.event ?? '',
+  );
+  const [condition, setCondition] = useState<FilterNode | null>(
+    (initial?.condition as FilterNode | null | undefined) ?? null,
+  );
+  const [actions, setActions] = useState<ActionDraft[]>(() => draftsFrom(initial?.actions));
+
+  const save = useMutation({
+    mutationFn: () => {
+      const body = {
         name: name.trim(),
         description: null,
         triggerEvent,
         condition,
         actions: actions.map((action) => action.value) as never,
-        enabled: true,
-      }),
+        /* Preserved, not reset. An edit must not silently re-enable a rule
+           somebody deliberately turned off — the kill switch and the editor
+           are separate controls and this is where they would collide. */
+        enabled: initial?.enabled ?? true,
+      };
+
+      /* Normalized to void: `create` answers with an id and `update` with a
+         name, neither of which this form uses — it re-reads the list either
+         way. Returning the union would make the mutation's result type a
+         choice nothing consumes. */
+      return editing
+        ? api.automation.update
+            .mutate({ ...body, automationId: initial.automationId })
+            .then(() => undefined)
+        : api.automation.create.mutate(body).then(() => undefined);
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: keys.automations(orgId) });
       onDone();
@@ -318,7 +504,7 @@ function RuleEditor({ orgId, onDone }: { readonly orgId: string; readonly onDone
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        create.mutate();
+        save.mutate();
       }}
       className="shrink-0 space-y-3 rounded-lg border border-line bg-surface-raised p-3"
     >
@@ -401,11 +587,11 @@ function RuleEditor({ orgId, onDone }: { readonly orgId: string; readonly onDone
         </div>
       </Field>
 
-      {create.isError && <ErrorText error={create.error} />}
+      {save.isError && <ErrorText error={save.error} />}
 
       <div className="flex items-center gap-2 border-t border-line pt-3">
-        <Button type="submit" size="sm" disabled={name.trim() === '' || create.isPending}>
-          {create.isPending ? 'Saving…' : 'Create rule'}
+        <Button type="submit" size="sm" disabled={name.trim() === '' || save.isPending}>
+          {save.isPending ? 'Saving…' : editing ? 'Save changes' : 'Create rule'}
         </Button>
         <button type="button" onClick={onDone} className="text-xs text-ink-faint hover:text-ink">
           Cancel

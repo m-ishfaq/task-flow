@@ -73,6 +73,47 @@ export interface ActionDraft {
   readonly value: ActionValue;
 }
 
+/**
+ * One stored action, described for a person.
+ *
+ * A rule row that says "3 actions" tells the reader nothing about what the rule
+ * DOES, which is the only thing they came to the page to find out. This turns
+ * the stored jsonb back into the sentence the builder offered.
+ *
+ * Takes `unknown` because the value comes off the wire as jsonb: a rule written
+ * by a NEWER build can name an action this one has never heard of, and the list
+ * must still render rather than crash. An unrecognized shape degrades to its own
+ * type name — honest about what it is, and visibly not something this build can
+ * explain.
+ */
+export function describeAction(action: unknown): string {
+  if (typeof action !== 'object' || action === null) return 'unrecognized action';
+
+  const record = action as Record<string, unknown>;
+  const type = typeof record['type'] === 'string' ? record['type'] : 'unknown';
+  const label = ACTION_LABELS[type] ?? type;
+
+  const key = ARGUMENT_KEYS[type];
+  const value = key === undefined ? undefined : record[key];
+  if (typeof value !== 'string' || value === '') return label;
+
+  /* Ids are shown truncated rather than resolved to names. Resolving would mean
+     a lookup per action per rule — and a stale or deleted target would render
+     as a spinner or a blank, which is worse than a visible id a person can
+     match against the thing they picked. */
+  return `${label}: ${value.length > 12 ? `${value.slice(0, 8)}…` : value}`;
+}
+
+/** Which field of each action carries its single argument. */
+export const ARGUMENT_KEYS: Readonly<Record<string, string>> = {
+  'card.move': 'listId',
+  'card.set_status': 'statusId',
+  'card.set_priority': 'priority',
+  'card.assign': 'userId',
+  'card.add_label': 'labelId',
+  'chat.post_message': 'channelId',
+};
+
 /** A fresh draft of the given type, reusing `key` when replacing a row in place. */
 export function blankAction(type = 'card.set_priority', key?: string): ActionDraft {
   const identity = key ?? crypto.randomUUID();
