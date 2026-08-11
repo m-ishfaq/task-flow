@@ -41,6 +41,7 @@ function eventFor(name: string, payload: Record<string, unknown>): OutboxRow {
     requestId: null,
     payload,
     attempts: 0,
+    causationDepth: 0,
   };
 }
 
