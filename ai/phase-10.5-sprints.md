@@ -236,7 +236,7 @@ composite FK + one-active partial index + REVOKE DELETE), the drizzle mirror, th
 slice-1 events, and the grants/RLS suite (6 tests: REVOKE, index refusal, FK refusal, org
 confinement).
 
-**Slice 2 COMPLETE (commit `a4e4531`)** — `sprint.service.ts` (create/update/start/complete/cancel/
+**Slice 2 COMPLETE (commit `1124823`)** — `sprint.service.ts` (create/update/start/complete/cancel/
 list + `assignSprint`/`releaseSprint`), the routes (`sprints.*` on `project:read`/`project:update`,
 `cards.assignSprint`/`cards.releaseSprint` on `card:update`), and `sprint.service.test.ts`
 (13 tests: the lifecycle guards, one-active through the service AND the index, decision-5
