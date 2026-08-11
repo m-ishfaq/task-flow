@@ -7,6 +7,7 @@ import { keys } from '../../lib/query.js';
 import { cn } from '../../lib/cn.js';
 import { formatRelative } from '../../lib/format.js';
 import { useToast } from '../../lib/toast-context.js';
+import type { Wire } from '../../lib/wire.js';
 import { Button, Empty, Field, SkeletonRows } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { FilterBuilder } from '../work/filter/filter-builder.js';
@@ -108,13 +109,16 @@ export function AutomationsPage() {
   );
 }
 
-type RuleSummary = NonNullable<ReturnType<typeof automationsQuery>['queryFn']> extends () => Promise<
-  infer T
->
-  ? T extends readonly (infer R)[]
-    ? R
-    : never
-  : never;
+/**
+ * One rule, as the wire actually delivers it.
+ *
+ * `Wire<…>`, not the bare tRPC return type. The two differ — `Wire` maps
+ * `Date` to `string` and makes everything deeply readonly — and taking the
+ * client's own type here compiled until the readonly mismatch surfaced,
+ * which is precisely the drift `lib/wire.ts` exists to make visible rather
+ * than let a component quietly disagree with the transport.
+ */
+type RuleSummary = Wire<Awaited<ReturnType<typeof api.automation.list.query>>>[number];
 
 function RuleRow({
   orgId,
@@ -235,7 +239,13 @@ function RuleRow({
  * cannot tell "the engine never saw the event" apart from "it saw it and the
  * condition said no". The reason column is where that answer lives.
  */
-function RunHistory({ orgId, automationId }: { readonly orgId: string; readonly automationId: string }) {
+function RunHistory({
+  orgId,
+  automationId,
+}: {
+  readonly orgId: string;
+  readonly automationId: string;
+}) {
   const runs = useQuery({ ...automationRunsQuery(orgId, automationId), enabled: orgId !== '' });
 
   if (runs.isPending) return <SkeletonRows rows={2} />;
@@ -257,7 +267,7 @@ function RunHistory({ orgId, automationId }: { readonly orgId: string; readonly 
             {run.status}
           </span>
           <span className="min-w-0 flex-1 truncate text-ink-muted">
-            {run.reason ?? `${run.actionResults.length} action(s)`}
+            {run.reason ?? `${String(run.actionResults.length)} action(s)`}
             {run.depth > 0 && ` · depth ${String(run.depth)}`}
           </span>
           <span className="shrink-0 text-ink-faint">{formatRelative(run.createdAt)}</span>
@@ -312,8 +322,9 @@ function RuleEditor({ orgId, onDone }: { readonly orgId: string; readonly onDone
       }}
       className="shrink-0 space-y-3 rounded-lg border border-line bg-surface-raised p-3"
     >
-      <Field label="Name">
+      <Field label="Name" htmlFor="automation-name">
         <input
+          id="automation-name"
           value={name}
           onChange={(event) => {
             setName(event.target.value);
@@ -324,8 +335,9 @@ function RuleEditor({ orgId, onDone }: { readonly orgId: string; readonly onDone
         />
       </Field>
 
-      <Field label="When">
+      <Field label="When" htmlFor="automation-trigger">
         <select
+          id="automation-trigger"
           value={triggerEvent}
           onChange={(event) => {
             setTriggerEvent(event.target.value);
@@ -340,11 +352,11 @@ function RuleEditor({ orgId, onDone }: { readonly orgId: string; readonly onDone
         </select>
       </Field>
 
-      <Field label="If (optional)">
+      <Field label="If (optional)" htmlFor="automation-condition">
         {/* The board's builder, unchanged — same component, same AST, same
             validator. `projectId` is null because a rule is org-wide and not
             scoped to one project's vocabulary. */}
-        <div className="flex items-center gap-2">
+        <div id="automation-condition" className="flex items-center gap-2">
           <FilterBuilder orgId={orgId} projectId={null} value={condition} onChange={setCondition} />
           {condition === null && (
             <span className="text-[11px] text-ink-faint">Runs every time the trigger fires.</span>
@@ -352,8 +364,8 @@ function RuleEditor({ orgId, onDone }: { readonly orgId: string; readonly onDone
         </div>
       </Field>
 
-      <Field label="Then">
-        <div className="space-y-2">
+      <Field label="Then" htmlFor="automation-actions">
+        <div id="automation-actions" className="space-y-2">
           {actions.map((action, index) => (
             <ActionRow
               key={action.key}
@@ -361,13 +373,18 @@ function RuleEditor({ orgId, onDone }: { readonly orgId: string; readonly onDone
               onChange={(next) => {
                 setActions(actions.map((item, i) => (i === index ? next : item)));
               }}
-              onRemove={
-                actions.length > 1
-                  ? () => {
+              /* Conditional SPREAD, not a ternary yielding undefined:
+                 `exactOptionalPropertyTypes` treats "absent" and "present and
+                 undefined" as different types, and the last action must not be
+                 removable — a rule with zero actions is refused by the
+                 database's own CHECK. */
+              {...(actions.length > 1
+                ? {
+                    onRemove: () => {
                       setActions(actions.filter((_, i) => i !== index));
-                    }
-                  : undefined
-              }
+                    },
+                  }
+                : {})}
             />
           ))}
           {actions.length < 10 && (
@@ -390,11 +407,7 @@ function RuleEditor({ orgId, onDone }: { readonly orgId: string; readonly onDone
         <Button type="submit" size="sm" disabled={name.trim() === '' || create.isPending}>
           {create.isPending ? 'Saving…' : 'Create rule'}
         </Button>
-        <button
-          type="button"
-          onClick={onDone}
-          className="text-xs text-ink-faint hover:text-ink"
-        >
+        <button type="button" onClick={onDone} className="text-xs text-ink-faint hover:text-ink">
           Cancel
         </button>
       </div>
@@ -435,7 +448,7 @@ function ActionRow({
         onChange={(event) => {
           onChange(withArgument(action, event.target.value));
         }}
-        aria-label={`${label} value`}
+        aria-label={`${label ?? action.value.type} value`}
         placeholder={PLACEHOLDER[action.value.type]}
         className="min-w-0 flex-1 rounded border border-line bg-surface px-2 py-1 font-mono text-xs text-ink outline-none focus:border-accent"
       />
@@ -473,7 +486,7 @@ function argumentOf(action: ActionDraft): string {
 function withArgument(action: ActionDraft, next: string): ActionDraft {
   const key = ARGUMENT_KEY[action.value.type];
   if (key === undefined) return action;
-  return { key: action.key, value: { ...action.value, [key]: next } as ActionDraft['value'] };
+  return { key: action.key, value: { ...action.value, [key]: next } };
 }
 
 const ARGUMENT_KEY: Readonly<Record<string, string>> = {

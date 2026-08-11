@@ -41,6 +41,7 @@ import { SettingsPage } from './features/admin/settings-page.js';
 import { AuditPage } from './features/admin/audit-page.js';
 import { ProjectSettingsPage } from './features/work/project-settings-page.js';
 import { PlatformAdminPage } from './features/platform-admin/platform-admin-page.js';
+import { AutomationsPage } from './features/automation/automations-page.js';
 
 /**
  * The route tree (PLAN.md §4.1 — typed routes and typed search params).
@@ -461,6 +462,22 @@ const platformAdminRoute = createRoute({
   component: PlatformAdminPage,
 });
 
+/**
+ * Automation rules (Phase 10 Wave 1).
+ *
+ * `requireOrg`, not `requireSession`: rules are org-scoped, and every query
+ * this page fires needs an org header. The page itself does no permission
+ * check — it renders and the server answers, so a member without
+ * `automation:manage` gets an honest FORBIDDEN rather than a hidden menu item
+ * (§8.2).
+ */
+const automationsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/automations',
+  beforeLoad: () => requireOrg('/automations'),
+  component: AutomationsPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -486,6 +503,7 @@ const routeTree = rootRoute.addChildren([
   permissionsRoute,
   accountRoute,
   platformAdminRoute,
+  automationsRoute,
 ]);
 
 export function createAppRouter(queryClient: QueryClient) {

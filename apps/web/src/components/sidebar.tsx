@@ -136,6 +136,19 @@ export function Sidebar() {
             Calls
           </Link>
 
+          {/* Shown to everyone, like every other item here. A member without
+              `automation:manage` gets an honest FORBIDDEN from the page rather
+              than a menu that quietly differs per role — §8.2's rule that the
+              UI never re-derives authorization, because the hidden version is
+              the one that never gets tested. */}
+          <Link
+            to="/automations"
+            className="mb-2 block rounded px-1 py-1 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
+            activeProps={{ className: 'bg-surface-hover text-ink' }}
+          >
+            Automations
+          </Link>
+
           <Link
             to="/people"
             className="mb-2 block rounded px-1 py-1 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
