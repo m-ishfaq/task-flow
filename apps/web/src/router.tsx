@@ -41,7 +41,10 @@ import { SettingsPage } from './features/admin/settings-page.js';
 import { AuditPage } from './features/admin/audit-page.js';
 import { ProjectSettingsPage } from './features/work/project-settings-page.js';
 import { PlatformAdminPage } from './features/platform-admin/platform-admin-page.js';
-import { AutomationsPage } from './features/automation/automations-page.js';
+import {
+  AUTOMATION_TAB_IDS,
+  AutomationsPage,
+} from './features/automation/automations-page.js';
 
 /**
  * The route tree (PLAN.md §4.1 — typed routes and typed search params).
@@ -478,8 +481,15 @@ const automationsRoute = createRoute({
     /* Which half of the surface is open. A search param rather than nested
        routes, the same shape `/calls` and `/settings` use, so the open tab is
        a shareable, back-button-correct link. `.catch(undefined)` per this
-       file's convention: a junk value renders Rules, never an error page. */
-    tab: z.enum(['rules', 'webhooks']).optional().catch(undefined),
+       file's convention: a junk value renders Rules, never an error page.
+
+       The enum comes from the page itself (`AUTOMATION_TAB_IDS`), not from a
+       second copy — the first version restated `['rules', 'webhooks']` here
+       and the page later grew an API-tokens tab the router had never heard
+       of, so clicking it navigated to `?tab=apiTokens`, validation refused
+       the value, and the click did nothing. A tab that cannot open is worse
+       than a missing tab: it looks broken rather than absent. */
+    tab: z.enum(AUTOMATION_TAB_IDS).optional().catch(undefined),
   }),
   beforeLoad: () => requireOrg('/automations'),
   component: AutomationsPage,

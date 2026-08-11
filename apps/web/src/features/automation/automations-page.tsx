@@ -122,13 +122,23 @@ function draftsFrom(stored: readonly unknown[] | undefined): ActionDraft[] {
  * that is never tested.
  */
 
+/* The tab ids, single-sourced: the ROUTE's search schema imports this same
+   const (`z.enum(AUTOMATION_TAB_IDS)` in router.tsx), so adding a tab here
+   and forgetting the route is a compile error instead of a tab that cannot
+   open. The first version duplicated the enum in the route's validateSearch
+   and the page grew a third tab the router never heard of — clicking it
+   navigated to `?tab=apiTokens`, the validator refused it, and nothing
+   happened. */
+export const AUTOMATION_TAB_IDS = ['rules', 'webhooks', 'apiTokens'] as const;
+export type AutomationTabId = (typeof AUTOMATION_TAB_IDS)[number];
+
 const TABS = [
   { id: 'rules', label: 'Rules' },
   { id: 'webhooks', label: 'Webhooks' },
   { id: 'apiTokens', label: 'API tokens' },
 ] as const;
 
-type TabId = (typeof TABS)[number]['id'];
+type TabId = AutomationTabId;
 
 /**
  * ## Two tabs, where there used to be two stacked sections
