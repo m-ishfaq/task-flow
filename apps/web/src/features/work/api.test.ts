@@ -33,6 +33,7 @@ function card(overrides: Partial<CardSummary> = {}): CardSummary {
     cardId: CARD,
     listId: 'list-1',
     boardId: BOARD,
+    projectId: 'project-1',
     reference: 'WEB-1',
     title: 'A card',
     rank: 'a0',

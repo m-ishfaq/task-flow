@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterCardsBySprint, type SprintFilter } from './sprints.js';
+import { filterCardsBySprint, type SprintFilter } from './sprint-filter.js';
 import type { CardSummary } from './api.js';
 
 /**
@@ -21,6 +21,7 @@ function card(id: string, sprintId: string | null): CardSummary {
     cardId: id,
     listId: 'list-1',
     boardId: 'board-1',
+    projectId: 'project-1',
     reference: `WEB-${id}`,
     title: `Card ${id}`,
     rank: '0',

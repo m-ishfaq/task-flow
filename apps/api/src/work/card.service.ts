@@ -79,6 +79,11 @@ export interface CardSummary {
   readonly cardId: string;
   readonly listId: string;
   readonly boardId: string;
+  /* Carried so a client that reached a board WITHOUT the `project` URL param
+     (My Tasks, a pasted link) can still derive which project's vocabulary to
+     load — the board page's sprint picker and status grouping fall back to
+     the first card's project. */
+  readonly projectId: string;
   readonly reference: string;
   readonly title: string;
   readonly rank: string;
@@ -136,6 +141,9 @@ export async function listCards(
         cardId: schema.cards.id,
         listId: schema.cards.listId,
         boardId: schema.cards.boardId,
+        /* On the wire so a board reached without the `project` URL param can
+           still derive which project's vocabulary to load (see CardSummary). */
+        projectId: schema.cards.projectId,
         number: schema.cards.number,
         projectKey: schema.projects.key,
         title: schema.cards.title,
@@ -257,7 +265,7 @@ export async function listMyCards(
             ancestors: ancestorsOfCard(row),
           }).allowed,
       )
-      .map(({ number, projectKey, projectId: _projectId, ...row }) => ({
+      .map(({ number, projectKey, ...row }) => ({
         ...row,
         priority: row.priority as Priority | null,
         reference: referenceOf(projectKey, number),
@@ -321,7 +329,7 @@ export async function getCard(
 
     enforceOn(actor, 'card:read', { type: 'card', id: input.cardId }, card, ancestorsOfCard(card));
 
-    const { number, projectKey, orgId: _orgId, projectId: _projectId, ...rest } = card;
+    const { number, projectKey, orgId: _orgId, ...rest } = card;
     return {
       ...rest,
       priority: rest.priority as Priority | null,

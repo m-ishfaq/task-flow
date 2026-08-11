@@ -7,7 +7,8 @@ import { keys } from '../../lib/query.js';
 import { useToast } from '../../lib/toast-context.js';
 import { Button, ConfirmButton, Input } from '../../components/primitives.js';
 import { ErrorText } from '../../components/error-view.js';
-import { sprintsQuery, type CardSummary, type Sprint } from './api.js';
+import { sprintsQuery, type Sprint } from './api.js';
+import type { SprintFilter } from './sprint-filter.js';
 
 /**
  * The sprint dimension on the board (`ai/phase-10.5-sprints.md`).
@@ -23,28 +24,10 @@ import { sprintsQuery, type CardSummary, type Sprint } from './api.js';
  * the manager is rendered for everyone and the server answers (§8.2): a member
  * without `project:update` gets an honest FORBIDDEN toast, never a hidden
  * button.
- */
-
-/** What the board is filtered to: all (null), the backlog, or one sprint. */
-export type SprintFilter = 'backlog' | SprintId | null;
-
-/**
- * The board's sprint filter — the whole definition of "which cards show".
  *
- * Pure so the web suite can pin it without rendering a board: every way it
- * could be wrong is quiet — a card in no sprint vanishing from the backlog
- * view, or a card from another project appearing in this one's sprint — and
- * none of them fail loudly.
+ * The filter itself lives in `sprint-filter.ts` — NOT here — because a
+ * component file with a function export cannot fast-refresh.
  */
-export function filterCardsBySprint(
-  cards: readonly CardSummary[],
-  sprint: SprintFilter,
-): readonly CardSummary[] {
-  if (sprint === null) return cards;
-  return sprint === 'backlog'
-    ? cards.filter((card) => card.sprintId === null)
-    : cards.filter((card) => card.sprintId === sprint);
-}
 
 export interface SprintPickerProps {
   readonly orgId: string;
@@ -299,7 +282,10 @@ export function SprintsManagerDialog({
             }}
           >
             <p className="text-[11px] font-medium text-ink-muted">New sprint</p>
-            <div className="flex flex-wrap items-center gap-2">
+            {/* Full-width rows rather than one crowded line: the single-row
+                version squeezed the name field until its placeholder read
+                "Sprin" and clipped the goal — the modal is not that short. */}
+            <div className="grid gap-2 sm:grid-cols-2">
               <Input
                 aria-label="New sprint name"
                 placeholder="Sprint name"
@@ -307,7 +293,7 @@ export function SprintsManagerDialog({
                 onChange={(event) => {
                   setDraft((current) => ({ ...current, name: event.target.value }));
                 }}
-                className="h-8 flex-1 text-xs"
+                className="h-8 w-full text-xs"
               />
               <Input
                 aria-label="New sprint goal"
@@ -316,8 +302,10 @@ export function SprintsManagerDialog({
                 onChange={(event) => {
                   setDraft((current) => ({ ...current, goal: event.target.value }));
                 }}
-                className="h-8 flex-1 text-xs"
+                className="h-8 w-full text-xs"
               />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
               <label className="flex items-center gap-1 text-[11px] text-ink-muted">
                 <input
                   type="date"
@@ -344,6 +332,7 @@ export function SprintsManagerDialog({
                 size="sm"
                 variant="primary"
                 disabled={create.isPending || draft.name.trim() === ''}
+                className="ml-auto"
               >
                 Add sprint
               </Button>
@@ -484,29 +473,32 @@ function EditSprintForm({
 
   return (
     <form
-      className="flex flex-1 flex-wrap items-center gap-2"
+      className="flex flex-1 flex-col gap-2"
       onSubmit={(event) => {
         event.preventDefault();
         if (draft.name.trim() !== '') onSave(draft);
       }}
     >
-      <Input
-        aria-label="Sprint name"
-        value={draft.name}
-        disabled={locked}
-        onChange={(event) => {
-          onDraftChange({ ...draft, name: event.target.value });
-        }}
-        className="h-7 flex-1 text-xs"
-      />
-      <Input
-        aria-label="Sprint goal"
-        value={draft.goal}
-        onChange={(event) => {
-          onDraftChange({ ...draft, goal: event.target.value });
-        }}
-        className="h-7 flex-1 text-xs"
-      />
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Input
+          aria-label="Sprint name"
+          value={draft.name}
+          disabled={locked}
+          onChange={(event) => {
+            onDraftChange({ ...draft, name: event.target.value });
+          }}
+          className="h-7 w-full text-xs"
+        />
+        <Input
+          aria-label="Sprint goal"
+          value={draft.goal}
+          onChange={(event) => {
+            onDraftChange({ ...draft, goal: event.target.value });
+          }}
+          className="h-7 w-full text-xs"
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
       <input
         type="date"
         aria-label="Starts"
@@ -530,12 +522,15 @@ function EditSprintForm({
       <span className="text-[11px] text-ink-faint">
         {locked ? 'Active: only the goal is editable.' : ''}
       </span>
-      <Button type="submit" size="sm" variant="primary" disabled={draft.name.trim() === ''}>
-        Save
-      </Button>
-      <Button size="sm" variant="ghost" type="button" onClick={onCancel}>
-        Cancel
-      </Button>
+      <div className="ml-auto flex items-center gap-2">
+        <Button type="submit" size="sm" variant="primary" disabled={draft.name.trim() === ''}>
+          Save
+        </Button>
+        <Button size="sm" variant="ghost" type="button" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+      </div>
     </form>
   );
 }

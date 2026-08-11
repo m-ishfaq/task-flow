@@ -154,6 +154,9 @@ const CardSummaryOutput = z
       cardId: z.string(),
       listId: z.string(),
       boardId: z.string(),
+      /* The card's own project — see the service's CardSummary note on why it
+         travels on the wire now. */
+      projectId: z.string(),
       reference: z.string(),
       title: z.string(),
       rank: z.string(),
@@ -582,6 +585,7 @@ export function createWorkRouter(deps: WorkRouterDeps) {
             cardId: z.string(),
             listId: z.string(),
             boardId: z.string(),
+            projectId: z.string(),
             reference: z.string(),
             title: z.string(),
             description: z.unknown(),
