@@ -20,7 +20,7 @@ import {
 import { buildIdentityDeps, buildPasskeyDeps } from './identity/deps.js';
 import { authenticateWithApiToken } from './identity/api-token-auth.js';
 import type { OAuthDeps } from './identity/oauth.service.js';
-import { authenticate } from './identity/authenticate.js';
+import { authenticate, bearerToken } from './identity/authenticate.js';
 import { createMailDelivery } from './identity/deliver.js';
 import { createLogger } from '@taskflow/observability';
 import { registerRateLimit } from './middleware/rate-limit.js';
@@ -274,12 +274,19 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
  * The bearer token's KIND is the discriminator: a `tf_pat_` token goes to
  * `authenticateWithApiToken`, everything else goes through the JWT path.
  *
- * The `startsWith` here is a cheap PRE-FILTER, not the authority. A misroute
- * lands in the token path, where `bearerToken` and `isTokenKind` re-check the
- * parsed bearer and refuse anything that is not genuinely a `tf_pat` — and a
- * session JWT whose base64url body happened to begin with the literal
- * characters `tf_pat_` is refused there too, rather than silently served, so
- * the two paths agree on what a bearer even is, fail-closed.
+ * The `startsWith` here is a cheap PRE-FILTER, not the authority — and it
+ * MUST run on the PARSED bearer body, never on the raw header. The first
+ * version checked `authorization.trim().startsWith('tf_pat_')`, and
+ * `"Bearer tf_pat_…"` starts with `Bearer`, not `tf_pat_` — so every token
+ * request fell through to the JWT path and answered UNAUTHENTICATED. Nothing
+ * caught it: the slice-3 suite called `authenticateWithApiToken` directly,
+ * which bypasses this dispatch entirely, and it took the HTTP round-trip
+ * suite (slice 6) to make a real request. A misroute lands in the token
+ * path, where `bearerToken` and `isTokenKind` re-check the parsed bearer and
+ * refuse anything that is not genuinely a `tf_pat` — and a session JWT whose
+ * base64url body happened to begin with the literal characters `tf_pat_` is
+ * refused there too, rather than silently served, so the two paths agree on
+ * what a bearer even is, fail-closed.
  *
  * The org resolution differs between the two paths and that is the point:
  *
@@ -294,7 +301,8 @@ async function authenticateRequest(
   orgHeader: string | string[] | undefined,
   config: { jwtSecret: Uint8Array },
 ): Promise<AuthenticatedPrincipal | null> {
-  if (typeof authorization === 'string' && authorization.trim().startsWith('tf_pat_')) {
+  const bearer = bearerToken(authorization);
+  if (bearer?.startsWith('tf_pat_') === true) {
     return authenticateWithApiToken(authorization, orgHeader);
   }
   return withOrgContext(await authenticate(authorization, config), orgHeader);

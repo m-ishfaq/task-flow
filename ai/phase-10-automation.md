@@ -460,9 +460,9 @@ Two supporting details:
 
 ## 6. Public API + scoped tokens (Wave 3)
 
-**SLICES 1–5 SHIPPED 2026-08-11** — the token store, the mint/list/revoke lifecycle, the
-full authentication path, the durable per-token daily quota, and the web UI. Remaining:
-slice 6 (the remaining suites, §6.6). Wave 3 is NOT yet COMPLETE.
+**SLICES 1–6 SHIPPED 2026-08-11 — Wave 3 COMPLETE.** The token store, the
+mint/list/revoke lifecycle, the full authentication path, the durable per-token daily
+quota, the web UI, and the remaining suites that closed the wave.
 
 1. **Slice 1 — migration 0050** `platform.api_tokens` + the `taskflow_api_token_auth` role
    (the twelfth; column-level SELECT of `token_hash, org_id, created_by, scopes, revoked_at`,
@@ -514,6 +514,21 @@ slice 6 (the remaining suites, §6.6). Wave 3 is NOT yet COMPLETE.
    surfaces share it). The checklist defaults to NOTHING selected; revoke is the same
    two-click `ConfirmButton` discipline as webhook deletion. `SecretReveal` also gained a
    neutral wording — it now says "secret for …" rather than webhook-specific language.
+7. **Slice 6 — the remaining suites.** Three layers, each proving something the one
+   before could not. (a) The real automation router with a token principal (in
+   `api-token-auth.test.ts`): a `webhook:manage` token lists and creates webhooks through
+   the actual routes, does NOT bleed into `automation:manage` (rules) — sibling org-level
+   permissions stay disjoint — and a webhook created by org A's token is invisible to org
+   B's, RLS through the real router. (b) The grants matrix (`api-token-grants.test.ts`):
+   the app role is RLS-CONFINED where the lookup role deliberately is not — under org A's
+   scope, `taskflow_app` sees only org A's `api_tokens` and `api_token_quota` rows, the
+   complement of the auth role's cross-org `USING (true)` lookup. (c) A real HTTP round
+   trip (`api-token-e2e.test.ts`, booting `buildServer`): register → verify → login →
+   create an org → mint (a step-up route, passed by the fresh session) → drive
+   `automation.webhooks.create`/`list` with the token and NO org header → a `card:read`
+   token refused 403 → a disagreeing org header refused 401 → the quota counter moved
+   (a durable row) → revoke through the session → the credential dead on the next
+   request.
 
 **One finding from the slice-3 review that is worth stating out loud:** a suspended org's
 request originally THREW `ORG_SUSPENDED` out of `authenticateWithApiToken`, and the unit test
@@ -534,12 +549,25 @@ node-postgres parses a `date` column as LOCAL midnight, and `toISOString()` on t
 the day back by the UTC offset — the rollover was working, the assertion was reading it
 through a timezone.
 
-Verified: api/db/realtime/collab typecheck + lint clean; the auth suite 18/18 (the slice-3
-set plus the five quota tests: exhaust → refused, per-token isolation, day rollover, the
-independent expensive class, the last-used throttle); service 10/10; grants 10/10 (0052's
-REVOKE DELETE asserted); route manifest + fuzz 99/99; worker automation 35/35; guardrail
-selftest; the RLS checker; `migrate:verify` up → down → up. **Not verified in a browser** —
-slice 5 is the UI.
+**The slice-6 HTTP round trip caught a real bug in `server.ts`'s dispatch — the one
+layer every prior test bypassed.** `authenticateRequest` decided the token path with
+`authorization.trim().startsWith('tf_pat_')`, and `"Bearer tf_pat_…"` starts with
+`Bearer`, not `tf_pat_` — so the condition was ALWAYS false and every token request fell
+through to the JWT path and answered UNAUTHENTICATED. The slice-3 suite called
+`authenticateWithApiToken` directly, which bypasses this dispatch entirely; the builder
+gate fed a pre-built principal. Nothing short of a real HTTP request could see it — the
+same lesson Phase 7 learned from a live carrier, and exactly what the E2E is for. The fix
+parses the bearer with the same `bearerToken` both auth paths use and dispatches on the
+body (`bearer?.startsWith('tf_pat_') === true`), matching the comment that was already
+there: the misroute lands in the token path, where `isTokenKind` refuses anything not
+genuinely a `tf_pat`, fail-closed.
+
+Verified: api/db/realtime/collab typecheck + lint clean; the auth suite 22/22 (the
+slice-3 set, the five quota tests, and slice 6's four real-router webhook tests); the
+HTTP E2E 1/1 (the full round trip above); service 11/11; grants 12/12 (0052's REVOKE
+DELETE, the auth-role column matrix, and slice 6's two app-role RLS-confinement tests);
+route manifest + fuzz 82/82; guardrail selftest; the RLS checker; `migrate:verify` up →
+down → up. **Not verified in a browser** — slice 5 is the UI.
 
 ### 6.1 The token
 

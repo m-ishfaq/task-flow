@@ -1,5 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { closeDatabase, initializeApiTokenAuthDatabase, resolveApiToken } from './index.js';
+import { unsafeAsId } from '@taskflow/contracts';
+import {
+  closeDatabase,
+  initializeApiTokenAuthDatabase,
+  initializeDatabase,
+  resolveApiToken,
+  withOrgScope,
+} from './index.js';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from './testing/index.js';
 
 /**
@@ -56,6 +63,12 @@ const ORG_A = crypto.randomUUID();
 const ORG_B = crypto.randomUUID();
 const USER = crypto.randomUUID();
 
+/* Token row ids, module-level so the RLS suite below can seed and count quota
+   rows against the SAME fixtures the lookup tests resolve. */
+const TOKEN_A_LIVE = crypto.randomUUID();
+const TOKEN_A_REVOKED = crypto.randomUUID();
+const TOKEN_B_LIVE = crypto.randomUUID();
+
 /* Fixture "hashes": any 64-char hex passes the CHECK; resolveApiToken is an
    equality lookup, so the value's provenance does not matter. Avoids
    importing node:crypto, which guardrail 5 bans outside packages/security. */
@@ -92,7 +105,14 @@ beforeAll(async () => {
      VALUES
        ($1, $2, $3, 'live', $4, 'live_pref1', ARRAY['card:read']::text[], NULL),
        ($5, $2, $3, 'revoked', $6, 'revok_pref', ARRAY['card:read']::text[], now())`,
-    [crypto.randomUUID(), ORG_A, USER, LIVE_HASH, crypto.randomUUID(), REVOKED_HASH],
+    [TOKEN_A_LIVE, ORG_A, USER, LIVE_HASH, TOKEN_A_REVOKED, REVOKED_HASH],
+  );
+  /* A quota row per org, with DISTINCT counters — the RLS suite asserts which
+     one each org scope sees. The count column is 5 for A, 7 for B. */
+  await admin.query(
+    `INSERT INTO platform.api_token_quota (token_id, org_id, quota_date, used_count, expensive_count)
+     VALUES ($1, $2, CURRENT_DATE, 5, 0)`,
+    [TOKEN_A_LIVE, ORG_A],
   );
 
   await admin.setOrg(ORG_B);
@@ -105,9 +125,21 @@ beforeAll(async () => {
     `INSERT INTO platform.api_tokens
        (id, org_id, created_by, name, token_hash, token_prefix, scopes, revoked_at)
      VALUES       ($1, $2, $3, 'other-org', $4, 'other_pref', ARRAY['card:read']::text[], NULL)`,
-    [crypto.randomUUID(), ORG_B, USER, 'c'.repeat(64)],
+    [TOKEN_B_LIVE, ORG_B, USER, 'c'.repeat(64)],
+  );
+  await admin.query(
+    `INSERT INTO platform.api_token_quota (token_id, org_id, quota_date, used_count, expensive_count)
+     VALUES ($1, $2, CURRENT_DATE, 7, 0)`,
+    [TOKEN_B_LIVE, ORG_B],
   );
   await admin.setOrg(null);
+
+  /* The application connection the RLS suite runs its org-scoped reads on —
+     the same hardcoded taskflow_app URL the auth suite uses. */
+  initializeDatabase({
+    url: 'postgresql://taskflow_app:app-dev-secret@localhost:5433/taskflow_test',
+    applicationName: 'api-token-grants',
+  });
 
   initializeApiTokenAuthDatabase({
     url: 'postgresql://taskflow_api_token_auth:api-token-auth-dev-secret@localhost:5433/taskflow_test',
@@ -233,5 +265,51 @@ describe('resolveApiToken — the real lookup, as the real role', () => {
 
   it('refuses an empty string before it touches the database', async () => {
     expect(await resolveApiToken('')).toBeUndefined();
+  });
+});
+
+describe('the app role is RLS-confined where the lookup role deliberately is not', () => {
+  /* The two roles answer different questions, and the contrast is the point:
+     `taskflow_api_token_auth` MUST cross orgs (the presented token's row names
+     its org — no app.org_id is correct for the read), while `taskflow_app`
+     must NEVER: every token the app role reads is inside its tenant_isolation
+     policy. `resolveApiToken` above proves the first; these two prove the
+     second, as REAL org-scoped SELECTs rather than privilege checks — a
+     privilege is only a claim, and RLS is the behaviour. */
+
+  it('taskflow_app under org A scope sees only org A tokens', async () => {
+    /* The org ids are fixture uuids; `unsafeAsId` is the trust-boundary
+       constructor for exactly this — a value that came from `randomUUID`
+       and never crossed a wire. */
+    await withOrgScope(unsafeAsId<'OrgId'>(ORG_A), async (tx) => {
+      const result = await tx.execute(
+        `SELECT count(*)::int AS n FROM platform.api_tokens`,
+      );
+      /* Two in org A (live + revoked) — never three, never one. */
+      expect(result.rows[0]?.['n']).toBe(2);
+    });
+    await withOrgScope(unsafeAsId<'OrgId'>(ORG_B), async (tx) => {
+      const result = await tx.execute(
+        `SELECT count(*)::int AS n FROM platform.api_tokens`,
+      );
+      expect(result.rows[0]?.['n']).toBe(1);
+    });
+  });
+
+  it('api_token_quota is org-confined for the app role too', async () => {
+    await withOrgScope(unsafeAsId<'OrgId'>(ORG_A), async (tx) => {
+      const result = await tx.execute(
+        `SELECT used_count::int AS used FROM platform.api_token_quota`,
+      );
+      /* Org A seeded 5; org B's row (7) is invisible from here. Without RLS,
+         the consume helper could charge one org's quota against another. */
+      expect(result.rows[0]?.['used']).toBe(5);
+    });
+    await withOrgScope(unsafeAsId<'OrgId'>(ORG_B), async (tx) => {
+      const result = await tx.execute(
+        `SELECT used_count::int AS used FROM platform.api_token_quota`,
+      );
+      expect(result.rows[0]?.['used']).toBe(7);
+    });
   });
 });

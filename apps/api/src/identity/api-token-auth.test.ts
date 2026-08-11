@@ -15,7 +15,8 @@ import {
   initializeDatabase,
 } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
-import { issueToken } from '@taskflow/security';
+import { issueToken, masterKeysFromBase64, SoftwareKeyProvider } from '@taskflow/security';
+import { createAutomationRouter } from '../automation/router.js';
 import { TEST_ENV, testContext } from '../testing/fixtures.js';
 import * as orgs from '../tenancy/org.service.js';
 import * as members from '../tenancy/member.service.js';
@@ -59,7 +60,7 @@ async function actorFor(
 }
 
 /** An org with an owner, and a minted token owned by that owner. */
-async function scaffold(slug: string): Promise<{
+async function scaffold(slug: string, scopes: readonly string[] = ['card:read']): Promise<{
   orgId: OrgId;
   owner: AutomationActor;
   token: string;
@@ -74,7 +75,7 @@ async function scaffold(slug: string): Promise<{
   created.push(result.orgId);
 
   const owner = await actorFor(result.orgId, OWNER, 'owner');
-  const issued = await mintApiToken(owner, { name: 'CI', scopes: ['card:read'] });
+  const issued = await mintApiToken(owner, { name: 'CI', scopes });
   return { orgId: result.orgId, owner, token: issued.token, tokenId: issued.tokenId };
 }
 
@@ -380,6 +381,87 @@ describe('the builder gate for token principals', () => {
     expect(after).not.toBeNull();
     const afterCaller = createCallerFactory(auditRouter)(tokenContext(after!));
     await expect(afterCaller.audit()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * The REAL automation router with a token principal (§6.6) — the synthetic
+ * gateRouter above proves the GATE; this proves the routes a token will
+ * actually drive. `webhook:manage` is Admin-and-above and org-level (§9
+ * decision 4), so a token scoped for it is the whole authorization story at
+ * this layer — and a token scoped for something else must be refused here.
+ * ------------------------------------------------------------------------- */
+
+const automationKeys = new SoftwareKeyProvider({
+  currentMasterKeyId: 'test-master',
+  masterKeys: masterKeysFromBase64({
+    'test-master': Buffer.alloc(32, 7).toString('base64'),
+  }),
+});
+
+const automationRouter = createAutomationRouter({ keys: automationKeys });
+
+describe('a token principal on the real automation router', () => {
+  async function principalOf(token: string) {
+    const principal = await authenticateWithApiToken(`Bearer ${token}`, undefined);
+    expect(principal).not.toBeNull();
+    return principal!;
+  }
+
+  it('a webhook:manage-scoped token lists and creates webhooks through the real routes', async () => {
+    const { token } = await scaffold('real-ok', ['webhook:manage']);
+    const caller = createCallerFactory(automationRouter)(tokenContext(await principalOf(token)));
+
+    /* The real routes carry an explicit `z.object({}).strict()` input, so
+       they take `{}` where the synthetic gateRouter's input-less routes take
+       nothing. */
+    await expect(caller.webhooks.list({})).resolves.toEqual([]);
+
+    const created = await caller.webhooks.create({
+      name: 'CI',
+      url: 'https://hooks.example.test/ci',
+    });
+    expect(created.webhookId.length).toBeGreaterThan(0);
+    /* The shown-once contract: the signing secret rides this one response. */
+    expect(created.signingSecret.length).toBeGreaterThan(0);
+
+    const listed = await caller.webhooks.list({});
+    expect(listed.some((webhook) => webhook.webhookId === created.webhookId)).toBe(true);
+  });
+
+  it('does not bleed into sibling surfaces — a webhook token cannot manage RULES', async () => {
+    const { token } = await scaffold('real-bleed', ['webhook:manage']);
+    const caller = createCallerFactory(automationRouter)(tokenContext(await principalOf(token)));
+
+    /* `automation:manage` is a different permission with the same floor
+       shape; the token scoped only for webhooks is refused here. */
+    await expect(caller.list({})).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('refuses a card:read token on webhook routes', async () => {
+    const { token } = await scaffold('real-refused');
+    const caller = createCallerFactory(automationRouter)(tokenContext(await principalOf(token)));
+
+    await expect(caller.webhooks.list({})).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('a webhook created by a token lands in the TOKEN org, invisible to another org', async () => {
+    const a = await scaffold('real-org-a', ['webhook:manage']);
+    const b = await scaffold('real-org-b', ['webhook:manage']);
+    const callerA = createCallerFactory(automationRouter)(tokenContext(await principalOf(a.token)));
+    const callerB = createCallerFactory(automationRouter)(tokenContext(await principalOf(b.token)));
+
+    const created = await callerA.webhooks.create({
+      name: 'A only',
+      url: 'https://hooks.example.test/a',
+    });
+    const listA = await callerA.webhooks.list({});
+    expect(listA.some((webhook) => webhook.webhookId === created.webhookId)).toBe(true);
+
+    /* RLS confines org B's token to org B's rows — the token's org came from
+       the token itself, not from anything the client said. */
+    const listB = await callerB.webhooks.list({});
+    expect(listB.some((webhook) => webhook.webhookId === created.webhookId)).toBe(false);
   });
 });
 
