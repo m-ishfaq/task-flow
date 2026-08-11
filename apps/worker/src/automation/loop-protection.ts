@@ -56,6 +56,9 @@ const EVENTS_EMITTED_BY: Readonly<Record<AutomationAction['type'], readonly stri
   'card.set_priority': ['card.updated'],
   'card.assign': ['card.assigned', 'card.updated'],
   'card.add_label': ['card.labeled', 'card.updated'],
+  'card.remove_label': ['card.labeled', 'card.updated'],
+  'card.unassign': ['card.assigned', 'card.updated'],
+  'card.add_comment': ['comment.created', 'card.updated'],
   'chat.post_message': ['message.sent'],
 };
 

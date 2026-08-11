@@ -79,6 +79,9 @@ export type AutomationActionInput =
   | { readonly type: 'card.set_priority'; readonly priority: string }
   | { readonly type: 'card.assign'; readonly userId: string }
   | { readonly type: 'card.add_label'; readonly labelId: string }
+  | { readonly type: 'card.remove_label'; readonly labelId: string }
+  | { readonly type: 'card.unassign'; readonly userId: string }
+  | { readonly type: 'card.add_comment'; readonly body: string }
   | { readonly type: 'chat.post_message'; readonly channelId: string; readonly body: string };
 
 /**
@@ -98,6 +101,9 @@ const EVENTS_EMITTED_BY: Readonly<Record<string, readonly string[]>> = {
   'card.set_priority': ['card.updated'],
   'card.assign': ['card.assigned', 'card.updated'],
   'card.add_label': ['card.labeled', 'card.updated'],
+  'card.remove_label': ['card.labeled', 'card.updated'],
+  'card.unassign': ['card.assigned', 'card.updated'],
+  'card.add_comment': ['comment.created', 'card.updated'],
   'chat.post_message': ['message.sent'],
 };
 

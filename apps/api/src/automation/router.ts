@@ -43,6 +43,14 @@ const AutomationActionSchema = z.discriminatedUnion('type', [
     .strict(),
   z.object({ type: z.literal('card.assign'), userId: z.string().uuid() }).strict(),
   z.object({ type: z.literal('card.add_label'), labelId: z.string().uuid() }).strict(),
+  z.object({ type: z.literal('card.remove_label'), labelId: z.string().uuid() }).strict(),
+  z.object({ type: z.literal('card.unassign'), userId: z.string().uuid() }).strict(),
+  /* The same plain-TEXT body rule as `chat.post_message` below: the executor
+     wraps it in a paragraph, so a rule can never store a user-supplied
+     document to be handed to `createComment`'s validator from storage. */
+  z
+    .object({ type: z.literal('card.add_comment'), body: z.string().trim().min(1).max(2_000) })
+    .strict(),
   z
     .object({
       type: z.literal('chat.post_message'),

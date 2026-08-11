@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FilterNode } from '@taskflow/filter';
+import type { ProjectId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
@@ -14,16 +15,34 @@ import { FilterBuilder } from '../work/filter/filter-builder.js';
 import { automationRunsQuery, automationsQuery } from './api.js';
 import {
   ACTION_LABELS,
-  ARGUMENT_KEYS,
+  ARGUMENTS,
   TRIGGER_OPTIONS,
   type ActionDraft,
   blankAction,
   describeAction,
+  needsProject,
 } from './vocabulary.js';
+import { ArgumentPicker, ProjectScopePicker } from './action-pickers.js';
 
 /** The trigger's human label, falling back to its event name for one this build does not offer. */
 function triggerLabel(event: string): string {
   return TRIGGER_OPTIONS.find((option) => option.event === event)?.label ?? event;
+}
+
+/**
+ * True when every argument of every action has a value — the server refuses
+ * anything less (a list id must be a real uuid, a message body non-empty), and
+ * "why won't it save" is worse when it only surfaces as a server error after
+ * the author has moved on. The Save button is disabled until this passes, and
+ * a one-line hint says which half of the form is incomplete.
+ */
+function actionsComplete(actions: readonly ActionDraft[]): boolean {
+  return actions.every((action) =>
+    (ARGUMENTS[action.value.type] ?? []).every((spec) => {
+      const value = (action.value as unknown as Record<string, string>)[spec.field];
+      return typeof value === 'string' && value.trim() !== '';
+    }),
+  );
 }
 
 /**
@@ -47,16 +66,25 @@ function draftsFrom(stored: readonly unknown[] | undefined): ActionDraft[] {
 
     const record = entry as Record<string, unknown>;
     const type = typeof record['type'] === 'string' ? record['type'] : '';
-    const key = ARGUMENT_KEYS[type];
-    if (key === undefined) return blankAction();
+    const specs = ARGUMENTS[type];
+    if (specs === undefined) return blankAction();
 
     const draft = blankAction(type);
-    const value = typeof record[key] === 'string' ? record[key] : '';
 
-    return {
-      key: draft.key,
-      value: { ...draft.value, [key]: value },
-    };
+    /* EVERY argument, not just the first. The version before this restored
+       only `specs[0]`, which meant opening a `chat.post_message` rule for
+       editing silently dropped its message body — and saving would then have
+       written the rule back with an empty one. The single-argument assumption
+       kept finding new ways to be wrong. */
+    const restored = specs.reduce<Record<string, unknown>>(
+      (value, spec) => ({
+        ...value,
+        [spec.field]: typeof record[spec.field] === 'string' ? record[spec.field] : '',
+      }),
+      { ...draft.value },
+    );
+
+    return { key: draft.key, value: restored as ActionDraft['value'] };
   });
 }
 
@@ -469,6 +497,12 @@ function RuleEditor({
     (initial?.condition as FilterNode | null | undefined) ?? null,
   );
   const [actions, setActions] = useState<ActionDraft[]>(() => draftsFrom(initial?.actions));
+  /* Which project's vocabulary the list/status/label pickers offer. Local to
+     the editor and never stored — see the field's own comment below. Starts
+     unset even when editing, because the stored action carries an id and not
+     the project it came from; the existing value stays selected regardless,
+     since the pickers show what is chosen by id. */
+  const [scopeProject, setScopeProject] = useState<ProjectId | null>(null);
 
   const save = useMutation({
     mutationFn: () => {
@@ -550,11 +584,35 @@ function RuleEditor({
         </div>
       </Field>
 
+      {/* Only rendered when an action needs it. Lists, statuses and labels are
+          PROJECT vocabulary while a rule is org-wide, so the picker has to be
+          told which project's options to offer. It is a UI aid and is not
+          stored: the action carries the id it resolved to, which is all the
+          engine needs.
+
+          The consequence is worth stating out loud because it is real and
+          predates the pickers — a rule whose action names project A's list
+          simply fails for a card in project B, and the run records it. Pasting
+          an id had the identical outcome, just later and less visibly. */}
+      {actions.some((action) => needsProject(action.value.type)) && (
+        <Field label="Project (for list, status and label choices)" htmlFor="automation-project">
+          <div id="automation-project" className="space-y-1">
+            <ProjectScopePicker orgId={orgId} value={scopeProject} onChange={setScopeProject} />
+            <p className="text-[11px] text-ink-faint">
+              Those actions only apply to cards in this project — a card from another project
+              records a failed run.
+            </p>
+          </div>
+        </Field>
+      )}
+
       <Field label="Then" htmlFor="automation-actions">
         <div id="automation-actions" className="space-y-2">
           {actions.map((action, index) => (
             <ActionRow
               key={action.key}
+              orgId={orgId}
+              projectId={scopeProject}
               action={action}
               onChange={(next) => {
                 setActions(actions.map((item, i) => (i === index ? next : item)));
@@ -590,37 +648,49 @@ function RuleEditor({
       {save.isError && <ErrorText error={save.error} />}
 
       <div className="flex items-center gap-2 border-t border-line pt-3">
-        <Button type="submit" size="sm" disabled={name.trim() === '' || save.isPending}>
+        <Button
+          type="submit"
+          size="sm"
+          disabled={name.trim() === '' || !actionsComplete(actions) || save.isPending}
+        >
           {save.isPending ? 'Saving…' : editing ? 'Save changes' : 'Create rule'}
         </Button>
         <button type="button" onClick={onDone} className="text-xs text-ink-faint hover:text-ink">
           Cancel
         </button>
+        {name.trim() !== '' && !actionsComplete(actions) && (
+          <span className="text-[11px] text-ink-faint">Finish choosing each action to save.</span>
+        )}
       </div>
     </form>
   );
 }
 
 function ActionRow({
+  orgId,
+  projectId,
   action,
   onChange,
   onRemove,
 }: {
+  readonly orgId: string;
+  readonly projectId: ProjectId | null;
   readonly action: ActionDraft;
   readonly onChange: (next: ActionDraft) => void;
   readonly onRemove?: () => void;
 }) {
-  const label = ACTION_LABELS[action.value.type];
+  const specs = ARGUMENTS[action.value.type] ?? [];
+  const values = action.value as unknown as Record<string, string>;
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-start gap-2">
       <select
         value={action.value.type}
         onChange={(event) => {
           onChange(blankAction(event.target.value, action.key));
         }}
         aria-label="Action"
-        className="rounded border border-line bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent"
+        className="shrink-0 rounded border border-line bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent"
       >
         {Object.entries(ACTION_LABELS).map(([type, text]) => (
           <option key={type} value={type}>
@@ -629,22 +699,34 @@ function ActionRow({
         ))}
       </select>
 
-      <input
-        value={argumentOf(action)}
-        onChange={(event) => {
-          onChange(withArgument(action, event.target.value));
-        }}
-        aria-label={`${label ?? action.value.type} value`}
-        placeholder={PLACEHOLDER[action.value.type]}
-        className="min-w-0 flex-1 rounded border border-line bg-surface px-2 py-1 font-mono text-xs text-ink outline-none focus:border-accent"
-      />
+      {/* One picker per ARGUMENT, not one input per action. The single-input
+          version could not reach `chat.post_message`'s `body` at all, so that
+          action could never be saved — the server requires it non-empty. */}
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        {specs.map((spec) => (
+          <ArgumentPicker
+            key={spec.field}
+            orgId={orgId}
+            projectId={projectId}
+            kind={spec.kind}
+            label={spec.label}
+            value={values[spec.field] ?? ''}
+            onChange={(next) => {
+              onChange({
+                key: action.key,
+                value: { ...action.value, [spec.field]: next },
+              });
+            }}
+          />
+        ))}
+      </div>
 
       {onRemove !== undefined && (
         <button
           type="button"
           onClick={onRemove}
           aria-label="Remove action"
-          className="text-xs text-ink-faint hover:text-danger"
+          className="shrink-0 py-1 text-xs text-ink-faint hover:text-danger"
         >
           ×
         </button>
@@ -652,34 +734,3 @@ function ActionRow({
     </div>
   );
 }
-
-const PLACEHOLDER: Readonly<Record<string, string>> = {
-  'card.move': 'list id',
-  'card.set_status': 'status id',
-  'card.set_priority': 'urgent | high | normal | low',
-  'card.assign': 'user id',
-  'card.add_label': 'label id',
-  'chat.post_message': 'channel id',
-};
-
-/** The single editable argument of an action draft. */
-function argumentOf(action: ActionDraft): string {
-  const value = action.value as Record<string, string>;
-  const key = ARGUMENT_KEY[action.value.type];
-  return key === undefined ? '' : (value[key] ?? '');
-}
-
-function withArgument(action: ActionDraft, next: string): ActionDraft {
-  const key = ARGUMENT_KEY[action.value.type];
-  if (key === undefined) return action;
-  return { key: action.key, value: { ...action.value, [key]: next } };
-}
-
-const ARGUMENT_KEY: Readonly<Record<string, string>> = {
-  'card.move': 'listId',
-  'card.set_status': 'statusId',
-  'card.set_priority': 'priority',
-  'card.assign': 'userId',
-  'card.add_label': 'labelId',
-  'chat.post_message': 'channelId',
-};

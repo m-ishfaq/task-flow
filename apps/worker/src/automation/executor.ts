@@ -1,6 +1,7 @@
 import { unsafeAsId, type CardId, type RequestId } from '@taskflow/contracts';
 import { resolveOrgMembership } from '@taskflow/api/tenancy/resolve';
 import * as cards from '@taskflow/api/work/cards';
+import * as comments from '@taskflow/api/work/comments';
 import * as labels from '@taskflow/api/work/labels';
 import * as messages from '@taskflow/api/chat/messages';
 import { RichTextDocument, type RichTextNode } from '@taskflow/api/richtext';
@@ -218,6 +219,52 @@ async function runAction(
       return;
     }
 
+    case 'card.remove_label': {
+      /* The mirror of `card.add_label` above, with the same full-replace
+         discipline: read first, subtract one, write the rest back. A target
+         the card does not carry is a no-op rather than an error — the rule
+         asked for a state the card is already in. */
+      const cardId = cardIdOf(event);
+      const current = await labels.listCardLabels(actor, { cardId });
+      const existing = current.map((label) => unsafeAsId<'LabelId'>(label.labelId));
+      const removal = unsafeAsId<'LabelId'>(action.labelId);
+
+      if (!existing.includes(removal)) return;
+
+      await labels.setCardLabels(
+        actor,
+        { cardId, labelIds: existing.filter((id) => id !== removal) },
+      );
+      return;
+    }
+
+    case 'card.unassign': {
+      /* The mirror of `card.assign`: remove ONE person from the set, reading
+         the current assignees first so nobody else is touched. Assigning
+         without the read would clear the card; removing without it would be
+         the same damage in reverse. */
+      const cardId = cardIdOf(event);
+      const current = await cards.getCard(actor, { cardId });
+      const existing = current.assigneeIds.map((id) => unsafeAsId<'UserId'>(id));
+      const removal = unsafeAsId<'UserId'>(action.userId);
+
+      if (!existing.includes(removal)) return;
+
+      await cards.assignCard(
+        actor,
+        { cardId, assigneeIds: existing.filter((id) => id !== removal) },
+      );
+      return;
+    }
+
+    case 'card.add_comment': {
+      await comments.createComment(actor, {
+        cardId: cardIdOf(event),
+        body: plainParagraph(action.body),
+      });
+      return;
+    }
+
     case 'chat.post_message': {
       /* A plain paragraph. The body is stored TEXT on the rule and is turned
          into the TipTap document shape here rather than letting a rule store
@@ -227,14 +274,26 @@ async function runAction(
          a document). */
       await messages.sendMessage(actor, {
         channelId: unsafeAsId<'ChannelId'>(action.channelId),
-        body: {
-          type: 'doc',
-          content: [{ type: 'paragraph', content: [{ type: 'text', text: action.body }] }],
-        },
+        body: plainParagraph(action.body),
       });
       return;
     }
   }
+}
+
+/**
+ * The one document shape a rule may say: a single plain-text paragraph.
+ *
+ * Both text-carrying actions (`chat.post_message` and `card.add_comment`)
+ * store TEXT on the rule and get their TipTap document here, so there is
+ * exactly one place that turns stored rule text into a document — a
+ * user-supplied document can never reach a validator from a stored column.
+ */
+function plainParagraph(text: string): RichTextNode {
+  return {
+    type: 'doc',
+    content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+  };
 }
 
 /**

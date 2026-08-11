@@ -25,6 +25,7 @@
     "./work/shared": "./src/work/shared.ts",
     "./work/cards": "./src/work/card.service.ts",
     "./work/labels": "./src/work/label.service.ts",
+    "./work/comments": "./src/work/comment.service.ts",
     "./chat/messages": "./src/chat/message.service.ts"
   },
   "scripts": {

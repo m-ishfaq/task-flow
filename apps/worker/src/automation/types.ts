@@ -50,6 +50,9 @@ export type AutomationAction =
   | { readonly type: 'card.set_priority'; readonly priority: string }
   | { readonly type: 'card.assign'; readonly userId: string }
   | { readonly type: 'card.add_label'; readonly labelId: string }
+  | { readonly type: 'card.remove_label'; readonly labelId: string }
+  | { readonly type: 'card.unassign'; readonly userId: string }
+  | { readonly type: 'card.add_comment'; readonly body: string }
   | { readonly type: 'chat.post_message'; readonly channelId: string; readonly body: string };
 
 /** Every action type, for the route's schema and the executor's exhaustiveness check. */
@@ -59,6 +62,9 @@ export const ACTION_TYPES = [
   'card.set_priority',
   'card.assign',
   'card.add_label',
+  'card.remove_label',
+  'card.unassign',
+  'card.add_comment',
   'chat.post_message',
 ] as const;
 

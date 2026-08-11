@@ -191,6 +191,46 @@ describe('creating a rule — what is refused at save time', () => {
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
   });
 
+  it('accepts every action in the catalog, including the removers and add-comment', async () => {
+    const { owner } = await scaffold('actions');
+
+    /* The three newest actions are full-replace subtractors or writers: they
+       must save exactly like the originals. Their EXECUTION is covered by the
+       worker's engine suite against real Postgres; what is under test here is
+       the write boundary accepting them. */
+    await expect(
+      createAutomation(
+        owner,
+        ruleBody({
+          triggerEvent: 'card.created',
+          actions: [
+            { type: 'card.add_comment', body: 'moved by automation' },
+            { type: 'card.remove_label', labelId: crypto.randomUUID() },
+            { type: 'card.unassign', userId: OWNER },
+          ],
+        }),
+      ),
+    ).resolves.toMatchObject({ automationId: expect.any(String) as unknown as string });
+  });
+
+  it('refuses a comment-triggered rule whose action adds a comment', async () => {
+    const { owner } = await scaffold('commentloop');
+
+    /* `card.add_comment` emits `comment.created` — the rule's own trigger.
+       The save-time self-trigger check must see it even though this is a NEW
+       action, which is exactly the check the exhaustive loop-protection table
+       exists to feed. */
+    await expect(
+      createAutomation(
+        owner,
+        ruleBody({
+          triggerEvent: 'comment.created',
+          actions: [{ type: 'card.add_comment', body: 'echo' }],
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+  });
+
   it('accepts a valid card condition and reads it back intact', async () => {
     const { owner } = await scaffold('roundtrip');
     await createAutomation(owner, ruleBody({ condition: compare('priority', 'eq', 'high') }));

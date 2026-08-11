@@ -6,6 +6,7 @@ import { compare } from '@taskflow/filter';
 import { MAX_DEPTH } from './loop-protection.js';
 import { HOURLY_EXECUTION_BUDGET } from './repository.js';
 import { processEvent } from './engine.js';
+import { createActionExecutor } from './executor.js';
 import type { ActionExecutor, ActionResult, TriggerEvent } from './types.js';
 
 /**
@@ -501,5 +502,68 @@ describe('the engine — failure handling', () => {
        exception escaping here would leave the whole batch unmarked. */
     await expect(processEvent(fx.event(), { executor })).resolves.toBeDefined();
     expect((await runsFor(fx.orgId))[0]?.status).toBe('failed');
+  });
+});
+
+describe('the engine — executing a REAL action against the real services', () => {
+  /* Everything above drives a recording fake; the real executor is exercised
+     only by typecheck. The three newest actions (add_comment, remove_label,
+     unassign) deserve one trip through their actual service wiring — the
+     class of mistake this catches is an import that resolves, a branch that
+     compiles, and a call that fails at runtime because the fixture shape
+     assumed wrong (the `@taskflow/api/work/comments` export entry is exactly
+     the kind of thing only this proves).
+
+     The real executor re-resolves the rule owner's membership on every run,
+     so these fixtures need a memberships row the recording-fake suites
+     never did. */
+  async function memberOf(fx: Fixture): Promise<void> {
+    await admin.setOrg(fx.orgId);
+    await admin.query(
+      `INSERT INTO identity.memberships (id, org_id, user_id, role, status)
+       VALUES ($1, $2, $3, 'owner', 'active')`,
+      [crypto.randomUUID(), fx.orgId, fx.userId],
+    );
+    await admin.setOrg(null);
+  }
+
+  it('card.add_comment writes the comment to the card', async () => {
+    const fx = await scaffold('realcomment');
+    await memberOf(fx);
+
+    await fx.addRule({
+      triggerEvent: 'card.status_changed',
+      actions: [{ type: 'card.add_comment', body: 'moved by automation' }],
+    });
+
+    await processEvent(fx.event(), { executor: createActionExecutor() });
+
+    expect((await runsFor(fx.orgId))[0]?.status).toBe('succeeded');
+
+    const comments = await withOrgScope(fx.orgId, async (tx) =>
+      tx
+        .select({ bodyText: schema.cardComments.bodyText })
+        .from(schema.cardComments)
+        .where(eq(schema.cardComments.cardId, fx.cardId)),
+    );
+    expect(comments.map((row) => row.bodyText)).toEqual(['moved by automation']);
+  });
+
+  it('card.remove_label is a no-op — and records success — when the card has no labels', async () => {
+    const fx = await scaffold('realremovelabel');
+    await memberOf(fx);
+
+    await fx.addRule({
+      triggerEvent: 'card.status_changed',
+      actions: [{ type: 'card.remove_label', labelId: crypto.randomUUID() }],
+    });
+
+    await processEvent(fx.event(), { executor: createActionExecutor() });
+
+    /* The action asked for a state the card is already in; that is not a
+       failure, and the run records it as a success — the same no-op
+       discipline `card.assign` already applies when the person is already
+       assigned. */
+    expect((await runsFor(fx.orgId))[0]?.status).toBe('succeeded');
   });
 });
