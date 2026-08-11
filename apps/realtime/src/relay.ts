@@ -88,10 +88,19 @@ export function startRealtimeRelay(options: StartRelayOptions): RelayHandle {
    * contending here at all: realtime's and audit's dispatch rows are different
    * rows by construction (migration 0015).
    */
-  const drainOnce = async (): Promise<number> => {
+  /**
+   * Claimed and delivered are tracked separately because they can legitimately
+   * differ: a dispatch failure leaves a row claimable again (see `Dispatch`'s
+   * own header) without shrinking the claim itself. `drainFully` below needs
+   * the CLAIMED count to know whether the queue is empty — the delivered count
+   * says nothing about that, since a full 100-row claim with one failure would
+   * otherwise read as "fewer than a batch" and stop the drain one batch short
+   * of the actual end of the queue.
+   */
+  const drainOnce = async (): Promise<{ claimed: number; delivered: number }> => {
     return withRealtimeScope(async (tx) => {
       const rows = await claimPending(tx, CONSUMER, BATCH_SIZE);
-      if (rows.length === 0) return 0;
+      if (rows.length === 0) return { claimed: 0, delivered: 0 };
 
       const delivered: string[] = [];
 
@@ -117,7 +126,7 @@ export function startRealtimeRelay(options: StartRelayOptions): RelayHandle {
       }
 
       await markDispatched(tx, CONSUMER, delivered);
-      return delivered.length;
+      return { claimed: rows.length, delivered: delivered.length };
     });
   };
 
@@ -125,9 +134,9 @@ export function startRealtimeRelay(options: StartRelayOptions): RelayHandle {
   const drainFully = async (): Promise<number> => {
     let total = 0;
     for (;;) {
-      const processed = await drainOnce();
-      total += processed;
-      if (processed < BATCH_SIZE) return total;
+      const { claimed, delivered } = await drainOnce();
+      total += delivered;
+      if (claimed < BATCH_SIZE) return total;
     }
   };
 
