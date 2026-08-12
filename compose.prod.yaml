@@ -454,11 +454,26 @@ services:
   # every container's logs — including, if a log line ever leaks one, a
   # secret `packages/observability`'s `REDACTION_PATHS` didn't anticipate.
   # That is exactly what the basic-auth gate above exists to bound.
+  #
+  # DOZZLE_BASE must match the proxy path this sits behind (ai/deployment-
+  # runbook.md's `/logs` example). Dozzle's own index.html links its JS/CSS/
+  # manifest with root-absolute paths — `/main-<hash>.js`, not a path
+  # relative to wherever it's mounted — so proxying it under a subpath
+  # without this renders a blank page: the browser requests those assets
+  # from the domain ROOT instead of the subpath, and (on this stack) the
+  # `web` service's own SPA fallback answers with ITS index.html instead,
+  # a 404-that-looks-like-someone-else's-app rather than a load failure.
+  # DOZZLE_BASE tells Dozzle to render every asset and API path under the
+  # given prefix instead. The Caddy side must then use `handle`, not
+  # `handle_path` — `handle_path` strips the matched prefix before
+  # forwarding, which would hand Dozzle a request it no longer recognizes
+  # as under its own base.
   dozzle:
     image: amir20/dozzle:latest
     restart: unless-stopped
     environment:
       DOZZLE_NO_ANALYTICS: 'true'
+      DOZZLE_BASE: ${DOZZLE_BASE:-/logs}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
