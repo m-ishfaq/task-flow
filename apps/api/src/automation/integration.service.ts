@@ -805,8 +805,8 @@ async function githubRepos(deps: IntegrationDeps, token: string): Promise<readon
 
   for (let page = 1; page <= GITHUB_REPO_PAGE_LIMIT; page += 1) {
     const response = await fetchFn(
-      `https://api.github.com/user/repos?per_page=${GITHUB_REPO_PAGE_SIZE}` +
-        `&sort=full_name&affiliation=owner,collaborator,organization_member&page=${page}`,
+      `https://api.github.com/user/repos?per_page=${String(GITHUB_REPO_PAGE_SIZE)}` +
+        `&sort=full_name&affiliation=owner,collaborator,organization_member&page=${String(page)}`,
       { headers: { ...GITHUB_HEADERS, authorization: `Bearer ${token}` } },
     );
     if (!response.ok) {
