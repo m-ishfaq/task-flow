@@ -18,16 +18,27 @@ export class FakePaymentProvider implements PaymentProvider {
   readonly isLive = false;
 
   private customers = new Map<OrgId, string>();
-  private nextCustomerId = 1;
 
+  /**
+   * Derived from `orgId`, not a per-instance counter.
+   *
+   * A sequential counter (`cus_fake_1`, `cus_fake_2`, …) is unique only
+   * within ONE provider instance — and every caller constructs a fresh one
+   * (`deps()` in each test file, each `it()` block). Persisted against real
+   * Postgres's `identity.orgs.stripe_customer_id UNIQUE` constraint, two
+   * different tests' first checkout both landing on `cus_fake_1` is a
+   * genuine collision, not a coincidence: this test suite never actually ran
+   * against real Postgres until CI did, so nothing had caught it. `orgId` is
+   * already a UUID assigned once per org, so keying on it directly is
+   * unique for free and still idempotent per org.
+   */
   ensureCustomer(options: { readonly orgId: OrgId; readonly email: string }): Promise<{
     readonly customerId: string;
   }> {
     const existing = this.customers.get(options.orgId);
     if (existing !== undefined) return Promise.resolve({ customerId: existing });
 
-    const customerId = `cus_fake_${String(this.nextCustomerId)}`;
-    this.nextCustomerId += 1;
+    const customerId = `cus_fake_${options.orgId}`;
     this.customers.set(options.orgId, customerId);
     return Promise.resolve({ customerId });
   }

@@ -87,14 +87,26 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await admin.setOrg(null);
+  // Every one of these tables is FORCE RLS'd on app.org_id — setOrg has to
+  // be scoped to THIS org inside the loop, not once outside it, or every
+  // delete here silently matches zero rows (identity.orgs is
+  // NOBYPASSRLS'd even for taskflow_migrator — migration 0004's own
+  // comment on FORCE).
   for (const orgId of created) {
+    await admin.setOrg(orgId);
     await admin.query(`DELETE FROM identity.memberships WHERE org_id = $1`, [orgId]);
     await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [orgId]);
     await admin.query(`DELETE FROM audit.audit_log WHERE org_id = $1`, [orgId]);
     await admin.query(`DELETE FROM audit.chain_heads WHERE org_id = $1`, [orgId]);
     await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [orgId]);
+    await admin.setOrg(null);
   }
+  // `grantExtension`'s own dual-write leaves rows in the GLOBAL operator
+  // chain referencing OPERATOR — scoped to this file's own operator id
+  // (never a blanket delete, unlike platform-admin.service.test.ts's own
+  // reset, which is exactly what this file's header says to avoid racing).
+  // Without this, deleting OPERATOR below fails its own FK.
+  await admin.query(`DELETE FROM platform.operator_audit_log WHERE operator_id = $1`, [OPERATOR]);
   await admin.query(`DELETE FROM identity.users WHERE id = ANY($1::uuid[])`, [[OPERATOR, OWNER]]);
   await admin.end();
   await closeDatabase();
@@ -125,10 +137,15 @@ describe('grantExtension', () => {
 
   it('extends the grace deadline and writes into the org’s own audit chain', async () => {
     const orgId = await newOrg('billing-directory-extend');
+    // identity.orgs is FORCE RLS'd — without setOrg this UPDATE silently
+    // matches zero rows, leaving billing_status at its 'trialing' default,
+    // and grantExtension below would then (correctly) refuse it.
+    await admin.setOrg(orgId);
     await admin.query(
       `UPDATE identity.orgs SET billing_status = 'past_due', billing_grace_ends_at = now() + interval '1 day' WHERE id = $1`,
       [orgId],
     );
+    await admin.setOrg(null);
     const events = new RecordingEventBus();
 
     const result = await grantExtension({ events }, operatorOf(OPERATOR), {
@@ -142,19 +159,23 @@ describe('grantExtension', () => {
     expect(hoursFromNow).toBeGreaterThan(7 * 24);
     expect(hoursFromNow).toBeLessThan(9 * 24);
 
+    await admin.setOrg(orgId);
     const chainRow = await admin.query(
       `SELECT action FROM audit.audit_log WHERE org_id = $1 AND action = 'billing.grace_extended'`,
       [orgId],
     );
+    await admin.setOrg(null);
     expect(chainRow.rowCount).toBe(1);
   });
 
   it('never shortens a deadline further out than "now + extendByDays"', async () => {
     const orgId = await newOrg('billing-directory-extend-later-base');
+    await admin.setOrg(orgId);
     await admin.query(
       `UPDATE identity.orgs SET billing_status = 'past_due', billing_grace_ends_at = now() + interval '30 days' WHERE id = $1`,
       [orgId],
     );
+    await admin.setOrg(null);
     const events = new RecordingEventBus();
 
     const result = await grantExtension({ events }, operatorOf(OPERATOR), {

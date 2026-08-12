@@ -47,6 +47,26 @@ async function newOrg(slug: string): Promise<OrgId> {
   return result.orgId;
 }
 
+/**
+ * `identity.orgs` is FORCE RLS'd on `app.org_id` (migration 0004), and
+ * `admin` is `taskflow_migrator` — NOBYPASSRLS by design (§3.7's own
+ * warning: an empirical proof, not an assumption). A read or write with no
+ * `setOrg` first silently matches ZERO rows rather than erroring, which is
+ * exactly the trap this helper exists to close off at every call site.
+ */
+async function readOrgStripeCustomerId(orgId: OrgId): Promise<string | null> {
+  await admin.setOrg(orgId);
+  const result = await admin.query(`SELECT stripe_customer_id FROM identity.orgs WHERE id = $1`, [
+    orgId,
+  ]);
+  await admin.setOrg(null);
+  const row = result.rows[0];
+  if (row === undefined) {
+    throw new Error(`identity.orgs has no row for ${orgId} — RLS scoping bug, not a missing org.`);
+  }
+  return row['stripe_customer_id'] as string | null;
+}
+
 beforeAll(async () => {
   await applyMigrations();
   admin = await connectAsMigrator();
@@ -62,11 +82,17 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await admin.setOrg(null);
+  // Every one of these three tables is FORCE RLS'd on app.org_id
+  // (identity.memberships, platform.outbox, identity.orgs) — setOrg has to
+  // be set to THIS org before each iteration's deletes, not once outside
+  // the loop, or every delete here silently matches zero rows and leaks
+  // the fixture forever (see readOrgStripeCustomerId's own comment).
   for (const orgId of created) {
+    await admin.setOrg(orgId);
     await admin.query(`DELETE FROM identity.memberships WHERE org_id = $1`, [orgId]);
     await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [orgId]);
     await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [orgId]);
+    await admin.setOrg(null);
   }
   await admin.query(`DELETE FROM identity.users WHERE id = $1`, [OWNER]);
   await admin.end();
@@ -99,11 +125,8 @@ describe('createCheckoutSession', () => {
 
     expect(result.url).toContain('checkout.fake.test');
 
-    const orgRow = await admin.query(`SELECT stripe_customer_id FROM identity.orgs WHERE id = $1`, [
-      orgId,
-    ]);
-    const customerId = orgRow.rows[0]?.['stripe_customer_id'] as string | undefined;
-    expect(customerId).toBeDefined();
+    const customerId = await readOrgStripeCustomerId(orgId);
+    expect(customerId).not.toBeNull();
     expect(result.url).toContain(customerId);
 
     const lookupRow = await admin.query(
@@ -153,11 +176,8 @@ describe('createCheckoutSession', () => {
       ),
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
 
-    const orgRow = await admin.query(`SELECT stripe_customer_id FROM identity.orgs WHERE id = $1`, [
-      orgId,
-    ]);
     // The provider was never reached — no customer id was ever assigned.
-    expect(orgRow.rows[0]?.['stripe_customer_id']).toBeNull();
+    expect(await readOrgStripeCustomerId(orgId)).toBeNull();
   });
 });
 
@@ -173,9 +193,7 @@ describe('createPortalSession', () => {
 
     expect(result.url).toContain('portal.fake.test');
 
-    const orgRow = await admin.query(`SELECT stripe_customer_id FROM identity.orgs WHERE id = $1`, [
-      orgId,
-    ]);
-    expect(result.url).toContain(orgRow.rows[0]?.['stripe_customer_id'] as string);
+    const customerId = await readOrgStripeCustomerId(orgId);
+    expect(result.url).toContain(customerId);
   });
 });

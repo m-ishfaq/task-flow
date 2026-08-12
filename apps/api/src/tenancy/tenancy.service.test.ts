@@ -145,7 +145,9 @@ describe('creating an organization', () => {
     const rows = await withOrgScope(orgId, async (tx) =>
       tx.select({ name: schema.outbox.name }).from(schema.outbox),
     );
-    expect(rows).toEqual([{ name: 'org.created' }]);
+    // billing.trial_started (Phase 12 Wave 3) writes to the SAME outbox
+    // append call, alongside org.created — one org creation, two events.
+    expect(rows).toEqual([{ name: 'org.created' }, { name: 'billing.trial_started' }]);
   });
 
   it('refuses an account that has not verified its email', async () => {

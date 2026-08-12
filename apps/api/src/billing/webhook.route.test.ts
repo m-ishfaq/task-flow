@@ -35,16 +35,53 @@ async function newOrgWithCustomer(slug: string, customerId: string): Promise<Org
   });
   created.push(result.orgId);
 
+  // identity.orgs is FORCE RLS'd — without setOrg this UPDATE silently
+  // matches zero rows, and the webhook below would 400 on an unresolvable
+  // customer id instead of exercising the path under test.
+  await admin.setOrg(result.orgId);
   await admin.query(`UPDATE identity.orgs SET stripe_customer_id = $2 WHERE id = $1`, [
     result.orgId,
     customerId,
   ]);
+  await admin.setOrg(null);
+  // billing.customer_orgs has NO RLS (migration 0055's own header) — the
+  // pre-tenant lookup a webhook resolves an org THROUGH, before any scope
+  // can be opened.
   await admin.query(
     `INSERT INTO billing.customer_orgs (stripe_customer_id, org_id) VALUES ($1, $2)`,
     [customerId, result.orgId],
   );
 
   return result.orgId;
+}
+
+/** See newOrgWithCustomer's own comment on why setOrg brackets every read here too. */
+async function readOrgRow<T extends string>(
+  orgId: OrgId,
+  columns: readonly T[],
+): Promise<Record<T, unknown>> {
+  await admin.setOrg(orgId);
+  const result = await admin.query(
+    `SELECT ${columns.join(', ')} FROM identity.orgs WHERE id = $1`,
+    [orgId],
+  );
+  await admin.setOrg(null);
+  const row = result.rows[0];
+  if (row === undefined) {
+    throw new Error(`identity.orgs has no row for ${orgId} — RLS scoping bug, not a missing org.`);
+  }
+  return row;
+}
+
+/** billing.webhook_events is org-scoped RLS (migration 0055) — same reasoning. */
+async function webhookEventExists(orgId: OrgId, providerEventId: string): Promise<boolean> {
+  await admin.setOrg(orgId);
+  const result = await admin.query(
+    `SELECT 1 FROM billing.webhook_events WHERE org_id = $1 AND provider_event_id = $2`,
+    [orgId, providerEventId],
+  );
+  await admin.setOrg(null);
+  return result.rowCount === 1;
 }
 
 // TEST_ENV sets this explicitly (testing/fixtures.ts) so the webhook route
@@ -80,11 +117,14 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close();
-  await admin.setOrg(null);
+  // FORCE RLS means setOrg has to be scoped to THIS org inside the loop,
+  // not once outside it — see newOrgWithCustomer's own comment.
   for (const orgId of created) {
+    await admin.setOrg(orgId);
     await admin.query(`DELETE FROM identity.memberships WHERE org_id = $1`, [orgId]);
     await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [orgId]);
     await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [orgId]);
+    await admin.setOrg(null);
   }
   await admin.query(`DELETE FROM identity.users WHERE id = $1`, [OWNER]);
   await admin.end();
@@ -148,19 +188,16 @@ describe('POST /webhooks/billing/stripe', () => {
     });
     expect(response.statusCode).toBe(200);
 
-    const orgRow = await admin.query(
-      `SELECT billing_status, plan_id, stripe_subscription_id FROM identity.orgs WHERE id = $1`,
-      [orgId],
-    );
-    expect(orgRow.rows[0]?.['billing_status']).toBe('active');
-    expect(orgRow.rows[0]?.['plan_id']).toBe('pro');
-    expect(orgRow.rows[0]?.['stripe_subscription_id']).toBe('sub_activate_1');
+    const orgRow = await readOrgRow(orgId, [
+      'billing_status',
+      'plan_id',
+      'stripe_subscription_id',
+    ] as const);
+    expect(orgRow.billing_status).toBe('active');
+    expect(orgRow.plan_id).toBe('pro');
+    expect(orgRow.stripe_subscription_id).toBe('sub_activate_1');
 
-    const eventRow = await admin.query(
-      `SELECT 1 FROM billing.webhook_events WHERE org_id = $1 AND provider_event_id = $2`,
-      [orgId, 'evt_activate_1'],
-    );
-    expect(eventRow.rowCount).toBe(1);
+    expect(await webhookEventExists(orgId, 'evt_activate_1')).toBe(true);
   });
 
   it('does not re-apply a replayed event a second time', async () => {
@@ -177,9 +214,11 @@ describe('POST /webhooks/billing/stripe', () => {
 
     // Cancel it directly, then replay the ORIGINAL activation event — if
     // replay protection failed, this would silently re-activate the org.
+    await admin.setOrg(orgId);
     await admin.query(`UPDATE identity.orgs SET billing_status = 'canceled' WHERE id = $1`, [
       orgId,
     ]);
+    await admin.setOrg(null);
 
     const replayed = await app.inject({
       method: 'POST',
@@ -188,10 +227,7 @@ describe('POST /webhooks/billing/stripe', () => {
     });
     expect(replayed.statusCode).toBe(400);
 
-    const orgRow = await admin.query(`SELECT billing_status FROM identity.orgs WHERE id = $1`, [
-      orgId,
-    ]);
-    expect(orgRow.rows[0]?.['billing_status']).toBe('canceled');
+    expect((await readOrgRow(orgId, ['billing_status'] as const)).billing_status).toBe('canceled');
   });
 
   it('moves a trialing org to past_due on payment_failed, with a grace deadline', async () => {
@@ -208,12 +244,9 @@ describe('POST /webhooks/billing/stripe', () => {
     });
     expect(canceled.statusCode).toBe(200);
 
-    const orgRow = await admin.query(
-      `SELECT billing_status, billing_grace_ends_at FROM identity.orgs WHERE id = $1`,
-      [orgId],
-    );
-    expect(orgRow.rows[0]?.['billing_status']).toBe('past_due');
-    expect(orgRow.rows[0]?.['billing_grace_ends_at']).not.toBeNull();
+    const orgRow = await readOrgRow(orgId, ['billing_status', 'billing_grace_ends_at'] as const);
+    expect(orgRow.billing_status).toBe('past_due');
+    expect(orgRow.billing_grace_ends_at).not.toBeNull();
   });
 
   it('cancels a subscription immediately on subscription_canceled, skipping past_due', async () => {
@@ -230,9 +263,6 @@ describe('POST /webhooks/billing/stripe', () => {
     });
     expect(response.statusCode).toBe(200);
 
-    const orgRow = await admin.query(`SELECT billing_status FROM identity.orgs WHERE id = $1`, [
-      orgId,
-    ]);
-    expect(orgRow.rows[0]?.['billing_status']).toBe('canceled');
+    expect((await readOrgRow(orgId, ['billing_status'] as const)).billing_status).toBe('canceled');
   });
 });

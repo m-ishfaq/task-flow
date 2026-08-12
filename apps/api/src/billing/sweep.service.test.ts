@@ -34,6 +34,52 @@ async function newOrg(slug: string): Promise<OrgId> {
   return result.orgId;
 }
 
+/**
+ * `identity.orgs` is FORCE RLS'd on `app.org_id` (migration 0004), and
+ * `admin` is `taskflow_migrator` — NOBYPASSRLS by design. Every raw read or
+ * write against it here has to bracket itself with `setOrg`, or it silently
+ * matches zero rows instead of erroring — the exact trap these two helpers
+ * exist to close off at every call site.
+ */
+async function setOrgBillingStatus(
+  orgId: OrgId,
+  billingStatus: string,
+  extra?: { readonly graceEndsAtNow?: boolean },
+): Promise<void> {
+  await admin.setOrg(orgId);
+  if (extra?.graceEndsAtNow === true) {
+    await admin.query(
+      `UPDATE identity.orgs SET billing_status = $2, billing_grace_ends_at = now() WHERE id = $1`,
+      [orgId, billingStatus],
+    );
+  } else {
+    await admin.query(`UPDATE identity.orgs SET billing_status = $2 WHERE id = $1`, [
+      orgId,
+      billingStatus,
+    ]);
+  }
+  await admin.setOrg(null);
+}
+
+async function readOrgBilling(
+  orgId: OrgId,
+): Promise<{ billingStatus: string | null; billingGraceEndsAt: Date | null }> {
+  await admin.setOrg(orgId);
+  const result = await admin.query(
+    `SELECT billing_status, billing_grace_ends_at FROM identity.orgs WHERE id = $1`,
+    [orgId],
+  );
+  await admin.setOrg(null);
+  const row = result.rows[0];
+  if (row === undefined) {
+    throw new Error(`identity.orgs has no row for ${orgId} — RLS scoping bug, not a missing org.`);
+  }
+  return {
+    billingStatus: row['billing_status'] as string | null,
+    billingGraceEndsAt: row['billing_grace_ends_at'] as Date | null,
+  };
+}
+
 beforeAll(async () => {
   await applyMigrations();
   admin = await connectAsMigrator();
@@ -50,11 +96,15 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await admin.setOrg(null);
+  // FORCE RLS on identity.memberships/platform.outbox/identity.orgs means
+  // setOrg has to be scoped to THIS org inside the loop, not once outside
+  // it — see setOrgBillingStatus's own comment.
   for (const orgId of created) {
+    await admin.setOrg(orgId);
     await admin.query(`DELETE FROM identity.memberships WHERE org_id = $1`, [orgId]);
     await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [orgId]);
     await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [orgId]);
+    await admin.setOrg(null);
   }
   await admin.query(`DELETE FROM identity.users WHERE id = $1`, [OWNER]);
   await admin.end();
@@ -68,45 +118,33 @@ describe('expireTrial', () => {
     const applied = await expireTrial(orgId, { pastDueGraceDays: 7 });
     expect(applied).toBe(true);
 
-    const row = await admin.query(
-      `SELECT billing_status, billing_grace_ends_at FROM identity.orgs WHERE id = $1`,
-      [orgId],
-    );
-    expect(row.rows[0]?.['billing_status']).toBe('past_due');
-    expect(row.rows[0]?.['billing_grace_ends_at']).not.toBeNull();
+    const row = await readOrgBilling(orgId);
+    expect(row.billingStatus).toBe('past_due');
+    expect(row.billingGraceEndsAt).not.toBeNull();
   });
 
   it('is a no-op on a non-trialing org', async () => {
     const orgId = await newOrg('sweep-expire-trial-noop');
-    await admin.query(`UPDATE identity.orgs SET billing_status = 'active' WHERE id = $1`, [orgId]);
+    await setOrgBillingStatus(orgId, 'active');
 
     const applied = await expireTrial(orgId, { pastDueGraceDays: 7 });
     expect(applied).toBe(false);
 
-    const row = await admin.query(`SELECT billing_status FROM identity.orgs WHERE id = $1`, [
-      orgId,
-    ]);
-    expect(row.rows[0]?.['billing_status']).toBe('active');
+    expect((await readOrgBilling(orgId)).billingStatus).toBe('active');
   });
 });
 
 describe('expireGracePeriod', () => {
   it('cancels a past_due org and clears the grace deadline', async () => {
     const orgId = await newOrg('sweep-expire-grace');
-    await admin.query(
-      `UPDATE identity.orgs SET billing_status = 'past_due', billing_grace_ends_at = now() WHERE id = $1`,
-      [orgId],
-    );
+    await setOrgBillingStatus(orgId, 'past_due', { graceEndsAtNow: true });
 
     const applied = await expireGracePeriod(orgId);
     expect(applied).toBe(true);
 
-    const row = await admin.query(
-      `SELECT billing_status, billing_grace_ends_at FROM identity.orgs WHERE id = $1`,
-      [orgId],
-    );
-    expect(row.rows[0]?.['billing_status']).toBe('canceled');
-    expect(row.rows[0]?.['billing_grace_ends_at']).toBeNull();
+    const row = await readOrgBilling(orgId);
+    expect(row.billingStatus).toBe('canceled');
+    expect(row.billingGraceEndsAt).toBeNull();
   });
 
   it('is a no-op on a trialing org (nothing to expire yet)', async () => {
@@ -115,24 +153,16 @@ describe('expireGracePeriod', () => {
     const applied = await expireGracePeriod(orgId);
     expect(applied).toBe(false);
 
-    const row = await admin.query(`SELECT billing_status FROM identity.orgs WHERE id = $1`, [
-      orgId,
-    ]);
-    expect(row.rows[0]?.['billing_status']).toBe('trialing');
+    expect((await readOrgBilling(orgId)).billingStatus).toBe('trialing');
   });
 
   it('never moves a canceled org backward on a redundant call', async () => {
     const orgId = await newOrg('sweep-expire-grace-idempotent');
-    await admin.query(`UPDATE identity.orgs SET billing_status = 'canceled' WHERE id = $1`, [
-      orgId,
-    ]);
+    await setOrgBillingStatus(orgId, 'canceled');
 
     const applied = await expireGracePeriod(orgId);
     expect(applied).toBe(false);
 
-    const row = await admin.query(`SELECT billing_status FROM identity.orgs WHERE id = $1`, [
-      orgId,
-    ]);
-    expect(row.rows[0]?.['billing_status']).toBe('canceled');
+    expect((await readOrgBilling(orgId)).billingStatus).toBe('canceled');
   });
 });
