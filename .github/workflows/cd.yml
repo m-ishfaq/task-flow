@@ -48,7 +48,15 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        service: [api, realtime, collab, web]
+        # Five images, not four: compose.prod.yaml's `worker` service has its
+        # own dedicated task-flow-worker image (apps/worker/Dockerfile) —
+        # `migrate` is the only service that reuses another image (api's)
+        # rather than needing its own. Found live: a real `docker compose
+        # pull` against a real deployment failing "denied" on
+        # task-flow-worker, because this matrix never built or pushed it —
+        # `docker compose config`/build never catch a tag that simply
+        # doesn't exist in the registry yet.
+        service: [api, realtime, collab, web, worker]
     outputs:
       sha: ${{ steps.resolve-ref.outputs.sha }}
     steps:
