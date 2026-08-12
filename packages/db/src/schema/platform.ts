@@ -690,3 +690,54 @@ export const apiTokens = platform.table(
   },
   (table) => [uniqueIndex('api_tokens_hash_key').on(table.tokenHash)],
 );
+
+/**
+ * Org↔provider connector rows (migration 0056, ai/phase-10-automation.md §7).
+ *
+ * One row per (org, provider, provider_scope) — a Slack workspace or a GitHub
+ * repository the org has authorized. The row carries the OUTBOUND credential
+ * envelope-encrypted under a per-org data key (the webhook secret's recipe:
+ * ciphertext + wrapped key + master key id) and, for GitHub only, the per-org
+ * inbound verify secret (D4); Slack inbound verification uses the
+ * deployment-wide signing secret, so `verify*` stays null there.
+ *
+ * `status` flips between 'connected'/'disconnected' — a disconnect never
+ * deletes the row (migration 0056's REVOKE DELETE, the api_tokens soft-delete
+ * shape). The inbound lookup runs as `taskflow_integration_auth`, whose
+ * column-level grant excludes `token*` — the role that resolves "who is this
+ * webhook for" cannot read anyone's outbound credential.
+ */
+export const integrations = platform.table(
+  'integrations',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+
+    /** 'slack' | 'github' — a CHECK, not an enum. */
+    provider: text('provider').notNull(),
+    /** Human label for the list view: the workspace/repository name. */
+    name: text('name').notNull(),
+    /** Slack team_id, or GitHub repository full_name. */
+    providerScope: text('provider_scope').notNull(),
+    /** 'connected' | 'disconnected' — a CHECK, not an enum. */
+    status: text('status').notNull().default('connected'),
+
+    tokenCiphertext: bytea('token_ciphertext').notNull(),
+    tokenWrapped: bytea('token_wrapped').notNull(),
+    tokenMasterId: text('token_master_id').notNull(),
+
+    verifyCiphertext: bytea('verify_ciphertext'),
+    verifyWrapped: bytea('verify_wrapped'),
+    verifyMasterId: text('verify_master_id'),
+
+    /** SET NULL, not CASCADE — the row is the org's, not the person's. */
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Mirrors the migration's `integrations_one_scope` UNIQUE constraint.
+    uniqueIndex('integrations_one_scope_key').on(table.orgId, table.provider, table.providerScope),
+  ],
+);

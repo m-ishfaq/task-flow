@@ -218,6 +218,25 @@ CREATE ROLE taskflow_webhook WITH LOGIN PASSWORD 'webhook-dev-secret' NOSUPERUSE
 CREATE ROLE taskflow_api_token_auth WITH LOGIN PASSWORD 'api-token-auth-dev-secret' NOSUPERUSER
   NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 
+-- ---------------------------------------------------------------------------
+-- taskflow_integration_auth — the inbound-connector LOOKUP role (Phase 10
+-- Wave 4, ai/phase-10-automation.md §7.2, migration 0056).
+--
+-- The pre-org resolution an inbound Slack/GitHub webhook needs BEFORE it can
+-- open a scope: the request body names a Slack team_id or a GitHub repository,
+-- and the row mapping that scope to an org must be readable across every
+-- tenant — no value of app.org_id is correct for the read, the api_token_auth
+-- argument made for a webhook instead of a token.
+--
+-- What it may see is column-limited to the LOOKUP — org_id, provider,
+-- provider_scope, and the GitHub verify-secret columns — and never
+-- token_ciphertext: the role that resolves "who is this webhook for" must not
+-- be able to read anyone's outbound credential or the connector's name. It
+-- holds no INSERT/UPDATE/DELETE anywhere.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_integration_auth WITH LOGIN PASSWORD 'integration-auth-dev-secret'
+  NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+
 -- Baseline grants live in 03-grants.sql, NOT here.
 --
 -- Roles are cluster-wide; grants are per-database. This file creates the roles

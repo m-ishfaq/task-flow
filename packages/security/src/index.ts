@@ -204,6 +204,23 @@ export {
 export { buildWebhookSignature, verifyWebhookSignature } from './webhook-signing.js';
 
 /**
+ * Connector webhook verification (Phase 10 Wave 4, ai/phase-10-automation.md
+ * §7.3) — the `twilio-signature.ts` precedent twice over: Slack's
+ * `v0=<hmac>` over `v0:<timestamp>:<raw body>` with a five-minute freshness
+ * window checked BEFORE the HMAC (a replay of an old body carries a valid old
+ * signature), and GitHub's `sha256=<hmac>` over the raw body with a PER-ORG
+ * secret — no timestamp, which is why the caller dedupes on
+ * `X-GitHub-Delivery` instead. Both compare in constant time and both are
+ * ⚠ human-review surfaces.
+ */
+export {
+  signSlackRequest,
+  verifySlackSignature,
+  slackSignaturePayload,
+} from './slack-signature.js';
+export { signGitHubRequest, verifyGitHubSignature } from './github-signature.js';
+
+/**
  * Blind indexes — equality lookup over an encrypted column (Phase 7 Wave 2).
  *
  * Here rather than in the slice that needs it because the tempting shortcuts
