@@ -101,10 +101,39 @@ jobs:
             echo "::notice::No deploy target configured (DEPLOY_HOST / DEPLOY_SSH_KEY / DEPLOY_USER repo secrets are unset) — images were pushed to GHCR and nothing more happened. See ai/deployment-runbook.md to configure a target host."
           fi
 
+      # Checked out here, not just in build-push: this job runs on a separate
+      # runner with no shared filesystem, and it needs compose.prod.yaml/
+      # docker/postgres as real local files to copy in the step below.
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.configured == 'true'
+        with:
+          ref: ${{ needs.build-push.outputs.sha }}
+
       - uses: webfactory/ssh-agent@v0.9.0
         if: steps.gate.outputs.configured == 'true'
         with:
           ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      # Pushed from the runner rather than pulled by the server (see
+      # ai/deployment-runbook.md): the target host holds no GitHub
+      # credential of any kind and never initiates contact with GitHub —
+      # DEPLOY_SSH_KEY, already required for the step below, is the only
+      # credential crossing the CI-to-server boundary. `--delete` on the
+      # directory sync keeps docker/postgres an exact mirror of this commit
+      # rather than accruing files a later migration removed.
+      - name: Copy compose files to the server
+        if: steps.gate.outputs.configured == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/taskflow' }}
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new "$DEPLOY_USER@$DEPLOY_HOST" \
+            "mkdir -p '$DEPLOY_PATH/docker/postgres'"
+          rsync -az -e 'ssh -o StrictHostKeyChecking=accept-new' \
+            compose.prod.yaml "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/compose.prod.yaml"
+          rsync -az --delete -e 'ssh -o StrictHostKeyChecking=accept-new' \
+            docker/postgres/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/docker/postgres/"
 
       # Migrate BEFORE recreating the app containers — a migration is a
       # deploy STEP here, never a side effect app startup triggers, per
@@ -122,8 +151,6 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=accept-new "$DEPLOY_USER@$DEPLOY_HOST" \
             "cd '$DEPLOY_PATH' && \
-             git fetch origin main && \
-             git checkout '$IMAGE_TAG' -- compose.prod.yaml docker/postgres && \
              IMAGE_TAG='$IMAGE_TAG' docker compose --env-file .env.prod -f compose.prod.yaml --profile tools run --rm migrate && \
              IMAGE_TAG='$IMAGE_TAG' docker compose --env-file .env.prod -f compose.prod.yaml pull && \
              IMAGE_TAG='$IMAGE_TAG' docker compose --env-file .env.prod -f compose.prod.yaml up -d --remove-orphans"
