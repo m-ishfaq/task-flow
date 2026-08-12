@@ -6,7 +6,7 @@ import {
   verify,
   withMigrationLock,
 } from './runner.js';
-import { migrationsDir } from '../testing/index.js';
+import { migrationsDir, TEST_MIGRATION_URL } from '../testing/index.js';
 
 const { Client } = pg;
 
@@ -90,8 +90,6 @@ describe('verify', () => {
  * same run also depends on staying intact.
  */
 describe('MIGRATION_LOCK_KEY', () => {
-  const TEST_MIGRATION_URL = 'postgresql://taskflow_migrator:secret@localhost:5433/taskflow_test';
-
   it('blocks a second holder until the first releases', async () => {
     const holder = new Client({ connectionString: TEST_MIGRATION_URL });
     const contender = new Client({ connectionString: TEST_MIGRATION_URL });
