@@ -3,9 +3,9 @@ import { PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import {
   LIST_OPERATORS,
   NULLARY_OPERATORS,
-  OPERATORS_BY_TYPE,
   fieldsOf,
   findField,
+  operatorsFor,
   validate,
   type ComparisonNode,
   type FieldDefinition,
@@ -13,6 +13,7 @@ import {
   type FilterValue,
   type GroupNode,
   type Operator,
+  type Resource,
 } from '@taskflow/filter';
 import type { ProjectId } from '@taskflow/contracts';
 import { Button } from '../../../components/primitives.js';
@@ -39,7 +40,7 @@ import { EMPTY_GROUP, asGroup, countComparisons, draftToTql, interpretTql } from
  * ## What keeps the builder from producing something the server rejects
  *
  * Every choice is drawn from the same closed sets the server validates against:
- * fields from `fieldsOf('card')`, operators from `OPERATORS_BY_TYPE[type]`.
+ * fields from `fieldsOf(resource)`, operators from `operatorsFor(field)`.
  * There is no free-text field name and no free-text operator anywhere in this
  * file, which is what makes "no user string reaches the database as a field
  * name" true of the UI as well as the compiler.
@@ -55,22 +56,44 @@ export interface FilterBuilderProps {
   readonly projectId: ProjectId | null;
   readonly value: FilterNode | null;
   readonly onChange: (filter: FilterNode | null) => void;
+  /**
+   * Which field set to offer. Defaults to `card` — every caller before Phase
+   * 10 Wave 4 filters cards, and defaulting keeps them unchanged.
+   *
+   * `connector` is the automation builder's answer for a rule keyed on a
+   * Slack/GitHub event (ai/phase-10-automation.md §7.8b). The sets are closed
+   * and do NOT overlap, so this is not a display preference: offering the card
+   * fields on a connector rule would build a condition the server refuses on
+   * save, and offering them and validating as `connector` would light up every
+   * chip the moment it was created.
+   */
+  readonly resource?: Resource;
 }
-
-const FIELDS = fieldsOf('card');
 
 /* `EMPTY`, `asGroup` and `countComparisons` moved to `tql-draft.ts` when the
    TQL tab needed them too — one definition, so the two editors cannot disagree
    about what "no filter" is. */
 const EMPTY = EMPTY_GROUP;
 
-export function FilterBuilder({ orgId, projectId, value, onChange }: FilterBuilderProps) {
+export function FilterBuilder({
+  orgId,
+  projectId,
+  value,
+  onChange,
+  resource = 'card',
+}: FilterBuilderProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<GroupNode>(() => asGroup(value));
   const [mode, setMode] = useState<'builder' | 'tql'>('builder');
 
-  const result = validate('card', draft);
+  const result = validate(resource, draft);
   const count = countComparisons(draft);
+
+  /* TQL is a CARD/SEARCH language: its bare terms desugar to `text contains …`
+     and `tql-draft.ts` validates against the card set by name. Offering the tab
+     on a connector rule would offer an editor that cannot produce a single
+     valid tree, so the toggle is hidden rather than shown-and-refusing. */
+  const tqlAvailable = resource === 'card';
 
   const apply = () => {
     if (!result.ok) return;
@@ -100,7 +123,12 @@ export function FilterBuilder({ orgId, projectId, value, onChange }: FilterBuild
       </PopoverTrigger>
 
       <PopoverContent align="start" sideOffset={6} className="w-[34rem] max-w-[95vw] p-3">
-        <div className="mb-2 inline-flex overflow-hidden rounded border border-line text-[11px]">
+        <div
+          className={cn(
+            'mb-2 inline-flex overflow-hidden rounded border border-line text-[11px]',
+            !tqlAvailable && 'hidden',
+          )}
+        >
           {(['builder', 'tql'] as const).map((value) => (
             <button
               key={value}
@@ -119,10 +147,11 @@ export function FilterBuilder({ orgId, projectId, value, onChange }: FilterBuild
           ))}
         </div>
 
-        {mode === 'builder' ? (
+        {mode === 'builder' || !tqlAvailable ? (
           <GroupEditor
             orgId={orgId}
             projectId={projectId}
+            resource={resource}
             group={draft}
             depth={0}
             onChange={setDraft}
@@ -259,12 +288,14 @@ function TqlEditor({
 function GroupEditor({
   orgId,
   projectId,
+  resource,
   group,
   depth,
   onChange,
 }: {
   readonly orgId: string;
   readonly projectId: ProjectId | null;
+  readonly resource: Resource;
   readonly group: GroupNode;
   readonly depth: number;
   readonly onChange: (group: GroupNode) => void;
@@ -319,6 +350,7 @@ function GroupEditor({
                   <GroupEditor
                     orgId={orgId}
                     projectId={projectId}
+                    resource={resource}
                     group={child}
                     depth={depth + 1}
                     onChange={(next) => {
@@ -336,6 +368,7 @@ function GroupEditor({
               <ComparisonEditor
                 orgId={orgId}
                 projectId={projectId}
+                resource={resource}
                 node={child}
                 onChange={(next) => {
                   replaceChild(index, next);
@@ -363,7 +396,7 @@ function GroupEditor({
         <Button
           size="sm"
           onClick={() => {
-            onChange({ ...group, children: [...group.children, newComparison()] });
+            onChange({ ...group, children: [...group.children, newComparison(resource)] });
           }}
         >
           + Condition
@@ -378,7 +411,7 @@ function GroupEditor({
                 ...group,
                 children: [
                   ...group.children,
-                  { kind: 'group', combinator: 'or', children: [newComparison()] },
+                  { kind: 'group', combinator: 'or', children: [newComparison(resource)] },
                 ],
               });
             }}
@@ -394,18 +427,23 @@ function GroupEditor({
 function ComparisonEditor({
   orgId,
   projectId,
+  resource,
   node,
   onChange,
   onRemove,
 }: {
   readonly orgId: string;
   readonly projectId: ProjectId | null;
+  readonly resource: Resource;
   readonly node: ComparisonNode;
   readonly onChange: (node: ComparisonNode) => void;
   readonly onRemove: () => void;
 }) {
-  const field = findField('card', node.field);
-  const operators = field === undefined ? [] : OPERATORS_BY_TYPE[field.type];
+  const field = findField(resource, node.field);
+  /* `operatorsFor`, never `OPERATORS_BY_TYPE[field.type]` — a field may carry
+     its own list, and a menu built from the type table would offer an operator
+     `validate()` refuses. */
+  const operators = field === undefined ? [] : operatorsFor(field);
   const takesValue = !NULLARY_OPERATORS.includes(node.operator);
 
   /**
@@ -417,7 +455,7 @@ function ComparisonEditor({
    * two clicks, and neither is recoverable except by deleting the row.
    */
   const changeField = (name: string) => {
-    const next = findField('card', name);
+    const next = findField(resource, name);
     if (next === undefined) return;
 
     const operator = defaultOperatorFor(next);
@@ -444,7 +482,7 @@ function ComparisonEditor({
         }}
         className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
       >
-        {FIELDS.map((entry) => (
+        {fieldsOf(resource).map((entry) => (
           <option key={entry.name} value={entry.name}>
             {entry.name}
           </option>
@@ -533,9 +571,9 @@ function buildComparison(
     : { kind: 'comparison', field, operator, value: value ?? null };
 }
 
-function newComparison(): ComparisonNode {
-  const first = FIELDS[0];
-  if (first === undefined) throw new Error('The card field set is empty.');
+function newComparison(resource: Resource): ComparisonNode {
+  const first = fieldsOf(resource)[0];
+  if (first === undefined) throw new Error(`The ${resource} field set is empty.`);
 
   const operator = defaultOperatorFor(first);
   return buildComparison(first.name, operator, defaultValueFor(first, operator));

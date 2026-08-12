@@ -5,9 +5,9 @@ import { unsafeAsId } from '@taskflow/contracts';
 import { boardsQuery, labelsQuery, listsQuery, projectsQuery, statusesQuery } from '../work/api.js';
 import { channelsQuery } from '../chat/api.js';
 import { membersQuery } from '../org/api.js';
-import { webhooksQuery } from './api.js';
+import { integrationsQuery, webhooksQuery } from './api.js';
 import { phoneContactsQuery, phoneNumbersQuery } from '../telephony/api.js';
-import type { ArgumentKind } from './vocabulary.js';
+import { INTEGRATION_PROVIDER_OF, type ArgumentKind } from './vocabulary.js';
 
 /**
  * Pickers for a rule's action arguments.
@@ -47,6 +47,16 @@ export interface PickerProps {
   /** The project whose vocabulary to offer, for the project-scoped kinds. */
   readonly projectId: ProjectId | null;
   readonly label: string;
+  /**
+   * The action this argument belongs to (Wave 4 slice 4, §7.6).
+   *
+   * Only the `integration` kind reads it, and only to decide WHICH provider's
+   * connectors to offer — a Slack action must not list the org's GitHub repos,
+   * because picking one saves a rule the server refuses at execution with "that
+   * connector is not a slack connector". Optional so the nine existing kinds
+   * and their call sites are unchanged.
+   */
+  readonly actionType?: string;
 }
 
 const SELECT_CLASS =
@@ -62,6 +72,8 @@ export function ArgumentPicker(props: PickerProps) {
       return <ChannelPicker {...props} />;
     case 'webhook':
       return <WebhookPicker {...props} />;
+    case 'integration':
+      return <IntegrationPicker {...props} />;
     case 'phoneNumber':
       return <PhoneNumberPicker {...props} />;
     case 'phoneTarget':
@@ -169,6 +181,47 @@ function WebhookPicker({ orgId, value, onChange, label }: PickerProps) {
         .filter((webhook) => webhook.enabled)
         .map((webhook) => ({ id: webhook.webhookId, name: webhook.name }))}
       emptyText="No webhooks — create one on the Webhooks tab"
+    />
+  );
+}
+
+/**
+ * Wave 4 slice 4 (§7.6) — which connected workspace or repository a rule acts
+ * through.
+ *
+ * Two filters, and both are correctness rather than tidiness:
+ *
+ *   - by PROVIDER, from `INTEGRATION_PROVIDER_OF`, because the service refuses
+ *     a Slack action pointed at a GitHub row ("that connector is not a slack
+ *     connector") — offering it would build a rule that saves and then fails
+ *     every time it runs;
+ *   - by STATUS, because disconnecting WIPES the credential (migration 0057).
+ *     A disconnected row still exists — it is the org's audit trail — and is
+ *     unusable, so listing it would offer a connector that is deliberately
+ *     dead.
+ *
+ * The option label is the `providerScope`, not the row's name: for GitHub that
+ * is `owner/repo`, which is the thing a person recognizes and also exactly what
+ * the issue will be opened against.
+ */
+function IntegrationPicker({ orgId, value, onChange, label, actionType }: PickerProps) {
+  const integrations = useQuery({ ...integrationsQuery(orgId), enabled: orgId !== '' });
+  const provider = actionType === undefined ? undefined : INTEGRATION_PROVIDER_OF[actionType];
+
+  return (
+    <Choose
+      value={value}
+      onChange={onChange}
+      label={label}
+      pending={integrations.isPending}
+      options={(integrations.data ?? [])
+        .filter((entry) => entry.status === 'connected' && entry.provider === provider)
+        .map((entry) => ({ id: entry.integrationId, name: entry.providerScope }))}
+      emptyText={
+        provider === 'github'
+          ? 'No repositories — connect one on the Integrations tab'
+          : 'No workspaces — connect one on the Integrations tab'
+      }
     />
   );
 }

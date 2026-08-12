@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ACTION_LABELS,
   ARGUMENTS,
+  INTEGRATION_PROVIDER_OF,
   TELEPHONY_ACTIONS,
   blankAction,
   describeAction,
@@ -134,5 +135,35 @@ describe('vocabulary invariants', () => {
 
   it('lists exactly the two telephony actions as cost-bearing', () => {
     expect([...TELEPHONY_ACTIONS].sort()).toEqual(['call.place', 'sms.send']);
+  });
+
+  /* Wave 4 slice 4 (§7.6) — the outbound connector actions. */
+
+  it('gives every `integration` argument a provider to filter its picker by', () => {
+    /* The picker offers connectors of ONE provider, because the service refuses
+       a Slack action pointed at a GitHub row. An action with an `integration`
+       argument and no entry here would offer every connector the org has, and
+       picking the wrong one builds a rule that saves and fails on every run. */
+    for (const [type, specs] of Object.entries(ARGUMENTS)) {
+      if (specs.some((spec) => spec.kind === 'integration')) {
+        expect(INTEGRATION_PROVIDER_OF[type]).toBeDefined();
+      }
+    }
+  });
+
+  it('offers the connector actions unconditionally — they are not flag-gated', () => {
+    /* Unlike telephony: these cost nothing and reach only a provider the org
+       authorized itself, so the flag must not hide them. */
+    const offered = offeredActions(false).map(([type]) => type);
+    expect(offered).toContain('slack.post_message');
+    expect(offered).toContain('github.create_issue');
+  });
+
+  it('names no repository on the GitHub action', () => {
+    /* The repo is the connector row's own scope, resolved server-side. An
+       argument for it would let one connector open issues on any repository
+       its token happens to reach. */
+    const fields = (ARGUMENTS['github.create_issue'] ?? []).map((spec) => spec.field);
+    expect(fields).toEqual(['integrationId', 'title', 'body']);
   });
 });

@@ -351,6 +351,138 @@ describe('the engine — matching and conditions', () => {
   });
 });
 
+/**
+ * Connector-event conditions (ai/phase-10-automation.md §7.8b).
+ *
+ * The gap slice 3 shipped with: a rule keyed on a Slack/GitHub event could
+ * carry no condition AT ALL, because `evaluableRowFor` re-read the trigger's
+ * card and a connector event has none. So the only legal connector rule fired
+ * on every event type from every connected repo — and a repo running GitHub
+ * Actions emits `workflow_job` continuously.
+ *
+ * The first test below is the one that would have failed the day slice 3
+ * shipped, and its assertion is specifically about WHICH refusal: `skipped` /
+ * `condition_not_met` says the condition was evaluated and answered no.
+ * `refused` / `trigger_not_evaluable` says it was never evaluated at all. Both
+ * mean "the rule did not run", which is exactly why asserting on the outcome
+ * alone would have passed before this existed.
+ */
+describe('the engine — connector event conditions (§7.8b)', () => {
+  const githubEvent = (fx: Fixture, providerEvent: string, providerScope = 'acme/api') =>
+    fx.event({
+      name: 'integration.github_event',
+      payload: { providerScope, providerEvent, payload: { ref: 'refs/heads/main' } },
+    });
+
+  it('runs a connector rule whose provider_event matches', async () => {
+    const fx = await scaffold('ghmatch');
+    await fx.addRule({
+      triggerEvent: 'integration.github_event',
+      condition: compare('provider_event', 'eq', 'push'),
+    });
+    const executor = new RecordingExecutor();
+
+    await processEvent(githubEvent(fx, 'push'), { executor });
+
+    expect(executor.calls).toHaveLength(1);
+    expect((await runsFor(fx.orgId))[0]?.status).toBe('succeeded');
+  });
+
+  it('SKIPS — not refuses — a connector rule whose provider_event does not match', async () => {
+    const fx = await scaffold('ghnoise');
+    await fx.addRule({
+      triggerEvent: 'integration.github_event',
+      condition: compare('provider_event', 'eq', 'push'),
+    });
+    const executor = new RecordingExecutor();
+
+    /* `workflow_job` is the noise case by name: it is what a repo with GitHub
+       Actions emits continuously, and it is the reason a connector rule needed
+       a condition before the outbound actions could be worth having. */
+    await processEvent(githubEvent(fx, 'workflow_job'), { executor });
+
+    expect(executor.calls).toEqual([]);
+    const runs = await runsFor(fx.orgId);
+    expect(runs[0]?.status).toBe('skipped');
+    expect(runs[0]?.reason).toBe('condition_not_met');
+  });
+
+  it('narrows to one repository with provider_scope when two are connected', async () => {
+    const fx = await scaffold('ghscope');
+    await fx.addRule({
+      triggerEvent: 'integration.github_event',
+      condition: compare('provider_scope', 'eq', 'acme/api'),
+    });
+    const executor = new RecordingExecutor();
+
+    await processEvent(githubEvent(fx, 'push', 'acme/website'), { executor });
+    expect(executor.calls).toEqual([]);
+    expect((await runsFor(fx.orgId))[0]?.reason).toBe('condition_not_met');
+
+    await processEvent(githubEvent(fx, 'push', 'acme/api'), { executor });
+    expect(executor.calls).toHaveLength(1);
+  });
+
+  it('accepts `in` over several event types', async () => {
+    const fx = await scaffold('ghin');
+    await fx.addRule({
+      triggerEvent: 'integration.github_event',
+      /* `in` on a text field exists ONLY because the connector fields declare
+         it (fields.ts's per-field `operators`), so this also proves the
+         override reaches the evaluator rather than being a builder-only
+         affordance. */
+      condition: compare('provider_event', 'in', ['push', 'pull_request']),
+    });
+    const executor = new RecordingExecutor();
+
+    await processEvent(githubEvent(fx, 'pull_request'), { executor });
+    expect(executor.calls).toHaveLength(1);
+
+    await processEvent(githubEvent(fx, 'issues'), { executor });
+    expect(executor.calls).toHaveLength(1);
+  });
+
+  it('refuses a connector rule whose condition names a CARD field', async () => {
+    const fx = await scaffold('ghcard');
+    await fx.addRule({
+      triggerEvent: 'integration.github_event',
+      /* The API refuses this at SAVE time (`assertConditionUsable`), so this
+         row can only exist by having been written directly — a rule from an
+         older build, or edited in the database. It must still be refused here
+         rather than evaluated against a row that has no `priority` key, which
+         would answer "no" forever and look like a condition nobody could get
+         to match. */
+      condition: compare('priority', 'eq', 'high'),
+    });
+    const executor = new RecordingExecutor();
+
+    await processEvent(githubEvent(fx, 'push'), { executor });
+
+    expect(executor.calls).toEqual([]);
+    expect((await runsFor(fx.orgId))[0]?.reason).toBe('condition_unusable');
+  });
+
+  it('still refuses a connector event missing its own wrapper fields', async () => {
+    const fx = await scaffold('ghbare');
+    await fx.addRule({
+      triggerEvent: 'integration.github_event',
+      condition: compare('provider_event', 'eq', 'push'),
+    });
+    const executor = new RecordingExecutor();
+
+    /* `trigger_not_evaluable` is narrowed by §7.8b, not removed. An event with
+       no `providerEvent` is not a connector event this build can reason about,
+       and evaluating it against a half-empty row would silently answer no. */
+    await processEvent(
+      fx.event({ name: 'integration.github_event', payload: { providerScope: 'acme/api' } }),
+      { executor },
+    );
+
+    expect(executor.calls).toEqual([]);
+    expect((await runsFor(fx.orgId))[0]?.reason).toBe('trigger_not_evaluable');
+  });
+});
+
 describe('the engine — loop protection', () => {
   it('refuses at the depth cap and never reaches the executor', async () => {
     const fx = await scaffold('depth');

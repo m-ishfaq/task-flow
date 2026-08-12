@@ -96,6 +96,13 @@ export const ACTION_LABELS: Readonly<Record<string, string>> = {
      still render when listed. */
   'call.place': 'Place a call',
   'sms.send': 'Send an SMS',
+  /* Wave 4 slice 4 (§7.6) — unconditional, unlike the telephony pair: they
+     cost nothing and reach only a provider the org connected itself, so there
+     is no deployment flag and `offeredActions` never hides them. A rule that
+     names a connector the org has since disconnected fails at execution with a
+     recorded reason, which is the honest place for it. */
+  'slack.post_message': 'Post a Slack message',
+  'github.create_issue': 'Open a GitHub issue',
 };
 
 export type ActionValue =
@@ -117,6 +124,21 @@ export type ActionValue =
       readonly type: 'sms.send';
       readonly to: string;
       readonly fromPhoneNumberId: string;
+      readonly body: string;
+    }
+  /* Wave 4 slice 4 (§7.6). `integrationId` is a picker over the org's
+     CONNECTED connectors; the GitHub repository is not an argument at all,
+     because it is the connector's own scope. */
+  | {
+      readonly type: 'slack.post_message';
+      readonly integrationId: string;
+      readonly channel: string;
+      readonly text: string;
+    }
+  | {
+      readonly type: 'github.create_issue';
+      readonly integrationId: string;
+      readonly title: string;
       readonly body: string;
     };
 
@@ -144,6 +166,16 @@ export type ArgumentKind =
   | 'member'
   | 'channel'
   | 'webhook'
+  /**
+   * A connected Slack workspace or GitHub repository (Wave 4 slice 4, §7.6).
+   *
+   * One kind, not two, because the picker's options are filtered by the action
+   * that asked: `slack.post_message` offers Slack rows and
+   * `github.create_issue` offers GitHub rows. A second `ArgumentKind` would be
+   * two names for one control and a coin flip about which one a new provider
+   * should use.
+   */
+  | 'integration'
   /** The org's owned phone numbers (Wave 4, §5.5). */
   | 'phoneNumber'
   /**
@@ -163,6 +195,17 @@ export interface ArgumentSpec {
   readonly field: string;
   readonly label: string;
   readonly kind: ArgumentKind;
+  /**
+   * True when the server accepts an empty value (Wave 4 slice 4).
+   *
+   * Every argument before this one was required, so `actionsComplete` simply
+   * demanded all of them — an assumption, not a rule. A GitHub issue with a
+   * title and no body is perfectly ordinary, and the route's schema allows it,
+   * so a Save button disabled on an empty body would be the UI refusing
+   * something the server does not. Mark it here rather than special-casing the
+   * field name in the form, which is where the two would drift.
+   */
+  readonly optional?: boolean;
 }
 
 export const ARGUMENTS: Readonly<Record<string, readonly ArgumentSpec[]>> = {
@@ -196,6 +239,33 @@ export const ARGUMENTS: Readonly<Record<string, readonly ArgumentSpec[]>> = {
     { field: 'fromPhoneNumberId', label: 'From (your number)', kind: 'phoneNumber' },
     { field: 'body', label: 'Message', kind: 'text' },
   ],
+  /* Wave 4 slice 4 (§7.6). Note what is NOT here: `github.create_issue` has no
+     repository argument. The repo is the connector's own scope, resolved
+     server-side, so the picker choosing a connector IS choosing the repo — and
+     a rule can never name one the org did not connect. */
+  'slack.post_message': [
+    { field: 'integrationId', label: 'Workspace', kind: 'integration' },
+    { field: 'channel', label: 'Channel', kind: 'text' },
+    { field: 'text', label: 'Message', kind: 'text' },
+  ],
+  'github.create_issue': [
+    { field: 'integrationId', label: 'Repository', kind: 'integration' },
+    { field: 'title', label: 'Title', kind: 'text' },
+    { field: 'body', label: 'Body (optional)', kind: 'text', optional: true },
+  ],
+};
+
+/**
+ * Which provider's connectors an action's `integration` picker may offer.
+ *
+ * A closed map rather than a guess from the action's `type` prefix: the prefix
+ * happens to match today (`slack.` / `github.`) and reading it would be a
+ * parser over a naming convention, which breaks silently the first time an
+ * action is named for what it does rather than for who it calls.
+ */
+export const INTEGRATION_PROVIDER_OF: Readonly<Record<string, 'slack' | 'github'>> = {
+  'slack.post_message': 'slack',
+  'github.create_issue': 'github',
 };
 
 /**
@@ -273,6 +343,20 @@ export function describeAction(action: unknown): string {
     return `${label}: “${truncate(record['body'], 40)}”`;
   }
 
+  /* Wave 4 slice 4 — the same "say what it says" rule, over the field each of
+     these actually carries. Without this the first ARGUMENT is `integrationId`
+     and every connector action in the list would read "Post a Slack message:
+     019ff609-78…", which is the id of a row the reader cannot resolve by eye —
+     strictly worse than the text the rule sends. */
+  if (type === 'slack.post_message' && typeof record['text'] === 'string') {
+    const channel = typeof record['channel'] === 'string' ? record['channel'] : '';
+    return `${label}${channel === '' ? '' : ` to ${channel}`}: “${truncate(record['text'], 40)}”`;
+  }
+
+  if (type === 'github.create_issue' && typeof record['title'] === 'string') {
+    return `${label}: “${truncate(record['title'], 40)}”`;
+  }
+
   const first = (ARGUMENTS[type] ?? [])[0];
   const value = first === undefined ? undefined : record[first.field];
   if (typeof value !== 'string' || value === '') return label;
@@ -330,6 +414,16 @@ export function blankAction(type = 'card.set_priority', key?: string): ActionDra
       return {
         key: identity,
         value: { type: 'sms.send', to: '', fromPhoneNumberId: '', body: '' },
+      };
+    case 'slack.post_message':
+      return {
+        key: identity,
+        value: { type: 'slack.post_message', integrationId: '', channel: '', text: '' },
+      };
+    case 'github.create_issue':
+      return {
+        key: identity,
+        value: { type: 'github.create_issue', integrationId: '', title: '', body: '' },
       };
     default:
       return { key: identity, value: { type: 'card.set_priority', priority: 'high' } };

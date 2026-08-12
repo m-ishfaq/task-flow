@@ -1,5 +1,5 @@
 import { eq, schema, withOrgScope } from '@taskflow/db';
-import { evaluate } from '@taskflow/filter';
+import { evaluate, resourceForTrigger, type Resource } from '@taskflow/filter';
 import type { OrgId } from '@taskflow/contracts';
 import { checkLoopProtection } from './loop-protection.js';
 import {
@@ -126,7 +126,11 @@ async function runOne(
 
   /* 4. The condition. A rule with none fires on every occurrence. */
   if (rule.condition !== null) {
-    const row = await evaluableRowFor(event);
+    /* WHICH field set is a property of the TRIGGER, and the same function the
+       API validated the rule with at save time (§7.8b). Reading it from the
+       rule row instead would let the two disagree after an edit. */
+    const resource = resourceForTrigger(event.name);
+    const row = await evaluableRowFor(resource, event);
     if (row === null) return done('refused', 'trigger_not_evaluable');
 
     /* `viewerId` is deliberately NOT passed. A rule has no viewer, so `@me`
@@ -134,7 +138,7 @@ async function runOne(
        means a tree that somehow carried it evaluates to false rather than
        silently resolving to whoever saved the rule. The trap 0014's header
        documents for shared views, in a context with no user at all. */
-    if (!evaluate('card', rule.condition, row)) {
+    if (!evaluate(resource, rule.condition, row)) {
       return done('skipped', 'condition_not_met');
     }
   }
@@ -199,8 +203,38 @@ async function runOne(
  * Keyed by FIELD name, not column name: that is what `packages/filter`'s
  * evaluator expects, and what `filter.parity.test.ts` asserts both backends
  * agree on.
+ *
+ * ## The connector case reads the PAYLOAD, and that is not an exception
+ *
+ * A connector event (§7.8b) has no card and never will — it is not one. Its two
+ * filterable fields are the wrapper the inbound route built and validated, so
+ * the payload IS the authoritative source here, not a shortcut around re-reading
+ * a row. The "source row is authoritative" discipline above is about not
+ * trusting an event's copy of something a table also holds; there is no table.
+ *
+ * `trigger_not_evaluable` is unchanged for every other card-less trigger. This
+ * narrows when it fires; it does not remove it — and a connector event missing
+ * its own wrapper fields still returns null rather than an empty row, because a
+ * condition silently answering "no" is the failure this function exists to
+ * avoid.
  */
-async function evaluableRowFor(event: TriggerEvent): Promise<Record<string, unknown> | null> {
+async function evaluableRowFor(
+  resource: Resource,
+  event: TriggerEvent,
+): Promise<Record<string, unknown> | null> {
+  if (resource === 'connector') {
+    const providerEvent = event.payload['providerEvent'];
+    const providerScope = event.payload['providerScope'];
+    if (typeof providerEvent !== 'string' || typeof providerScope !== 'string') return null;
+
+    /* Snake_case keys, because the evaluator looks a value up by FIELD name and
+       the connector fields are `provider_event` / `provider_scope`. The payload
+       is camelCase (the registry's convention), so this is a rename and not a
+       pass-through — writing `{ ...event.payload }` would produce a row where
+       every condition matched nothing. */
+    return { provider_event: providerEvent, provider_scope: providerScope };
+  }
+
   const cardId = typeof event.payload['cardId'] === 'string' ? event.payload['cardId'] : null;
   if (cardId === null) return null;
 

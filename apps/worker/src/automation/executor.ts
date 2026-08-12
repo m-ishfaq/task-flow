@@ -5,6 +5,8 @@ import * as comments from '@taskflow/api/work/comments';
 import * as labels from '@taskflow/api/work/labels';
 import * as messages from '@taskflow/api/chat/messages';
 import * as webhooks from '@taskflow/api/automation/webhooks';
+import * as integrationActions from '@taskflow/api/automation/integration-actions';
+import type { IntegrationActionDeps } from '@taskflow/api/automation/integration-actions';
 import * as telephonyCalls from '@taskflow/api/telephony/call';
 import * as telephonySms from '@taskflow/api/telephony/message';
 import type { TelephonyDeps } from '@taskflow/api/telephony/deps';
@@ -89,6 +91,19 @@ export interface ExecutorDeps {
    * silence. Default false matches the env default.
    */
   readonly telephonyActionsEnabled?: boolean;
+  /**
+   * Wave 4 slice 4 (§7.6) — what the outbound connector actions need: the key
+   * provider that unwraps the org's data key, and a fetch.
+   *
+   * Absent on a deployment with no master key configured for the worker, and
+   * `integrationsFor` turns that into a recorded failure rather than a crash —
+   * the `telephonyFor` shape. There is deliberately NO env flag here, unlike
+   * telephony: these actions cost nothing and reach only a provider the ORG
+   * itself authorized through an OAuth consent screen. The gate is
+   * `integration:manage` plus the existence of a connector row, both of which
+   * the org controls.
+   */
+  readonly integrations?: IntegrationActionDeps;
 }
 
 export function createActionExecutor(deps: ExecutorDeps = {}): ActionExecutor {
@@ -357,7 +372,53 @@ async function runAction(
       );
       return;
     }
+
+    case 'slack.post_message': {
+      /* Wave 4 slice 4 (§7.6) — the org speaking as itself on Slack. The
+         `integration:manage` check is inside the service, not here: it is the
+         action's own authorization and belongs with the code that performs the
+         effect, exactly as `enqueueWebhookDelivery` carries its own
+         `webhook:manage`. Doing it here as well would be two copies of one
+         decision, and the copy the worker holds is the one nothing tests. */
+      await integrationActions.postSlackMessage(actor, integrationsFor(deps), {
+        integrationId: action.integrationId,
+        channel: action.channel,
+        text: action.text,
+      });
+      return;
+    }
+
+    case 'github.create_issue': {
+      /* The repository is NOT taken from the action — the service reads it off
+         the connector row's `provider_scope`. See the union's own comment: a
+         repo named by the rule would let one connector open issues anywhere
+         its token reaches. */
+      await integrationActions.createGithubIssue(actor, integrationsFor(deps), {
+        integrationId: action.integrationId,
+        title: action.title,
+        body: action.body,
+      });
+      return;
+    }
   }
+}
+
+/**
+ * The connector deps for one outbound action — or the reason it fails.
+ *
+ * `telephonyFor`'s shape with one fewer refusal: there is no env flag, because
+ * these actions cost nothing and reach only a provider the org authorized
+ * itself. What remains is the configuration case — a worker with no master key
+ * cannot decrypt a connector credential, so the action fails loudly in run
+ * history instead of throwing something shapeless out of the loop.
+ *
+ * Nothing here reaches a provider, so a refusal cannot post anything.
+ */
+function integrationsFor(deps: ExecutorDeps): IntegrationActionDeps {
+  if (deps.integrations === undefined) {
+    throw new Error('connector actions are not configured on this instance');
+  }
+  return deps.integrations;
 }
 
 /**
