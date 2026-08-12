@@ -162,7 +162,7 @@ inside this file:** Phase 11's only route to historical data is replaying `card.
 out of `platform.outbox`, which nothing has ever pruned. **This phase does not prune it** —
 see §9 decision 7 and [ai/phase-11-analytics.md](ai/phase-11-analytics.md) §2.4.
 
-### Wave 4 — the cost-bearing telephony actions (§5.5), COMPLETE (commit `924d539`)
+### Wave 4 — the cost-bearing telephony actions (§5.5), COMPLETE (commit `1e48295`)
 
 The slice §9 decision 3 put last and behind the flag: `call.place` and `sms.send` as rule
 actions, available only when `AUTOMATION_TELEPHONY_ACTIONS_ENABLED` is true — off by default
