@@ -76,6 +76,6 @@ export function refusalMessage(reason: TelephonyRefusal): string {
          budget that is gone, not the phone line. The org's real cap is
          reported by `spend_cap_exceeded`, which is the case they must not
          be confused with. */
-      return 'This organization\'s automation telephony budget is exhausted.';
+      return "This organization's automation telephony budget is exhausted.";
   }
 }

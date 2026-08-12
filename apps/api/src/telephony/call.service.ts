@@ -113,8 +113,7 @@ export async function placeCall(
      automation path passes it identically, under its attributed kind, so the
      sub-budget (§5.5) and the velocity table see an unattended caller as its
      own actor rather than silently borrowing the human 'call' bucket. */
-  const kind: OutboundKind =
-    options.initiatedBy === 'automation' ? 'automation_call' : 'call';
+  const kind: OutboundKind = options.initiatedBy === 'automation' ? 'automation_call' : 'call';
   const decision = await checkOutboundAllowed(
     { orgId, userId, kind, to: input.to, estimatedCents },
     { defaultCapCents: deps.defaultSpendCapCents },
