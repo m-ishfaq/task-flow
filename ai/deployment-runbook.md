@@ -240,7 +240,7 @@ Caddyfile addition (adjust the domain to match `web`'s existing block):
 taskflow-demo.duckdns.org {
 	# ... existing reverse_proxy for / -> localhost:80 (web) stays as-is ...
 
-	handle_path /logs* {
+	handle /logs* {
 		basicauth {
 			# bcrypt hash, not the plaintext password — generate with:
 			#   caddy hash-password
@@ -250,6 +250,18 @@ taskflow-demo.duckdns.org {
 	}
 }
 ```
+
+**Use `handle`, not `handle_path`.** `handle_path` strips the matched prefix
+before forwarding upstream — the natural choice, and wrong here. Dozzle's own
+`DOZZLE_BASE` env var (set to `/logs` by default in `compose.prod.yaml`) makes
+it render every asset and API path under that prefix; stripping the prefix on
+the way in hands it a request it no longer recognizes as its own, and the
+symptom is a blank page with `/main-<hash>.js` and `manifest.webmanifest`
+404s in the browser console — those requests land on the domain ROOT instead
+of `/logs`, where this stack's `web` service answers with ITS OWN SPA
+fallback instead of a clean 404, which reads as "Dozzle is serving garbage"
+rather than "the prefix got stripped twice." `handle` leaves the path alone,
+matching what `DOZZLE_BASE` expects.
 
 `caddy reload --config /etc/caddy/Caddyfile` picks it up without dropping the
 existing TLS cert. Verify with a plain `curl -I https://.../logs/` first — a
