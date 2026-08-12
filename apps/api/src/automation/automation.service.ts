@@ -3,7 +3,7 @@ import { errors, type OrgId, type RequestId, type UserId } from '@taskflow/contr
 import { createEvent, findEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
 import { can, type Subject } from '@taskflow/policy';
-import { FilterTree, validate, type FilterNode } from '@taskflow/filter';
+import { FilterTree, resourceForTrigger, validate, type FilterNode } from '@taskflow/filter';
 import { automationCreated, automationDeleted, automationUpdated } from './events.js';
 import { translatingConstraints } from '../work/shared.js';
 
@@ -99,6 +99,21 @@ export type AutomationActionInput =
       readonly to: string;
       readonly fromPhoneNumberId: string;
       readonly body: string;
+    }
+  /* Wave 4 slice 4 (§7.6) — the outbound connector actions. Both name a
+     connector ROW rather than a URL or a repository string; the GitHub
+     repository is the row's own scope, read by the service. */
+  | {
+      readonly type: 'slack.post_message';
+      readonly integrationId: string;
+      readonly channel: string;
+      readonly text: string;
+    }
+  | {
+      readonly type: 'github.create_issue';
+      readonly integrationId: string;
+      readonly title: string;
+      readonly body: string;
     };
 
 /**
@@ -130,6 +145,15 @@ const EVENTS_EMITTED_BY: Readonly<Record<string, readonly string[]>> = {
      transitions its own actions can provoke. */
   'call.place': ['call.placed', 'call.status_changed'],
   'sms.send': ['sms.sent'],
+  /* Wave 4 slice 4 (§7.6) — the OUTBOUND governance events, deliberately not
+     the inbound connector triggers. A loop through a provider (our Slack post
+     coming back as a Slack event) is invisible to this process and is what the
+     depth counter exists for; listing the inbound names here would refuse
+     "post to Slack when something happens in GitHub" — the most useful rule in
+     the phase — while stopping no real loop. The worker's copy of this table
+     carries the same reasoning. */
+  'slack.post_message': ['integration.message_posted'],
+  'github.create_issue': ['integration.issue_created'],
 };
 
 const orgOf = (actor: AutomationActor): OrgId => actor.subject.orgId;
@@ -162,7 +186,7 @@ export async function listAutomations(
       .orderBy(asc(schema.automations.name), asc(schema.automations.id));
 
     return rows.map((row) => {
-      const parsed = parseStoredCondition(row.condition);
+      const parsed = parseStoredCondition(row.triggerEvent, row.condition);
       return {
         ...row,
         condition: parsed.condition,
@@ -181,7 +205,7 @@ export async function createAutomation(
   const orgId = orgOf(actor);
 
   assertTriggerRegistered(input.triggerEvent);
-  assertConditionUsable(input.condition);
+  assertConditionUsable(input.triggerEvent, input.condition);
   assertNotSelfTriggering(input);
 
   await translatingConstraints(
@@ -229,7 +253,7 @@ export async function updateAutomation(
   const orgId = orgOf(actor);
 
   assertTriggerRegistered(input.triggerEvent);
-  assertConditionUsable(input.condition);
+  assertConditionUsable(input.triggerEvent, input.condition);
   assertNotSelfTriggering(input);
 
   await translatingConstraints(
@@ -456,13 +480,26 @@ function assertTriggerRegistered(triggerEvent: string): void {
 /**
  * Refuses a condition that would be stored only to read back broken.
  *
- * `validate('card', …)` because Wave 1 evaluates conditions against the card
- * row (the engine's `evaluableRowFor`). A condition naming a search-only field
- * would parse, store, and then be refused at every execution with
- * `condition_unusable` — failing here is the honest moment, while the author is
- * still looking at what they built.
+ * A condition naming a field its trigger's field set does not have would parse,
+ * store, and then be refused at every execution with `condition_unusable` —
+ * failing here is the honest moment, while the author is still looking at what
+ * they built.
+ *
+ * ## Which field set, and why it comes from the TRIGGER
+ *
+ * `resourceForTrigger` (ai/phase-10-automation.md §7.8b). Most triggers name a
+ * card and are evaluated against the card row the engine re-reads; the two
+ * connector triggers carry no card at all and are evaluated against the event's
+ * own `provider_event` / `provider_scope`. The two sets are closed and do NOT
+ * overlap, so this is a real refusal and not a formality: `status = X` on a
+ * GitHub rule is a condition nothing could ever satisfy.
+ *
+ * Deriving it from the trigger rather than storing it on the rule is the point.
+ * A flag on the row could be edited independently of the trigger, and then a
+ * rule saved under one reading would evaluate under another — changing what it
+ * means without anybody touching the condition.
  */
-function assertConditionUsable(condition: FilterNode | null): void {
+function assertConditionUsable(triggerEvent: string, condition: FilterNode | null): void {
   if (condition === null) return;
 
   const shape = FilterTree.safeParse(condition);
@@ -470,7 +507,7 @@ function assertConditionUsable(condition: FilterNode | null): void {
     throw errors.validation({ condition: ['That condition is not a valid filter.'] });
   }
 
-  const result = validate('card', shape.data);
+  const result = validate(resourceForTrigger(triggerEvent), shape.data);
   if (result.ok) return;
 
   throw errors.validation(
@@ -506,8 +543,20 @@ function assertNotSelfTriggering(input: {
   );
 }
 
-/** Same argument as `view.service.ts`'s `parseStoredFilter`: a column is not a parser. */
-function parseStoredCondition(stored: unknown): {
+/**
+ * Same argument as `view.service.ts`'s `parseStoredFilter`: a column is not a
+ * parser.
+ *
+ * Takes the trigger for the same reason `assertConditionUsable` does — the row
+ * holds both, and validating a connector rule's condition against the CARD set
+ * would report every one of them as broken in the list. The bug that would
+ * cause is not cosmetic: `conditionBroken` is what the UI shows as a warning
+ * and what an author would act on by deleting a condition that was fine.
+ */
+function parseStoredCondition(
+  triggerEvent: string,
+  stored: unknown,
+): {
   readonly condition: FilterNode | null;
   readonly broken: boolean;
 } {
@@ -516,7 +565,7 @@ function parseStoredCondition(stored: unknown): {
   const parsed = FilterTree.safeParse(stored);
   if (!parsed.success) return { condition: null, broken: true };
 
-  return validate('card', parsed.data).ok
+  return validate(resourceForTrigger(triggerEvent), parsed.data).ok
     ? { condition: parsed.data, broken: false }
     : { condition: null, broken: true };
 }

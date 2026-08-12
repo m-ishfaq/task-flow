@@ -63,7 +63,7 @@ function walk(
     return;
   }
 
-  if (!supportsOperator(field.type, node.operator)) {
+  if (!supportsOperator(field, node.operator)) {
     errors.push({
       path,
       message: `Operator "${node.operator}" cannot be used with ${field.type} field "${field.name}".`,

@@ -2,8 +2,8 @@ import {
   LIST_OPERATORS,
   ME,
   NULLARY_OPERATORS,
-  OPERATORS_BY_TYPE,
   findField,
+  operatorsFor,
   type ComparisonNode,
   type FieldDefinition,
   type FilterNode,
@@ -28,10 +28,13 @@ import {
  * chip that renders fine and cannot be applied.
  */
 export function defaultOperatorFor(field: FieldDefinition): Operator {
-  const supported = OPERATORS_BY_TYPE[field.type];
+  /* `operatorsFor`, not `OPERATORS_BY_TYPE[field.type]`: a field may narrow or
+     widen its type's list (the connector set does), and reading the type table
+     directly would default to an operator the validator then refuses. */
+  const supported = operatorsFor(field);
   const first = supported[0];
   if (first === undefined) {
-    throw new Error(`Field type "${field.type}" supports no operators.`);
+    throw new Error(`Field "${field.name}" supports no operators.`);
   }
   return first;
 }

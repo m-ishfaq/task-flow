@@ -103,6 +103,47 @@ export function buildAutomationActionSchema(telephonyActionsEnabled: boolean) {
        un-nameable for `tsc --declaration` (the `UuidSchema` precedent).
        `record` is deliberately absent: an unattended rule must never be able
        to start recording a person. */
+    /* Wave 4 slice 4 (§7.6) — the outbound connector actions. Unconditional,
+       unlike the telephony pair below: they cost nothing and reach only a
+       provider the org authorized through its own OAuth consent, so there is no
+       deployment flag to hide them behind. Whether one can RUN is decided at
+       execution by `integration:manage` and by whether the named connector row
+       still holds a credential.
+
+       `integrationId` is a uuid because it names one of the org's own rows —
+       the `call_webhook` shape. Neither variant carries a URL or a repository:
+       the repo is the connector's own `provider_scope`, read by the service, so
+       a rule cannot reach a repository the org never connected. */
+    z
+      .object({
+        type: z.literal('slack.post_message'),
+        integrationId: z.string().uuid(),
+        /* Free text because a workspace has many channels and Slack accepts
+           both `#general` and a channel id (`C0123…`). It is a VALUE in a JSON
+           body, never part of a URL, so the bound is about cost rather than
+           injection — Slack's own limit is far below this. */
+        channel: z.string().trim().min(1).max(120),
+        /* Plain TEXT, the `chat.post_message` rule: the rule stores what to
+           say, not a document. Slack's own hard limit is 40,000 characters and
+           it truncates above ~4,000; 2,000 matches the other text actions and
+           is more than any notification needs. */
+        text: z.string().trim().min(1).max(2_000),
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal('github.create_issue'),
+        integrationId: z.string().uuid(),
+        /* GitHub's own title limit is 256; a longer one is silently truncated
+           by the API, which would make the rule quietly say something other
+           than what its author wrote. */
+        title: z.string().trim().min(1).max(256),
+        /* Markdown, as GitHub renders it — and it never reaches a TipTap
+           validator or this product's own renderer, so the rich-text rule does
+           not apply. It is sent as a JSON value to one fixed endpoint. */
+        body: z.string().trim().max(10_000),
+      })
+      .strict(),
     ...(telephonyActionsEnabled
       ? [
           z

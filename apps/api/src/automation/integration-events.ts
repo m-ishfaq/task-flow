@@ -133,3 +133,49 @@ export const integrationGithubEvent = defineEvent(
   'integration.github_event',
   connectorTriggerPayload,
 );
+
+/* -------------------------------------------------------------------------- *
+ * OUTBOUND effects (slice 4, §7.6) — what this deployment did to a provider,
+ * as opposed to what a provider told us.
+ *
+ * These exist for guardrail 11, and the reason is sharper here than for a card
+ * move: an outbound action spends the ORG'S OWN IDENTITY on somebody else's
+ * platform. "A message appeared in #general signed by our workspace bot" is a
+ * thing an access review has to be able to trace back to a rule and a rule
+ * owner, and the provider's side of it is not ours to query.
+ *
+ * They carry no message body and no issue body. The audit log records that the
+ * org posted, where, and under which rule — not what was said, which is on the
+ * provider and is already recoverable from the rule's own stored action text.
+ * A body copied here would put user text into a hash-chained log that cannot be
+ * edited, for a fact the log does not need.
+ * -------------------------------------------------------------------------- */
+
+export const integrationMessagePosted = defineEvent(
+  'integration.message_posted',
+  z
+    .object({
+      integrationId: z.string(),
+      provider: z.enum(['slack', 'github']),
+      providerScope: z.string(),
+      /** The channel as the rule named it — `#general` or a channel id. */
+      channel: z.string(),
+      /** The provider's own id for what it created, for correlation. */
+      providerMessageId: z.string().nullable(),
+    })
+    .strict(),
+);
+
+export const integrationIssueCreated = defineEvent(
+  'integration.issue_created',
+  z
+    .object({
+      integrationId: z.string(),
+      provider: z.enum(['slack', 'github']),
+      /** The repository — `owner/name`, the row's own scope, never a rule input. */
+      providerScope: z.string(),
+      /** GitHub's issue number, so the audit row points at the actual issue. */
+      issueNumber: z.number().nullable(),
+    })
+    .strict(),
+);

@@ -16,8 +16,8 @@ flag, the automation sub-budget (migration 0055), the worker executor branches, 
 rule-builder + spend-panel UI. See the "Wave 4 — the cost-bearing telephony actions (§5.5)"
 header below.
 
-**Wave 4 still open: the connectors (Slack/GitHub) and the CSV/JSON importers/exporters
-(§7).** Slice 1 SHIPPED 2026-08-12 (commit `66349c8`) — migration 0056 + the two
+**Wave 4 COMPLETE 2026-08-12: the connectors (Slack/GitHub) and the CSV/JSON
+importers/exporters (§7).** Slice 1 SHIPPED 2026-08-12 (commit `66349c8`) — migration 0056 + the two
 signing primitives + the `taskflow_integration_auth` role + the grants suite. **Slice 2
 SHIPPED 2026-08-12** — the OAuth connect/disconnect flow for Slack and GitHub
 (`integration.service.ts` + the 7-route router, `begin`/`selectRepo`/`disconnect` step-up
@@ -29,8 +29,14 @@ back; GitHub shows the repo picker + one-time verify secret). **Slice 3 SHIPPED
 2026-08-12** — the inbound routes (`/integrations/slack`, `/integrations/github`, see the
 §7 header below). **Slice 5 SHIPPED 2026-08-12** — import/export (`work.cards.export`
 CSV/JSON + `work.cards.import` with the dry-run, per-row line-numbered errors, and the
-board-toolbar Import/Export dialog — see the §7 header below). Slice 4 (the outbound
-Slack/GitHub actions) is the one remaining slice. Waves 1–2 are the engine and the
+board-toolbar Import/Export dialog — see the §7 header below). **§7.8b SHIPPED 2026-08-12** —
+connector-event CONDITIONS, built FIRST inside slice 4 exactly as §7.9's ordering note
+demands: the `connector` field set, `resourceForTrigger`, `evaluableRowFor`'s payload branch,
+and save-time validation, so a rule on a GitHub event can finally be narrowed to one event
+type and one repository instead of firing on every `workflow_job`. **Slice 4 SHIPPED
+2026-08-12** — the outbound `slack.post_message` / `github.create_issue` actions (§7.6 below:
+the action service, the executor branches, the five-place change, and the connector picker).
+**Wave 4 is complete, and with it the phase's slice list.** Waves 1–2 are the engine and the
 webhook delivery path; the wave list below says exactly what shipped in each.
 
 **Two recommendations were overturned in that review, and both were overturned correctly:**
@@ -811,8 +817,10 @@ known-answer), and `integration-grants.test.ts` (7/7, real roles). **Slice 2 SHI
 inbound ingestion (the two routes below, with migration 0058's GitHub delivery
 dedupe). **Slice 5 SHIPPED 2026-08-12** — import/export (§7.7, below: the
 project-scoped CSV/JSON export, the list-targeted import through the real create
-path with the dry-run, and the web surface). Slice 4 (the outbound actions)
-remains.
+path with the dry-run, and the web surface). **§7.8b SHIPPED 2026-08-12** —
+connector-event conditions, built first inside slice 4 per §7.9's ordering note.
+**Slice 4 SHIPPED 2026-08-12** — the outbound actions (§7.6). **All five slices
+are done.**
 Decisions 1–8 below are PROPOSED as of 2026-08-12; review resolves them before building,
 the same route §6 took.
 
@@ -1088,6 +1096,53 @@ event's actions are the non-card ones (chat post, webhook call, the D6 actions).
 
 ### 7.6 Outbound — two actions through the service layer
 
+**Status: BUILT 2026-08-12.** `integration-action.service.ts` (`postSlackMessage`,
+`createGithubIssue`), the export-map entry `"./automation/integration-actions"`, executor
+branches + `integrationsFor`, the five-place change on both sides, the `integration` argument
+kind with a provider-filtered picker, and two new registry events
+(`integration.message_posted`, `integration.issue_created`). Tests in
+`integration.service.test.ts`, `executor.test.ts`, `action-schema.test.ts` and
+`vocabulary.test.ts`.
+
+**Four decisions that departed from this section as written, all deliberately:**
+
+- **`github.create_issue` takes NO repository.** The parenthetical below says "repo
+  full_name"; the repo is the connector row's own `provider_scope`, read server-side. A
+  repository named by the rule would be a stored string interpolated into a URL path, and the
+  org's token usually reaches far more repositories than the one it connected — so the action
+  could open issues anywhere. Naming the connector row instead is the `call_webhook` rule
+  ("an org-registered entry, never a URL") applied to a second provider. `.strict()` refuses a
+  `repository` key, and a test pins that.
+- **`repoPath` re-checks the scope's shape anyway**, because it is interpolated into a path.
+  `selectRepo` validated it against GitHub's own list three slices ago; that is not the code
+  building the URL. `owner/../../user/repos` would reach a different endpoint on the same host
+  with the org's token attached. `encodeURIComponent` is not the fix — it would encode the
+  legitimate separating slash and 404 every call.
+- **Not flag-gated, unlike the telephony pair.** These cost nothing and reach only a provider
+  the org authorized through its own OAuth consent, so there is no deployment flag and
+  `offeredActions` never hides them. The gate is `integration:manage` plus the existence of a
+  connector row, both org-controlled.
+- **`EVENTS_EMITTED_BY` lists the OUTBOUND events, not the inbound triggers.** A loop through
+  a provider — our Slack post returning as `integration.slack_event` — is invisible to this
+  process and is what the depth counter is for. Listing the inbound names would refuse "post
+  to Slack when something happens in GitHub", the most useful rule in the phase, while
+  stopping no real loop.
+
+**The trap worth knowing: Slack answers HTTP 200 with `{ ok: false }`.** A channel the bot is
+not in, an archived channel, a revoked token — all 200. A handler checking only `response.ok`
+records a SUCCEEDED action while nothing was posted, which is the worst outcome available: a
+rule that reports working and does nothing. Slack's own error code is carried through
+(`not_in_channel` vs `channel_not_found` vs `token_revoked` are three different fixes), the
+`TwilioApiError` lesson from Phase 7.
+
+**The outbound event is written AFTER the provider confirms, never before.** Every other
+action's event goes to the outbox in the mutation's own transaction; this effect is on
+somebody else's platform and cannot be. An event claiming a post that Slack refused would be a
+false entry in a hash-chained log, which is worse than a missing one. Neither event carries the
+message or issue body: the log records that the org posted and where, not what was said.
+
+The original section, kept for its reasoning:
+
 `slack.post_message` (a `channel` name) and `github.create_issue` (repo full_name, title,
 body) join the closed action union, the full five-place change: schema variants in
 `buildAutomationActionSchema`, union members + `EVENTS_EMITTED_BY` on both sides,
@@ -1133,7 +1188,37 @@ executor branches, and an `"./integrations/…"` export-map entry for the worker
 
 ### 7.8b Connector-event CONDITIONS — the gap slice 3 shipped with
 
-**Status: NOT BUILT. Found 2026-08-12 by driving a real GitHub webhook end to end, after
+**Status: BUILT 2026-08-12, ahead of the rest of slice 4, exactly as the ordering note below
+demands.** `packages/filter`'s `connector` field set (`provider_event`, `provider_scope`, both
+`sql: null`), `resourceForTrigger` as the one place a trigger is mapped to a vocabulary,
+`evaluableRowFor`'s payload branch, save-time validation on both `createAutomation` and
+`updateAutomation`, and the builder's per-trigger field set. Tests in `filter.test.ts`,
+`engine.test.ts` and `automation.service.test.ts`.
+
+Four things worth carrying forward from building it:
+
+- **`FieldDefinition.sql` became nullable, and that immediately found two callers.**
+  `postgres-provider.ts` builds `to_tsvector(...)` and `ORDER BY` from `field.sql` directly;
+  both now refuse a null rather than interpolating one. Neither could ever receive a connector
+  field — but a `null` reaching either would have produced a query that RUNS and matches
+  nothing, which is the failure mode this repo keeps finding. Widening a type is how the
+  compiler enumerates the code that assumed otherwise.
+- **The operator table is keyed by TYPE, and `in`/`not_in` on the connector fields is a
+  per-FIELD override.** Adding them to `text` would have silently widened `title`,
+  `description` and search's `text` too. `operatorsFor(field)` is now the only correct way to
+  ask, and `OPERATORS_BY_TYPE[field.type]` is the bug — it ignores the override, so the
+  builder's menu offers an operator `validate()` refuses.
+- **A list operator on a TEXT field had no value editor**, because until now no text field had
+  one. The scalar `<Input>` emitted a string where the AST requires an array, which
+  `FilterTree` rejects — a chip that renders fine and cannot be applied, the same shape
+  `checkValue`'s own comment documents for `@me`.
+- **Changing a rule's trigger across the card/connector boundary CLEARS its condition.** The
+  sets do not overlap, so a condition carried across is invalid in every chip at once and
+  cannot be repaired from a builder that only offers the new set's fields.
+
+The original finding, kept because the reasoning is what justifies the shape:
+
+**Found 2026-08-12 by driving a real GitHub webhook end to end, after
 slice 3 was already working.** Nothing in §7.5 is wrong; what it does not say is that a rule
 keyed on a connector event **cannot carry a condition at all**, which makes the trigger far
 less useful than the section implies. Slice 4 must close this, or the outbound actions it

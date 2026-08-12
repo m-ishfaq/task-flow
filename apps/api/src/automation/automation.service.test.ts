@@ -174,6 +174,62 @@ describe('creating a rule — what is refused at save time', () => {
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
   });
 
+  /* §7.8b — the field set a condition is read against comes from the TRIGGER,
+     and the card and connector sets do not overlap. Both directions are tested
+     because getting this wrong in either one is silent: a connector rule
+     validated as `card` is refused at save with a confusing message, and a card
+     rule validated as `connector` would be accepted and then refused forever at
+     execution. */
+  it('refuses a CARD field on a connector trigger', async () => {
+    const { owner } = await scaffold('conncard');
+
+    await expect(
+      createAutomation(
+        owner,
+        ruleBody({
+          triggerEvent: 'integration.github_event',
+          condition: compare('priority', 'eq', 'high'),
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+  });
+
+  it('refuses a CONNECTOR field on a card trigger', async () => {
+    const { owner } = await scaffold('cardconn');
+
+    await expect(
+      createAutomation(
+        owner,
+        ruleBody({
+          triggerEvent: 'card.status_changed',
+          condition: compare('provider_event', 'eq', 'push'),
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+  });
+
+  it('accepts a connector condition and reads it back unbroken', async () => {
+    const { owner } = await scaffold('connok');
+
+    await createAutomation(
+      owner,
+      ruleBody({
+        triggerEvent: 'integration.github_event',
+        condition: compare('provider_event', 'in', ['push', 'pull_request']),
+      }),
+    );
+
+    /* `conditionBroken` is the assertion that matters. The list projection
+       re-validates every stored condition, and doing that against the card set
+       would report a perfectly good connector rule as broken — which the UI
+       shows as a warning and an author would "fix" by deleting it. */
+    const rule = (await listAutomations(owner)).find(
+      (entry) => entry.triggerEvent === 'integration.github_event',
+    );
+    expect(rule?.conditionBroken).toBe(false);
+    expect(JSON.stringify(rule?.condition)).toContain('provider_event');
+  });
+
   it('refuses a rule whose own action re-triggers it', async () => {
     const { owner } = await scaffold('selftrigger');
 

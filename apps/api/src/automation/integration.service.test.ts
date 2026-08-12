@@ -17,6 +17,7 @@ import {
   selectRepo,
   type IntegrationDeps,
 } from './integration.service.js';
+import { createGithubIssue, postSlackMessage } from './integration-action.service.js';
 
 /**
  * Connector lifecycle (ai/phase-10-automation.md §7, Wave 4 slice 2).
@@ -976,5 +977,176 @@ describe('the credential is row-bound — a transplant fails to decrypt', () => 
       integrationId: pending.integrationId,
     });
     expect(repos.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The OUTBOUND actions (§7.6, slice 4) — the org acting as itself on a
+ * provider.
+ *
+ * The acceptance bar is Phase 7's spend-gate bar, for the same reason: a
+ * refusal returned AFTER the message was posted reads correctly in a diff and
+ * is visible in somebody's Slack channel. So every refusal here asserts that
+ * the fake provider recorded no call, not merely that an error was thrown.
+ *
+ * The other assertion worth its own test is the Slack `ok:false` case. Slack
+ * answers HTTP 200 for every application-level failure — a channel the bot is
+ * not in, a revoked token — so a handler that checked only `response.ok` would
+ * record a SUCCEEDED action while nothing was posted. That is the worst
+ * available outcome: a rule that reports working and does nothing.
+ */
+describe('the outbound connector actions', () => {
+  /** A fake with the connect endpoints AND the two outbound ones. */
+  function fakeWithOutbound(options: {
+    readonly slackOk?: boolean;
+    readonly slackError?: string;
+    readonly githubStatus?: number;
+  }): { fetch: typeof fetch; calls: string[] } {
+    const base = fakeProvider();
+    const calls = base.calls;
+
+    const fn = ((input: string | URL | Request, init?: RequestInit) => {
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+      if (url === 'https://slack.com/api/chat.postMessage') {
+        calls.push(url);
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(
+              options.slackOk === false
+                ? { ok: false, error: options.slackError ?? 'not_in_channel' }
+                : { ok: true, ts: '1700000000.000100' },
+            ),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+      }
+
+      if (url.startsWith('https://api.github.com/repos/')) {
+        calls.push(url);
+        const status = options.githubStatus ?? 201;
+        return Promise.resolve(
+          new Response(JSON.stringify(status === 201 ? { number: 42 } : { message: 'nope' }), {
+            status,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      }
+
+      return base.fetch(input, init);
+    }) as typeof fetch;
+
+    return { fetch: fn, calls };
+  }
+
+  /** Connects Slack and hands back the row id. */
+  async function connectedSlack(
+    actor: AutomationActor,
+    deps: IntegrationDeps,
+  ): Promise<string> {
+    const { state } = await beginState(actor, deps, 'slack');
+    const result = await completeIntegration(
+      deps,
+      { provider: 'slack', code: 'code-out', state },
+      requestId,
+    );
+    if (result.status !== 'connected') throw new Error('slack connect did not complete');
+    return result.integrationId;
+  }
+
+  it('posts, and records the effect in the org outbox', async () => {
+    const { owner } = await scaffold('out-slack-ok');
+    const fake = fakeWithOutbound({});
+    const deps = depsFor(fake.fetch);
+    const integrationId = await connectedSlack(owner, deps);
+
+    const result = await postSlackMessage(owner, deps, {
+      integrationId,
+      channel: '#general',
+      text: 'shipped',
+    });
+
+    expect(result.providerMessageId).toBe('1700000000.000100');
+    expect(fake.calls).toContain('https://slack.com/api/chat.postMessage');
+
+    /* Guardrail 11 — and note WHICH event: the outbound governance fact, not
+       a copy of the message. The body is deliberately absent from the payload
+       (see integration-events.ts): the audit log records that the org posted
+       and where, never what was said. */
+    const events = await integrationEvents(owner.subject.orgId);
+    const posted = events.find((event) => event.name === 'integration.message_posted');
+    expect(posted?.payload).toMatchObject({
+      provider: 'slack',
+      providerScope: 'T0001',
+      channel: '#general',
+      providerMessageId: '1700000000.000100',
+    });
+    expect(JSON.stringify(posted?.payload)).not.toContain('shipped');
+  });
+
+  it('treats Slack\'s ok:false at HTTP 200 as a FAILURE, and names its code', async () => {
+    const { owner } = await scaffold('out-slack-notok');
+    const fake = fakeWithOutbound({ slackOk: false, slackError: 'channel_not_found' });
+    const deps = depsFor(fake.fetch);
+    const integrationId = await connectedSlack(owner, deps);
+
+    await expect(
+      postSlackMessage(owner, deps, { integrationId, channel: '#nope', text: 'x' }),
+    ).rejects.toThrow(/channel_not_found/);
+
+    /* No event, because nothing was posted. An event written before the
+       provider confirmed would be a false entry in a hash-chained log. */
+    const events = await integrationEvents(owner.subject.orgId);
+    expect(events.some((event) => event.name === 'integration.message_posted')).toBe(false);
+  });
+
+  it('refuses a member without integration:manage, and never reaches the provider', async () => {
+    const { owner, member } = await scaffold('out-slack-forbidden');
+    const fake = fakeWithOutbound({});
+    const deps = depsFor(fake.fetch);
+    const integrationId = await connectedSlack(owner, deps);
+
+    const callsBefore = fake.calls.length;
+    await expect(
+      postSlackMessage(member, deps, { integrationId, channel: '#general', text: 'x' }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+
+    /* THE assertion: authorization runs before the credential is even
+       decrypted, so a member cannot spend the org's Slack identity. */
+    expect(fake.calls.slice(callsBefore)).toHaveLength(0);
+  });
+
+  it('refuses a GitHub action pointed at a Slack connector', async () => {
+    const { owner } = await scaffold('out-cross-provider');
+    const fake = fakeWithOutbound({});
+    const deps = depsFor(fake.fetch);
+    const integrationId = await connectedSlack(owner, deps);
+
+    const callsBefore = fake.calls.length;
+    await expect(
+      createGithubIssue(owner, deps, { integrationId, title: 'x', body: '' }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    expect(fake.calls.slice(callsBefore)).toHaveLength(0);
+  });
+
+  it('refuses after disconnect, because the credential is gone', async () => {
+    const { owner } = await scaffold('out-disconnected');
+    const fake = fakeWithOutbound({});
+    const deps = depsFor(fake.fetch);
+    const integrationId = await connectedSlack(owner, deps);
+
+    await disconnectIntegration(owner, { integrationId });
+
+    /* 0057 wipes the credential columns, so the row survives as the audit
+       trail and is unusable. A disconnected connector must be genuinely dead,
+       not merely hidden from a list. */
+    const callsBefore = fake.calls.length;
+    await expect(
+      postSlackMessage(owner, deps, { integrationId, channel: '#general', text: 'x' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+    expect(fake.calls.slice(callsBefore)).toHaveLength(0);
   });
 });

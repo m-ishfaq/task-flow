@@ -61,3 +61,66 @@ describe('buildAutomationActionSchema — the product-surface flag', () => {
     expect(bad.success).toBe(false);
   });
 });
+
+/**
+ * The outbound connector actions (§7.6, slice 4) at the WRITE boundary.
+ *
+ * What the schema decides is what may reach the database at all, so the
+ * assertions here are about shape refusals — the execution-time refusals
+ * (`integration:manage`, a disconnected connector) belong to
+ * `integration.service.test.ts`.
+ */
+describe('the connector action schema (Wave 4 §7.6)', () => {
+  const SLACK = {
+    type: 'slack.post_message' as const,
+    integrationId: '018f4d1e-7c3a-7b2e-8f1a-0000000000f1',
+    channel: '#general',
+    text: 'shipped',
+  };
+  const GITHUB = {
+    type: 'github.create_issue' as const,
+    integrationId: '018f4d1e-7c3a-7b2e-8f1a-0000000000f2',
+    title: 'Something broke',
+    body: '',
+  };
+
+  it('admits both regardless of the telephony flag', () => {
+    /* Not flag-gated, unlike the telephony pair: these cost nothing and reach
+       only a provider the org authorized through its own consent screen. */
+    for (const enabled of [false, true]) {
+      const schema = buildAutomationActionSchema(enabled);
+      expect(schema.safeParse(SLACK).success).toBe(true);
+      expect(schema.safeParse(GITHUB).success).toBe(true);
+    }
+  });
+
+  it('refuses a repository named by the rule', () => {
+    /* `.strict()` is the control. The repo is the connector row's own scope —
+       an action that could carry one would let a single connector open issues
+       on every repository its token reaches. */
+    const schema = buildAutomationActionSchema(true);
+    const withRepo = { ...GITHUB, repository: 'acme/other' };
+
+    expect(schema.safeParse(withRepo).success).toBe(false);
+  });
+
+  it('refuses a connector named by anything but a row id', () => {
+    const schema = buildAutomationActionSchema(true);
+
+    /* A workspace name, a team id, a URL — none of them are one of the org's
+       own rows, which is what makes "a rule cannot reach a connector the org
+       did not authorize" true by construction. */
+    expect(schema.safeParse({ ...SLACK, integrationId: 'T0001' }).success).toBe(false);
+    expect(schema.safeParse({ ...GITHUB, integrationId: 'acme/todo' }).success).toBe(false);
+  });
+
+  it('allows an empty GitHub body but never an empty title', () => {
+    /* A title-only issue is ordinary. An empty title is one GitHub would
+       reject, and the rule author would only find out at execution. */
+    const schema = buildAutomationActionSchema(true);
+
+    expect(schema.safeParse({ ...GITHUB, body: '' }).success).toBe(true);
+    expect(schema.safeParse({ ...GITHUB, title: '' }).success).toBe(false);
+    expect(schema.safeParse({ ...SLACK, text: '' }).success).toBe(false);
+  });
+});

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
-import type { FilterNode } from '@taskflow/filter';
+import { resourceForTrigger, type FilterNode } from '@taskflow/filter';
 import type { ProjectId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { api } from '../../lib/trpc.js';
@@ -53,6 +53,7 @@ function triggerLabel(event: string): string {
 function actionsComplete(actions: readonly ActionDraft[]): boolean {
   return actions.every((action) =>
     (ARGUMENTS[action.value.type] ?? []).every((spec) => {
+      if (spec.optional === true) return true;
       const value = (action.value as unknown as Record<string, string>)[spec.field];
       return typeof value === 'string' && value.trim() !== '';
     }),
@@ -624,7 +625,9 @@ const REASON_TEXT: Readonly<Record<string, string>> = {
   budget_exhausted: 'this organization hit its hourly automation limit',
   unauthorized: 'the rule owner no longer has permission to do this',
   condition_unusable: 'the saved condition no longer parses — edit the rule to fix it',
-  trigger_not_evaluable: 'this trigger has no card for the condition to check',
+  /* Two ways to reach this now (§7.8b): a card trigger with no card, and a
+     connector event missing the wrapper fields a connector condition reads. */
+  trigger_not_evaluable: 'this trigger carried nothing for the condition to check',
 };
 
 function explainReason(reason: string): string {
@@ -677,6 +680,11 @@ function RuleEditor({
     (initial?.condition as FilterNode | null | undefined) ?? null,
   );
   const [actions, setActions] = useState<ActionDraft[]>(() => draftsFrom(initial?.actions));
+
+  /* Which vocabulary the condition is written in — derived, never stored. The
+     server derives the same answer from the same function when it validates the
+     save, so the builder cannot offer a field the save will refuse. */
+  const conditionResource = resourceForTrigger(triggerEvent);
   /* Wave 4 (§5.5) — whether the cost-bearing telephony actions may be offered
      at all. The SERVER answers (the same env flag the write boundary is built
      from), never a client-side copy of the deployment's env; false until the
@@ -749,7 +757,17 @@ function RuleEditor({
           id="automation-trigger"
           value={triggerEvent}
           onChange={(event) => {
-            setTriggerEvent(event.target.value);
+            const next = event.target.value;
+            /* Changing the trigger can change WHICH field set the condition is
+               read against (§7.8b) — card fields for most triggers, the two
+               connector fields for a Slack/GitHub event. The sets do not
+               overlap, so a condition carried across that boundary is invalid
+               in every chip at once and cannot be repaired from the builder,
+               which only offers the new set's fields. Clearing it is the only
+               recoverable outcome; keeping it would be a form that cannot be
+               submitted and does not say why. */
+            if (resourceForTrigger(next) !== resourceForTrigger(triggerEvent)) setCondition(null);
+            setTriggerEvent(next);
           }}
           className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
         >
@@ -764,11 +782,25 @@ function RuleEditor({
       <Field label="If (optional)" htmlFor="automation-condition">
         {/* The board's builder, unchanged — same component, same AST, same
             validator. `projectId` is null because a rule is org-wide and not
-            scoped to one project's vocabulary. */}
+            scoped to one project's vocabulary.
+
+            `resource` is derived from the trigger, never chosen here: a Slack
+            or GitHub rule filters on `provider_event` / `provider_scope`, and
+            everything else filters on the card. See §7.8b. */}
         <div id="automation-condition" className="flex items-center gap-2">
-          <FilterBuilder orgId={orgId} projectId={null} value={condition} onChange={setCondition} />
+          <FilterBuilder
+            orgId={orgId}
+            projectId={null}
+            resource={conditionResource}
+            value={condition}
+            onChange={setCondition}
+          />
           {condition === null && (
-            <span className="text-[11px] text-ink-faint">Runs every time the trigger fires.</span>
+            <span className="text-[11px] text-ink-faint">
+              {conditionResource === 'connector'
+                ? 'Runs on every event from every connected workspace or repository.'
+                : 'Runs every time the trigger fires.'}
+            </span>
           )}
         </div>
       </Field>
@@ -923,6 +955,9 @@ function ActionRow({
             projectId={projectId}
             kind={spec.kind}
             label={spec.label}
+            /* Only the `integration` kind reads it — to offer the right
+               provider's connectors (§7.6). */
+            actionType={action.value.type}
             value={values[spec.field] ?? ''}
             onChange={(next) => {
               onChange({

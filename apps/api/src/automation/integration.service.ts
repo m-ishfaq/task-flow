@@ -1120,10 +1120,33 @@ async function tokenForRow(
   integrationId: string,
   expectedProvider: ConnectorProvider,
 ): Promise<string> {
+  return (await connectorFor(orgId, deps, integrationId, expectedProvider)).token;
+}
+
+/**
+ * The token AND the row's scope, for slice 4's outbound actions (§7.6).
+ *
+ * `github.create_issue` needs the repository, and the repository is the ROW's
+ * `provider_scope` — not something the rule carries. That is the whole reason
+ * this returns both: an action naming a repo directly would be a stored string
+ * interpolated into a URL path, and the org could then post issues to any repo
+ * its token happens to reach rather than the one it connected. Reading the
+ * scope off the row makes "which repository" a property of the connector, which
+ * is the thing `integration:manage` actually governs.
+ *
+ * `tokenForRow` above is the narrower caller that only wants the credential.
+ */
+export async function connectorFor(
+  orgId: OrgId,
+  deps: Pick<IntegrationDeps, 'keys'>,
+  integrationId: string,
+  expectedProvider: ConnectorProvider,
+): Promise<{ readonly token: string; readonly providerScope: string }> {
   return withOrgScope(orgId, async (tx) => {
     const rows = await tx
       .select({
         provider: schema.integrations.provider,
+        providerScope: schema.integrations.providerScope,
         tokenCiphertext: schema.integrations.tokenCiphertext,
         tokenWrapped: schema.integrations.tokenWrapped,
         tokenMasterId: schema.integrations.tokenMasterId,
@@ -1156,10 +1179,12 @@ async function tokenForRow(
       encryptionContext: { orgId },
     });
 
-    return decryptString(
+    const token = decryptString(
       dataKey.key,
       new Uint8Array(row.tokenCiphertext),
       integrationTokenAad(orgId, integrationId),
     );
+
+    return { token, providerScope: row.providerScope };
   });
 }

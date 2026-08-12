@@ -78,6 +78,31 @@ export type AutomationAction =
       readonly to: string;
       readonly fromPhoneNumberId: string;
       readonly body: string;
+    }
+  /* Wave 4 slice 4 (§7.6) — the outbound connector actions, and the first
+     ones that act as the ORG on a platform this deployment does not run.
+
+     Both name a connector ROW, never a URL and never a repository string — the
+     `call_webhook` rule applied to a second provider. The GitHub repository is
+     the row's own `provider_scope`, so a rule cannot open an issue on a repo
+     the org never connected even though the stored token would usually reach
+     it. Slack's `channel` IS a rule input, because a workspace has many
+     channels and the connector is the workspace.
+
+     Authorization is `integration:manage`, enforced at EXECUTION inside the
+     service (the `enqueueWebhookDelivery` precedent) — a member who cannot
+     manage integrations cannot write a rule that speaks as the org. */
+  | {
+      readonly type: 'slack.post_message';
+      readonly integrationId: string;
+      readonly channel: string;
+      readonly text: string;
+    }
+  | {
+      readonly type: 'github.create_issue';
+      readonly integrationId: string;
+      readonly title: string;
+      readonly body: string;
     };
 
 /** Every action type, for the route's schema and the executor's exhaustiveness check. */
@@ -94,6 +119,8 @@ export const ACTION_TYPES = [
   'call_webhook',
   'call.place',
   'sms.send',
+  'slack.post_message',
+  'github.create_issue',
 ] as const;
 
 export type ActionType = (typeof ACTION_TYPES)[number];

@@ -1,7 +1,7 @@
 import { and, consumeAutomationBudget, eq, schema, withOrgScope } from '@taskflow/db';
 import { unsafeAsId, type OrgId } from '@taskflow/contracts';
 import { newId } from '@taskflow/security';
-import { FilterTree, validate, type FilterNode } from '@taskflow/filter';
+import { FilterTree, resourceForTrigger, validate, type FilterNode } from '@taskflow/filter';
 import type { AutomationAction, AutomationRule, RunOutcome } from './types.js';
 
 /**
@@ -61,7 +61,7 @@ export async function loadRulesFor(
       );
 
     return rows.map((row) => {
-      const condition = parseStoredCondition(row.condition);
+      const condition = parseStoredCondition(row.triggerEvent, row.condition);
       const actions = parseStoredActions(row.actions);
 
       if (condition === UNUSABLE || actions === null) {
@@ -95,7 +95,10 @@ export function isUnusable(rule: AutomationRule | UnusableRule): rule is Unusabl
 
 const UNUSABLE = Symbol('unusable-condition');
 
-function parseStoredCondition(stored: unknown): FilterNode | null | typeof UNUSABLE {
+function parseStoredCondition(
+  triggerEvent: string,
+  stored: unknown,
+): FilterNode | null | typeof UNUSABLE {
   if (stored === null || stored === undefined) return null;
 
   const parsed = FilterTree.safeParse(stored);
@@ -105,8 +108,13 @@ function parseStoredCondition(stored: unknown): FilterNode | null | typeof UNUSA
      `view.service.ts` makes for saved views, verbatim. `FilterTree` validates
      SHAPE and cannot validate MEANING: it accepts a field name that no longer
      exists as readily as one that does, so a structurally perfect tree naming
-     nothing would be called healthy right up until evaluation. */
-  return validate('card', parsed.data).ok ? parsed.data : UNUSABLE;
+     nothing would be called healthy right up until evaluation.
+
+     The field set comes from the TRIGGER (§7.8b), matching what the API
+     validated at save time. Hard-coding `'card'` here would mark every
+     connector rule's condition unusable — refusing, in the worker, exactly the
+     rules the API had just accepted. */
+  return validate(resourceForTrigger(triggerEvent), parsed.data).ok ? parsed.data : UNUSABLE;
 }
 
 /**

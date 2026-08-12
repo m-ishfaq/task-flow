@@ -96,6 +96,17 @@ if (env.AUTOMATION_TELEPHONY_ACTIONS_ENABLED && telephonyDeps === undefined) {
   );
 }
 
+/* One key provider for the whole process. The webhook delivery loop unwraps
+   per-webhook signing keys with it; slice 4's connector actions unwrap the
+   org's data key to decrypt a Slack/GitHub credential. Hoisted rather than
+   constructed twice so there is one place the master key is read — two
+   providers built from the same env would be two things to keep in step for no
+   benefit. */
+const keys = new SoftwareKeyProvider({
+  masterKeys: masterKeysFromBase64({ [env.MASTER_KEY_ID]: env.MASTER_KEY_BASE64 }),
+  currentMasterKeyId: env.MASTER_KEY_ID,
+});
+
 const health = createHealthServer();
 await new Promise<void>((resolveListen) => {
   health.listen(env.WORKER_PORT, () => {
@@ -114,6 +125,12 @@ const engine = startAutomationEngine({
        the action sees; undefined would not even compile. */
     ...(telephonyDeps === undefined ? {} : { telephony: telephonyDeps }),
     telephonyActionsEnabled: env.AUTOMATION_TELEPHONY_ACTIONS_ENABLED,
+    /* Wave 4 slice 4 (§7.6) — unconditional, unlike telephony. These actions
+       cost nothing and reach only a provider the org itself authorized, so
+       there is no deployment flag; whether they work is decided by whether the
+       org has a connector row and whether the rule owner holds
+       `integration:manage`, both of which the org controls. */
+    integrations: { keys },
   }),
   intervalMs: env.WORKER_POLL_INTERVAL_MS,
 });
@@ -122,10 +139,7 @@ const engine = startAutomationEngine({
    API validates, used here to unwrap per-webhook data keys at delivery. */
 const delivery = startWebhookDeliveryLoop({
   logger,
-  keys: new SoftwareKeyProvider({
-    masterKeys: masterKeysFromBase64({ [env.MASTER_KEY_ID]: env.MASTER_KEY_BASE64 }),
-    currentMasterKeyId: env.MASTER_KEY_ID,
-  }),
+  keys,
   intervalMs: env.WORKER_POLL_INTERVAL_MS,
 });
 

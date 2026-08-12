@@ -123,6 +123,36 @@ export function ValueEditor(props: ValueEditorProps) {
     );
   }
 
+  /* Text with a LIST operator, which the connector field set introduced
+     (`provider_event in ["push", "pull_request"]` — ai/phase-10-automation.md
+     §7.8b). Without this branch the scalar input below would emit a STRING
+     where the AST requires an array, and `FilterTree` rejects the mismatch —
+     a chip that renders fine and cannot be applied, the exact failure
+     `checkValue`'s own comment describes for `@me`.
+
+     Comma-separated in one box rather than a chip-adder: the values are typed,
+     not chosen, so there is no option list to pick from, and a single field
+     keeps "push, pull_request" a thing somebody can paste. */
+  if (isList) {
+    const entries = Array.isArray(props.value) ? props.value.map(String) : [];
+    return (
+      <Input
+        aria-label="Value"
+        placeholder="one, or, several"
+        className="h-7 w-56 text-xs"
+        value={entries.join(', ')}
+        onChange={(event) => {
+          props.onChange(
+            event.target.value
+              .split(',')
+              .map((part) => part.trim())
+              .filter((part) => part !== ''),
+          );
+        }}
+      />
+    );
+  }
+
   return (
     <Input
       aria-label="Value"
