@@ -363,6 +363,27 @@ export function flattenToText(node: RichTextNode): string {
 }
 
 /**
+ * The one document shape a stored TEXT field may become: a single plain-text
+ * paragraph.
+ *
+ * The rule-body rule (Phase 10, `ai/phase-10-automation.md` §5.2): a rule
+ * stores TEXT, and the only place that text becomes a document is here — a
+ * user-supplied document can never reach a validator from a stored column.
+ * The card importer uses the same shape for the same reason: a CSV cell is
+ * text, and this is the one function that turns it into the TipTap shape
+ * `createCard` stores, so there is exactly one place that does it. (The
+ * worker's automation executor carries its own copy of this literal because
+ * it runs in a different package and cannot import this module; the shape is
+ * pinned by tests on both sides.)
+ */
+export function plainParagraph(text: string): RichTextNode {
+  return {
+    type: 'doc',
+    content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+  };
+}
+
+/**
  * Every user id `@mentioned` in a document, deduplicated (Phase 9,
  * ai/phase-9-notifications.md §4).
  *

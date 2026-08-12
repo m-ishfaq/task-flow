@@ -18,13 +18,13 @@ import { integrationTokenAad } from './integration.service.js';
  * ## Plain Fastify routes, not tRPC procedures
  *
  * The caller is Slack or GitHub — a third party with no session, exactly like
- * the telephony carrier. The tRPC adapter replaces the JSON parser globally
- * with a pass-through, which is what makes these handlers work at all: the
- * signature covers the EXACT bytes the provider sent, so `request.body`
- * arrives here as the raw string and is verified before anything parses it.
- * A handler that re-serialized JSON before verifying would fail every request
- * — and that failure mode is the shape of bug that gets "fixed" by skipping
- * verification for a path.
+ * the telephony carrier. These are raw routes on the root instance, and this
+ * file registers the scoped raw-body parser they depend on (see
+ * `registerIntegrationWebhooks`): the signature covers the EXACT bytes the
+ * provider sent, so `request.body` has to arrive as an unparsed string and
+ * be verified before anything parses it. A handler that re-serialized JSON
+ * before verifying would fail every request — and that failure mode is the
+ * shape of bug that gets "fixed" by skipping verification for a path.
  *
  * ## Two providers, two resolution orders — the difference IS the control
  *
@@ -76,6 +76,58 @@ export function registerIntegrationWebhooks(
   app: FastifyInstance,
   deps: IntegrationWebhookDeps,
 ): void {
+  /* ------------------------------------------------------------------ *
+   * The raw-body parser, and why it is SCOPED.
+   *
+   * Both handlers verify an HMAC over the EXACT bytes the provider sent,
+   * so `request.body` has to arrive as an unparsed string. Fastify's
+   * built-in `application/json` parser hands back an OBJECT, and `rawBody`
+   * refuses anything that is not a string — so without this, every Slack
+   * and GitHub delivery answered 400 before verification was ever reached.
+   *
+   * The tempting reading (and what `telephony/webhook.routes.ts`'s comment
+   * asserts) is that the tRPC adapter already replaced the JSON parser
+   * globally. It does not: `app.register` ENCAPSULATES, and the tRPC plugin
+   * is registered after these routes, so its parser never applies here.
+   * Telephony never noticed because Twilio posts form-encoded, and its own
+   * parser covers that content type.
+   *
+   * Registered inside `app.register`, with the existing parser REMOVED
+   * first, for one combined reason: a child scope inherits its parent's
+   * parser map (buildContentTypeParser copies it), and `add` throws
+   * FST_ERR_CTP_ALREADY_PRESENT only when the parser it would replace is a
+   * CUSTOM one — the built-in default json parser passes, a host that
+   * installed its own does not. `removeContentTypeParser` first is the
+   * documented override pattern and a no-op when the inherited parser is
+   * the default (remove returns false, never throws), so the same code
+   * boots on a bare instance AND on a host that replaced the root parser.
+   * And because the parser lives in this scope, every other root-level
+   * route keeps whatever the root installed.
+   *
+   * The test must NOT install its own parser to "help": a harness that
+   * supplies the raw-body parser masks a missing one, and the suite would
+   * pass while every real delivery failed — that is exactly what happened
+   * to the version that trusted the tRPC adapter's (encapsulated) parser.
+   * The routes are asserted on a bare Fastify instance with the default
+   * parser, so this block is the only thing that can make `request.body`
+   * a string.
+   * ------------------------------------------------------------------ */
+  void app.register((scope, _opts, ready) => {
+    scope.removeContentTypeParser('application/json');
+    scope.addContentTypeParser(
+      'application/json',
+      { parseAs: 'string' },
+      (_request, body, done) => {
+        done(null, body);
+      },
+    );
+
+    registerRoutes(scope, deps);
+    ready();
+  });
+}
+
+function registerRoutes(app: FastifyInstance, deps: IntegrationWebhookDeps): void {
   /**
    * A Slack workspace event (or the app-configuration handshake).
    *
@@ -354,10 +406,10 @@ async function loadGithubVerify(
 /**
  * The raw request body as the EXACT bytes the provider signed.
  *
- * The tRPC adapter's global JSON pass-through means `request.body` is the
- * raw string for `application/json`. Anything else (a body a different
- * parser already turned into an object) is refused: re-serializing would
- * not reproduce the signed bytes.
+ * The scoped parser registered in `registerIntegrationWebhooks` means
+ * `request.body` is the raw string for `application/json` on these routes.
+ * Anything else (a body a different parser already turned into an object)
+ * is refused: re-serializing would not reproduce the signed bytes.
  */
 function rawBody(request: FastifyRequest): string | undefined {
   return typeof request.body === 'string' ? request.body : undefined;

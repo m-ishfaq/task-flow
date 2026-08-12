@@ -27,9 +27,11 @@ genuinely dead, not merely hidden), the Integrations tab on `/automations` with 
 one-time webhook URL reveal, and the `/integrations/callback` page (Slack lands straight
 back; GitHub shows the repo picker + one-time verify secret). **Slice 3 SHIPPED
 2026-08-12** — the inbound routes (`/integrations/slack`, `/integrations/github`, see the
-§7 header below). Slices 4–5 remain: the outbound actions and import/export. Waves 1–2
-are the engine and the webhook delivery path; the wave list below says exactly what
-shipped in each.
+§7 header below). **Slice 5 SHIPPED 2026-08-12** — import/export (`work.cards.export`
+CSV/JSON + `work.cards.import` with the dry-run, per-row line-numbered errors, and the
+board-toolbar Import/Export dialog — see the §7 header below). Slice 4 (the outbound
+Slack/GitHub actions) is the one remaining slice. Waves 1–2 are the engine and the
+webhook delivery path; the wave list below says exactly what shipped in each.
 
 **Two recommendations were overturned in that review, and both were overturned correctly:**
 
@@ -807,7 +809,10 @@ over, with published-vector tests — Slack's own worked example, plus a pinned 
 known-answer), and `integration-grants.test.ts` (7/7, real roles). **Slice 2 SHIPPED
 2026-08-12** — the connect/disconnect flow below. **Slice 3 SHIPPED 2026-08-12** —
 inbound ingestion (the two routes below, with migration 0058's GitHub delivery
-dedupe). Slices 4–5 remain: the outbound actions, and import/export.
+dedupe). **Slice 5 SHIPPED 2026-08-12** — import/export (§7.7, below: the
+project-scoped CSV/JSON export, the list-targeted import through the real create
+path with the dry-run, and the web surface). Slice 4 (the outbound actions)
+remains.
 Decisions 1–8 below are PROPOSED as of 2026-08-12; review resolves them before building,
 the same route §6 took.
 
@@ -842,7 +847,7 @@ EXACT bytes, so re-serializing before verifying would fail every request.
   id — proceeds normally.
 - **The synthetic triggers**: `integration.slack_event` /
   `integration.github_event` carrying `{ providerScope, providerEvent,
-  payload }`, `actorId: null` (the event came from the provider, not a user).
+payload }`, `actorId: null` (the event came from the provider, not a user).
   `payload` is `unknown` by design — the body's shape belongs to
   Slack/GitHub — bounded by the API's 1MB bodyLimit. The one deliberate edit:
   Slack's deprecated legacy `token` field is stripped from the stored copy
@@ -860,6 +865,58 @@ ok/wrong-secret/unknown-repo/no-repo/replay/revoked/no-delivery-id/cross-org.
 API 976/976 (the full suite, pre-review-fix; the uniform-403 change re-ran its
 own suite 17/17), lint + typecheck clean across api/web/db, guardrail selftest,
 the RLS checker across 116 migrations, `migrate:verify` for 0058.
+
+#### Slice 5 — import/export (SHIPPED 2026-08-12)
+
+- **Export** (`work.cards.export`, `project:read`, `quotaClass: 'expensive'`):
+  one call renders every live card in the project to CSV or JSON, from the
+  same query shape the board reads — `description` comes from the already-
+  flattened `description_text` column, never by parsing TipTap. The CSV
+  writer is RFC 4180, hand-rolled (the repo carries no CSV dependency), and
+  it NEUTRALIZES formula-leading cells (`= + - @` get a `'` prefix,
+  CWE-1236): a card titled `=HYPERLINK(...)` must not execute the moment an
+  exported file is opened. The import's `unneutralize` is the exact inverse,
+  applied only when the remainder would itself trigger the rule, so the
+  format round-trips and a title that genuinely begins with an apostrophe
+  keeps it. The per-project layer is `requireProject` inside the org-scoped
+  transaction — the route's `project:read` is only layer 1.
+- **Import** (`work.cards.import`, `project:update` — the bulk-write tier,
+  not `card:create`): structured rows targeting one list, bounded 1–1,000 at
+  the route AND in the service (the copy a non-tRPC caller would hit). Every
+  field arrives as `unknown` on purpose — the dry-run's job is to report
+  PER-ROW errors with line numbers, and a route schema that rejected
+  `title: 42` would turn one bad row into a whole-request 400 with no line
+  number. `.strict()` still pins the row's KEYS, so a typo'd column is
+  refused loudly. Validation resolves statuses/labels case-insensitively
+  (exact-first, refusing to guess on a case-collision) and assignees by
+  email against the org's ACTIVE members — all against the target project's
+  live vocabulary, so a row naming another project's status is a row error,
+  never a write. Rows then go through the REAL services (`createCard` →
+  `setCardStatus`/`assignCard`/`setCardLabels`/`updateCard`), so an import
+  cannot create a card a user could not have created, and every card emits
+  its own events, audit entries and search re-indexes. `dryRun: true`
+  validates every row and writes nothing.
+- **The row-isolation shape is the §7.7 answer, and it has one documented
+  gap.** Each row's writes are per-service transactions (that IS "the same
+  service path"), so a setter can fail after `createCard` succeeded — a
+  status deleted between the vocabulary read and this row's write. The loop
+  compensates by best-effort archiving the created card (needs `card:delete`;
+  a restrictive board tuple could take even that, but the row error is
+  reported either way), so a "failed" row does not stay live as a partial
+  card.
+- **Web** — the Import/Export dialog in the board toolbar: export downloads
+  the server's answer; import parses the file CLIENT-side (a hand-rolled
+  RFC-4180 reader; the API takes rows, not file formats), maps headers
+  case-insensitively (ignoring the export-only columns), runs the server
+  dry-run as the preview, and only then imports — invalidating the board's
+  card and list queries.
+
+Verified: the 16-test service suite (dry-run reports every bad row with line
+numbers and writes nothing; a valid import creates through the real path with
+all five events; a bad row mid-batch fails alone; cross-project vocabulary
+refused; member without `project:update` refused; 1,001 rows refused; export
+project-scoped with RFC-4180 quoting and the formula guard round-tripping),
+12 CSV-parser tests, API + web typecheck and lint clean, prettier clean.
 
 #### Slice 2 — connect/disconnect (SHIPPED 2026-08-12)
 
@@ -1074,6 +1131,59 @@ executor branches, and an `"./integrations/…"` export-map entry for the worker
 - Service mutations emit `integration.connected` / `integration.disconnected` through the
   outbox like everything else.
 
+### 7.8b Connector-event CONDITIONS — the gap slice 3 shipped with
+
+**Status: NOT BUILT. Found 2026-08-12 by driving a real GitHub webhook end to end, after
+slice 3 was already working.** Nothing in §7.5 is wrong; what it does not say is that a rule
+keyed on a connector event **cannot carry a condition at all**, which makes the trigger far
+less useful than the section implies. Slice 4 must close this, or the outbound actions it
+adds will mostly be wired to rules that fire far too often.
+
+**What happens today.** `engine.ts`'s `evaluableRowFor` builds the row a condition is
+evaluated against by re-reading the trigger's CARD. A connector event has no `cardId`, so it
+returns null and the engine records `trigger_not_evaluable` and REFUSES the rule. The
+practical consequence is that the only legal connector rule is one with no condition — which
+fires on **every event type from every connected repo or workspace**. A repo with GitHub
+Actions emits `workflow_job` continuously, so the first rule anyone writes is immediately
+noise, and their only recourse is unchecking events in GitHub's own webhook config.
+
+That §7.5 says a rule "keys on `providerScope` (which workspace/repo) and `providerEvent`
+(which Slack event type / X-GitHub-Event)" makes this sharper, not softer: the payload was
+deliberately shaped to carry exactly those two fields, and no code can reach them.
+
+**The fix is a third FIELD SET, not a special case in the engine.** `packages/filter`'s
+`FIELD_SETS` is already keyed by resource — `card` since Phase 3, `search` since Phase 8 —
+and `evaluate()` already takes that key, which is why `engine.ts` says `evaluate('card', …)`
+today. So:
+
+- Add `connector` to `FIELD_SETS` with a CLOSED, two-field set: `provider_event` and
+  `provider_scope`, both text, supporting `=`, `!=`, `in`, `not_in`, `contains`. Nothing
+  else. The provider's own body stays `unknown` (§7.5's argument holds — its shape belongs
+  to GitHub and Slack); these two fields are the wrapper WE own and already validate.
+- `evaluableRowFor` returns `{ provider_event, provider_scope }` from the event payload for
+  the two connector triggers, and the engine evaluates with `'connector'` rather than
+  `'card'`. Which field set a trigger uses is a property OF THE TRIGGER, derived from the
+  registry — never a flag on the rule, or a rule saved under one reading evaluates under
+  another after an edit.
+- `trigger_not_evaluable` stays exactly as it is for every other card-less trigger. This
+  narrows when it fires; it does not remove it.
+- The builder picks the field set from the selected trigger, so choosing "A GitHub event
+  arrives" offers `provider_event`/`provider_scope` and choosing a card trigger offers the
+  card fields. The two sets do NOT overlap, the same closed-and-disjoint property Phase 8
+  documents for card vs search — and the same trap: an example written against the wrong set
+  validates in a person's head and is refused by `validate()`.
+
+**Save-time validation is what makes this safe to add.** A condition naming a card field on
+a connector trigger must be refused when the rule is SAVED, not silently at execution — the
+`assertConditionUsable` precedent. Otherwise the failure mode is a rule that looks correct in
+the builder and records `condition_unusable` forever.
+
+**Both backends still have to agree.** `packages/filter`'s whole purpose is that the SQL
+compiler and the JavaScript evaluator answer identically. A connector field set is
+evaluator-only — no card table to compile against — so either the compiler refuses the
+`connector` resource explicitly, or `filter.parity.test.ts` grows a case proving it does.
+Silently compiling to something is the failure this package exists to prevent.
+
 ### 7.9 Slices
 
 1. **Migration 0056** + `packages/db` schema + the two signing primitives
@@ -1089,7 +1199,14 @@ executor branches, and an `"./integrations/…"` export-map entry for the worker
    auth-role lookup, synthetic-trigger emission, and the suite that drives both routes
    with real signed requests.
 4. **Outbound actions** — the two union variants through the five-place change, executor
-   branches + `integrationsFor`, loop-protection entries, worker deps.
+   branches + `integrationsFor`, loop-protection entries, worker deps. **Do §7.8b FIRST,
+   inside this slice**: the `connector` field set, `evaluableRowFor`'s payload row, the
+   builder's per-trigger field set, and save-time validation. The ordering is not cosmetic —
+   an outbound action is the first rule action that costs money on someone else's platform,
+   and until a connector rule can be narrowed to one event type it fires on all of them. The
+   natural first rule a person writes ("post to Slack when something happens in GitHub")
+   becomes "post to Slack on every `workflow_job`", which is how an org turns its own
+   integration off on day one.
 5. **Import/export** — export + import routes, the dry-run, and the web surface.
 
 ### 7.10 Tests
@@ -1105,6 +1222,12 @@ executor branches, and an `"./integrations/…"` export-map entry for the worker
 - Outbound actions: `integration:manage` enforced at execution (a member who cannot manage
   integrations cannot write the rule); no connector row → recorded failed action;
   provider-call refusal before the network when the credential is absent.
+- Connector conditions (§7.8b): a rule keyed on `integration.github_event` with
+  `provider_event = "push"` fires on a push and is SKIPPED (`condition_not_met`, not
+  `trigger_not_evaluable`) on a `workflow_job` — the assertion that would have failed the
+  day slice 3 shipped; `provider_scope` narrows to one repo when two are connected; a
+  condition naming a CARD field on a connector trigger is refused at SAVE time; and the SQL
+  compiler refuses the `connector` resource rather than compiling it to anything.
 - Import: dry-run rejects every invalid row with line numbers and writes nothing; a valid
   import creates cards through the real service path (events + audit for every card);
   a member without `project:update` refused; 1,001 rows refused.

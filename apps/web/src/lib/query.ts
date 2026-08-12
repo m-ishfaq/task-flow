@@ -234,6 +234,12 @@ export const keys = {
     ['org', orgId, 'projects', projectId, 'statuses'] as const,
   sprints: (orgId: string, projectId: string) =>
     ['org', orgId, 'projects', projectId, 'sprints'] as const,
+  /**
+   * Every project's active sprint (10.6 D3) — the sidebar's ambient line.
+   * Org-scoped, NOT nested under `sprints`, so invalidating one project's
+   * sprint list does not silently drop the whole tree's line and vice versa.
+   */
+  activeSprints: (orgId: string) => ['org', orgId, 'active-sprints'] as const,
   fields: (orgId: string, projectId: string) =>
     ['org', orgId, 'projects', projectId, 'fields'] as const,
 

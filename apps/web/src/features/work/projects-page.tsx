@@ -15,7 +15,7 @@ import {
   Input,
   SkeletonRows,
 } from '../../components/primitives.js';
-import { ErrorView } from '../../components/error-view.js';
+import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { boardsQuery, projectsQuery } from './api.js';
 
 /**
@@ -146,6 +146,7 @@ interface ProjectCardProps {
 
 function ProjectCard({ orgId, project, showArchived }: ProjectCardProps) {
   const isArchived = project.archivedAt !== null;
+  const [duplicating, setDuplicating] = useState(false);
 
   return (
     <li
@@ -161,14 +162,41 @@ function ProjectCard({ orgId, project, showArchived }: ProjectCardProps) {
         <h2 className="truncate text-sm font-medium text-ink">{project.name}</h2>
         {isArchived && <Badge className="text-warning">archived</Badge>}
 
-        <Link
-          to="/projects/$projectId"
-          params={{ projectId: project.projectId as ProjectId }}
-          className="ml-auto shrink-0 rounded border border-line px-2 py-0.5 text-[11px] text-ink-muted hover:bg-surface-hover hover:text-ink"
-        >
-          Settings
-        </Link>
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          {/* Not offered on an archived project: duplicating one would create a
+              live copy of something somebody deliberately put away, and the
+              first question would be why it came back. */}
+          {!isArchived && (
+            <button
+              type="button"
+              onClick={() => {
+                setDuplicating((open) => !open);
+              }}
+              className="rounded border border-line px-2 py-0.5 text-[11px] text-ink-muted hover:bg-surface-hover hover:text-ink"
+            >
+              Duplicate
+            </button>
+          )}
+          <Link
+            to="/projects/$projectId"
+            params={{ projectId: project.projectId as ProjectId }}
+            className="rounded border border-line px-2 py-0.5 text-[11px] text-ink-muted hover:bg-surface-hover hover:text-ink"
+          >
+            Settings
+          </Link>
+        </div>
       </div>
+
+      {duplicating && (
+        <DuplicateProjectForm
+          orgId={orgId}
+          projectId={project.projectId as ProjectId}
+          sourceName={project.name}
+          onDone={() => {
+            setDuplicating(false);
+          }}
+        />
+      )}
 
       {project.description !== null && project.description !== '' && (
         <p className="mt-1 line-clamp-2 text-xs text-ink-muted">{project.description}</p>
@@ -180,6 +208,127 @@ function ProjectCard({ orgId, project, showArchived }: ProjectCardProps) {
         showArchived={showArchived}
       />
     </li>
+  );
+}
+
+/**
+ * Copying a project into a new one (`duplicate.service.ts`).
+ *
+ * Deliberately NOT the import/export dialog. That moves cards through a file
+ * and cannot carry rank ordering, checklists or custom field values; this
+ * copies rows, so the new project is the old one's shape exactly. The two look
+ * adjacent and answer different questions — "give this to another system" and
+ * "give me another one of these".
+ *
+ * The key is the only field with no sensible default: it is a namespace, it
+ * appears in every card reference, and it is immutable once set. So the name
+ * is pre-filled and the key is not.
+ */
+function DuplicateProjectForm({
+  orgId,
+  projectId,
+  sourceName,
+  onDone,
+}: {
+  readonly orgId: string;
+  readonly projectId: ProjectId;
+  readonly sourceName: string;
+  readonly onDone: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(`${sourceName} (copy)`);
+  const [key, setKey] = useState('');
+  const [includeCards, setIncludeCards] = useState(true);
+
+  const duplicate = useMutation({
+    mutationFn: () =>
+      api.work.projects.duplicate.mutate({
+        sourceProjectId: projectId,
+        name: name.trim(),
+        key: key.trim(),
+        includeCards,
+      }),
+    onSuccess: async () => {
+      /* The list gained a project, and each project row lazily loads its own
+         boards — invalidating the projects query is what makes the copy
+         appear without a reload. */
+      await queryClient.invalidateQueries({ queryKey: keys.projects(orgId) });
+      onDone();
+    },
+  });
+
+  return (
+    <form
+      className="mt-2 space-y-2 rounded border border-line bg-surface-sunken/60 p-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        duplicate.mutate();
+      }}
+    >
+      {/* Ids carry the project id: several of these forms can be open at once
+          on this page, and duplicated ids would make every label point at the
+          first card's inputs. */}
+      <div className="flex flex-wrap gap-2">
+        <div className="min-w-0 flex-1 basis-40">
+          <Field label="New name" htmlFor={`dup-name-${projectId}`}>
+            <Input
+              id={`dup-name-${projectId}`}
+              value={name}
+              onChange={(event) => {
+                setName(event.target.value);
+              }}
+            />
+          </Field>
+        </div>
+        <div className="w-28 shrink-0">
+          <Field label="Key" htmlFor={`dup-key-${projectId}`}>
+            <Input
+              id={`dup-key-${projectId}`}
+              value={key}
+              placeholder="WEB2"
+              onChange={(event) => {
+                setKey(event.target.value.toUpperCase());
+              }}
+              className="font-mono"
+            />
+          </Field>
+        </div>
+      </div>
+
+      <label className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          checked={includeCards}
+          onChange={(event) => {
+            setIncludeCards(event.target.checked);
+          }}
+          className="mt-0.5"
+        />
+        <span className="text-[11px] text-ink-muted">
+          Copy the cards too
+          <span className="block text-ink-faint">
+            Unticked copies only the shape — boards, lists, statuses, labels and custom fields —
+            which is what makes it a template. Comments, attachments and sprints are never copied.
+          </span>
+        </span>
+      </label>
+
+      <div className="flex items-center gap-2">
+        <Button
+          type="submit"
+          variant="primary"
+          size="sm"
+          disabled={duplicate.isPending || name.trim() === '' || key.trim() === ''}
+        >
+          {duplicate.isPending ? 'Copying…' : 'Duplicate'}
+        </Button>
+        <Button type="button" size="sm" onClick={onDone}>
+          Cancel
+        </Button>
+      </div>
+
+      {duplicate.isError && <ErrorText error={duplicate.error} />}
+    </form>
   );
 }
 

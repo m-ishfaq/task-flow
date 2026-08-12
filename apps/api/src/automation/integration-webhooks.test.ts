@@ -36,9 +36,13 @@ import { integrationTokenAad } from './integration.service.js';
  * The signatures are GENUINELY computed (signSlackRequest/signGitHubRequest),
  * never stubbed — a webhook test whose signature check is mocked asserts that
  * the handler works on trusted input, which is the one case it is not
- * defending against. The Fastify instance replicates the tRPC adapter's
- * global JSON pass-through (CLAUDE.md), so `request.body` arrives as the raw
- * string the signatures cover, exactly as it does in production.
+ * defending against. The Fastify instances are BARE and keep the built-in
+ * default json parser: the scoped raw-body parser inside
+ * `registerIntegrationWebhooks` is the only thing that makes `request.body`
+ * arrive as the raw string the signatures cover. A harness that installed
+ * its own string parser would mask a missing one and the suite would pass
+ * while every real delivery failed (the exact failure the plugin's comment
+ * warns about), so this suite deliberately supplies nothing.
  */
 
 const OWNER = unsafeAsId<'UserId'>('0195ee32-0000-7000-8000-0000000000a1');
@@ -187,13 +191,14 @@ beforeAll(async () => {
 
   const deps: IntegrationWebhookDeps = { keys, slackSigningSecret: SLACK_SIGNING_SECRET };
   app = Fastify();
-  /* Mirror the tRPC adapter's global JSON pass-through (CLAUDE.md): the
-     signatures cover the EXACT bytes, so the handlers must see the raw
-     string, and a parsed object would fail rawBody() — which is the point. */
-  app.removeContentTypeParser('application/json');
-  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
-    done(null, body);
-  });
+  /* Deliberately NO parser here: the plugin must provide it. Registering a
+     string parser at the root here would (a) make the child scope's own
+     addContentTypeParser throw FST_ERR_CTP_ALREADY_PRESENT — fastify copies
+     the parent's parser map into every child scope, so a root-level custom
+     json parser is inherited and redefining it in the child is an error —
+     and (b) hide the plugin's parser behind the harness's, so the suite
+     would pass even if the plugin's were deleted. Bare Fastify with the
+     default parser is the honest fixture. */
   registerIntegrationWebhooks(app, deps);
   await app.ready();
 });
@@ -422,10 +427,6 @@ describe('the Slack route — verify first, resolve second', () => {
 
   it('answers 503 when the deployment has no signing secret — fail-closed', async () => {
     const bare = Fastify();
-    bare.removeContentTypeParser('application/json');
-    bare.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
-      done(null, body);
-    });
     registerIntegrationWebhooks(bare, { keys, slackSigningSecret: undefined });
     await bare.ready();
 

@@ -355,7 +355,7 @@ function OrgsTab({
               className="mt-4 space-y-3"
               onSubmit={(event) => {
                 event.preventDefault();
-                if (deleteTarget !== null && confirmSlug === deleteTarget.slug) {
+                if (confirmSlug === deleteTarget.slug) {
                   remove.mutate({
                     orgId: deleteTarget.orgId as OrgId,
                     confirmSlug,

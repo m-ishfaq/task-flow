@@ -41,6 +41,7 @@ import { PermissionDebugPage } from './features/admin/permission-debug-page.js';
 import { SettingsPage } from './features/admin/settings-page.js';
 import { AuditPage } from './features/admin/audit-page.js';
 import { ProjectSettingsPage } from './features/work/project-settings-page.js';
+import { SprintsPage } from './features/work/sprints-page.js';
 import { PlatformAdminPage } from './features/platform-admin/platform-admin-page.js';
 import { AUTOMATION_TAB_IDS, AutomationsPage } from './features/automation/automations-page.js';
 import { IntegrationsCallbackPage } from './features/automation/integrations-callback-page.js';
@@ -454,6 +455,23 @@ const projectSettingsRoute = createRoute({
   component: ProjectSettingsPage,
 });
 
+/**
+ * A project's sprints (ai/phase-10.6-sprint-flow.md D2).
+ *
+ * Registered as a SIBLING of `/projects/$projectId` rather than a child,
+ * matching how every other route in this tree is declared — the router is flat
+ * here, and a nested route would be the only one of its kind. The more specific
+ * path is matched first, so project settings is unaffected.
+ */
+const projectSprintsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/projects/$projectId/sprints',
+  parseParams: (params) => ({ projectId: ProjectIdSchema.parse(params.projectId) }),
+  stringifyParams: (params) => ({ projectId: params.projectId }),
+  beforeLoad: ({ params }) => requireOrg(`/projects/${params.projectId}/sprints`),
+  component: SprintsPage,
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
@@ -545,6 +563,7 @@ const routeTree = rootRoute.addChildren([
   homeRoute,
   projectsRoute,
   projectSettingsRoute,
+  projectSprintsRoute,
   boardRoute,
   peopleRoute,
   personRoute,

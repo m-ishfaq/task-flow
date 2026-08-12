@@ -621,6 +621,233 @@ describe('membership', () => {
   });
 });
 
+describe('close destination (10.6 D1 — supersedes 10.5 decision 5)', () => {
+  it('moves unfinished cards into the NAMED sprint and keeps done ones', async () => {
+    const fixture = await scaffold('close-into-next');
+    const current = await makeSprint(fixture.owner, fixture, 'Sprint 1');
+    const next = await makeSprint(fixture.owner, fixture, 'Sprint 2');
+    await sprints.startSprint(fixture.owner, { sprintId: current.sprintId });
+
+    const shipped = await makeCard(fixture.owner, fixture, 'Shipped');
+    const unfinished = await makeCard(fixture.owner, fixture, 'Carried over');
+    for (const card of [shipped, unfinished]) {
+      await sprints.assignSprint(fixture.owner, {
+        cardId: card.cardId,
+        sprintId: current.sprintId,
+      });
+    }
+    await cards.setCardStatus(fixture.owner, {
+      cardId: shipped.cardId,
+      statusId: fixture.doneStatusId,
+    });
+
+    const result = await sprints.completeSprint(fixture.owner, {
+      sprintId: current.sprintId,
+      moveUnfinishedTo: next.sprintId,
+    });
+
+    expect(result).toMatchObject({ shippedCount: 1, releasedCount: 1 });
+
+    /* The done card stays with the sprint it shipped in — a completed
+       sprint's record must not change because a later sprint was chosen. */
+    const shippedCard = await cards.getCard(fixture.owner, { cardId: shipped.cardId });
+    expect(shippedCard.sprintId).toBe(current.sprintId);
+
+    const carried = await cards.getCard(fixture.owner, { cardId: unfinished.cardId });
+    expect(carried.sprintId).toBe(next.sprintId);
+  });
+
+  it('still releases to the backlog when no destination is given', async () => {
+    /* THE ADDITIVE ASSERTION. 10.5's behaviour must be byte-for-byte intact
+       for a caller that passes nothing — that is what makes D1 a new option
+       rather than a change of meaning, and it is the test that would fail if
+       someone later made a destination mandatory. */
+    const fixture = await scaffold('close-default-backlog');
+    const sprint = await makeSprint(fixture.owner, fixture);
+    await sprints.startSprint(fixture.owner, { sprintId: sprint.sprintId });
+
+    const card = await makeCard(fixture.owner, fixture, 'Unfinished');
+    await sprints.assignSprint(fixture.owner, { cardId: card.cardId, sprintId: sprint.sprintId });
+
+    await sprints.completeSprint(fixture.owner, { sprintId: sprint.sprintId });
+
+    const after = await cards.getCard(fixture.owner, { cardId: card.cardId });
+    expect(after.sprintId).toBeNull();
+  });
+
+  it('refuses a destination in another project', async () => {
+    /* The composite FK would refuse the write anyway — but as a 500. This
+       proves the service turns it into a 404 BEFORE anything is written, so
+       the sprint is not left completed with its cards stranded. */
+    const fixture = await scaffold('close-cross-project');
+    const other = await projects.createProject(fixture.owner, {
+      name: 'Mobile',
+      key: 'MOB',
+      description: null,
+    });
+    const foreign = await sprints.createSprint(fixture.owner, {
+      projectId: other.projectId,
+      name: 'Their Sprint',
+      goal: null,
+      startsOn: '2026-08-10',
+      endsOn: '2026-08-21',
+    });
+
+    const sprint = await makeSprint(fixture.owner, fixture);
+    await sprints.startSprint(fixture.owner, { sprintId: sprint.sprintId });
+
+    await expect(
+      sprints.completeSprint(fixture.owner, {
+        sprintId: sprint.sprintId,
+        moveUnfinishedTo: foreign.sprintId,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+    /* And the sprint is still running — the refusal wrote nothing. */
+    const [row] = await sprints.listSprints(fixture.owner, { projectId: fixture.projectId });
+    expect(row?.status).toBe('active');
+  });
+
+  it('refuses a completed destination', async () => {
+    const fixture = await scaffold('close-into-completed');
+    const old = await makeSprint(fixture.owner, fixture, 'Old');
+    await sprints.startSprint(fixture.owner, { sprintId: old.sprintId });
+    await sprints.completeSprint(fixture.owner, { sprintId: old.sprintId });
+
+    const current = await makeSprint(fixture.owner, fixture, 'Current');
+    await sprints.startSprint(fixture.owner, { sprintId: current.sprintId });
+
+    /* Moving live work into a closed sprint would make its shipped record
+       grow after the fact. */
+    await expect(
+      sprints.completeSprint(fixture.owner, {
+        sprintId: current.sprintId,
+        moveUnfinishedTo: old.sprintId,
+      }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+
+  it('refuses rolling a sprint into itself', async () => {
+    const fixture = await scaffold('close-into-self');
+    const sprint = await makeSprint(fixture.owner, fixture);
+    await sprints.startSprint(fixture.owner, { sprintId: sprint.sprintId });
+
+    await expect(
+      sprints.completeSprint(fixture.owner, {
+        sprintId: sprint.sprintId,
+        moveUnfinishedTo: sprint.sprintId,
+      }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+});
+
+describe('listActiveSprints — the sidebar line (10.6 D3)', () => {
+  it('returns nothing when a project has no active sprint', async () => {
+    const fixture = await scaffold('active-none');
+    /* A planned sprint is NOT active. The sidebar must stay silent for a
+       project that has lined work up but not started it — a line that appeared
+       early would claim a sprint is running when it is not. */
+    await makeSprint(fixture.owner, fixture);
+
+    expect(await sprints.listActiveSprints(fixture.owner)).toEqual([]);
+  });
+
+  it('returns the active sprint with its live card count', async () => {
+    const fixture = await scaffold('active-one');
+    const sprint = await makeSprint(fixture.owner, fixture);
+    await sprints.startSprint(fixture.owner, { sprintId: sprint.sprintId });
+
+    const first = await makeCard(fixture.owner, fixture, 'One');
+    const second = await makeCard(fixture.owner, fixture, 'Two');
+    await sprints.assignSprint(fixture.owner, {
+      cardId: first.cardId,
+      sprintId: sprint.sprintId,
+    });
+    await sprints.assignSprint(fixture.owner, {
+      cardId: second.cardId,
+      sprintId: sprint.sprintId,
+    });
+
+    const active = await sprints.listActiveSprints(fixture.owner);
+    expect(active).toHaveLength(1);
+    expect(active[0]).toMatchObject({
+      projectId: fixture.projectId,
+      sprintId: sprint.sprintId,
+      name: 'Sprint 1',
+      cardCount: 2,
+    });
+  });
+
+  it('counts only live cards — an archived card leaves the count', async () => {
+    const fixture = await scaffold('active-archived');
+    const sprint = await makeSprint(fixture.owner, fixture);
+    await sprints.startSprint(fixture.owner, { sprintId: sprint.sprintId });
+
+    const card = await makeCard(fixture.owner, fixture, 'Archived later');
+    await sprints.assignSprint(fixture.owner, { cardId: card.cardId, sprintId: sprint.sprintId });
+    expect((await sprints.listActiveSprints(fixture.owner))[0]?.cardCount).toBe(1);
+
+    await cards.archiveCard(fixture.owner, { cardId: card.cardId, archived: true });
+    /* Archiving is not deleting, and the board still shows the card under a
+       filter — but the sidebar's number is the live count, the same one the
+       picker shows. Asserted because "count everything attached" and "count
+       what is on the board" are both defensible and only one matches. */
+    const after = await sprints.listActiveSprints(fixture.owner);
+    expect(after[0]?.cardCount).toBe(1);
+  });
+
+  it('returns one row per project — two projects both running a sprint', async () => {
+    /* The one-active index is per PROJECT, not per org (0054). An
+       implementation that assumed one active sprint per org would return one
+       row here and silently hide the other team's sprint. */
+    const fixture = await scaffold('active-two-projects');
+    const second = await projects.createProject(fixture.owner, {
+      name: 'Mobile',
+      key: 'MOB',
+      description: null,
+    });
+
+    const one = await makeSprint(fixture.owner, fixture, 'Web Sprint');
+    await sprints.startSprint(fixture.owner, { sprintId: one.sprintId });
+
+    const two = await sprints.createSprint(fixture.owner, {
+      projectId: second.projectId,
+      name: 'Mobile Sprint',
+      goal: null,
+      startsOn: '2026-08-10',
+      endsOn: '2026-08-21',
+    });
+    await sprints.startSprint(fixture.owner, { sprintId: two.sprintId });
+
+    const active = await sprints.listActiveSprints(fixture.owner);
+    expect(active).toHaveLength(2);
+    expect(active.map((row) => row.name).sort()).toEqual(['Mobile Sprint', 'Web Sprint']);
+  });
+
+  it('never returns another org’s sprint', async () => {
+    const mine = await scaffold('active-mine');
+    const theirs = await scaffold('active-theirs');
+
+    const sprint = await makeSprint(theirs.owner, theirs, 'Their Sprint');
+    await sprints.startSprint(theirs.owner, { sprintId: sprint.sprintId });
+
+    /* RLS, not a WHERE clause — `withOrgScope` is the whole isolation
+       argument, and a cross-org read returns zero rows rather than erroring. */
+    expect(await sprints.listActiveSprints(mine.owner)).toEqual([]);
+    expect(await sprints.listActiveSprints(theirs.owner)).toHaveLength(1);
+  });
+
+  it('drops the line when the sprint completes', async () => {
+    const fixture = await scaffold('active-completed');
+    const sprint = await makeSprint(fixture.owner, fixture);
+    await sprints.startSprint(fixture.owner, { sprintId: sprint.sprintId });
+    expect(await sprints.listActiveSprints(fixture.owner)).toHaveLength(1);
+
+    await sprints.completeSprint(fixture.owner, { sprintId: sprint.sprintId });
+    expect(await sprints.listActiveSprints(fixture.owner)).toEqual([]);
+  });
+});
+
 describe('authorization', () => {
   it("lets a member assign their own cards but not manage the project's sprints", async () => {
     const fixture = await scaffold('sprint-authz');

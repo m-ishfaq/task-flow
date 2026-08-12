@@ -787,10 +787,20 @@ async function exchangeSlackCode(
      calls /user before trusting the exchange. */
   const testResponse = await fetchFn('https://slack.com/api/auth.test', {
     method: 'POST',
-    headers: { authorization: `Bearer ${body.access_token}` },
+    /* The content-type is REQUIRED even though there is no body. A POST to a
+       Slack Web API method with none makes Slack fall back to reading the
+       token out of a form body it cannot parse, and it answers
+       `{ ok: false, error: 'not_authed' }` while ignoring a perfectly valid
+       Authorization header — which reads as "the token is bad" when the token
+       is fine and the REQUEST is malformed. */
+    headers: {
+      authorization: `Bearer ${body.access_token}`,
+      'content-type': 'application/x-www-form-urlencoded; charset=utf-8',
+    },
   });
   const testBody = (await testResponse.json()) as {
     ok?: unknown;
+    error?: unknown;
     team_id?: unknown;
     team_name?: unknown;
   };
@@ -799,7 +809,15 @@ async function exchangeSlackCode(
     typeof testBody.team_id !== 'string' ||
     typeof testBody.team_name !== 'string'
   ) {
-    throw errors.validation({ code: 'Slack rejected the access token.' });
+    /* Slack's own error code is carried through, the `TwilioApiError` lesson
+       (Phase 7): a generic "rejected" made five distinct causes —
+       `not_authed`, `invalid_auth`, `account_inactive`, `token_revoked`,
+       `missing_scope` — indistinguishable, and none of them is diagnosable
+       from our side. Unlike Twilio's error bodies, which echo phone numbers
+       and message text, these are a short published enum that contains no
+       caller-supplied data, so passing it on discloses nothing. */
+    const reason = typeof testBody.error === 'string' ? testBody.error : 'unknown';
+    throw errors.validation({ code: `Slack rejected the access token (${reason}).` });
   }
 
   return { token: body.access_token, teamId: testBody.team_id, teamName: testBody.team_name };

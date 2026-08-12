@@ -147,6 +147,33 @@ export default defineConfig({
         target: API_ORIGIN,
         changeOrigin: false,
       },
+
+      /* Connector webhooks (Phase 10 Wave 4 §7.3), the same story as
+         `/telephony` above: plain Fastify routes whose caller is Slack or
+         GitHub rather than this browser, reachable only when a tunnel is
+         aimed at this dev server — which is the setup that lets ONE tunnel
+         serve both the OAuth redirect (a web route) and the webhooks, and is
+         why INTEGRATION_WEBHOOK_ORIGIN and WEB_ORIGIN want to be one host.
+
+         MATCHED PER PROVIDER, never as a bare '/integrations' prefix. The
+         OAuth callback the browser lands on is `/integrations/callback/
+         :provider` — a WEB route in router.tsx — so proxying the whole prefix
+         would send the callback page to the API, which answers 404 and
+         strands every connect at the moment it returns from consent. The two
+         exact paths below are the only ones the API owns.
+
+         Unlike Twilio, neither provider signs the URL — Slack signs
+         `v0:<ts>:<body>` and GitHub signs the raw body — so `changeOrigin`
+         cannot break verification here. It stays `false` to match the rest of
+         this block and to keep the Host a handler could log honest. */
+      '/integrations/slack': {
+        target: API_ORIGIN,
+        changeOrigin: false,
+      },
+      '/integrations/github': {
+        target: API_ORIGIN,
+        changeOrigin: false,
+      },
     },
   },
 
