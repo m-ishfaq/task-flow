@@ -202,6 +202,21 @@ afterAll(async () => {
  * The fake provider — records every call, answers the fixed endpoints.
  * ------------------------------------------------------------------------- */
 
+/**
+ * The repo-listing URL the service must call, page 1.
+ *
+ * Pinned as a constant rather than inlined because this exact query string is
+ * the fix for a real defect: it once read `type=member`, which GitHub defines
+ * as "repos I am a collaborator on, EXCLUDING the ones I own". The picker
+ * silently dropped the connecting user's own repositories, and since
+ * `selectRepo` validates against this same list, those repos could not be
+ * connected at all. `affiliation` is what expresses "everything this token
+ * reaches"; the two parameters are mutually exclusive at GitHub's end.
+ */
+const GITHUB_REPOS_URL =
+  'https://api.github.com/user/repos?per_page=100' +
+  '&sort=full_name&affiliation=owner,collaborator,organization_member&page=1';
+
 interface FakeProviderOptions {
   readonly slackToken?: string;
   readonly teamId?: string;
@@ -251,7 +266,7 @@ function fakeProvider(options: FakeProviderOptions = {}): {
         return Promise.resolve(json({ access_token: options.githubToken ?? 'gho_test_token' }));
       case 'https://api.github.com/user':
         return Promise.resolve(json({ login: options.login ?? 'octocat' }));
-      case 'https://api.github.com/user/repos?per_page=100&type=member':
+      case GITHUB_REPOS_URL:
         return Promise.resolve(json([...repos]));
       default:
         throw new Error(`unexpected provider call: ${url}`);
@@ -538,9 +553,46 @@ describe('the GitHub connect — pending until the repo choice', () => {
     });
     expect(repos.map((repo) => repo.fullName)).toEqual(['acme/todo', 'acme/docs']);
     /* Exactly one network call — the repos endpoint, no re-exchange. */
-    expect(fake.calls.slice(callsBefore)).toEqual([
-      'https://api.github.com/user/repos?per_page=100&type=member',
-    ]);
+    expect(fake.calls.slice(callsBefore)).toEqual([GITHUB_REPOS_URL]);
+  });
+
+  it('lists repos the connecting user OWNS, and lets them be selected', async () => {
+    /* The regression. `type=member` excludes owned repositories at GitHub's
+       end, so this suite passed while the live picker showed only the repos
+       the user had been added to as a collaborator — and `selectRepo`, which
+       validates against the same list, refused an owned repo as "not
+       accessible with this connection". Asserting the URL alone would not
+       catch a future re-narrowing that still spells `affiliation`, so this
+       drives the whole path with an owned repo instead. */
+    const { owner } = await scaffold('github-owned');
+    const fake = fakeProvider({
+      login: 'octocat',
+      repos: [
+        { name: 'my-own-repo', full_name: 'octocat/my-own-repo' },
+        { name: 'todo', full_name: 'acme/todo' },
+      ],
+    });
+    const deps = depsFor(fake.fetch);
+    const { state } = await beginState(owner, deps, 'github');
+    const pending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-1', state },
+      requestId,
+    );
+    expect(pending.status).toBe('pending_repo');
+    if (pending.status !== 'pending_repo') return;
+
+    expect(pending.repos.map((repo) => repo.fullName)).toContain('octocat/my-own-repo');
+
+    const connected = await selectRepo(owner, deps, {
+      integrationId: pending.integrationId,
+      fullName: 'octocat/my-own-repo',
+    });
+    expect(connected.status).toBe('connected');
+    expect(connected.providerScope).toBe('octocat/my-own-repo');
+
+    /* Nothing may ask GitHub for the owner-excluding view. */
+    expect(fake.calls.some((call) => call.includes('type=member'))).toBe(false);
   });
 });
 

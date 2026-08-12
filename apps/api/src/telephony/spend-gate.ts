@@ -258,8 +258,7 @@ export async function readSpendState(orgId: OrgId, config: GateConfig): Promise<
          threshold, so a parsing slip here reads as "under the cap" forever.
          Parsed explicitly and floored at 0. */
       spentCents: Math.max(0, Number.parseInt(spend[0]?.total ?? '0', 10) || 0),
-      automationSpentCents:
-        Math.max(0, Number.parseInt(automationSpend[0]?.total ?? '0', 10) || 0),
+      automationSpentCents: Math.max(0, Number.parseInt(automationSpend[0]?.total ?? '0', 10) || 0),
       /* `bigint` with `mode: 'number'` arrives as a number or null; a NULL row
          (no policy) means "no separate ceiling". */
       automationCapCents: policyRows[0]?.automationCapCents ?? null,
@@ -336,8 +335,7 @@ export async function checkOutboundAllowed(
      configured one and the org cap alone bounds automation, exactly as before
      this phase. The `>` mirrors the org-cap check: the action that crosses
      the line must not be the one that gets through. */
-  const isAutomation =
-    request.kind === 'automation_call' || request.kind === 'automation_sms';
+  const isAutomation = request.kind === 'automation_call' || request.kind === 'automation_sms';
   if (
     isAutomation &&
     state.automationCapCents !== null &&

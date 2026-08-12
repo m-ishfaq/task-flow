@@ -775,19 +775,58 @@ async function exchangeGithubCode(
   return { token, login: user.login, repos };
 }
 
-/** The repos a GitHub token can reach — used by complete, repos, and selectRepo. */
+/* One page of `/user/repos`, and the ceiling on how many we will walk.
+   GitHub caps `per_page` at 100, so an account with more repositories than
+   PAGE_LIMIT * PAGE_SIZE has a truncated picker — bounded rather than
+   unbounded on purpose (the search router's 50/100 argument), because an
+   unpaged loop against a third party is a request amplifier, not a feature. */
+const GITHUB_REPO_PAGE_SIZE = 100;
+const GITHUB_REPO_PAGE_LIMIT = 10;
+
+/**
+ * The repos a GitHub token can reach — used by complete, repos, and selectRepo.
+ *
+ * `affiliation`, never `type`. `type=member` means "repositories I am a
+ * collaborator or organization member on, EXCLUDING the ones I own" — so the
+ * picker listed every repo except the connecting user's own, and because
+ * `selectRepo` validates the chosen `full_name` against this same list, an
+ * owned repository was not merely hidden but impossible to connect. The
+ * refusal read as "that repository is not accessible with this connection",
+ * which is exactly the wrong diagnosis. The two parameters are mutually
+ * exclusive (GitHub answers 422 if both are sent), and `affiliation` is the
+ * one that can express "everything this token reaches".
+ *
+ * Paginated because the picker is a correctness surface, not a preview: a
+ * repository missing from page 2 cannot be selected at all.
+ */
 async function githubRepos(deps: IntegrationDeps, token: string): Promise<readonly RepoRef[]> {
   const fetchFn = deps.fetchImpl ?? fetch;
-  const response = await fetchFn('https://api.github.com/user/repos?per_page=100&type=member', {
-    headers: { ...GITHUB_HEADERS, authorization: `Bearer ${token}` },
-  });
-  if (!response.ok) {
-    throw errors.validation({ code: 'GitHub rejected the access token.' });
+  const collected: RepoRef[] = [];
+
+  for (let page = 1; page <= GITHUB_REPO_PAGE_LIMIT; page += 1) {
+    const response = await fetchFn(
+      `https://api.github.com/user/repos?per_page=${GITHUB_REPO_PAGE_SIZE}` +
+        `&sort=full_name&affiliation=owner,collaborator,organization_member&page=${page}`,
+      { headers: { ...GITHUB_HEADERS, authorization: `Bearer ${token}` } },
+    );
+    if (!response.ok) {
+      throw errors.validation({ code: 'GitHub rejected the access token.' });
+    }
+
+    const rows = (await response.json()) as { name?: unknown; full_name?: unknown }[];
+    for (const row of rows) {
+      if (typeof row.name === 'string' && typeof row.full_name === 'string') {
+        collected.push({ name: row.name, fullName: row.full_name });
+      }
+    }
+
+    // A short page is the last page — GitHub returns exactly `per_page` rows
+    // while more remain, so this is the only end condition that does not need
+    // a second request to discover.
+    if (rows.length < GITHUB_REPO_PAGE_SIZE) break;
   }
-  const rows = (await response.json()) as { name?: unknown; full_name?: unknown }[];
-  return rows
-    .filter((row) => typeof row.name === 'string' && typeof row.full_name === 'string')
-    .map((row) => ({ name: row.name as string, fullName: row.full_name as string }));
+
+  return collected;
 }
 
 /** Loads and decrypts the outbound token for one of the org's rows. */

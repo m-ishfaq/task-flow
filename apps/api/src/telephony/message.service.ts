@@ -97,8 +97,7 @@ export async function sendSms(
 
   /* GATE TWO: spend, geo, velocity, org freeze — and the automation sub-budget
      when this is a rule's message (§5.5), under the attributed kind. */
-  const kind: OutboundKind =
-    options.initiatedBy === 'automation' ? 'automation_sms' : 'sms';
+  const kind: OutboundKind = options.initiatedBy === 'automation' ? 'automation_sms' : 'sms';
   const decision = await checkOutboundAllowed(
     { orgId, userId: userOf(actor), kind, to: input.to, estimatedCents },
     { defaultCapCents: deps.defaultSpendCapCents },
