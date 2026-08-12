@@ -341,6 +341,15 @@ export const keys = {
   apiTokens: (orgId: string) => ['org', orgId, 'automations', 'api-tokens'] as const,
   /** The caller's currently held permissions — the scope checklist's options. */
   apiTokenScopes: (orgId: string) => ['org', orgId, 'automations', 'api-tokens', 'scopes'] as const,
+  /** Every connector row in the org (Wave 4 slice 2, §7) — Slack workspaces, GitHub repos. */
+  integrations: (orgId: string) => ['org', orgId, 'automations', 'integrations'] as const,
+  /**
+   * Which connector providers this server has credentials for, plus the
+   * webhook origin — the server's answer, so an unconfigured provider's
+   * connect button never renders (the `oauth.providers` precedent).
+   */
+  integrationCapabilities: (orgId: string) =>
+    ['org', orgId, 'automations', 'integrations', 'capabilities'] as const,
   /**
    * Whether the cost-bearing telephony actions exist in the rule builder
    * (Wave 4, §5.5) — the server's answer, never a client-side copy of the

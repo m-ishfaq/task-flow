@@ -19,10 +19,12 @@ import {
   automationCapabilitiesQuery,
   automationRunsQuery,
   automationsQuery,
+  integrationsQuery,
   webhookDeliveriesQuery,
   webhooksQuery,
 } from './api.js';
 import { ApiTokensSection } from './api-tokens-section.js';
+import { IntegrationsSection } from './integrations-section.js';
 import {
   ACTION_LABELS,
   ARGUMENTS,
@@ -132,13 +134,14 @@ function draftsFrom(stored: readonly unknown[] | undefined): ActionDraft[] {
    and the page grew a third tab the router never heard of — clicking it
    navigated to `?tab=apiTokens`, the validator refused it, and nothing
    happened. */
-export const AUTOMATION_TAB_IDS = ['rules', 'webhooks', 'apiTokens'] as const;
+export const AUTOMATION_TAB_IDS = ['rules', 'webhooks', 'apiTokens', 'integrations'] as const;
 export type AutomationTabId = (typeof AUTOMATION_TAB_IDS)[number];
 
 const TABS = [
   { id: 'rules', label: 'Rules' },
   { id: 'webhooks', label: 'Webhooks' },
   { id: 'apiTokens', label: 'API tokens' },
+  { id: 'integrations', label: 'Integrations' },
 ] as const;
 
 type TabId = AutomationTabId;
@@ -169,11 +172,15 @@ export function AutomationsPage() {
   const automations = useQuery({ ...automationsQuery(orgId), enabled: orgId !== '' });
   const webhooks = useQuery({ ...webhooksQuery(orgId), enabled: orgId !== '' });
   const apiTokens = useQuery({ ...apiTokensQuery(orgId), enabled: orgId !== '' });
+  const integrations = useQuery({ ...integrationsQuery(orgId), enabled: orgId !== '' });
 
   const counts: Readonly<Record<TabId, number | undefined>> = {
     rules: automations.data?.length,
     webhooks: webhooks.data?.length,
     apiTokens: apiTokens.data?.length,
+    /* Connected rows only — a disconnected row is a past authorization, not
+       something the tab's badge should claim exists today. */
+    integrations: integrations.data?.filter((row) => row.status === 'connected').length,
   };
 
   return (
@@ -230,8 +237,10 @@ export function AutomationsPage() {
             <RulesPanel orgId={orgId} automations={automations} />
           ) : tab === 'webhooks' ? (
             <WebhooksSection orgId={orgId} />
-          ) : (
+          ) : tab === 'apiTokens' ? (
             <ApiTokensSection orgId={orgId} />
+          ) : (
+            <IntegrationsSection orgId={orgId} />
           )}
         </div>
       </div>

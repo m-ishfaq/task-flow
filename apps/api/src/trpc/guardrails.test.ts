@@ -301,6 +301,11 @@ describe('the real application router', () => {
          step already succeeded, so this cannot itself require authentication. */
       'auth.totp.verifyLogin',
       'auth.verifyEmail',
+      /* Connector callback (Phase 10 Wave 4 slice 2, §7) — reached via a
+         browser redirect from Slack/GitHub with no session; the signed state
+         token minted by `integration.begin` carries the org and user, the
+         `linkUserId` trust model applied to an org surface. */
+      'automation.integration.complete',
       /* Publish-to-public (ai/phase-6-docs.md §3.9, Wave 4) — the one route
          whose entire purpose is being reachable with no session, gated
          entirely by the target page's own `published_version_id` rather

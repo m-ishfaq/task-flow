@@ -43,6 +43,7 @@ import { AuditPage } from './features/admin/audit-page.js';
 import { ProjectSettingsPage } from './features/work/project-settings-page.js';
 import { PlatformAdminPage } from './features/platform-admin/platform-admin-page.js';
 import { AUTOMATION_TAB_IDS, AutomationsPage } from './features/automation/automations-page.js';
+import { IntegrationsCallbackPage } from './features/automation/integrations-callback-page.js';
 
 /**
  * The route tree (PLAN.md §4.1 — typed routes and typed search params).
@@ -192,6 +193,31 @@ const oauthCallbackRoute = createRoute({
     error: z.string().optional(),
   }),
   component: OAuthCallbackPage,
+});
+
+/**
+ * Where every CONNECTOR OAuth redirect lands (Phase 10 Wave 4 slice 2, §7).
+ *
+ * A deliberately DIFFERENT path from `oauthCallbackRoute` above: the two
+ * flows mint different signed-state claims and must never cross-complete, so
+ * the paths are separate contracts with the providers' consoles. No
+ * `beforeLoad` guard — the round trip loses the in-memory token, `complete`
+ * is a public route trusting the state, and only the GitHub repo picker
+ * (which follows) needs a session, recovered by the shell's boot-time
+ * `restore()`. Same search contract as the login callback: missing pieces
+ * render "this link is incomplete", never a silent empty exchange.
+ */
+const integrationsCallbackRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/integrations/callback/$provider',
+  parseParams: (params) => ({ provider: z.enum(['slack', 'github']).parse(params.provider) }),
+  stringifyParams: (params) => ({ provider: params.provider }),
+  validateSearch: z.object({
+    code: z.string().min(1).optional(),
+    state: z.string().min(1).optional(),
+    error: z.string().optional(),
+  }),
+  component: IntegrationsCallbackPage,
 });
 
 const orgsRoute = createRoute({
@@ -514,6 +540,7 @@ const routeTree = rootRoute.addChildren([
   resetPasswordRoute,
   forgotPasswordRoute,
   oauthCallbackRoute,
+  integrationsCallbackRoute,
   orgsRoute,
   homeRoute,
   projectsRoute,

@@ -724,9 +724,12 @@ export const integrations = platform.table(
     /** 'connected' | 'disconnected' — a CHECK, not an enum. */
     status: text('status').notNull().default('connected'),
 
-    tokenCiphertext: bytea('token_ciphertext').notNull(),
-    tokenWrapped: bytea('token_wrapped').notNull(),
-    tokenMasterId: text('token_master_id').notNull(),
+    /* Nullable since 0057: a disconnect wipes them, and the credential's
+       PRESENCE is what tells 'disconnected' (pending repo choice) apart
+       from 'disconnected' (revoked). */
+    tokenCiphertext: bytea('token_ciphertext'),
+    tokenWrapped: bytea('token_wrapped'),
+    tokenMasterId: text('token_master_id'),
 
     verifyCiphertext: bytea('verify_ciphertext'),
     verifyWrapped: bytea('verify_wrapped'),

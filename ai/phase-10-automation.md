@@ -17,12 +17,17 @@ rule-builder + spend-panel UI. See the "Wave 4 — the cost-bearing telephony ac
 header below.
 
 **Wave 4 still open: the connectors (Slack/GitHub) and the CSV/JSON importers/exporters
-(§7).** Slice 1 of the connectors SHIPPED 2026-08-12 (commit `66349c8`) — migration 0056 +
-the two signing primitives + the `taskflow_integration_auth` role + the grants suite; the
-connect UI,
-inbound ingestion, the outbound actions, and import/export remain. Waves 1–2 are the
-engine and the webhook delivery path; the wave list below says exactly what shipped in
-each.
+(§7).** Slice 1 SHIPPED 2026-08-12 (commit `66349c8`) — migration 0056 + the two
+signing primitives + the `taskflow_integration_auth` role + the grants suite. **Slice 2
+SHIPPED 2026-08-12** — the OAuth connect/disconnect flow for Slack and GitHub
+(`integration.service.ts` + the 7-route router, `begin`/`selectRepo`/`disconnect` step-up
+and `complete` a public route trusting a signed state token carrying org+user+PKCE
+verifier), migration 0057 (disconnect WIPES the credential — a revoked connector is
+genuinely dead, not merely hidden), the Integrations tab on `/automations` with the
+one-time webhook URL reveal, and the `/integrations/callback` page (Slack lands straight
+back; GitHub shows the repo picker + one-time verify secret). Slices 3–5 remain: inbound
+ingestion, the outbound actions, and import/export. Waves 1–2 are the engine and the
+webhook delivery path; the wave list below says exactly what shipped in each.
 
 **Two recommendations were overturned in that review, and both were overturned correctly:**
 
@@ -797,10 +802,66 @@ SHIPPED 2026-08-12 (commit `66349c8`)** — migration 0056 (`platform.integratio
 verify columns, never `token_*`, plus the 0036 `REVOKE DELETE` from `taskflow_app`),
 `slack-signature.ts` + `github-signature.ts` (the `twilio-signature` precedent twice
 over, with published-vector tests — Slack's own worked example, plus a pinned GitHub
-known-answer), and `integration-grants.test.ts` (7/7, real roles). Slices 2–5 remain:
-connect/disconnect, inbound ingestion, the outbound actions, and import/export.
+known-answer), and `integration-grants.test.ts` (7/7, real roles). **Slice 2 SHIPPED
+2026-08-12** — the connect/disconnect flow below. Slices 3–5 remain: inbound
+ingestion, the outbound actions, and import/export.
 Decisions 1–8 below are PROPOSED as of 2026-08-12; review resolves them before building,
 the same route §6 took.
+
+#### Slice 2 — connect/disconnect (SHIPPED 2026-08-12)
+
+The OAuth round trip, org-flavoured: `integration.begin` (`integration:manage`, step-up)
+mints a signed `connector-state` JWT (new in `packages/security/jwt.ts`, distinct
+`connector-state` audience) carrying { provider, PKCE verifier, ORG, USER } and returns
+the provider's authorization URL. The browser round trip loses the session, so
+`integration.complete` is a PUBLIC route that trusts the state — the org the connector
+row is written under, and the person the connect is attributed to, come from the state,
+never from a request. An attacker without a session cannot mint state, and a holder of
+`integration:manage` can only mint it for orgs where they hold it (the login flow's
+`linkUserId` trust model).
+
+Two completion shapes. Slack connects in one hop (token exchange + `auth.test`, least
+privilege `chat:write` scope, PKCE with the verifier riding in the state): the row is keyed
+on `team_id` and the upsert makes RECONNECT land on the same row with a fresh token.
+GitHub is account-level OAuth keyed on the REPOSITORY, and the repo choice can only happen
+after consent: `complete` stores the credential in a row keyed on the login (status
+'disconnected', `integration.pending` event — the guardrail-11 record that the credential
+ever existed), returns the repos the token can reach plus a one-time verify secret, and
+`selectRepo` validates the chosen full_name against that token-owned list (a repo the
+credential cannot access is not a connector), re-keys the row, flips it connected, and
+emits `integration.connected`.
+
+The credential is the webhook secret's recipe: envelope-encrypted under a per-org data
+key with AAD bound to (org, row) — `integrationTokenAad`, exported for slice 4's executor
+— so a ciphertext transplanted into another org fails to decrypt BEFORE any network call.
+
+**Migration 0057 came out of the adversarial review.** The first version of disconnect
+flipped status and left the credential decryptable — a stale picker could resurrect a
+revoked connector with the old token, contradicting the "dead" guarantee. 0057 makes the
+six credential columns NULLABLE and `disconnectIntegration` NULLs them: a revoked
+connector is genuinely dead, `tokenForRow` answers notFound, and slice 4's executor
+refuses an action naming it for the same reason. One 'disconnected' status now means both
+"pending repo choice" (credential present) and "revoked" (credential gone) — the
+presence of the credential is the discriminator. `selectRepo` is claim-guarded the same
+way disconnect is (`status = 'disconnected'` in the WHERE).
+
+The router (7 routes: `capabilities`, `list`, `begin`, `complete` (public), `repos`,
+`selectRepo`, `disconnect` — the three mutations step-up) is wired through the automation
+router, and the Integrations tab on `/automations` renders connect buttons only for
+configured providers (`capabilities`), the one-time webhook URL reveal, and two-click
+disconnect. The `/integrations/callback/$provider` page drives both flows: Slack
+straight back to the tab; GitHub through the repo picker with the verify secret shown
+exactly once (the webhook reveal precedent). Connector env vars are
+`SLACK_CONNECTOR_CLIENT_*`/`GITHUB_CONNECTOR_CLIENT_*`/`INTEGRATION_WEBHOOK_ORIGIN`, in
+`.env.example` and the typo-guard prefix list.
+
+Events: `integration.connected` / `integration.pending` / `integration.disconnected`
+through the outbox; the audit projection maps them (`integration` was already in
+`RESOURCE_TYPES`, so no CHECK widening). Verified: API 958/958 (the 19-test service suite
+covers connect/reconnect/pending/selectRepo/refusals/disconnect-wipe/no-resurrection/the
+AAD transplant with fake fetch and real Postgres and real keys), lint + typecheck clean
+across api/web/security, guardrail selftest, `migrate:verify` for 0057, and the db grants
+suite. **Not verified in a browser** — the standing caveat.
 
 ### 7.1 What a connector is
 

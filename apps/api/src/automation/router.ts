@@ -5,6 +5,8 @@ import { route, router } from '../trpc/builder.js';
 import { subjectOf } from '../trpc/context.js';
 import * as automations from './automation.service.js';
 import * as webhooks from './webhook.service.js';
+import { createIntegrationRouter } from './integration.router.js';
+import type { IntegrationDeps } from './integration.service.js';
 import type { AutomationActor } from './automation.service.js';
 
 /**
@@ -176,6 +178,12 @@ export function createAutomationRouter(deps: {
    * execution regardless; see `buildAutomationActionSchema`'s comment.
    */
   readonly telephonyActionsEnabled: boolean;
+  /**
+   * Connector connect/disconnect (Wave 4 slice 2, §7) — provider client
+   * credentials, the redirect URI builder, the webhook origin, and the keys
+   * that wrap connector credentials and sign connector state.
+   */
+  readonly integration: IntegrationDeps;
 }) {
   const Body = AutomationBody(deps.telephonyActionsEnabled);
   return router({
@@ -328,6 +336,14 @@ export function createAutomationRouter(deps: {
           }),
         ),
     }),
+    /**
+     * Connector connect/disconnect (Wave 4 slice 2, §7) — Slack/GitHub
+     * OAuth, nested here because the /automations page owns the Integrations
+     * tab. Floored on `integration:manage` (owner/admin, org-level), with
+     * `begin`/`selectRepo`/`disconnect` stepUp and `complete` a public route
+     * trusting the signed state — see integration.router.ts's header.
+     */
+    integration: createIntegrationRouter(deps.integration),
   });
 }
 

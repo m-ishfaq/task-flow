@@ -54,7 +54,10 @@ async function actorFor(
 }
 
 /** An org with an owner, and a minted token owned by that owner. */
-async function scaffold(slug: string, scopes: readonly string[] = ['card:read']): Promise<{
+async function scaffold(
+  slug: string,
+  scopes: readonly string[] = ['card:read'],
+): Promise<{
   orgId: OrgId;
   owner: AutomationActor;
   token: string;
@@ -384,6 +387,16 @@ const automationRouter = createAutomationRouter({
      which the flag does not touch, and a rule containing a telephony action
      cannot be saved through a default-shaped router — the honest fixture. */
   telephonyActionsEnabled: false,
+  /* No connector is configured in this suite — the honest fixture for a
+     suite that never drives the connect flow: begin/complete would answer
+     NOT_FOUND rather than the router failing to build. */
+  integration: {
+    providers: {},
+    redirectUri: (provider) => `https://app.test/integrations/callback/${provider}`,
+    webhookOrigin: undefined,
+    jwtSecret: Buffer.alloc(32, 9),
+    keys: automationKeys,
+  },
 });
 
 describe('a token principal on the real automation router', () => {

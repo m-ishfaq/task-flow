@@ -88,6 +88,30 @@ export function heldApiTokenScopesQuery(orgId: string) {
   });
 }
 
+/**
+ * Every connector row in the org (Wave 4 slice 2, §7) — the Integrations
+ * tab's list. Feeds both the management section and, indirectly, the rule
+ * builder's connector picker (slice 4).
+ */
+export function integrationsQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.integrations(orgId),
+    queryFn: async () => wire(await api.automation.integration.list.query({})),
+  });
+}
+
+/**
+ * Which connector providers this server has credentials for, plus the webhook
+ * origin — read before any connect button renders, so an unconfigured
+ * provider's button never appears (the `auth.oauth.providers` precedent).
+ */
+export function integrationCapabilitiesQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.integrationCapabilities(orgId),
+    queryFn: async () => wire(await api.automation.integration.capabilities.query({})),
+  });
+}
+
 /** Recent delivery history for one endpoint — the "did it go out" read. */
 export function webhookDeliveriesQuery(orgId: string, webhookId: string) {
   return queryOptions({

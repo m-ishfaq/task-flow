@@ -75,11 +75,14 @@ export {
   verifyTotpChallenge,
   signOAuthState,
   verifyOAuthState,
+  signConnectorState,
+  verifyConnectorState,
   InvalidTokenError,
   ACCESS_TOKEN_TTL_SECONDS,
   type AccessTokenClaims,
   type TotpChallengeClaims,
   type OAuthStateClaims,
+  type ConnectorStateClaims,
   type JwtConfig,
 } from './jwt.js';
 

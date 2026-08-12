@@ -277,6 +277,27 @@ export const EnvSchema = z
       .default('false')
       .transform((value) => value === 'true'),
 
+    /* Phase 10 Wave 4 — the Slack/GitHub connectors (§7.2). ALL optional,
+       the oauth.service precedent: an unconfigured provider's connect route
+       refuses with NOT_FOUND rather than the app failing to boot.
+
+       These are a SEPARATE Slack app and GitHub OAuth app from the login-
+       linking ones (the GOOGLE_CLIENT_* and GITHUB_CLIENT_* above) — different
+       scope, different trust, never shared credentials. SLACK_SIGNING_SECRET
+       is the Slack APP's signing secret (D3 — shared by every workspace,
+       deployment env, never a per-org column), consumed by slice 3's inbound
+       route. */
+    SLACK_CONNECTOR_CLIENT_ID: OptionalNonEmpty,
+    SLACK_CONNECTOR_CLIENT_SECRET: OptionalNonEmpty,
+    SLACK_SIGNING_SECRET: OptionalNonEmpty,
+    GITHUB_CONNECTOR_CLIENT_ID: OptionalNonEmpty,
+    GITHUB_CONNECTOR_CLIENT_SECRET: OptionalNonEmpty,
+    /* The absolute origin the UI builds each connector's WEBHOOK URL from
+       (Slack app config takes one URL, deployment-wide; GitHub one per
+       org's repo). Absent = the webhook URLs are hidden and slice 3's
+       inbound routes are unregistered — the connect flow still works. */
+    INTEGRATION_WEBHOOK_ORIGIN: OptionalUrl,
+
     /* Where call recordings land. Optional, like every telephony setting: an
        instance with no carrier has nothing to store. */
     STORAGE_BUCKET_RECORDINGS: OptionalNonEmpty,
@@ -522,6 +543,14 @@ const KNOWN_VARIABLES = new Set([
   'API_HOST',
   'API_TRUST_PROXY',
   'RETENTION_SWEEP_ENABLED',
+  /* Phase 10 Wave 4 — the connectors (§7.2). Listed so a misspelled
+     SLACK_CONNECTOR_CLIENT_SECRETT is caught wherever it is made. */
+  'SLACK_CONNECTOR_CLIENT_ID',
+  'SLACK_CONNECTOR_CLIENT_SECRET',
+  'SLACK_SIGNING_SECRET',
+  'GITHUB_CONNECTOR_CLIENT_ID',
+  'GITHUB_CONNECTOR_CLIENT_SECRET',
+  'INTEGRATION_WEBHOOK_ORIGIN',
   /* Telephony (Phase 7 Wave 1). Listed for the same reason as every other
      variable in this set — a typo must be caught wherever it is made. */
   'TWILIO_ACCOUNT_SID',
@@ -599,6 +628,12 @@ const TASKFLOW_PREFIXES = [
      misspelled `AUTOMATION_TELEPHONY_ACTIONS_EBABLED` is exactly the near-miss
      this list exists to catch. */
   'AUTOMATION_',
+  /* Phase 10 Wave 4 — the connectors (§7.2). `GITHUB_` is shared with the
+     login-linking `GITHUB_CLIENT_*` (already listed as known); the prefix is
+     what makes a `GITHUB_CONNECTOR_CLIENT_SECRETT` typo refuse to boot. */
+  'SLACK_',
+  'GITHUB_',
+  'INTEGRATION_',
 ];
 
 /**

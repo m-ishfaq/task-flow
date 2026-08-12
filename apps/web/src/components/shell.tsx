@@ -271,7 +271,7 @@ export function Shell() {
             window scrollbar dragged the entire fixed-height frame — header,
             sidebar and all — off the top. Positioning `main` keeps those
             descendants inside the frame that clips them. */}
-        <main className="relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
+        <main className="relative min-h-0 flex-1 overflow-x-auto">
           <Outlet />
         </main>
       </div>
