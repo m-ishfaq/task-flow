@@ -129,10 +129,21 @@ IMAGE_TAG=<new-sha> docker compose --env-file .env.prod -f compose.prod.yaml up 
 ```
 
 This is exactly what `.github/workflows/cd.yml`'s `deploy` job does over SSH
-when `DEPLOY_HOST`/`DEPLOY_SSH_KEY`/`DEPLOY_USER` repo secrets are set: fetch →
-checkout the SHA's compose files → migrate → pull → `up -d --remove-orphans`.
-Until those secrets exist, CD builds and pushes images to GHCR and the deploy
-job prints a `::notice::` explaining that nothing more happened.
+when `DEPLOY_HOST`/`DEPLOY_SSH_KEY`/`DEPLOY_USER` repo secrets are set: rsync
+the SHA's `compose.prod.yaml`/`docker/postgres` from the CI runner (which
+already has them from its own checkout) → migrate → pull → `up -d
+--remove-orphans`. Until those secrets exist, CD builds and pushes images to
+GHCR and the deploy job prints a `::notice::` explaining that nothing more
+happened.
+
+The files are pushed to the host, not pulled by it — the target host holds no
+GitHub credential of any kind and never itself contacts GitHub. That is
+narrower than the Prerequisites section above requiring "the repo checked out
+on the host": that requirement is for the manual first deploy, where an
+operator runs `docker compose ... build` from local source. Once CD is
+configured, `$DEPLOY_PATH` only ever needs `.env.prod` and whatever compose
+files the last successful deploy rsynced in — a git checkout there is
+optional going forward, not a standing requirement.
 
 ### Gotcha: changing a Dockerfile does not recreate a running container
 
