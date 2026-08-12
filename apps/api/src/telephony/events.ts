@@ -70,7 +70,18 @@ export const spendLimitExceeded = defineEvent(
   z
     .object({
       reason: z.enum(TELEPHONY_REFUSALS),
-      kind: z.enum(['call', 'sms', 'number_purchase', 'verification']),
+      /* The automation kinds (Phase 10 Wave 4 §5.5) ride this closed enum so a
+         refusal of a rule's call is attributable the same way its spend is —
+         and so the alert someone built on `kind === 'call'` does not miss an
+         unattended caller burning the sub-budget. */
+      kind: z.enum([
+        'call',
+        'sms',
+        'number_purchase',
+        'verification',
+        'automation_call',
+        'automation_sms',
+      ]),
       /* Cents, never the destination number. A refusal event is exactly the
          kind of thing that ends up on a dashboard, and §8.5's PII obligations
          do not pause because the action was denied. */

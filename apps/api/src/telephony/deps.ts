@@ -2,7 +2,6 @@ import { SoftwareKeyProvider } from '@taskflow/security';
 import { S3StorageProvider } from '@taskflow/storage';
 import { FakeTelephonyProvider, TwilioTelephonyProvider } from '@taskflow/telephony';
 import type { KeyProvider, StorageProvider, TelephonyProvider } from '@taskflow/contracts';
-import type { Env } from '../config/env.js';
 
 /**
  * Wiring for the telephony module (ai/phase-7-voice.md §6.4).
@@ -45,7 +44,44 @@ export interface TelephonyDeps {
   readonly webhookOrigin: string | undefined;
 }
 
-export function buildTelephonyDeps(env: Env): TelephonyDeps | undefined {
+/**
+ * The environment subset `buildTelephonyDeps` reads.
+ *
+ * Declared structurally rather than as the API's `Env` so BOTH apps can call
+ * the same builder: the API passes its full validated env, and the worker
+ * (Phase 10 Wave 4, §5.5) passes its own smaller env schema carrying exactly
+ * this subset — the storage fields are optional because the worker never
+ * ingests recordings. One construction means the two processes cannot build
+ * different provider selections, different spend defaults, or different boot
+ * validations for the same credentials.
+ */
+export interface TelephonyEnv {
+  /* Optional with `?:` — under `exactOptionalPropertyTypes`, an optional
+     property may be ABSENT, and the API's env schema marks these optional,
+     so a present-but-undefined field would be refused by TS even though the
+     value is identical at runtime. */
+  readonly TWILIO_ACCOUNT_SID?: string | undefined;
+  readonly TWILIO_AUTH_TOKEN?: string | undefined;
+  readonly TWILIO_VERIFY_SERVICE_SID?: string | undefined;
+  readonly TELEPHONY_INDEX_KEY?: string | undefined;
+  readonly TELEPHONY_WEBHOOK_ORIGIN?: string | undefined;
+  /* Required: both apps' env schemas default these, so they are always
+     present — and a deployment that somehow lacked one must fail here. */
+  readonly TELEPHONY_DEFAULT_SPEND_CAP_CENTS: number;
+  readonly TELEPHONY_MAX_SPEND_CAP_CENTS: number;
+  readonly MASTER_KEY_ID: string;
+  readonly MASTER_KEY_BASE64: string;
+  /* Optional: the worker's env schema carries none of these, and a worker
+     never ingests recordings. */
+  readonly STORAGE_ENDPOINT?: string | undefined;
+  readonly STORAGE_REGION?: string | undefined;
+  readonly STORAGE_ACCESS_KEY_ID?: string | undefined;
+  readonly STORAGE_SECRET_ACCESS_KEY?: string | undefined;
+  readonly STORAGE_FORCE_PATH_STYLE?: boolean | undefined;
+  readonly STORAGE_BUCKET_RECORDINGS?: string | undefined;
+}
+
+export function buildTelephonyDeps(env: TelephonyEnv): TelephonyDeps | undefined {
   const accountSid = env.TWILIO_ACCOUNT_SID;
   const authToken = env.TWILIO_AUTH_TOKEN;
 
@@ -135,16 +171,23 @@ export function buildTelephonyDeps(env: Env): TelephonyDeps | undefined {
     /* Recordings go to their OWN bucket, not the attachments one. Different
        retention, different access rules, and a bucket-level lifecycle policy on
        recordings must not touch a card's attachments. */
+    /* All-or-nothing: a recordings bucket with no storage credentials is half
+       a configuration whose failure would surface at the first upload, not at
+       boot. The API's env schema REQUIRES the storage fields, so this guard
+       only ever trips for the worker — whose env carries none of them. */
     storage:
-      env.STORAGE_BUCKET_RECORDINGS === undefined
+      env.STORAGE_BUCKET_RECORDINGS === undefined ||
+      env.STORAGE_ENDPOINT === undefined ||
+      env.STORAGE_ACCESS_KEY_ID === undefined ||
+      env.STORAGE_SECRET_ACCESS_KEY === undefined
         ? undefined
         : new S3StorageProvider({
             endpoint: env.STORAGE_ENDPOINT,
-            region: env.STORAGE_REGION,
+            region: env.STORAGE_REGION ?? 'us-east-1',
             bucket: env.STORAGE_BUCKET_RECORDINGS,
             accessKeyId: env.STORAGE_ACCESS_KEY_ID,
             secretAccessKey: env.STORAGE_SECRET_ACCESS_KEY,
-            forcePathStyle: env.STORAGE_FORCE_PATH_STYLE,
+            forcePathStyle: env.STORAGE_FORCE_PATH_STYLE ?? true,
           }),
     recordingsBucket: env.STORAGE_BUCKET_RECORDINGS,
     defaultSpendCapCents: env.TELEPHONY_DEFAULT_SPEND_CAP_CENTS,

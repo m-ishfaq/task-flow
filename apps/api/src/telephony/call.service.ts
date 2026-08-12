@@ -1,5 +1,11 @@
 import { and, desc, eq, schema, withOrgScope, outboxWriter } from '@taskflow/db';
-import { errors, type OrgId, type PhoneNumber, type UserId } from '@taskflow/contracts';
+import {
+  errors,
+  type OrgId,
+  type OutboundKind,
+  type PhoneNumber,
+  type UserId,
+} from '@taskflow/contracts';
 import { createEvent, type DomainEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
 import { consentRequirementFor } from '@taskflow/telephony';
@@ -70,10 +76,25 @@ export interface PlaceCallInput {
   readonly record: boolean;
 }
 
+/**
+ * Why this call is being placed — attribution for the ledger and the gate.
+ *
+ * The automation path (Phase 10 Wave 4 §5.5) is NOT a different gate: it is
+ * the same `checkOutboundAllowed` with the same geo table, org freeze,
+ * subaccount check, rolling cap and velocity limiter. What changes is the
+ * KIND the gate sees and the ledger records — `automation_call` instead of
+ * `call` — so the sub-budget can sum unattended spend and a runaway rule
+ * cannot consume the allowance a human needs for a real customer call.
+ */
+export interface PlaceCallOptions {
+  readonly initiatedBy?: 'automation';
+}
+
 export async function placeCall(
   actor: TelephonyActor,
   deps: TelephonyDeps,
   input: PlaceCallInput,
+  options: PlaceCallOptions = {},
 ): Promise<{ readonly callId: string; readonly announcementRequired: boolean }> {
   const orgId = orgOf(actor);
   const userId = userOf(actor);
@@ -83,16 +104,24 @@ export async function placeCall(
 
   const account = await ensureSubaccount(actor, deps);
 
+  /* Priced with the BASE kind, never the automation one: a call costs what a
+     call costs, and the provider's rate card is keyed on what the action IS,
+     not on who asked for it. The attributed kind enters at the gate below. */
   const estimatedCents = await deps.telephony.estimateCostCents({ kind: 'call', to: input.to });
 
-  /* THE gate. Before the carrier hears anything about this call. */
+  /* THE gate. Before the carrier hears anything about this call — and the
+     automation path passes it identically, under its attributed kind, so the
+     sub-budget (§5.5) and the velocity table see an unattended caller as its
+     own actor rather than silently borrowing the human 'call' bucket. */
+  const kind: OutboundKind =
+    options.initiatedBy === 'automation' ? 'automation_call' : 'call';
   const decision = await checkOutboundAllowed(
-    { orgId, userId, kind: 'call', to: input.to, estimatedCents },
+    { orgId, userId, kind, to: input.to, estimatedCents },
     { defaultCapCents: deps.defaultSpendCapCents },
   );
 
   if (!decision.allowed) {
-    await emitRefusal(actor, decision, 'call', estimatedCents);
+    await emitRefusal(actor, decision, kind, estimatedCents);
     throw errors.quotaExceeded(refusalMessage(decision.reason));
   }
 
@@ -135,7 +164,7 @@ export async function placeCall(
 
     await recordSpend(tx, orgId, {
       id: spendId,
-      kind: 'call',
+      kind,
       estimatedCents,
       providerSid: undefined,
     });

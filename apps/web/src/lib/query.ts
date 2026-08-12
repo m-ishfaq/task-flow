@@ -341,6 +341,12 @@ export const keys = {
   apiTokens: (orgId: string) => ['org', orgId, 'automations', 'api-tokens'] as const,
   /** The caller's currently held permissions — the scope checklist's options. */
   apiTokenScopes: (orgId: string) => ['org', orgId, 'automations', 'api-tokens', 'scopes'] as const,
+  /**
+   * Whether the cost-bearing telephony actions exist in the rule builder
+   * (Wave 4, §5.5) — the server's answer, never a client-side copy of the
+   * deployment env.
+   */
+  automationCapabilities: (orgId: string) => ['org', orgId, 'automations', 'capabilities'] as const,
   /** Every SMS thread. */
   messageThreads: (orgId: string) => ['org', orgId, 'telephony', 'threads'] as const,
   /** Messages in one thread. */

@@ -6,12 +6,19 @@ in review before building. Written 2026-08-11 against `pre-launch-hardening` HEA
 and wants its own spec written and approved before implementation). Phase 8 followed this
 route and it worked; this is the same route.
 
-**Waves 3–4 (public API with scoped tokens, Slack/GitHub connectors, importers/exporters, and
-wave 4's cost-bearing telephony actions behind the env flag) are NOT complete.** Wave 3's
-slices 1–3 shipped 2026-08-11 (see the §6 status header) — the token store, the mint/list/
-revoke lifecycle, and the full authentication path — with slices 4 (quota), 5 (UI) and 6
-(remaining suites) still open. Waves 1–2 are the engine and the webhook delivery path; the
-wave list below says exactly what shipped in each.
+**Wave 3 COMPLETE** — all six slices shipped 2026-08-11 (see the §6 status header): the token
+store, the mint/list/revoke lifecycle, the full authentication path, the durable per-token
+quota, the web UI, and the closing suites.
+
+**Wave 4's cost-bearing telephony slice (§5.5) SHIPPED 2026-08-12** — `call.place` and
+`sms.send` as rule actions behind the off-by-default `AUTOMATION_TELEPHONY_ACTIONS_ENABLED`
+flag, the automation sub-budget (migration 0055), the worker executor branches, and the
+rule-builder + spend-panel UI. See the "Wave 4 — the cost-bearing telephony actions (§5.5)"
+header below.
+
+**Wave 4 still open: the connectors (Slack/GitHub) and the CSV/JSON importers/exporters
+(§7).** Waves 1–2 are the engine and the webhook delivery path; the wave list below says
+exactly what shipped in each.
 
 **Two recommendations were overturned in that review, and both were overturned correctly:**
 
@@ -154,6 +161,75 @@ browser** — the standing caveat, and the reason Wave 1 shipped with gaps a sin
 inside this file:** Phase 11's only route to historical data is replaying `card.status_changed`
 out of `platform.outbox`, which nothing has ever pruned. **This phase does not prune it** —
 see §9 decision 7 and [ai/phase-11-analytics.md](ai/phase-11-analytics.md) §2.4.
+
+### Wave 4 — the cost-bearing telephony actions (§5.5), COMPLETE (commit `924d539`)
+
+The slice §9 decision 3 put last and behind the flag: `call.place` and `sms.send` as rule
+actions, available only when `AUTOMATION_TELEPHONY_ACTIONS_ENABLED` is true — off by default
+in BOTH the API's and the worker's validated env schemas, parsed from the literal string
+(the `RETENTION_SWEEP_ENABLED` lesson). Migration 0055, the API and worker changes, and the
+rule-builder and spend-panel UI shipped together.
+
+Backend:
+
+1. **Migration 0055** — `comms.spend_ledger.kind` gains `automation_call` and `automation_sms`
+   (the CHECK widens rather than being replaced; the provider is never asked to price them —
+   a call costs what a call costs), and `comms.spend_policy.automation_cap_cents`, the org's
+   separate ceiling for unattended spend, with a non-negativity CHECK. NULL means "no separate
+   ceiling" — the org cap alone bounds automation, which is the pre-feature behaviour. The
+   sub-budget is per-ORG and in the DATABASE for the identical reason `cap_cents` is: policy
+   is not a redeploy.
+2. **The write boundary is a function of the flag.** `buildAutomationActionSchema` adds the
+   two variants only when enabled, so with the flag off a rule containing one cannot be SAVED
+   at all — the same error a mistyped action type gets. `to` is validated against
+   `PhoneNumberTextSchema` (the plain-string E.164, because a branded output would make the
+   exported schema un-nameable for `tsc --declaration`; the executor re-brands at the
+   boundary). `record` is deliberately absent: an unattended rule must never be able to start
+   recording a person. `automation.capabilities` answers the flag to the builder through the
+   real router, so the UI never hard-codes a copy of the deployment env.
+3. **The actions are NOT a second gate.** `placeCall`/`sendSms` take an
+   `{ initiatedBy: 'automation' }` option that changes ONLY the kind the gate sees and the
+   ledger records — the same `checkOutboundAllowed` chain (geo table, org freeze, subaccount
+   status, rolling cap, velocity limiter) runs identically, and the velocity table gives the
+   automation kinds their OWN per-owner buckets so a rule cannot drain the allowance a human
+   needs for a real call. The sub-budget is summed over the automation kinds in the SAME
+   window as the org cap and checked IN ADDITION to it, never instead of it; a refusal cites
+   the sub-budget's own figures, so an operator alerting on `automation_budget_exceeded` is
+   not woken by a plain overspend.
+4. **The executor** runs the actions through the same service functions a human's call uses —
+   `record: false` always — and `telephonyFor` refuses loudly, as a recorded failed action,
+   when the flag is off (a rule saved under an earlier configuration) or when no carrier is
+   configured. Loop protection lists `call.placed`/`call.status_changed` for `call.place` and
+   `sms.sent` for `sms.send`, conservatively per the table's own header.
+5. **One construction, two processes.** `buildTelephonyDeps` now takes a structural
+   `TelephonyEnv` subset, so the worker builds the identical provider selection, spend
+   defaults and boot validations (including `TELEPHONY_WEBHOOK_ORIGIN` being required for a
+   live carrier) from the same function the API uses.
+
+Web:
+
+6. **The rule builder** offers the two actions only when `automation.capabilities` says the
+   flag is on (`offeredActions`, false until the answer arrives — the safe side). The `To`
+   field is a `phoneTarget` picker: the org's members with a work phone offered as prefilled
+   options (the same `phoneContactsQuery` click-to-call uses), plus a "Custom number…"
+   fall-through to a typed E.164 for anyone not in the directory; the server validates.
+   `From (your number)` is a `phoneNumber` picker over the org's OWN numbers, because the
+   service resolves the id under `withOrgScope` and a number the org does not hold is a 404.
+   A rule saved while the flag was on stays visible and editable after it is turned off —
+   the server refuses to save it unchanged with a real message rather than the UI swapping
+   the action for whatever sorts first.
+7. **The spend panel** shows an "Automation allowance" bar (the same figures
+   `checkOutboundAllowed` enforces against) when the org has configured a sub-budget, and the
+   cost-attribution table labels the automation kinds instead of printing `automation_call`
+   raw.
+
+Verified: lint + typecheck clean across web/api/worker/db; web 341/341 (including the
+11-test `vocabulary.test.ts`); the API automation + telephony suites 56/56; the worker
+executor 7/7. The full `pnpm verify` had not completed when this slice was committed — the
+turbo run exceeds an agent's per-command cap, not because anything failed; the remaining
+package suites (db, seed, realtime, collab, telephony) are in the commit's status note.
+**Browser verification was in progress when this slice was committed** — the standing
+caveat, and the reason Wave 1 shipped with gaps a single click found.
 
 ---
 

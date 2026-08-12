@@ -267,6 +267,51 @@ describe('placeCall', () => {
   });
 });
 
+describe('automation-initiated calls (Phase 10 Wave 4 §5.5)', () => {
+  it('attributes the ledger row under automation_call, never call', async () => {
+    const orgId = await readyOrg('call-auto-kind');
+    const fromId = await givePhoneNumber(orgId);
+    const actor = await actorFor(orgId);
+
+    const result = await placeCall(
+      actor,
+      depsFor(),
+      { to: ALL_PARTY_TO, fromPhoneNumberId: fromId, record: false },
+      { initiatedBy: 'automation' },
+    );
+
+    expect(result.callId).toBeTruthy();
+    /* The call is an ordinary call row; the ATTRIBUTION lives in the ledger
+       kind — the thing the sub-budget sums and spendReport groups. A rule's
+       call that wrote kind 'call' would consume the human allowance. */
+    const ledger = await withOrgScope(orgId, async (tx) =>
+      tx.select({ kind: schema.spendLedger.kind }).from(schema.spendLedger),
+    );
+    expect(ledger.map((row) => row.kind)).toEqual(['automation_call']);
+    expect(provider.calls.length).toBe(1);
+  });
+
+  it('passes the SAME gate — a premium destination is refused before the provider', async () => {
+    /* The one property §5.5 restates at the top: an automation action is not
+       a different gate. A rule's call to a disallowed destination must be
+       refused identically to a human's, before the carrier hears anything. */
+    const orgId = await readyOrg('call-auto-geo');
+    const fromId = await givePhoneNumber(orgId);
+    const actor = await actorFor(orgId);
+
+    await expect(
+      placeCall(
+        actor,
+        depsFor(),
+        { to: PREMIUM_TO, fromPhoneNumberId: fromId, record: false },
+        { initiatedBy: 'automation' },
+      ),
+    ).rejects.toThrow();
+
+    expect(provider.calls.length).toBe(0);
+  });
+});
+
 describe('the consent CHECK constraint', () => {
   it('refuses to start recording before a required announcement has played', async () => {
     const orgId = await readyOrg('call-check-blocks');

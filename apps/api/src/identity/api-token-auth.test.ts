@@ -378,7 +378,13 @@ const automationKeys = new SoftwareKeyProvider({
   }),
 });
 
-const automationRouter = createAutomationRouter({ keys: automationKeys });
+const automationRouter = createAutomationRouter({
+  keys: automationKeys,
+  /* The flag is off in tests (its default): this suite drives webhook routes,
+     which the flag does not touch, and a rule containing a telephony action
+     cannot be saved through a default-shaped router — the honest fixture. */
+  telephonyActionsEnabled: false,
+});
 
 describe('a token principal on the real automation router', () => {
   async function principalOf(token: string) {

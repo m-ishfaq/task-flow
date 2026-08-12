@@ -58,7 +58,27 @@ export type AutomationAction =
      org-registered webhook (never a URL), so the SSRF gate can live in the
      delivery loop instead of on the rule, and the enqueue itself is
      authorized as `webhook:manage` (§2). */
-  | { readonly type: 'call_webhook'; readonly webhookId: string };
+  | { readonly type: 'call_webhook'; readonly webhookId: string }
+  /* Wave 4 — the cost-bearing actions (ai/phase-10-automation.md §5.5).
+
+     Available only when the deployment enables them
+     (AUTOMATION_TELEPHONY_ACTIONS_ENABLED, default OFF — the API refuses to
+     even save a rule containing them while it is off), and they run through
+     the SAME outbound gate a human's call runs through: geo table, org
+     freeze, subaccount check, rolling cap, velocity limiter, and the
+     automation SUB-budget. The ledger attributes their spend under
+     `automation_call`/`automation_sms` kinds so a broken rule burns its own
+     allowance and stops while the phone still works for people.
+
+     A rule can never request recording: the union has no field for it, and
+     the executor always passes `record: false`. */
+  | { readonly type: 'call.place'; readonly to: string; readonly fromPhoneNumberId: string }
+  | {
+      readonly type: 'sms.send';
+      readonly to: string;
+      readonly fromPhoneNumberId: string;
+      readonly body: string;
+    };
 
 /** Every action type, for the route's schema and the executor's exhaustiveness check. */
 export const ACTION_TYPES = [
@@ -72,6 +92,8 @@ export const ACTION_TYPES = [
   'card.add_comment',
   'chat.post_message',
   'call_webhook',
+  'call.place',
+  'sms.send',
 ] as const;
 
 export type ActionType = (typeof ACTION_TYPES)[number];

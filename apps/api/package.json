@@ -30,7 +30,10 @@
     "./automation/webhooks": "./src/automation/webhook.service.ts",
     "./events/automation": "./src/automation/events.ts",
     "./events/automation-webhooks": "./src/automation/webhook-events.ts",
-    "./events/api-tokens": "./src/automation/api-token-events.ts"
+    "./events/api-tokens": "./src/automation/api-token-events.ts",
+    "./telephony/call": "./src/telephony/call.service.ts",
+    "./telephony/message": "./src/telephony/message.service.ts",
+    "./telephony/deps": "./src/telephony/deps.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",

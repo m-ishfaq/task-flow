@@ -87,7 +87,19 @@ export type AutomationActionInput =
      org-registered webhook (never a URL), so the SSRF gate lives in the
      delivery loop instead of on the rule, and the enqueue itself is
      authorized as `webhook:manage` (§2). */
-  | { readonly type: 'call_webhook'; readonly webhookId: string };
+  | { readonly type: 'call_webhook'; readonly webhookId: string }
+  /* Wave 4 — the cost-bearing actions (§5.5). Reachable only when the
+     deployment enables them: the router's schema refuses to SAVE a rule
+     containing one while AUTOMATION_TELEPHONY_ACTIONS_ENABLED is off, and the
+     worker's executor refuses to RUN one. No `record` field — a rule must
+     never be able to start recording a person. */
+  | { readonly type: 'call.place'; readonly to: string; readonly fromPhoneNumberId: string }
+  | {
+      readonly type: 'sms.send';
+      readonly to: string;
+      readonly fromPhoneNumberId: string;
+      readonly body: string;
+    };
 
 /**
  * Events an action emits, for the save-time self-trigger check.
@@ -113,6 +125,11 @@ const EVENTS_EMITTED_BY: Readonly<Record<string, readonly string[]>> = {
   /* The enqueue emits this through the service layer, so a rule triggered by
      `webhook.delivery_queued` whose action calls a webhook would feed itself. */
   call_webhook: ['webhook.delivery_queued'],
+  /* Wave 4 — a call's lifecycle is a first-class event stream. Conservative
+     per the header: the events `placeCall` actually emits plus the status
+     transitions its own actions can provoke. */
+  'call.place': ['call.placed', 'call.status_changed'],
+  'sms.send': ['sms.sent'],
 };
 
 const orgOf = (actor: AutomationActor): OrgId => actor.subject.orgId;

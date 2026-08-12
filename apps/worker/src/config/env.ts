@@ -85,6 +85,42 @@ export const EnvSchema = z.object({
 
   /** How often the engine claims a batch from the outbox. */
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(250).max(60_000).default(2_000),
+
+  /* ------------------------------------------------------------------ *
+   * Automation telephony (Phase 10 Wave 4, ai/phase-10-automation.md §5.5)
+   * ------------------------------------------------------------------ */
+
+  /* Whether the cost-bearing automation actions may EXECUTE here. Default
+     false, parsed from the literal string (the `RETENTION_SWEEP_ENABLED`
+     lesson — `z.coerce.boolean()` would treat `=false` as true).
+
+     The same flag the API validates gates the BUILDER — the actions cannot
+     even be saved while it is off. This second copy is the execution-time
+     half: a rule saved while the flag was on must not run after the
+     deployment turns it off, and the refusal lands in run history with a
+     reason rather than happening somewhere silently. Off-by-default means
+     this process builds no telephony provider and imports nothing heavy it
+     does not need. */
+  AUTOMATION_TELEPHONY_ACTIONS_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+
+  /* The carrier and gate configuration, needed ONLY to execute the actions
+     above. Optional, and the pattern is the API's own: an unconfigured
+     carrier is a valid deployment, and rules that use telephony fail with a
+     recorded reason rather than the process refusing to boot. When the flag
+     above is on, `buildTelephonyDeps` reads these — the same construction
+     and the same validation (including `TELEPHONY_WEBHOOK_ORIGIN` being
+     REQUIRED for a live carrier) the API applies, so a rule's call goes
+     through the identical chokepoint a human's does. */
+  TWILIO_ACCOUNT_SID: NonEmpty.optional(),
+  TWILIO_AUTH_TOKEN: NonEmpty.optional(),
+  TWILIO_VERIFY_SERVICE_SID: NonEmpty.optional(),
+  TELEPHONY_INDEX_KEY: NonEmpty.optional(),
+  TELEPHONY_WEBHOOK_ORIGIN: z.string().url().optional(),
+  TELEPHONY_DEFAULT_SPEND_CAP_CENTS: z.coerce.number().int().nonnegative().default(2500),
+  TELEPHONY_MAX_SPEND_CAP_CENTS: z.coerce.number().int().nonnegative().default(50_000),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -135,6 +171,17 @@ const KNOWN_VARIABLES = new Set([
   'COLLAB_PORT',
   'WORKER_PORT',
   'WORKER_POLL_INTERVAL_MS',
+  /* Telephony (Phase 7 / Phase 10 Wave 4) — legitimately present in a
+     developer's shared .env even when the worker has not been configured to
+     place calls, and listed so the misspelling check below cannot reject a
+     correctly-spelled variable this process simply does not act on. */
+  'TWILIO_ACCOUNT_SID',
+  'TWILIO_AUTH_TOKEN',
+  'TWILIO_VERIFY_SERVICE_SID',
+  'TELEPHONY_INDEX_KEY',
+  'TELEPHONY_WEBHOOK_ORIGIN',
+  'TELEPHONY_DEFAULT_SPEND_CAP_CENTS',
+  'TELEPHONY_MAX_SPEND_CAP_CENTS',
 ]);
 
 /**
@@ -180,7 +227,16 @@ export function loadEnv(): Env {
 export function assertNoMisspelledVariables(source: Record<string, string | undefined>): void {
   const suspects = Object.keys(source).filter(
     (key) =>
-      !KNOWN_VARIABLES.has(key) && (key.startsWith('WORKER_') || key.startsWith('DATABASE_')),
+      !KNOWN_VARIABLES.has(key) &&
+      (key.startsWith('WORKER_') ||
+        key.startsWith('DATABASE_') ||
+        /* Phase 10 Wave 4: this process now reads telephony configuration, so
+           a misspelled TWILIO_/TELEPHONY_/AUTOMATION_ variable is as much
+           "ours" as a misspelled WORKER_ one — the API's own check catches it
+           for ITS schema, but the worker is a second place the typo is made. */
+        key.startsWith('TWILIO_') ||
+        key.startsWith('TELEPHONY_') ||
+        key.startsWith('AUTOMATION_')),
   );
 
   if (suspects.length > 0) {

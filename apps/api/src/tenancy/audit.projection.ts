@@ -101,6 +101,24 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'card.assigned': { type: 'card', key: 'cardId' },
   'card.archived': { type: 'card', key: 'cardId' },
 
+  /* Sprints (Phase 10.5, migration 0054) resolve to their PROJECT, on exactly
+     the reasoning `list.*` resolves to its board: there is no `sprint`
+     resource type, because a sprint is not independently grantable — nobody
+     shares one iteration of a project's plan — so the resource an entry names
+     is the thing a grant could actually name. Every one of these payloads
+     carries `projectId`, which is what makes the key honest rather than
+     convenient.
+
+     `card.sprint_changed` is the exception and resolves to the CARD, like
+     every other per-card event: the fact recorded is "this card's membership
+     changed", and its payload carries no `projectId` to key on anyway. */
+  'sprint.created': { type: 'project', key: 'projectId' },
+  'sprint.started': { type: 'project', key: 'projectId' },
+  'sprint.completed': { type: 'project', key: 'projectId' },
+  'sprint.cancelled': { type: 'project', key: 'projectId' },
+  'sprint.updated': { type: 'project', key: 'projectId' },
+  'card.sprint_changed': { type: 'card', key: 'cardId' },
+
   /* Card detail. Labels and custom field DEFINITIONS resolve to their project,
      because that is what they belong to and what a grant could name; the
      per-card events resolve to the card. Checklists and their items have no

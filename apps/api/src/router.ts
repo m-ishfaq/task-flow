@@ -31,11 +31,15 @@ import { PostgresSearchProvider } from './search/postgres-provider.js';
 
 export interface AppRouterDeps extends IdentityRouterDeps {
   /**
-   * Automation (Phase 10). Only the webhook registry needs anything external
-   * — a KeyProvider to wrap the per-webhook signing secrets at rest — so the
-   * dep is exactly that, threaded through `createAutomationRouter`.
+   * Automation (Phase 10). Only two things are external: a KeyProvider to
+   * wrap the per-webhook signing secrets at rest, and §9 decision 3's
+   * product-surface flag deciding whether the cost-bearing telephony actions
+   * exist in the rule builder at all (Wave 4, §5.5).
    */
-  readonly automation: { readonly keys: KeyProvider };
+  readonly automation: {
+    readonly keys: KeyProvider;
+    readonly telephonyActionsEnabled: boolean;
+  };
   /**
    * Work's external dependencies — object storage and the virus scanner.
    *
@@ -206,7 +210,10 @@ export function createAppRouter(deps: AppRouterDeps) {
      * question is asked at EXECUTION, per action, against the rule owner's
      * live permissions.
      */
-    automation: createAutomationRouter(deps.automation),
+    automation: createAutomationRouter({
+      keys: deps.automation.keys,
+      telephonyActionsEnabled: deps.automation.telephonyActionsEnabled,
+    }),
 
     /**
      * Programmatic-access tokens (Phase 10 Wave 3, §6).

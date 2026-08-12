@@ -132,6 +132,11 @@ export function testAppRouter(
           }),
           currentMasterKeyId: TEST_ENV.MASTER_KEY_ID,
         }),
+        /* TEST_ENV leaves the flag at its off-by-default value, so the fixture
+           router's rule builder cannot save a cost-bearing telephony action —
+           the same shape a default deployment has. A suite exercising those
+           actions builds its own router with the flag on. */
+        telephonyActionsEnabled: TEST_ENV.AUTOMATION_TELEPHONY_ACTIONS_ENABLED,
       },
       work: buildWorkDeps(TEST_ENV),
       platform: { vapidPublicKey: null },

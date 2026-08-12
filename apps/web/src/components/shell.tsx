@@ -152,7 +152,9 @@ export function Shell() {
 
   if (bare) {
     return (
-      <div className="flex h-full flex-col">
+      /* `h-dvh` for the same reason as the framed branch below — the login and
+         mail-link pages centre themselves against this height. */
+      <div className="flex h-dvh flex-col">
         <main className="min-h-0 flex-1">
           <Outlet />
         </main>
@@ -163,7 +165,24 @@ export function Shell() {
   return (
     <div
       className={cn(
-        'flex h-full overflow-y-hidden',
+        /* `h-dvh`, not `h-full`. `h-full` is `height: 100%`, which only
+           resolves if EVERY ancestor has a definite height — html, body and
+           #root each carry `h-full` for exactly that reason, and the chain
+           holds today. It is still the wrong tool for the outermost frame:
+           the whole layout below depends on this element having a real
+           height, and a percentage makes that a property of four elements in
+           two files rather than of this one.
+
+           When the chain breaks, nothing errors. Every height falls back to
+           `auto`, so the sidebar collapses to the height of its own tree and
+           `main` grows past the viewport — which means a page that manages
+           its own scrolling (`h-full` root, `flex-1 overflow-y-auto` body)
+           has its inner region grow instead of scroll, and its `shrink-0`
+           header scrolls away with the rest. A sticky header sliding off the
+           top is the visible symptom of a height that was never definite.
+
+           `dvh` is viewport-relative, so it resolves unconditionally. */
+        'flex h-dvh overflow-hidden',
         /* The pre-org state has no drawer, so its switcher is an ordinary flex
            child with a fixed width — which below `md` left the org picker about
            180px to render "Choose an organization" in, header and all. Stacking
@@ -240,7 +259,19 @@ export function Shell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <Header showMenuButton={hasOrg} />
-        <main className="min-h-0 flex-1 overflow-x-auto">
+        {/* `relative` establishes a containing block, and it is load-bearing.
+            An `position: absolute` descendant with no positioned ancestor
+            resolves against the INITIAL containing block instead — which means
+            it escapes both its scroll container's clipping and `#root`'s
+            `overflow-hidden`, and contributes to the DOCUMENT's scroll area at
+            its static position. Tailwind's `sr-only` is absolutely positioned,
+            so every screen-reader label in a long list did exactly that: the
+            page itself measured correctly (its own region scrolled, its header
+            stayed put) while `<html>` quietly grew past the viewport, and the
+            window scrollbar dragged the entire fixed-height frame — header,
+            sidebar and all — off the top. Positioning `main` keeps those
+            descendants inside the frame that clips them. */}
+        <main className="relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
           <Outlet />
         </main>
       </div>

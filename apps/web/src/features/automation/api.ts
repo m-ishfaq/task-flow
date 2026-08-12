@@ -65,6 +65,18 @@ export function apiTokensQuery(orgId: string) {
 }
 
 /**
+ * Whether the cost-bearing telephony actions exist in the builder (§5.5) —
+ * the server's answer to the same env flag the write boundary is built from,
+ * so the builder cannot offer a rule the server will refuse to save.
+ */
+export function automationCapabilitiesQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.automationCapabilities(orgId),
+    queryFn: async () => wire(await api.automation.capabilities.query({})),
+  });
+}
+
+/**
  * The scope checklist's options — the caller's held permissions, answered by
  * the same live `can()` the mint route validates with, so the form can never
  * offer a scope the server will refuse.

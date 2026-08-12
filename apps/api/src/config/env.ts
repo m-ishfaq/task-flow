@@ -257,6 +257,26 @@ export const EnvSchema = z
        is a reindex, not a restart. */
     TELEPHONY_INDEX_KEY: OptionalKey,
 
+    /* Phase 10 Wave 4 (§5.5): whether the cost-bearing automation actions
+       (`call.place`, `sms.send`) exist in the rule builder at all.
+
+       OFF BY DEFAULT, and the default is the safe one — parsed from the
+       string 'true' rather than with `z.coerce.boolean()`, which treats every
+       non-empty string as true, so `=false` would enable it (the
+       RETENTION_SWEEP_ENABLED lesson).
+
+       This is NOT a security control and must never be read as one: it gates
+       a product surface. Every security control — the geo table, the org
+       freeze, subaccount status, the rolling cap, the velocity limiter, and
+       the automation sub-budget — runs unconditionally on both sides of it,
+       through the identical `checkOutboundAllowed` chokepoint a human's call
+       passes. Turning the flag on adds a caller to an existing gate; turning
+       it off is defence in depth, not the defence (§9 decision 3). */
+    AUTOMATION_TELEPHONY_ACTIONS_ENABLED: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
+
     /* Where call recordings land. Optional, like every telephony setting: an
        instance with no carrier has nothing to store. */
     STORAGE_BUCKET_RECORDINGS: OptionalNonEmpty,
@@ -575,6 +595,10 @@ const TASKFLOW_PREFIXES = [
   'TWILIO_',
   'TELEPHONY_',
   'RTC_',
+  /* Phase 10 Wave 4 — the automation telephony flag is this app's own, and a
+     misspelled `AUTOMATION_TELEPHONY_ACTIONS_EBABLED` is exactly the near-miss
+     this list exists to catch. */
+  'AUTOMATION_',
 ];
 
 /**

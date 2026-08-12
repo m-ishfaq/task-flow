@@ -77,6 +77,13 @@ export const ACTION_LABELS: Readonly<Record<string, string>> = {
   'card.add_comment': 'Add a comment to the card',
   'chat.post_message': 'Post a chat message',
   call_webhook: 'Call a webhook',
+  /* Wave 4 (§5.5) — the cost-bearing actions. They cost money and are gated
+     behind a deployment flag, so `offeredActions` hides them unless the
+     server says they exist — but the LABELS (and the ARGUMENTS below) are
+     unconditional, because a rule saved under a previous configuration must
+     still render when listed. */
+  'call.place': 'Place a call',
+  'sms.send': 'Send an SMS',
 };
 
 export type ActionValue =
@@ -89,7 +96,17 @@ export type ActionValue =
   | { readonly type: 'card.unassign'; readonly userId: string }
   | { readonly type: 'card.add_comment'; readonly body: string }
   | { readonly type: 'chat.post_message'; readonly channelId: string; readonly body: string }
-  | { readonly type: 'call_webhook'; readonly webhookId: string };
+  | { readonly type: 'call_webhook'; readonly webhookId: string }
+  /* Wave 4 (§5.5) — `to` is free text because a rule may reach anyone
+     (validated to E.164 by the server, never a UI claim), while the FROM
+     number must be one the org owns — that is what the picker offers. */
+  | { readonly type: 'call.place'; readonly to: string; readonly fromPhoneNumberId: string }
+  | {
+      readonly type: 'sms.send';
+      readonly to: string;
+      readonly fromPhoneNumberId: string;
+      readonly body: string;
+    };
 
 /**
  * How to EDIT each argument of each action.
@@ -115,6 +132,14 @@ export type ArgumentKind =
   | 'member'
   | 'channel'
   | 'webhook'
+  /** The org's owned phone numbers (Wave 4, §5.5). */
+  | 'phoneNumber'
+  /**
+   * Who a rule dials or texts: a select of org members' work phones, with a
+   * fall-through to a typed E.164 for anyone not in the directory (Wave 4,
+   * §5.5).
+   */
+  | 'phoneTarget'
   /** Project-scoped pickers — need a project chosen first (see PROJECT_SCOPED). */
   | 'list'
   | 'status'
@@ -144,7 +169,49 @@ export const ARGUMENTS: Readonly<Record<string, readonly ArgumentSpec[]>> = {
   /* Wave 2 — names an org-registered webhook, so the picker offers the
      registry and the action can never carry a bare URL. */
   call_webhook: [{ field: 'webhookId', label: 'Webhook', kind: 'webhook' }],
+  /* Wave 4 (§5.5) — the cost-bearing actions. `to` is a contact-or-custom
+     picker: the org's members with work phones offered as prefills, plus a
+     manual E.164 field (a rule may reach anyone, and the server validates the
+     number). `fromPhoneNumberId` is a picker over the org's OWN numbers,
+     because the service resolves it under `withOrgScope` and a number the org
+     does not hold is a 404. */
+  'call.place': [
+    { field: 'to', label: 'To', kind: 'phoneTarget' },
+    { field: 'fromPhoneNumberId', label: 'From (your number)', kind: 'phoneNumber' },
+  ],
+  'sms.send': [
+    { field: 'to', label: 'To', kind: 'phoneTarget' },
+    { field: 'fromPhoneNumberId', label: 'From (your number)', kind: 'phoneNumber' },
+    { field: 'body', label: 'Message', kind: 'text' },
+  ],
 };
+
+/**
+ * The cost-bearing actions (§5.5), hidden unless the deployment enables them.
+ *
+ * The flag is a PRODUCT-SURFACE gate, never a security control: every gate a
+ * telephony action passes — geo, org freeze, subaccount, rolling cap,
+ * velocity, the automation sub-budget — runs unconditionally at execution
+ * whether or not the builder offers the action.
+ */
+export const TELEPHONY_ACTIONS: ReadonlySet<string> = new Set(['call.place', 'sms.send']);
+
+/**
+ * The actions the builder may offer, as `[type, label]` pairs.
+ *
+ * The server decides whether the telephony actions exist at all
+ * (`automation.capabilities`, answered from the deployment env), and the UI
+ * must not offer a rule the server will refuse to save. False until the
+ * answer arrives — the safe side of the flag: a hidden action is a missing
+ * feature, a shown one is a rule that cannot exist.
+ */
+export function offeredActions(
+  telephonyActionsEnabled: boolean,
+): readonly [type: string, label: string][] {
+  return Object.entries(ACTION_LABELS).filter(
+    ([type]) => !TELEPHONY_ACTIONS.has(type) || telephonyActionsEnabled,
+  );
+}
 
 /**
  * Argument kinds whose options only exist inside a PROJECT.
@@ -188,7 +255,7 @@ export function describeAction(action: unknown): string {
      add-comment action is described by what it says rather than by where or
      on what it does it. */
   if (
-    (type === 'chat.post_message' || type === 'card.add_comment') &&
+    (type === 'chat.post_message' || type === 'card.add_comment' || type === 'sms.send') &&
     typeof record['body'] === 'string'
   ) {
     return `${label}: “${truncate(record['body'], 40)}”`;
@@ -245,6 +312,13 @@ export function blankAction(type = 'card.set_priority', key?: string): ActionDra
       return { key: identity, value: { type: 'chat.post_message', channelId: '', body: '' } };
     case 'call_webhook':
       return { key: identity, value: { type: 'call_webhook', webhookId: '' } };
+    case 'call.place':
+      return { key: identity, value: { type: 'call.place', to: '', fromPhoneNumberId: '' } };
+    case 'sms.send':
+      return {
+        key: identity,
+        value: { type: 'sms.send', to: '', fromPhoneNumberId: '', body: '' },
+      };
     default:
       return { key: identity, value: { type: 'card.set_priority', priority: 'high' } };
   }

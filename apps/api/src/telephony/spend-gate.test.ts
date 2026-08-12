@@ -116,22 +116,38 @@ async function suspendOrg(orgId: OrgId): Promise<void> {
   await admin.setOrg(null);
 }
 
-async function setCap(orgId: OrgId, capCents: number, windowDays = 30): Promise<void> {
+async function setCap(
+  orgId: OrgId,
+  capCents: number,
+  windowDays = 30,
+  automationCapCents?: number,
+): Promise<void> {
   await withOrgScope(orgId, async (tx) => {
-    await tx.insert(schema.spendPolicy).values({ orgId, capCents, windowDays });
+    await tx.insert(schema.spendPolicy).values({
+      orgId,
+      capCents,
+      windowDays,
+      /* §5.5's sub-budget, set explicitly or left NULL (no separate ceiling). */
+      ...(automationCapCents === undefined ? {} : { automationCapCents }),
+    });
   });
 }
 
 async function spend(
   orgId: OrgId,
   estimatedCents: number,
-  options: { actualCents?: number; occurredAt?: Date; providerSid?: string } = {},
+  options: {
+    actualCents?: number;
+    occurredAt?: Date;
+    providerSid?: string;
+    kind?: OutboundKind;
+  } = {},
 ): Promise<void> {
   await withOrgScope(orgId, async (tx) => {
     await tx.insert(schema.spendLedger).values({
       id: newId<'SpendLedgerId'>(),
       orgId,
-      kind: 'sms',
+      kind: options.kind ?? 'sms',
       estimatedCents,
       ...(options.actualCents === undefined ? {} : { actualCents: options.actualCents }),
       ...(options.occurredAt === undefined ? {} : { occurredAt: options.occurredAt }),
@@ -385,6 +401,121 @@ describe('checkOutboundAllowed', () => {
       /* Already past the threshold — reporting it again would make the
          notification fire on every call for the rest of the window. */
       expect(after.allowed && after.warnThresholdPercent).toBeUndefined();
+    });
+  });
+
+  describe('the automation sub-budget (Phase 10 Wave 4 §5.5)', () => {
+    it('refuses an automation action over the sub-budget, reporting the SUB-budget figures', async () => {
+      const orgId = await newOrg('tel-autosub-over');
+      await giveSubaccount(orgId);
+      /* The org cap is far above what automation is allowed — the refusal must
+         come from the narrower ceiling, and must say so. */
+      await setCap(orgId, 100_000, 30, 100);
+      await spend(orgId, 90, { kind: 'automation_sms' });
+
+      const decision = await checkOutboundAllowed(
+        request(orgId, { kind: 'automation_sms', estimatedCents: 20 }),
+        CONFIG,
+      );
+
+      expect(decision.allowed).toBe(false);
+      if (!decision.allowed) {
+        expect(decision.reason).toBe('automation_budget_exceeded');
+        /* The numbers that refused this action are the SUB-budget's, not the
+           org's — an alert on this event must not read as "the org is over
+           its cap" when the phone still works for people. */
+        expect(decision.spentCents).toBe(90);
+        expect(decision.capCents).toBe(100);
+      }
+    });
+
+    it('checks the org cap IN ADDITION to the sub-budget, never instead of it', async () => {
+      const orgId = await newOrg('tel-autosub-orgcap');
+      await giveSubaccount(orgId);
+      await setCap(orgId, 100, 30, 100_000);
+      await spend(orgId, 90, { kind: 'automation_sms' });
+
+      const decision = await checkOutboundAllowed(
+        request(orgId, { kind: 'automation_call', estimatedCents: 20 }),
+        CONFIG,
+      );
+
+      /* Under the (generous) sub-budget, but over the org cap — the org cap
+         still refuses. A sub-budget that REPLACED the cap would be a route to
+         unlimited unattended spend wearing the shape of a limit. */
+      expect(decision.allowed).toBe(false);
+      if (!decision.allowed) expect(decision.reason).toBe('spend_cap_exceeded');
+    });
+
+    it('does not count a HUMAN action against the sub-budget', async () => {
+      const orgId = await newOrg('tel-autosub-human');
+      await giveSubaccount(orgId);
+      await setCap(orgId, 100_000, 30, 100);
+      /* A real customer call costs 10× the sub-budget — and must not touch
+         it, because the whole point of the separate allowance is that
+         attended spend and unattended spend are different risks. */
+      await spend(orgId, 1_000, { kind: 'sms' });
+
+      const decision = await checkOutboundAllowed(
+        request(orgId, { kind: 'automation_sms', estimatedCents: 1 }),
+        CONFIG,
+      );
+
+      expect(decision.allowed).toBe(true);
+      if (decision.allowed) expect(decision.automationSpentCents).toBe(0);
+    });
+
+    it('is IGNORED for a human-initiated action — the org cap alone bounds a human', async () => {
+      const orgId = await newOrg('tel-autosub-humanok');
+      await giveSubaccount(orgId);
+      await setCap(orgId, 100_000, 30, 100);
+      await spend(orgId, 500, { kind: 'automation_call' });
+
+      const decision = await checkOutboundAllowed(request(orgId, { estimatedCents: 1 }), CONFIG);
+      expect(decision.allowed).toBe(true);
+    });
+
+    it('bounds automation by the org cap alone when no sub-budget is configured', async () => {
+      /* NULL automation_cap_cents is the pre-feature behaviour: a rule's spend
+         is ordinary spend against the org's one cap. */
+      const orgId = await newOrg('tel-autosub-null');
+      await giveSubaccount(orgId);
+      await setCap(orgId, 100, 30); // no automation_cap_cents
+      await spend(orgId, 99, { kind: 'automation_sms' });
+
+      const under = await checkOutboundAllowed(
+        request(orgId, { kind: 'automation_sms', estimatedCents: 1 }),
+        CONFIG,
+      );
+      expect(under.allowed).toBe(true);
+      if (under.allowed) expect(under.automationCapCents).toBeNull();
+
+      await spend(orgId, 1, { kind: 'automation_sms' });
+      const over = await checkOutboundAllowed(
+        request(orgId, { kind: 'automation_sms', estimatedCents: 1 }),
+        CONFIG,
+      );
+      expect(over.allowed).toBe(false);
+      if (!over.allowed) expect(over.reason).toBe('spend_cap_exceeded');
+    });
+
+    it('spends nothing when refusing for the sub-budget — the provider is never reached', async () => {
+      /* §5.5's gate is the same gate: a refusal must happen BEFORE the carrier
+         hears anything, for an automation action as for a human one. */
+      const orgId = await newOrg('tel-autosub-nr');
+      await giveSubaccount(orgId);
+      await setCap(orgId, 100_000, 30, 10);
+      await spend(orgId, 10, { kind: 'automation_sms' });
+
+      const decision = await checkOutboundAllowed(
+        request(orgId, { kind: 'automation_sms', estimatedCents: 5 }),
+        CONFIG,
+      );
+      expect(decision.allowed).toBe(false);
+
+      expect(provider.calls).toHaveLength(0);
+      expect(provider.messages).toHaveLength(0);
+      expect(provider.spentCents).toBe(0);
     });
   });
 

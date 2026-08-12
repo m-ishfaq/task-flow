@@ -104,7 +104,12 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
     identity: identityDeps,
     identityDataKey,
     passkeys: buildPasskeyDeps(identityDeps, options.env),
-    automation: { keys: automationKeys },
+    /* §9 decision 3 — whether the cost-bearing telephony actions exist in the
+       rule builder. OFF by default; see config/env.ts. */
+    automation: {
+      keys: automationKeys,
+      telephonyActionsEnabled: options.env.AUTOMATION_TELEPHONY_ACTIONS_ENABLED,
+    },
     work: buildWorkDeps(options.env),
     /* VAPID keys are optional (an instance without them is a valid deployment
        that simply does not send push); null is the honest answer the
