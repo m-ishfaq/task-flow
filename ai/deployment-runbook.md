@@ -216,6 +216,46 @@ the `web` service: a managed load balancer, or another reverse proxy doing ACME
   Caddyfile still resolves). `docker compose up -d --force-recreate web`
   applies the change to an already-running stack.
 
+## Log visibility (Dozzle)
+
+`dozzle` in `compose.prod.yaml` is a live log viewer for every container in this
+stack (`docker logs -f`, per service, in a browser). It ships bound to
+`127.0.0.1:8081` only — never set `DOZZLE_HOST_BIND=0.0.0.0`, since unlike `web`
+it has no first-deploy reason to be briefly public, and reading it means
+reading every container's stdout, including anything
+`packages/observability`'s `REDACTION_PATHS` did not anticipate.
+
+Expose it through the same reverse proxy already terminating TLS for `web`, at
+a path, gated by HTTP basic auth. This is VM-only config — it does not live in
+this repo, the same way no Caddyfile does. One shared operator credential is
+enough; it is intentionally outside the app's own login/role system (it does
+not reuse `taskflow_platform_admin` or any org-owner account) because Dozzle
+has no concept of a Postgres role or a tRPC session to check against — the
+proxy's basic-auth prompt is the entire access control, and it runs before the
+request ever reaches the container.
+
+Caddyfile addition (adjust the domain to match `web`'s existing block):
+
+```
+taskflow-demo.duckdns.org {
+	# ... existing reverse_proxy for / -> localhost:80 (web) stays as-is ...
+
+	handle_path /logs* {
+		basicauth {
+			# bcrypt hash, not the plaintext password — generate with:
+			#   caddy hash-password
+			<operator-username> <bcrypt-hash>
+		}
+		reverse_proxy localhost:8081
+	}
+}
+```
+
+`caddy reload --config /etc/caddy/Caddyfile` picks it up without dropping the
+existing TLS cert. Verify with a plain `curl -I https://.../logs/` first — a
+401 with no prompt shown means the proxy is misrouting, not that auth is
+working.
+
 ## Enabling the TURN profile (in-app voice relay)
 
 Set `RTC_TURN_URLS` and `RTC_TURN_SECRET` to real values in `.env.prod` FIRST,
