@@ -62,8 +62,12 @@ const TRACKING_TABLE = 'public.schema_migrations';
  * for the table's implicit row type — "duplicate key value violates unique
  * constraint pg_type_typname_nsp_index" gives no hint that the actual cause
  * is two callers, not a schema bug in the migration itself.
+ *
+ * Exported for `runner.test.ts` alone, so it can prove the lock actually
+ * serializes two holders against real Postgres rather than trusting that a
+ * `pg_advisory_lock` call does what its name says.
  */
-const MIGRATION_LOCK_KEY = 84652211;
+export const MIGRATION_LOCK_KEY = 84652211;
 
 const CREATE_TRACKING = `
   CREATE TABLE IF NOT EXISTS ${TRACKING_TABLE} (
@@ -142,6 +146,69 @@ async function connect(url: string): Promise<pg.Client> {
   return client;
 }
 
+/** How long to wait for the migration lock before giving up. */
+const LOCK_TIMEOUT = '60s';
+
+/** Postgres's SQLSTATE for a lock request that hit `lock_timeout`. */
+const LOCK_TIMEOUT_SQLSTATE = '55P03';
+
+/**
+ * Runs `fn` while holding the migration advisory lock — see
+ * `MIGRATION_LOCK_KEY`'s own comment for why one is needed at all.
+ *
+ * `lock_timeout` is scoped to the acquisition step alone (reset to 0,
+ * meaning disabled, right after acquiring): a bounded wait to GET the lock
+ * is what stops a crashed holder from wedging every other CI suite
+ * indefinitely, but the same bound applied to the migration DDL itself
+ * would risk failing a legitimate slow migration over unrelated,
+ * unremarkable lock contention it would otherwise just wait out.
+ *
+ * A failed unlock in the `finally` is swallowed rather than thrown: this
+ * connection is a dedicated, single-use `Client` that the CALLER's own
+ * `finally` closes right after `fn()` returns, and Postgres releases a
+ * session-level advisory lock on disconnect regardless of whether the
+ * explicit unlock succeeded — so surfacing an unlock failure here would only
+ * ever replace a real error from `fn()` with a less useful one about the
+ * lock, never report a fault nothing else catches.
+ *
+ * Exported for `runner.test.ts` alone (see `MIGRATION_LOCK_KEY`'s own note)
+ * — specifically so a test can exercise the SQLSTATE 55P03 -> friendlier-
+ * message branch directly, rather than only the raw `pg_advisory_lock`
+ * primitive it wraps. `lockTimeout` defaults to the real production value;
+ * the only reason to override it is a test proving the timeout branch
+ * without an actual 60-second wait.
+ */
+export async function withMigrationLock<T>(
+  client: pg.Client,
+  fn: () => Promise<T>,
+  lockTimeout: string = LOCK_TIMEOUT,
+): Promise<T> {
+  await client.query(`SET lock_timeout = '${lockTimeout}'`);
+  try {
+    await client.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_KEY]);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === LOCK_TIMEOUT_SQLSTATE) {
+      throw new Error(
+        `Timed out after ${lockTimeout} waiting for the migration lock. Another process ` +
+          `appears to be applying migrations against this database — or one crashed while ` +
+          `holding it, in which case retry once Postgres has noticed the dead connection.`,
+      );
+    }
+    throw error;
+  }
+  await client.query('SET lock_timeout = 0');
+
+  try {
+    return await fn();
+  } finally {
+    try {
+      await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_KEY]);
+    } catch {
+      // See this function's own header — deliberately swallowed.
+    }
+  }
+}
+
 export interface RunnerOptions {
   /** Connection string for taskflow_migrator — NOT the application role. */
   readonly migrationUrl: string;
@@ -154,21 +221,27 @@ export async function status(options: RunnerOptions): Promise<MigrationStatus[]>
   const client = await connect(options.migrationUrl);
 
   try {
-    await client.query(CREATE_TRACKING);
-    const { rows } = await client.query<{ id: number; checksum: string; applied_at: Date }>(
-      `SELECT id, checksum, applied_at FROM ${TRACKING_TABLE}`,
-    );
-    const appliedById = new Map(rows.map((r) => [r.id, r]));
+    // Locked like up()/down(): CREATE_TRACKING's `IF NOT EXISTS` is not
+    // atomic against a concurrent creator on a database where the tracking
+    // table doesn't exist yet — the same pg_type catalog race up() itself
+    // hit, just on schema_migrations instead of a migration's own table.
+    return await withMigrationLock(client, async () => {
+      await client.query(CREATE_TRACKING);
+      const { rows } = await client.query<{ id: number; checksum: string; applied_at: Date }>(
+        `SELECT id, checksum, applied_at FROM ${TRACKING_TABLE}`,
+      );
+      const appliedById = new Map(rows.map((r) => [r.id, r]));
 
-    return migrations.map((m) => {
-      const applied = appliedById.get(m.id);
-      return {
-        id: m.id,
-        name: m.name,
-        applied: applied !== undefined,
-        ...(applied && { appliedAt: applied.applied_at }),
-        checksumMismatch: applied !== undefined && applied.checksum !== m.checksum,
-      };
+      return migrations.map((m) => {
+        const applied = appliedById.get(m.id);
+        return {
+          id: m.id,
+          name: m.name,
+          applied: applied !== undefined,
+          ...(applied && { appliedAt: applied.applied_at }),
+          checksumMismatch: applied !== undefined && applied.checksum !== m.checksum,
+        };
+      });
     });
   } finally {
     await client.end();
@@ -183,13 +256,7 @@ export async function up(options: RunnerOptions): Promise<number> {
   let applied = 0;
 
   try {
-    // Session-level: held for this whole function, released (explicitly, or
-    // by client.end() below if something throws first) once every pending
-    // migration has been applied and committed — so a second caller blocked
-    // here re-reads the tracking table only after seeing the first caller's
-    // writes, not the same stale "not yet applied" snapshot.
-    await client.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_KEY]);
-    try {
+    await withMigrationLock(client, async () => {
       await client.query(CREATE_TRACKING);
       const { rows } = await client.query<{ id: number; checksum: string }>(
         `SELECT id, checksum FROM ${TRACKING_TABLE}`,
@@ -234,9 +301,7 @@ export async function up(options: RunnerOptions): Promise<number> {
           );
         }
       }
-    } finally {
-      await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_KEY]);
-    }
+    });
   } finally {
     await client.end();
   }
@@ -256,8 +321,7 @@ export async function down(options: RunnerOptions, count = 1): Promise<number> {
     // Same lock `up` takes, and the same reason: nothing else stops a
     // concurrent `up`/`down` pair from reading the tracking table at the
     // same instant and racing to mutate the same rows.
-    await client.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_KEY]);
-    try {
+    await withMigrationLock(client, async () => {
       await client.query(CREATE_TRACKING);
       const { rows } = await client.query<{ id: number; name: string }>(
         `SELECT id, name FROM ${TRACKING_TABLE} ORDER BY id DESC LIMIT $1`,
@@ -289,9 +353,7 @@ export async function down(options: RunnerOptions, count = 1): Promise<number> {
           );
         }
       }
-    } finally {
-      await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_KEY]);
-    }
+    });
   } finally {
     await client.end();
   }
