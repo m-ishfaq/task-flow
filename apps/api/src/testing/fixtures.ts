@@ -46,6 +46,12 @@ export const TEST_ENV: Env = parseEnv({
      "no price configured" throws needs a configured control case to contrast
      against. */
   BILLING_STRIPE_PRICE_ID_PRO: 'price_test_pro',
+  /* Likewise the webhook secret: FakePaymentProvider compares it literally
+     rather than verifying a real HMAC, but the webhook ROUTE 404s with none
+     configured at all (§3.5's own "no real endpoint here" answer) — so a
+     value here is what makes the webhook path testable end-to-end without a
+     Stripe account, not a real secret. */
+  STRIPE_WEBHOOK_SECRET: 'whsec_test',
 });
 
 export function testContext(overrides: Partial<RequestContext> = {}): RequestContext {

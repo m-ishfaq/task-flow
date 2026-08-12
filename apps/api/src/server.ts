@@ -9,6 +9,7 @@ import { buildTelephonyDeps } from './telephony/deps.js';
 import { buildRtcDeps } from './rtc/deps.js';
 import { buildBillingDeps } from './billing/deps.js';
 import { registerTelephonyWebhooks } from './telephony/webhook.routes.js';
+import { registerBillingWebhooks } from './billing/webhook.routes.js';
 import { assertRoutesDeclarePermissions } from './trpc/manifest.js';
 import type { AuthenticatedPrincipal, RequestContext } from './trpc/context.js';
 import { ORG_HEADER, resolveOrgMembership } from './tenancy/resolve.js';
@@ -219,6 +220,13 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
   if (telephonyDeps !== undefined) {
     registerTelephonyWebhooks(app, { telephony: telephonyDeps });
   }
+
+  /* Billing webhook (Phase 12 Wave 3 §3.5) — registered unconditionally,
+     unlike telephony: billingDeps always exists (§3.3's "never returns
+     undefined"), so this route always exists too, the same reasoning `rtc`
+     is always built. Needs its own raw-body JSON parser for the identical
+     reason telephony's needs its own form-encoded one. */
+  registerBillingWebhooks(app, { billing: billingDeps });
 
   await app.register(fastifyTRPCPlugin<AppRouter>, {
     prefix: '/trpc',

@@ -85,6 +85,7 @@ export { listenForOutboxAppends, type OutboxListener, type ListenOptions } from 
  * ordering obligation it puts on its caller.
  */
 export { resolveOrgBySubaccountSid } from './comms-directory.js';
+export { resolveOrgByStripeCustomerId } from './billing-directory.js';
 export { resolveApiToken } from './api-tokens.js';
 
 export {
