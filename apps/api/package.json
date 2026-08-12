@@ -30,7 +30,9 @@
     "./automation/webhooks": "./src/automation/webhook.service.ts",
     "./events/automation": "./src/automation/events.ts",
     "./events/automation-webhooks": "./src/automation/webhook-events.ts",
-    "./events/api-tokens": "./src/automation/api-token-events.ts"
+    "./events/api-tokens": "./src/automation/api-token-events.ts",
+    "./billing/sweep": "./src/billing/sweep.service.ts",
+    "./billing/deps": "./src/billing/deps.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",

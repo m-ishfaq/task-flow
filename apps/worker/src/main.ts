@@ -1,6 +1,7 @@
 import {
   closeDatabase,
   initializeAutomationDatabase,
+  initializeBillingSweepDatabase,
   initializeDatabase,
   initializeWebhookDatabase,
 } from '@taskflow/db';
@@ -11,6 +12,7 @@ import { createHealthServer } from './health.js';
 import { createActionExecutor } from './automation/executor.js';
 import { startAutomationEngine } from './automation/relay.js';
 import { startWebhookDeliveryLoop } from './webhooks/delivery.js';
+import { startBillingSweep } from './billing/sweep.js';
 
 /**
  * Process entry point for the background worker (ai/phase-10-automation.md,
@@ -20,7 +22,8 @@ import { startWebhookDeliveryLoop } from './webhooks/delivery.js';
  * ## What runs here, and what deliberately does not
  *
  * This process takes only NEW background work: the automation engine, webhook
- * delivery, and (Phase 11) the analytics rollup refresh. The seven loops
+ * delivery, (Phase 11) the analytics rollup refresh, and (Phase 12 Wave 3) the
+ * trial/grace-expiry billing sweep. The seven loops
  * already running on `setInterval` inside `apps/api` — the audit relay, the
  * search indexer, backlinks, chat retention, recording ingest, digests, due
  * reminders — STAY THERE. Moving them is a separate follow-up done one at a
@@ -75,6 +78,18 @@ if (env.DATABASE_WEBHOOK_URL !== undefined) {
   });
 }
 
+/* The billing sweep's claim pool, as `taskflow_billing_sweep` (Phase 12
+   Wave 3, migration 0056). Optional like the two pools above: without it
+   the sweep logs a warning and stays off — no trial or grace period will
+   ever expire, which is a valid deployment shape for an instance that has
+   not enabled billing enforcement yet. */
+if (env.DATABASE_BILLING_SWEEP_URL !== undefined) {
+  initializeBillingSweepDatabase({
+    url: env.DATABASE_BILLING_SWEEP_URL,
+    applicationName: 'taskflow-worker-billing-sweep',
+  });
+}
+
 const logger = createLogger({ name: 'worker', level: env.LOG_LEVEL });
 
 const health = createHealthServer();
@@ -101,6 +116,12 @@ const delivery = startWebhookDeliveryLoop({
   intervalMs: env.WORKER_POLL_INTERVAL_MS,
 });
 
+const billingSweep = startBillingSweep({
+  logger,
+  pastDueGraceDays: env.BILLING_PAST_DUE_GRACE_DAYS,
+  intervalMs: env.WORKER_BILLING_SWEEP_INTERVAL_MS,
+});
+
 logger.info({ port: env.WORKER_PORT }, 'worker started');
 
 /**
@@ -118,6 +139,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     void (async () => {
       engine.stop();
       delivery.stop();
+      billingSweep.stop();
       await new Promise<void>((resolveClose) => {
         health.close(() => {
           resolveClose();

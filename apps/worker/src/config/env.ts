@@ -73,6 +73,18 @@ export const EnvSchema = z.object({
      unset rather than falling back to a role that cannot claim across orgs. */
   DATABASE_WEBHOOK_URL: NonEmpty.optional(),
 
+  /* The billing sweep's CLAIM role (migration 0056, Phase 12 Wave 3 §3.4).
+     Same contract as the two above: optional, and the sweep declines to
+     start when unset rather than falling back to a role that cannot scan
+     identity.orgs across every tenant. */
+  DATABASE_BILLING_SWEEP_URL: NonEmpty.optional(),
+
+  /* The grace period a past_due org gets before the sweep cancels it — the
+     SAME value apps/api's env schema validates, duplicated here rather than
+     imported because the two processes' env schemas are deliberately
+     independent (this file's own header). Defaults match apps/api's. */
+  BILLING_PAST_DUE_GRACE_DAYS: z.coerce.number().int().positive().default(7),
+
   /* The master key pair. Required, because this process decrypts webhook
      signing secrets at delivery — a deployment that runs the worker runs the
      loop that signs requests, and a worker without the key could not do its
@@ -85,6 +97,17 @@ export const EnvSchema = z.object({
 
   /** How often the engine claims a batch from the outbox. */
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(250).max(60_000).default(2_000),
+
+  /* Trial/grace deadlines are day-granularity, not seconds — a slower,
+     dedicated interval, rather than reusing WORKER_POLL_INTERVAL_MS, so
+     tightening the outbox poll for latency reasons never accidentally
+     multiplies how often this sweep scans every tenant's orgs. */
+  WORKER_BILLING_SWEEP_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(3_600_000)
+    .default(60_000),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

@@ -18,7 +18,7 @@
 DO $$
 BEGIN
   EXECUTE format(
-    'GRANT CONNECT ON DATABASE %I TO taskflow_app, taskflow_migrator, taskflow_audit, taskflow_realtime, taskflow_collab, taskflow_backlinks, taskflow_notification_sweep, taskflow_recording_ingest, taskflow_platform_admin, taskflow_search, taskflow_automation',
+    'GRANT CONNECT ON DATABASE %I TO taskflow_app, taskflow_migrator, taskflow_audit, taskflow_realtime, taskflow_collab, taskflow_backlinks, taskflow_notification_sweep, taskflow_recording_ingest, taskflow_platform_admin, taskflow_search, taskflow_automation, taskflow_webhook, taskflow_api_token_auth, taskflow_billing_sweep',
     current_database()
   );
 

@@ -218,6 +218,21 @@ CREATE ROLE taskflow_webhook WITH LOGIN PASSWORD 'webhook-dev-secret' NOSUPERUSE
 CREATE ROLE taskflow_api_token_auth WITH LOGIN PASSWORD 'api-token-auth-dev-secret' NOSUPERUSER
   NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 
+-- ---------------------------------------------------------------------------
+-- taskflow_billing_sweep — the trial/grace-expiry sweep (Phase 12 Wave 3,
+-- ai/phase-12-wave3.md §3.4, migration 0056's own header).
+--
+-- A THIRTEENTH role, on the same CLAIM-ONLY pattern as taskflow_backlinks
+-- and taskflow_search: NOBYPASSRLS, holding only a SELECT on
+-- identity.orgs's `id, billing_status, trial_ends_at, billing_grace_ends_at`
+-- — never `status`, Wave 1's operator column, which this role must be
+-- structurally unable to even observe, let alone move. The actual write
+-- happens afterward, per matched org, over the ORDINARY taskflow_app
+-- connection inside withOrgScope — this role never holds UPDATE anywhere.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_billing_sweep WITH LOGIN PASSWORD 'billing-sweep-dev-secret' NOSUPERUSER
+  NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+
 -- Baseline grants live in 03-grants.sql, NOT here.
 --
 -- Roles are cluster-wide; grants are per-database. This file creates the roles
