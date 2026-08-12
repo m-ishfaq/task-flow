@@ -1041,10 +1041,7 @@ describe('the outbound connector actions', () => {
   }
 
   /** Connects Slack and hands back the row id. */
-  async function connectedSlack(
-    actor: AutomationActor,
-    deps: IntegrationDeps,
-  ): Promise<string> {
+  async function connectedSlack(actor: AutomationActor, deps: IntegrationDeps): Promise<string> {
     const { state } = await beginState(actor, deps, 'slack');
     const result = await completeIntegration(
       deps,
@@ -1085,7 +1082,7 @@ describe('the outbound connector actions', () => {
     expect(JSON.stringify(posted?.payload)).not.toContain('shipped');
   });
 
-  it('treats Slack\'s ok:false at HTTP 200 as a FAILURE, and names its code', async () => {
+  it("treats Slack's ok:false at HTTP 200 as a FAILURE, and names its code", async () => {
     const { owner } = await scaffold('out-slack-notok');
     const fake = fakeWithOutbound({ slackOk: false, slackError: 'channel_not_found' });
     const deps = depsFor(fake.fetch);
