@@ -431,6 +431,39 @@ services:
       - realtime
       - collab
 
+  # Live log viewer (ai/deployment-runbook.md's logging section) — read-only,
+  # no state of its own, so it carries no volume and needs no backup. Bound to
+  # 127.0.0.1 ONLY, with no `:-0.0.0.0` fallback the way `web` has one: `web`
+  # needs a brief public window before TLS exists (see its own port comment),
+  # a log stream never does, so this has no bare-host-on-:80-first-deploy
+  # excuse to default open. Put it behind the reverse proxy's own basic-auth
+  # (Caddy `basicauth` directive, configured on the VM — not in this repo,
+  # for the same reason no Caddyfile lives here) at a path such as `/logs`,
+  # same as every other service on this box: the proxy is the one thing that
+  # ever reaches host `:80`/`:443`.
+  #
+  # That auth is INFRASTRUCTURE-level and deliberately outside the app's own
+  # login and role system — it does not reuse `taskflow_platform_admin`
+  # (Phase 12 Wave 1's in-app operator role) or any org-owner credential.
+  # Dozzle has no concept of a Postgres role or a tRPC session to check, and
+  # Caddy's basicauth runs before a request ever reaches this container, so
+  # there is no code path by which an in-app org owner's password could open
+  # it. One shared operator credential, known only to whoever runs this box.
+  #
+  # The docker socket mount is read-only, but reading it is still reading
+  # every container's logs — including, if a log line ever leaks one, a
+  # secret `packages/observability`'s `REDACTION_PATHS` didn't anticipate.
+  # That is exactly what the basic-auth gate above exists to bound.
+  dozzle:
+    image: amir20/dozzle:latest
+    restart: unless-stopped
+    environment:
+      DOZZLE_NO_ANALYTICS: 'true'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - '${DOZZLE_HOST_BIND:-127.0.0.1}:${DOZZLE_HOST_PORT:-8081}:8080'
+
 volumes:
   postgres-data:
   minio-data:
