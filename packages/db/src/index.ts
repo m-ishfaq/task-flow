@@ -58,6 +58,9 @@ export {
   initializeApiTokenAuthDatabase,
   withApiTokenAuthScope,
   hasApiTokenAuthDatabase,
+  initializeIntegrationAuthDatabase,
+  withIntegrationAuthScope,
+  hasIntegrationAuthDatabase,
   type OrgId,
   type UserId,
   type DbConfig,
@@ -86,6 +89,18 @@ export { listenForOutboxAppends, type OutboxListener, type ListenOptions } from 
  */
 export { resolveOrgBySubaccountSid } from './comms-directory.js';
 export { resolveApiToken } from './api-tokens.js';
+
+/**
+ * The one connector read that has no org yet (Phase 10 Wave 4, §7.2/§7.4).
+ *
+ * Here rather than in `apps/api/src/automation` because it needs
+ * `withIntegrationAuthScope`, which is lint-restricted to this package. See
+ * the file's own header for what it can and cannot see, and for the ordering
+ * obligation it puts on its caller: the org it returns selects WHICH KEY to
+ * verify an inbound webhook against, and nothing may be written until the
+ * signature has passed.
+ */
+export { resolveIntegrationOrg } from './integrations-directory.js';
 
 export {
   claimUnprocessedPageVersions,

@@ -1,4 +1,4 @@
-import { and, eq, gte, schema, sumWithFallback, withOrgScope } from '@taskflow/db';
+import { and, eq, gte, inArray, schema, sumWithFallback, withOrgScope } from '@taskflow/db';
 import type {
   OrgId,
   OutboundKind,
@@ -76,6 +76,15 @@ const VELOCITY: Readonly<Record<OutboundKind, RateLimitRule>> = {
      target: an attacker triggers "send me a code" repeatedly against numbers
      they control a revenue share on. */
   verification: { limit: 5, windowMs: 15 * 60_000 },
+  /* Phase 10 Wave 4 (§5.5): a rule is a new caller under its OWN kind, so it
+     gets its own per-owner bucket — a rule that posts ten SMS in a minute is
+     a real pattern, not abuse, and the human's own bucket must not be
+     consumed by someone else's rule. The PER-ORG window below is keyed on
+     the org alone, so an automation burst still hits the same shared
+     60/min ceiling a human does; the per-kind split only stops the two
+     from draining each other's allowance. */
+  automation_call: { limit: 10, windowMs: 60_000 },
+  automation_sms: { limit: 30, windowMs: 60_000 },
 };
 
 /** Org-wide ceiling, so one compromised account cannot be laundered across many. */
@@ -114,6 +123,13 @@ export interface GateAllowed {
    * the cap, and a threshold recomputed at each call site drifts.
    */
   readonly warnThresholdPercent: number | undefined;
+  /** The sub-budget's state at decision time (§5.5) — what an automation
+      action has already spent, and the ceiling it burns against (null when
+      the org has configured none). Carried on the allowed decision so the
+      caller can report "you are at 80% of your automation allowance" the
+      same way it reports the org cap's crossing, without a second read. */
+  readonly automationSpentCents: number;
+  readonly automationCapCents: number | null;
 }
 
 export interface GateRefused {
@@ -139,6 +155,12 @@ export interface SpendState {
   readonly subaccount: { readonly sid: string; readonly status: string } | undefined;
   readonly capCents: number;
   readonly spentCents: number;
+  /** Automation-attributed spend within the window (§5.5) — sum over the
+      `automation_*` kinds only. */
+  readonly automationSpentCents: number;
+  /** The org's separate ceiling for unattended spend, or null when none is
+      configured (migration 0055). */
+  readonly automationCapCents: number | null;
 }
 
 /**
@@ -181,7 +203,11 @@ export async function readSpendState(orgId: OrgId, config: GateConfig): Promise<
       .limit(1);
 
     const policyRows = await tx
-      .select({ capCents: schema.spendPolicy.capCents, windowDays: schema.spendPolicy.windowDays })
+      .select({
+        capCents: schema.spendPolicy.capCents,
+        windowDays: schema.spendPolicy.windowDays,
+        automationCapCents: schema.spendPolicy.automationCapCents,
+      })
       .from(schema.spendPolicy)
       .limit(1);
 
@@ -205,6 +231,24 @@ export async function readSpendState(orgId: OrgId, config: GateConfig): Promise<
       .from(schema.spendLedger)
       .where(gte(schema.spendLedger.occurredAt, since));
 
+    /* The sub-budget's own sum (§5.5): the automation kinds only, over the
+       SAME window as the org cap. Two sums rather than one filtered aggregate,
+       so the number the sub-budget enforces and the number a spend page shows
+       are the same query — the drift this whole function exists to prevent.
+       `inArray` over the two kinds, never over the base kinds: a human's call
+       must not count against the allowance a rule burns. */
+    const automationSpend = await tx
+      .select({
+        total: sumWithFallback(schema.spendLedger.actualCents, schema.spendLedger.estimatedCents),
+      })
+      .from(schema.spendLedger)
+      .where(
+        and(
+          gte(schema.spendLedger.occurredAt, since),
+          inArray(schema.spendLedger.kind, ['automation_call', 'automation_sms']),
+        ),
+      );
+
     return {
       orgStatus: orgRows[0]?.status,
       subaccount: accountRows[0],
@@ -214,6 +258,10 @@ export async function readSpendState(orgId: OrgId, config: GateConfig): Promise<
          threshold, so a parsing slip here reads as "under the cap" forever.
          Parsed explicitly and floored at 0. */
       spentCents: Math.max(0, Number.parseInt(spend[0]?.total ?? '0', 10) || 0),
+      automationSpentCents: Math.max(0, Number.parseInt(automationSpend[0]?.total ?? '0', 10) || 0),
+      /* `bigint` with `mode: 'number'` arrives as a number or null; a NULL row
+         (no policy) means "no separate ceiling". */
+      automationCapCents: policyRows[0]?.automationCapCents ?? null,
     };
   });
 }
@@ -281,6 +329,30 @@ export async function checkOutboundAllowed(
     };
   }
 
+  /* --- 2b. The automation SUB-budget (§5.5) ------------------------------ */
+  /* Checked IN ADDITION to the org cap above — never instead of it, and never
+     for a human-initiated action. A NULL sub-budget means the org has not
+     configured one and the org cap alone bounds automation, exactly as before
+     this phase. The `>` mirrors the org-cap check: the action that crosses
+     the line must not be the one that gets through. */
+  const isAutomation = request.kind === 'automation_call' || request.kind === 'automation_sms';
+  if (
+    isAutomation &&
+    state.automationCapCents !== null &&
+    state.automationSpentCents + request.estimatedCents > state.automationCapCents
+  ) {
+    return {
+      allowed: false,
+      reason: 'automation_budget_exceeded',
+      /* Reported against the SUB-budget figures — the numbers that refused
+         this action — not the org's. `spend_cap_exceeded` already owns the
+         org's numbers. */
+      spentCents: state.automationSpentCents,
+      capCents: state.automationCapCents,
+      retryAfterSeconds: undefined,
+    };
+  }
+
   /* --- 3. Velocity (mutates, so it runs last) ---------------------------- */
   const perUser = limiter.check(
     `tel:${request.orgId}:${request.userId}:${request.kind}`,
@@ -319,6 +391,8 @@ export async function checkOutboundAllowed(
     spentCents: state.spentCents,
     capCents: state.capCents,
     warnThresholdPercent: crossesWarning ? WARN_PERCENT : undefined,
+    automationSpentCents: state.automationSpentCents,
+    automationCapCents: state.automationCapCents,
   };
 }
 

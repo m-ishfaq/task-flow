@@ -129,3 +129,62 @@ describe('the executor — what it refuses to invent', () => {
     expect(results[0]?.error).toContain('no cardId');
   });
 });
+
+describe('the executor — the cost-bearing actions (Phase 10 Wave 4 §5.5)', () => {
+  const member = { orgId: ORG, role: 'admin' as const, tuples: [] };
+  const telephonyRule = (type: 'call.place' | 'sms.send') =>
+    rule({
+      actions: [
+        type === 'call.place'
+          ? {
+              type: 'call.place' as const,
+              to: '+14155550100',
+              fromPhoneNumberId: '018f4d1e-7c3a-7b2e-8f1a-0000000000ab',
+            }
+          : {
+              type: 'sms.send' as const,
+              to: '+14155550100',
+              fromPhoneNumberId: '018f4d1e-7c3a-7b2e-8f1a-0000000000ab',
+              body: 'hello',
+            },
+      ],
+    });
+
+  it('refuses to run a telephony action while the flag is off, with a recorded reason', async () => {
+    /* The execution-time half of the env flag: a rule saved while the flag was
+       on must stop the moment the deployment turns it off — recorded as a
+       failed action, never silent. Default (no deps) IS off. */
+    const executor = createActionExecutor({
+      resolveMembership: vi.fn().mockResolvedValue(member),
+    });
+
+    for (const type of ['call.place', 'sms.send'] as const) {
+      const results = await executor.execute({
+        rule: telephonyRule(type),
+        event,
+        nextDepth: 2,
+      });
+      expect(results[0]?.status).toBe('failed');
+      expect(results[0]?.error).toContain('disabled');
+    }
+  });
+
+  it('refuses when the flag is on but no carrier is configured', async () => {
+    /* A valid deployment with the flag enabled and no telephony configured:
+       the action fails with the API's own "not configured" language, so the
+       rule author sees why, and nothing reaches a carrier. */
+    const executor = createActionExecutor({
+      resolveMembership: vi.fn().mockResolvedValue(member),
+      telephonyActionsEnabled: true,
+    });
+
+    const results = await executor.execute({
+      rule: telephonyRule('call.place'),
+      event,
+      nextDepth: 2,
+    });
+
+    expect(results[0]?.status).toBe('failed');
+    expect(results[0]?.error).toContain('not configured');
+  });
+});

@@ -41,6 +41,17 @@ export const TOKEN_PREFIX = {
   shareLink: 'tf_sl',
   /** Signs an outbound webhook body so the receiver can verify us. */
   webhookSigning: 'tf_whs',
+  /**
+   * Verifies an INBOUND connector webhook — the per-org secret pasted into a
+   * GitHub repository's webhook config, which GitHub then HMACs each delivery
+   * with (ai/phase-10-automation.md §7.3).
+   *
+   * The mirror image of `webhookSigning`: that one proves US to a receiver,
+   * this one proves a PROVIDER to us. Distinct prefixes because the two live
+   * in different places — ours in our database, this one pasted into a third
+   * party's console — and a leaked value should say which on sight.
+   */
+  connectorVerify: 'tf_cwv',
 } as const;
 
 export type TokenKind = keyof typeof TOKEN_PREFIX;

@@ -146,7 +146,7 @@ function ViewTab({
              value is about to end up. */
           const parsed = FilterTree.safeParse(view.filter);
           onApply({
-            type: view.type ?? 'board',
+            type: view.type,
             groupBy: view.groupBy ?? 'list',
             sortBy: view.sortBy ?? 'manual',
             filter: parsed.success ? parsed.data : null,

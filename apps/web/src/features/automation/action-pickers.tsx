@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { BoardId, ProjectId } from '@taskflow/contracts';
 import { unsafeAsId } from '@taskflow/contracts';
@@ -5,6 +6,7 @@ import { boardsQuery, labelsQuery, listsQuery, projectsQuery, statusesQuery } fr
 import { channelsQuery } from '../chat/api.js';
 import { membersQuery } from '../org/api.js';
 import { webhooksQuery } from './api.js';
+import { phoneContactsQuery, phoneNumbersQuery } from '../telephony/api.js';
 import type { ArgumentKind } from './vocabulary.js';
 
 /**
@@ -60,6 +62,10 @@ export function ArgumentPicker(props: PickerProps) {
       return <ChannelPicker {...props} />;
     case 'webhook':
       return <WebhookPicker {...props} />;
+    case 'phoneNumber':
+      return <PhoneNumberPicker {...props} />;
+    case 'phoneTarget':
+      return <PhoneTargetPicker {...props} />;
     case 'list':
       return <ListPicker {...props} />;
     case 'status':
@@ -163,6 +169,119 @@ function WebhookPicker({ orgId, value, onChange, label }: PickerProps) {
         .filter((webhook) => webhook.enabled)
         .map((webhook) => ({ id: webhook.webhookId, name: webhook.name }))}
       emptyText="No webhooks — create one on the Webhooks tab"
+    />
+  );
+}
+
+/** The select's sentinel for “not a directory contact — type it instead”. */
+const CUSTOM_NUMBER = '__custom_number__';
+
+/**
+ * Wave 4 (§5.5) — who a rule dials or texts.
+ *
+ * The `to` of `call.place`/`sms.send` can be anyone, so it is deliberately
+ * not a closed picker: the org's members with a work phone are offered as
+ * prefilled options (the same `phoneContactsQuery` the click-to-call buttons
+ * use — the directory folded down to dialable people), and a “Custom
+ * number…” choice falls through to a typed E.164 field for everyone else: a
+ * customer, a vendor, a number not in the directory. The server validates
+ * the typed value against the same E.164 schema it validates the click-to-call
+ * route's `to` with, so a rule stores a real destination or nothing.
+ *
+ * The select is open to edit, not authoritative: a stored value that is not
+ * one of today's contacts (they may have left, or cleared their work phone)
+ * lands on “Custom number…” with the input showing it, so an existing rule
+ * opens with its destination legible rather than blank or silently changed.
+ */
+function PhoneTargetPicker({ orgId, value, onChange, label }: PickerProps) {
+  const contacts = useQuery({ ...phoneContactsQuery(orgId), enabled: orgId !== '' });
+  /* Whether the destination is a typed number rather than a directory pick.
+     Seeded true for any pre-existing value: at mount the contacts have not
+     loaded, and the input must show whatever number the rule already carries
+     instead of pretending it came from a select nobody chose. */
+  const [custom, setCustom] = useState(value !== '');
+
+  const known = contacts.data?.find((contact) => contact.phone === value);
+  const selectValue = custom ? CUSTOM_NUMBER : known !== undefined ? known.phone : '';
+
+  return (
+    <div className="flex min-w-0 flex-1 flex-col gap-1">
+      <select
+        value={selectValue}
+        onChange={(event) => {
+          if (event.target.value === CUSTOM_NUMBER) {
+            /* The number already in the field stays; the input below now owns
+               it. Picking the sentinel is a mode switch, not a value change. */
+            setCustom(true);
+          } else {
+            setCustom(false);
+            onChange(event.target.value);
+          }
+        }}
+        aria-label={label}
+        disabled={contacts.isPending}
+        className={SELECT_CLASS}
+      >
+        <option value="">
+          {contacts.isPending ? 'Loading…' : `Choose a contact or type a ${label.toLowerCase()}…`}
+        </option>
+        {(contacts.data ?? []).map((contact) => (
+          /* The stored value is the NUMBER, not the person: `unsafeAsPhoneNumber`
+             rebrands the same E.164 at execution, and the directory may drift.
+             Two contacts sharing a number would collide on the option value, so
+             the person's name is the label and the number is the key. */
+          <option key={contact.phone} value={contact.phone}>
+            {contact.label} — {contact.phone}
+          </option>
+        ))}
+        <option value={CUSTOM_NUMBER}>Custom number…</option>
+        {!contacts.isPending && (contacts.data ?? []).length === 0 && (
+          <option disabled>No members have a work phone — type a number instead</option>
+        )}
+      </select>
+      {custom && (
+        <input
+          value={value}
+          onChange={(event) => {
+            onChange(event.target.value);
+          }}
+          aria-label={`${label} (custom)`}
+          placeholder="+14155550100"
+          inputMode="tel"
+          autoComplete="off"
+          className={SELECT_CLASS}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Wave 4 (§5.5) — the org's OWN numbers, offered by number.
+ *
+ * A rule's FROM must be a number the org holds — the service resolves
+ * `fromPhoneNumberId` under `withOrgScope`, so a number the org does not own
+ * is a 404 — and the picker offers exactly that set. `phoneNumber:read` is
+ * Member-level while rule builders hold `automation:manage` (owner/admin), so
+ * the query is expected to succeed; a refusal renders the same quiet empty
+ * state as every other picker, never a hidden control — the server's answer.
+ */
+function PhoneNumberPicker({ orgId, value, onChange, label }: PickerProps) {
+  const numbers = useQuery({ ...phoneNumbersQuery(orgId), enabled: orgId !== '' });
+
+  return (
+    <Choose
+      value={value}
+      onChange={onChange}
+      label={label}
+      pending={numbers.isPending}
+      /* `String(number.e164)`: the wire keeps the `PhoneNumber` brand, and the
+         options want a plain string — the brand adds nothing to a label. */
+      options={(numbers.data ?? []).map((number) => ({
+        id: number.phoneNumberId,
+        name: String(number.e164),
+      }))}
+      emptyText="No numbers owned yet — purchase one on the Calls page"
     />
   );
 }

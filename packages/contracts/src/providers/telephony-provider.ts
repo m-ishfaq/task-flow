@@ -96,7 +96,21 @@ export interface OwnedNumber {
  * -------------------------------------------------------------------------- */
 
 /** What an outbound action can be. Keyed by this in the gate and the ledger. */
-export type OutboundKind = 'call' | 'sms' | 'number_purchase' | 'verification';
+export type OutboundKind =
+  | 'call'
+  | 'sms'
+  | 'number_purchase'
+  | 'verification'
+  /* Phase 10 Wave 4 (§5.5) — how the ledger attributes UNATTENDED spend.
+     A rule's call is a different row kind from a human's, so the automation
+     sub-budget can sum exactly its own spend without a second table, and the
+     velocity table keys the two separately. The PROVIDER is never asked to
+     price an automation kind — a call costs what a call costs, and the
+     services pass the base kind to `estimateCostCents` — but the maps below
+     stay total over the union so a future caller cannot get `undefined` →
+     NaN out of a widening they forgot. */
+  | 'automation_call'
+  | 'automation_sms';
 
 export interface PlaceCallOptions {
   readonly from: PhoneNumber;

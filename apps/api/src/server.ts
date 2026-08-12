@@ -4,10 +4,12 @@ import { isDatabaseHealthy } from '@taskflow/db';
 import { masterKeysFromBase64, newId, SoftwareKeyProvider } from '@taskflow/security';
 import { ensureIdentityDataKey } from './identity/secret-key.js';
 import { createAppRouter, type AppRouter } from './router.js';
+import type { IntegrationDeps } from './automation/integration.service.js';
 import { buildWorkDeps } from './work/deps.js';
 import { buildTelephonyDeps } from './telephony/deps.js';
 import { buildRtcDeps } from './rtc/deps.js';
 import { registerTelephonyWebhooks } from './telephony/webhook.routes.js';
+import { registerIntegrationWebhooks } from './automation/integration-webhooks.js';
 import { assertRoutesDeclarePermissions } from './trpc/manifest.js';
 import type { AuthenticatedPrincipal, RequestContext } from './trpc/context.js';
 import { ORG_HEADER, resolveOrgMembership } from './tenancy/resolve.js';
@@ -27,6 +29,7 @@ import { registerRateLimit } from './middleware/rate-limit.js';
 import type { SlidingWindowLimiter } from './middleware/sliding-window.js';
 import type { Env } from './config/env.js';
 import type { EventBus } from '@taskflow/events';
+import type { KeyProvider } from '@taskflow/contracts';
 import type { Mailer } from '@taskflow/mail';
 import type { DeliverableLink } from './identity/identity.service.js';
 
@@ -104,7 +107,20 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
     identity: identityDeps,
     identityDataKey,
     passkeys: buildPasskeyDeps(identityDeps, options.env),
-    automation: { keys: automationKeys },
+    /* §9 decision 3 — whether the cost-bearing telephony actions exist in the
+       rule builder. OFF by default; see config/env.ts. The connectors (Wave 4
+       slice 2, §7) ride in here too: the connector state is signed with the
+       SAME secret that signs access tokens (the jwt config, not a second
+       env var), and connector credentials are wrapped by the SAME key
+       provider that wraps webhook signing secrets. */
+    automation: {
+      keys: automationKeys,
+      telephonyActionsEnabled: options.env.AUTOMATION_TELEPHONY_ACTIONS_ENABLED,
+      integration: buildIntegrationDeps(options.env, {
+        jwtSecret: identityDeps.config.jwtSecret,
+        keys: automationKeys,
+      }),
+    },
     work: buildWorkDeps(options.env),
     /* VAPID keys are optional (an instance without them is a valid deployment
        that simply does not send push); null is the honest answer the
@@ -213,6 +229,19 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
   if (telephonyDeps !== undefined) {
     registerTelephonyWebhooks(app, { telephony: telephonyDeps });
   }
+
+  /* Connector inbound webhooks (Phase 10 Wave 4 slice 3, §7.3) — plain
+     Fastify routes, for the same reason as the carrier webhooks above: the
+     caller is Slack/GitHub, a third party with no session. Registered
+     UNCONDITIONALLY, unlike the carrier routes: an unconfigured instance
+     answers 503 on the Slack route (no signing secret) rather than a 404
+     that a provider configured out-of-band would retry forever without a
+     usable diagnosis. The routes read the raw body, so they must be
+     registered before the tRPC plugin the same way the carrier routes are. */
+  registerIntegrationWebhooks(app, {
+    keys: automationKeys,
+    slackSigningSecret: options.env.SLACK_SIGNING_SECRET,
+  });
 
   await app.register(fastifyTRPCPlugin<AppRouter>, {
     prefix: '/trpc',
@@ -364,6 +393,50 @@ function buildOAuthDeps(env: Env): Omit<OAuthDeps, 'identity'> {
        an OAuth authorization server refuses a redirect_uri it does not
        recognize verbatim. */
     redirectUri: (provider) => `${env.WEB_ORIGIN}/oauth/callback/${provider}`,
+  };
+}
+
+/**
+ * Builds the connector (Slack/GitHub) OAuth wiring from env.
+ *
+ * A provider missing either half of its client id/secret is simply absent
+ * from `providers`, and `integration.begin`/`complete` refuse with NOT_FOUND
+ * rather than the app failing to boot — the `buildOAuthDeps` convention. The
+ * webhook origin is optional for the same reason: an instance that never
+ * exposes inbound connector routes hides webhook URLs instead of printing
+ * ones that 404.
+ */
+function buildIntegrationDeps(
+  env: Env,
+  keys: { jwtSecret: Uint8Array; keys: KeyProvider },
+): IntegrationDeps {
+  return {
+    providers: {
+      ...(env.SLACK_CONNECTOR_CLIENT_ID && env.SLACK_CONNECTOR_CLIENT_SECRET
+        ? {
+            slack: {
+              clientId: env.SLACK_CONNECTOR_CLIENT_ID,
+              clientSecret: env.SLACK_CONNECTOR_CLIENT_SECRET,
+            },
+          }
+        : {}),
+      ...(env.GITHUB_CONNECTOR_CLIENT_ID && env.GITHUB_CONNECTOR_CLIENT_SECRET
+        ? {
+            github: {
+              clientId: env.GITHUB_CONNECTOR_CLIENT_ID,
+              clientSecret: env.GITHUB_CONNECTOR_CLIENT_SECRET,
+            },
+          }
+        : {}),
+    },
+    /* Registered with each provider's console ahead of time — the one value
+       that must match exactly, the buildOAuthDeps note. The connector
+       callback is a DIFFERENT path from the sign-in callback by design:
+       these two flows mint different state claims and must never be able to
+       cross-complete. */
+    redirectUri: (provider) => `${env.WEB_ORIGIN}/integrations/callback/${provider}`,
+    webhookOrigin: env.INTEGRATION_WEBHOOK_ORIGIN,
+    ...keys,
   };
 }
 

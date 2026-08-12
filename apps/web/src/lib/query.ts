@@ -234,6 +234,12 @@ export const keys = {
     ['org', orgId, 'projects', projectId, 'statuses'] as const,
   sprints: (orgId: string, projectId: string) =>
     ['org', orgId, 'projects', projectId, 'sprints'] as const,
+  /**
+   * Every project's active sprint (10.6 D3) — the sidebar's ambient line.
+   * Org-scoped, NOT nested under `sprints`, so invalidating one project's
+   * sprint list does not silently drop the whole tree's line and vice versa.
+   */
+  activeSprints: (orgId: string) => ['org', orgId, 'active-sprints'] as const,
   fields: (orgId: string, projectId: string) =>
     ['org', orgId, 'projects', projectId, 'fields'] as const,
 
@@ -341,6 +347,21 @@ export const keys = {
   apiTokens: (orgId: string) => ['org', orgId, 'automations', 'api-tokens'] as const,
   /** The caller's currently held permissions — the scope checklist's options. */
   apiTokenScopes: (orgId: string) => ['org', orgId, 'automations', 'api-tokens', 'scopes'] as const,
+  /** Every connector row in the org (Wave 4 slice 2, §7) — Slack workspaces, GitHub repos. */
+  integrations: (orgId: string) => ['org', orgId, 'automations', 'integrations'] as const,
+  /**
+   * Which connector providers this server has credentials for, plus the
+   * webhook origin — the server's answer, so an unconfigured provider's
+   * connect button never renders (the `oauth.providers` precedent).
+   */
+  integrationCapabilities: (orgId: string) =>
+    ['org', orgId, 'automations', 'integrations', 'capabilities'] as const,
+  /**
+   * Whether the cost-bearing telephony actions exist in the rule builder
+   * (Wave 4, §5.5) — the server's answer, never a client-side copy of the
+   * deployment env.
+   */
+  automationCapabilities: (orgId: string) => ['org', orgId, 'automations', 'capabilities'] as const,
   /** Every SMS thread. */
   messageThreads: (orgId: string) => ['org', orgId, 'telephony', 'threads'] as const,
   /** Messages in one thread. */

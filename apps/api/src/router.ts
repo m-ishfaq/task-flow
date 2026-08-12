@@ -17,6 +17,7 @@ import type { RtcDeps } from './rtc/deps.js';
 import { createSearchRouter } from './search/router.js';
 import { createAutomationRouter } from './automation/router.js';
 import { createApiTokenRouter } from './automation/api-token.router.js';
+import type { IntegrationDeps } from './automation/integration.service.js';
 import { PostgresSearchProvider } from './search/postgres-provider.js';
 
 /**
@@ -31,11 +32,19 @@ import { PostgresSearchProvider } from './search/postgres-provider.js';
 
 export interface AppRouterDeps extends IdentityRouterDeps {
   /**
-   * Automation (Phase 10). Only the webhook registry needs anything external
-   * — a KeyProvider to wrap the per-webhook signing secrets at rest — so the
-   * dep is exactly that, threaded through `createAutomationRouter`.
+   * Automation (Phase 10). Three things are external: a KeyProvider to wrap
+   * the per-webhook signing secrets at rest, §9 decision 3's product-surface
+   * flag deciding whether the cost-bearing telephony actions exist in the
+   * rule builder at all (Wave 4, §5.5), and the connector (Wave 4 slice 2,
+   * §7) OAuth wiring — provider client credentials, redirect URIs, webhook
+   * origin, and the jwt/key material that signs connector state and wraps
+   * connector credentials.
    */
-  readonly automation: { readonly keys: KeyProvider };
+  readonly automation: {
+    readonly keys: KeyProvider;
+    readonly telephonyActionsEnabled: boolean;
+    readonly integration: IntegrationDeps;
+  };
   /**
    * Work's external dependencies — object storage and the virus scanner.
    *
@@ -206,7 +215,11 @@ export function createAppRouter(deps: AppRouterDeps) {
      * question is asked at EXECUTION, per action, against the rule owner's
      * live permissions.
      */
-    automation: createAutomationRouter(deps.automation),
+    automation: createAutomationRouter({
+      keys: deps.automation.keys,
+      telephonyActionsEnabled: deps.automation.telephonyActionsEnabled,
+      integration: deps.automation.integration,
+    }),
 
     /**
      * Programmatic-access tokens (Phase 10 Wave 3, §6).

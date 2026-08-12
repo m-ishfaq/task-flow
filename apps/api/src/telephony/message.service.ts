@@ -1,5 +1,5 @@
 import { and, desc, eq, schema, withOrgScope, outboxWriter } from '@taskflow/db';
-import { errors, type OrgId, type PhoneNumber } from '@taskflow/contracts';
+import { errors, type OrgId, type OutboundKind, type PhoneNumber } from '@taskflow/contracts';
 import { createEvent, type DomainEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
 import {
@@ -73,6 +73,11 @@ export async function sendSms(
     readonly fromPhoneNumberId: string;
     readonly body: string;
   },
+  /* Phase 10 Wave 4 (§5.5): same gate, attributed kind — see `call.service.ts`
+     `PlaceCallOptions` for the argument. The sub-budget sums the
+     `automation_sms` rows; a rule's SMS must not silently borrow the human
+     bucket in the ledger or the velocity table. */
+  options: { readonly initiatedBy?: 'automation' } = {},
 ): Promise<{ readonly threadId: string; readonly messageId: string }> {
   const orgId = orgOf(actor);
   const crypto = cryptoOf(deps);
@@ -86,16 +91,20 @@ export async function sendSms(
   }
 
   const account = await ensureSubaccount(actor, deps);
+  /* Priced with the base kind — an SMS costs what an SMS costs, and the
+     provider's rate card does not distinguish who asked. */
   const estimatedCents = await deps.telephony.estimateCostCents({ kind: 'sms', to: input.to });
 
-  /* GATE TWO: spend, geo, velocity, org freeze. */
+  /* GATE TWO: spend, geo, velocity, org freeze — and the automation sub-budget
+     when this is a rule's message (§5.5), under the attributed kind. */
+  const kind: OutboundKind = options.initiatedBy === 'automation' ? 'automation_sms' : 'sms';
   const decision = await checkOutboundAllowed(
-    { orgId, userId: userOf(actor), kind: 'sms', to: input.to, estimatedCents },
+    { orgId, userId: userOf(actor), kind, to: input.to, estimatedCents },
     { defaultCapCents: deps.defaultSpendCapCents },
   );
 
   if (!decision.allowed) {
-    await emitRefusal(actor, decision, 'sms', estimatedCents);
+    await emitRefusal(actor, decision, kind, estimatedCents);
     throw errors.quotaExceeded(refusalMessage(decision.reason));
   }
 
@@ -149,7 +158,7 @@ export async function sendSms(
        spend through the cap. */
     await recordSpend(tx, orgId, {
       id: newId<'SpendLedgerId'>(),
-      kind: 'sms',
+      kind,
       estimatedCents: result.costCents,
       providerSid: result.sid,
     });

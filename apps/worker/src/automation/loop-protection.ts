@@ -66,6 +66,11 @@ const EVENTS_EMITTED_BY: Readonly<Record<AutomationAction['type'], readonly stri
      eventual `webhook.delivery_queued` the loop might produce again — the
      loop itself writes no outbox event of this name. */
   call_webhook: ['webhook.delivery_queued'],
+  /* Wave 4 — the cost-bearing actions emit through the telephony service
+     layer exactly like a human's do, so a rule triggered by `call.placed` or
+     `sms.sent` whose action places a call or sends an SMS would feed itself. */
+  'call.place': ['call.placed', 'call.status_changed'],
+  'sms.send': ['sms.sent'],
 };
 
 export interface DepthVerdict {

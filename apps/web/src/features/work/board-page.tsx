@@ -27,6 +27,7 @@ import {
 import { CardDetailPanel } from './detail/card-detail-panel.js';
 import { ShareBoardDialog } from './share-board.js';
 import { ArchivedCardsDialog } from './archived-cards-dialog.js';
+import { ImportExportDialog } from './import-export-dialog.js';
 import { GROUP_BY_OPTIONS, SORT_BY_OPTIONS, type GroupBy, type SortBy } from './grouping.js';
 import { cn } from '../../lib/cn.js';
 
@@ -266,6 +267,13 @@ export function BoardPage() {
 
           <ArchivedCardsDialog orgId={orgId} boardId={boardId} />
           <ShareBoardDialog orgId={orgId} boardId={boardId} />
+          {/* Import/export is project-scoped — a board reached by a pasted
+              URL with no `?project=` cannot know which project's cards it
+              would move, so it waits for the vocabulary to resolve, exactly
+              like the sprint picker above. */}
+          {projectId !== null && (
+            <ImportExportDialog orgId={orgId} boardId={boardId} projectId={projectId} />
+          )}
         </div>
 
         {view === 'board' && (

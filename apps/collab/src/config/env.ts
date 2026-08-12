@@ -101,6 +101,7 @@ const KNOWN_VARIABLES = new Set([
   'DATABASE_AUTOMATION_URL',
   'DATABASE_WEBHOOK_URL',
   'DATABASE_API_TOKEN_URL',
+  'DATABASE_INTEGRATION_URL',
   /* The search indexer's claim role (Phase 8 Wave 2, migration 0045) — read by
      the API's relay, never here, and the fifth variable of this exact class to
      stop a correctly-configured process booting. */

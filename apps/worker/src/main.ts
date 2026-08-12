@@ -6,6 +6,7 @@ import {
 } from '@taskflow/db';
 import { createLogger } from '@taskflow/observability';
 import { masterKeysFromBase64, SoftwareKeyProvider } from '@taskflow/security';
+import { buildTelephonyDeps } from '@taskflow/api/telephony/deps';
 import { loadEnv } from './config/env.js';
 import { createHealthServer } from './health.js';
 import { createActionExecutor } from './automation/executor.js';
@@ -77,6 +78,24 @@ if (env.DATABASE_WEBHOOK_URL !== undefined) {
 
 const logger = createLogger({ name: 'worker', level: env.LOG_LEVEL });
 
+/* Wave 4 (§5.5) — the cost-bearing actions. Built ONLY when the deployment
+   enables them (off by default): the same `buildTelephonyDeps` the API uses,
+   over the same env subset, so a rule's call goes through the identical
+   provider selection and gate configuration a human's does. When the flag is
+   on but no carrier is configured, the API's own convention applies — an
+   unconfigured carrier is a valid deployment — and rules that use telephony
+   fail at execution with a recorded reason; the warning makes the misconfig
+   discoverable without refusing to boot. */
+const telephonyDeps = env.AUTOMATION_TELEPHONY_ACTIONS_ENABLED
+  ? buildTelephonyDeps(env)
+  : undefined;
+if (env.AUTOMATION_TELEPHONY_ACTIONS_ENABLED && telephonyDeps === undefined) {
+  logger.warn(
+    'AUTOMATION_TELEPHONY_ACTIONS_ENABLED is true but no telephony provider is ' +
+      'configured — rules using call.place or sms.send will fail at execution.',
+  );
+}
+
 const health = createHealthServer();
 await new Promise<void>((resolveListen) => {
   health.listen(env.WORKER_PORT, () => {
@@ -86,7 +105,16 @@ await new Promise<void>((resolveListen) => {
 
 const engine = startAutomationEngine({
   logger,
-  executor: createActionExecutor(),
+  executor: createActionExecutor({
+    /* Conditional spread rather than `telephony: telephonyDeps`:
+       `exactOptionalPropertyTypes` makes "absent" and "present and undefined"
+       different types, and `telephonyDeps` is `TelephonyDeps | undefined` when
+       the flag is on but no carrier is configured — the same idiom the API's
+       router uses. Absent means the executor's `telephonyFor` refusal is what
+       the action sees; undefined would not even compile. */
+    ...(telephonyDeps === undefined ? {} : { telephony: telephonyDeps }),
+    telephonyActionsEnabled: env.AUTOMATION_TELEPHONY_ACTIONS_ENABLED,
+  }),
   intervalMs: env.WORKER_POLL_INTERVAL_MS,
 });
 

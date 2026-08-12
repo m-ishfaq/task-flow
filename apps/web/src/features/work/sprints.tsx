@@ -163,6 +163,10 @@ export function SprintsManagerDialog({
   const [draft, setDraft] = useState<SprintDraft>(blankDraft);
   const [editing, setEditing] = useState<SprintId | null>(null);
   const [editDraft, setEditDraft] = useState<SprintDraft>(blankDraft);
+  /* Which sprint the close dialog is open for (10.6 D1). A ConfirmButton was
+     enough while the close had one outcome; choosing a destination is a real
+     decision that needs the counts in front of it, so it gets a panel. */
+  const [closing, setClosing] = useState<SprintId | null>(null);
 
   const refreshSprints = () =>
     queryClient.invalidateQueries({ queryKey: keys.sprints(orgId, projectId) });
@@ -228,10 +232,21 @@ export function SprintsManagerDialog({
   });
 
   const complete = useMutation({
-    mutationFn: (sprintId: SprintId) => api.work.sprints.complete.mutate({ sprintId }),
-    onSuccess: async () => {
+    mutationFn: (input: { sprintId: SprintId; moveUnfinishedTo: SprintId | null }) =>
+      api.work.sprints.complete.mutate(input),
+    onSuccess: async (result) => {
+      setClosing(null);
       await refreshSprints();
       await refreshReleasedCards();
+      /* The counts are the only record of what the close DID, and they are
+         gone from the screen the moment the list refreshes — so they are said
+         out loud rather than left to be inferred from a shorter board. */
+      toast.show('Sprint completed', {
+        description:
+          result.releasedCount === 0
+            ? `${String(result.shippedCount)} shipped, nothing left over.`
+            : `${String(result.shippedCount)} shipped, ${String(result.releasedCount)} moved on.`,
+      });
     },
     onError: (error) => {
       toast.failure('The sprint could not be completed', error);
@@ -349,8 +364,13 @@ export function SprintsManagerDialog({
             </p>
           ) : (
             <ul className="divide-y divide-line rounded border border-line">
+              {/* Each row is a BLOCK, not a flex row: its own contents are
+                  flexed by the wrapper inside, so the close panel can sit
+                  underneath at full width. As a direct child of a flex `li`
+                  the panel became a third column, squeezing the sprint name
+                  and truncating the dates. */}
               {(sprints.data ?? []).map((sprint) => (
-                <li key={sprint.sprintId} className="flex items-center gap-3 px-3 py-2">
+                <li key={sprint.sprintId} className="px-3 py-2">
                   {editing === sprint.sprintId ? (
                     <EditSprintForm
                       sprint={sprint}
@@ -365,67 +385,90 @@ export function SprintsManagerDialog({
                     />
                   ) : (
                     <>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate text-xs font-medium text-ink">
-                            {sprint.name}
-                          </span>
-                          <span className={`text-[10px] uppercase ${STATUS_COLOR[sprint.status]}`}>
-                            {STATUS_LABEL[sprint.status]}
-                          </span>
+                      <div className="flex items-center gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate text-xs font-medium text-ink">
+                              {sprint.name}
+                            </span>
+                            <span
+                              className={`text-[10px] uppercase ${STATUS_COLOR[sprint.status]}`}
+                            >
+                              {STATUS_LABEL[sprint.status]}
+                            </span>
+                          </div>
+                          <p className="truncate text-[11px] text-ink-faint">
+                            {sprint.startsOn} → {sprint.endsOn} · {sprint.cardCount}{' '}
+                            {sprint.cardCount === 1 ? 'card' : 'cards'}
+                            {sprint.goal !== null && ` · ${sprint.goal}`}
+                          </p>
                         </div>
-                        <p className="truncate text-[11px] text-ink-faint">
-                          {sprint.startsOn} → {sprint.endsOn} · {sprint.cardCount}{' '}
-                          {sprint.cardCount === 1 ? 'card' : 'cards'}
-                          {sprint.goal !== null && ` · ${sprint.goal}`}
-                        </p>
-                      </div>
 
-                      <div className="ml-auto flex shrink-0 items-center gap-1">
-                        {sprint.status === 'planned' && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={start.isPending}
-                            onClick={() => {
-                              start.mutate(sprint.sprintId as SprintId);
-                            }}
-                          >
-                            Start
-                          </Button>
-                        )}
-                        {sprint.status === 'active' && (
-                          <ConfirmButton
-                            label="Complete"
-                            confirmLabel="Complete sprint"
-                            disabled={complete.isPending}
-                            onConfirm={() => {
-                              complete.mutate(sprint.sprintId as SprintId);
-                            }}
-                          />
-                        )}
-                        {(sprint.status === 'planned' || sprint.status === 'active') && (
-                          <>
+                        <div className="ml-auto flex shrink-0 items-center gap-1">
+                          {sprint.status === 'planned' && (
                             <Button
                               size="sm"
                               variant="ghost"
+                              disabled={start.isPending}
                               onClick={() => {
-                                openEdit(sprint);
+                                start.mutate(sprint.sprintId as SprintId);
                               }}
                             >
-                              Edit
+                              Start
                             </Button>
-                            <ConfirmButton
-                              label="Cancel"
-                              confirmLabel="Cancel sprint"
-                              disabled={cancel.isPending}
-                              onConfirm={() => {
-                                cancel.mutate(sprint.sprintId as SprintId);
+                          )}
+                          {sprint.status === 'active' && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={complete.isPending}
+                              onClick={() => {
+                                setClosing(sprint.sprintId as SprintId);
                               }}
-                            />
-                          </>
-                        )}
+                            >
+                              Complete
+                            </Button>
+                          )}
+                          {(sprint.status === 'planned' || sprint.status === 'active') && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  openEdit(sprint);
+                                }}
+                              >
+                                Edit
+                              </Button>
+                              <ConfirmButton
+                                label="Cancel"
+                                confirmLabel="Cancel sprint"
+                                disabled={cancel.isPending}
+                                onConfirm={() => {
+                                  cancel.mutate(sprint.sprintId as SprintId);
+                                }}
+                              />
+                            </>
+                          )}
+                        </div>
                       </div>
+
+                      {closing === sprint.sprintId && (
+                        <CloseSprintPanel
+                          sprint={sprint}
+                          options={sprints.data ?? []}
+                          pending={complete.isPending}
+                          onCancel={() => {
+                            setClosing(null);
+                          }}
+                          onConfirm={(moveUnfinishedTo) => {
+                            complete.mutate({
+                              sprintId: sprint.sprintId as SprintId,
+                              moveUnfinishedTo,
+                            });
+                          }}
+                        />
+                      )}
                     </>
                   )}
                 </li>
@@ -455,6 +498,92 @@ export function SprintsManagerDialog({
  * is a model rule, not an authorization call: the server still answers for
  * every field, this just keeps the refusal from being a surprise.
  */
+/**
+ * Where the unfinished work goes (ai/phase-10.6-sprint-flow.md D1).
+ *
+ * Phase 10.5 closed a sprint with a two-click confirm because there was one
+ * outcome: everything unfinished went to the backlog. That is still the
+ * default — and still the right default, since 10.5 decision 5's argument
+ * holds that rolling work over SILENTLY is how a sprint accumulates two
+ * sprints' worth of work. What was missing is that a team running
+ * back-to-back sprints then re-drags the same cards every fortnight.
+ *
+ * So the destination is a choice, made once, with the counts visible. The
+ * count is what makes it a decision rather than a reflex: "12 unfinished"
+ * reads very differently from "1 unfinished", and the old confirm showed
+ * neither.
+ *
+ * Only `planned` and `active` sprints are offered — the service refuses a
+ * closed one, and offering it here would be a control that exists to be
+ * rejected.
+ */
+function CloseSprintPanel({
+  sprint,
+  options,
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  readonly sprint: Sprint;
+  readonly options: readonly Sprint[];
+  readonly pending: boolean;
+  readonly onCancel: () => void;
+  readonly onConfirm: (moveUnfinishedTo: SprintId | null) => void;
+}) {
+  const [target, setTarget] = useState<string>('');
+
+  const destinations = options.filter(
+    (option) =>
+      option.sprintId !== sprint.sprintId &&
+      (option.status === 'planned' || option.status === 'active'),
+  );
+
+  return (
+    <div className="mt-2 rounded border border-line bg-surface-sunken/60 p-3">
+      <p className="text-xs font-medium text-ink">Complete {sprint.name}</p>
+      <p className="mt-0.5 text-[11px] text-ink-faint">
+        {sprint.cardCount} {sprint.cardCount === 1 ? 'card' : 'cards'} attached. Cards in a done
+        status stay with this sprint as its shipped record; the rest move where you choose.
+      </p>
+
+      <label className="mt-2 block">
+        <span className="text-[11px] font-medium text-ink-muted">Move unfinished cards to</span>
+        <select
+          value={target}
+          onChange={(event) => {
+            setTarget(event.target.value);
+          }}
+          className="mt-0.5 h-8 w-full rounded border border-line bg-surface px-2 text-xs text-ink"
+        >
+          <option value="">Backlog</option>
+          {destinations.map((option) => (
+            <option key={option.sprintId} value={option.sprintId}>
+              {option.name}
+              {option.status === 'active' ? ' (active)' : ''}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div className="mt-2 flex justify-end gap-1">
+        <Button size="sm" variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button
+          size="sm"
+          variant="primary"
+          disabled={pending}
+          onClick={() => {
+            onConfirm(target === '' ? null : (target as SprintId));
+          }}
+        >
+          Complete sprint
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function EditSprintForm({
   sprint,
   draft,

@@ -117,21 +117,39 @@ export function testAppRouter(
   });
 
   const passkeys = buildPasskeyDeps(deps, TEST_ENV);
+  /* The same fixed master key TEST_ENV carries — wrapped blobs created by
+     this provider unwrap under the identical bytes in the worker's
+     delivery-loop tests. Shared by the webhook registry and the connector
+     flow, mirroring buildServer's `automationKeys`. */
+  const automationKeys = new SoftwareKeyProvider({
+    masterKeys: masterKeysFromBase64({
+      [TEST_ENV.MASTER_KEY_ID]: TEST_ENV.MASTER_KEY_BASE64,
+    }),
+    currentMasterKeyId: TEST_ENV.MASTER_KEY_ID,
+  });
   return {
     router: createAppRouter({
       identity: deps,
       identityDataKey: TEST_IDENTITY_DATA_KEY,
       passkeys,
-      /* The same fixed master key TEST_ENV carries — wrapped blobs created
-         by this provider unwrap under the identical bytes in the worker's
-         delivery-loop tests. */
       automation: {
-        keys: new SoftwareKeyProvider({
-          masterKeys: masterKeysFromBase64({
-            [TEST_ENV.MASTER_KEY_ID]: TEST_ENV.MASTER_KEY_BASE64,
-          }),
-          currentMasterKeyId: TEST_ENV.MASTER_KEY_ID,
-        }),
+        keys: automationKeys,
+        /* TEST_ENV leaves the flag at its off-by-default value, so the fixture
+           router's rule builder cannot save a cost-bearing telephony action —
+           the same shape a default deployment has. A suite exercising those
+           actions builds its own router with the flag on. */
+        telephonyActionsEnabled: TEST_ENV.AUTOMATION_TELEPHONY_ACTIONS_ENABLED,
+        /* No connector is configured in the fixture — the same "an unset
+           integration is a valid deployment" case buildServer's provider
+           builder handles. begin/complete answer NOT_FOUND; nothing else on
+           the surface touches these. */
+        integration: {
+          providers: {},
+          redirectUri: (provider) => `${TEST_ENV.WEB_ORIGIN}/integrations/callback/${provider}`,
+          webhookOrigin: undefined,
+          jwtSecret: deps.config.jwtSecret,
+          keys: automationKeys,
+        },
       },
       work: buildWorkDeps(TEST_ENV),
       platform: { vapidPublicKey: null },

@@ -16,20 +16,25 @@ import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { FilterBuilder } from '../work/filter/filter-builder.js';
 import {
   apiTokensQuery,
+  automationCapabilitiesQuery,
   automationRunsQuery,
   automationsQuery,
+  integrationsQuery,
   webhookDeliveriesQuery,
   webhooksQuery,
 } from './api.js';
 import { ApiTokensSection } from './api-tokens-section.js';
+import { IntegrationsSection } from './integrations-section.js';
 import {
   ACTION_LABELS,
   ARGUMENTS,
+  TELEPHONY_ACTIONS,
   TRIGGER_OPTIONS,
   type ActionDraft,
   blankAction,
   describeAction,
   needsProject,
+  offeredActions,
 } from './vocabulary.js';
 import { ArgumentPicker, ProjectScopePicker } from './action-pickers.js';
 
@@ -129,13 +134,14 @@ function draftsFrom(stored: readonly unknown[] | undefined): ActionDraft[] {
    and the page grew a third tab the router never heard of — clicking it
    navigated to `?tab=apiTokens`, the validator refused it, and nothing
    happened. */
-export const AUTOMATION_TAB_IDS = ['rules', 'webhooks', 'apiTokens'] as const;
+export const AUTOMATION_TAB_IDS = ['rules', 'webhooks', 'apiTokens', 'integrations'] as const;
 export type AutomationTabId = (typeof AUTOMATION_TAB_IDS)[number];
 
 const TABS = [
   { id: 'rules', label: 'Rules' },
   { id: 'webhooks', label: 'Webhooks' },
   { id: 'apiTokens', label: 'API tokens' },
+  { id: 'integrations', label: 'Integrations' },
 ] as const;
 
 type TabId = AutomationTabId;
@@ -166,11 +172,15 @@ export function AutomationsPage() {
   const automations = useQuery({ ...automationsQuery(orgId), enabled: orgId !== '' });
   const webhooks = useQuery({ ...webhooksQuery(orgId), enabled: orgId !== '' });
   const apiTokens = useQuery({ ...apiTokensQuery(orgId), enabled: orgId !== '' });
+  const integrations = useQuery({ ...integrationsQuery(orgId), enabled: orgId !== '' });
 
   const counts: Readonly<Record<TabId, number | undefined>> = {
     rules: automations.data?.length,
     webhooks: webhooks.data?.length,
     apiTokens: apiTokens.data?.length,
+    /* Connected rows only — a disconnected row is a past authorization, not
+       something the tab's badge should claim exists today. */
+    integrations: integrations.data?.filter((row) => row.status === 'connected').length,
   };
 
   return (
@@ -227,8 +237,10 @@ export function AutomationsPage() {
             <RulesPanel orgId={orgId} automations={automations} />
           ) : tab === 'webhooks' ? (
             <WebhooksSection orgId={orgId} />
-          ) : (
+          ) : tab === 'apiTokens' ? (
             <ApiTokensSection orgId={orgId} />
+          ) : (
+            <IntegrationsSection orgId={orgId} />
           )}
         </div>
       </div>
@@ -665,6 +677,15 @@ function RuleEditor({
     (initial?.condition as FilterNode | null | undefined) ?? null,
   );
   const [actions, setActions] = useState<ActionDraft[]>(() => draftsFrom(initial?.actions));
+  /* Wave 4 (§5.5) — whether the cost-bearing telephony actions may be offered
+     at all. The SERVER answers (the same env flag the write boundary is built
+     from), never a client-side copy of the deployment's env; false until the
+     answer arrives, which is the safe side — the server refuses to save a
+     rule containing one while the flag is off. */
+  const capabilities = useQuery({
+    ...automationCapabilitiesQuery(orgId),
+    enabled: orgId !== '',
+  });
   /* Which project's vocabulary the list/status/label pickers offer. Local to
      the editor and never stored — see the field's own comment below. Starts
      unset even when editing, because the stored action carries an id and not
@@ -782,6 +803,7 @@ function RuleEditor({
               orgId={orgId}
               projectId={scopeProject}
               action={action}
+              telephonyActionsEnabled={capabilities.data?.telephonyActionsEnabled ?? false}
               onChange={(next) => {
                 setActions(actions.map((item, i) => (i === index ? next : item)));
               }}
@@ -838,17 +860,40 @@ function ActionRow({
   orgId,
   projectId,
   action,
+  telephonyActionsEnabled,
   onChange,
   onRemove,
 }: {
   readonly orgId: string;
   readonly projectId: ProjectId | null;
   readonly action: ActionDraft;
+  /** Wave 4 (§5.5) — the server's answer to whether telephony actions exist. */
+  readonly telephonyActionsEnabled: boolean;
   readonly onChange: (next: ActionDraft) => void;
   readonly onRemove?: () => void;
 }) {
   const specs = ARGUMENTS[action.value.type] ?? [];
   const values = action.value as unknown as Record<string, string>;
+
+  /* The offerable actions, minus the cost-bearing ones when the deployment
+     has not enabled them. A rule SAVED while the flag was on keeps its
+     telephony action in the editor after the flag is turned off: the row
+     must stay legible, and saving unchanged is refused by the server with a
+     real message — silently swapping the type for whatever sorts first
+     would be an edit that replaced the action while the author watched. */
+  const offered = offeredActions(telephonyActionsEnabled);
+  /* `ACTION_LABELS[type] ?? type`: the label is present for every telephony
+     type (the invariant vocabulary.test.ts pins), but `noUncheckedIndexedAccess`
+     cannot know that, and the fallback is the type itself — the same fallback
+     `describeAction` uses for a rule written by a newer build. */
+  const options =
+    TELEPHONY_ACTIONS.has(action.value.type) &&
+    !offered.some(([type]) => type === action.value.type)
+      ? ([
+          ...offered,
+          [action.value.type, ACTION_LABELS[action.value.type] ?? action.value.type],
+        ] as const)
+      : offered;
 
   return (
     <div className="flex items-start gap-2">
@@ -860,7 +905,7 @@ function ActionRow({
         aria-label="Action"
         className="shrink-0 rounded border border-line bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent"
       >
-        {Object.entries(ACTION_LABELS).map(([type, text]) => (
+        {options.map(([type, text]) => (
           <option key={type} value={type}>
             {text}
           </option>

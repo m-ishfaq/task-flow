@@ -43,6 +43,23 @@ export const PhoneNumberSchema = z
   .regex(E164_PATTERN, 'must be an E.164 phone number, e.g. +14155550100')
   .transform((value) => value as PhoneNumber);
 
+/**
+ * E.164 validation with a PLAIN-STRING output — no brand.
+ *
+ * The `UuidSchema` pattern from `ids.ts`, applied to phone numbers: a schema
+ * whose inferred output is branded cannot have its type emitted by
+ * `tsc --declaration`, because the brand symbol is intentionally not exported.
+ * That matters for `buildAutomationActionSchema`, whose return type is public
+ * and would otherwise name the private symbol. It is also the honest shape for
+ * a RULE: `automations.actions` is a jsonb column, so a `to` read back from
+ * storage is a plain string anyway, and the executor re-brands it with
+ * `unsafeAsPhoneNumber` at the boundary — the same place `UuidSchema`'s
+ * consumers brand theirs.
+ */
+export const PhoneNumberTextSchema = z
+  .string()
+  .regex(E164_PATTERN, 'must be an E.164 phone number, e.g. +14155550100');
+
 /** Brands an already-validated number. Never call this on external input. */
 export function unsafeAsPhoneNumber(value: string): PhoneNumber {
   return value as PhoneNumber;
@@ -92,6 +109,15 @@ export const TELEPHONY_REFUSALS = [
   'org_suspended',
   /** No Twilio subaccount has been provisioned for this org yet (§3.1). */
   'no_subaccount',
+  /**
+   * The org's automation SUB-budget is exhausted (Phase 10 Wave 4 §5.5).
+   *
+   * Distinct from `spend_cap_exceeded`: that one says the ORG is over its
+   * cap, this one says the org is fine and the unattended allowance a rule
+   * burns against is gone. An operator alerting on one must not be woken by
+   * the other, and a rule's run history should be able to say which.
+   */
+  'automation_budget_exceeded',
 ] as const;
 
 export type TelephonyRefusal = (typeof TELEPHONY_REFUSALS)[number];
