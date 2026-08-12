@@ -267,6 +267,19 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'automation.created': { type: 'automation', key: 'automationId' },
   'automation.updated': { type: 'automation', key: 'automationId' },
   'automation.deleted': { type: 'automation', key: 'automationId' },
+
+  /* Sprints (Phase 10.5). No `sprint` entry in RESOURCE_TYPES — mirroring
+     `label.*`/`custom_field.*` above, a sprint is project vocabulary, not an
+     independently grantable resource, so it resolves to the PROJECT and
+     `sprintId` stays in the payload for a reader to see. `card.sprint_changed`
+     is the exception, matching `card.moved`/`card.assigned`: it is a fact
+     about the CARD that changed, so it resolves there instead. */
+  'sprint.created': { type: 'project', key: 'projectId' },
+  'sprint.updated': { type: 'project', key: 'projectId' },
+  'sprint.started': { type: 'project', key: 'projectId' },
+  'sprint.completed': { type: 'project', key: 'projectId' },
+  'sprint.cancelled': { type: 'project', key: 'projectId' },
+  'card.sprint_changed': { type: 'card', key: 'cardId' },
 };
 
 /**

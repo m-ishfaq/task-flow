@@ -85,9 +85,7 @@ export const webhooksModule = defineSeedModule({
               true,
               0,
               createdBy,
-              Buffer.from(
-                encryptString(dataKey.plaintext.key, issued.token, aad),
-              ),
+              Buffer.from(encryptString(dataKey.plaintext.key, issued.token, aad)),
               Buffer.from(dataKey.wrapped.wrapped),
               dataKey.wrapped.masterKeyId,
               org.createdAt.toISOString(),

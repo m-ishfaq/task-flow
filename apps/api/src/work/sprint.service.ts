@@ -1,4 +1,13 @@
-import { and, eq, inArray, isNotNull, isNull, outboxWriter, schema, withOrgScope } from '@taskflow/db';
+import {
+  and,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  outboxWriter,
+  schema,
+  withOrgScope,
+} from '@taskflow/db';
 import { errors, type CardId, type ProjectId, type SprintId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
@@ -194,8 +203,18 @@ export async function updateSprint(
 
     assertDatesOrdered(input.startsOn, input.endsOn);
 
-    const before = { name: sprint.name, goal: sprint.goal, startsOn: sprint.startsOn, endsOn: sprint.endsOn };
-    const after = { name: input.name, goal: input.goal, startsOn: input.startsOn, endsOn: input.endsOn };
+    const before = {
+      name: sprint.name,
+      goal: sprint.goal,
+      startsOn: sprint.startsOn,
+      endsOn: sprint.endsOn,
+    };
+    const after = {
+      name: input.name,
+      goal: input.goal,
+      startsOn: input.startsOn,
+      endsOn: input.endsOn,
+    };
 
     /* No-op save FIRST, before the editability guards: a manager panel that
        fires on blur must stay out of the audit log for a click that changed
@@ -215,7 +234,10 @@ export async function updateSprint(
       throw errors.validation({ sprintId: 'A completed or cancelled sprint cannot be edited.' });
     }
     if (sprint.status === 'active') {
-      const locked = input.name !== sprint.name || input.startsOn !== sprint.startsOn || input.endsOn !== sprint.endsOn;
+      const locked =
+        input.name !== sprint.name ||
+        input.startsOn !== sprint.startsOn ||
+        input.endsOn !== sprint.endsOn;
       if (locked) {
         throw errors.validation({ sprintId: 'Only the goal of an active sprint can be edited.' });
       }
@@ -262,7 +284,9 @@ export async function startSprint(
         await requireProject(tx, actor, sprint.projectId as ProjectId, 'project:update');
 
         if (sprint.status !== 'planned') {
-          throw errors.conflict(`Only a planned sprint can be started — this one is ${sprint.status}.`);
+          throw errors.conflict(
+            `Only a planned sprint can be started — this one is ${sprint.status}.`,
+          );
         }
 
         const startedAt = new Date();
@@ -304,13 +328,19 @@ export async function startSprint(
 export async function completeSprint(
   actor: WorkActor,
   input: { readonly sprintId: SprintId },
-): Promise<{ readonly status: 'completed'; readonly shippedCount: number; readonly releasedCount: number }> {
+): Promise<{
+  readonly status: 'completed';
+  readonly shippedCount: number;
+  readonly releasedCount: number;
+}> {
   return withOrgScope(orgOf(actor), async (tx) => {
     const sprint = await loadSprint(tx, input.sprintId);
     await requireProject(tx, actor, sprint.projectId as ProjectId, 'project:update');
 
     if (sprint.status !== 'active') {
-      throw errors.conflict(`Only the active sprint can be completed — this one is ${sprint.status}.`);
+      throw errors.conflict(
+        `Only the active sprint can be completed — this one is ${sprint.status}.`,
+      );
     }
 
     const attached = await tx
@@ -388,7 +418,9 @@ export async function cancelSprint(
     await requireProject(tx, actor, sprint.projectId as ProjectId, 'project:update');
 
     if (sprint.status !== 'planned' && sprint.status !== 'active') {
-      throw errors.conflict(`Only a planned or active sprint can be cancelled — this one is ${sprint.status}.`);
+      throw errors.conflict(
+        `Only a planned or active sprint can be cancelled — this one is ${sprint.status}.`,
+      );
     }
 
     const attached = await tx
