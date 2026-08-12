@@ -378,6 +378,42 @@ export const EnvSchema = z
       .transform((value) => value === 'true'),
 
     WEB_ORIGIN: z.string().url(),
+
+    /* ------------------------------------------------------------------ *
+     * Billing & org lifecycle (Phase 12 Wave 3, ai/phase-12-wave3.md §3.3)
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Which `PaymentProvider` implementation boots — EXPLICIT, not
+     * credential-sniffed the way telephony's `ACtest` marker is. A named
+     * switch is what "swap processors later with minimal changes" means in
+     * practice: a second implementation is a new `PAYMENTS_PROVIDER` value
+     * plus a `packages/payments` class, never a call-site change.
+     *
+     * Defaults to `fake` so an unconfigured instance boots clean — the
+     * identical "a developer must not need a real account" reasoning
+     * `buildTelephonyDeps` gives for its own marker-SID fallback.
+     */
+    PAYMENTS_PROVIDER: z.enum(['stripe', 'fake']).default('fake'),
+
+    /* Required only when PAYMENTS_PROVIDER=stripe — deps.ts refuses at boot
+       rather than at the first checkout call, the TELEPHONY_WEBHOOK_ORIGIN
+       precedent. Optional here because `fake` needs neither. */
+    STRIPE_SECRET_KEY: OptionalNonEmpty,
+    STRIPE_WEBHOOK_SECRET: OptionalNonEmpty,
+
+    /* The one plan this wave ships (§2's own "seats deferred" decision) —
+       this deployment's Stripe Price id for it. A named variable rather than
+       a JSON blob of plan-id -> price-id pairs: there is exactly one plan,
+       and a mapping table for a map with one entry is the premature
+       generalization this codebase's own conventions warn against. */
+    BILLING_STRIPE_PRICE_ID_PRO: OptionalNonEmpty,
+
+    /* Business constants, not security boundaries — tunable per deployment
+       with no migration, the same reasoning TELEPHONY_DEFAULT_SPEND_CAP_CENTS
+       already gives for its own default. */
+    BILLING_TRIAL_DAYS: z.coerce.number().int().positive().default(14),
+    BILLING_PAST_DUE_GRACE_DAYS: z.coerce.number().int().positive().default(7),
   })
   /* NOT `.strict()`, unlike every other schema in this codebase.
 
@@ -561,6 +597,14 @@ const KNOWN_VARIABLES = new Set([
   'RTC_TURN_ISSUANCE_CAP_PER_DAY',
   'RTC_ICE_TRANSPORT_POLICY',
   'RTC_MAX_RECORDING_BYTES',
+  /* Billing & org lifecycle (Phase 12 Wave 3). Same reasoning as every other
+     variable in this set — a typo must be caught wherever it is made. */
+  'PAYMENTS_PROVIDER',
+  'STRIPE_SECRET_KEY',
+  'STRIPE_WEBHOOK_SECRET',
+  'BILLING_STRIPE_PRICE_ID_PRO',
+  'BILLING_TRIAL_DAYS',
+  'BILLING_PAST_DUE_GRACE_DAYS',
 ]);
 
 /**
@@ -582,6 +626,9 @@ const TASKFLOW_PREFIXES = [
   'TWILIO_',
   'TELEPHONY_',
   'RTC_',
+  'PAYMENTS_',
+  'STRIPE_',
+  'BILLING_',
 ];
 
 /**

@@ -12,6 +12,7 @@ import { createPeopleRouter } from './people/router.js';
 import { createPlatformAdminRouter } from './platform-admin/router.js';
 import { createTelephonyRouter } from './telephony/router.js';
 import type { TelephonyDeps } from './telephony/deps.js';
+import type { BillingDeps } from './billing/deps.js';
 import { createRtcRouter } from './rtc/router.js';
 import type { RtcDeps } from './rtc/deps.js';
 import { createSearchRouter } from './search/router.js';
@@ -65,6 +66,15 @@ export interface AppRouterDeps extends IdentityRouterDeps {
    * is whether `iceServers` includes a relay, which is data rather than shape.
    */
   readonly rtc: RtcDeps;
+  /**
+   * Billing & org lifecycle (Phase 12 Wave 3).
+   *
+   * Not optional, unlike `telephony`: `PAYMENTS_PROVIDER` defaults to `fake`
+   * rather than to an absent credential, so every instance has SOME
+   * `PaymentProvider` and every org gets a real trial. `tenancy.orgs.create`
+   * reads `trialDays` off this same object — see `tenancy/router.ts`.
+   */
+  readonly billing: BillingDeps;
 }
 
 export function createAppRouter(deps: AppRouterDeps) {
@@ -88,12 +98,11 @@ export function createAppRouter(deps: AppRouterDeps) {
     /**
      * Tenancy, authorization and audit (Phase 2).
      *
-     * Takes no dependencies: everything it needs is the tenant-scoped database
-     * and the policy engine, both of which are module-level and stateless.
-     * There is no clock or mailer to inject here, so a `deps` parameter would
-     * be an empty object threaded through for symmetry.
+     * Takes `trialDays` (Phase 12 Wave 3) and nothing else: everything else
+     * it needs is the tenant-scoped database and the policy engine, both of
+     * which are module-level and stateless.
      */
-    tenancy: createTenancyRouter(),
+    tenancy: createTenancyRouter({ trialDays: deps.billing.trialDays }),
 
     /**
      * Work — projects, boards, lists, cards, card detail, attachments (Phase 3).

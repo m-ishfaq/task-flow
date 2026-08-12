@@ -7,6 +7,7 @@ import { createAppRouter, type AppRouter } from './router.js';
 import { buildWorkDeps } from './work/deps.js';
 import { buildTelephonyDeps } from './telephony/deps.js';
 import { buildRtcDeps } from './rtc/deps.js';
+import { buildBillingDeps } from './billing/deps.js';
 import { registerTelephonyWebhooks } from './telephony/webhook.routes.js';
 import { assertRoutesDeclarePermissions } from './trpc/manifest.js';
 import type { AuthenticatedPrincipal, RequestContext } from './trpc/context.js';
@@ -76,6 +77,7 @@ export interface BuildOptions {
 export async function buildServer(options: BuildOptions): Promise<FastifyInstance> {
   const mail = resolveMail(options);
   const telephonyDeps = buildTelephonyDeps(options.env);
+  const billingDeps = buildBillingDeps(options.env);
   const identityDeps = buildIdentityDeps({
     env: options.env,
     ...(options.events === undefined ? {} : { events: options.events }),
@@ -120,6 +122,10 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
        answers SERVICE_UNAVAILABLE on the upload routes alone. */
     rtc: buildRtcDeps(options.env),
     oauth: buildOAuthDeps(options.env),
+    /* Always built, like rtc: PAYMENTS_PROVIDER defaults to 'fake' rather
+       than to an absent credential, so there is no "billing not configured"
+       shape for the router to answer with — every org gets a real trial. */
+    billing: billingDeps,
   });
 
   /* Guardrail 4, second half. Before a single connection is accepted: if any

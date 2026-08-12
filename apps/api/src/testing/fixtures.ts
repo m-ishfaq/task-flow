@@ -5,6 +5,7 @@ import { createAppRouter } from '../router.js';
 import { buildIdentityDeps, buildPasskeyDeps } from '../identity/deps.js';
 import { buildWorkDeps } from '../work/deps.js';
 import { buildRtcDeps } from '../rtc/deps.js';
+import { buildBillingDeps } from '../billing/deps.js';
 import type { OAuthDeps } from '../identity/oauth.service.js';
 import type { AuthenticatedPrincipal, OrgMembership, RequestContext } from '../trpc/context.js';
 import type { DeliverableLink } from '../identity/identity.service.js';
@@ -146,6 +147,10 @@ export function testAppRouter(
          cannot spend, so no test that forgets to stub it can. */
       rtc: buildRtcDeps(TEST_ENV),
       oauth: options.oauth ?? NO_OAUTH_PROVIDERS,
+      /* PAYMENTS_PROVIDER defaults to 'fake' in TEST_ENV (no Stripe account
+         in CI) — the same in-memory FakePaymentProvider every billing route
+         must work end-to-end against. */
+      billing: buildBillingDeps(TEST_ENV),
     }),
     events,
     deps,

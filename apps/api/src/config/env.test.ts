@@ -103,6 +103,9 @@ describe('parseEnv', () => {
     // one-line fix.
     expect(() => parseEnv({ ...valid, MASTER_KEY_BASE_64: 'x' })).toThrow(/MASTER_KEY_BASE_64/);
     expect(() => parseEnv({ ...valid, API_PORTT: '3000' })).toThrow(/API_PORTT/);
+    expect(() => parseEnv({ ...valid, STRIPE_SECRET_KEYY: 'sk_test_x' })).toThrow(
+      /STRIPE_SECRET_KEYY/,
+    );
   });
 
   it('accepts variables belonging to other TaskFlow services', () => {

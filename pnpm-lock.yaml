@@ -94,6 +94,9 @@ importers:
       '@taskflow/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@taskflow/payments':
+        specifier: workspace:*
+        version: link:../../packages/payments
       '@taskflow/policy':
         specifier: workspace:*
         version: link:../../packages/policy

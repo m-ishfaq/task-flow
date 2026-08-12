@@ -48,6 +48,7 @@
     "@taskflow/filter": "workspace:*",
     "@taskflow/mail": "workspace:*",
     "@taskflow/observability": "workspace:*",
+    "@taskflow/payments": "workspace:*",
     "@taskflow/policy": "workspace:*",
     "@taskflow/security": "workspace:*",
     "@taskflow/storage": "workspace:*",
