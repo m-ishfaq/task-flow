@@ -85,9 +85,10 @@ const ImportRowInput = z
        `Object.fromEntries` loses the key types, so the cast restores them —
        it asserts the shape TypeScript cannot infer through that call, and
        `IMPORT_ROW_KEYS` is what makes it true. */
-    Object.fromEntries(
-      importExport.IMPORT_ROW_KEYS.map((key) => [key, z.unknown()]),
-    ) as Record<(typeof importExport.IMPORT_ROW_KEYS)[number], z.ZodUnknown>,
+    Object.fromEntries(importExport.IMPORT_ROW_KEYS.map((key) => [key, z.unknown()])) as Record<
+      (typeof importExport.IMPORT_ROW_KEYS)[number],
+      z.ZodUnknown
+    >,
   )
   .strict()
   .partial();

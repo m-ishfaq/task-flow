@@ -991,11 +991,7 @@ describe('createdByList — where the cards went', () => {
     const result = await importExport.importCards(fixture.owner, {
       listId: fixture.listId,
       dryRun: false,
-      rows: [
-        { title: 'A', list: 'Doing' },
-        { title: 'B', list: 'Doing' },
-        { title: 'C' },
-      ],
+      rows: [{ title: 'A', list: 'Doing' }, { title: 'B', list: 'Doing' }, { title: 'C' }],
     });
 
     expect(result.created).toBe(3);

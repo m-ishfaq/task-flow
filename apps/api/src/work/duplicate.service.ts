@@ -126,9 +126,7 @@ export async function duplicateProject(
         for (const row of statusRows) {
           const id = newId<'StatusId'>();
           statusMap.set(row.id, id);
-          await tx
-            .insert(schema.statuses)
-            .values({ ...row, id, projectId, createdAt: undefined });
+          await tx.insert(schema.statuses).values({ ...row, id, projectId, createdAt: undefined });
         }
 
         const labelRows = await tx

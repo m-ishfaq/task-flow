@@ -266,8 +266,7 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
       rows: ImportRow[];
       dryRun: boolean;
       createMissingLabels: boolean;
-    }) =>
-      api.work.cards.import.mutate(input),
+    }) => api.work.cards.import.mutate(input),
     onSuccess: (result, input) => {
       if (input.dryRun) {
         setPreview(result);
@@ -474,8 +473,8 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
           </ul>
           {!titleMapped && (
             <p className="border-t border-line px-3 py-2 text-[11px] text-danger">
-              Point <code className="font-mono">title</code> at a column — a card cannot be
-              created without one.
+              Point <code className="font-mono">title</code> at a column — a card cannot be created
+              without one.
             </p>
           )}
         </div>
@@ -498,7 +497,12 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
             variant="primary"
             disabled={!ready || importCards.isPending || preview === null || importableCount <= 0}
             onClick={() => {
-              importCards.mutate({ listId, rows, dryRun: false, createMissingLabels: createLabels });
+              importCards.mutate({
+                listId,
+                rows,
+                dryRun: false,
+                createMissingLabels: createLabels,
+              });
             }}
           >
             {hasErrors

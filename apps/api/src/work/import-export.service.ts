@@ -329,9 +329,7 @@ export const IMPORT_ROW_KEYS = [
  * array is a file error, not a row error). Everything inside is validated in
  * `validateRow` against the project's live vocabulary.
  */
-export type ImportRowInput = Readonly<
-  Partial<Record<(typeof IMPORT_ROW_KEYS)[number], unknown>>
->;
+export type ImportRowInput = Readonly<Partial<Record<(typeof IMPORT_ROW_KEYS)[number], unknown>>>;
 
 export interface ImportRow {
   readonly title: string;
@@ -374,7 +372,11 @@ export interface ImportResult {
    *
    * Empty on a dry run: nothing was placed anywhere.
    */
-  readonly createdByList: readonly { readonly listId: string; readonly name: string; readonly count: number }[];
+  readonly createdByList: readonly {
+    readonly listId: string;
+    readonly name: string;
+    readonly count: number;
+  }[];
 }
 
 /**
