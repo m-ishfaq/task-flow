@@ -93,6 +93,13 @@ const RLS_EXEMPT = new Map([
       why: 'Pre-tenant webhook lookup (ai/phase-7-voice.md §3.11). RLS here would make the read it exists for return zero rows. Holds no secrets — see migration 0032.',
     },
   ],
+  [
+    'billing.customer_orgs',
+    {
+      columns: new Set(['stripe_customer_id', 'org_id']),
+      why: 'Pre-tenant webhook lookup, the identical shape and reasoning as comms.subaccount_orgs (ai/phase-12-wave3.md §3.5): a Stripe webhook is unauthenticated and carries only a customer id, which must resolve to an org BEFORE any scope can open. Holds no secrets — see migration 0055.',
+    },
+  ],
 ]);
 
 /**

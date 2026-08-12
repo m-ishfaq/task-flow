@@ -41,8 +41,31 @@ export const orgs = identity.table(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+
+    /**
+     * Billing state (Phase 12 Wave 3, migration 0055) — deliberately
+     * INDEPENDENT of `status` above. `status` is Wave 1's operator kill
+     * switch; `billingStatus` is written only by the billing worker sweep
+     * and the Stripe webhook handler, so an automated billing recovery can
+     * never silently undo a manual operator suspension, or vice versa. See
+     * `ai/phase-12-wave3.md` §3.2.
+     */
+    billingStatus: text('billing_status').notNull().default('trialing'),
+    planId: text('plan_id'),
+    trialEndsAt: timestamp('trial_ends_at', { withTimezone: true }),
+    billingGraceEndsAt: timestamp('billing_grace_ends_at', { withTimezone: true }),
+    stripeCustomerId: text('stripe_customer_id'),
+    stripeSubscriptionId: text('stripe_subscription_id'),
   },
-  (table) => [uniqueIndex('orgs_slug_key').on(table.slug)],
+  (table) => [
+    uniqueIndex('orgs_slug_key').on(table.slug),
+    uniqueIndex('orgs_stripe_customer_id_key')
+      .on(table.stripeCustomerId)
+      .where(sql`${table.stripeCustomerId} IS NOT NULL`),
+    uniqueIndex('orgs_stripe_subscription_id_key')
+      .on(table.stripeSubscriptionId)
+      .where(sql`${table.stripeSubscriptionId} IS NOT NULL`),
+  ],
 );
 
 /**

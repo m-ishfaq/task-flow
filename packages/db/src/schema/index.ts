@@ -14,6 +14,7 @@
  *   Phase 7  comms     — subaccounts, spend policy + ledger, webhook nonces   ✅
  *   Phase 13 rtc       — in-app voice sessions, participants, TURN issuance    ✅
  *   Phase 8  search    — the cross-product documents projection               ✅
+ *   Phase 12 billing   — Wave 3: customer_orgs, webhook_events                ✅
  */
 
 export * from './identity.js';
@@ -29,3 +30,4 @@ export * from './people.js';
 export * from './comms.js';
 export * from './rtc.js';
 export * from './search.js';
+export * from './billing.js';
