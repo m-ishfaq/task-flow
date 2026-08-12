@@ -39,6 +39,13 @@ export const TEST_ENV: Env = parseEnv({
   STORAGE_SECRET_ACCESS_KEY: 'taskflow-dev-secret',
   STORAGE_BUCKET_ATTACHMENTS: 'taskflow-attachments',
   STORAGE_BUCKET_EXPORTS: 'taskflow-exports',
+
+  /* PAYMENTS_PROVIDER defaults to 'fake' (no Stripe account in CI), but the
+     plan -> price id MAPPING is still exercised against the fake provider —
+     it does not care what string it receives, and a route-level test asserting
+     "no price configured" throws needs a configured control case to contrast
+     against. */
+  BILLING_STRIPE_PRICE_ID_PRO: 'price_test_pro',
 });
 
 export function testContext(overrides: Partial<RequestContext> = {}): RequestContext {

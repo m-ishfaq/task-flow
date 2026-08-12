@@ -13,6 +13,7 @@ import { createPlatformAdminRouter } from './platform-admin/router.js';
 import { createTelephonyRouter } from './telephony/router.js';
 import type { TelephonyDeps } from './telephony/deps.js';
 import type { BillingDeps } from './billing/deps.js';
+import { createBillingRouter } from './billing/router.js';
 import { createRtcRouter } from './rtc/router.js';
 import type { RtcDeps } from './rtc/deps.js';
 import { createSearchRouter } from './search/router.js';
@@ -193,6 +194,14 @@ export function createAppRouter(deps: AppRouterDeps) {
      * One namespace for both would make every caller disambiguate.
      */
     rtc: createRtcRouter(deps.rtc),
+
+    /**
+     * Billing (Phase 12 Wave 3) — the owner-facing half: what does MY org
+     * pay, and can I change it. The operator-facing half (every org's
+     * billing state) is `platformAdmin.billing`, a deliberately separate
+     * namespace under a deliberately separate permission.
+     */
+    billing: createBillingRouter(deps.billing),
 
     /**
      * Search (Phase 8 Wave 2) — one query over cards, messages, pages and

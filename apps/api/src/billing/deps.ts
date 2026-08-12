@@ -26,6 +26,8 @@ export interface BillingDeps {
   /** This wave's one plan id -> the configured processor's own price id. Empty when unconfigured. */
   readonly planPriceIds: ReadonlyMap<string, string>;
   readonly webhookSecret: string | undefined;
+  /** Where Checkout/the customer portal redirect back to. Same value every other absolute link in this app already builds from. */
+  readonly webOrigin: string;
 }
 
 export function buildBillingDeps(env: Env): BillingDeps {
@@ -42,6 +44,7 @@ export function buildBillingDeps(env: Env): BillingDeps {
     pastDueGraceDays: env.BILLING_PAST_DUE_GRACE_DAYS,
     planPriceIds,
     webhookSecret: env.STRIPE_WEBHOOK_SECRET,
+    webOrigin: env.WEB_ORIGIN,
   };
 }
 
