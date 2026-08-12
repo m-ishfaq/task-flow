@@ -1,0 +1,25 @@
+{
+  "name": "@taskflow/payments",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@taskflow/contracts": "workspace:*",
+    "stripe": "^17.5.0"
+  },
+  "devDependencies": {
+    "@taskflow/config": "workspace:*",
+    "@types/node": "^22.10.2",
+    "eslint": "^9.17.0",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.7"
+  }
+}
