@@ -48,6 +48,23 @@ export interface MigrationStatus {
 
 const TRACKING_TABLE = 'public.schema_migrations';
 
+/**
+ * Fixed and arbitrary — the value only has to be agreed on by every `up`/
+ * `down` caller against the same database. Serializes concurrent migration
+ * runs: `up` reads which migrations are already applied and then loops
+ * applying the pending ones, with nothing between those two steps to stop a
+ * second caller from reading the same "not yet applied" answer and racing
+ * the first to apply it — which `packages/db/src/testing/index.ts`'s
+ * `applyMigrations` makes a real scenario, not a hypothetical one: every
+ * test suite calls it from its own setup, and turbo runs suites in parallel
+ * against one shared `taskflow_test`. Found live as two concurrent `CREATE
+ * TABLE`s for the same migration colliding on Postgres's own catalog insert
+ * for the table's implicit row type — "duplicate key value violates unique
+ * constraint pg_type_typname_nsp_index" gives no hint that the actual cause
+ * is two callers, not a schema bug in the migration itself.
+ */
+const MIGRATION_LOCK_KEY = 84652211;
+
 const CREATE_TRACKING = `
   CREATE TABLE IF NOT EXISTS ${TRACKING_TABLE} (
     id          integer     PRIMARY KEY,
@@ -166,49 +183,59 @@ export async function up(options: RunnerOptions): Promise<number> {
   let applied = 0;
 
   try {
-    await client.query(CREATE_TRACKING);
-    const { rows } = await client.query<{ id: number; checksum: string }>(
-      `SELECT id, checksum FROM ${TRACKING_TABLE}`,
-    );
-    const appliedById = new Map(rows.map((r) => [r.id, r.checksum]));
+    // Session-level: held for this whole function, released (explicitly, or
+    // by client.end() below if something throws first) once every pending
+    // migration has been applied and committed — so a second caller blocked
+    // here re-reads the tracking table only after seeing the first caller's
+    // writes, not the same stale "not yet applied" snapshot.
+    await client.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_KEY]);
+    try {
+      await client.query(CREATE_TRACKING);
+      const { rows } = await client.query<{ id: number; checksum: string }>(
+        `SELECT id, checksum FROM ${TRACKING_TABLE}`,
+      );
+      const appliedById = new Map(rows.map((r) => [r.id, r.checksum]));
 
-    for (const migration of migrations) {
-      const existing = appliedById.get(migration.id);
+      for (const migration of migrations) {
+        const existing = appliedById.get(migration.id);
 
-      if (existing !== undefined) {
-        if (existing !== migration.checksum) {
-          // An applied migration whose file has changed means the database and
-          // the repository disagree about history. Continuing would apply later
-          // migrations onto a schema that is not what the code expects.
+        if (existing !== undefined) {
+          if (existing !== migration.checksum) {
+            // An applied migration whose file has changed means the database and
+            // the repository disagree about history. Continuing would apply later
+            // migrations onto a schema that is not what the code expects.
+            throw new Error(
+              `Migration ${fmtId(migration.id)} (${migration.name}) was modified after being ` +
+                `applied (recorded ${existing}, file ${migration.checksum}). Never edit an ` +
+                `applied migration — add a new one instead.`,
+            );
+          }
+          continue;
+        }
+
+        log(`  up   ${fmtId(migration.id)}_${migration.name}`);
+
+        // Each migration is atomic. Postgres supports transactional DDL, so a
+        // failure mid-migration leaves no partially-migrated schema.
+        await client.query('BEGIN');
+        try {
+          await client.query(migration.upSql);
+          await client.query(
+            `INSERT INTO ${TRACKING_TABLE} (id, name, checksum) VALUES ($1, $2, $3)`,
+            [migration.id, migration.name, migration.checksum],
+          );
+          await client.query('COMMIT');
+          applied += 1;
+        } catch (error) {
+          await client.query('ROLLBACK');
           throw new Error(
-            `Migration ${fmtId(migration.id)} (${migration.name}) was modified after being ` +
-              `applied (recorded ${existing}, file ${migration.checksum}). Never edit an ` +
-              `applied migration — add a new one instead.`,
+            `Migration ${fmtId(migration.id)} (${migration.name}) failed and was rolled back: ` +
+              errText(error),
           );
         }
-        continue;
       }
-
-      log(`  up   ${fmtId(migration.id)}_${migration.name}`);
-
-      // Each migration is atomic. Postgres supports transactional DDL, so a
-      // failure mid-migration leaves no partially-migrated schema.
-      await client.query('BEGIN');
-      try {
-        await client.query(migration.upSql);
-        await client.query(
-          `INSERT INTO ${TRACKING_TABLE} (id, name, checksum) VALUES ($1, $2, $3)`,
-          [migration.id, migration.name, migration.checksum],
-        );
-        await client.query('COMMIT');
-        applied += 1;
-      } catch (error) {
-        await client.query('ROLLBACK');
-        throw new Error(
-          `Migration ${fmtId(migration.id)} (${migration.name}) failed and was rolled back: ` +
-            errText(error),
-        );
-      }
+    } finally {
+      await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_KEY]);
     }
   } finally {
     await client.end();
@@ -226,36 +253,44 @@ export async function down(options: RunnerOptions, count = 1): Promise<number> {
   let reverted = 0;
 
   try {
-    await client.query(CREATE_TRACKING);
-    const { rows } = await client.query<{ id: number; name: string }>(
-      `SELECT id, name FROM ${TRACKING_TABLE} ORDER BY id DESC LIMIT $1`,
-      [count],
-    );
+    // Same lock `up` takes, and the same reason: nothing else stops a
+    // concurrent `up`/`down` pair from reading the tracking table at the
+    // same instant and racing to mutate the same rows.
+    await client.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_KEY]);
+    try {
+      await client.query(CREATE_TRACKING);
+      const { rows } = await client.query<{ id: number; name: string }>(
+        `SELECT id, name FROM ${TRACKING_TABLE} ORDER BY id DESC LIMIT $1`,
+        [count],
+      );
 
-    for (const row of rows) {
-      const migration = byId.get(row.id);
-      if (!migration) {
-        throw new Error(
-          `Migration ${fmtId(row.id)} (${row.name}) is recorded as applied but its files are ` +
-            `missing. Cannot revert what cannot be read.`,
-        );
+      for (const row of rows) {
+        const migration = byId.get(row.id);
+        if (!migration) {
+          throw new Error(
+            `Migration ${fmtId(row.id)} (${row.name}) is recorded as applied but its files are ` +
+              `missing. Cannot revert what cannot be read.`,
+          );
+        }
+
+        log(`  down ${fmtId(migration.id)}_${migration.name}`);
+
+        await client.query('BEGIN');
+        try {
+          await client.query(migration.downSql);
+          await client.query(`DELETE FROM ${TRACKING_TABLE} WHERE id = $1`, [migration.id]);
+          await client.query('COMMIT');
+          reverted += 1;
+        } catch (error) {
+          await client.query('ROLLBACK');
+          throw new Error(
+            `Rollback of migration ${fmtId(migration.id)} (${migration.name}) failed: ` +
+              errText(error),
+          );
+        }
       }
-
-      log(`  down ${fmtId(migration.id)}_${migration.name}`);
-
-      await client.query('BEGIN');
-      try {
-        await client.query(migration.downSql);
-        await client.query(`DELETE FROM ${TRACKING_TABLE} WHERE id = $1`, [migration.id]);
-        await client.query('COMMIT');
-        reverted += 1;
-      } catch (error) {
-        await client.query('ROLLBACK');
-        throw new Error(
-          `Rollback of migration ${fmtId(migration.id)} (${migration.name}) failed: ` +
-            errText(error),
-        );
-      }
+    } finally {
+      await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_KEY]);
     }
   } finally {
     await client.end();
