@@ -75,6 +75,15 @@ description = "Published test vectors and example data — not credentials"
 # constant. High-entropy hex next to a field named `signingSecret` is exactly
 # what `generic-api-key` is built to flag, and it authenticates nothing —
 # it is not bound to any Slack workspace this project has ever touched.
+#
+# `GITHUB_VERIFY_SECRET` from
+# `apps/api/src/automation/integration-webhooks.test.ts`.
+#
+# A fake GitHub webhook verify secret, invented for this suite to compute
+# HMAC signatures against — never issued by GitHub, never bound to any real
+# repository or app this project has touched. The `ghs_` prefix mimics a
+# real GitHub token's shape, which combined with the trailing hex is exactly
+# what `generic-api-key` is built to flag.
 regexes = [
   '''5BAA61E4C9B93F3F0682250B6CF8331B7EE68FD8''',
   '''1E4C9B93F3F0682250B6CF8331B7EE68FD8''',
@@ -82,4 +91,5 @@ regexes = [
   '''ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_''',
   '''tf_whs_0123456789abcdef0123456789abcdef''',
   '''8f742231b10e8888abcd99yyyzzz85a5''',
+  '''ghs_test_verify_secret_0123456789abcdef''',
 ]

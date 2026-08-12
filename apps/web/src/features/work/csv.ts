@@ -146,7 +146,10 @@ const COLUMN_ALIASES: Readonly<Record<ImportColumn, readonly string[]>> = {
  * hand would be doing the opposite of its job.
  */
 function normaliseHeader(header: string): string {
-  return header.trim().toLowerCase().replace(/[^a-z0-9]/gu, '');
+  return header
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/gu, '');
 }
 
 /**

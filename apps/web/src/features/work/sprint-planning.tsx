@@ -97,8 +97,8 @@ export function SprintPlanning({ orgId, projectId }: SprintPlanningProps) {
         <div>
           <h2 className="text-sm font-semibold text-ink">Plan a sprint</h2>
           <p className="mt-0.5 text-xs text-ink-faint">
-            Move work between the backlog and the sprint. Done cards stay with their sprint when
-            it closes; the rest go where you choose.
+            Move work between the backlog and the sprint. Done cards stay with their sprint when it
+            closes; the rest go where you choose.
           </p>
         </div>
 

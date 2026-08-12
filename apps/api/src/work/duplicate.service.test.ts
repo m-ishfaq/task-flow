@@ -203,7 +203,10 @@ describe('duplicateProject', () => {
 
     expect(result).toMatchObject({ key: 'WEB2', boards: 1, lists: 2, cards: 3 });
 
-    const copiedBoards = await boards.listBoards(fixture.owner, { projectId: result.projectId, includeArchived: false });
+    const copiedBoards = await boards.listBoards(fixture.owner, {
+      projectId: result.projectId,
+      includeArchived: false,
+    });
     expect(copiedBoards).toHaveLength(1);
 
     const copiedCards = await cards.listCards(fixture.owner, {
@@ -242,7 +245,10 @@ describe('duplicateProject', () => {
     /* Same names, entirely different ids. */
     expect(copyStatuses.some((status) => sourceIds.has(status.statusId))).toBe(false);
 
-    const copiedBoards = await boards.listBoards(fixture.owner, { projectId: result.projectId, includeArchived: false });
+    const copiedBoards = await boards.listBoards(fixture.owner, {
+      projectId: result.projectId,
+      includeArchived: false,
+    });
     const copiedCards = await cards.listCards(fixture.owner, {
       boardId: copiedBoards[0]?.boardId as BoardId,
     });
@@ -267,7 +273,10 @@ describe('duplicateProject', () => {
       includeCards: true,
     });
 
-    const copiedBoards = await boards.listBoards(fixture.owner, { projectId: result.projectId, includeArchived: false });
+    const copiedBoards = await boards.listBoards(fixture.owner, {
+      projectId: result.projectId,
+      includeArchived: false,
+    });
     const boardId = copiedBoards[0]?.boardId as BoardId;
     const copied = await cards.listCards(fixture.owner, { boardId });
     expect(copied.map((card) => card.reference).sort()).toEqual(['NUM-1', 'NUM-2', 'NUM-3']);
@@ -296,7 +305,10 @@ describe('duplicateProject', () => {
     expect(result.cards).toBe(0);
     expect(result.lists).toBe(2);
 
-    const copiedBoards = await boards.listBoards(fixture.owner, { projectId: result.projectId, includeArchived: false });
+    const copiedBoards = await boards.listBoards(fixture.owner, {
+      projectId: result.projectId,
+      includeArchived: false,
+    });
     const copied = await cards.listCards(fixture.owner, {
       boardId: copiedBoards[0]?.boardId as BoardId,
     });
