@@ -8,6 +8,7 @@ import type { SubaccountDeps } from '../telephony/subaccount.service.js';
 import * as directory from './org-directory.service.js';
 import * as users from './user-directory.service.js';
 import * as flags from './flags.service.js';
+import * as billing from './billing-directory.service.js';
 import { readOperatorAudit, recordOperatorAction } from './audit.js';
 
 /**
@@ -212,6 +213,54 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
         )
         .output(z.object({ flagName: z.string(), value: z.boolean().nullable() }).strict())
         .mutation(({ input, ctx }) => flags.setFlag(deps, operatorOf(ctx), input)),
+    }),
+
+    /**
+     * The operator-facing billing view (Phase 12 Wave 3 §3.6). Deliberately
+     * separate from `billing.*` (the owner-facing router) — see
+     * `billing-directory.service.ts`'s own header on why the same word
+     * names two different questions here.
+     */
+    billing: router({
+      list: platformRoute({
+        platformReason:
+          "Every org's billing state — cross-tenant by definition; no org permission can describe it.",
+      })
+        .input(ListInput)
+        .output(
+          z
+            .object({
+              orgs: z
+                .array(
+                  z
+                    .object({
+                      orgId: z.string(),
+                      name: z.string(),
+                      slug: z.string(),
+                      billingStatus: z.string(),
+                      planId: z.string().nullable(),
+                      trialEndsAt: z.date().nullable(),
+                      billingGraceEndsAt: z.date().nullable(),
+                      stripeCustomerId: z.string().nullable(),
+                    })
+                    .strict(),
+                )
+                .readonly(),
+              nextCursor: z.string().nullable(),
+            })
+            .strict(),
+        )
+        .query(({ input, ctx }) => billing.listBilling(operatorOf(ctx), input)),
+
+      grantExtension: platformRoute({
+        platformReason:
+          'Extending a grace period is a cross-tenant write on identity.orgs — no org-scoped permission can authorize it.',
+      })
+        .input(
+          z.object({ orgId: OrgIdSchema, extendByDays: z.number().int().min(1).max(90) }).strict(),
+        )
+        .output(z.object({ orgId: z.string(), billingGraceEndsAt: z.date() }).strict())
+        .mutation(({ input, ctx }) => billing.grantExtension(deps, operatorOf(ctx), input)),
     }),
 
     audit: router({
