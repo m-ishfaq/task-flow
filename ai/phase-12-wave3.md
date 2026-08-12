@@ -3,7 +3,7 @@
 **Status: DRAFT, not yet approved for build.** Written 2026-08-12, at the project owner's request,
 after a design conversation about a real point of confusion: with Wave 1 and Wave 2 both shipped,
 org role and platform-operator access are already fully decoupled in code — but nothing in the
-system says *when* an org should lose access for non-payment, and that gap is what made "an org
+system says _when_ an org should lose access for non-payment, and that gap is what made "an org
 owner" and "the system admin" feel like the same thing in practice. This wave closes that gap.
 
 Parent: [PLAN.md](../PLAN.md) §13 (Roadmap, row 12). Siblings:
@@ -23,7 +23,7 @@ against the actual code confirms the separation it built is real:
 - **Org role never grants anything platform-wide.** `identity.memberships.role` is scoped by a
   composite `(org_id, user_id)` row under RLS; owning or being Owner of any number of orgs
   produces exactly that many independent, non-overlapping memberships. `packages/policy/src/
-  roles.ts`'s `OWNER` constant is `PERMISSIONS` — every permission that exists — but every one of
+roles.ts`'s `OWNER` constant is `PERMISSIONS` — every permission that exists — but every one of
   them is evaluated inside `withOrgScope(theOneOrgTheyOwn)`. There is no code path from "Owner of
   Org A" to "anything about Org B."
 - **Platform operator never derives from org role.** `platform.operators` (migration 0035) has no
@@ -58,7 +58,7 @@ a human remembering to look. This wave replaces that human with a state machine.
   trial end date, and a link out to that org's Stripe customer — the "see all companies, manage
   them, see invoices" surface the project owner asked for directly.
 - Enforcement: an org whose billing has genuinely lapsed (grace period exhausted, no payment)
-  loses access through the *same* chokepoint Wave 1 built for operator suspension
+  loses access through the _same_ chokepoint Wave 1 built for operator suspension
   (`resolveOrgMembership`), not a second one.
 
 **Deliberately out of scope:**
@@ -73,7 +73,7 @@ a human remembering to look. This wave replaces that human with a state machine.
   and buys nothing — Wave 1 already made this exact call for org directory data ("cross-org data
   access stays structurally out of reach without a purpose-built, audited path").
 - **Usage-based billing** (telephony spend passed through to the customer, storage overages). The
-  spend-cap machinery in Phase 7 stops an org from costing *this deployment* money; it says
+  spend-cap machinery in Phase 7 stops an org from costing _this deployment_ money; it says
   nothing about charging the org for it, which is a distinct, unscoped feature.
 - **Coupons, annual billing, proration edge cases beyond what Stripe Checkout/Billing Portal
   already handle for free.** Everything Stripe's own hosted UI does is free scope; anything this
@@ -91,7 +91,7 @@ This is the crux of the project owner's question, made structural rather than le
 remember:
 
 - **`org:billing`** — owner-only (per `packages/policy/src/roles.ts`, only `OWNER` carries it),
-  answers "what does *my* org pay, and can I change it." Already in `ORG_LEVEL_PERMISSIONS`
+  answers "what does _my_ org pay, and can I change it." Already in `ORG_LEVEL_PERMISSIONS`
   (`permissions.ts` §"never reachable through a resource tuple" — deliberately, since sharing a
   channel or a page can never imply the ability to change what the whole org is billed). Scoped
   by `withOrgScope`; an Owner of three orgs calls this three separate times, once per org, and
@@ -152,7 +152,7 @@ if (billingStatus === 'canceled') throw errors.orgBillingLapsed();
 
 `orgBillingLapsed` is a new, distinct `AppError` (`packages/contracts/src/errors.ts`, alongside
 `orgSuspended`) rather than reusing `ORG_SUSPENDED` — an Owner staring at a locked-out org needs
-to know *which* wall they hit ("pay us" vs. "call support"), the identical reasoning
+to know _which_ wall they hit ("pay us" vs. "call support"), the identical reasoning
 `resolveOrgMembership`'s own comment already gives for treating `suspended` and `deleted`
 differently rather than collapsing them.
 
@@ -201,7 +201,7 @@ export interface PaymentProvider {
 
 `BillingWebhookEvent` is a small closed union — `subscription_activated | payment_failed |
 payment_recovered | subscription_canceled` — the provider's own richer event vocabulary (Stripe
-alone has dozens of event types) is translated down to this shape *inside* the provider
+alone has dozens of event types) is translated down to this shape _inside_ the provider
 implementation, so nothing in `apps/api` ever pattern-matches on a Stripe-specific string. This is
 the actual mechanism behind "swap the provider with minimal changes": every call site — the
 checkout route, the portal route, the webhook handler — is written against these four members and
@@ -239,14 +239,14 @@ everywhere but `packages/db`.
 ### 3.4 Trial start, expiry, and the grace period — all automatic, none of them the Owner's job
 
 - **`orgs.create` sets `billing_status = 'trialing'`, `trial_ends_at = now() + BILLING_TRIAL_DAYS
-  days`** in the same transaction that already writes the org and its founding membership
+days`** in the same transaction that already writes the org and its founding membership
   (`org.service.ts`) — one more field on a write path that already exists, not a second write.
 - **A worker sweep** (`apps/worker`, alongside the automation engine and webhook delivery per
   CLAUDE.md's own placement rule — "takes only work added from Phase 10 onward," and this is
   exactly that shape of recurring job, not one of the seven legacy `apps/api` intervals) runs on a
   short interval and:
   - `trialing` past `trial_ends_at` with no `stripe_subscription_id` → `billing_status =
-    'past_due'`, `billing_grace_ends_at = now() + BILLING_PAST_DUE_GRACE_DAYS days`. Not
+'past_due'`, `billing_grace_ends_at = now() + BILLING_PAST_DUE_GRACE_DAYS days`. Not
     `canceled` directly — a trial that ends on a Friday should not lock someone out before they
     have had a business day to notice, which is what the grace period is for.
   - `past_due` past `billing_grace_ends_at` → `billing_status = 'canceled'`. This is the write
@@ -280,7 +280,7 @@ or cancel access for an org). The sequence, matching Phase 7 Wave 1's own worked
 4. Only after the signature passes: check `billing.webhook_events` for the Stripe event id
    (idempotency — Stripe retries undelivered webhooks, and a retry must not double-apply a state
    transition), then apply the transition and record the event id, in one transaction. Recording
-   the id happens *inside* the same transaction as the effect, not before it — the identical
+   the id happens _inside_ the same transaction as the effect, not before it — the identical
    "written on success" reasoning telephony's own nonce-recording gives, so a failed handler
    attempt does not poison a retry that would otherwise recover it.
 
