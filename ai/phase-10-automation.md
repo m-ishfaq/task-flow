@@ -966,7 +966,7 @@ CREATE TABLE platform.integrations (
   status flip, never a row gone — the api_tokens shape).
 - **The inbound lookup needs a narrow auth role**, `taskflow_integration_auth`, with
   column-level SELECT of exactly `(provider, provider_scope, org_id, verify_ciphertext,
-  verify_wrapped, verify_master_id)` — the api_token_auth recipe. The role that resolves
+verify_wrapped, verify_master_id)` — the api_token_auth recipe. The role that resolves
   "who is this webhook for" must not be able to read anyone's outbound token or name.
   It needs the GitHub verify secret because GitHub verification is per-ORG (D4); it must
   never see `token_ciphertext`.
