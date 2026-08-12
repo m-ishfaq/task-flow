@@ -33,6 +33,11 @@ export const ERROR_CODES = [
   // a member deserves to be told what happened and what to do next (Phase 12
   // Wave 1, ai/phase-12-admin.md §3.3).
   'ORG_SUSPENDED',
+  // Distinct from ORG_SUSPENDED too: a lapsed trial/subscription and an
+  // operator's manual suspension are different columns, different writers,
+  // and different next steps for an Owner (Phase 12 Wave 3,
+  // ai/phase-12-wave3.md §3.2).
+  'ORG_BILLING_LAPSED',
 
   /* --- Resource --------------------------------------------------------- */
   // NOT_FOUND is deliberately returned for resources that exist but are not
@@ -94,6 +99,7 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
   FORBIDDEN: 403,
   NOT_A_MEMBER: 403,
   ORG_SUSPENDED: 403,
+  ORG_BILLING_LAPSED: 403,
 
   NOT_FOUND: 404,
   ALREADY_EXISTS: 409,
@@ -209,6 +215,17 @@ export const errors = {
 
   orgSuspended: (message = 'This organization has been suspended.') =>
     new AppError('ORG_SUSPENDED', message),
+
+  /**
+   * Distinct from `orgSuspended` on purpose (Phase 12 Wave 3,
+   * ai/phase-12-wave3.md §3.2) — an Owner staring at a locked-out org needs
+   * to know WHICH wall they hit ("pay us" vs. "call support"). Thrown by
+   * `resolveOrgMembership` only when `billing_status = 'canceled'`, never
+   * for `trialing`/`active`/`past_due`.
+   */
+  orgBillingLapsed: (
+    message = 'This organization’s trial or subscription has ended. An owner can resolve this from Billing settings.',
+  ) => new AppError('ORG_BILLING_LAPSED', message),
 
   /**
    * Use for resources the caller may not see, as well as those that do not

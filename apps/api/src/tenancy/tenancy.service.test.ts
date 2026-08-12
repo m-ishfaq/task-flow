@@ -677,6 +677,84 @@ describe('suspension enforcement', () => {
   });
 });
 
+describe('billing enforcement (Phase 12 Wave 3 §3.2)', () => {
+  /* Pinned against real Postgres for the identical reason the suspension
+     suite above is: resolveOrgMembership reads billing_status from the SAME
+     withUserScope row as status, in the SAME query, and only an empirical
+     assertion — not a reading of the code — proves that read actually
+     reaches a real row under RLS rather than silently seeing `undefined`
+     and falling through as "not lapsed". */
+  it('refuses a billing-lapsed org for every member, including its owner, with a distinct error', async () => {
+    const orgId = await newOrg('billing-lapsed-enforce');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'member' },
+      actorOf(OWNER),
+    );
+
+    await admin.setOrg(orgId);
+    await admin.query(`UPDATE identity.orgs SET billing_status = 'canceled' WHERE id = $1`, [
+      orgId,
+    ]);
+    await admin.setOrg(null);
+
+    await expect(resolveOrgMembership(OWNER, orgId)).rejects.toMatchObject({
+      code: 'ORG_BILLING_LAPSED',
+    });
+    await expect(resolveOrgMembership(COLLEAGUE, orgId)).rejects.toMatchObject({
+      code: 'ORG_BILLING_LAPSED',
+    });
+  });
+
+  it.each(['trialing', 'active', 'past_due'] as const)(
+    'does not block a %s org',
+    async (billingStatus) => {
+      const orgId = await newOrg(`billing-${billingStatus}-enforce`);
+
+      await admin.setOrg(orgId);
+      await admin.query(`UPDATE identity.orgs SET billing_status = $2 WHERE id = $1`, [
+        orgId,
+        billingStatus,
+      ]);
+      await admin.setOrg(null);
+
+      expect((await resolveOrgMembership(OWNER, orgId))?.role).toBe('owner');
+    },
+  );
+
+  it('never clobbers the other column: an operator suspension survives billing recovery, and a billing cancellation survives operator reactivation', async () => {
+    /* The whole point of two independent columns (§3.2's migration header):
+       an automated billing recovery must never silently undo a manual
+       operator suspension, and an operator's own action must never silently
+       clear a billing state it knows nothing about. This test writes both
+       columns directly, exactly as the sweep/webhook and the platform
+       console each write only their own — never in combination — and
+       asserts the refusal that actually fires is the one whose column is
+       still in a blocking state. */
+    const suspendedButPaid = await newOrg('operator-suspended-paid-enforce');
+    await admin.setOrg(suspendedButPaid);
+    await admin.query(
+      `UPDATE identity.orgs SET status = 'suspended', billing_status = 'active' WHERE id = $1`,
+      [suspendedButPaid],
+    );
+    await admin.setOrg(null);
+    await expect(resolveOrgMembership(OWNER, suspendedButPaid)).rejects.toMatchObject({
+      code: 'ORG_SUSPENDED',
+    });
+
+    const activeButUnpaid = await newOrg('operator-active-unpaid-enforce');
+    await admin.setOrg(activeButUnpaid);
+    await admin.query(
+      `UPDATE identity.orgs SET status = 'active', billing_status = 'canceled' WHERE id = $1`,
+      [activeButUnpaid],
+    );
+    await admin.setOrg(null);
+    await expect(resolveOrgMembership(OWNER, activeButUnpaid)).rejects.toMatchObject({
+      code: 'ORG_BILLING_LAPSED',
+    });
+  });
+});
+
 describe('ownership transfer', () => {
   it('hands the org over in one atomic transaction', async () => {
     const orgId = await newOrg('transfer-one');

@@ -111,13 +111,13 @@ export async function resolveOrgMembership(
      falls through, which is the not-suspended answer — the case the spec's
      own §3.7 correction warns to verify empirically rather than assume, and
      the tenancy suite's suspension tests pin it against real Postgres. */
-  const status = await withUserScope(userId, async (tx) => {
+  const org = await withUserScope(userId, async (tx) => {
     const orgRow = await tx
-      .select({ status: schema.orgs.status })
+      .select({ status: schema.orgs.status, billingStatus: schema.orgs.billingStatus })
       .from(schema.orgs)
       .where(eq(schema.orgs.id, orgId))
       .limit(1);
-    return orgRow[0]?.status;
+    return orgRow[0];
   });
 
   /* Suspended and deleted get different treatments on purpose (§3.3):
@@ -133,11 +133,22 @@ export async function resolveOrgMembership(
        used to exist" is exactly the kind of fact a former member should not
        get confirmed by an error message — the same cross-tenant-privacy
        argument member.service.ts already makes for NOT_FOUND. */
-  if (status === 'suspended') {
+  if (org?.status === 'suspended') {
     throw errors.orgSuspended();
   }
-  if (status === 'deleted') {
+  if (org?.status === 'deleted') {
     return null;
+  }
+
+  /* Phase 12 Wave 3 (§3.2): billingStatus is read from the SAME row, in the
+     SAME query, deliberately — a second, later read here would open a window
+     where an org already resolved as "not operator-suspended" could still be
+     billing-lapsed by the time this line runs, and vice versa. `canceled` is
+     the only value that blocks (see the column's own migration comment for
+     why 'past_due' does not); a distinct error, not `orgSuspended`, because
+     an Owner staring at a locked-out org needs to know which wall they hit. */
+  if (org?.billingStatus === 'canceled') {
+    throw errors.orgBillingLapsed();
   }
 
   const tuples = await loadTuples(orgId, userId);
