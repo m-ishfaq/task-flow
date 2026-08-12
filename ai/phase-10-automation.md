@@ -17,8 +17,9 @@ rule-builder + spend-panel UI. See the "Wave 4 — the cost-bearing telephony ac
 header below.
 
 **Wave 4 still open: the connectors (Slack/GitHub) and the CSV/JSON importers/exporters
-(§7).** Slice 1 of the connectors SHIPPED 2026-08-12 — migration 0056 + the two signing
-primitives + the `taskflow_integration_auth` role + the grants suite; the connect UI,
+(§7).** Slice 1 of the connectors SHIPPED 2026-08-12 (commit `66349c8`) — migration 0056 +
+the two signing primitives + the `taskflow_integration_auth` role + the grants suite; the
+connect UI,
 inbound ingestion, the outbound actions, and import/export remain. Waves 1–2 are the
 engine and the webhook delivery path; the wave list below says exactly what shipped in
 each.
@@ -791,7 +792,7 @@ down → up. **Not verified in a browser** — slice 5 is the UI.
 ## 7. Connectors and import/export (Wave 4, remainder)
 
 Status: the §5.5 telephony slice shipped 2026-08-12 (commit `1e48295`). **Slice 1
-SHIPPED 2026-08-12** — migration 0056 (`platform.integrations` + the
+SHIPPED 2026-08-12 (commit `66349c8`)** — migration 0056 (`platform.integrations` + the
 `taskflow_integration_auth` lookup role: column-level SELECT of the lookup + GitHub
 verify columns, never `token_*`, plus the 0036 `REVOKE DELETE` from `taskflow_app`),
 `slack-signature.ts` + `github-signature.ts` (the `twilio-signature` precedent twice
