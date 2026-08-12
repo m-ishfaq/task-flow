@@ -518,6 +518,19 @@ Still open: granting the operator flag is migration/script-only (§7 decision 7 
 route, deliberately); and `platformAdmin.audit.list` exists because the doc's route list named the
 Audit tab but no route to feed it.
 
+**Phase 12 Wave 3 — billing & org lifecycle — DRAFT, not yet approved:**
+[ai/phase-12-wave3.md](ai/phase-12-wave3.md), written 2026-08-12. Confirms Wave 1's org-role /
+platform-operator split already holds (an Owner of N orgs has N independent, non-overlapping
+memberships; `platform.operators` has no relationship to org membership at all) and adds the
+piece that was actually missing: an org's subscription/trial state, as a **second, independent**
+column (`identity.orgs.billing_status`) from Wave 1's own operator-controlled `status` — kept
+separate on purpose, so an automated billing recovery can never silently undo a manual operator
+suspension (or vice versa). Enforcement widens the same `resolveOrgMembership` chokepoint Wave 1
+built rather than adding a second one. Stripe is the first `PaymentProvider` implementation,
+chosen by an explicit `PAYMENTS_PROVIDER` env var (not credential-sniffed, unlike telephony's
+`ACtest` marker) so a second processor is an implementation swap, per the project owner's own
+instruction.
+
 #### Phase 7 — four defects a green suite could not see, found by a live carrier (2026-08-10)
 
 **Outbound telephony had never worked against real Twilio**, through five "complete" waves, 733
