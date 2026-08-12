@@ -262,6 +262,22 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'sprint.completed': { type: 'project', key: 'projectId' },
   'sprint.cancelled': { type: 'project', key: 'projectId' },
   'card.sprint_changed': { type: 'card', key: 'cardId' },
+
+  /* Billing & org lifecycle (Phase 12 Wave 3). All six resolve to the ORG —
+     every one of them is a fact about the org's subscription state, which is
+     exactly what an Owner reviewing their own audit log would ask about, and
+     none names an independently grantable resource of its own. Distinct from
+     `platform.*`'s billing-adjacent events (Wave 1's `org_suspended`/
+     `org_reactivated`): those run as `taskflow_platform_admin` with no outbox
+     grant and reach `platform.operator_audit_log` instead — these six run as
+     the ordinary app role inside `withOrgScope` and reach this consumer like
+     any other tenant event. */
+  'billing.trial_started': { type: 'org', key: 'orgId' },
+  'billing.subscription_activated': { type: 'org', key: 'orgId' },
+  'billing.payment_failed': { type: 'org', key: 'orgId' },
+  'billing.org_suspended_for_nonpayment': { type: 'org', key: 'orgId' },
+  'billing.subscription_canceled': { type: 'org', key: 'orgId' },
+  'billing.grace_extended': { type: 'org', key: 'orgId' },
 };
 
 /**

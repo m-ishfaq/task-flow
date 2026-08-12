@@ -482,6 +482,11 @@ describe('the application router', () => {
       .sort();
 
     expect(exempt).toEqual([
+      /* Both read/act on the CALLER's own org (`ctx.principal.org.orgId`,
+         Phase 12 Wave 3 §3.1) and take no id — `createCheckoutSession` is
+         NOT here because it takes a `planId` this technique can substitute. */
+      'billing.createPortalSession',
+      'billing.status',
       /* `chat.channels.list` reads the caller's own tuples and their org's
          public channels. There is no id to substitute, so calling it with the
          victim's bag returns the ATTACKER's own channels and succeeds — which

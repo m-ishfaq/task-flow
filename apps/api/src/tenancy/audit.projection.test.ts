@@ -30,6 +30,10 @@ import '../search/events.js';
    accounted for" — which is precisely how the platform-admin events went
    unchecked from Wave 1 to Wave 2. */
 import '../automation/events.js';
+/* Phase 12 Wave 3, same moment — same lesson as platform-admin's Wave 1 gap
+   two lines above: a slice's own `events.ts` is invisible to every assertion
+   below until something imports it. */
+import '../billing/events.js';
 
 /**
  * The audit projection's mapping table, checked against what is actually
