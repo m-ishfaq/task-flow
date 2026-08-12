@@ -55,7 +55,7 @@ export function PlatformAdminPage() {
   const queryClient = useQueryClient();
   const { guard, dialog } = useStepUp();
   const [gateOpen, setGateOpen] = useState(false);
-  const [tab, setTab] = useState<'orgs' | 'users' | 'flags' | 'audit'>('orgs');
+  const [tab, setTab] = useState<'orgs' | 'users' | 'billing' | 'flags' | 'audit'>('orgs');
 
   /* The query-side step-up gate (see the header comment). Confirming runs the
      same login the mutation dialog runs; invalidating every `['platform']` key
@@ -87,6 +87,7 @@ export function PlatformAdminPage() {
           [
             ['orgs', 'Organizations'],
             ['users', 'Users'],
+            ['billing', 'Billing'],
             ['flags', 'Feature flags'],
             ['audit', 'Operator audit'],
           ] as const
@@ -120,6 +121,14 @@ export function PlatformAdminPage() {
       )}
       {tab === 'users' && (
         <UsersTab
+          onStepUp={() => {
+            setGateOpen(true);
+          }}
+        />
+      )}
+      {tab === 'billing' && (
+        <BillingTab
+          guard={guard}
           onStepUp={() => {
             setGateOpen(true);
           }}
@@ -729,4 +738,201 @@ function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
         ))}
     </section>
   );
+}
+
+/* -------------------------------------------------------------------------- *
+ * Billing (Phase 12 Wave 3 §3.6)
+ * -------------------------------------------------------------------------- */
+
+function BillingTab({
+  guard,
+  onStepUp,
+}: {
+  readonly guard: (error: unknown, retry: () => void) => boolean;
+  readonly onStepUp: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [extendTarget, setExtendTarget] = useState<{ orgId: string; name: string } | null>(null);
+  const [extendByDays, setExtendByDays] = useState('7');
+
+  const billing = useQuery({
+    queryKey: keys.platformBilling(cursor),
+    queryFn: async () => wire(await api.platformAdmin.billing.list.query({ cursor, limit: 25 })),
+  });
+
+  const extend = useMutation({
+    mutationFn: (input: { orgId: OrgId; extendByDays: number }) =>
+      api.platformAdmin.billing.grantExtension.mutate(input),
+    onSuccess: async () => {
+      setExtendTarget(null);
+      await queryClient.invalidateQueries({ queryKey: ['platform', 'billing'] });
+    },
+    onError: (error, input) => {
+      guard(error, () => {
+        extend.mutate(input);
+      });
+    },
+  });
+
+  if (errorCodeOf(billing.error) === 'STEP_UP_REQUIRED') return <StepUpGate onStepUp={onStepUp} />;
+
+  return (
+    <section aria-label="Billing">
+      {billing.isPending && <SkeletonRows rows={5} className="*:h-12" />}
+      {billing.isError && <ErrorView error={billing.error} title="Could not load billing" />}
+
+      {billing.data !== undefined && (
+        <div className="overflow-x-auto rounded border border-line">
+          <table className="w-full text-left text-xs">
+            <thead className="border-b border-line text-ink-faint">
+              <tr>
+                <th className="px-3 py-2 font-medium">Organization</th>
+                <th className="px-3 py-2 font-medium">Status</th>
+                <th className="px-3 py-2 font-medium">Plan</th>
+                <th className="px-3 py-2 font-medium">Trial / grace ends</th>
+                <th className="px-3 py-2 font-medium">Stripe customer</th>
+                <th className="px-3 py-2 font-medium" />
+              </tr>
+            </thead>
+            <tbody>
+              {billing.data.orgs.map((org) => (
+                <tr key={org.orgId} className="border-b border-line/50 last:border-0">
+                  <td className="px-3 py-2">
+                    <p className="font-medium text-ink">{org.name}</p>
+                    <p className="font-mono text-[10px] text-ink-faint">{org.slug}</p>
+                  </td>
+                  <td className="px-3 py-2">
+                    <BillingStatusBadge billingStatus={org.billingStatus} />
+                  </td>
+                  <td className="px-3 py-2 text-ink-muted">{org.planId ?? '—'}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-ink-muted">
+                    {org.billingStatus === 'past_due' && org.billingGraceEndsAt !== null
+                      ? formatDate(org.billingGraceEndsAt)
+                      : org.trialEndsAt !== null
+                        ? formatDate(org.trialEndsAt)
+                        : '—'}
+                  </td>
+                  <td className="px-3 py-2 font-mono text-[10px] text-ink-faint">
+                    {org.stripeCustomerId ?? '—'}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {org.billingStatus === 'past_due' && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={extend.isPending}
+                        onClick={() => {
+                          setExtendByDays('7');
+                          setExtendTarget({ orgId: org.orgId, name: org.name });
+                        }}
+                      >
+                        Extend grace
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {extend.isError && (
+        <ErrorView error={extend.error} title="Could not extend the grace period" />
+      )}
+
+      {/* A support-ticket override, not a way to mark an org paid — this
+          writes billing_grace_ends_at alone, never billing_status. */}
+      {extendTarget !== null && (
+        <ModalRoot
+          open
+          onOpenChange={(next) => {
+            if (!next) setExtendTarget(null);
+          }}
+        >
+          <ModalContent size="sm" className="p-4">
+            <ModalTitle>Extend grace period for {extendTarget.name}?</ModalTitle>
+            <ModalDescription>
+              Pushes the deadline before this organization is locked out for non-payment. This does
+              not mark the organization as paid — only Stripe, or the organization&rsquo;s own owner
+              completing checkout, does that.
+            </ModalDescription>
+
+            <form
+              className="mt-4 space-y-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const days = Number.parseInt(extendByDays, 10);
+                if (extendTarget !== null && Number.isInteger(days) && days > 0) {
+                  extend.mutate({ orgId: extendTarget.orgId as OrgId, extendByDays: days });
+                }
+              }}
+            >
+              <Field label="Extend by (days)" htmlFor="extend-by-days">
+                <Input
+                  id="extend-by-days"
+                  type="number"
+                  min={1}
+                  max={90}
+                  value={extendByDays}
+                  onChange={(event) => {
+                    setExtendByDays(event.target.value);
+                  }}
+                />
+              </Field>
+
+              <div className="flex gap-2">
+                <Button type="submit" variant="primary" disabled={extend.isPending}>
+                  {extend.isPending ? 'Extending…' : 'Extend'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setExtendTarget(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </ModalContent>
+        </ModalRoot>
+      )}
+
+      <div className="flex items-center gap-2">
+        <Button
+          variant="secondary"
+          disabled={cursor === null}
+          onClick={() => {
+            setCursor(null);
+          }}
+        >
+          Newest
+        </Button>
+        <Button
+          variant="secondary"
+          disabled={billing.data?.nextCursor === null}
+          onClick={() => {
+            setCursor(billing.data?.nextCursor ?? null);
+          }}
+        >
+          Older
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function BillingStatusBadge({ billingStatus }: { readonly billingStatus: string }) {
+  if (billingStatus === 'active') {
+    return <Badge className="border-success/40 bg-success/10 text-success">active</Badge>;
+  }
+  if (billingStatus === 'trialing') {
+    return <Badge className="border-line bg-surface-sunken text-ink-faint">trial</Badge>;
+  }
+  if (billingStatus === 'past_due') {
+    return <Badge className="border-danger/40 bg-danger/10 text-danger">past due</Badge>;
+  }
+  return <Badge className="border-danger/40 bg-danger/10 text-danger">canceled</Badge>;
 }

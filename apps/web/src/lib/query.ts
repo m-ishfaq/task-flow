@@ -198,6 +198,9 @@ export const keys = {
 
   org: (orgId: string) => ['org', orgId] as const,
 
+  /** The org's own billing state (Phase 12 Wave 3 §3.1) — `billing.status`, owner-only. */
+  billing: (orgId: string) => ['org', orgId, 'billing'] as const,
+
   /**
    * Every projects query for an org, archived or not.
    *
@@ -369,6 +372,8 @@ export const keys = {
   platformUsers: (cursor: string | null) => ['platform', 'users', cursor ?? 'first'] as const,
   /** The flag registry with resolved values. */
   platformFlags: () => ['platform', 'flags'] as const,
+  /** One page of the billing directory (Phase 12 Wave 3 §3.6). */
+  platformBilling: (cursor: string | null) => ['platform', 'billing', cursor ?? 'first'] as const,
   /** One page of the operator chain. Keyset on seq — the page is `before`. */
   platformAudit: (before: string | null) => ['platform', 'audit', before ?? 'latest'] as const,
 } as const;

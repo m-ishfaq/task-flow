@@ -62,8 +62,11 @@ export async function createCheckoutSession(
   return deps.payments.createCheckoutSession({
     customerId,
     planId: priceId,
-    successUrl: `${deps.webOrigin}/settings/billing?checkout=success`,
-    cancelUrl: `${deps.webOrigin}/settings/billing?checkout=canceled`,
+    // The Billing section lives on the ordinary org settings page
+    // (apps/web/src/features/admin/settings-page.tsx), not a route of its
+    // own — matching where this redirects back to.
+    successUrl: `${deps.webOrigin}/settings?checkout=success`,
+    cancelUrl: `${deps.webOrigin}/settings?checkout=canceled`,
   });
 }
 
@@ -76,6 +79,6 @@ export async function createPortalSession(
 
   return deps.payments.createPortalSession({
     customerId,
-    returnUrl: `${deps.webOrigin}/settings/billing`,
+    returnUrl: `${deps.webOrigin}/settings`,
   });
 }
