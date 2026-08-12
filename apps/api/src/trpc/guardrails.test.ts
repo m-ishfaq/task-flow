@@ -350,10 +350,14 @@ describe('the real application router', () => {
       /* TOTP enrollment lifecycle (Phase 12 Wave 2 §3.2) — adding or removing a
          second factor on your own account, `stepUp: true` on all three.
          `auth.totp.verifyLogin` is NOT here: it is the public route above,
-         reached with no session yet. */
+         reached with no session yet. `status` is the one read in the group —
+         no `stepUp`, the same "cheap no-step-up probe" reasoning
+         `platformAdmin.self.check` uses: the account page needs it on every
+         load just to decide which button to render. */
       'auth.totp.confirmEnrollment',
       'auth.totp.disable',
       'auth.totp.startEnrollment',
+      'auth.totp.status',
       /* The resolved feature-flag snapshot (Phase 12 Wave 1 §3.8) — the
          client bootstrap payload, and the consumer that makes the override
          store real. Self-scoped rather than public because the flags are a
