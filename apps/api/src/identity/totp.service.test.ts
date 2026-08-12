@@ -147,6 +147,45 @@ describe('enrollment', () => {
 });
 
 /* -------------------------------------------------------------------------- *
+ * Status — the account page's own question (§"Whether this account has a
+ * CONFIRMED credential" in totp.service.ts)
+ * -------------------------------------------------------------------------- */
+
+describe('status', () => {
+  it('is false with no enrollment, true once confirmed, and false again after an unconfirmed start', async () => {
+    const token = await signedInUser('totp-status@example.test');
+
+    const before = await app.inject({
+      method: 'GET',
+      url: '/trpc/auth.totp.status',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect((before.json<TrpcBody>().result?.data as { enabled?: boolean }).enabled).toBe(false);
+
+    await enrollTotp(token);
+
+    const after = await app.inject({
+      method: 'GET',
+      url: '/trpc/auth.totp.status',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect((after.json<TrpcBody>().result?.data as { enabled?: boolean }).enabled).toBe(true);
+  });
+
+  it('does not count an unconfirmed enrollment as enabled', async () => {
+    const token = await signedInUser('totp-status-pending@example.test');
+    await call('auth.totp.startEnrollment', { token });
+
+    const status = await app.inject({
+      method: 'GET',
+      url: '/trpc/auth.totp.status',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect((status.json<TrpcBody>().result?.data as { enabled?: boolean }).enabled).toBe(false);
+  });
+});
+
+/* -------------------------------------------------------------------------- *
  * Login
  * -------------------------------------------------------------------------- */
 

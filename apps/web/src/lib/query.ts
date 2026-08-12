@@ -170,6 +170,9 @@ export const keys = {
   /** Personal, not org-scoped — a passkey signs into the account, not one org. */
   passkeys: () => ['auth', 'passkeys'] as const,
 
+  /** Whether the caller's own account has a confirmed TOTP factor (Phase 12 Wave 2 §3.2). */
+  totpStatus: () => ['auth', 'totp', 'status'] as const,
+
   /** Which OAuth providers this server has credentials for (Phase 12 Wave 2 §3.3). */
   oauthProviders: () => ['auth', 'oauth', 'providers'] as const,
   /** The caller's own linked OAuth providers. */

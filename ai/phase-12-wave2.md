@@ -1,9 +1,19 @@
 # Phase 12, Wave 2 — Identity extras, device security, and account erasure
 
-**Status: approved for build.** Scope and the architecturally-significant decisions were resolved
-directly with the project owner on 2026-08-09 (recorded in §7) rather than left as an open-questions
-section for a first draft, since this document is written immediately before implementation starts,
-not ahead of it the way Wave 1's was.
+**Status: SHIPPED**, except §3.2's own enrollment UI (see the correction below). Scope and the
+architecturally-significant decisions were resolved directly with the project owner on 2026-08-09
+(recorded in §7) rather than left as an open-questions section for a first draft, since this
+document was written immediately before implementation started, not ahead of it the way Wave 1's
+was.
+
+**Corrected 2026-08-12 — this header said "approved for build" for two days after the code
+shipped.** Every structural decision below (§3.1–§3.6) landed exactly as designed, each with its
+own "SHIPPED 2026-08-1x" note inline — but nobody updated the ONE line a reader checks first, which
+is the identical failure this file's own sibling docs warn about (`CLAUDE.md`: "a status marker is
+a claim, not a fact"). The one real gap found on the correction pass: §3.2 shipped
+`auth.totp.startEnrollment`/`confirmEnrollment`/`disable` with no caller — `account-page.tsx` never
+grew a section for it, so a user could not actually turn TOTP on. Closed the same day
+(`totp-section.tsx`, mirroring `passkey-section.tsx`'s enroll-then-confirm shape).
 
 Parent: [PLAN.md](../PLAN.md) §13 (Roadmap, row 12). Sibling: [phase-12-admin.md](phase-12-admin.md)
 (Wave 1 — org governance & platform admin, shipped).

@@ -143,6 +143,21 @@ export async function disable(deps: TotpDeps, input: { userId: string }): Promis
 }
 
 /**
+ * Whether this account has a CONFIRMED credential — the account page's own
+ * question, distinct from every other read in this file. `getTotpCredential`
+ * returns an unconfirmed row too (an enrollment interrupted mid-flow, §"the
+ * secret is encrypted, not hashed" above), and the UI must not read that as
+ * "enabled": doing so would show a Disable button for a factor that cannot
+ * actually complete a login, and the secret it would disable was already
+ * unusable. Deliberately does not decrypt or return the secret — this is a
+ * status probe, not an enrollment read.
+ */
+export async function status(input: { userId: string }): Promise<{ enabled: boolean }> {
+  const credential = await repo.getTotpCredential(input.userId);
+  return { enabled: credential?.confirmedAt != null };
+}
+
+/**
  * Completes a login or step-up held by `identity.login()`'s
  * `totp_required` challenge — a 6-digit code from the app, or a recovery
  * code, either one redeemable exactly once (a recovery code cannot

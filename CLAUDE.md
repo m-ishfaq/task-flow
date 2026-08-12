@@ -518,6 +518,27 @@ Still open: granting the operator flag is migration/script-only (§7 decision 7 
 route, deliberately); and `platformAdmin.audit.list` exists because the doc's route list named the
 Audit tab but no route to feed it.
 
+### Phase 12 Wave 2 — identity extras, device security, account erasure (SHIPPED)
+
+Spec: [ai/phase-12-wave2.md](ai/phase-12-wave2.md). **This section did not exist until 2026-08-12,
+two days after the code shipped** — the spec's own header still said "approved for build" the
+whole time, which is the exact "status marker is a claim, not a fact" failure this file's Phase 5
+and Phase 8 sections already document, just caught later. Shipped, verified against the real code
+rather than trusted from the spec: user suspension (`identity.users.status`, mirroring Wave 1's org
+suspension); TOTP as a second factor (`totp.service.ts`, migration 0040, the identity-scoped data
+key, login returning a `totp_required` challenge); OAuth sign-in for Google/GitHub with auto-link on
+a provider-verified email (`oauth.service.ts`); device/session inventory and impossible-travel
+detection over `identity.sessions` (migration 0043, IP-country-level only, flags rather than
+blocks); org deletion as a real cascading `DELETE` behind a suspend-then-type-the-slug two-step gate
+(migration 0044, `platformAdmin.directory.delete`); and self-serve DSAR export
+(`people.exportMine`).
+
+**One real gap, closed the same day it was found:** `auth.totp.startEnrollment`/`confirmEnrollment`
+had shipped with no caller — `account-page.tsx` had Passkeys, Connected accounts, Sessions, and
+Export sections but nothing for TOTP, so a user could never actually turn it on. Closed by
+`totp-section.tsx`, mirroring `passkey-section.tsx`'s enroll-then-confirm shape (show the secret,
+collect one real code, show recovery codes exactly once) rather than inventing a new pattern.
+
 **Phase 12 Wave 3 — billing & org lifecycle — DRAFT, not yet approved:**
 [ai/phase-12-wave3.md](ai/phase-12-wave3.md), written 2026-08-12. Confirms Wave 1's org-role /
 platform-operator split already holds (an Owner of N orgs has N independent, non-overlapping
@@ -611,7 +632,11 @@ have no dedicated test file.
 **Wave 4 — Twilio Verify wired into "the existing MFA path" — does not have an existing MFA path to
 wire into.** The spec's §3.12 assumed one exists in `apps/api/src/identity`; PLAN.md §3.4 is explicit
 that TOTP and this SMS/call fallback are deferred to Phase 12, itself still an unapproved draft, and
-`apps/api/src/identity` today is password and passkeys only. Building a login-time second factor here
+`apps/api/src/identity` today is password and passkeys only. _(True when this paragraph was written;
+Phase 12 Wave 2 has since shipped real login-time TOTP — `apps/api/src/identity/totp.service.ts` —
+so this describes the state at the time, not the state now. Left as written rather than edited, per
+this file's own rule about correcting a stale claim in place instead of silently rewriting it.)_
+Building a login-time second factor here
 would be new, un-spec'd work on a second human-review surface, not "finishing" an approved phase — so
 only the capability shipped: `verify.service.ts`'s `startPhoneVerification`/`checkPhoneVerification`,
 gated through the identical `checkOutboundAllowed` chokepoint every other outbound path uses, with no

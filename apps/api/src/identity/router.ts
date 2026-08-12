@@ -249,6 +249,20 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
      * the password step already succeeded.
      */
     totp: router({
+      /**
+       * Whether this account already has a confirmed factor — no `stepUp`,
+       * the same "cheap, no-step-up probe" reasoning `platformAdmin.self.check`
+       * already uses (`shell.tsx`'s own comment on why): the account page
+       * needs this on every load just to decide which button to render, and
+       * gating a read behind a fresh credential would make the settings page
+       * itself demand one before it can even show its own state.
+       */
+      status: selfRoute({
+        selfReason: 'Whether your own account has a confirmed second factor.',
+      })
+        .output(z.object({ enabled: z.boolean() }))
+        .query(({ ctx }) => totp.status({ userId: ctx.principal.userId })),
+
       startEnrollment: selfRoute({
         selfReason: 'Enrolling a second factor on your own account.',
         stepUp: true,
