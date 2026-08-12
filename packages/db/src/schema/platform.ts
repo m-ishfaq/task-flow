@@ -744,3 +744,38 @@ export const integrations = platform.table(
     uniqueIndex('integrations_one_scope_key').on(table.orgId, table.provider, table.providerScope),
   ],
 );
+
+/**
+ * The inbound connector delivery dedupe (migration 0058,
+ * ai/phase-10-automation.md §7.4).
+ *
+ * GitHub's replay control: GitHub puts no timestamp inside its webhook
+ * signature, so a captured request can be replayed forever — the
+ * `X-GitHub-Delivery` id is the ONLY control, and the row is written on
+ * SUCCESS inside the handler's own transaction (the nonce-on-success lesson,
+ * so a failed attempt rolls the row back and GitHub's retry — which reuses
+ * the same delivery id — proceeds normally). Append-only: migration 0058
+ * revokes UPDATE and DELETE from `taskflow_app`.
+ *
+ * Slack does not use this table (its replay control is the five-minute
+ * freshness window inside `verifySlackSignature`); the `provider` CHECK
+ * restricts it to 'github' so the excluded-provider intent is a database
+ * fact.
+ */
+export const integrationDeliveries = platform.table(
+  'integration_deliveries',
+  {
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    /** 'github' — a CHECK, not an enum; see the header. */
+    provider: text('provider').notNull().default('github'),
+    /** The raw `X-GitHub-Delivery` header, verbatim. */
+    deliveryId: text('delivery_id').notNull(),
+    createdAt: timestamp('seen_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Mirrors the migration's `integration_deliveries_one` UNIQUE constraint.
+    uniqueIndex('integration_deliveries_one_key').on(table.orgId, table.provider, table.deliveryId),
+  ],
+);

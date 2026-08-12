@@ -1,4 +1,13 @@
-import { and, desc, eq, schema, withOrgScope, outboxWriter } from '@taskflow/db';
+import {
+  and,
+  desc,
+  eq,
+  ne,
+  schema,
+  withOrgScope,
+  outboxWriter,
+  type TenantDb,
+} from '@taskflow/db';
 import { errors, unsafeAsId, type KeyProvider, type OrgId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import {
@@ -9,6 +18,7 @@ import {
   newId,
   secureHex,
   signConnectorState,
+  TOKEN_PREFIX,
   verifyConnectorState,
   type ConnectorStateClaims,
 } from '@taskflow/security';
@@ -348,20 +358,24 @@ async function completeSlack(
     code,
     codeVerifier,
   );
-  const integrationId = newId<'IntegrationId'>();
-
-  const dataKey = await deps.keys.generateDataKey({ orgId });
-  const ciphertext = encryptString(
-    dataKey.plaintext.key,
-    token,
-    integrationTokenAad(orgId, integrationId),
-  );
-
   /* The upsert is what makes RECONNECT work: disconnecting never deletes the
      row, and connecting the same workspace again lands on the same
      (org, slack, team_id) row with a fresh token. The connected event fires
-     either way — a reconnect is a connect. */
+     either way — a reconnect is a connect.
+
+     The id is resolved from the EXISTING row before anything is encrypted —
+     see `existingRowId`. Minting one here and letting ON CONFLICT discard it
+     silently produced a ciphertext no row could ever decrypt. */
   const inserted = await withOrgScope(orgId, async (tx) => {
+    const integrationId = (await existingRowId(tx, 'slack', teamId)) ?? newId<'IntegrationId'>();
+
+    const dataKey = await deps.keys.generateDataKey({ orgId });
+    const ciphertext = encryptString(
+      dataKey.plaintext.key,
+      token,
+      integrationTokenAad(orgId, integrationId),
+    );
+
     const rows = await tx
       .insert(schema.integrations)
       .values({
@@ -423,24 +437,20 @@ async function completeGithub(
   requestId: AutomationActor['requestId'],
 ): Promise<Extract<CompleteResult, { provider: 'github' }>> {
   const { token, login, repos } = await exchangeGithubCode(deps, credentials, code);
-  const integrationId = newId<'IntegrationId'>();
 
   /* A fresh verify secret on EVERY complete, including a reconnect: a
      re-wiring of the connector is a deliberate act, and the org re-pastes the
      new secret into GitHub's repo webhook config — the "a lost secret means
-     recreating the webhook" rule, applied to reconnecting. */
-  const verifySecret = secureHex(32);
-  const dataKey = await deps.keys.generateDataKey({ orgId });
-  const tokenCiphertext = encryptString(
-    dataKey.plaintext.key,
-    token,
-    integrationTokenAad(orgId, integrationId),
-  );
-  const verifyCiphertext = encryptString(
-    dataKey.plaintext.key,
-    verifySecret,
-    integrationTokenAad(orgId, integrationId),
-  );
+     recreating the webhook" rule, applied to reconnecting.
+
+     PREFIXED, like every other secret this codebase issues (tokens.ts's own
+     argument): this value is pasted into a third party's console and then
+     lives in a screenshot, a runbook, or a paste buffer, so it is more likely
+     than most to surface somewhere it should not. `tf_cwv_` makes it
+     identifiable on sight and matchable by a scanner; an undifferentiated hex
+     blob is invisible to both. The entropy is unchanged — a known prefix on a
+     256-bit CSPRNG key weakens no HMAC. */
+  const verifySecret = `${TOKEN_PREFIX.connectorVerify}_${secureHex(32)}`;
 
   /* NO connected event here: the row is keyed on the login and the connect is
      not complete until a repository is chosen. `selectRepo` emits it. What
@@ -448,6 +458,21 @@ async function completeGithub(
      shape: if the person abandons the picker, this is the only record that
      the org's credential for this login ever existed. */
   const inserted = await withOrgScope(orgId, async (tx) => {
+    /* Resolved before encrypting — see `existingRowId`. */
+    const integrationId = (await existingRowId(tx, 'github', login)) ?? newId<'IntegrationId'>();
+
+    const dataKey = await deps.keys.generateDataKey({ orgId });
+    const tokenCiphertext = encryptString(
+      dataKey.plaintext.key,
+      token,
+      integrationTokenAad(orgId, integrationId),
+    );
+    const verifyCiphertext = encryptString(
+      dataKey.plaintext.key,
+      verifySecret,
+      integrationTokenAad(orgId, integrationId),
+    );
+
     const rows = await tx
       .insert(schema.integrations)
       .values({
@@ -550,6 +575,54 @@ export async function selectRepo(
   }
 
   return withOrgScope(orgId, async (tx) => {
+    /* ------------------------------------------------------------------ *
+     * The RETIRED-ROW case, and why it needs handling rather than a
+     * constraint change.
+     *
+     * A disconnect is a status flip, never a row gone (0056 REVOKEs DELETE
+     * from the app role) — so a repo the org once connected leaves a dead
+     * row that still OWNS its slot in `integrations_one_scope UNIQUE
+     * (org_id, provider, provider_scope)`. Re-keying the pending row onto
+     * that same full_name then violates the constraint, and a raw 23505 is
+     * an INTERNAL_ERROR: "a repository you have ever disconnected can never
+     * be reconnected", reported as a reference id and nothing else.
+     *
+     * The fix REVIVES the retired row rather than creating a second one for
+     * the same repository. Two rows for one repo would make the inbound
+     * lookup ambiguous — `resolveIntegrationOrg` matches on full_name, and
+     * "which of these two secrets is the live one" is not a question a
+     * webhook handler should ever have to answer.
+     *
+     * The credentials cannot simply be copied across: the AAD binds every
+     * ciphertext to its own row id, which is exactly the property that makes
+     * a ciphertext transplanted to another org fail to decrypt. So they are
+     * decrypted under the pending row's AAD and re-encrypted under the
+     * revived row's, and the pending row is retired in the same transaction
+     * with its credentials wiped — there must never be a moment where two
+     * rows hold a usable credential for one authorization.
+     * ------------------------------------------------------------------ */
+    const retired = await tx
+      .select({ id: schema.integrations.id })
+      .from(schema.integrations)
+      .where(
+        and(
+          eq(schema.integrations.provider, 'github'),
+          eq(schema.integrations.providerScope, input.fullName),
+          ne(schema.integrations.id, input.integrationId),
+        ),
+      )
+      .limit(1);
+
+    const retiredId = retired[0]?.id;
+    if (retiredId !== undefined) {
+      return reviveRetiredRepo(tx, actor, deps, {
+        orgId,
+        pendingId: input.integrationId,
+        retiredId,
+        fullName: input.fullName,
+      });
+    }
+
     /* The claim guard, the `disconnect` precedent: only a row still awaiting
        its repo choice (status 'disconnected' WITH a credential) may be
        completed. A row already connected cannot be re-keyed by a stale
@@ -805,8 +878,8 @@ async function githubRepos(deps: IntegrationDeps, token: string): Promise<readon
 
   for (let page = 1; page <= GITHUB_REPO_PAGE_LIMIT; page += 1) {
     const response = await fetchFn(
-      `https://api.github.com/user/repos?per_page=${GITHUB_REPO_PAGE_SIZE}` +
-        `&sort=full_name&affiliation=owner,collaborator,organization_member&page=${page}`,
+      `https://api.github.com/user/repos?per_page=${String(GITHUB_REPO_PAGE_SIZE)}` +
+        `&sort=full_name&affiliation=owner,collaborator,organization_member&page=${String(page)}`,
       { headers: { ...GITHUB_HEADERS, authorization: `Bearer ${token}` } },
     );
     if (!response.ok) {
@@ -827,6 +900,199 @@ async function githubRepos(deps: IntegrationDeps, token: string): Promise<readon
   }
 
   return collected;
+}
+
+/**
+ * Moves a pending connect's credentials onto the retired row that already owns
+ * this repository's unique slot, and retires the pending row.
+ *
+ * See `selectRepo`'s own comment for why this exists. The ordering inside the
+ * one transaction is what matters: the revived row is armed and the pending row
+ * is wiped together, so there is no committed state in which two rows hold a
+ * usable credential for the same repository.
+ *
+ * The verify secret carried across is the one the person was shown on the
+ * callback page moments ago — minting a fresh one here would hand them a secret
+ * that does not match the value they are about to paste into GitHub, and the
+ * failure would surface days later as signature mismatches on live deliveries.
+ */
+async function reviveRetiredRepo(
+  tx: TenantDb,
+  actor: IntegrationActor,
+  deps: IntegrationDeps,
+  input: {
+    readonly orgId: OrgId;
+    readonly pendingId: string;
+    readonly retiredId: string;
+    readonly fullName: string;
+  },
+): Promise<IntegrationSummary> {
+  const { orgId, pendingId, retiredId, fullName } = input;
+
+  const pendingRows = await tx
+    .select({
+      tokenCiphertext: schema.integrations.tokenCiphertext,
+      tokenWrapped: schema.integrations.tokenWrapped,
+      tokenMasterId: schema.integrations.tokenMasterId,
+      verifyCiphertext: schema.integrations.verifyCiphertext,
+      verifyWrapped: schema.integrations.verifyWrapped,
+      verifyMasterId: schema.integrations.verifyMasterId,
+    })
+    .from(schema.integrations)
+    .where(
+      and(eq(schema.integrations.id, pendingId), eq(schema.integrations.status, 'disconnected')),
+    )
+    .limit(1);
+
+  const pending = pendingRows[0];
+  if (
+    pending?.tokenCiphertext == null ||
+    pending.tokenWrapped === null ||
+    pending.tokenMasterId === null ||
+    pending.verifyCiphertext === null ||
+    pending.verifyWrapped === null ||
+    pending.verifyMasterId === null
+  ) {
+    /* No usable pending credential — the same notFound a missing row gets,
+       the `tokenForRow` precedent. */
+    throw errors.notFound();
+  }
+
+  const pendingKey = await deps.keys.unwrapDataKey({
+    wrapped: new Uint8Array(pending.tokenWrapped),
+    masterKeyId: pending.tokenMasterId,
+    encryptionContext: { orgId },
+  });
+  const pendingVerifyKey = await deps.keys.unwrapDataKey({
+    wrapped: new Uint8Array(pending.verifyWrapped),
+    masterKeyId: pending.verifyMasterId,
+    encryptionContext: { orgId },
+  });
+
+  const pendingAad = integrationTokenAad(orgId, pendingId);
+  const token = decryptString(pendingKey.key, new Uint8Array(pending.tokenCiphertext), pendingAad);
+  const verifySecret = decryptString(
+    pendingVerifyKey.key,
+    new Uint8Array(pending.verifyCiphertext),
+    pendingAad,
+  );
+
+  /* Re-encrypted under the REVIVED row's AAD — the whole reason this is a
+     decrypt/encrypt rather than a column copy. */
+  const revivedAad = integrationTokenAad(orgId, retiredId);
+  const dataKey = await deps.keys.generateDataKey({ orgId });
+  const tokenCiphertext = encryptString(dataKey.plaintext.key, token, revivedAad);
+  const verifyCiphertext = encryptString(dataKey.plaintext.key, verifySecret, revivedAad);
+
+  const revivedRows = await tx
+    .update(schema.integrations)
+    .set({
+      name: fullName,
+      status: 'connected',
+      tokenCiphertext: Buffer.from(tokenCiphertext),
+      tokenWrapped: Buffer.from(dataKey.wrapped.wrapped),
+      tokenMasterId: dataKey.wrapped.masterKeyId,
+      verifyCiphertext: Buffer.from(verifyCiphertext),
+      verifyWrapped: Buffer.from(dataKey.wrapped.wrapped),
+      verifyMasterId: dataKey.wrapped.masterKeyId,
+      createdBy: actor.subject.userId,
+    })
+    .where(eq(schema.integrations.id, retiredId))
+    .returning({
+      integrationId: schema.integrations.id,
+      provider: schema.integrations.provider,
+      name: schema.integrations.name,
+      providerScope: schema.integrations.providerScope,
+      status: schema.integrations.status,
+      createdAt: schema.integrations.createdAt,
+    });
+
+  const revived = revivedRows[0];
+  if (revived === undefined) throw errors.notFound();
+
+  /* The pending row is retired in the SAME transaction, credentials wiped —
+     the disconnect shape (0057), applied to an authorization that has been
+     superseded rather than revoked by a person. */
+  await tx
+    .update(schema.integrations)
+    .set({
+      status: 'disconnected',
+      tokenCiphertext: null,
+      tokenWrapped: null,
+      tokenMasterId: null,
+      verifyCiphertext: null,
+      verifyWrapped: null,
+      verifyMasterId: null,
+    })
+    .where(eq(schema.integrations.id, pendingId));
+
+  await outboxWriter.append(tx, [
+    createEvent(
+      integrationConnected,
+      {
+        integrationId: revived.integrationId,
+        provider: 'github',
+        providerScope: fullName,
+        name: fullName,
+      },
+      envelopeOf(actor),
+    ),
+  ]);
+
+  return {
+    integrationId: revived.integrationId,
+    provider: revived.provider as ConnectorProvider,
+    name: revived.name,
+    providerScope: revived.providerScope,
+    status: revived.status as IntegrationSummary['status'],
+    createdAt: revived.createdAt,
+  };
+}
+
+/**
+ * The id of the row a connect's upsert will land on, or null for a first
+ * connect.
+ *
+ * ## Why this exists, and the bug it removes
+ *
+ * Both complete paths upsert on `(org_id, provider, provider_scope)` so that a
+ * RECONNECT lands on the existing row — disconnecting never deletes one. The
+ * original code minted a fresh id, encrypted the credential under
+ * `integrationTokenAad(orgId, <fresh id>)`, and let `ON CONFLICT DO UPDATE`
+ * write that ciphertext into the row it found. `ON CONFLICT` does not change
+ * the conflicting row's primary key, so the stored ciphertext was bound to an
+ * id that no row had — and every later decrypt failed.
+ *
+ * The failure is worth understanding because nothing about it points at the
+ * cause. Encryption succeeds, the upsert succeeds, the route returns 200, the
+ * row looks perfect in psql, and the DATABASE logs nothing — the damage only
+ * surfaces at the next decrypt, which is a different request, in a different
+ * route, reported as an opaque INTERNAL_ERROR. The first connect always works
+ * (no conflict, so the fresh id IS the row's id), so it presents as "the
+ * second connect is broken", which is the shape of a race or a caching bug
+ * rather than an AAD mismatch.
+ *
+ * Resolving the id first keeps the row-bound AAD intact — the property that
+ * makes a transplanted ciphertext refuse to decrypt — rather than weakening
+ * the AAD to something stable across upserts.
+ */
+async function existingRowId(
+  tx: TenantDb,
+  provider: ConnectorProvider,
+  providerScope: string,
+): Promise<string | null> {
+  const rows = await tx
+    .select({ id: schema.integrations.id })
+    .from(schema.integrations)
+    .where(
+      and(
+        eq(schema.integrations.provider, provider),
+        eq(schema.integrations.providerScope, providerScope),
+      ),
+    )
+    .limit(1);
+
+  return rows[0]?.id ?? null;
 }
 
 /** Loads and decrypts the outbound token for one of the org's rows. */

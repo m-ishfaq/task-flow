@@ -69,3 +69,67 @@ export const integrationDisconnected = defineEvent(
     })
     .strict(),
 );
+
+/* -------------------------------------------------------------------------- *
+ * The synthetic TRIGGER events (slice 3, §7.5) — what an inbound webhook
+ * becomes, as opposed to the governance facts above.
+ * -------------------------------------------------------------------------- */
+
+/**
+ * The payload every inbound connector event carries (§7.5).
+ *
+ * `payload` is deliberately `unknown` rather than a closed schema: it is the
+ * provider's own event body, whose shape belongs to Slack/GitHub, not to this
+ * repo — a closed schema here would either reject a new provider field at the
+ * route (turning a benign upstream change into a hard failure) or drift from
+ * the registry. What IS closed is the wrapper: a rule keys on
+ * `providerScope` (which workspace/repo) and `providerEvent` (which Slack
+ * event type / X-GitHub-Event), and the raw body rides along for whatever the
+ * action needs. The body is bounded upstream by the API's 1MB `bodyLimit`,
+ * the same bound every outbox payload lives under — and `platform.outbox` is
+ * never pruned (Phase 11), so a chatty connector's rows are exactly as heavy
+ * as the deployment chose to accept.
+ */
+const connectorTriggerPayload = z
+  .object({
+    /** Slack team_id, or GitHub repository full_name — the row's scope. */
+    providerScope: z.string(),
+    /** Slack `event.type` (or top-level type), or the X-GitHub-Event header. */
+    providerEvent: z.string(),
+    /** The provider's parsed event body — the rule's raw material. */
+    payload: z.unknown(),
+  })
+  .strict();
+
+/**
+ * A verified Slack workspace event, ready to trigger a rule.
+ *
+ * Written to the outbox by the inbound webhook route (§7.5) AFTER signature
+ * verification with the deployment-wide signing secret — the signature is the
+ * assertion, and `providerScope` (team_id, taken from the VERIFIED body) is a
+ * lookup key, never a trust input. `actorId` is null on the envelope: the
+ * event came from Slack, not from a user.
+ *
+ * The one deliberate edit to the body before storage: the deprecated legacy
+ * `token` field is dropped from `payload` when present — a shared secret that
+ * would otherwise sit in every consumer's view of the outbox for a rule that
+ * almost certainly never reads it.
+ */
+export const integrationSlackEvent = defineEvent(
+  'integration.slack_event',
+  connectorTriggerPayload,
+);
+
+/**
+ * A verified GitHub repository event, ready to trigger a rule.
+ *
+ * Same shape as the Slack event. The resolution order is the mirror image:
+ * the org comes from `repository.full_name` in the UNVERIFIED body (the
+ * lookup key — the per-org secret this body must be checked against lives on
+ * the row the scope names), and only after that signature passes is anything
+ * written.
+ */
+export const integrationGithubEvent = defineEvent(
+  'integration.github_event',
+  connectorTriggerPayload,
+);

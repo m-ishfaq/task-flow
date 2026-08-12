@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { unsafeAsId, type OrgId, type UserId } from '@taskflow/contracts';
 import { closeDatabase, initializeDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
-import { masterKeysFromBase64, SoftwareKeyProvider } from '@taskflow/security';
+import { masterKeysFromBase64, SoftwareKeyProvider, TOKEN_PREFIX } from '@taskflow/security';
 import { TEST_ENV } from '../testing/fixtures.js';
 import * as orgs from '../tenancy/org.service.js';
 import * as members from '../tenancy/member.service.js';
@@ -457,7 +457,12 @@ describe('the GitHub connect — pending until the repo choice', () => {
     if (result.status !== 'pending_repo') return;
     expect(result.login).toBe('octocat');
     expect(result.repos.map((repo) => repo.fullName)).toEqual(['acme/todo', 'acme/docs']);
-    /* The per-org verify secret — shown exactly once, never readable again. */
+    /* The per-org verify secret — shown exactly once, never readable again.
+       Prefixed like every other secret this codebase issues: the value is
+       pasted into GitHub's console and outlives this page in runbooks and
+       paste buffers, so it must be identifiable on sight and matchable by a
+       secret scanner (tokens.ts's own argument for TOKEN_PREFIX). */
+    expect(result.verifySecret.startsWith(`${TOKEN_PREFIX.connectorVerify}_`)).toBe(true);
     expect(result.verifySecret.length).toBeGreaterThanOrEqual(32);
 
     const [row] = await listIntegrations(owner);
@@ -509,6 +514,115 @@ describe('the GitHub connect — pending until the repo choice', () => {
       providerScope: 'acme/todo',
       name: 'acme/todo',
     });
+  });
+
+  it('a RECONNECTED credential is still decryptable — the AAD follows the row', async () => {
+    /* THE REGRESSION, and the reason the existing reconnect tests could not
+       see it: they assert the row is written, never that what was written can
+       be read back. Both complete paths upsert on (org, provider, scope), and
+       the id was minted fresh before encrypting — but ON CONFLICT keeps the
+       conflicting row's primary key, so the ciphertext ended up bound via its
+       AAD to an id no row had. Encryption succeeded, the upsert succeeded, the
+       route returned 200, psql showed a perfect row, and Postgres logged
+       nothing; the failure surfaced only at the NEXT decrypt, in a different
+       request, as an opaque INTERNAL_ERROR.
+
+       `listReposForIntegration` is the cheapest real decrypt of the stored
+       token, so it is what this drives. */
+    const { owner } = await scaffold('github-reconnect-aad');
+    const fake = fakeProvider();
+    const deps = depsFor(fake.fetch);
+
+    const first = await beginState(owner, deps, 'github');
+    const firstPending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-1', state: first.state },
+      requestId,
+    );
+    if (firstPending.status !== 'pending_repo') throw new Error('expected pending_repo');
+
+    /* Connect the SAME account again — the upsert path, where the id the
+       ciphertext was bound to used to be discarded. */
+    const second = await beginState(owner, deps, 'github');
+    const secondPending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-2', state: second.state },
+      requestId,
+    );
+    if (secondPending.status !== 'pending_repo') throw new Error('expected pending_repo');
+
+    /* The upsert must land on the same row, and its token must still decrypt. */
+    expect(secondPending.integrationId).toBe(firstPending.integrationId);
+    const repos = await listReposForIntegration(owner, deps, {
+      integrationId: secondPending.integrationId,
+    });
+    expect(repos.map((repo) => repo.fullName)).toEqual(['acme/todo', 'acme/docs']);
+
+    /* And the repo choice, which decrypts the same token again. */
+    const connected = await selectRepo(owner, deps, {
+      integrationId: secondPending.integrationId,
+      fullName: 'acme/todo',
+    });
+    expect(connected.status).toBe('connected');
+  });
+
+  it('reconnects a repository that was previously disconnected', async () => {
+    /* THE REGRESSION. A disconnect is a status flip, never a row gone, so the
+       dead row keeps owning its slot in `integrations_one_scope UNIQUE
+       (org_id, provider, provider_scope)`. Re-keying a fresh pending row onto
+       the same full_name then raised a bare 23505 — surfaced to the person as
+       "Something went wrong" and a reference id, meaning a repository they had
+       ever disconnected could never be reconnected. Every other test in this
+       file connects a repo nobody has touched, which is why the suite was
+       green while the flow was broken in the browser. */
+    const { owner } = await scaffold('github-reconnect');
+    const fake = fakeProvider();
+    const deps = depsFor(fake.fetch);
+
+    const first = await beginState(owner, deps, 'github');
+    const firstPending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-1', state: first.state },
+      requestId,
+    );
+    if (firstPending.status !== 'pending_repo') throw new Error('expected pending_repo');
+    const connected = await selectRepo(owner, deps, {
+      integrationId: firstPending.integrationId,
+      fullName: 'acme/todo',
+    });
+    await disconnectIntegration(owner, { integrationId: connected.integrationId });
+
+    /* Connect again and choose the SAME repository. */
+    const second = await beginState(owner, deps, 'github');
+    const secondPending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-2', state: second.state },
+      requestId,
+    );
+    if (secondPending.status !== 'pending_repo') throw new Error('expected pending_repo');
+
+    const revived = await selectRepo(owner, deps, {
+      integrationId: secondPending.integrationId,
+      fullName: 'acme/todo',
+    });
+
+    expect(revived.status).toBe('connected');
+    expect(revived.providerScope).toBe('acme/todo');
+    /* The RETIRED row is revived rather than a second row created for the same
+       repository: two rows would make the inbound lookup's full_name match
+       ambiguous, and "which secret is live" is not a question a webhook
+       handler should have to answer. */
+    expect(revived.integrationId).toBe(connected.integrationId);
+
+    const rows = await listIntegrations(owner);
+    const forRepo = rows.filter((row) => row.providerScope === 'acme/todo');
+    expect(forRepo).toHaveLength(1);
+    expect(forRepo[0]?.status).toBe('connected');
+
+    /* And exactly one row holds a usable credential for this authorization —
+       the superseded pending row was wiped in the same transaction. */
+    const live = rows.filter((row) => row.status === 'connected');
+    expect(live.map((row) => row.providerScope)).toEqual(['acme/todo']);
   });
 
   it('selectRepo refuses a repository the token cannot reach', async () => {

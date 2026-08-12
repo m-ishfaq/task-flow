@@ -4,6 +4,7 @@ import {
   initializeAuditDatabase,
   initializeBacklinksDatabase,
   initializeDatabase,
+  initializeIntegrationAuthDatabase,
   initializePlatformAdminDatabase,
   initializeRecordingIngestDatabase,
   initializeSearchDatabase,
@@ -133,6 +134,21 @@ if (env.DATABASE_API_TOKEN_URL !== undefined) {
   initializeApiTokenAuthDatabase({
     url: env.DATABASE_API_TOKEN_URL,
     applicationName: 'taskflow-api-token-auth',
+  });
+}
+
+/* The inbound-connector lookup connection, on its own role and pool (Phase 10
+   Wave 4, §7.2; migration 0056). Same optionality reasoning as every
+   consumer pool above: `taskflow_integration_auth` resolves an inbound Slack
+   team_id / GitHub repository full_name to an org across every tenant, and
+   when it is absent `withIntegrationAuthScope` throws, the connector webhook
+   routes answer 503, and every inbound connector event fails CLOSED rather
+   than falling back to the application role, which cannot read across every
+   org anyway. */
+if (env.DATABASE_INTEGRATION_URL !== undefined) {
+  initializeIntegrationAuthDatabase({
+    url: env.DATABASE_INTEGRATION_URL,
+    applicationName: 'taskflow-integration-auth',
   });
 }
 

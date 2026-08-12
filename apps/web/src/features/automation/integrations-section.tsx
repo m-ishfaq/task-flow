@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
@@ -100,9 +100,33 @@ function ProviderRow({
   const toast = useToast();
   const { guard, dialog } = useStepUp();
   const [copying, setCopying] = useState(false);
+  /* Which row a disconnect is for, so the step-up retry re-fires the SAME
+     one. A single `connected` row was enough when a provider could only hold
+     one; with several repos, replaying the wrong id would disconnect a
+     connector the person never touched. */
+  const lastDisconnected = useRef('');
 
-  const rows = integrations.filter((row) => row.provider === provider);
-  const connected = rows.find((row) => row.status === 'connected');
+  /* A GitHub connect writes its row keyed on the ACCOUNT login first, and
+     `selectRepo` re-keys it to `owner/name` — so a github scope with no slash
+     is a connect that never reached the repo choice (abandoned at the picker,
+     or superseded once its credentials moved to the repo's own row). It is
+     not a repository and must not be listed as one: showing `m-ishfaq` beside
+     `m-ishfaq/task-flow` reads as a connector that exists and does nothing.
+     The row still lives in the database as the org's audit trail; this is a
+     display decision, not a deletion. */
+  const rows = integrations.filter(
+    (row) =>
+      row.provider === provider && (provider !== 'github' || row.providerScope.includes('/')),
+  );
+  const live = rows.filter((row) => row.status === 'connected');
+
+  /* GitHub connects one REPOSITORY per row, and an org routinely wants
+     several — so the connect action stays available after the first. Slack's
+     scope IS the workspace, so a second connect would be a second workspace,
+     which this product surface does not model: one connected row hides it.
+     The asymmetry is in the data (provider_scope means different things), not
+     a UI preference. */
+  const canConnectMore = provider === 'github' || live.length === 0;
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: keys.integrations(orgId) });
 
@@ -134,7 +158,7 @@ function ProviderRow({
     onError: (error: unknown) => {
       if (
         guard(error, () => {
-          disconnect.mutate(connected?.integrationId ?? '');
+          disconnect.mutate(lastDisconnected.current);
         })
       ) {
         return;
@@ -154,27 +178,25 @@ function ProviderRow({
             <span className="truncate text-sm font-medium text-ink">
               {PROVIDER_LABEL[provider] ?? provider}
             </span>
-            {connected !== undefined && (
+            {live.length > 0 && (
               <span className="shrink-0 rounded bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success">
-                Connected
+                {provider === 'github' && live.length > 1
+                  ? `${String(live.length)} connected`
+                  : 'Connected'}
               </span>
             )}
           </p>
           <p className="truncate text-[11px] text-ink-faint">
-            {connected !== undefined ? (
-              <>
-                {connected.providerScope}
-                {rows.some((row) => row.status === 'disconnected') &&
-                  ' · reconnecting will replace this'}
-              </>
-            ) : (
-              'Not connected'
-            )}
+            {live.length === 0
+              ? 'Not connected'
+              : provider === 'github'
+                ? 'Automation rules can act on these repositories.'
+                : live[0]?.providerScope}
           </p>
         </div>
 
         <div className="flex shrink-0 items-center gap-0.5">
-          {connected === undefined ? (
+          {canConnectMore && (
             <Button
               size="sm"
               className="h-6 px-1.5 text-[11px]"
@@ -183,21 +205,65 @@ function ProviderRow({
                 begin.mutate();
               }}
             >
-              {begin.isPending ? 'Opening consent…' : 'Connect'}
+              {begin.isPending
+                ? 'Opening consent…'
+                : live.length === 0
+                  ? 'Connect'
+                  : 'Connect another repo'}
             </Button>
-          ) : (
-            <ConfirmButton
-              label="Disconnect"
-              confirmLabel={`Disconnect ${PROVIDER_LABEL[provider] ?? provider}`}
-              disabled={disconnect.isPending}
-              className="h-6 px-1.5 text-[11px]"
-              onConfirm={() => {
-                disconnect.mutate(connected.integrationId);
-              }}
-            />
           )}
         </div>
       </div>
+
+      {/* Every scope this provider holds, live and dead. A disconnected row is
+          shown rather than filtered out because it is the org's record that
+          the scope was once authorized — the same reason the row survives a
+          disconnect in the database at all. */}
+      {rows.length > 0 && (
+        <ul className="divide-y divide-line border-t border-line">
+          {rows.map((row) => (
+            <li
+              key={row.integrationId}
+              className="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-3 py-1.5"
+            >
+              <div className="min-w-0 flex-1 basis-48">
+                <p className="flex items-center gap-1.5">
+                  <span
+                    className={`truncate font-mono text-[12px] ${
+                      row.status === 'connected' ? 'text-ink' : 'text-ink-faint line-through'
+                    }`}
+                    title={row.providerScope}
+                  >
+                    {row.providerScope}
+                  </span>
+                  {row.status === 'disconnected' && (
+                    <span className="shrink-0 rounded bg-surface-raised px-1 py-0.5 text-[10px] text-ink-faint">
+                      Disconnected
+                    </span>
+                  )}
+                </p>
+                <p className="truncate text-[11px] text-ink-faint">
+                  {row.name !== row.providerScope && `${row.name} · `}
+                  Connected {new Date(row.createdAt).toLocaleDateString()}
+                </p>
+              </div>
+
+              {row.status === 'connected' && (
+                <ConfirmButton
+                  label="Disconnect"
+                  confirmLabel={`Disconnect ${row.providerScope}`}
+                  disabled={disconnect.isPending}
+                  className="h-6 shrink-0 px-1.5 text-[11px]"
+                  onConfirm={() => {
+                    lastDisconnected.current = row.integrationId;
+                    disconnect.mutate(row.integrationId);
+                  }}
+                />
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
 
       {/* The webhook URL events arrive at. Not a secret (it is derivable from
           the origin), but it is the value someone pastes into a Slack app's

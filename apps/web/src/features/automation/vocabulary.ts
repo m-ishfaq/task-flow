@@ -10,8 +10,10 @@
  * ## Adding a trigger
  *
  * One entry in `TRIGGER_OPTIONS`, and the event must carry a `cardId` — see
- * that list's own note. Nothing else: the server validates a trigger against
- * the live registry, so a name that exists is already accepted.
+ * that list's own note — unless it is a deliberately card-less trigger like
+ * the connector events at the bottom, which say so in their label. Nothing
+ * else: the server validates a trigger against the live registry, so a name
+ * that exists is already accepted.
  *
  * ## Adding an action — five places, deliberately
  *
@@ -48,6 +50,13 @@ export interface TriggerOption {
  * against that card's row, so a trigger without one leaves both with nothing to
  * work on — the engine records `trigger_not_evaluable` and refuses. Offering
  * one here would be offering a rule that cannot work.
+ *
+ * The two connector events at the bottom are the deliberate exception (§7.5):
+ * an inbound Slack/GitHub event carries no card because it ISN'T one, so a
+ * rule whose actions need the trigger's card records a failed run — the
+ * honest shape for a rule built wrong — while a rule using the non-card
+ * actions (chat post, webhook call, and slice 4's connector actions) works
+ * exactly as built.
  */
 export const TRIGGER_OPTIONS: readonly TriggerOption[] = [
   { event: 'card.created', label: 'A card is created' },
@@ -63,6 +72,9 @@ export const TRIGGER_OPTIONS: readonly TriggerOption[] = [
   { event: 'checklist_item.updated', label: 'A checklist item is checked or edited' },
   { event: 'attachment.uploaded', label: 'A file is attached to a card' },
   { event: 'card.field_set', label: "A card's custom field changes" },
+  /* Wave 4 slice 3 (§7.5) — no card, deliberately; see the header note. */
+  { event: 'integration.slack_event', label: 'A Slack event arrives (message, reaction, …)' },
+  { event: 'integration.github_event', label: 'A GitHub event arrives (push, issue, …)' },
 ];
 
 /** Every action the executor implements, labelled for a person. */

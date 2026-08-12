@@ -25,9 +25,11 @@ and `complete` a public route trusting a signed state token carrying org+user+PK
 verifier), migration 0057 (disconnect WIPES the credential — a revoked connector is
 genuinely dead, not merely hidden), the Integrations tab on `/automations` with the
 one-time webhook URL reveal, and the `/integrations/callback` page (Slack lands straight
-back; GitHub shows the repo picker + one-time verify secret). Slices 3–5 remain: inbound
-ingestion, the outbound actions, and import/export. Waves 1–2 are the engine and the
-webhook delivery path; the wave list below says exactly what shipped in each.
+back; GitHub shows the repo picker + one-time verify secret). **Slice 3 SHIPPED
+2026-08-12** — the inbound routes (`/integrations/slack`, `/integrations/github`, see the
+§7 header below). Slices 4–5 remain: the outbound actions and import/export. Waves 1–2
+are the engine and the webhook delivery path; the wave list below says exactly what
+shipped in each.
 
 **Two recommendations were overturned in that review, and both were overturned correctly:**
 
@@ -803,10 +805,61 @@ verify columns, never `token_*`, plus the 0036 `REVOKE DELETE` from `taskflow_ap
 `slack-signature.ts` + `github-signature.ts` (the `twilio-signature` precedent twice
 over, with published-vector tests — Slack's own worked example, plus a pinned GitHub
 known-answer), and `integration-grants.test.ts` (7/7, real roles). **Slice 2 SHIPPED
-2026-08-12** — the connect/disconnect flow below. Slices 3–5 remain: inbound
-ingestion, the outbound actions, and import/export.
+2026-08-12** — the connect/disconnect flow below. **Slice 3 SHIPPED 2026-08-12** —
+inbound ingestion (the two routes below, with migration 0058's GitHub delivery
+dedupe). Slices 4–5 remain: the outbound actions, and import/export.
 Decisions 1–8 below are PROPOSED as of 2026-08-12; review resolves them before building,
 the same route §6 took.
+
+#### Slice 3 — inbound ingestion (SHIPPED 2026-08-12)
+
+The two plain Fastify routes (§7.3–§7.5), both reading the raw body as the
+string the tRPC adapter's JSON pass-through delivers — the signature covers the
+EXACT bytes, so re-serializing before verifying would fail every request.
+
+- **`POST /integrations/slack`** — verify FIRST with the deployment-wide
+  `SLACK_SIGNING_SECRET` (freshness window inside `verifySlackSignature`,
+  the replay control), then `team_id` from the VERIFIED body resolves the org
+  via `taskflow_integration_auth` (`packages/db/src/integrations-directory.ts`,
+  the api_token_auth recipe for webhooks). The `url_verification` challenge is
+  echoed after verification, app-level, emitting nothing. The status guard
+  (`status = 'connected'`, read in the SAME transaction as the emission) is
+  what makes a disconnect stop inbound Slack traffic — the one per-org check
+  Slack has, since verification is deployment-wide. No signing secret
+  configured → 503, fail-closed.
+- **`POST /integrations/github`** — the mirror order: org from
+  `repository.full_name` in the UNVERIFIED body (a lookup key selecting WHICH
+  secret to check), then verified against the org's stored per-org secret
+  (envelope-decrypted under the org data key with the row-bound AAD).
+  **Every refusal after a parseable body is the same 403** — unknown repo,
+  revoked row, wrong secret, replay — because this lookup runs BEFORE
+  verification and a distinguishable 404 would be a repo-existence oracle to
+  an unauthenticated attacker (the telephony uniform-403 rule, applied where
+  the order forces it; Slack's 404 is safe because only verified requests
+  reach its lookup). `X-GitHub-Delivery` dedupes on SUCCESS inside the
+  handler's own transaction (migration 0058, the nonce-on-success lesson): a
+  failed attempt rolls the dedupe row back and GitHub's retry — same delivery
+  id — proceeds normally.
+- **The synthetic triggers**: `integration.slack_event` /
+  `integration.github_event` carrying `{ providerScope, providerEvent,
+  payload }`, `actorId: null` (the event came from the provider, not a user).
+  `payload` is `unknown` by design — the body's shape belongs to
+  Slack/GitHub — bounded by the API's 1MB bodyLimit. The one deliberate edit:
+  Slack's deprecated legacy `token` field is stripped from the stored copy
+  (the signature was checked against the unedited bytes). The engine fires any
+  rule keyed on these; a rule with card actions records a failed run
+  (`cardIdOf` refuses the missing card), the designed behaviour for a trigger
+  with no card. The builder's `TRIGGER_OPTIONS` lists them with the "no card"
+  note.
+
+Verified: the 17-test suite drives both routes through real Fastify with
+GENUINELY signed requests (signSlackRequest/signGitHubRequest — a webhook test
+whose signature is mocked asserts the wrong thing): Slack ok/challenge/
+tampered/stale/unknown/unsigned/disconnected/503/token-strip; GitHub
+ok/wrong-secret/unknown-repo/no-repo/replay/revoked/no-delivery-id/cross-org.
+API 976/976 (the full suite, pre-review-fix; the uniform-403 change re-ran its
+own suite 17/17), lint + typecheck clean across api/web/db, guardrail selftest,
+the RLS checker across 116 migrations, `migrate:verify` for 0058.
 
 #### Slice 2 — connect/disconnect (SHIPPED 2026-08-12)
 

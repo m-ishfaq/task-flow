@@ -9,6 +9,7 @@ import { buildWorkDeps } from './work/deps.js';
 import { buildTelephonyDeps } from './telephony/deps.js';
 import { buildRtcDeps } from './rtc/deps.js';
 import { registerTelephonyWebhooks } from './telephony/webhook.routes.js';
+import { registerIntegrationWebhooks } from './automation/integration-webhooks.js';
 import { assertRoutesDeclarePermissions } from './trpc/manifest.js';
 import type { AuthenticatedPrincipal, RequestContext } from './trpc/context.js';
 import { ORG_HEADER, resolveOrgMembership } from './tenancy/resolve.js';
@@ -228,6 +229,19 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
   if (telephonyDeps !== undefined) {
     registerTelephonyWebhooks(app, { telephony: telephonyDeps });
   }
+
+  /* Connector inbound webhooks (Phase 10 Wave 4 slice 3, §7.3) — plain
+     Fastify routes, for the same reason as the carrier webhooks above: the
+     caller is Slack/GitHub, a third party with no session. Registered
+     UNCONDITIONALLY, unlike the carrier routes: an unconfigured instance
+     answers 503 on the Slack route (no signing secret) rather than a 404
+     that a provider configured out-of-band would retry forever without a
+     usable diagnosis. The routes read the raw body, so they must be
+     registered before the tRPC plugin the same way the carrier routes are. */
+  registerIntegrationWebhooks(app, {
+    keys: automationKeys,
+    slackSigningSecret: options.env.SLACK_SIGNING_SECRET,
+  });
 
   await app.register(fastifyTRPCPlugin<AppRouter>, {
     prefix: '/trpc',

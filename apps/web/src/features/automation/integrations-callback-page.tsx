@@ -4,6 +4,7 @@ import { useMutation } from '@tanstack/react-query';
 import { api } from '../../lib/trpc.js';
 import { useSession } from '../../lib/session.js';
 import { ErrorView } from '../../components/error-view.js';
+import { Input } from '../../components/primitives.js';
 import { SecretReveal } from '../../components/secret-reveal.js';
 import { useStepUp } from '../auth/use-step-up.js';
 import type { Wire } from '../../lib/wire.js';
@@ -44,6 +45,9 @@ type PendingRepo = Wire<
 
 const PENDING_STORAGE_KEY = 'taskflow.integration.pending';
 
+/** Above this many repositories the picker gets a filter box; at or below it, scrolling is fine. */
+const REPO_FILTER_THRESHOLD = 8;
+
 interface PendingRecord {
   readonly provider: 'github';
   readonly integrationId: string;
@@ -58,6 +62,7 @@ export function IntegrationsCallbackPage() {
   const [pending, setPending] = useState<PendingRepo | null>(null);
   const [recovered, setRecovered] = useState(false);
   const [mutationError, setMutationError] = useState<unknown>(null);
+  const [repoFilter, setRepoFilter] = useState('');
 
   const { guard, dialog } = useStepUp();
   const started = useRef(false);
@@ -226,6 +231,18 @@ export function IntegrationsCallbackPage() {
     );
   }
 
+  /* Matched on `full_name`, so typing either half of `owner/name` narrows —
+     the two things a person actually remembers about a repository. Plain
+     `includes` on the lowercased value rather than a fuzzy match: this list
+     is the authorization surface for the org's outbound identity, and a
+     picker that reorders results by a relevance score it invented is one
+     where the wrong repo is one careless click away. */
+  const filterTerm = repoFilter.trim().toLowerCase();
+  const visibleRepos =
+    filterTerm === ''
+      ? pending.repos
+      : pending.repos.filter((repo) => repo.fullName.toLowerCase().includes(filterTerm));
+
   return (
     <div className="mx-auto flex min-h-full max-w-lg flex-col justify-center gap-4 p-6">
       <div>
@@ -263,22 +280,53 @@ export function IntegrationsCallbackPage() {
           reconnect.
         </p>
       ) : (
-        <ul className="max-h-72 space-y-1 overflow-y-auto">
-          {pending.repos.map((repo) => (
-            <li key={repo.fullName}>
-              <button
-                type="button"
-                disabled={selectRepo.isPending}
-                onClick={() => {
-                  pick(repo.fullName);
-                }}
-                className="w-full rounded-md border border-line bg-surface px-3 py-2 text-left text-sm text-ink transition-colors hover:border-accent hover:bg-surface-hover disabled:opacity-60"
-              >
-                {repo.fullName}
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div className="space-y-2">
+          {/* The filter appears only once the list is long enough to need it.
+              A GitHub account can reach hundreds of repositories (the service
+              walks up to ten pages of 100), and scrolling to find one in a
+              72-unit-tall box is the difference between this picker working
+              and the person giving up mid-connect. Below the threshold a
+              search box is noise on a screen whose one job is a single
+              choice. */}
+          {pending.repos.length > REPO_FILTER_THRESHOLD && (
+            <Input
+              type="search"
+              value={repoFilter}
+              placeholder={`Filter ${String(pending.repos.length)} repositories…`}
+              aria-label="Filter repositories"
+              onChange={(event) => {
+                setRepoFilter(event.target.value);
+              }}
+            />
+          )}
+
+          {visibleRepos.length === 0 ? (
+            /* A filter that matches nothing must say so. Rendering an empty
+               list instead reads as "this connection can reach no
+               repositories" — the message directly above — and sends someone
+               off to re-authorize GitHub over a typo. */
+            <p className="px-1 py-2 text-sm text-ink-muted">
+              No repository matches “{repoFilter}”.
+            </p>
+          ) : (
+            <ul className="max-h-72 space-y-1 overflow-y-auto">
+              {visibleRepos.map((repo) => (
+                <li key={repo.fullName}>
+                  <button
+                    type="button"
+                    disabled={selectRepo.isPending}
+                    onClick={() => {
+                      pick(repo.fullName);
+                    }}
+                    className="w-full rounded-md border border-line bg-surface px-3 py-2 text-left text-sm text-ink transition-colors hover:border-accent hover:bg-surface-hover disabled:opacity-60"
+                  >
+                    {repo.fullName}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
 
       {selectRepo.isError && <ErrorView error={selectRepo.error} />}
