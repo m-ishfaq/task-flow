@@ -146,7 +146,7 @@ describe('MIGRATION_LOCK_KEY', () => {
       // wait in the test suite. See withMigrationLock's own note on why the
       // parameter exists at all.
       await expect(
-        withMigrationLock(contender, async () => 'unreachable', '200ms'),
+        withMigrationLock(contender, () => Promise.resolve('unreachable'), '200ms'),
       ).rejects.toThrow(/timed out.*waiting for the migration lock/i);
 
       await holder.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_KEY]);
