@@ -55,7 +55,9 @@ export function PlatformAdminPage() {
   const queryClient = useQueryClient();
   const { guard, dialog } = useStepUp();
   const [gateOpen, setGateOpen] = useState(false);
-  const [tab, setTab] = useState<'orgs' | 'users' | 'billing' | 'flags' | 'audit'>('orgs');
+  const [tab, setTab] = useState<'orgs' | 'users' | 'billing' | 'flags' | 'audit' | 'operations'>(
+    'orgs',
+  );
 
   /* The query-side step-up gate (see the header comment). Confirming runs the
      same login the mutation dialog runs; invalidating every `['platform']` key
@@ -90,6 +92,7 @@ export function PlatformAdminPage() {
             ['billing', 'Billing'],
             ['flags', 'Feature flags'],
             ['audit', 'Operator audit'],
+            ['operations', 'Operations'],
           ] as const
         ).map(([value, label]) => (
           <button
@@ -144,6 +147,13 @@ export function PlatformAdminPage() {
       )}
       {tab === 'audit' && (
         <AuditTab
+          onStepUp={() => {
+            setGateOpen(true);
+          }}
+        />
+      )}
+      {tab === 'operations' && (
+        <OperationsTab
           onStepUp={() => {
             setGateOpen(true);
           }}
@@ -364,7 +374,7 @@ function OrgsTab({
               className="mt-4 space-y-3"
               onSubmit={(event) => {
                 event.preventDefault();
-                if (deleteTarget !== null && confirmSlug === deleteTarget.slug) {
+                if (confirmSlug === deleteTarget.slug) {
                   remove.mutate({
                     orgId: deleteTarget.orgId as OrgId,
                     confirmSlug,
@@ -738,6 +748,156 @@ function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
         ))}
     </section>
   );
+}
+
+/* -------------------------------------------------------------------------- *
+ * Operations dashboard — "did a system action succeed or fail" (mail
+ * delivery, a billing webhook, the billing sweep's heartbeat), the different
+ * question from the operator audit tab above, which answers "what did a
+ * human operator do". Read-only in this wave — no retry action yet.
+ * -------------------------------------------------------------------------- */
+
+type OperationalEventKind = 'mail' | 'billing_webhook' | 'billing_sweep';
+
+const OPERATIONAL_EVENT_KINDS: readonly (readonly [OperationalEventKind | null, string])[] = [
+  [null, 'All'],
+  ['mail', 'Mail'],
+  ['billing_webhook', 'Billing webhook'],
+  ['billing_sweep', 'Billing sweep'],
+];
+
+function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [kind, setKind] = useState<OperationalEventKind | null>(null);
+
+  const events = useQuery({
+    queryKey: keys.platformOperations(cursor, kind),
+    queryFn: async () =>
+      wire(await api.platformAdmin.operations.list.query({ cursor, limit: 25, kind })),
+  });
+
+  if (errorCodeOf(events.error) === 'STEP_UP_REQUIRED') return <StepUpGate onStepUp={onStepUp} />;
+
+  return (
+    <section aria-label="Operations">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-ink-muted">
+          System-action outcomes across every process, newest first. For the raw container output —
+          every request, not only what this table records — see{' '}
+          <a
+            href="/logs"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-accent underline underline-offset-2"
+          >
+            live logs
+          </a>
+          , gated by its own infrastructure credential, separate from this console's.
+        </p>
+      </div>
+
+      <div
+        role="tablist"
+        aria-label="Filter by kind"
+        className="mb-3 flex gap-1 rounded-lg border border-line bg-surface-sunken p-1"
+      >
+        {OPERATIONAL_EVENT_KINDS.map(([value, label]) => (
+          <button
+            key={value ?? 'all'}
+            role="tab"
+            aria-selected={kind === value}
+            onClick={() => {
+              setKind(value);
+              setCursor(null);
+            }}
+            className={cn(
+              'flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+              kind === value
+                ? 'bg-surface-raised text-ink shadow-sm'
+                : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {events.isPending && <SkeletonRows rows={5} className="*:h-12" />}
+      {events.isError && <ErrorView error={events.error} title="Could not load operations" />}
+
+      {events.data !== undefined &&
+        (events.data.events.length === 0 ? (
+          <Empty title="Nothing recorded yet" />
+        ) : (
+          <>
+            <div className="overflow-x-auto rounded border border-line">
+              <table className="w-full text-left text-xs">
+                <thead className="border-b border-line text-ink-faint">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">When</th>
+                    <th className="px-3 py-2 font-medium">Kind</th>
+                    <th className="px-3 py-2 font-medium">Outcome</th>
+                    <th className="px-3 py-2 font-medium">Target</th>
+                    <th className="px-3 py-2 font-medium">Detail</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {events.data.events.map((event) => (
+                    <tr key={event.id} className="border-b border-line/50 last:border-0">
+                      <td className="px-3 py-1.5 whitespace-nowrap text-ink-muted">
+                        {formatDateTime(event.occurredAt)}
+                      </td>
+                      <td className="px-3 py-1.5 font-medium text-ink">{event.kind}</td>
+                      <td className="px-3 py-1.5">
+                        <OutcomeBadge outcome={event.outcome} />
+                      </td>
+                      <td className="px-3 py-1.5 font-mono text-[10px] text-ink-muted">
+                        {event.target ?? '—'}
+                      </td>
+                      <td className="px-3 py-1.5 font-mono text-[10px] text-ink-muted">
+                        {event.detail === null || event.detail === undefined
+                          ? '—'
+                          : JSON.stringify(event.detail)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Keyset pagination on (occurredAt, id) — pagination.ts's own
+                reasoning, reused. */}
+            <div className="mt-3 flex gap-2">
+              <Button
+                variant="secondary"
+                disabled={cursor === null}
+                onClick={() => {
+                  setCursor(null);
+                }}
+              >
+                Newest
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={events.data.nextCursor === null}
+                onClick={() => {
+                  setCursor(events.data.nextCursor);
+                }}
+              >
+                Older
+              </Button>
+            </div>
+          </>
+        ))}
+    </section>
+  );
+}
+
+function OutcomeBadge({ outcome }: { readonly outcome: string }) {
+  if (outcome === 'success') {
+    return <Badge className="border-success/40 bg-success/10 text-success">success</Badge>;
+  }
+  return <Badge className="border-danger/40 bg-danger/10 text-danger">failure</Badge>;
 }
 
 /* -------------------------------------------------------------------------- *

@@ -1,4 +1,4 @@
--- 0056 — Phase 12 Wave 3 §3.4: the billing sweep's own role
+-- 0060 — Phase 12 Wave 3 §3.4: the billing sweep's own role
 -- (ai/phase-12-wave3.md §3.4).
 --
 -- `apps/worker`'s trial/grace-expiry sweep scans `identity.orgs` across

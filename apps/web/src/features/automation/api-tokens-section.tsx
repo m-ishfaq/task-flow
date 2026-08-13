@@ -219,7 +219,7 @@ function TokenCreateForm({
                   type="checkbox"
                   checked={allSelected}
                   onChange={() => {
-                    setSelected(allSelected ? [] : [...(held.data ?? [])]);
+                    setSelected(allSelected ? [] : [...held.data]);
                   }}
                   className="accent-accent"
                 />

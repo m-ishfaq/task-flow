@@ -34,6 +34,11 @@ import '../automation/events.js';
    two lines above: a slice's own `events.ts` is invisible to every assertion
    below until something imports it. */
 import '../billing/events.js';
+/* Phase 10 Wave 4 connectors — same lesson again. integration-events.ts
+   defines integration.connected/disconnected/pending and was never imported
+   here, so this test could not see them despite RESOURCE_OF already mapping
+   all three. */
+import '../automation/integration-events.js';
 
 /**
  * The audit projection's mapping table, checked against what is actually

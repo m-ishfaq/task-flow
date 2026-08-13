@@ -225,6 +225,57 @@ describe('sendSms', () => {
   });
 });
 
+describe('automation-initiated SMS (Phase 10 Wave 4 §5.5)', () => {
+  it('attributes the ledger row under automation_sms, never sms', async () => {
+    const { orgId, fromId } = await readyOrg('sms-auto-kind');
+    const actor = await actorFor(orgId);
+
+    const result = await sendSms(
+      actor,
+      depsFor(),
+      { to: COUNTERPARTY, fromPhoneNumberId: fromId, body: 'hello from a rule' },
+      { initiatedBy: 'automation' },
+    );
+
+    expect(result.messageId).toBeDefined();
+    /* The attribution lives in the ledger kind — the thing the sub-budget
+       sums and spendReport groups. A rule's SMS that wrote kind 'sms' would
+       consume the human allowance. */
+    const ledger = await withOrgScope(orgId, async (tx) =>
+      tx.select({ kind: schema.spendLedger.kind }).from(schema.spendLedger),
+    );
+    expect(ledger.map((row) => row.kind)).toEqual(['automation_sms']);
+    expect(provider.messages.length).toBe(1);
+  });
+
+  it('checks the suppression list before anything else, exactly like a human send', async () => {
+    /* An opt-out is a legal fact, and the suppression check runs FIRST in
+       `sendSms` for a human send (§8.5). A rule must not be a cheaper door
+       past it — the same refusal, before the provider. */
+    const { orgId, fromId } = await readyOrg('sms-auto-suppressed');
+    const actor = await actorFor(orgId);
+
+    await receiveSms(orgId, depsFor(), {
+      from: COUNTERPARTY,
+      phoneNumberId: fromId,
+      body: 'STOP',
+      providerSid: 'SM0000000000000000000000000000000a1',
+      requestId,
+    });
+
+    await expect(
+      sendSms(
+        actor,
+        depsFor(),
+        { to: COUNTERPARTY, fromPhoneNumberId: fromId, body: 'hi from a rule' },
+        { initiatedBy: 'automation' },
+      ),
+    ).rejects.toThrow(/opted out/);
+
+    expect(provider.messages.length).toBe(0);
+  });
+});
+
 describe('receiveSms', () => {
   it('threads two inbound messages from the same counterparty together', async () => {
     const { orgId, fromId } = await readyOrg('sms-thread');

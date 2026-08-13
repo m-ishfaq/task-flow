@@ -171,16 +171,19 @@ const KNOWN_VARIABLES = new Set([
   'DATABASE_PLATFORM_ADMIN_URL',
   'DATABASE_RECORDING_INGEST_URL',
   'DATABASE_AUTOMATION_URL',
-  'DATABASE_WEBHOOK_URL',
   'DATABASE_INTEGRATION_URL',
+  'DATABASE_WEBHOOK_URL',
   'DATABASE_API_TOKEN_URL',
   /* The search indexer's claim role (Phase 8 Wave 2, migration 0045) — read by
      the API's relay, never here, and the fifth variable of this exact class to
      stop a correctly-configured process booting. */
   'DATABASE_SEARCH_URL',
-  /* The billing sweep's scan role (Phase 12 Wave 3, migration 0056) — read by
+  /* The billing sweep's scan role (Phase 12 Wave 3, migration 0060) — read by
      apps/worker, never here, and the next variable of this exact class. */
   'DATABASE_BILLING_SWEEP_URL',
+  /* The operations dashboard's writer role (migration 0061) — read by the API
+     and the worker, never here. Same class again. */
+  'DATABASE_OPS_EVENTS_URL',
   'DATABASE_POOL_MAX',
   'STORAGE_ENDPOINT',
   'STORAGE_REGION',

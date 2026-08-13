@@ -21,6 +21,8 @@ import * as lists from './list.service.js';
 import * as cards from './card.service.js';
 import * as views from './view.service.js';
 import * as sprints from './sprint.service.js';
+import * as importExport from './import-export.service.js';
+import * as duplicate from './duplicate.service.js';
 import { createCardDetailRouter } from './detail.router.js';
 import { createAttachmentRouter } from './attachment.router.js';
 import type { AttachmentDeps } from './attachment.service.js';
@@ -60,6 +62,36 @@ const ProjectKey = z
 
 /** Optional rich text. Null clears it; omitting it is not the same as clearing. */
 const Description = RichTextDocument.nullable();
+
+/**
+ * One import row as it arrives (§7.7).
+ *
+ * Every field is `unknown` ON PURPOSE — see `import-export.service.ts`: the
+ * dry-run's job is to report per-row errors with line numbers, and a schema
+ * that rejected `title: 42` would turn one bad row into a whole-request 400
+ * with no line number at all. What this schema DOES pin is the row's KEYS
+ * (`.strict()`, so a typo'd column is refused loudly) and the row's shape (a
+ * non-object in the array is a file error, not a row error).
+ */
+const ImportRowInput = z
+  .object(
+    /* Built FROM the service's own key list rather than restated here. These
+       were two hand-written lists and they drifted three times — each drift
+       rejected the whole request at `.strict()`, before a single row reached
+       `validateRow`, producing one `Unrecognized key(s)` error per row for a
+       column the exporter itself had written. Deriving the schema makes that
+       failure unrepresentable: adding a column in one place adds it here.
+
+       `Object.fromEntries` loses the key types, so the cast restores them —
+       it asserts the shape TypeScript cannot infer through that call, and
+       `IMPORT_ROW_KEYS` is what makes it true. */
+    Object.fromEntries(importExport.IMPORT_ROW_KEYS.map((key) => [key, z.unknown()])) as Record<
+      (typeof importExport.IMPORT_ROW_KEYS)[number],
+      z.ZodUnknown
+    >,
+  )
+  .strict()
+  .partial();
 
 /**
  * A timestamp from a client.
@@ -227,6 +259,40 @@ export function createWorkRouter(deps: WorkRouterDeps) {
         .output(z.object({ projectId: z.string(), key: z.string() }))
         .mutation(({ input, ctx }) => projects.createProject(actorOf(ctx), input)),
 
+      /**
+       * Copy a project into a new one (`duplicate.service.ts`).
+       *
+       * Floored on `project:create` — the operation MAKES a project, and that
+       * is the capability being exercised. Reading the source is a separate
+       * question the service asks with `project:read` against the source's own
+       * tuples, so holding `project:create` never becomes a way to read a
+       * project you could not otherwise open.
+       *
+       * `quotaClass: 'expensive'` for the same reason export carries it: this
+       * is a whole project's rows in one call.
+       */
+      duplicate: route({ permission: 'project:create', quotaClass: 'expensive' })
+        .input(
+          z
+            .object({
+              sourceProjectId: ProjectIdSchema,
+              name: Name,
+              key: ProjectKey,
+              includeCards: z.boolean().default(true),
+            })
+            .strict(),
+        )
+        .output(
+          z.object({
+            projectId: z.string(),
+            key: z.string(),
+            boards: z.number().int().nonnegative(),
+            lists: z.number().int().nonnegative(),
+            cards: z.number().int().nonnegative(),
+          }),
+        )
+        .mutation(({ input, ctx }) => duplicate.duplicateProject(actorOf(ctx), input)),
+
       update: route({ permission: 'project:update' })
         .input(
           z
@@ -283,6 +349,30 @@ export function createWorkRouter(deps: WorkRouterDeps) {
         )
         .query(({ input, ctx }) => sprints.listSprints(actorOf(ctx), input)),
 
+      /**
+       * Every project's active sprint, in one query (10.6 D3) — the sidebar's
+       * ambient line. Floored on `project:read` like `projects.list`, whose
+       * result set this one hangs off: the sprint line appears beside a
+       * project the tree is already showing, so the two reads must answer the
+       * same question about which projects exist.
+       */
+      active: route({ permission: 'project:read' })
+        .input(z.object({}).strict())
+        .output(
+          z
+            .array(
+              z.object({
+                projectId: z.string(),
+                sprintId: z.string(),
+                name: z.string(),
+                endsOn: z.string(),
+                cardCount: z.number().int().nonnegative(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ ctx }) => sprints.listActiveSprints(actorOf(ctx))),
+
       create: route({ permission: 'project:update' })
         .input(
           z
@@ -321,7 +411,18 @@ export function createWorkRouter(deps: WorkRouterDeps) {
 
       /** The atomic close — see the service for the shipped/released split. */
       complete: route({ permission: 'project:update' })
-        .input(z.object({ sprintId: SprintIdSchema }).strict())
+        .input(
+          z
+            .object({
+              sprintId: SprintIdSchema,
+              /* Where unfinished work goes (10.6 D1). `.default(null)` rather
+                 than `.optional()`: the destination is always a decision, and
+                 a defaulted null says "the backlog" explicitly instead of
+                 leaving the absent case to be inferred at the service. */
+              moveUnfinishedTo: SprintIdSchema.nullable().default(null),
+            })
+            .strict(),
+        )
         .output(
           z.object({
             status: z.literal('completed'),
@@ -710,6 +811,85 @@ export function createWorkRouter(deps: WorkRouterDeps) {
         .input(z.object({ cardId: CardIdSchema }).strict())
         .output(z.object({ sprintId: z.string().nullable() }))
         .mutation(({ input, ctx }) => sprints.releaseSprint(actorOf(ctx), input)),
+
+      /**
+       * Export a project's cards as CSV or JSON (§7.7).
+       *
+       * Project-scoped — the route is `cards.*` because the thing being
+       * exported is cards — and gated `project:read` with the 'expensive'
+       * quota class, because one call renders every card in the project and
+       * the output can be large. Generated server-side from the same queries
+       * the board uses (see the service), so an export and the board agree
+       * about what a card is.
+       */
+      export: route({ permission: 'project:read', quotaClass: 'expensive' })
+        .input(
+          z
+            .object({
+              projectId: ProjectIdSchema,
+              format: z.enum(['csv', 'json']).default('csv'),
+              /* Optional narrowing. The PROJECT stays the authorization
+                 anchor — these are filters inside the answer it already
+                 gates, and the service confirms each belongs to it, so
+                 naming another project's board cannot widen the result. */
+              boardId: BoardIdSchema.nullable().default(null),
+              listId: ListIdSchema.nullable().default(null),
+            })
+            .strict(),
+        )
+        .output(z.object({ format: z.enum(['csv', 'json']), content: z.string() }))
+        .query(({ input, ctx }) => importExport.exportCards(actorOf(ctx), input)),
+
+      /**
+       * Import CSV/JSON rows into a list (§7.7).
+       *
+       * `project:update`, NOT `card:create`: a bulk write is a project-level
+       * operation — one wrong import is a whole board's event, and the tier
+       * that manages the project's vocabulary is the tier that may reshape
+       * its work at once. The service still routes every row through the
+       * same per-card services the UI's create uses, so an import cannot
+       * create a card a user could not have created.
+       *
+       * `dryRun: true` validates every row against the project's live
+       * vocabulary and writes nothing — the preview. Errors are PER ROW with
+       * 1-based line numbers, never a whole-request 400.
+       */
+      import: route({ permission: 'project:update' })
+        .input(
+          z
+            .object({
+              listId: ListIdSchema,
+              dryRun: z.boolean().default(false),
+              /* The bound is mirrored in the service — this is the route's
+                 copy, the service's is the one that cannot be forgotten. */
+              rows: z.array(ImportRowInput).min(1).max(importExport.MAX_IMPORT_ROWS),
+              /* Off by default: a typo'd column would otherwise mint junk
+                 labels on a shared project. Opting in grants nothing extra —
+                 managing the label set IS `project:update`, which this route
+                 already requires. */
+              createMissingLabels: z.boolean().default(false),
+            })
+            .strict(),
+        )
+        .output(
+          z.object({
+            created: z.number().int().nonnegative(),
+            errors: z
+              .array(z.object({ line: z.number().int().positive(), error: z.string() }))
+              .readonly(),
+            missingLabels: z.array(z.string()).readonly(),
+            createdByList: z
+              .array(
+                z.object({
+                  listId: z.string(),
+                  name: z.string(),
+                  count: z.number().int().positive(),
+                }),
+              )
+              .readonly(),
+          }),
+        )
+        .mutation(({ input, ctx }) => importExport.importCards(actorOf(ctx), input)),
 
       archive: route({ permission: 'card:delete' })
         .input(z.object({ cardId: CardIdSchema, archived: z.boolean() }).strict())

@@ -58,6 +58,16 @@ export class FilterCompileError extends Error {
 }
 
 /**
+ * Field sets that have a table behind them.
+ *
+ * An ALLOWLIST rather than a list of what to refuse: a field set added later
+ * with no SQL form is refused by default, which is the direction that fails
+ * closed. Adding a resource here is the deliberate act of claiming every one
+ * of its fields compiles.
+ */
+const COMPILABLE_RESOURCES: ReadonlySet<Resource> = new Set<Resource>(['card', 'search']);
+
+/**
  * Compiles a validated tree.
  *
  * Re-runs `validate` rather than trusting the caller. That is not paranoia
@@ -71,6 +81,21 @@ export function compile(
   node: FilterNode,
   options: CompileOptions = {},
 ): CompiledFilter {
+  /* An evaluator-only resource is refused HERE, by name, before validation —
+     not left to fail field by field below (ai/phase-10-automation.md §7.8b).
+     The connector set describes an event payload the worker holds in memory
+     and has no table anywhere; "silently compiling to something" is precisely
+     the failure this package exists to prevent, and the something it would
+     most plausibly compile to is `TRUE`. Two layers, because they fail on
+     different mistakes: this catches a caller that named the wrong resource,
+     and the `sql === null` check in `emitComparison` catches a field set that
+     grows an evaluator-only field without anyone noticing. */
+  if (!COMPILABLE_RESOURCES.has(resource)) {
+    throw new FilterCompileError(
+      `The "${resource}" field set has no SQL form — it is evaluated in memory, never compiled.`,
+    );
+  }
+
   const result = validate(resource, node);
   if (!result.ok) {
     throw new FilterCompileError(
@@ -139,6 +164,12 @@ function emitComparison(
   options: CompileOptions,
 ): string {
   const column = field.sql;
+  /* The structural half of the resource refusal above. `sql: null` marks a
+     field with no SQL form at all, and there is no safe fallback: omitting the
+     predicate widens the filter, and inventing one guesses at a column. */
+  if (column === null) {
+    throw new FilterCompileError(`Field "${field.name}" has no SQL form and cannot be compiled.`);
+  }
 
   // Array fields are asked about membership, never equality.
   const isArray = field.type === 'uuid_array';

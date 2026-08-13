@@ -290,7 +290,16 @@ export function createTelephonyRouter(maybeDeps: TelephonyDeps | undefined) {
           const state = await readSpendState(actorOf(ctx).subject.orgId, {
             defaultCapCents: deps().defaultSpendCapCents,
           });
-          return { spentCents: state.spentCents, capCents: state.capCents };
+          return {
+            spentCents: state.spentCents,
+            capCents: state.capCents,
+            /* The sub-budget figures (§5.5) ride the same read the gate
+               enforces from, so what a page shows and what the gate refuses
+               cannot drift. `automationCapCents` is null when the org has not
+               configured a separate ceiling. */
+            automationSpentCents: state.automationSpentCents,
+            automationCapCents: state.automationCapCents,
+          };
         }),
 
       /**

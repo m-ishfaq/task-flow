@@ -46,6 +46,14 @@ export interface MailQueueOptions {
    * the log file.
    */
   readonly onFailure?: (failure: { to: string; subject: string; attempts: number }) => void;
+  /**
+   * Called when a message sends successfully — the same shape as `onFailure`,
+   * for the same redaction reason. Optional and separate rather than folded
+   * into `onFailure` with a boolean flag: most callers (this package's own
+   * tests) care only about failure, and a required callback that most code
+   * ignores is a callback most code gets slightly wrong.
+   */
+  readonly onSuccess?: (success: { to: string; subject: string }) => void;
   /** Injected for tests. Real code has no reason to pass this. */
   readonly sleep?: (ms: number) => Promise<void>;
 }
@@ -76,6 +84,7 @@ export class MailQueue {
   readonly #baseDelayMs: number;
   readonly #backoffFactor: number;
   readonly #onFailure: (failure: { to: string; subject: string; attempts: number }) => void;
+  readonly #onSuccess: (success: { to: string; subject: string }) => void;
   readonly #sleep: (ms: number) => Promise<void>;
 
   readonly #pending: QueueEntry[] = [];
@@ -91,6 +100,7 @@ export class MailQueue {
     this.#baseDelayMs = options.baseDelayMs ?? DEFAULT_BASE_DELAY_MS;
     this.#backoffFactor = options.backoffFactor ?? DEFAULT_BACKOFF_FACTOR;
     this.#onFailure = options.onFailure ?? (() => undefined);
+    this.#onSuccess = options.onSuccess ?? (() => undefined);
     this.#sleep = options.sleep ?? defaultSleep;
   }
 
@@ -177,6 +187,7 @@ export class MailQueue {
       try {
         await this.#mailer.send(entry.message);
         this.#pending.shift();
+        this.#onSuccess({ to: entry.message.to, subject: entry.message.subject });
         continue;
       } catch {
         entry.attempts += 1;

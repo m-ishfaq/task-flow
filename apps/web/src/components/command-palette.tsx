@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { ProjectId } from '@taskflow/contracts';
 import { useSession } from '../lib/session.js';
 import { useUi } from '../lib/ui-store.js';
-import { projectsQuery } from '../features/work/api.js';
+import { activeSprintsQuery, projectsQuery } from '../features/work/api.js';
 import { cn } from '../lib/cn.js';
 
 /**
@@ -80,7 +80,7 @@ export function CommandPalette() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [setPaletteOpen, setShortcutsOpen]);
+  }, [navigate, setPaletteOpen, setShortcutsOpen]);
 
   return (
     <>
@@ -113,6 +113,10 @@ function PaletteDialog({
   /* Only fetched while the palette is open — the sidebar tree already keeps
      this warm on every page that has one, so this is usually a cache hit. */
   const projects = useQuery({ ...projectsQuery(orgId), enabled: open && orgId !== '' });
+  /* The running sprints, same open-only rule (10.6 slice 2). The sidebar keeps
+     this warm too, so it is normally a cache hit — and there is at most one row
+     per project, so this never grows into a list worth paginating. */
+  const activeSprints = useQuery({ ...activeSprintsQuery(orgId), enabled: open && orgId !== '' });
 
   const commands = useMemo<readonly Command[]>(() => {
     const go =
@@ -164,8 +168,30 @@ function PaletteDialog({
             },
           ];
 
-    return [...searchCommand, ...navigation, ...projectCommands];
-  }, [navigate, projects.data, query, toggleSidebar]);
+    /* The running sprints, by NAME (10.6 slice 2).
+       Listed before projects because a sprint is the thing a person is in the
+       middle of — "Sprint 14" is a more likely thing to be reaching for during
+       a sprint than the project that contains it, and the palette's order is
+       its only ranking. The label carries the project so two teams' "Sprint 14"
+       are told apart, which is the whole reason a bare sprint name is not
+       enough on an org-wide list. */
+    const sprintCommands: Command[] = (activeSprints.data ?? []).map((sprint) => {
+      const project = (projects.data ?? []).find((entry) => entry.projectId === sprint.projectId);
+      return {
+        id: `sprint-${sprint.sprintId}`,
+        label: project === undefined ? sprint.name : `${sprint.name} — ${project.name}`,
+        hint: 'Sprint',
+        run: () => {
+          void navigate({
+            to: '/projects/$projectId/sprints',
+            params: { projectId: sprint.projectId as ProjectId },
+          });
+        },
+      };
+    });
+
+    return [...searchCommand, ...navigation, ...sprintCommands, ...projectCommands];
+  }, [activeSprints.data, navigate, projects.data, query, toggleSidebar]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();

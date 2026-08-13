@@ -248,6 +248,91 @@ export class InvalidTokenError extends Error {
 }
 
 /**
+ * Connector OAuth `state` tokens (Phase 10 Wave 4, ai/phase-10-automation.md
+ * §7.2).
+ *
+ * The same shape and reasoning as `OAUTH_STATE_AUDIENCE` above, for a
+ * different flow: a Slack/GitHub CONNECTOR connect, minted by
+ * `integration.begin` (an org-scoped, `integration:manage`, step-up route)
+ * and completed by `integration.complete` — a public route, because the
+ * browser round trip to the provider loses the session.
+ *
+ * It carries the ORG and USER the flow was begun for, beside the PKCE
+ * verifier. That is what lets the public complete route write the connector
+ * row under the right org and attribute the connect to the right person
+ * without a session — the same trust model as `linkUserId` in the login
+ * flow's state: the state is signed by this API and minted only by an
+ * authenticated, authorized actor, so the claims it carries are as trustworthy
+ * as the session that created them.
+ *
+ * The AUDIENCE is distinct from `OAUTH_STATE_AUDIENCE`, for the same reason
+ * that one is distinct from `AUDIENCE`: a connector state must never be
+ * accepted as a login-OAuth state (whose `linkUserId` would sign a different
+ * account into a session), and neither must be accepted as an access token.
+ */
+const CONNECTOR_STATE_AUDIENCE = 'taskflow-connector-state';
+const CONNECTOR_STATE_TTL_SECONDS = 600;
+
+export interface ConnectorStateClaims {
+  readonly provider: string;
+  readonly codeVerifier: string;
+  /** The org the connector row will be written under — from the signed state, never from a request. */
+  readonly orgId: string;
+  /** Whose connect this is — the step-upped actor who called `integration.begin`. */
+  readonly userId: string;
+}
+
+export async function signConnectorState(
+  claims: ConnectorStateClaims,
+  config: JwtConfig,
+): Promise<string> {
+  assertSecret(config.secret);
+
+  return new SignJWT({
+    provider: claims.provider,
+    verifier: claims.codeVerifier,
+    org: claims.orgId,
+    uid: claims.userId,
+  })
+    .setProtectedHeader({ alg: ALGORITHM, typ: 'JWT' })
+    .setIssuer(ISSUER)
+    .setAudience(CONNECTOR_STATE_AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime(`${String(CONNECTOR_STATE_TTL_SECONDS)}s`)
+    .sign(config.secret);
+}
+
+export async function verifyConnectorState(
+  token: string,
+  config: JwtConfig,
+): Promise<ConnectorStateClaims> {
+  assertSecret(config.secret);
+
+  try {
+    const { payload } = await jwtVerify(token, config.secret, {
+      issuer: ISSUER,
+      audience: CONNECTOR_STATE_AUDIENCE,
+      algorithms: [ALGORITHM],
+      clockTolerance: 5,
+    });
+
+    const { provider, verifier, org, uid } = payload;
+    if (
+      typeof provider !== 'string' ||
+      typeof verifier !== 'string' ||
+      typeof org !== 'string' ||
+      typeof uid !== 'string'
+    ) {
+      throw new InvalidTokenError();
+    }
+
+    return { provider, codeVerifier: verifier, orgId: org, userId: uid };
+  } catch {
+    throw new InvalidTokenError();
+  }
+}
+
+/**
  * Verifies an access token and returns its claims.
  *
  * Throws `InvalidTokenError` for everything. Note what is NOT checked here:

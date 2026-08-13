@@ -1,4 +1,4 @@
--- 0055 — Phase 12 Wave 3: billing & org lifecycle, the data half
+-- 0059 — Phase 12 Wave 3: billing & org lifecycle, the data half
 -- (ai/phase-12-wave3.md §3.2, §3.5)
 --
 -- ==========================================================================

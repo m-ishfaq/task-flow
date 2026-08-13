@@ -103,7 +103,7 @@ export async function createOrg(
      the org itself — there is no "org exists but has no billing state yet"
      moment for a later step to fill in, the identical reasoning the founding
      membership above already follows. `billingStatus` defaults to 'trialing'
-     at the column level (migration 0055); `trialEndsAt` is the one value only
+     at the column level (migration 0059); `trialEndsAt` is the one value only
      this call site can supply. */
   const now = (deps.now ?? (() => new Date()))();
   const trialEndsAt = new Date(now.getTime() + deps.trialDays * 24 * 60 * 60 * 1000);

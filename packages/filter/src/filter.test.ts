@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FilterTree, ME, and, compare, not, or, type FilterNode } from './ast.js';
-import { fieldsOf, findField } from './fields.js';
+import { fieldsOf, findField, resourceForTrigger } from './fields.js';
 import { validate } from './validate.js';
 import { FilterCompileError, compile } from './compile.js';
 import { evaluate, type EvaluableRow } from './evaluate.js';
@@ -370,7 +370,10 @@ describe('field definitions', () => {
   it('exposes a field set the visual builder can render', () => {
     const fields = fieldsOf('card');
     expect(fields.length).toBeGreaterThan(5);
-    expect(fields.every((field) => field.sql.length > 0)).toBe(true);
+    /* Every CARD field has a SQL form. `sql` became nullable when the
+       evaluator-only connector set arrived (§7.8b); a null one here would be a
+       card field the board view cannot filter on. */
+    expect(fields.every((field) => field.sql !== null && field.sql.length > 0)).toBe(true);
   });
 
   it('declares acceptsMe only on user-valued fields', () => {
@@ -390,5 +393,81 @@ describe('field definitions', () => {
       const definition = findField('card', field.name);
       expect(definition).toBeDefined();
     }
+  });
+});
+
+/**
+ * The connector field set (ai/phase-10-automation.md §7.8b).
+ *
+ * Evaluator-only, by construction: it describes an inbound Slack/GitHub event
+ * the worker holds in memory, and there is no table behind it. The assertion
+ * that matters most here is the REFUSAL — "silently compiling to something" is
+ * the failure this package exists to prevent, and the something it would most
+ * plausibly compile to is `TRUE`, which turns a narrow rule into one that fires
+ * on everything.
+ */
+describe('the connector field set', () => {
+  const push: EvaluableRow = { provider_event: 'push', provider_scope: 'acme/api' };
+
+  it('is closed to exactly two fields, neither of which compiles', () => {
+    const names = fieldsOf('connector').map((field) => field.name);
+    expect(names).toEqual(['provider_event', 'provider_scope']);
+    expect(fieldsOf('connector').every((field) => field.sql === null)).toBe(true);
+  });
+
+  it('does not overlap the card set in either direction', () => {
+    /* Closed AND disjoint, the property Phase 8 documents for card vs search —
+       and the same trap: an example written against the wrong set validates in
+       a person's head and is refused by `validate()`. */
+    expect(validate('connector', compare('priority', 'eq', 'high')).ok).toBe(false);
+    expect(validate('card', compare('provider_event', 'eq', 'push')).ok).toBe(false);
+  });
+
+  it('refuses to compile, by resource and by field', () => {
+    expect(() => compile('connector', compare('provider_event', 'eq', 'push'))).toThrow(
+      FilterCompileError,
+    );
+    /* Named in the message, because the person who hits this is a developer
+       who has just pointed a SQL query at an in-memory field set. */
+    expect(() => compile('connector', compare('provider_event', 'eq', 'push'))).toThrow(
+      /no SQL form/,
+    );
+  });
+
+  it('evaluates the five operators it advertises', () => {
+    expect(evaluate('connector', compare('provider_event', 'eq', 'push'), push)).toBe(true);
+    expect(evaluate('connector', compare('provider_event', 'eq', 'workflow_job'), push)).toBe(
+      false,
+    );
+    expect(evaluate('connector', compare('provider_event', 'neq', 'workflow_job'), push)).toBe(
+      true,
+    );
+    expect(
+      evaluate('connector', compare('provider_event', 'in', ['push', 'pull_request']), push),
+    ).toBe(true);
+    expect(
+      evaluate('connector', compare('provider_event', 'not_in', ['push', 'pull_request']), push),
+    ).toBe(false);
+    expect(evaluate('connector', compare('provider_scope', 'contains', 'acme/'), push)).toBe(true);
+  });
+
+  it('refuses the operators it does not advertise', () => {
+    /* `is_empty` is legal for every other text field and is deliberately NOT
+       here: a connector event always carries both wrapper fields, so an
+       emptiness test could only ever describe a malformed event — which the
+       engine refuses as `trigger_not_evaluable` before a condition runs. */
+    expect(validate('connector', compare('provider_event', 'is_empty', undefined)).ok).toBe(false);
+    expect(validate('connector', compare('provider_event', 'gt', 'push')).ok).toBe(false);
+  });
+
+  it('maps a trigger to its field set, and everything else to the card set', () => {
+    expect(resourceForTrigger('integration.github_event')).toBe('connector');
+    expect(resourceForTrigger('integration.slack_event')).toBe('connector');
+    expect(resourceForTrigger('card.created')).toBe('card');
+    /* An unregistered name answers `card` rather than throwing. This function
+       decides a VOCABULARY, not whether a trigger exists — the service's
+       `assertTriggerRegistered` does that, and a throw here would turn an
+       unknown trigger into a 500 instead of a field error. */
+    expect(resourceForTrigger('nonsense.event')).toBe('card');
   });
 });

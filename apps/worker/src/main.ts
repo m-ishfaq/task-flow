@@ -3,10 +3,12 @@ import {
   initializeAutomationDatabase,
   initializeBillingSweepDatabase,
   initializeDatabase,
+  initializeOpsEventsDatabase,
   initializeWebhookDatabase,
 } from '@taskflow/db';
 import { createLogger } from '@taskflow/observability';
 import { masterKeysFromBase64, SoftwareKeyProvider } from '@taskflow/security';
+import { buildTelephonyDeps } from '@taskflow/api/telephony/deps';
 import { loadEnv } from './config/env.js';
 import { createHealthServer } from './health.js';
 import { createActionExecutor } from './automation/executor.js';
@@ -79,7 +81,7 @@ if (env.DATABASE_WEBHOOK_URL !== undefined) {
 }
 
 /* The billing sweep's claim pool, as `taskflow_billing_sweep` (Phase 12
-   Wave 3, migration 0056). Optional like the two pools above: without it
+   Wave 3, migration 0060). Optional like the two pools above: without it
    the sweep logs a warning and stays off — no trial or grace period will
    ever expire, which is a valid deployment shape for an instance that has
    not enabled billing enforcement yet. */
@@ -90,7 +92,48 @@ if (env.DATABASE_BILLING_SWEEP_URL !== undefined) {
   });
 }
 
+/* The operations dashboard's writer pool, as `taskflow_ops_events`
+   (migration 0061) — this process's own connection, for the sweep's
+   heartbeat row. Optional like every consumer pool above: without it
+   `recordOperationalEvent()` catches the missing-connection error itself,
+   so the sweep still runs, it just produces no heartbeat row. */
+if (env.DATABASE_OPS_EVENTS_URL !== undefined) {
+  initializeOpsEventsDatabase({
+    url: env.DATABASE_OPS_EVENTS_URL,
+    applicationName: 'taskflow-worker-ops-events',
+  });
+}
+
 const logger = createLogger({ name: 'worker', level: env.LOG_LEVEL });
+
+/* Wave 4 (§5.5) — the cost-bearing actions. Built ONLY when the deployment
+   enables them (off by default): the same `buildTelephonyDeps` the API uses,
+   over the same env subset, so a rule's call goes through the identical
+   provider selection and gate configuration a human's does. When the flag is
+   on but no carrier is configured, the API's own convention applies — an
+   unconfigured carrier is a valid deployment — and rules that use telephony
+   fail at execution with a recorded reason; the warning makes the misconfig
+   discoverable without refusing to boot. */
+const telephonyDeps = env.AUTOMATION_TELEPHONY_ACTIONS_ENABLED
+  ? buildTelephonyDeps(env)
+  : undefined;
+if (env.AUTOMATION_TELEPHONY_ACTIONS_ENABLED && telephonyDeps === undefined) {
+  logger.warn(
+    'AUTOMATION_TELEPHONY_ACTIONS_ENABLED is true but no telephony provider is ' +
+      'configured — rules using call.place or sms.send will fail at execution.',
+  );
+}
+
+/* One key provider for the whole process. The webhook delivery loop unwraps
+   per-webhook signing keys with it; slice 4's connector actions unwrap the
+   org's data key to decrypt a Slack/GitHub credential. Hoisted rather than
+   constructed twice so there is one place the master key is read — two
+   providers built from the same env would be two things to keep in step for no
+   benefit. */
+const keys = new SoftwareKeyProvider({
+  masterKeys: masterKeysFromBase64({ [env.MASTER_KEY_ID]: env.MASTER_KEY_BASE64 }),
+  currentMasterKeyId: env.MASTER_KEY_ID,
+});
 
 const health = createHealthServer();
 await new Promise<void>((resolveListen) => {
@@ -101,7 +144,22 @@ await new Promise<void>((resolveListen) => {
 
 const engine = startAutomationEngine({
   logger,
-  executor: createActionExecutor(),
+  executor: createActionExecutor({
+    /* Conditional spread rather than `telephony: telephonyDeps`:
+       `exactOptionalPropertyTypes` makes "absent" and "present and undefined"
+       different types, and `telephonyDeps` is `TelephonyDeps | undefined` when
+       the flag is on but no carrier is configured — the same idiom the API's
+       router uses. Absent means the executor's `telephonyFor` refusal is what
+       the action sees; undefined would not even compile. */
+    ...(telephonyDeps === undefined ? {} : { telephony: telephonyDeps }),
+    telephonyActionsEnabled: env.AUTOMATION_TELEPHONY_ACTIONS_ENABLED,
+    /* Wave 4 slice 4 (§7.6) — unconditional, unlike telephony. These actions
+       cost nothing and reach only a provider the org itself authorized, so
+       there is no deployment flag; whether they work is decided by whether the
+       org has a connector row and whether the rule owner holds
+       `integration:manage`, both of which the org controls. */
+    integrations: { keys },
+  }),
   intervalMs: env.WORKER_POLL_INTERVAL_MS,
 });
 
@@ -109,10 +167,7 @@ const engine = startAutomationEngine({
    API validates, used here to unwrap per-webhook data keys at delivery. */
 const delivery = startWebhookDeliveryLoop({
   logger,
-  keys: new SoftwareKeyProvider({
-    masterKeys: masterKeysFromBase64({ [env.MASTER_KEY_ID]: env.MASTER_KEY_BASE64 }),
-    currentMasterKeyId: env.MASTER_KEY_ID,
-  }),
+  keys,
   intervalMs: env.WORKER_POLL_INTERVAL_MS,
 });
 

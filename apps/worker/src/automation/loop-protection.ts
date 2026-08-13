@@ -66,6 +66,25 @@ const EVENTS_EMITTED_BY: Readonly<Record<AutomationAction['type'], readonly stri
      eventual `webhook.delivery_queued` the loop might produce again — the
      loop itself writes no outbox event of this name. */
   call_webhook: ['webhook.delivery_queued'],
+  /* Wave 4 — the cost-bearing actions emit through the telephony service
+     layer exactly like a human's do, so a rule triggered by `call.placed` or
+     `sms.sent` whose action places a call or sends an SMS would feed itself. */
+  'call.place': ['call.placed', 'call.status_changed'],
+  'sms.send': ['sms.sent'],
+  /* Wave 4 slice 4 (§7.6). These are the OUTBOUND governance events the
+     service emits after a confirmed provider success — deliberately NOT the
+     inbound `integration.slack_event` / `integration.github_event` triggers.
+
+     The distinction matters and is the whole reason this table is
+     conservative. A rule "when a GitHub event arrives, post to Slack" does not
+     self-trigger through this table, and it must not be made to: the loop it
+     could form runs through the PROVIDER — our Slack post becomes a Slack
+     `message` event that comes back in as `integration.slack_event`. Nothing
+     in this process can see that hop, which is exactly what the depth counter
+     is for. Listing the inbound names here would refuse the most obviously
+     useful rule in the phase while stopping no real loop. */
+  'slack.post_message': ['integration.message_posted'],
+  'github.create_issue': ['integration.issue_created'],
 };
 
 export interface DepthVerdict {

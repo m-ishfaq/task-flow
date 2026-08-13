@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { withOrgScope } from '@taskflow/db';
+import { recordOperationalEvent, withOrgScope } from '@taskflow/db';
 import { applyBillingWebhookEvent } from './webhook-apply.service.js';
 import { commitWebhookEvent, verifyInboundBillingWebhook } from './webhook.js';
 import type { BillingDeps } from './deps.js';
@@ -70,8 +70,18 @@ export function registerBillingWebhooks(app: FastifyInstance, deps: BillingWebho
 
       /* Every rejection answers the same way, with no detail distinguishing
          them — the identical reasoning telephony's webhook route gives: which
-         check failed is a map of the verification logic to hand an attacker. */
+         check failed is a map of the verification logic to hand an attacker.
+         The operations dashboard is a DIFFERENT audience from that response —
+         an operator, not the caller — so `verdict.reason` is safe to record
+         here even though it is never reflected in the HTTP response. No
+         `target`: the event was never verified, so there is no id yet to
+         name. */
       if (!verdict.ok) {
+        void recordOperationalEvent({
+          kind: 'billing_webhook',
+          outcome: 'failure',
+          detail: { reason: verdict.reason },
+        });
         return reply.status(400).send();
       }
 
@@ -79,9 +89,31 @@ export function registerBillingWebhooks(app: FastifyInstance, deps: BillingWebho
          own header for why splitting these across two would reintroduce the
          exact "retry silently lost" failure the nonce discipline exists to
          prevent. */
-      await withOrgScope(verdict.orgId, async (tx) => {
-        await commitWebhookEvent(tx, verdict.orgId, verdict.event.providerEventId);
-        await applyBillingWebhookEvent(tx, billing, verdict.orgId, verdict.event, request.id);
+      try {
+        await withOrgScope(verdict.orgId, async (tx) => {
+          await commitWebhookEvent(tx, verdict.orgId, verdict.event.providerEventId);
+          await applyBillingWebhookEvent(tx, billing, verdict.orgId, verdict.event, request.id);
+        });
+      } catch (error) {
+        /* No error message in `detail` — the same redaction discipline every
+           other recordOperationalEvent() call site applies: an event id and
+           its kind identify what failed without risking a driver error
+           string that could carry connection details into a table several
+           roles beyond taskflow_app can read. */
+        void recordOperationalEvent({
+          kind: 'billing_webhook',
+          outcome: 'failure',
+          target: verdict.event.providerEventId,
+          detail: { kind: verdict.event.kind },
+        });
+        throw error;
+      }
+
+      void recordOperationalEvent({
+        kind: 'billing_webhook',
+        outcome: 'success',
+        target: verdict.event.providerEventId,
+        detail: { kind: verdict.event.kind },
       });
 
       return reply.status(200).send();

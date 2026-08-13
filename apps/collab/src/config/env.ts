@@ -101,16 +101,19 @@ const KNOWN_VARIABLES = new Set([
   'DATABASE_AUTOMATION_URL',
   'DATABASE_WEBHOOK_URL',
   'DATABASE_API_TOKEN_URL',
+  'DATABASE_INTEGRATION_URL',
   /* The search indexer's claim role (Phase 8 Wave 2, migration 0045) — read by
      the API's relay, never here, and the fifth variable of this exact class to
      stop a correctly-configured process booting. */
   'DATABASE_SEARCH_URL',
-  /* The billing sweep's scan role (Phase 12 Wave 3, migration 0056) — read by
+  /* The billing sweep's scan role (Phase 12 Wave 3, migration 0060) — read by
      apps/worker, never here, and the next variable of this exact class. */
   'DATABASE_BILLING_SWEEP_URL',
+  /* The operations dashboard's writer role (migration 0061) — read by the API
+     and the worker, never here. Same class again. */
+  'DATABASE_OPS_EVENTS_URL',
   'DATABASE_POOL_MAX',
   'JWT_SECRET',
-  'DATABASE_INTEGRATION_URL',
   'WEB_ORIGIN',
   /* apps/web's vite.config.ts reads these; no server does. Same reasoning as
      the API's identical note: the `WEB_` prefix makes the misspelling check

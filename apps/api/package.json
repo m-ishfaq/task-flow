@@ -28,11 +28,15 @@
     "./work/comments": "./src/work/comment.service.ts",
     "./chat/messages": "./src/chat/message.service.ts",
     "./automation/webhooks": "./src/automation/webhook.service.ts",
+    "./automation/integration-actions": "./src/automation/integration-action.service.ts",
     "./events/automation": "./src/automation/events.ts",
     "./events/automation-webhooks": "./src/automation/webhook-events.ts",
     "./events/api-tokens": "./src/automation/api-token-events.ts",
     "./billing/sweep": "./src/billing/sweep.service.ts",
-    "./billing/deps": "./src/billing/deps.ts"
+    "./billing/deps": "./src/billing/deps.ts",
+    "./telephony/call": "./src/telephony/call.service.ts",
+    "./telephony/message": "./src/telephony/message.service.ts",
+    "./telephony/deps": "./src/telephony/deps.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",

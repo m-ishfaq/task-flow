@@ -945,6 +945,84 @@ export function hasWebhookDatabase(): boolean {
 }
 
 /* -------------------------------------------------------------------------- *
+ * The integration-auth lookup connection (ai/phase-10-automation.md §7.2,
+ * Phase 10 Wave 4, migration 0056)
+ * -------------------------------------------------------------------------- */
+
+let integrationAuthPool: pg.Pool | undefined;
+let integrationAuthDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the inbound-connector lookup pool, as `taskflow_integration_auth`.
+ *
+ * The api_token_auth recipe applied to a webhook instead of a token: an
+ * inbound Slack/GitHub request must be resolved to an org BEFORE any scope is
+ * open — the body names a team_id / repository full_name, and the row mapping
+ * that scope to an org lives on its own tenant row, so no value of
+ * `app.org_id` is correct for the read.
+ *
+ * Migration 0056's grant is COLUMN-LEVEL and what is excluded is the point:
+ * this role sees `org_id, provider, provider_scope` plus the GitHub verify
+ * columns, and never `token_ciphertext`/`token_wrapped`/`token_master_id` or
+ * `name` — the role that resolves "who is this webhook for" cannot read
+ * anyone's outbound credential.
+ */
+export function initializeIntegrationAuthDatabase(config: DbConfig): void {
+  if (integrationAuthPool) {
+    throw new Error('Integration-auth database already initialized. This is a boot-time call.');
+  }
+
+  integrationAuthPool = new Pool({
+    connectionString: config.url,
+    // Small, matching every other narrow role: a lookup per inbound webhook,
+    // not a workload.
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-integration-auth',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  integrationAuthDb = drizzle(integrationAuthPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_integration_auth` — the role that may resolve an
+ * inbound connector's scope to an org across every tenant, and nothing else.
+ *
+ * NOT tenant-scoped, for the identical reason every consumer scope in this
+ * file is not: the org is unknown until the lookup answers, so no single
+ * value of `app.org_id` is correct. What contains it is the role —
+ * `NOBYPASSRLS`, reaching across orgs only on `platform.integrations`' one
+ * `TO taskflow_integration_auth` policy, through its column-level grant.
+ *
+ * Throws rather than falling back to the application role — which cannot read
+ * across every org anyway, so the fallback would silently refuse every
+ * inbound webhook while looking healthy. The standing refusal shape of this
+ * file.
+ */
+export async function withIntegrationAuthScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!integrationAuthDb) {
+    throw new Error(
+      'Integration-auth database not initialized. Call initializeIntegrationAuthDatabase() ' +
+        'during boot — inbound connector verification must not fall back to the application ' +
+        'role, which cannot read platform.integrations across every org and would silently ' +
+        'refuse every webhook.',
+    );
+  }
+
+  return integrationAuthDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the integration-auth pool has been initialized. */
+export function hasIntegrationAuthDatabase(): boolean {
+  return integrationAuthDb !== undefined;
+}
+
+/* -------------------------------------------------------------------------- *
  * The API-token auth lookup connection (ai/phase-10-automation.md §6.2,
  * Wave 3, migration 0050)
  * -------------------------------------------------------------------------- */
@@ -1095,6 +1173,68 @@ export function hasBillingSweepDatabase(): boolean {
   return billingSweepDb !== undefined;
 }
 
+/* -------------------------------------------------------------------------- *
+ * The operations-dashboard connection (migration 0061)
+ * -------------------------------------------------------------------------- */
+
+let opsEventsPool: pg.Pool | undefined;
+let opsEventsDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the operations dashboard's writer pool, as `taskflow_ops_events`.
+ *
+ * A FOURTEENTH role, and a different shape from `taskflow_billing_sweep`
+ * above it: not a claim-only scan, because `platform.operational_events`
+ * carries no `org_id` at all — there is no tenant to scan across. Opened
+ * from BOTH `apps/api` (mail delivery, billing webhooks) and `apps/worker`
+ * (the sweep's own heartbeat), each with its own connection pool as this
+ * same role, the same way multiple processes already share
+ * `taskflow_webhook`. Reads go through `taskflow_platform_admin` instead
+ * (migration 0061 grants it SELECT directly) — this pool is the write side.
+ */
+export function initializeOpsEventsDatabase(config: DbConfig): void {
+  if (opsEventsPool) {
+    throw new Error('Ops-events database already initialized. This is a boot-time call.');
+  }
+
+  opsEventsPool = new Pool({
+    connectionString: config.url,
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-ops-events',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  opsEventsDb = drizzle(opsEventsPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_ops_events`. Not tenant-scoped — the table this
+ * role writes has no `org_id` column, so there is nothing to scope to.
+ */
+export async function withOpsEventScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!opsEventsDb) {
+    throw new Error(
+      'Ops-events database not initialized. Call initializeOpsEventsDatabase() during boot. ' +
+        'recordOperationalEvent() (packages/db/src/ops-events.ts) catches this throw itself and ' +
+        'reports it through its own onWriteFailure callback rather than propagating — a missing ' +
+        'connection here must degrade to "no dashboard row", never to "mail delivery crashes" or ' +
+        '"the webhook 500s". A caller reaching this function directly gets the throw, uncaught.',
+    );
+  }
+
+  return opsEventsDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the ops-events pool has been initialized. */
+export function hasOpsEventsDatabase(): boolean {
+  return opsEventsDb !== undefined;
+}
+
 /** Closes every pool. Shutdown only. */
 export async function closeDatabase(): Promise<void> {
   await pool?.end();
@@ -1152,6 +1292,14 @@ export async function closeDatabase(): Promise<void> {
   await billingSweepPool?.end();
   billingSweepPool = undefined;
   billingSweepDb = undefined;
+
+  await integrationAuthPool?.end();
+  integrationAuthPool = undefined;
+  integrationAuthDb = undefined;
+
+  await opsEventsPool?.end();
+  opsEventsPool = undefined;
+  opsEventsDb = undefined;
 }
 
 /** True when the pool is live and answering. Backs `/health/ready` (§14). */

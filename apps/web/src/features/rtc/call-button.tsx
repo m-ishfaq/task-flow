@@ -39,7 +39,13 @@ export function CallButton({
   const currentSessionId = useCallStore((state) => state.sessionId);
 
   const live = active.data;
-  const alreadyIn = live?.sessionId === currentSessionId && currentSessionId !== null;
+  /* The null check leads deliberately. `live?.sessionId` is `undefined` when no
+     call is live, and comparing that to a null store value is already false —
+     but written the other way round the reader has to work that out, and a
+     later `??` on either side would turn it into "not in a call" meaning "in
+     the call". Asking whether THIS tab holds a session first says what the flag
+     means. */
+  const alreadyIn = currentSessionId !== null && live?.sessionId === currentSessionId;
 
   const start = useMutation({
     mutationFn: async () => {

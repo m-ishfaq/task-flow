@@ -1,10 +1,15 @@
-import { unsafeAsId, type CardId, type RequestId } from '@taskflow/contracts';
+import { unsafeAsId, unsafeAsPhoneNumber, type CardId, type RequestId } from '@taskflow/contracts';
 import { resolveOrgMembership } from '@taskflow/api/tenancy/resolve';
 import * as cards from '@taskflow/api/work/cards';
 import * as comments from '@taskflow/api/work/comments';
 import * as labels from '@taskflow/api/work/labels';
 import * as messages from '@taskflow/api/chat/messages';
 import * as webhooks from '@taskflow/api/automation/webhooks';
+import * as integrationActions from '@taskflow/api/automation/integration-actions';
+import type { IntegrationActionDeps } from '@taskflow/api/automation/integration-actions';
+import * as telephonyCalls from '@taskflow/api/telephony/call';
+import * as telephonySms from '@taskflow/api/telephony/message';
+import type { TelephonyDeps } from '@taskflow/api/telephony/deps';
 import { RichTextDocument, type RichTextNode } from '@taskflow/api/richtext';
 import type { WorkActor } from '@taskflow/api/work/shared';
 /* `./chat/channel` is the existing map entry for `chat/shared.ts` — reused
@@ -71,6 +76,34 @@ export interface ExecutorDeps {
    * never to bypass it.
    */
   readonly resolveMembership?: typeof resolveOrgMembership;
+  /**
+   * Wave 4 (§5.5) — the telephony deps the cost-bearing actions run through.
+   * Built in `main.ts` from the same env subset the API validates, so a rule's
+   * call passes the identical `checkOutboundAllowed` chokepoint a human's
+   * does. Absent when the flag is off, or when no carrier is configured.
+   */
+  readonly telephony?: TelephonyDeps;
+  /**
+   * Wave 4 (§5.5) — the execution-time half of the env flag. The API refuses
+   * to SAVE a rule containing a telephony action while it is off; this second
+   * gate refuses to RUN one, so a rule saved while the flag was on stops the
+   * moment the deployment turns it off — with a recorded reason, not a
+   * silence. Default false matches the env default.
+   */
+  readonly telephonyActionsEnabled?: boolean;
+  /**
+   * Wave 4 slice 4 (§7.6) — what the outbound connector actions need: the key
+   * provider that unwraps the org's data key, and a fetch.
+   *
+   * Absent on a deployment with no master key configured for the worker, and
+   * `integrationsFor` turns that into a recorded failure rather than a crash —
+   * the `telephonyFor` shape. There is deliberately NO env flag here, unlike
+   * telephony: these actions cost nothing and reach only a provider the ORG
+   * itself authorized through an OAuth consent screen. The gate is
+   * `integration:manage` plus the existence of a connector row, both of which
+   * the org controls.
+   */
+  readonly integrations?: IntegrationActionDeps;
 }
 
 export function createActionExecutor(deps: ExecutorDeps = {}): ActionExecutor {
@@ -112,7 +145,7 @@ export function createActionExecutor(deps: ExecutorDeps = {}): ActionExecutor {
 
       for (const [index, action] of rule.actions.entries()) {
         try {
-          await runAction(actor, action, event);
+          await runAction(actor, action, event, deps);
           results.push({ index, type: action.type, status: 'succeeded' });
         } catch (error) {
           results.push({
@@ -144,6 +177,7 @@ async function runAction(
   actor: WorkActor & ChatActor,
   action: AutomationAction,
   event: TriggerEvent,
+  deps: ExecutorDeps,
 ): Promise<void> {
   switch (action.type) {
     case 'card.move': {
@@ -295,7 +329,124 @@ async function runAction(
       });
       return;
     }
+
+    case 'call.place': {
+      /* Wave 4 (§5.5) — the cost-bearing actions, behind the flag and through
+         the SAME service function the click-to-call route calls. That service
+         runs the full gate — geo, org freeze, subaccount, rolling cap,
+         velocity, and the automation sub-budget — and records the ledger row
+         under the `automation_call` kind in the same transaction. `record` is
+         always false: a rule cannot ask to record a person, and the union has
+         no field that would let it. */
+      const telephony = telephonyFor(deps);
+      await telephonyCalls.placeCall(
+        actor,
+        telephony,
+        {
+          to: unsafeAsPhoneNumber(action.to),
+          fromPhoneNumberId: action.fromPhoneNumberId,
+          record: false,
+        },
+        { initiatedBy: 'automation' },
+      );
+      return;
+    }
+
+    case 'sms.send': {
+      /* Wave 4 (§5.5) — the SMS twin of `call.place` above: the same service
+         function a human's SMS uses, the same gate, the ledger under
+         `automation_sms`. The suppression list (§8.5) is checked first inside
+         the service, exactly as it is for a human send — an opt-out is a legal
+         fact, and a rule must not be able to message someone who asked to
+         stop. */
+      const telephony = telephonyFor(deps);
+      await telephonySms.sendSms(
+        actor,
+        telephony,
+        {
+          to: unsafeAsPhoneNumber(action.to),
+          fromPhoneNumberId: action.fromPhoneNumberId,
+          body: action.body,
+        },
+        { initiatedBy: 'automation' },
+      );
+      return;
+    }
+
+    case 'slack.post_message': {
+      /* Wave 4 slice 4 (§7.6) — the org speaking as itself on Slack. The
+         `integration:manage` check is inside the service, not here: it is the
+         action's own authorization and belongs with the code that performs the
+         effect, exactly as `enqueueWebhookDelivery` carries its own
+         `webhook:manage`. Doing it here as well would be two copies of one
+         decision, and the copy the worker holds is the one nothing tests. */
+      await integrationActions.postSlackMessage(actor, integrationsFor(deps), {
+        integrationId: action.integrationId,
+        channel: action.channel,
+        text: action.text,
+      });
+      return;
+    }
+
+    case 'github.create_issue': {
+      /* The repository is NOT taken from the action — the service reads it off
+         the connector row's `provider_scope`. See the union's own comment: a
+         repo named by the rule would let one connector open issues anywhere
+         its token reaches. */
+      await integrationActions.createGithubIssue(actor, integrationsFor(deps), {
+        integrationId: action.integrationId,
+        title: action.title,
+        body: action.body,
+      });
+      return;
+    }
   }
+}
+
+/**
+ * The connector deps for one outbound action — or the reason it fails.
+ *
+ * `telephonyFor`'s shape with one fewer refusal: there is no env flag, because
+ * these actions cost nothing and reach only a provider the org authorized
+ * itself. What remains is the configuration case — a worker with no master key
+ * cannot decrypt a connector credential, so the action fails loudly in run
+ * history instead of throwing something shapeless out of the loop.
+ *
+ * Nothing here reaches a provider, so a refusal cannot post anything.
+ */
+function integrationsFor(deps: ExecutorDeps): IntegrationActionDeps {
+  if (deps.integrations === undefined) {
+    throw new Error('connector actions are not configured on this instance');
+  }
+  return deps.integrations;
+}
+
+/**
+ * The telephony deps for one cost-bearing action — or the reason it fails.
+ *
+ * Two distinct refusals, both recorded as failed actions in run history rather
+ * than thrown somewhere silent:
+ *
+ *   - the flag is OFF: the deployment has chosen not to have these actions,
+ *     so this rule predates the current configuration. This is the case that
+ *     must never silently pass — a rule saved while the flag was on must stop
+ *     the moment it is turned off;
+ *   - the flag is on but no carrier is configured: a valid deployment with
+ *     telephony simply absent, the API's own SERVICE_UNAVAILABLE case. The
+ *     action fails loudly here so the rule's author sees why.
+ *
+ * Neither refusal reaches the carrier, so neither can cost anything.
+ */
+function telephonyFor(deps: ExecutorDeps): TelephonyDeps {
+  if (deps.telephonyActionsEnabled !== true) {
+    throw new Error(
+      'telephony automation actions are disabled on this instance (AUTOMATION_TELEPHONY_ACTIONS_ENABLED is off)',
+    );
+  }
+  if (deps.telephony === undefined) {
+    throw new Error('telephony is not configured on this instance');
+  }
+  return deps.telephony;
 }
 
 /**

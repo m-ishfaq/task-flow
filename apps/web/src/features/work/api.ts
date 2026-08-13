@@ -214,6 +214,21 @@ export function sprintsQuery(orgId: string, projectId: ProjectId) {
   });
 }
 
+/**
+ * Every project's ACTIVE sprint, in one query (10.6 D3) — the sidebar's line.
+ *
+ * Org-keyed rather than project-keyed on purpose: the sidebar renders every
+ * project at once, so a per-project key would mean one request per project and
+ * a cache that can be half-stale across the tree. Invalidated by the same
+ * mutations the manager panel already invalidates `keys.sprints` on.
+ */
+export function activeSprintsQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.activeSprints(orgId),
+    queryFn: async () => wire(await api.work.sprints.active.query({})),
+  });
+}
+
 export function fieldsQuery(orgId: string, projectId: ProjectId) {
   return queryOptions({
     queryKey: keys.fields(orgId, projectId),

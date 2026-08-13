@@ -690,3 +690,119 @@ export const apiTokens = platform.table(
   },
   (table) => [uniqueIndex('api_tokens_hash_key').on(table.tokenHash)],
 );
+
+/**
+ * Org↔provider connector rows (migration 0056, ai/phase-10-automation.md §7).
+ *
+ * One row per (org, provider, provider_scope) — a Slack workspace or a GitHub
+ * repository the org has authorized. The row carries the OUTBOUND credential
+ * envelope-encrypted under a per-org data key (the webhook secret's recipe:
+ * ciphertext + wrapped key + master key id) and, for GitHub only, the per-org
+ * inbound verify secret (D4); Slack inbound verification uses the
+ * deployment-wide signing secret, so `verify*` stays null there.
+ *
+ * `status` flips between 'connected'/'disconnected' — a disconnect never
+ * deletes the row (migration 0056's REVOKE DELETE, the api_tokens soft-delete
+ * shape). The inbound lookup runs as `taskflow_integration_auth`, whose
+ * column-level grant excludes `token*` — the role that resolves "who is this
+ * webhook for" cannot read anyone's outbound credential.
+ */
+export const integrations = platform.table(
+  'integrations',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+
+    /** 'slack' | 'github' — a CHECK, not an enum. */
+    provider: text('provider').notNull(),
+    /** Human label for the list view: the workspace/repository name. */
+    name: text('name').notNull(),
+    /** Slack team_id, or GitHub repository full_name. */
+    providerScope: text('provider_scope').notNull(),
+    /** 'connected' | 'disconnected' — a CHECK, not an enum. */
+    status: text('status').notNull().default('connected'),
+
+    /* Nullable since 0057: a disconnect wipes them, and the credential's
+       PRESENCE is what tells 'disconnected' (pending repo choice) apart
+       from 'disconnected' (revoked). */
+    tokenCiphertext: bytea('token_ciphertext'),
+    tokenWrapped: bytea('token_wrapped'),
+    tokenMasterId: text('token_master_id'),
+
+    verifyCiphertext: bytea('verify_ciphertext'),
+    verifyWrapped: bytea('verify_wrapped'),
+    verifyMasterId: text('verify_master_id'),
+
+    /** SET NULL, not CASCADE — the row is the org's, not the person's. */
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Mirrors the migration's `integrations_one_scope` UNIQUE constraint.
+    uniqueIndex('integrations_one_scope_key').on(table.orgId, table.provider, table.providerScope),
+  ],
+);
+
+/**
+ * The inbound connector delivery dedupe (migration 0058,
+ * ai/phase-10-automation.md §7.4).
+ *
+ * GitHub's replay control: GitHub puts no timestamp inside its webhook
+ * signature, so a captured request can be replayed forever — the
+ * `X-GitHub-Delivery` id is the ONLY control, and the row is written on
+ * SUCCESS inside the handler's own transaction (the nonce-on-success lesson,
+ * so a failed attempt rolls the row back and GitHub's retry — which reuses
+ * the same delivery id — proceeds normally). Append-only: migration 0058
+ * revokes UPDATE and DELETE from `taskflow_app`.
+ *
+ * Slack does not use this table (its replay control is the five-minute
+ * freshness window inside `verifySlackSignature`); the `provider` CHECK
+ * restricts it to 'github' so the excluded-provider intent is a database
+ * fact.
+ */
+export const integrationDeliveries = platform.table(
+  'integration_deliveries',
+  {
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    /** 'github' — a CHECK, not an enum; see the header. */
+    provider: text('provider').notNull().default('github'),
+    /** The raw `X-GitHub-Delivery` header, verbatim. */
+    deliveryId: text('delivery_id').notNull(),
+    createdAt: timestamp('seen_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Mirrors the migration's `integration_deliveries_one` UNIQUE constraint.
+    uniqueIndex('integration_deliveries_one_key').on(table.orgId, table.provider, table.deliveryId),
+  ],
+);
+
+/**
+ * The operations dashboard's own log (migration 0061).
+ *
+ * "Did a system action succeed or fail" — mail delivery, a billing webhook,
+ * a sweep tick — the different question from `operatorAuditLog` above,
+ * which answers "what did a human operator do". No hash chain: nothing
+ * here is a decision to hold anyone accountable for. No `orgId` column at
+ * all — mail delivery frequently has no org yet (a password reset before
+ * one exists), and this table is GLOBAL for the identical reason
+ * `operators`/`operatorAuditLog` are.
+ */
+export const operationalEvents = platform.table(
+  'operational_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: text('kind').notNull(),
+    outcome: text('outcome').notNull(),
+    target: text('target'),
+    detail: jsonb('detail'),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('operational_events_occurred_at_idx').on(table.occurredAt.desc()),
+    index('operational_events_kind_occurred_at_idx').on(table.kind, table.occurredAt.desc()),
+  ],
+);

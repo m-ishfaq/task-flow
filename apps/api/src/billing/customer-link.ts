@@ -38,7 +38,7 @@ export async function ensureCustomerId(
       .set({ stripeCustomerId: customerId })
       .where(eq(schema.orgs.id, orgId));
 
-    /* No RLS on this table (migration 0055's own header) — an ordinary
+    /* No RLS on this table (migration 0059's own header) — an ordinary
        insert inside this scope, not a privileged one. `onConflictDoNothing`
        rather than a plain insert: `ensureCustomer` is itself idempotent
        (§3.3's own contract), so a racing second call landing here after the

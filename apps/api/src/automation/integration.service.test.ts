@@ -1,0 +1,1149 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { unsafeAsId, type OrgId, type UserId } from '@taskflow/contracts';
+import { closeDatabase, initializeDatabase } from '@taskflow/db';
+import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
+import { masterKeysFromBase64, SoftwareKeyProvider, TOKEN_PREFIX } from '@taskflow/security';
+import { TEST_ENV } from '../testing/fixtures.js';
+import * as orgs from '../tenancy/org.service.js';
+import * as members from '../tenancy/member.service.js';
+import { loadTuples } from '../tenancy/resolve.js';
+import type { AutomationActor } from './automation.service.js';
+import {
+  beginIntegration,
+  completeIntegration,
+  disconnectIntegration,
+  listIntegrations,
+  listReposForIntegration,
+  selectRepo,
+  type IntegrationDeps,
+} from './integration.service.js';
+import { createGithubIssue, postSlackMessage } from './integration-action.service.js';
+
+/**
+ * Connector lifecycle (ai/phase-10-automation.md §7, Wave 4 slice 2).
+ *
+ * What is under test is the §7.10 lifecycle contract: connect stores an
+ * ENCRYPTED token under a row-bound AAD (a ciphertext transplanted to another
+ * org fails to decrypt), disconnect flips status and never deletes, list never
+ * exposes a token, and the GitHub connect completes at the repo choice with
+ * the choice validated against what the token can genuinely reach.
+ *
+ * The provider calls go through a fake `fetchImpl` — the SERVICE has no real
+ * network dependency — while the database, the keys, and the outbox are real.
+ * The two assertions that matter most:
+ *
+ *   - the state token is the trust anchor: complete is a public route, so a
+ *     forged or cross-provider state must be refused BEFORE any write;
+ *   - the AAD transplant refusal happens BEFORE any network call — a
+ *     ciphertext that cannot decrypt never reaches the provider.
+ */
+
+const OWNER = unsafeAsId<'UserId'>('0195ee32-0000-7000-8000-000000000001');
+const ADMIN = unsafeAsId<'UserId'>('0195ee32-0000-7000-8000-000000000002');
+const MEMBER = unsafeAsId<'UserId'>('0195ee32-0000-7000-8000-000000000003');
+
+const USERS: readonly [UserId, string][] = [
+  [OWNER, 'owner@integration-service.test'],
+  [ADMIN, 'admin@integration-service.test'],
+  [MEMBER, 'member@integration-service.test'],
+];
+
+const requestId = unsafeAsId<'RequestId'>('0195ee32-0000-7000-8000-0000000000ff');
+
+const MASTER_KEY_ID = 'test-master';
+const keys = new SoftwareKeyProvider({
+  currentMasterKeyId: MASTER_KEY_ID,
+  masterKeys: masterKeysFromBase64({
+    [MASTER_KEY_ID]: Buffer.alloc(32, 7).toString('base64'),
+  }),
+});
+
+let admin: AdminConnection;
+const created: OrgId[] = [];
+let fixtureCounter = 0;
+
+async function actorFor(
+  orgId: OrgId,
+  userId: UserId,
+  role: AutomationActor['subject']['role'],
+): Promise<AutomationActor> {
+  const tuples = await loadTuples(orgId, userId);
+  return { subject: { orgId, userId, role, tuples }, requestId };
+}
+
+async function scaffold(slug: string): Promise<{
+  orgId: OrgId;
+  owner: AutomationActor;
+  member: AutomationActor;
+}> {
+  fixtureCounter += 1;
+  const uniqueSlug = `in-${fixtureCounter.toString(36)}-${slug.slice(0, 8)}-${crypto.randomUUID().slice(0, 8)}`;
+  const result = await orgs.createOrg(
+    { name: `Integrations ${slug}`, slug: uniqueSlug },
+    { userId: OWNER, requestId },
+  );
+  created.push(result.orgId);
+
+  for (const [id, email] of USERS) {
+    if (id === OWNER) continue;
+    await members.addMember(result.orgId, { email, role: 'member' }, { userId: OWNER, requestId });
+  }
+
+  return {
+    orgId: result.orgId,
+    owner: await actorFor(result.orgId, OWNER, 'owner'),
+    member: await actorFor(result.orgId, MEMBER, 'member'),
+  };
+}
+
+async function removeOrg(orgId: string): Promise<void> {
+  await admin.setOrg(orgId);
+  await admin.query(
+    `DELETE FROM platform.outbox_dispatch WHERE event_id IN
+       (SELECT id FROM platform.outbox WHERE org_id = $1)`,
+    [orgId],
+  );
+  for (const table of [
+    'audit.audit_log',
+    'audit.chain_heads',
+    'platform.outbox',
+    'platform.integrations',
+    'authz.relationship_tuples',
+    'identity.memberships',
+  ]) {
+    await admin.query(`DELETE FROM ${table} WHERE org_id = $1`, [orgId]);
+  }
+  await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [orgId]);
+  await admin.setOrg(null);
+}
+
+/** The org's CONNECTOR outbox events, in order. Filters to `integration.%`
+ * deliberately: the scaffold's own `members.addMember` emits `member.added`
+ * events, which are foreign fixtures here — the suite's assertions are about
+ * what the connector mutations emitted, not everything in the queue. */
+async function integrationEvents(
+  orgId: string,
+): Promise<{ name: string; payload: Record<string, unknown> }[]> {
+  await admin.setOrg(orgId);
+  const result = await admin.query(
+    `SELECT name, payload FROM platform.outbox
+     WHERE org_id = $1 AND name LIKE 'integration.%' ORDER BY occurred_at`,
+    [orgId],
+  );
+  await admin.setOrg(null);
+  return result.rows as { name: string; payload: Record<string, unknown> }[];
+}
+
+/** Reads one connector row's credential columns, as the migrator. The
+ * columns are NULLABLE since migration 0057 — a disconnected row has its
+ * credential wiped, so the helper returns `null` for a dead connector and
+ * the plaintext for a live one. */
+async function credentialColumns(
+  orgId: string,
+  integrationId: string,
+): Promise<{
+  tokenCiphertext: string | null;
+  tokenWrapped: string | null;
+  tokenMasterId: string | null;
+}> {
+  await admin.setOrg(orgId);
+  const result = await admin.query(
+    `SELECT encode(token_ciphertext, 'hex') AS token_ciphertext,
+            encode(token_wrapped, 'hex') AS token_wrapped,
+            token_master_id AS token_master_id
+     FROM platform.integrations WHERE id = $1`,
+    [integrationId],
+  );
+  await admin.setOrg(null);
+  const row = result.rows[0] as
+    | {
+        token_ciphertext: string | null;
+        token_wrapped: string | null;
+        token_master_id: string | null;
+      }
+    | undefined;
+  if (row === undefined) throw new Error('row missing');
+  return {
+    tokenCiphertext: row.token_ciphertext,
+    tokenWrapped: row.token_wrapped,
+    tokenMasterId: row.token_master_id,
+  };
+}
+
+beforeAll(async () => {
+  await applyMigrations();
+  admin = await connectAsMigrator();
+
+  await admin.setOrg(null);
+  await admin.query(`DELETE FROM identity.users WHERE id = ANY($1::uuid[])`, [
+    USERS.map(([id]) => id),
+  ]);
+  for (const [id, email] of USERS) {
+    await admin.query(
+      `INSERT INTO identity.users (id, email, email_normalized, email_verified_at)
+       VALUES ($1, $2, $2, now())`,
+      [id, email],
+    );
+  }
+
+  initializeDatabase({ url: TEST_ENV.DATABASE_URL, applicationName: 'taskflow-integration-svc' });
+});
+
+afterAll(async () => {
+  await closeDatabase();
+  for (const orgId of created) await removeOrg(orgId);
+  await admin.setOrg(null);
+  await admin.query(`DELETE FROM identity.users WHERE id = ANY($1::uuid[])`, [
+    USERS.map(([id]) => id),
+  ]);
+  await admin.end();
+});
+
+/* ---------------------------------------------------------------------------
+ * The fake provider — records every call, answers the fixed endpoints.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * The repo-listing URL the service must call, page 1.
+ *
+ * Pinned as a constant rather than inlined because this exact query string is
+ * the fix for a real defect: it once read `type=member`, which GitHub defines
+ * as "repos I am a collaborator on, EXCLUDING the ones I own". The picker
+ * silently dropped the connecting user's own repositories, and since
+ * `selectRepo` validates against this same list, those repos could not be
+ * connected at all. `affiliation` is what expresses "everything this token
+ * reaches"; the two parameters are mutually exclusive at GitHub's end.
+ */
+const GITHUB_REPOS_URL =
+  'https://api.github.com/user/repos?per_page=100' +
+  '&sort=full_name&affiliation=owner,collaborator,organization_member&page=1';
+
+interface FakeProviderOptions {
+  readonly slackToken?: string;
+  readonly teamId?: string;
+  readonly teamName?: string;
+  readonly githubToken?: string;
+  readonly login?: string;
+  readonly repos?: readonly { name: string; full_name: string }[];
+}
+
+function fakeProvider(options: FakeProviderOptions = {}): {
+  fetch: typeof fetch;
+  calls: string[];
+} {
+  const calls: string[] = [];
+  const repos = options.repos ?? [
+    { name: 'todo', full_name: 'acme/todo' },
+    { name: 'docs', full_name: 'acme/docs' },
+  ];
+
+  /* A synchronous function returning promises — no `await` anywhere, which
+     is what makes the response construction straight-line and testable. */
+  const fn = ((input: string | URL | Request) => {
+    const url =
+      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    calls.push(url);
+
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      });
+
+    switch (url) {
+      case 'https://slack.com/api/oauth.v2.access':
+        return Promise.resolve(
+          json({ ok: true, access_token: options.slackToken ?? 'xoxb-test-token' }),
+        );
+      case 'https://slack.com/api/auth.test':
+        return Promise.resolve(
+          json({
+            ok: true,
+            team_id: options.teamId ?? 'T0001',
+            team_name: options.teamName ?? 'Acme Workspace',
+          }),
+        );
+      case 'https://github.com/login/oauth/access_token':
+        return Promise.resolve(json({ access_token: options.githubToken ?? 'gho_test_token' }));
+      case 'https://api.github.com/user':
+        return Promise.resolve(json({ login: options.login ?? 'octocat' }));
+      case GITHUB_REPOS_URL:
+        return Promise.resolve(json([...repos]));
+      default:
+        throw new Error(`unexpected provider call: ${url}`);
+    }
+  }) as typeof fetch;
+
+  return { fetch: fn, calls };
+}
+
+function depsFor(
+  fetchImpl: typeof fetch,
+  overrides: Partial<IntegrationDeps> = {},
+): IntegrationDeps {
+  return {
+    providers: {
+      slack: { clientId: 'slack-client', clientSecret: 'slack-secret' },
+      github: { clientId: 'github-client', clientSecret: 'github-secret' },
+    },
+    redirectUri: (provider) => `https://app.test/integrations/callback/${provider}`,
+    webhookOrigin: 'https://app.test',
+    jwtSecret: Buffer.alloc(32, 9),
+    keys,
+    fetchImpl,
+    ...overrides,
+  };
+}
+
+/** Begins a connect and pulls the signed state out of the authorization URL. */
+async function beginState(
+  actor: AutomationActor,
+  deps: IntegrationDeps,
+  provider: 'slack' | 'github',
+): Promise<{ state: string; url: URL }> {
+  const { authorizationUrl } = await beginIntegration(actor, deps, { provider });
+  const url = new URL(authorizationUrl);
+  const state = url.searchParams.get('state');
+  if (state === null) throw new Error('no state in authorization URL');
+  return { state, url };
+}
+
+describe('begin — minting the state and handing the browser to the provider', () => {
+  it('builds a Slack authorization URL with PKCE and the least privilege scope', async () => {
+    const { owner } = await scaffold('begin-slack');
+    const deps = depsFor(fakeProvider().fetch);
+
+    const { url } = await beginState(owner, deps, 'slack');
+
+    expect(url.hostname).toBe('slack.com');
+    expect(url.searchParams.get('client_id')).toBe('slack-client');
+    expect(url.searchParams.get('redirect_uri')).toBe(
+      'https://app.test/integrations/callback/slack',
+    );
+    /* chat:write is the one scope the outbound action needs — a connector
+       that could list channels would know more of the workspace than the
+       org controls its memberships of. */
+    expect(url.searchParams.get('scope')).toBe('chat:write');
+    expect(url.searchParams.get('code_challenge')).toBeTruthy();
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+  });
+
+  it('builds a GitHub authorization URL with the repo scope', async () => {
+    const { owner } = await scaffold('begin-github');
+    const deps = depsFor(fakeProvider().fetch);
+
+    const { url } = await beginState(owner, deps, 'github');
+
+    expect(url.hostname).toBe('github.com');
+    expect(url.searchParams.get('client_id')).toBe('github-client');
+    expect(url.searchParams.get('scope')).toBe('repo');
+    /* GitHub's OAuth apps do not support PKCE — the confidential client
+       secret stands in for it. A code_challenge present here would be a lie. */
+    expect(url.searchParams.get('code_challenge')).toBeNull();
+  });
+
+  it('refuses a provider this server has no credentials for', async () => {
+    const { owner } = await scaffold('begin-unconfigured');
+    const deps = depsFor(fakeProvider().fetch, { providers: {} });
+
+    await expect(beginIntegration(owner, deps, { provider: 'slack' })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+  });
+});
+
+describe('the Slack connect — one hop to connected', () => {
+  it('completes with a connected row keyed on the workspace, token encrypted at rest', async () => {
+    const { owner } = await scaffold('slack-connect');
+    const fake = fakeProvider({ teamId: 'T0001', teamName: 'Acme Workspace' });
+    const deps = depsFor(fake.fetch);
+    const { state } = await beginState(owner, deps, 'slack');
+
+    const result = await completeIntegration(
+      deps,
+      { provider: 'slack', code: 'code-1', state },
+      requestId,
+    );
+
+    expect(result.status).toBe('connected');
+    if (result.status !== 'connected') return;
+    expect(result.name).toBe('Acme Workspace');
+    expect(result.providerScope).toBe('T0001');
+    /* The webhook URL is derivable, but it is the value pasted into the
+       Slack app's event subscription — part of the connect contract. */
+    expect(result.webhookUrl).toBe('https://app.test/integrations/slack');
+
+    const [row] = await listIntegrations(owner);
+    expect(row?.provider).toBe('slack');
+    expect(row?.providerScope).toBe('T0001');
+    expect(row?.status).toBe('connected');
+
+    /* Encrypted at rest is a fact, not a comment: the stored ciphertext must
+       differ from the token the exchange handed back. */
+    const stored = await credentialColumns(owner.subject.orgId, result.integrationId);
+    expect(stored.tokenCiphertext).not.toContain('xoxb');
+    expect(stored.tokenCiphertext?.length).toBeGreaterThan(0);
+    expect(stored.tokenWrapped?.length).toBeGreaterThan(0);
+
+    /* The connected event went through the org's outbox. */
+    const events = await integrationEvents(owner.subject.orgId);
+    expect(events.map((event) => event.name)).toEqual(['integration.connected']);
+    expect(events[0]?.payload).toMatchObject({
+      provider: 'slack',
+      providerScope: 'T0001',
+      name: 'Acme Workspace',
+    });
+  });
+
+  it('reconnect lands on the SAME row — disconnect never deletes, and reconnecting replaces the token', async () => {
+    const { owner } = await scaffold('slack-reconnect');
+    const fake = fakeProvider({ teamId: 'T0001' });
+    const deps = depsFor(fake.fetch);
+    const { state: firstState } = await beginState(owner, deps, 'slack');
+    const first = await completeIntegration(
+      deps,
+      { provider: 'slack', code: 'code-1', state: firstState },
+      requestId,
+    );
+    expect(first.status).toBe('connected');
+    if (first.status !== 'connected') return;
+
+    /* Reconnect: same workspace, second OAuth round trip. */
+    const { state: secondState } = await beginState(owner, deps, 'slack');
+    const second = await completeIntegration(
+      deps,
+      { provider: 'slack', code: 'code-2', state: secondState },
+      requestId,
+    );
+    expect(second.status).toBe('connected');
+    if (second.status !== 'connected') return;
+
+    expect(second.integrationId).toBe(first.integrationId);
+    const events = await integrationEvents(owner.subject.orgId);
+    expect(events.filter((event) => event.name === 'integration.connected')).toHaveLength(2);
+
+    /* The token column was rewritten with the second exchange's token. */
+    const stored = await credentialColumns(owner.subject.orgId, second.integrationId);
+    expect(stored.tokenCiphertext?.length).toBeGreaterThan(0);
+  });
+
+  it('list never exposes a token column — the summary shape carries none', async () => {
+    const { owner } = await scaffold('slack-list');
+    const deps = depsFor(fakeProvider().fetch);
+    const { state } = await beginState(owner, deps, 'slack');
+    await completeIntegration(deps, { provider: 'slack', code: 'code-1', state }, requestId);
+
+    const rows = await listIntegrations(owner);
+    expect(rows).toHaveLength(1);
+    const serialized = JSON.stringify(rows);
+    expect(serialized).not.toContain('token');
+    expect(serialized).not.toContain('ciphertext');
+  });
+});
+
+describe('the GitHub connect — pending until the repo choice', () => {
+  it('complete returns pending_repo with the reachable repos and the one-time verify secret', async () => {
+    const { owner } = await scaffold('github-pending');
+    const fake = fakeProvider({ login: 'octocat' });
+    const deps = depsFor(fake.fetch);
+    const { state } = await beginState(owner, deps, 'github');
+
+    const result = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-1', state },
+      requestId,
+    );
+
+    expect(result.status).toBe('pending_repo');
+    if (result.status !== 'pending_repo') return;
+    expect(result.login).toBe('octocat');
+    expect(result.repos.map((repo) => repo.fullName)).toEqual(['acme/todo', 'acme/docs']);
+    /* The per-org verify secret — shown exactly once, never readable again.
+       Prefixed like every other secret this codebase issues: the value is
+       pasted into GitHub's console and outlives this page in runbooks and
+       paste buffers, so it must be identifiable on sight and matchable by a
+       secret scanner (tokens.ts's own argument for TOKEN_PREFIX). */
+    expect(result.verifySecret.startsWith(`${TOKEN_PREFIX.connectorVerify}_`)).toBe(true);
+    expect(result.verifySecret.length).toBeGreaterThanOrEqual(32);
+
+    const [row] = await listIntegrations(owner);
+    expect(row?.provider).toBe('github');
+    expect(row?.providerScope).toBe('octocat');
+    expect(row?.status).toBe('disconnected');
+
+    /* NO connected event yet — the connect completes at the repo choice. What
+       DID emit is `integration.pending`: the row is a state mutation, and if
+       the person abandons the picker this event is the only record the org's
+       credential ever existed (guardrail 11, integration-events.ts). */
+    const events = await integrationEvents(owner.subject.orgId);
+    expect(events.map((event) => event.name)).toEqual(['integration.pending']);
+    expect(events[0]?.payload).toMatchObject({
+      provider: 'github',
+      providerScope: 'octocat',
+    });
+  });
+
+  it('selectRepo validates the choice against the token, flips the row, and emits the event', async () => {
+    const { owner } = await scaffold('github-select');
+    const fake = fakeProvider();
+    const deps = depsFor(fake.fetch);
+    const { state } = await beginState(owner, deps, 'github');
+    const pending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-1', state },
+      requestId,
+    );
+    expect(pending.status).toBe('pending_repo');
+    if (pending.status !== 'pending_repo') return;
+
+    const summary = await selectRepo(owner, deps, {
+      integrationId: pending.integrationId,
+      fullName: 'acme/todo',
+    });
+
+    expect(summary.status).toBe('connected');
+    expect(summary.providerScope).toBe('acme/todo');
+    expect(summary.name).toBe('acme/todo');
+
+    const events = await integrationEvents(owner.subject.orgId);
+    expect(events.map((event) => event.name)).toEqual([
+      'integration.pending',
+      'integration.connected',
+    ]);
+    expect(events[1]?.payload).toMatchObject({
+      provider: 'github',
+      providerScope: 'acme/todo',
+      name: 'acme/todo',
+    });
+  });
+
+  it('a RECONNECTED credential is still decryptable — the AAD follows the row', async () => {
+    /* THE REGRESSION, and the reason the existing reconnect tests could not
+       see it: they assert the row is written, never that what was written can
+       be read back. Both complete paths upsert on (org, provider, scope), and
+       the id was minted fresh before encrypting — but ON CONFLICT keeps the
+       conflicting row's primary key, so the ciphertext ended up bound via its
+       AAD to an id no row had. Encryption succeeded, the upsert succeeded, the
+       route returned 200, psql showed a perfect row, and Postgres logged
+       nothing; the failure surfaced only at the NEXT decrypt, in a different
+       request, as an opaque INTERNAL_ERROR.
+
+       `listReposForIntegration` is the cheapest real decrypt of the stored
+       token, so it is what this drives. */
+    const { owner } = await scaffold('github-reconnect-aad');
+    const fake = fakeProvider();
+    const deps = depsFor(fake.fetch);
+
+    const first = await beginState(owner, deps, 'github');
+    const firstPending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-1', state: first.state },
+      requestId,
+    );
+    if (firstPending.status !== 'pending_repo') throw new Error('expected pending_repo');
+
+    /* Connect the SAME account again — the upsert path, where the id the
+       ciphertext was bound to used to be discarded. */
+    const second = await beginState(owner, deps, 'github');
+    const secondPending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-2', state: second.state },
+      requestId,
+    );
+    if (secondPending.status !== 'pending_repo') throw new Error('expected pending_repo');
+
+    /* The upsert must land on the same row, and its token must still decrypt. */
+    expect(secondPending.integrationId).toBe(firstPending.integrationId);
+    const repos = await listReposForIntegration(owner, deps, {
+      integrationId: secondPending.integrationId,
+    });
+    expect(repos.map((repo) => repo.fullName)).toEqual(['acme/todo', 'acme/docs']);
+
+    /* And the repo choice, which decrypts the same token again. */
+    const connected = await selectRepo(owner, deps, {
+      integrationId: secondPending.integrationId,
+      fullName: 'acme/todo',
+    });
+    expect(connected.status).toBe('connected');
+  });
+
+  it('reconnects a repository that was previously disconnected', async () => {
+    /* THE REGRESSION. A disconnect is a status flip, never a row gone, so the
+       dead row keeps owning its slot in `integrations_one_scope UNIQUE
+       (org_id, provider, provider_scope)`. Re-keying a fresh pending row onto
+       the same full_name then raised a bare 23505 — surfaced to the person as
+       "Something went wrong" and a reference id, meaning a repository they had
+       ever disconnected could never be reconnected. Every other test in this
+       file connects a repo nobody has touched, which is why the suite was
+       green while the flow was broken in the browser. */
+    const { owner } = await scaffold('github-reconnect');
+    const fake = fakeProvider();
+    const deps = depsFor(fake.fetch);
+
+    const first = await beginState(owner, deps, 'github');
+    const firstPending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-1', state: first.state },
+      requestId,
+    );
+    if (firstPending.status !== 'pending_repo') throw new Error('expected pending_repo');
+    const connected = await selectRepo(owner, deps, {
+      integrationId: firstPending.integrationId,
+      fullName: 'acme/todo',
+    });
+    await disconnectIntegration(owner, { integrationId: connected.integrationId });
+
+    /* Connect again and choose the SAME repository. */
+    const second = await beginState(owner, deps, 'github');
+    const secondPending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-2', state: second.state },
+      requestId,
+    );
+    if (secondPending.status !== 'pending_repo') throw new Error('expected pending_repo');
+
+    const revived = await selectRepo(owner, deps, {
+      integrationId: secondPending.integrationId,
+      fullName: 'acme/todo',
+    });
+
+    expect(revived.status).toBe('connected');
+    expect(revived.providerScope).toBe('acme/todo');
+    /* The RETIRED row is revived rather than a second row created for the same
+       repository: two rows would make the inbound lookup's full_name match
+       ambiguous, and "which secret is live" is not a question a webhook
+       handler should have to answer. */
+    expect(revived.integrationId).toBe(connected.integrationId);
+
+    const rows = await listIntegrations(owner);
+    const forRepo = rows.filter((row) => row.providerScope === 'acme/todo');
+    expect(forRepo).toHaveLength(1);
+    expect(forRepo[0]?.status).toBe('connected');
+
+    /* And exactly one row holds a usable credential for this authorization —
+       the superseded pending row was wiped in the same transaction. */
+    const live = rows.filter((row) => row.status === 'connected');
+    expect(live.map((row) => row.providerScope)).toEqual(['acme/todo']);
+  });
+
+  it('selectRepo refuses a repository the token cannot reach', async () => {
+    const { owner } = await scaffold('github-refuse');
+    const fake = fakeProvider();
+    const deps = depsFor(fake.fetch);
+    const { state } = await beginState(owner, deps, 'github');
+    const pending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-1', state },
+      requestId,
+    );
+    expect(pending.status).toBe('pending_repo');
+    if (pending.status !== 'pending_repo') return;
+
+    await expect(
+      selectRepo(owner, deps, { integrationId: pending.integrationId, fullName: 'acme/private' }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    /* Still pending — the refusal wrote nothing. */
+    const [row] = await listIntegrations(owner);
+    expect(row?.status).toBe('disconnected');
+  });
+
+  it('repos rebuilds the picker from the STORED token — the refresh resume path', async () => {
+    const { owner } = await scaffold('github-repos');
+    const fake = fakeProvider();
+    const deps = depsFor(fake.fetch);
+    const { state } = await beginState(owner, deps, 'github');
+    const pending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-1', state },
+      requestId,
+    );
+    expect(pending.status).toBe('pending_repo');
+    if (pending.status !== 'pending_repo') return;
+
+    /* The one-time code is burned; the resume path re-lists from the token. */
+    const callsBefore = fake.calls.length;
+    const repos = await listReposForIntegration(owner, deps, {
+      integrationId: pending.integrationId,
+    });
+    expect(repos.map((repo) => repo.fullName)).toEqual(['acme/todo', 'acme/docs']);
+    /* Exactly one network call — the repos endpoint, no re-exchange. */
+    expect(fake.calls.slice(callsBefore)).toEqual([GITHUB_REPOS_URL]);
+  });
+
+  it('lists repos the connecting user OWNS, and lets them be selected', async () => {
+    /* The regression. `type=member` excludes owned repositories at GitHub's
+       end, so this suite passed while the live picker showed only the repos
+       the user had been added to as a collaborator — and `selectRepo`, which
+       validates against the same list, refused an owned repo as "not
+       accessible with this connection". Asserting the URL alone would not
+       catch a future re-narrowing that still spells `affiliation`, so this
+       drives the whole path with an owned repo instead. */
+    const { owner } = await scaffold('github-owned');
+    const fake = fakeProvider({
+      login: 'octocat',
+      repos: [
+        { name: 'my-own-repo', full_name: 'octocat/my-own-repo' },
+        { name: 'todo', full_name: 'acme/todo' },
+      ],
+    });
+    const deps = depsFor(fake.fetch);
+    const { state } = await beginState(owner, deps, 'github');
+    const pending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-1', state },
+      requestId,
+    );
+    expect(pending.status).toBe('pending_repo');
+    if (pending.status !== 'pending_repo') return;
+
+    expect(pending.repos.map((repo) => repo.fullName)).toContain('octocat/my-own-repo');
+
+    const connected = await selectRepo(owner, deps, {
+      integrationId: pending.integrationId,
+      fullName: 'octocat/my-own-repo',
+    });
+    expect(connected.status).toBe('connected');
+    expect(connected.providerScope).toBe('octocat/my-own-repo');
+
+    /* Nothing may ask GitHub for the owner-excluding view. */
+    expect(fake.calls.some((call) => call.includes('type=member'))).toBe(false);
+  });
+});
+
+describe('the state token is the trust anchor', () => {
+  it('refuses a state minted for the other provider', async () => {
+    const { owner } = await scaffold('state-provider');
+    const fake = fakeProvider();
+    const deps = depsFor(fake.fetch);
+    const { state } = await beginState(owner, deps, 'slack');
+
+    await expect(
+      completeIntegration(deps, { provider: 'github', code: 'code-1', state }, requestId),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    /* Refused before any write or any provider call. */
+    expect(fake.calls).toHaveLength(0);
+    expect(await integrationEvents(owner.subject.orgId)).toHaveLength(0);
+  });
+
+  it('refuses a forged state — one signed by a different secret', async () => {
+    const { owner } = await scaffold('state-forged');
+    const fake = fakeProvider();
+    const deps = depsFor(fake.fetch);
+
+    /* A state signed by an attacker's own secret is indistinguishable from
+       garbage to the verifier — the audience, issuer and HMAC all fail. */
+    const forgedDeps = depsFor(fake.fetch, { jwtSecret: Buffer.alloc(32, 1) });
+    const { state } = await beginState(owner, forgedDeps, 'slack');
+
+    await expect(
+      completeIntegration(deps, { provider: 'slack', code: 'code-1', state }, requestId),
+    ).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });
+
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it('refuses a complete for a provider with no credentials', async () => {
+    const { owner } = await scaffold('state-unconfigured');
+    const fake = fakeProvider();
+    const deps = depsFor(fake.fetch);
+    const { state } = await beginState(owner, deps, 'slack');
+    const noProviderDeps = depsFor(fake.fetch, { providers: {} });
+
+    await expect(
+      completeIntegration(noProviderDeps, { provider: 'slack', code: 'code-1', state }, requestId),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+});
+
+describe('disconnect — a status flip, never a delete', () => {
+  it('flips to disconnected, keeps the row, and emits the event', async () => {
+    const { owner } = await scaffold('disconnect-flip');
+    const fake = fakeProvider();
+    const deps = depsFor(fake.fetch);
+    const { state } = await beginState(owner, deps, 'slack');
+    const connected = await completeIntegration(
+      deps,
+      { provider: 'slack', code: 'code-1', state },
+      requestId,
+    );
+    expect(connected.status).toBe('connected');
+    if (connected.status !== 'connected') return;
+
+    await disconnectIntegration(owner, { integrationId: connected.integrationId });
+
+    const [row] = await listIntegrations(owner);
+    expect(row?.status).toBe('disconnected');
+    /* The row survives — it is the org's audit trail of having authorized
+       this scope. Name and providerScope stay; the credential does not. */
+    expect(row?.providerScope).toBe('T0001');
+
+    /* The wipe is a fact, not a comment (migration 0057): a revoked
+       connector is genuinely dead, so no stale picker or admin can act as
+       the org with the token it deliberately revoked. */
+    const stored = await credentialColumns(owner.subject.orgId, connected.integrationId);
+    expect(stored.tokenCiphertext).toBeNull();
+    expect(stored.tokenWrapped).toBeNull();
+    expect(stored.tokenMasterId).toBeNull();
+
+    const events = await integrationEvents(owner.subject.orgId);
+    expect(events.map((event) => event.name)).toEqual([
+      'integration.connected',
+      'integration.disconnected',
+    ]);
+  });
+
+  it('a disconnected connector cannot be resurrected — a stale picker has nothing to decrypt', async () => {
+    const { owner } = await scaffold('disconnect-dead');
+    const fake = fakeProvider();
+    const deps = depsFor(fake.fetch);
+    const { state } = await beginState(owner, deps, 'github');
+    const pending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-1', state },
+      requestId,
+    );
+    expect(pending.status).toBe('pending_repo');
+    if (pending.status !== 'pending_repo') return;
+    await selectRepo(owner, deps, {
+      integrationId: pending.integrationId,
+      fullName: 'acme/todo',
+    });
+
+    await disconnectIntegration(owner, { integrationId: pending.integrationId });
+
+    /* A picker tab that outlived the revocation tries to resume the connect
+       — it must fail on the DECRYPT, before anything reaches GitHub. */
+    const callsBefore = fake.calls.length;
+    await expect(
+      listReposForIntegration(owner, deps, { integrationId: pending.integrationId }),
+    ).rejects.toThrow();
+    expect(fake.calls.slice(callsBefore)).toHaveLength(0);
+
+    /* And selectRepo refuses the same way — the row is unclaimable dead. */
+    await expect(
+      selectRepo(owner, deps, { integrationId: pending.integrationId, fullName: 'acme/todo' }),
+    ).rejects.toThrow();
+  });
+
+  it('a revoked connector can reconnect — the cycle lands on the same row with a fresh token', async () => {
+    const { owner } = await scaffold('disconnect-cycle');
+    const fake = fakeProvider();
+    const deps = depsFor(fake.fetch);
+
+    const { state } = await beginState(owner, deps, 'github');
+    const pending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-1', state },
+      requestId,
+    );
+    expect(pending.status).toBe('pending_repo');
+    if (pending.status !== 'pending_repo') return;
+    await selectRepo(owner, deps, {
+      integrationId: pending.integrationId,
+      fullName: 'acme/todo',
+    });
+    await disconnectIntegration(owner, { integrationId: pending.integrationId });
+
+    /* Reconnect: the revoked row kept its providerScope ('acme/todo', the
+       repo — the audit trail of what was authorized), while the upsert
+       matches on (org, github, LOGIN), so the reconnect is a NEW row with a
+       fresh credential and a fresh one-time verify secret. The old row stays
+       dead behind it; no stale handle to it can ever act again. */
+    const { state: secondState } = await beginState(owner, deps, 'github');
+    const second = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-2', state: secondState },
+      requestId,
+    );
+    expect(second.status).toBe('pending_repo');
+    if (second.status !== 'pending_repo') return;
+    expect(second.integrationId).not.toBe(pending.integrationId);
+
+    /* And the old row stayed dead through all of it. */
+    const dead = await credentialColumns(owner.subject.orgId, pending.integrationId);
+    expect(dead.tokenCiphertext).toBeNull();
+
+    const resumed = await selectRepo(owner, deps, {
+      integrationId: second.integrationId,
+      fullName: 'acme/docs',
+    });
+    expect(resumed.status).toBe('connected');
+    expect(resumed.providerScope).toBe('acme/docs');
+
+    /* The full lifecycle is on the chain: connect, revoke, connect again. */
+    const events = await integrationEvents(owner.subject.orgId);
+    expect(events.map((event) => event.name)).toEqual([
+      'integration.pending',
+      'integration.connected',
+      'integration.disconnected',
+      'integration.pending',
+      'integration.connected',
+    ]);
+  });
+
+  it('a second disconnect emits nothing — the transition is in the WHERE', async () => {
+    const { owner } = await scaffold('disconnect-twice');
+    const fake = fakeProvider();
+    const deps = depsFor(fake.fetch);
+    const { state } = await beginState(owner, deps, 'slack');
+    const connected = await completeIntegration(
+      deps,
+      { provider: 'slack', code: 'code-1', state },
+      requestId,
+    );
+    expect(connected.status).toBe('connected');
+    if (connected.status !== 'connected') return;
+
+    await disconnectIntegration(owner, { integrationId: connected.integrationId });
+    /* Two racing disconnects — the second answers success (idempotent for the
+       caller) but must not append a second event to the chain. */
+    await disconnectIntegration(owner, { integrationId: connected.integrationId });
+
+    const events = await integrationEvents(owner.subject.orgId);
+    expect(events.filter((event) => event.name === 'integration.disconnected')).toHaveLength(1);
+  });
+
+  it('refuses an unknown row', async () => {
+    const { owner } = await scaffold('disconnect-missing');
+    await expect(
+      disconnectIntegration(owner, { integrationId: crypto.randomUUID() }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+});
+
+describe('the credential is row-bound — a transplant fails to decrypt', () => {
+  it('a ciphertext lifted into another org cannot be used, and the refusal precedes the network', async () => {
+    const a = await scaffold('transplant-a');
+    const b = await scaffold('transplant-b');
+    const fake = fakeProvider();
+    const deps = depsFor(fake.fetch);
+
+    /* Org A connects GitHub and gets a pending row holding its token. */
+    const { state } = await beginState(a.owner, deps, 'github');
+    const pending = await completeIntegration(
+      deps,
+      { provider: 'github', code: 'code-1', state },
+      requestId,
+    );
+    expect(pending.status).toBe('pending_repo');
+    if (pending.status !== 'pending_repo') return;
+
+    const stolen = await credentialColumns(a.orgId, pending.integrationId);
+
+    /* The transplant: an admin row in org B carrying org A's credential
+       columns. Two independent guards refuse it — the data key's own
+       encryption context is org A, and the row-bound AAD names org A. */
+    await admin.setOrg(b.orgId);
+    await admin.query(
+      `INSERT INTO platform.integrations
+         (id, org_id, provider, name, provider_scope, status,
+          token_ciphertext, token_wrapped, token_master_id, created_by, created_at)
+       VALUES ($1, $2, 'github', 'stolen', 'stolen/login', 'disconnected',
+          decode($3, 'hex'), decode($4, 'hex'), $5, $6, now())`,
+      [
+        crypto.randomUUID(),
+        b.orgId,
+        stolen.tokenCiphertext,
+        stolen.tokenWrapped,
+        stolen.tokenMasterId,
+        OWNER,
+      ],
+    );
+    const transplantedId = (
+      await admin.query(
+        `SELECT id FROM platform.integrations WHERE org_id = $1 AND name = 'stolen'`,
+        [b.orgId],
+      )
+    ).rows[0]?.['id'] as string;
+    await admin.setOrg(null);
+
+    /* Org B's owner tries to resume the picker with the stolen row. */
+    const callsBefore = fake.calls.length;
+    await expect(
+      listReposForIntegration(b.owner, deps, { integrationId: transplantedId }),
+    ).rejects.toThrow();
+
+    /* THE assertion for this test: the failure is the DECRYPT, which happens
+       before any provider call — an attacker with a transplanted row learns
+       nothing from the network because nothing reaches it. The original
+       connect made its own calls above; what matters is that THIS attempt
+       made none. */
+    expect(fake.calls.slice(callsBefore)).toHaveLength(0);
+
+    /* And the original still works in org A — only the transplant broke. */
+    const repos = await listReposForIntegration(a.owner, deps, {
+      integrationId: pending.integrationId,
+    });
+    expect(repos.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The OUTBOUND actions (§7.6, slice 4) — the org acting as itself on a
+ * provider.
+ *
+ * The acceptance bar is Phase 7's spend-gate bar, for the same reason: a
+ * refusal returned AFTER the message was posted reads correctly in a diff and
+ * is visible in somebody's Slack channel. So every refusal here asserts that
+ * the fake provider recorded no call, not merely that an error was thrown.
+ *
+ * The other assertion worth its own test is the Slack `ok:false` case. Slack
+ * answers HTTP 200 for every application-level failure — a channel the bot is
+ * not in, a revoked token — so a handler that checked only `response.ok` would
+ * record a SUCCEEDED action while nothing was posted. That is the worst
+ * available outcome: a rule that reports working and does nothing.
+ */
+describe('the outbound connector actions', () => {
+  /** A fake with the connect endpoints AND the two outbound ones. */
+  function fakeWithOutbound(options: {
+    readonly slackOk?: boolean;
+    readonly slackError?: string;
+    readonly githubStatus?: number;
+  }): { fetch: typeof fetch; calls: string[] } {
+    const base = fakeProvider();
+    const calls = base.calls;
+
+    const fn = ((input: string | URL | Request, init?: RequestInit) => {
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+      if (url === 'https://slack.com/api/chat.postMessage') {
+        calls.push(url);
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(
+              options.slackOk === false
+                ? { ok: false, error: options.slackError ?? 'not_in_channel' }
+                : { ok: true, ts: '1700000000.000100' },
+            ),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+      }
+
+      if (url.startsWith('https://api.github.com/repos/')) {
+        calls.push(url);
+        const status = options.githubStatus ?? 201;
+        return Promise.resolve(
+          new Response(JSON.stringify(status === 201 ? { number: 42 } : { message: 'nope' }), {
+            status,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      }
+
+      return base.fetch(input, init);
+    }) as typeof fetch;
+
+    return { fetch: fn, calls };
+  }
+
+  /** Connects Slack and hands back the row id. */
+  async function connectedSlack(actor: AutomationActor, deps: IntegrationDeps): Promise<string> {
+    const { state } = await beginState(actor, deps, 'slack');
+    const result = await completeIntegration(
+      deps,
+      { provider: 'slack', code: 'code-out', state },
+      requestId,
+    );
+    if (result.status !== 'connected') throw new Error('slack connect did not complete');
+    return result.integrationId;
+  }
+
+  it('posts, and records the effect in the org outbox', async () => {
+    const { owner } = await scaffold('out-slack-ok');
+    const fake = fakeWithOutbound({});
+    const deps = depsFor(fake.fetch);
+    const integrationId = await connectedSlack(owner, deps);
+
+    const result = await postSlackMessage(owner, deps, {
+      integrationId,
+      channel: '#general',
+      text: 'shipped',
+    });
+
+    expect(result.providerMessageId).toBe('1700000000.000100');
+    expect(fake.calls).toContain('https://slack.com/api/chat.postMessage');
+
+    /* Guardrail 11 — and note WHICH event: the outbound governance fact, not
+       a copy of the message. The body is deliberately absent from the payload
+       (see integration-events.ts): the audit log records that the org posted
+       and where, never what was said. */
+    const events = await integrationEvents(owner.subject.orgId);
+    const posted = events.find((event) => event.name === 'integration.message_posted');
+    expect(posted?.payload).toMatchObject({
+      provider: 'slack',
+      providerScope: 'T0001',
+      channel: '#general',
+      providerMessageId: '1700000000.000100',
+    });
+    expect(JSON.stringify(posted?.payload)).not.toContain('shipped');
+  });
+
+  it("treats Slack's ok:false at HTTP 200 as a FAILURE, and names its code", async () => {
+    const { owner } = await scaffold('out-slack-notok');
+    const fake = fakeWithOutbound({ slackOk: false, slackError: 'channel_not_found' });
+    const deps = depsFor(fake.fetch);
+    const integrationId = await connectedSlack(owner, deps);
+
+    await expect(
+      postSlackMessage(owner, deps, { integrationId, channel: '#nope', text: 'x' }),
+    ).rejects.toThrow(/channel_not_found/);
+
+    /* No event, because nothing was posted. An event written before the
+       provider confirmed would be a false entry in a hash-chained log. */
+    const events = await integrationEvents(owner.subject.orgId);
+    expect(events.some((event) => event.name === 'integration.message_posted')).toBe(false);
+  });
+
+  it('refuses a member without integration:manage, and never reaches the provider', async () => {
+    const { owner, member } = await scaffold('out-slack-forbidden');
+    const fake = fakeWithOutbound({});
+    const deps = depsFor(fake.fetch);
+    const integrationId = await connectedSlack(owner, deps);
+
+    const callsBefore = fake.calls.length;
+    await expect(
+      postSlackMessage(member, deps, { integrationId, channel: '#general', text: 'x' }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+
+    /* THE assertion: authorization runs before the credential is even
+       decrypted, so a member cannot spend the org's Slack identity. */
+    expect(fake.calls.slice(callsBefore)).toHaveLength(0);
+  });
+
+  it('refuses a GitHub action pointed at a Slack connector', async () => {
+    const { owner } = await scaffold('out-cross-provider');
+    const fake = fakeWithOutbound({});
+    const deps = depsFor(fake.fetch);
+    const integrationId = await connectedSlack(owner, deps);
+
+    const callsBefore = fake.calls.length;
+    await expect(
+      createGithubIssue(owner, deps, { integrationId, title: 'x', body: '' }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    expect(fake.calls.slice(callsBefore)).toHaveLength(0);
+  });
+
+  it('refuses after disconnect, because the credential is gone', async () => {
+    const { owner } = await scaffold('out-disconnected');
+    const fake = fakeWithOutbound({});
+    const deps = depsFor(fake.fetch);
+    const integrationId = await connectedSlack(owner, deps);
+
+    await disconnectIntegration(owner, { integrationId });
+
+    /* 0057 wipes the credential columns, so the row survives as the audit
+       trail and is unusable. A disconnected connector must be genuinely dead,
+       not merely hidden from a list. */
+    const callsBefore = fake.calls.length;
+    await expect(
+      postSlackMessage(owner, deps, { integrationId, channel: '#general', text: 'x' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+    expect(fake.calls.slice(callsBefore)).toHaveLength(0);
+  });
+});

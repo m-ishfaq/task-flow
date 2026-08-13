@@ -118,7 +118,19 @@ async function scaffold(): Promise<Fixture> {
   await admin.query(`INSERT INTO identity.orgs (id, name, slug) VALUES ($1, $2, $3)`, [
     orgId,
     `Org ${suffix}`,
-    `cgw-${suffix}`,
+    /* The same random suffix the email above carries, and for the identical
+       reason — which is why this line is worth reading twice. The comment on
+       the email was written when this exact bug was fixed THERE, and the slug
+       was left on the counter alone, so `orgs_slug_key` kept the failure the
+       email's unique index had stopped having.
+
+       It reproduces with a one-row residue and only ever kills the FIRST
+       test: an aborted run leaves `cgw-001`, the next run's first scaffold
+       collides, and scaffolds 002+ succeed and clean up after themselves. So
+       it reads as "one flaky integration test" rather than as stale state,
+       and re-running does not clear it — every subsequent run fails the same
+       single test until somebody deletes the row by hand. */
+    `cgw-${suffix}-${crypto.randomUUID().slice(0, 8)}`,
   ]);
   await admin.query(
     `INSERT INTO identity.memberships (id, org_id, user_id, role)

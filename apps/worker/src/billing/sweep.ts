@@ -1,4 +1,12 @@
-import { and, eq, hasBillingSweepDatabase, lt, schema, withBillingSweepScope } from '@taskflow/db';
+import {
+  and,
+  eq,
+  hasBillingSweepDatabase,
+  lt,
+  recordOperationalEvent,
+  schema,
+  withBillingSweepScope,
+} from '@taskflow/db';
 import type { OrgId } from '@taskflow/contracts';
 import type { Logger } from '@taskflow/observability';
 import { expireGracePeriod, expireTrial } from '@taskflow/api/billing/sweep';
@@ -63,11 +71,25 @@ export function startBillingSweep(options: {
       if (trialsExpired > 0 || gracesExpired > 0) {
         options.logger.info({ trialsExpired, gracesExpired }, 'billing sweep applied transitions');
       }
+
+      /* Recorded on EVERY tick, not only when something transitioned — this
+         is a HEARTBEAT, and a dashboard that only ever sees a row when there
+         was work to do cannot tell "the sweep is healthy and idle" apart
+         from "the sweep died three days ago". `trialsExpired`/`gracesExpired`
+         being 0 is itself the answer to "is anything overdue right now". */
+      void recordOperationalEvent({
+        kind: 'billing_sweep',
+        outcome: 'success',
+        detail: { trialsExpired, gracesExpired },
+      });
     } catch (error) {
       // Logged, never rethrown — the identical reasoning every other loop's
       // tick in this codebase gives: a transient blip must not take the
       // process down, and every deadline is still there for the next tick.
       options.logger.error({ err: error }, 'billing sweep tick failed');
+      // No error message in `detail` — the same redaction discipline every
+      // other recordOperationalEvent() call site applies.
+      void recordOperationalEvent({ kind: 'billing_sweep', outcome: 'failure' });
     } finally {
       running = false;
     }

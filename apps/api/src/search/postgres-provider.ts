@@ -32,8 +32,12 @@ function textConcat(): string {
   const text = findField('search', 'text');
   /* Unreachable — the `text` field set is a literal in fields.ts. Thrown rather
      than interpolated so a future edit that renames the field fails here at
-     boot, not as a syntax error in a query string. */
-  if (!text) throw new Error('search field set lost its `text` field');
+     boot, not as a syntax error in a query string.
+
+     `sql === null` marks an evaluator-only field (§7.8b's connector set). No
+     search field is one, and a search field that became one would produce
+     `to_tsvector('english', null)` — a query that runs and matches nothing. */
+  if (text?.sql == null) throw new Error('search field set lost its `text` field');
   return text.sql;
 }
 
@@ -92,7 +96,9 @@ function buildOrderBy(orderBy: readonly OrderBy[], filter: FilterNode | null): r
       /* The route validates orderBy fields before calling; this is the second
          half of that argument — the provider re-checks rather than trusting
          its caller, the identical discipline compile() applies to trees. */
-      if (!field) throw new Error(`Unknown ORDER BY field "${entry.field}".`);
+      if (field?.sql == null) {
+        throw new Error(`Unknown ORDER BY field "${entry.field}".`);
+      }
       const column = compiledPredicate(field.sql, []);
       return entry.direction === 'asc' ? asc(column) : desc(column);
     });

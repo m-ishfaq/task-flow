@@ -42,7 +42,18 @@ const SIGNATURE_VECTOR = {
   signature: 'L/OH5YylLD5NRKLltdqwSvS0BnU=',
 } as const;
 
-const ALL_KINDS: readonly OutboundKind[] = ['call', 'sms', 'number_purchase', 'verification'];
+const ALL_KINDS: readonly OutboundKind[] = [
+  'call',
+  'sms',
+  'number_purchase',
+  'verification',
+  /* Phase 10 Wave 4 (§5.5): the automation kinds must price like their base
+     kinds. They ride this loop so a provider whose map is no longer total
+     over the union fails here with a named kind rather than returning
+     `undefined` into the gate's estimate. */
+  'automation_call',
+  'automation_sms',
+];
 
 export function describeTelephonyProviderContract(
   name: string,
