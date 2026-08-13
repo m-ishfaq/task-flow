@@ -324,7 +324,7 @@ header:
    `taskflow_integration_auth` — each only discovered when a migration's own
    `GRANT` hit a role that did not exist. Root cause: that cluster was first
    initialized before those roles were added to `docker/postgres/init/
-   02-roles.sql`, and `docker-entrypoint-initdb.d` never runs again against
+02-roles.sql`, and `docker-entrypoint-initdb.d` never runs again against
    an existing data directory, so newer roles silently never landed on it.
    Manually creating the three missing roles over SSH unblocked the deploy
    each time, but that is a symptom fix repeated three times, not a closed
