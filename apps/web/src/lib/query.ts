@@ -397,6 +397,9 @@ export const keys = {
   platformBilling: (cursor: string | null) => ['platform', 'billing', cursor ?? 'first'] as const,
   /** One page of the operator chain. Keyset on seq — the page is `before`. */
   platformAudit: (before: string | null) => ['platform', 'audit', before ?? 'latest'] as const,
+  /** One page of the operations dashboard, optionally filtered by kind. */
+  platformOperations: (cursor: string | null, kind: string | null) =>
+    ['platform', 'operations', kind ?? 'all', cursor ?? 'first'] as const,
 } as const;
 
 /** The org id every key needs, or a placeholder that matches nothing. */
