@@ -298,6 +298,16 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
      connect the person abandons at the picker. Same resource as the other
      two: the connector row itself, which is exactly what it names. */
   'integration.pending': { type: 'integration', key: 'integrationId' },
+  /* The OUTBOUND effects (§7.6's own header, above `integrationMessagePosted`
+     in integration-events.ts): what this deployment did to a provider under a
+     rule, as opposed to what a provider told us. These carry `integrationId`
+     and resolve to the connector for the identical reason the connection
+     lifecycle events above do — "show me everything this connector did" is
+     the same query as "show me everything that happened to it". The inbound
+     triggers these actions are keyed off of (`integration.slack_event`,
+     `integration.github_event`) are NOT mapped here — see NEVER_AUDITED. */
+  'integration.message_posted': { type: 'integration', key: 'integrationId' },
+  'integration.issue_created': { type: 'integration', key: 'integrationId' },
 };
 
 /**
@@ -361,6 +371,20 @@ export const NEVER_AUDITED: ReadonlySet<string> = new Set([
   'platform.flag_override_cleared',
   'platform.user_suspended',
   'platform.user_reactivated',
+  /* Phase 10 Wave 4's inbound connector triggers (§7.5, integration-events.ts's
+     own header on `connectorTriggerPayload`). One fires for every Slack
+     workspace event or GitHub repository event a connected integration
+     receives — the same high-frequency shape as `channel.read_advanced` and
+     `page.content_updated` above, not a decision an access review would ever
+     query for. They carry no `integrationId`, only `providerScope` (a team_id
+     or repository full_name, not a UUID), so there is no resource for
+     RESOURCE_OF to name even if the volume argument did not already settle
+     it. The compliance-relevant half of a connector doing something is the
+     OUTBOUND effect it triggers — `integration.message_posted` /
+     `integration.issue_created`, both mapped above — which is what an access
+     review actually needs to trace a rule's action back to its owner. */
+  'integration.slack_event',
+  'integration.github_event',
 ]);
 
 interface Resource {
