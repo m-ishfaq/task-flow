@@ -90,14 +90,30 @@ In this order, from the repo root:
 docker compose --env-file .env.prod -f compose.prod.yaml build
 # or, if using images pushed by CD: set IMAGE_TAG=<sha> in .env.prod and `pull` instead.
 
+docker compose --env-file .env.prod -f compose.prod.yaml --profile tools run --rm ensure-roles
 docker compose --env-file .env.prod -f compose.prod.yaml --profile tools run --rm migrate
 docker compose --env-file .env.prod -f compose.prod.yaml up -d
 docker compose --env-file .env.prod -f compose.prod.yaml ps   # all healthy
 ```
 
-Migrations always run BEFORE the app containers start, and never as a side
-effect of `up` — `migrate` sits behind the `tools` profile deliberately, so a
-plain `up -d` could not run it by accident.
+`ensure-roles` and migrations always run BEFORE the app containers start, and
+never as a side effect of `up` — both sit behind the `tools` profile
+deliberately, so a plain `up -d` could not run either by accident.
+
+**Why `ensure-roles` runs before `migrate`, as a separate step:** roles are
+NOT created by migrations — `taskflow_migrator` is deliberately `NOCREATEROLE`
+(so a migration file, ordinary reviewed application code, can never mint a
+Postgres role as a side effect of a routine deploy). `docker/postgres/init/
+02-roles.sql` creates every role known at the time this cluster was FIRST
+initialized, but `docker-entrypoint-initdb.d` never runs again after that —
+so a role a later phase adds is invisible to an existing cluster until
+something explicitly creates it. `ensure-roles` (`docker/postgres/
+ensure-roles.sh`) is that something: it runs on every deploy, connects as the
+Postgres SUPERUSER (the one identity allowed to create roles), and creates
+only whichever of the sixteen roles this database does not have yet —
+idempotent, so it is a no-op on every deploy after the one where a role is
+new. `CREATE ROLE` alone grants nothing; the actual permissions a role gets
+still come from a migration's own `GRANT`, reviewed as a separate change.
 
 **What "healthy" means here:** every service shows `healthy` in `docker compose
 ps` except `web` (running) and `minio-init` (exited 0 — it is a one-shot bucket
@@ -123,18 +139,19 @@ default handler; `web`'s checks that nginx serves the SPA.
 Same order every time:
 
 ```bash
-IMAGE_TAG=<new-sha> docker compose --env-file .env.prod -f compose.prod.yaml pull
+IMAGE_TAG=<new-sha> docker compose --env-file .env.prod -f compose.prod.yaml --profile tools run --rm ensure-roles
 IMAGE_TAG=<new-sha> docker compose --env-file .env.prod -f compose.prod.yaml --profile tools run --rm migrate
+IMAGE_TAG=<new-sha> docker compose --env-file .env.prod -f compose.prod.yaml pull
 IMAGE_TAG=<new-sha> docker compose --env-file .env.prod -f compose.prod.yaml up -d --remove-orphans
 ```
 
 This is exactly what `.github/workflows/cd.yml`'s `deploy` job does over SSH
 when `DEPLOY_HOST`/`DEPLOY_SSH_KEY`/`DEPLOY_USER` repo secrets are set: rsync
 the SHA's `compose.prod.yaml`/`docker/postgres` from the CI runner (which
-already has them from its own checkout) → migrate → pull → `up -d
---remove-orphans`. Until those secrets exist, CD builds and pushes images to
-GHCR and the deploy job prints a `::notice::` explaining that nothing more
-happened.
+already has them from its own checkout) → ensure-roles → migrate → pull →
+`up -d --remove-orphans`. Until those secrets exist, CD builds and pushes
+images to GHCR and the deploy job prints a `::notice::` explaining that
+nothing more happened.
 
 The files are pushed to the host, not pulled by it — the target host holds no
 GitHub credential of any kind and never itself contacts GitHub. That is
@@ -301,6 +318,20 @@ header:
 4. **Compose did not recreate containers after an image rebuild** with the same
    `:local` tag (gotcha above) — the fixed image was running the old
    container config until `--force-recreate`.
+5. **A live deployment's `migrate` step failed three separate times, on three
+   separate deploys, each naming a different missing role** —
+   `taskflow_billing_sweep`, `taskflow_ops_events`, then
+   `taskflow_integration_auth` — each only discovered when a migration's own
+   `GRANT` hit a role that did not exist. Root cause: that cluster was first
+   initialized before those roles were added to `docker/postgres/init/
+02-roles.sql`, and `docker-entrypoint-initdb.d` never runs again against
+   an existing data directory, so newer roles silently never landed on it.
+   Manually creating the three missing roles over SSH unblocked the deploy
+   each time, but that is a symptom fix repeated three times, not a closed
+   gap — the next new role would have hit it a fourth time. Closed properly
+   by `ensure-roles` (`docker/postgres/ensure-roles.sh`, wired into both this
+   runbook's command sequence and `cd.yml`, ahead of `migrate`): idempotent,
+   runs on every deploy, creates only whichever roles are still missing.
 
 ## Local smoke-test teardown
 

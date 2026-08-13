@@ -143,13 +143,19 @@ jobs:
           rsync -az --delete -e 'ssh -o StrictHostKeyChecking=accept-new' \
             docker/postgres/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/docker/postgres/"
 
-      # Migrate BEFORE recreating the app containers — a migration is a
-      # deploy STEP here, never a side effect app startup triggers, per
-      # compose.prod.yaml's own header and the runbook. `--profile tools`
-      # is required: `migrate` sits behind that profile deliberately, so a
-      # plain `up -d` elsewhere in this job (there isn't one — see below)
-      # could never run it by accident.
-      - name: Migrate, then deploy over SSH
+      # ensure-roles BEFORE migrate, migrate BEFORE recreating the app
+      # containers — none of these are side effects app startup triggers,
+      # per compose.prod.yaml's own header and the runbook. `--profile
+      # tools` is required for both: they sit behind that profile
+      # deliberately, so a plain `up -d` elsewhere in this job (there isn't
+      # one — see below) could never run either by accident.
+      #
+      # ensure-roles creates any Postgres role this deploy's migrations need
+      # that does not exist yet on THIS cluster — see
+      # docker/postgres/ensure-roles.sh's own header for why that can't be
+      # migrate's job (taskflow_migrator is deliberately NOCREATEROLE) or
+      # 02-roles.sql's (it only runs once, against an empty data directory).
+      - name: Ensure roles, migrate, then deploy over SSH
         if: steps.gate.outputs.configured == 'true'
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -159,6 +165,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=accept-new "$DEPLOY_USER@$DEPLOY_HOST" \
             "cd '$DEPLOY_PATH' && \
+             IMAGE_TAG='$IMAGE_TAG' docker compose --env-file .env.prod -f compose.prod.yaml --profile tools run --rm ensure-roles && \
              IMAGE_TAG='$IMAGE_TAG' docker compose --env-file .env.prod -f compose.prod.yaml --profile tools run --rm migrate && \
              IMAGE_TAG='$IMAGE_TAG' docker compose --env-file .env.prod -f compose.prod.yaml pull && \
              IMAGE_TAG='$IMAGE_TAG' docker compose --env-file .env.prod -f compose.prod.yaml up -d --remove-orphans"
