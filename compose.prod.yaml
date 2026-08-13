@@ -284,6 +284,18 @@ services:
 
       RETENTION_SWEEP_ENABLED: ${RETENTION_SWEEP_ENABLED:-false}
       WEB_ORIGIN: ${WEB_ORIGIN:?WEB_ORIGIN must be set to the real public origin, e.g. https://app.example.com}
+
+      # Billing (Phase 12 Wave 3/4). PAYMENTS_PROVIDER defaults to `fake`, same
+      # as apps/api/src/config/env.ts's own default — an instance with neither
+      # STRIPE_SECRET_KEY nor STRIPE_WEBHOOK_SECRET set boots clean on the
+      # in-memory provider. Setting PAYMENTS_PROVIDER=stripe without both keys
+      # is refused at boot by deps.ts, the TELEPHONY_WEBHOOK_ORIGIN precedent —
+      # never a silent fallback to `fake` mid-deployment.
+      PAYMENTS_PROVIDER: ${PAYMENTS_PROVIDER:-fake}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      BILLING_TRIAL_DAYS: ${BILLING_TRIAL_DAYS:-14}
+      BILLING_PAST_DUE_GRACE_DAYS: ${BILLING_PAST_DUE_GRACE_DAYS:-7}
     depends_on:
       postgres:
         condition: service_healthy
@@ -395,6 +407,15 @@ services:
       # past_due deadline from it, and apps/api validates the same value
       # independently (their env schemas are deliberately separate).
       BILLING_PAST_DUE_GRACE_DAYS: ${BILLING_PAST_DUE_GRACE_DAYS:-7}
+      # How long before a trial ends the owner is warned — this process sends
+      # it, apps/api never reads it.
+      BILLING_TRIAL_ENDING_WARNING_HOURS: ${BILLING_TRIAL_ENDING_WARNING_HOURS:-72}
+      # The period-close job bills usage overage through this — the SAME
+      # PAYMENTS_PROVIDER/STRIPE_SECRET_KEY apps/api validates (see api's own
+      # comment above). Disagreeing between the two services is the dangerous
+      # state: set both or neither.
+      PAYMENTS_PROVIDER: ${PAYMENTS_PROVIDER:-fake}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       DATABASE_OPS_EVENTS_URL: postgresql://taskflow_ops_events:${TASKFLOW_OPS_EVENTS_PASSWORD:?TASKFLOW_OPS_EVENTS_PASSWORD must be set}@postgres:5432/taskflow
       # The worker decrypts webhook signing secrets at delivery, so it holds
       # the same master key pair the API holds — the same variables, same
