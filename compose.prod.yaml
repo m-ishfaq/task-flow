@@ -65,6 +65,8 @@ services:
       TASKFLOW_AUTOMATION_PASSWORD: ${TASKFLOW_AUTOMATION_PASSWORD:?TASKFLOW_AUTOMATION_PASSWORD must be set}
       TASKFLOW_WEBHOOK_PASSWORD: ${TASKFLOW_WEBHOOK_PASSWORD:?TASKFLOW_WEBHOOK_PASSWORD must be set}
       TASKFLOW_API_TOKEN_AUTH_PASSWORD: ${TASKFLOW_API_TOKEN_AUTH_PASSWORD:?TASKFLOW_API_TOKEN_AUTH_PASSWORD must be set}
+      TASKFLOW_BILLING_SWEEP_PASSWORD: ${TASKFLOW_BILLING_SWEEP_PASSWORD:?TASKFLOW_BILLING_SWEEP_PASSWORD must be set}
+      TASKFLOW_OPS_EVENTS_PASSWORD: ${TASKFLOW_OPS_EVENTS_PASSWORD:?TASKFLOW_OPS_EVENTS_PASSWORD must be set}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       # 01-03: the same role/grant model dev uses, unmodified. 04
@@ -219,6 +221,7 @@ services:
       DATABASE_RECORDING_INGEST_URL: postgresql://taskflow_recording_ingest:${TASKFLOW_RECORDING_INGEST_PASSWORD:?TASKFLOW_RECORDING_INGEST_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_API_TOKEN_URL: postgresql://taskflow_api_token_auth:${TASKFLOW_API_TOKEN_AUTH_PASSWORD:?TASKFLOW_API_TOKEN_AUTH_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_SEARCH_URL: postgresql://taskflow_search:${TASKFLOW_SEARCH_PASSWORD:?TASKFLOW_SEARCH_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_OPS_EVENTS_URL: postgresql://taskflow_ops_events:${TASKFLOW_OPS_EVENTS_PASSWORD:?TASKFLOW_OPS_EVENTS_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
 
       STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:?STORAGE_ENDPOINT must be set — a publicly reachable S3-compatible endpoint; see minio's own port comment}
@@ -381,6 +384,8 @@ services:
       DATABASE_URL: postgresql://taskflow_app:${TASKFLOW_APP_PASSWORD:?TASKFLOW_APP_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_AUTOMATION_URL: postgresql://taskflow_automation:${TASKFLOW_AUTOMATION_PASSWORD:?TASKFLOW_AUTOMATION_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_WEBHOOK_URL: postgresql://taskflow_webhook:${TASKFLOW_WEBHOOK_PASSWORD:?TASKFLOW_WEBHOOK_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_BILLING_SWEEP_URL: postgresql://taskflow_billing_sweep:${TASKFLOW_BILLING_SWEEP_PASSWORD:?TASKFLOW_BILLING_SWEEP_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_OPS_EVENTS_URL: postgresql://taskflow_ops_events:${TASKFLOW_OPS_EVENTS_PASSWORD:?TASKFLOW_OPS_EVENTS_PASSWORD must be set}@postgres:5432/taskflow
       # The worker decrypts webhook signing secrets at delivery, so it holds
       # the same master key pair the API holds — the same variables, same
       # meaning.

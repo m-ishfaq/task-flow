@@ -3,6 +3,7 @@ import {
   initializeAutomationDatabase,
   initializeBillingSweepDatabase,
   initializeDatabase,
+  initializeOpsEventsDatabase,
   initializeWebhookDatabase,
 } from '@taskflow/db';
 import { createLogger } from '@taskflow/observability';
@@ -88,6 +89,18 @@ if (env.DATABASE_BILLING_SWEEP_URL !== undefined) {
   initializeBillingSweepDatabase({
     url: env.DATABASE_BILLING_SWEEP_URL,
     applicationName: 'taskflow-worker-billing-sweep',
+  });
+}
+
+/* The operations dashboard's writer pool, as `taskflow_ops_events`
+   (migration 0061) — this process's own connection, for the sweep's
+   heartbeat row. Optional like every consumer pool above: without it
+   `recordOperationalEvent()` catches the missing-connection error itself,
+   so the sweep still runs, it just produces no heartbeat row. */
+if (env.DATABASE_OPS_EVENTS_URL !== undefined) {
+  initializeOpsEventsDatabase({
+    url: env.DATABASE_OPS_EVENTS_URL,
+    applicationName: 'taskflow-worker-ops-events',
   });
 }
 

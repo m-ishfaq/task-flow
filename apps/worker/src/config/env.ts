@@ -79,6 +79,13 @@ export const EnvSchema = z.object({
      identity.orgs across every tenant. */
   DATABASE_BILLING_SWEEP_URL: NonEmpty.optional(),
 
+  /* The operations dashboard's writer (migration 0061) — this process's own
+     connection as taskflow_ops_events, for the sweep's heartbeat row.
+     Optional, same convention: recordOperationalEvent() catches the
+     missing-connection error itself, so an instance without this simply
+     gets no heartbeat rows rather than a sweep that fails to run. */
+  DATABASE_OPS_EVENTS_URL: NonEmpty.optional(),
+
   /* The grace period a past_due org gets before the sweep cancels it — the
      SAME value apps/api's env schema validates, duplicated here rather than
      imported because the two processes' env schemas are deliberately

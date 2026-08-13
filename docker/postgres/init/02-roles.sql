@@ -254,6 +254,24 @@ CREATE ROLE taskflow_billing_sweep WITH LOGIN PASSWORD 'billing-sweep-dev-secret
 CREATE ROLE taskflow_integration_auth WITH LOGIN PASSWORD 'integration-auth-dev-secret'
   NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 
+-- ---------------------------------------------------------------------------
+-- taskflow_ops_events — the operations dashboard's writer (migration 0061's
+-- own header).
+--
+-- A FOURTEENTH role, and a different shape from every claim-only role above
+-- it: NOBYPASSRLS like the rest, but holding both INSERT and SELECT on one
+-- table with no org_id column at all — platform.operational_events. Written
+-- from apps/api (mail delivery, billing webhooks) AND apps/worker (the
+-- sweep's own heartbeat), each over its own connection pool as this same
+-- role, the same way multiple processes already share taskflow_webhook.
+-- The platform console reads the table back through taskflow_platform_admin
+-- instead (0061 grants it SELECT directly), not through this role — the
+-- same "write role differs from read role" split platform.operator_audit_log
+-- already established.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_ops_events WITH LOGIN PASSWORD 'ops-events-dev-secret' NOSUPERUSER
+  NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+
 -- Baseline grants live in 03-grants.sql, NOT here.
 --
 -- Roles are cluster-wide; grants are per-database. This file creates the roles

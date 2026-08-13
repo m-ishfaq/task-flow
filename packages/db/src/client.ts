@@ -1173,6 +1173,68 @@ export function hasBillingSweepDatabase(): boolean {
   return billingSweepDb !== undefined;
 }
 
+/* -------------------------------------------------------------------------- *
+ * The operations-dashboard connection (migration 0061)
+ * -------------------------------------------------------------------------- */
+
+let opsEventsPool: pg.Pool | undefined;
+let opsEventsDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the operations dashboard's writer pool, as `taskflow_ops_events`.
+ *
+ * A FOURTEENTH role, and a different shape from `taskflow_billing_sweep`
+ * above it: not a claim-only scan, because `platform.operational_events`
+ * carries no `org_id` at all — there is no tenant to scan across. Opened
+ * from BOTH `apps/api` (mail delivery, billing webhooks) and `apps/worker`
+ * (the sweep's own heartbeat), each with its own connection pool as this
+ * same role, the same way multiple processes already share
+ * `taskflow_webhook`. Reads go through `taskflow_platform_admin` instead
+ * (migration 0061 grants it SELECT directly) — this pool is the write side.
+ */
+export function initializeOpsEventsDatabase(config: DbConfig): void {
+  if (opsEventsPool) {
+    throw new Error('Ops-events database already initialized. This is a boot-time call.');
+  }
+
+  opsEventsPool = new Pool({
+    connectionString: config.url,
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-ops-events',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  opsEventsDb = drizzle(opsEventsPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_ops_events`. Not tenant-scoped — the table this
+ * role writes has no `org_id` column, so there is nothing to scope to.
+ */
+export async function withOpsEventScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!opsEventsDb) {
+    throw new Error(
+      'Ops-events database not initialized. Call initializeOpsEventsDatabase() during boot. ' +
+        "recordOperationalEvent() (packages/db/src/ops-events.ts) catches this throw itself and " +
+        'reports it through its own onWriteFailure callback rather than propagating — a missing ' +
+        'connection here must degrade to "no dashboard row", never to "mail delivery crashes" or ' +
+        '"the webhook 500s". A caller reaching this function directly gets the throw, uncaught.',
+    );
+  }
+
+  return opsEventsDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the ops-events pool has been initialized. */
+export function hasOpsEventsDatabase(): boolean {
+  return opsEventsDb !== undefined;
+}
+
 /** Closes every pool. Shutdown only. */
 export async function closeDatabase(): Promise<void> {
   await pool?.end();
@@ -1234,6 +1296,10 @@ export async function closeDatabase(): Promise<void> {
   await integrationAuthPool?.end();
   integrationAuthPool = undefined;
   integrationAuthDb = undefined;
+
+  await opsEventsPool?.end();
+  opsEventsPool = undefined;
+  opsEventsDb = undefined;
 }
 
 /** True when the pool is live and answering. Backs `/health/ready` (§14). */

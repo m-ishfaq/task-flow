@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
-import { isDatabaseHealthy } from '@taskflow/db';
+import { isDatabaseHealthy, recordOperationalEvent } from '@taskflow/db';
 import { masterKeysFromBase64, newId, SoftwareKeyProvider } from '@taskflow/security';
 import { ensureIdentityDataKey } from './identity/secret-key.js';
 import { createAppRouter, type AppRouter } from './router.js';
@@ -487,6 +487,25 @@ function resolveMail(options: BuildOptions): {
         { to: failure.to, subject: failure.subject, attempts: failure.attempts },
         'mail delivery abandoned',
       );
+      /* recordOperationalEvent() never throws into its caller (its own
+         comment) — a missing ops-events connection must not turn a mail
+         failure into an unhandled rejection in the queue's background loop.
+         `to`/`subject` only, the identical redaction the log line above
+         already applies. */
+      void recordOperationalEvent({
+        kind: 'mail',
+        outcome: 'failure',
+        target: failure.to,
+        detail: { subject: failure.subject, attempts: failure.attempts },
+      });
+    },
+    onSuccess: (success) => {
+      void recordOperationalEvent({
+        kind: 'mail',
+        outcome: 'success',
+        target: success.to,
+        detail: { subject: success.subject },
+      });
     },
   });
 

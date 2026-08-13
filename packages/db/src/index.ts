@@ -64,6 +64,9 @@ export {
   initializeIntegrationAuthDatabase,
   withIntegrationAuthScope,
   hasIntegrationAuthDatabase,
+  initializeOpsEventsDatabase,
+  withOpsEventScope,
+  hasOpsEventsDatabase,
   type OrgId,
   type UserId,
   type DbConfig,
@@ -93,6 +96,7 @@ export { listenForOutboxAppends, type OutboxListener, type ListenOptions } from 
 export { resolveOrgBySubaccountSid } from './comms-directory.js';
 export { resolveOrgByStripeCustomerId } from './billing-directory.js';
 export { resolveApiToken } from './api-tokens.js';
+export { recordOperationalEvent, type OperationalEventInput } from './ops-events.js';
 
 /**
  * The one connector read that has no org yet (Phase 10 Wave 4, §7.2/§7.4).

@@ -779,3 +779,30 @@ export const integrationDeliveries = platform.table(
     uniqueIndex('integration_deliveries_one_key').on(table.orgId, table.provider, table.deliveryId),
   ],
 );
+
+/**
+ * The operations dashboard's own log (migration 0061).
+ *
+ * "Did a system action succeed or fail" — mail delivery, a billing webhook,
+ * a sweep tick — the different question from `operatorAuditLog` above,
+ * which answers "what did a human operator do". No hash chain: nothing
+ * here is a decision to hold anyone accountable for. No `orgId` column at
+ * all — mail delivery frequently has no org yet (a password reset before
+ * one exists), and this table is GLOBAL for the identical reason
+ * `operators`/`operatorAuditLog` are.
+ */
+export const operationalEvents = platform.table(
+  'operational_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: text('kind').notNull(),
+    outcome: text('outcome').notNull(),
+    target: text('target'),
+    detail: jsonb('detail'),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('operational_events_occurred_at_idx').on(table.occurredAt.desc()),
+    index('operational_events_kind_occurred_at_idx').on(table.kind, table.occurredAt.desc()),
+  ],
+);

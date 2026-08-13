@@ -26,6 +26,7 @@ export interface MailDeliveryOptions {
   /** Injected by tests. Production builds an SmtpMailer from the environment. */
   readonly mailer?: Mailer;
   readonly onFailure?: (failure: { to: string; subject: string; attempts: number }) => void;
+  readonly onSuccess?: (success: { to: string; subject: string }) => void;
 }
 
 export interface MailDelivery {
@@ -62,6 +63,7 @@ export function createMailDelivery(options: MailDeliveryOptions): MailDelivery {
   const queue = new MailQueue({
     mailer,
     ...(options.onFailure === undefined ? {} : { onFailure: options.onFailure }),
+    ...(options.onSuccess === undefined ? {} : { onSuccess: options.onSuccess }),
   });
 
   return {
