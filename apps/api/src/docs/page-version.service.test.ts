@@ -373,6 +373,75 @@ describe('restorePageVersion', () => {
     expect(text).toBe('original');
   });
 
+  it('materializeCurrentState is correct even when the restore snapshot and the superseded WAL row land in the same millisecond', async () => {
+    // The previous test relies on real elapsed time to keep the restore
+    // snapshot's `createdAt` after the superseded WAL row's — which is true
+    // in production (a restore always follows its prior edits by real
+    // human/network latency) but is NOT guaranteed on a fast connection,
+    // where two sequential inserts can land in the same millisecond. This
+    // test forces exactly that collision, deterministically, to prove the
+    // boundary in `materializeCurrentState` (via `walRowsSinceLatestSnapshot`
+    // in `@taskflow/db`) is resolved entirely inside Postgres rather than by
+    // comparing a JS-truncated `Date` — see that function's own header for
+    // why a JS round trip of the boundary is unsafe here.
+    const fixture = await scaffold('restore-collision');
+    await appendWalRow(fixture.orgId, fixture.pageId, encodedUpdateWithText('original'));
+    const saved = await pageVersions.savePageVersion(fixture.owner, { pageId: fixture.pageId });
+    await appendWalRow(fixture.orgId, fixture.pageId, encodedUpdateWithText(' edited'));
+
+    await pageVersions.restorePageVersion(fixture.owner, {
+      pageId: fixture.pageId,
+      versionId: saved.versionId,
+    });
+
+    // Identify the two rows first, while ordering is still normal, then pin
+    // both timestamps inside the SAME millisecond, sharing one truncated
+    // `now()` so neither drifts outside a plausible "current" range relative
+    // to their unmodified siblings: the WAL row 100 microseconds into that
+    // millisecond, the restore snapshot 900 microseconds in (later — still
+    // correctly the "latest" row by its real, stored value).
+    await admin.setOrg(fixture.orgId);
+    const walIdRow = await admin.query(
+      `SELECT id FROM docs.yjs_updates WHERE page_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [fixture.pageId],
+    );
+    const snapIdRow = await admin.query(
+      `SELECT id FROM docs.page_versions WHERE page_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [fixture.pageId],
+    );
+    const walId = (walIdRow.rows[0] as { id: string }).id;
+    const snapId = (snapIdRow.rows[0] as { id: string }).id;
+
+    await admin.query(
+      `WITH base AS (SELECT date_trunc('millisecond', now()) AS t)
+       UPDATE docs.yjs_updates SET created_at = (SELECT t FROM base) + interval '100 microseconds'
+        WHERE id = $1`,
+      [walId],
+    );
+    await admin.query(
+      `WITH base AS (SELECT date_trunc('millisecond', created_at) AS t FROM docs.yjs_updates WHERE id = $1)
+       UPDATE docs.page_versions SET created_at = (SELECT t FROM base) + interval '900 microseconds'
+        WHERE id = $2`,
+      [walId, snapId],
+    );
+    await admin.setOrg(null);
+
+    const resaved = await pageVersions.savePageVersion(fixture.owner, { pageId: fixture.pageId });
+
+    await admin.setOrg(fixture.orgId);
+    const { rows } = await admin.query(`SELECT state FROM docs.page_versions WHERE id = $1`, [
+      resaved.versionId,
+    ]);
+    await admin.setOrg(null);
+    const state = (rows[0] as { state: Buffer }).state;
+
+    const replay = new Y.Doc();
+    Y.applyUpdate(replay, new Uint8Array(state));
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string
+    const text: string = replay.getXmlFragment('content').toString();
+    expect(text).toBe('original');
+  });
+
   it('throws NOT_FOUND for a version id that does not exist', async () => {
     const fixture = await scaffold('restore-missing');
 

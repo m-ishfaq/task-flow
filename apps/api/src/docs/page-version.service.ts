@@ -1,5 +1,13 @@
 import * as Y from 'yjs';
-import { and, asc, desc, eq, gt, schema, withOrgScope, outboxWriter } from '@taskflow/db';
+import {
+  and,
+  desc,
+  eq,
+  schema,
+  withOrgScope,
+  outboxWriter,
+  walRowsSinceLatestSnapshot,
+} from '@taskflow/db';
 import { errors, type PageId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { uuidv7 } from '@taskflow/security';
@@ -114,7 +122,7 @@ type Tx = Parameters<Parameters<typeof withOrgScope>[1]>[0];
  */
 export async function materializeCurrentState(tx: Tx, pageId: PageId): Promise<Uint8Array> {
   const snapshotRows = await tx
-    .select({ state: schema.pageVersions.state, createdAt: schema.pageVersions.createdAt })
+    .select({ state: schema.pageVersions.state })
     .from(schema.pageVersions)
     .where(eq(schema.pageVersions.pageId, pageId))
     .orderBy(desc(schema.pageVersions.createdAt))
@@ -124,17 +132,11 @@ export async function materializeCurrentState(tx: Tx, pageId: PageId): Promise<U
   const doc = new Y.Doc();
   if (snapshot) Y.applyUpdate(doc, snapshot.state);
 
-  const updateRows = await tx
-    .select({ data: schema.yjsUpdates.data })
-    .from(schema.yjsUpdates)
-    .where(
-      and(
-        eq(schema.yjsUpdates.pageId, pageId),
-        snapshot === null ? undefined : gt(schema.yjsUpdates.createdAt, snapshot.createdAt),
-      ),
-    )
-    .orderBy(asc(schema.yjsUpdates.createdAt), asc(schema.yjsUpdates.id));
-
+  // The snapshot/WAL boundary is resolved by `walRowsSinceLatestSnapshot`
+  // entirely inside Postgres — see its own header for why comparing a
+  // JS-truncated `createdAt` against microsecond-precision rows admits WAL
+  // rows it should exclude.
+  const updateRows = await walRowsSinceLatestSnapshot(tx, pageId);
   for (const row of updateRows) Y.applyUpdate(doc, row.data);
 
   return Y.encodeStateAsUpdate(doc);
