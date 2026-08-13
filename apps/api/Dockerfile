@@ -44,6 +44,7 @@ COPY packages/filter/package.json packages/filter/package.json
 COPY packages/guardrail-selftest/package.json packages/guardrail-selftest/package.json
 COPY packages/mail/package.json packages/mail/package.json
 COPY packages/observability/package.json packages/observability/package.json
+COPY packages/payments/package.json packages/payments/package.json
 COPY packages/policy/package.json packages/policy/package.json
 COPY packages/security/package.json packages/security/package.json
 COPY packages/seed/package.json packages/seed/package.json
