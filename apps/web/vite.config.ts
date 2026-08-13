@@ -148,6 +148,18 @@ export default defineConfig({
         changeOrigin: false,
       },
 
+      /* Billing webhooks (Phase 12 Wave 3 §3.5) — the same story as
+         `/telephony` above: a plain Fastify route (`registerBillingWebhooks`,
+         apps/api/src/billing/webhook.routes.ts) whose caller is Stripe, not
+         this browser, reachable only when a tunnel is aimed at this dev
+         server. Stripe's signature does not cover the URL (unlike Twilio's),
+         so `changeOrigin` has no verification consequence here — kept
+         `false` only to match every other entry in this block. */
+      '/webhooks': {
+        target: API_ORIGIN,
+        changeOrigin: false,
+      },
+
       /* Connector webhooks (Phase 10 Wave 4 §7.3), the same story as
          `/telephony` above: plain Fastify routes whose caller is Slack or
          GitHub rather than this browser, reachable only when a tunnel is
