@@ -9,6 +9,7 @@ import * as directory from './org-directory.service.js';
 import * as users from './user-directory.service.js';
 import * as flags from './flags.service.js';
 import * as billing from './billing-directory.service.js';
+import * as operations from './operations.js';
 import { readOperatorAudit, recordOperatorAction } from './audit.js';
 
 /**
@@ -69,6 +70,29 @@ const UserRow = z
     status: z.string(),
     orgCount: z.number().int().nonnegative(),
     createdAt: z.date(),
+  })
+  .strict();
+
+/** Mirrors `platform.operational_events`' own CHECK constraint (migration 0061). */
+const OperationalEventKind = z.enum(['mail', 'billing_webhook', 'billing_sweep']);
+
+const OperationsListInput = z
+  .object({
+    cursor: z.string().nullable().default(null),
+    limit: z.number().int().min(1).max(100).default(25),
+    /** Null means every kind — the console's default view. */
+    kind: OperationalEventKind.nullable().default(null),
+  })
+  .strict();
+
+const OperationalEventRow = z
+  .object({
+    id: z.string(),
+    kind: z.string(),
+    outcome: z.string(),
+    target: z.string().nullable(),
+    detail: z.unknown(),
+    occurredAt: z.date(),
   })
   .strict();
 
@@ -261,6 +285,28 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
         )
         .output(z.object({ orgId: z.string(), billingGraceEndsAt: z.date() }).strict())
         .mutation(({ input, ctx }) => billing.grantExtension(deps, operatorOf(ctx), input)),
+    }),
+
+    /**
+     * The operations dashboard (the "did a system action succeed or fail"
+     * question `operations.ts`'s own header distinguishes from the operator
+     * audit chain below). Read-only in this wave — no retry action yet.
+     */
+    operations: router({
+      list: platformRoute({
+        platformReason:
+          'System-action outcomes across every process — mail delivery, billing webhooks, the billing sweep — global by definition; no org permission can describe it.',
+      })
+        .input(OperationsListInput)
+        .output(
+          z
+            .object({
+              events: z.array(OperationalEventRow).readonly(),
+              nextCursor: z.string().nullable(),
+            })
+            .strict(),
+        )
+        .query(({ input, ctx }) => operations.listOperationalEvents(operatorOf(ctx), input)),
     }),
 
     audit: router({
