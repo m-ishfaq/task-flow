@@ -11,6 +11,7 @@
 ##
 ## Usage:
 ##   docker compose --env-file .env.prod -f compose.prod.yaml build
+##   docker compose --env-file .env.prod -f compose.prod.yaml --profile tools run --rm ensure-roles
 ##   docker compose --env-file .env.prod -f compose.prod.yaml --profile tools run --rm migrate
 ##   docker compose --env-file .env.prod -f compose.prod.yaml up -d
 ##
@@ -66,6 +67,7 @@ services:
       TASKFLOW_WEBHOOK_PASSWORD: ${TASKFLOW_WEBHOOK_PASSWORD:?TASKFLOW_WEBHOOK_PASSWORD must be set}
       TASKFLOW_API_TOKEN_AUTH_PASSWORD: ${TASKFLOW_API_TOKEN_AUTH_PASSWORD:?TASKFLOW_API_TOKEN_AUTH_PASSWORD must be set}
       TASKFLOW_BILLING_SWEEP_PASSWORD: ${TASKFLOW_BILLING_SWEEP_PASSWORD:?TASKFLOW_BILLING_SWEEP_PASSWORD must be set}
+      TASKFLOW_INTEGRATION_AUTH_PASSWORD: ${TASKFLOW_INTEGRATION_AUTH_PASSWORD:?TASKFLOW_INTEGRATION_AUTH_PASSWORD must be set}
       TASKFLOW_OPS_EVENTS_PASSWORD: ${TASKFLOW_OPS_EVENTS_PASSWORD:?TASKFLOW_OPS_EVENTS_PASSWORD must be set}
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -191,6 +193,44 @@ services:
   # a rolling-deploy side effect. Reuses the api image rather than adding a
   # fifth Dockerfile — packages/db's migrate:up is `tsx`, and the api image
   # already carries the whole workspace source.
+  # Runs before `migrate` on every deploy — see docker/postgres/ensure-roles.sh's
+  # own header for why this exists as a separate step rather than folding role
+  # creation into 02-roles.sql (which only runs once, against an empty data
+  # directory) or into `migrate` (taskflow_migrator is deliberately
+  # NOCREATEROLE). Connects as the Postgres SUPERUSER, on the same `postgres`
+  # image already pulled for the database itself — no extra image to build.
+  ensure-roles:
+    image: postgres:17-alpine
+    profiles: ['tools']
+    environment:
+      PGHOST: postgres
+      PGPORT: '5432'
+      POSTGRES_USER: postgres
+      PGPASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?POSTGRES_SUPERUSER_PASSWORD must be set}
+      POSTGRES_DB: taskflow
+      TASKFLOW_MIGRATOR_PASSWORD: ${TASKFLOW_MIGRATOR_PASSWORD:?TASKFLOW_MIGRATOR_PASSWORD must be set}
+      TASKFLOW_APP_PASSWORD: ${TASKFLOW_APP_PASSWORD:?TASKFLOW_APP_PASSWORD must be set}
+      TASKFLOW_AUDIT_PASSWORD: ${TASKFLOW_AUDIT_PASSWORD:?TASKFLOW_AUDIT_PASSWORD must be set}
+      TASKFLOW_REALTIME_PASSWORD: ${TASKFLOW_REALTIME_PASSWORD:?TASKFLOW_REALTIME_PASSWORD must be set}
+      TASKFLOW_COLLAB_PASSWORD: ${TASKFLOW_COLLAB_PASSWORD:?TASKFLOW_COLLAB_PASSWORD must be set}
+      TASKFLOW_NOTIFICATION_SWEEP_PASSWORD: ${TASKFLOW_NOTIFICATION_SWEEP_PASSWORD:?TASKFLOW_NOTIFICATION_SWEEP_PASSWORD must be set}
+      TASKFLOW_BACKLINKS_PASSWORD: ${TASKFLOW_BACKLINKS_PASSWORD:?TASKFLOW_BACKLINKS_PASSWORD must be set}
+      TASKFLOW_PLATFORM_ADMIN_PASSWORD: ${TASKFLOW_PLATFORM_ADMIN_PASSWORD:?TASKFLOW_PLATFORM_ADMIN_PASSWORD must be set}
+      TASKFLOW_RECORDING_INGEST_PASSWORD: ${TASKFLOW_RECORDING_INGEST_PASSWORD:?TASKFLOW_RECORDING_INGEST_PASSWORD must be set}
+      TASKFLOW_SEARCH_PASSWORD: ${TASKFLOW_SEARCH_PASSWORD:?TASKFLOW_SEARCH_PASSWORD must be set}
+      TASKFLOW_AUTOMATION_PASSWORD: ${TASKFLOW_AUTOMATION_PASSWORD:?TASKFLOW_AUTOMATION_PASSWORD must be set}
+      TASKFLOW_WEBHOOK_PASSWORD: ${TASKFLOW_WEBHOOK_PASSWORD:?TASKFLOW_WEBHOOK_PASSWORD must be set}
+      TASKFLOW_API_TOKEN_AUTH_PASSWORD: ${TASKFLOW_API_TOKEN_AUTH_PASSWORD:?TASKFLOW_API_TOKEN_AUTH_PASSWORD must be set}
+      TASKFLOW_BILLING_SWEEP_PASSWORD: ${TASKFLOW_BILLING_SWEEP_PASSWORD:?TASKFLOW_BILLING_SWEEP_PASSWORD must be set}
+      TASKFLOW_INTEGRATION_AUTH_PASSWORD: ${TASKFLOW_INTEGRATION_AUTH_PASSWORD:?TASKFLOW_INTEGRATION_AUTH_PASSWORD must be set}
+      TASKFLOW_OPS_EVENTS_PASSWORD: ${TASKFLOW_OPS_EVENTS_PASSWORD:?TASKFLOW_OPS_EVENTS_PASSWORD must be set}
+    volumes:
+      - ./docker/postgres/ensure-roles.sh:/ensure-roles.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ['sh', '/ensure-roles.sh']
+
   migrate:
     image: ${REGISTRY:-ghcr.io/m-ishfaq}/task-flow-api:${IMAGE_TAG:-local}
     build:
