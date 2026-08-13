@@ -73,7 +73,7 @@ async function call(
 
 /** Registers, verifies, and signs in with a password. Returns the access token. */
 async function signedInUser(email: string): Promise<string> {
-  await call('auth.register', { payload: { email, password: PASSWORD } });
+  await call('auth.register', { payload: { email, password: PASSWORD, name: 'Test User' } });
 
   const link = deliveries.find(
     (message) => message.kind === 'verify_email' && message.email === email,
