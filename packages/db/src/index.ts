@@ -108,6 +108,8 @@ export {
   type UnprocessedPageVersion,
 } from './docs-backlinks.js';
 
+export { walRowsSinceLatestSnapshot } from './docs-materialize.js';
+
 export { readNotificationPrefsTimezone } from './notification-prefs-timezone.js';
 
 export { consumeAutomationBudget } from './automation-budget.js';
