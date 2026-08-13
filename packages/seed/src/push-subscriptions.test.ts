@@ -75,6 +75,7 @@ function harnessFor(profile: Profile, users: readonly SeededUser[], seed = 'push
     telephony: null,
     keys: null,
     payments: null,
+    platformOperator: null,
     log: () => undefined,
     use: <Out>(module: SeedModule<Out>): Out => {
       if (!outputs.has(module)) throw new Error(`no output recorded for ${module.name}`);

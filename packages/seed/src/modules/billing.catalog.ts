@@ -170,6 +170,18 @@ export const catalogModule = defineSeedModule({
     }
 
     const { operator } = ctx.use(adminModule);
+    /* Every call below is attributed to the operator as an actor, in a REAL
+       operator-audit row (SEED_REQUEST_ID's own comment) — there is no
+       "seeded by nobody" actor to fall back to, and inventing one would
+       write an audit entry that lies about who acted. Same skip as the
+       payments check above: SEED_PLATFORM_ADMIN_EMAIL/PASSWORD unset means
+       there is no operator to be the actor, so the catalog goes unseeded
+       along with the console that would have managed it. */
+    if (operator === null) {
+      ctx.log('billing.catalog: no platform operator — skipped.');
+      return { planIds: [], created: 0, reused: 0 };
+    }
+
     const deps = { events: new InMemoryEventBus(), payments: ctx.payments };
     const actor = {
       userId: unsafeAsId<'UserId'>(operator.id) as UserId,
@@ -203,7 +215,7 @@ export const catalogModule = defineSeedModule({
     /* Never grantable through a plan — it authorizes REAL CARRIER SPEND, so a
        pricing table must not be able to hand it out. `createPlan` refuses it
        too; this only says so before anything has been created. */
-    const spendFlag: string = 'telephonyLiveCredentials';
+    const spendFlag = 'telephonyLiveCredentials';
     if (CATALOG.some((tier) => (tier.features as readonly string[]).includes(spendFlag))) {
       throw new Error(`billing.catalog: ${spendFlag} is not grantable through a plan.`);
     }

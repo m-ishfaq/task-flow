@@ -53,6 +53,17 @@ export interface ResetOptions {
   readonly connection: AdminConnection;
   /** The same roots a normal run would seed — reset only needs their tables. */
   readonly roots: readonly SeedModule[];
+  /**
+   * The CURRENTLY configured `SEED_PLATFORM_ADMIN_EMAIL`, or null/undefined
+   * when unset. The platform operator's address no longer necessarily ends
+   * in `SEED_EMAIL_DOMAIN` (`context.ts`'s `PlatformOperatorSeedConfig`), so
+   * the domain-suffix match below cannot find it — this is the second,
+   * narrower marker that can. Only the email THIS run is configured with,
+   * deliberately: a run with no operator email at all matches nothing extra,
+   * which is the safe default for a file whose entire job is to never touch
+   * a row it cannot positively identify as its own.
+   */
+  readonly platformOperatorEmail?: string | null;
   readonly log: (message: string) => void;
 }
 
@@ -64,7 +75,7 @@ export interface ResetResult {
 export async function reset(options: ResetOptions): Promise<ResetResult> {
   const { connection, roots, log } = options;
 
-  const userIds = await findSeededUserIds(connection);
+  const userIds = await findSeededUserIds(connection, options.platformOperatorEmail ?? null);
   if (userIds.length === 0) {
     log('reset: no seeded users found — nothing to remove.');
     return { orgsRemoved: 0, usersRemoved: 0 };
@@ -252,13 +263,22 @@ async function findTablesWithoutOrgId(
   return tables.filter((table) => table !== 'identity.orgs' && !withOrgId.has(table));
 }
 
-async function findSeededUserIds(connection: AdminConnection): Promise<readonly string[]> {
+async function findSeededUserIds(
+  connection: AdminConnection,
+  platformOperatorEmail: string | null,
+): Promise<readonly string[]> {
   // identity.users has no tenant RLS, so no scope is needed — but clearing it
   // anyway costs nothing and documents that this read is deliberately global.
   await connection.setOrg(null);
+  /* The second branch is a no-op when `platformOperatorEmail` is null:
+     `email_normalized = NULL` is UNKNOWN for every row, never TRUE, so the OR
+     contributes nothing and the query degrades to the domain-suffix match
+     alone — see ResetOptions.platformOperatorEmail's own header. */
   const result = await connection.query(
-    `SELECT id FROM identity.users WHERE email_normalized LIKE '%@' || $1`,
-    [SEED_EMAIL_DOMAIN],
+    `SELECT id FROM identity.users
+      WHERE email_normalized LIKE '%@' || $1
+         OR email_normalized = $2`,
+    [SEED_EMAIL_DOMAIN, platformOperatorEmail?.toLowerCase() ?? null],
   );
   return result.rows.map((row) => String(row['id']));
 }

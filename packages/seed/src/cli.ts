@@ -8,7 +8,11 @@ import { FakePaymentProvider, StripePaymentProvider } from '@taskflow/payments';
 import { TwilioTelephonyProvider } from '@taskflow/telephony';
 import { masterKeysFromBase64, SoftwareKeyProvider } from '@taskflow/security';
 import type { KeyProvider, PaymentProvider, StorageProvider } from '@taskflow/contracts';
-import { createSeedContext, type TelephonySeedConfig } from './context.js';
+import {
+  createSeedContext,
+  type PlatformOperatorSeedConfig,
+  type TelephonySeedConfig,
+} from './context.js';
 import { createRng } from './rng.js';
 import {
   DEFAULT_PROFILE,
@@ -199,7 +203,7 @@ function assertSafeToSeed(migrationUrl: string): void {
  */
 function buildPayments(): PaymentProvider {
   if (process.env['SEED_PAYMENTS'] === 'fake') {
-    console.info('billing.catalog: SEED_PAYMENTS=fake — using the in-memory processor.');
+    console.warn('billing.catalog: SEED_PAYMENTS=fake — using the in-memory processor.');
     return new FakePaymentProvider();
   }
 
@@ -214,6 +218,25 @@ function buildPayments(): PaymentProvider {
       '  Set SEED_PAYMENTS=fake to seed the catalog against the in-memory processor instead.',
   );
   return new StripePaymentProvider({ secretKey });
+}
+
+/**
+ * The platform operator's login, or null to seed no operator at all.
+ *
+ * Both `SEED_PLATFORM_ADMIN_EMAIL` and `SEED_PLATFORM_ADMIN_PASSWORD` must be
+ * set — the same all-or-nothing shape `buildTelephonySeedConfig` uses for its
+ * four variables, so a half-configured pair fails the same way a fully absent
+ * one does rather than seeding an account with an empty password. Unlike
+ * every other `build*` function here, there is no fallback to a fixture
+ * value: the account this seeds can suspend any organization and read a
+ * global audit log, and `identity.users`'s own header explains why that must
+ * never come from a hardcoded pair committed to the repository.
+ */
+function buildPlatformOperatorConfig(): PlatformOperatorSeedConfig | null {
+  const email = process.env['SEED_PLATFORM_ADMIN_EMAIL'];
+  const password = process.env['SEED_PLATFORM_ADMIN_PASSWORD'];
+  if (!email || !password) return null;
+  return { email, password };
 }
 
 function buildStorage(): StorageProvider | null {
@@ -346,10 +369,19 @@ async function main(): Promise<void> {
     );
   }
 
+  const platformOperator = buildPlatformOperatorConfig();
+  if (!platformOperator) {
+    console.warn(
+      'platform.admin: SEED_PLATFORM_ADMIN_EMAIL/SEED_PLATFORM_ADMIN_PASSWORD not set — the\n' +
+        '  platform operator will be skipped, so the seeded database will have no\n' +
+        '  /platform-admin console access. Set both to seed one.',
+    );
+  }
+
   const connection = await connectAsMigrator({ url: migrationUrl });
 
   try {
-  /* `billing.catalog` is a ROOT rather than a dependency of something else:
+    /* `billing.catalog` is a ROOT rather than a dependency of something else:
      nothing in the tenant graph requires it (an org's plan is written by
      `billing.subscriptions`, which does), and a module no root reaches is a
      module that silently never runs. */
@@ -359,6 +391,7 @@ async function main(): Promise<void> {
       await reset({
         connection,
         roots,
+        platformOperatorEmail: platformOperator?.email ?? null,
         log: (message) => {
           console.warn(message);
         },
@@ -411,6 +444,7 @@ async function main(): Promise<void> {
       telephony,
       keys,
       payments,
+      platformOperator,
       log: (message) => {
         console.warn(message);
       },
@@ -441,11 +475,14 @@ async function main(): Promise<void> {
        only place a fresh database says who that is. Its own credentials, on
        their own lines, because reusing the shared demo password for the one
        account that can suspend any organization would put the console behind
-       whatever password a demo audience was just shown. */
-    console.warn('\nPlatform operator (separate credentials, belongs to NO org):');
-    console.warn(`  email:    ${operator.email}`);
-    console.warn(`  password: ${operatorPassword}`);
-    console.warn('  sign in, then follow "Platform console" on the org picker.');
+       whatever password a demo audience was just shown. Absent entirely when
+       `operator` is null — nothing was seeded, so nothing to print. */
+    if (operator !== null && operatorPassword !== null) {
+      console.warn('\nPlatform operator (separate credentials, belongs to NO org):');
+      console.warn(`  email:    ${operator.email}`);
+      console.warn(`  password: ${operatorPassword}`);
+      console.warn('  sign in, then follow "Platform console" on the org picker.');
+    }
 
     /* One-time secrets (Phase 10): the API token and the webhook signing
        secret exist in plaintext exactly once, at mint — the same rule the

@@ -70,8 +70,15 @@ export const OVERRIDES = [
 ] as const;
 
 export interface PlatformAdminOutput {
-  /** The seeded operator — a dedicated account in zero orgs. */
-  readonly operator: SeededUser;
+  /**
+   * The seeded operator — a dedicated account in zero orgs — or null when
+   * `identity.users` seeded none (`SEED_PLATFORM_ADMIN_EMAIL`/
+   * `SEED_PLATFORM_ADMIN_PASSWORD` unset). This module skips its own writes
+   * entirely in that case: `platform.flag_overrides.set_by` references the
+   * operator, so there is no operator to grant and nothing to attribute an
+   * override to.
+   */
+  readonly operator: SeededUser | null;
   readonly overrides: readonly { readonly flagName: string; readonly value: boolean }[];
 }
 
@@ -86,6 +93,15 @@ export const adminModule = defineSeedModule({
 
   async seed(ctx): Promise<PlatformAdminOutput> {
     const { operator } = ctx.use(usersModule);
+
+    if (operator === null) {
+      ctx.log(
+        'platform.admin: no platform operator (SEED_PLATFORM_ADMIN_EMAIL/' +
+          'SEED_PLATFORM_ADMIN_PASSWORD unset) — skipped. The seeded database has no ' +
+          '/platform-admin console access.',
+      );
+      return { operator: null, overrides: [] };
+    }
 
     /* No orgScope — see the file header. `granted_at` is the run's `now`,
        exactly as every other module derives its timestamps. */

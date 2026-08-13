@@ -1141,17 +1141,17 @@ function marketingOrg(spec: {
     grants,
     teams: [...spec.teams],
     members: [
-      ...spec.members.map((user, index) => ({
+      ...spec.members.map((user, index): { user: number; role: Role } => ({
         user,
-        role: (index === 0 ? 'owner' : index < 3 ? 'admin' : 'member') as Role,
+        role: index === 0 ? 'owner' : index < 3 ? 'admin' : 'member',
       })),
       /* Borrowed from other tenants, and one of them a GUEST. Both matter:
          the org switcher and `OrgGate`'s stored-org validation are only
          reachable with users in more than one org, and a guest grants nothing
          from their role, so every guest surface depends on a tuple existing. */
-      ...(spec.guests ?? []).map((user, index) => ({
+      ...(spec.guests ?? []).map((user, index): { user: number; role: Role } => ({
         user,
-        role: (index === 0 ? 'guest' : 'member') as Role,
+        role: index === 0 ? 'guest' : 'member',
       })),
     ],
     channels: [
@@ -1202,7 +1202,9 @@ function marketingOrg(spec: {
             { name: null, type: 'dm', members: 2, messages: 45 },
           ] as const)
         : []),
-      ...(roster >= 5 ? ([{ name: null, type: 'group_dm', members: 3, messages: 70 }] as const) : []),
+      ...(roster >= 5
+        ? ([{ name: null, type: 'group_dm', members: 3, messages: 70 }] as const)
+        : []),
     ],
     spaces: [
       { name: 'Handbook', pages: 34, depth: 4, wide: 8, grants: 4, archivedSubtree: true },
@@ -1279,11 +1281,36 @@ const MARKETING: Profile = {
       guests: [40, 41],
       billing: { planId: 'business', status: 'active', renewsInDays: 22, priceCents: 14_900 },
       projects: [
-        { name: 'Platform', key: 'PLAT', boards: 3, cards: 120, sprints: { completed: 6, planned: 2 } },
-        { name: 'Mobile App', key: 'MOB', boards: 2, cards: 80, sprints: { completed: 4, planned: 1 } },
-        { name: 'Website', key: 'WEB', boards: 2, cards: 60, sprints: { completed: 3, planned: 2 } },
+        {
+          name: 'Platform',
+          key: 'PLAT',
+          boards: 3,
+          cards: 120,
+          sprints: { completed: 6, planned: 2 },
+        },
+        {
+          name: 'Mobile App',
+          key: 'MOB',
+          boards: 2,
+          cards: 80,
+          sprints: { completed: 4, planned: 1 },
+        },
+        {
+          name: 'Website',
+          key: 'WEB',
+          boards: 2,
+          cards: 60,
+          sprints: { completed: 3, planned: 2 },
+        },
         /* Archived, so the "show archived" affordance has something to reveal. */
-        { name: 'Legacy Portal', key: 'LEG', boards: 1, cards: 24, sprints: { completed: 8, planned: 0 }, archived: true },
+        {
+          name: 'Legacy Portal',
+          key: 'LEG',
+          boards: 1,
+          cards: 24,
+          sprints: { completed: 8, planned: 0 },
+          archived: true,
+        },
       ],
     }),
 
@@ -1296,8 +1323,20 @@ const MARKETING: Profile = {
       guests: [0, 42],
       billing: { planId: 'pro', status: 'active', renewsInDays: 11, priceCents: 4900 },
       projects: [
-        { name: 'Patient Portal', key: 'PP', boards: 2, cards: 95, sprints: { completed: 5, planned: 2 } },
-        { name: 'Integrations', key: 'INT', boards: 2, cards: 64, sprints: { completed: 3, planned: 1 } },
+        {
+          name: 'Patient Portal',
+          key: 'PP',
+          boards: 2,
+          cards: 95,
+          sprints: { completed: 5, planned: 2 },
+        },
+        {
+          name: 'Integrations',
+          key: 'INT',
+          boards: 2,
+          cards: 64,
+          sprints: { completed: 3, planned: 1 },
+        },
       ],
     }),
 
@@ -1317,7 +1356,13 @@ const MARKETING: Profile = {
       },
       projects: [
         { name: 'Fleet', key: 'FLT', boards: 2, cards: 72, sprints: { completed: 4, planned: 1 } },
-        { name: 'Warehouse', key: 'WH', boards: 1, cards: 40, sprints: { completed: 2, planned: 2 } },
+        {
+          name: 'Warehouse',
+          key: 'WH',
+          boards: 1,
+          cards: 40,
+          sprints: { completed: 2, planned: 2 },
+        },
       ],
     }),
 
@@ -1335,7 +1380,13 @@ const MARKETING: Profile = {
         graceEndsInDays: 4,
       },
       projects: [
-        { name: 'Client Work', key: 'CW', boards: 2, cards: 55, sprints: { completed: 3, planned: 1 } },
+        {
+          name: 'Client Work',
+          key: 'CW',
+          boards: 2,
+          cards: 55,
+          sprints: { completed: 3, planned: 1 },
+        },
       ],
     }),
 
@@ -1348,8 +1399,20 @@ const MARKETING: Profile = {
       guests: [20],
       billing: { planId: 'starter', status: 'active', renewsInDays: 26, priceCents: 1900 },
       projects: [
-        { name: 'Pipelines', key: 'PIPE', boards: 2, cards: 68, sprints: { completed: 4, planned: 2 } },
-        { name: 'Dashboards', key: 'DASH', boards: 1, cards: 36, sprints: { completed: 1, planned: 1 } },
+        {
+          name: 'Pipelines',
+          key: 'PIPE',
+          boards: 2,
+          cards: 68,
+          sprints: { completed: 4, planned: 2 },
+        },
+        {
+          name: 'Dashboards',
+          key: 'DASH',
+          boards: 1,
+          cards: 36,
+          sprints: { completed: 1, planned: 1 },
+        },
       ],
     }),
 
@@ -1373,7 +1436,13 @@ const MARKETING: Profile = {
       members: [38, 39, 43],
       billing: { planId: 'free', status: 'trialing', trialEndsInHours: 30 },
       projects: [
-        { name: 'Onboarding', key: 'ONB', boards: 1, cards: 22, sprints: { completed: 0, planned: 2 } },
+        {
+          name: 'Onboarding',
+          key: 'ONB',
+          boards: 1,
+          cards: 22,
+          sprints: { completed: 0, planned: 2 },
+        },
       ],
     }),
 
@@ -1387,7 +1456,13 @@ const MARKETING: Profile = {
       members: [44, 45, 46, 47],
       billing: { planId: 'pro', status: 'active', renewsInDays: 15, priceCents: 4900 },
       projects: [
-        { name: 'Site Works', key: 'SITE', boards: 1, cards: 34, sprints: { completed: 3, planned: 1 } },
+        {
+          name: 'Site Works',
+          key: 'SITE',
+          boards: 1,
+          cards: 34,
+          sprints: { completed: 3, planned: 1 },
+        },
       ],
     }),
 
@@ -1400,9 +1475,27 @@ const MARKETING: Profile = {
       guests: [26],
       billing: { planId: 'business', status: 'active', renewsInDays: 4, priceCents: 14_900 },
       projects: [
-        { name: 'Trading Core', key: 'TC', boards: 3, cards: 140, sprints: { completed: 7, planned: 2 } },
-        { name: 'Risk Engine', key: 'RISK', boards: 2, cards: 88, sprints: { completed: 5, planned: 1 } },
-        { name: 'Client Portal', key: 'CP', boards: 2, cards: 62, sprints: { completed: 2, planned: 2 } },
+        {
+          name: 'Trading Core',
+          key: 'TC',
+          boards: 3,
+          cards: 140,
+          sprints: { completed: 7, planned: 2 },
+        },
+        {
+          name: 'Risk Engine',
+          key: 'RISK',
+          boards: 2,
+          cards: 88,
+          sprints: { completed: 5, planned: 1 },
+        },
+        {
+          name: 'Client Portal',
+          key: 'CP',
+          boards: 2,
+          cards: 62,
+          sprints: { completed: 2, planned: 2 },
+        },
       ],
     }),
 
@@ -1414,7 +1507,13 @@ const MARKETING: Profile = {
       members: [42],
       billing: { planId: 'starter', status: 'active', renewsInDays: 19, priceCents: 1900 },
       projects: [
-        { name: 'Engagements', key: 'ENG', boards: 1, cards: 18, sprints: { completed: 1, planned: 1 } },
+        {
+          name: 'Engagements',
+          key: 'ENG',
+          boards: 1,
+          cards: 18,
+          sprints: { completed: 1, planned: 1 },
+        },
       ],
     }),
   ],

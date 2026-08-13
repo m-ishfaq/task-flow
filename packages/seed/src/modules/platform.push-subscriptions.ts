@@ -1,4 +1,3 @@
-import { generateVapidKeys } from '@taskflow/security';
 import { defineSeedModule } from '../registry.js';
 import { daysBefore } from '../support.js';
 import type { Rng } from '../rng.js';
@@ -71,6 +70,43 @@ const PUSH_SERVICES = [
   'https://push.taskflow.seed.test/apns',
 ] as const;
 
+/**
+ * Real P-256 uncompressed public points (65 bytes, leading `0x04`), picked
+ * deterministically per row rather than generated fresh.
+ *
+ * `isValidSubscriptionKeys` decodes `p256dh` and requires exactly that shape;
+ * 87 random base64url characters are the right LENGTH and essentially never
+ * the right first byte, so a naive `token(rng, 87)` here produced a
+ * structurally invalid key on every row — the delivery loop could not
+ * encrypt for it, each attempt stayed pending and was retried forever, and a
+ * seeded database produced a continuous stream of push failures in the API
+ * log that read as a bug in web-push rather than as invented key material.
+ *
+ * The fix is NOT `generateVapidKeys()` called per row: that function reaches
+ * into `node:crypto` for genuine randomness, which means two seed runs with
+ * the identical `--seed` value produce DIFFERENT databases — silently
+ * breaking the one guarantee `pnpm seed --seed <value>` documents. This
+ * package's own determinism suite (`push-subscriptions.test.ts`) caught it:
+ * running the same module twice with the same seed produced two different
+ * sets of rows, differing only in this column.
+ *
+ * These five were generated once, offline, with the exact code
+ * `generateVapidKeys` runs (`createECDH('prime256v1').generateKeys()`,
+ * base64url-encoded) — real points, just fixed rather than fresh. Nothing
+ * ever encrypts a real push payload against seeded key material (the file
+ * header's "plaintext, on purpose" argument extends to reuse: there is no
+ * real device on the other end to distinguish one valid point from another),
+ * so picking deterministically from a small pool costs nothing a real
+ * subscription would have needed.
+ */
+const P256DH_KEYS = [
+  'BJD-_aM8LxcrwduKEOj30x3D9u43tL3cfh4tcezro-7Pc3d6-W6z4btzwh-oHYH_7QgOn6-ZFEsZIizuH8JLJIA',
+  'BOdHrnzdYcSUg3fvzhliE21SSSvKBvkkwL5276Gam02JyuAI32DdPrZW-jdc23PVs86dMhV2kRMzRRYV7XYNovU',
+  'BPu3C6hQhzqGugAXqfcph9j1z3bk4P97tlt0P18plYPMi1f4rHQDD_tRJ1K6cUkVTsd1n6A3XFRNHDv3Jvc2XS0',
+  'BC0Tcl7xe5OiVIgGziSjNOnhC-jPMFIpu3OJk_4jufOUQeZrrMmwFxc37dd1G-1Htkw4_KJ3X2cQhhybCaSo0gs',
+  'BB99DlFdUYW8STiQgNMk_Ocu7b_7UIbLQhEHkRgrWO87lnPRKHGG6btoCD-KnZEb_bovIY5VPcVOuwfGG7QcGz4',
+] as const;
+
 const URL_SAFE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
 /**
@@ -113,21 +149,9 @@ export const pushSubscriptionsModule = defineSeedModule({
           rng.uuid(createdAt),
           user.id,
           `${rng.pick(PUSH_SERVICES)}/${token(rng, 32)}`,
-          /* A REAL P-256 point, not 87 random base64url characters.
-             `isValidSubscriptionKeys` decodes this and requires 65 bytes
-             beginning `0x04` (the uncompressed-point marker); random
-             characters are the right LENGTH and essentially never the right
-             first byte, so every seeded subscription was structurally invalid.
-             The delivery loop could not encrypt for them, each attempt stayed
-             pending and was retried, and a seeded database produced a
-             continuous stream of push failures in the API log — which reads as
-             a bug in web-push rather than as invented key material.
-
-             `generateVapidKeys` already produces exactly this shape (VAPID
-             keys are P-256 uncompressed points), and it lives in
-             `packages/security` — the one place allowed to touch
-             `node:crypto`, so the seeder does not have to reach for it. */
-          generateVapidKeys().publicKey,
+          /* See P256DH_KEYS's own header on why this is a deterministic pick
+             from a fixed pool rather than a fresh `generateVapidKeys()` call. */
+          rng.pick(P256DH_KEYS),
           /* `auth` genuinely IS 16 arbitrary bytes, so the token generator is
              correct here — the validator only checks its decoded length. */
           token(rng, 22),

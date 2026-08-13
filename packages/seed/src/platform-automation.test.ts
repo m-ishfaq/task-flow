@@ -207,6 +207,7 @@ function harnessFor(
     storage: null,
     telephony: null,
     keys: options?.keys ?? null,
+    platformOperator: null,
     log: () => undefined,
     use: <Out>(module: SeedModule<Out>): Out => {
       const output = outputs.get(module);

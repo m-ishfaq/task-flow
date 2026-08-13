@@ -13,6 +13,26 @@ import type { Profile } from './profiles.js';
 import type { Rng } from './rng.js';
 
 /**
+ * The platform operator's login, or nothing to seed one at all.
+ *
+ * Assembled in `cli.ts` from `SEED_PLATFORM_ADMIN_EMAIL`/
+ * `SEED_PLATFORM_ADMIN_PASSWORD` (guardrail 7: only a CLI entry point may
+ * read raw env) — the same "resolved object or null" shape `TelephonySeedConfig`
+ * and `buildKeysProvider` use, so a module never runs half-configured.
+ *
+ * Unlike `storage`/`telephony`/`keys`, this is not a technical prerequisite —
+ * nothing here decrypts or dials. It is null by DEFAULT on purpose: the
+ * account this seeds can suspend any organization and read a global audit
+ * log, so a fresh clone must not get one for free with no credential anyone
+ * chose. `identity.users` and `platform.admin` both skip themselves when this
+ * is null, exactly like `platform.webhooks` skips on a null `keys`.
+ */
+export interface PlatformOperatorSeedConfig {
+  readonly email: string;
+  readonly password: string;
+}
+
+/**
  * Everything `comms.telephony` needs that a database connection cannot supply.
  *
  * Assembled in `cli.ts` from the environment (guardrail 7: only a CLI entry
@@ -112,6 +132,15 @@ export interface SeedContext {
    * says so out loud before it does — see `buildPayments`.
    */
   readonly payments: PaymentProvider | null;
+  /**
+   * The platform operator's login, or null to skip seeding one — see
+   * `PlatformOperatorSeedConfig`. `identity.users` reads this to decide
+   * whether to write the operator's `identity.users` row at all, and
+   * `platform.admin` reads `identity.users`' own output rather than this
+   * field directly, so the two modules can never disagree about whether an
+   * operator exists.
+   */
+  readonly platformOperator: PlatformOperatorSeedConfig | null;
   log(message: string): void;
   /**
    * The output of a module this one declared in `requires`.
@@ -264,6 +293,7 @@ export interface CreateContextOptions {
   readonly telephony: TelephonySeedConfig | null;
   readonly keys: KeyProvider | null;
   readonly payments: PaymentProvider | null;
+  readonly platformOperator: PlatformOperatorSeedConfig | null;
   readonly log: (message: string) => void;
 }
 
@@ -294,6 +324,7 @@ export function createSeedContext(options: CreateContextOptions): SeedContextHan
     telephony: options.telephony,
     keys: options.keys,
     payments: options.payments,
+    platformOperator: options.platformOperator,
     log: options.log,
 
     use: <Out>(module: SeedModule<Out>): Out => {

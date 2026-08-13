@@ -27,32 +27,6 @@ import { daysBefore } from '../support.js';
 export const SEED_PASSWORD = 'TaskFlow!Demo1';
 
 /**
- * The platform operator's own address and password — deliberately NOT the
- * shared pair above.
- *
- * The operator can suspend any organization, change every org's plan, and read
- * a global audit log. Handing it the same password as twenty-four demo
- * employees means anyone who is shown a demo account is one email address away
- * from the console: the credential that protects the most privileged account in
- * the system would be the one most widely distributed.
- *
- * Separate credentials also make the seeded database honest about how the real
- * thing is meant to be operated — an operator account is not a member account
- * with an extra flag, and `platform.operators` having no relationship to org
- * membership is the whole point of Wave 1.
- *
- * ## This is still a PUBLIC password
- *
- * It is committed to a public repository, so its strength buys nothing against
- * anyone who can read this file. What actually protects it is that seeded
- * accounts only ever exist in a development database: `assertSafeToSeed`
- * refuses to run against `NODE_ENV=production` or a `_test`-suffixed
- * database, and `.test` is RFC 2606-reserved so the address can never receive
- * mail. Treat any environment where this pair works as a development
- * environment, because that is what it is.
- */
-
-/**
  * The address domain every seeded account uses.
  *
  * Load-bearing for the reset: it is how `--reset` recognizes a user this seeder
@@ -63,15 +37,22 @@ export const SEED_PASSWORD = 'TaskFlow!Demo1';
 export const SEED_EMAIL_DOMAIN = 'taskflow.seed.test';
 
 /**
- * The operator's address, built from `SEED_EMAIL_DOMAIN` rather than spelling
- * the domain again — `--reset` recognizes a seeded account by that exact
- * suffix, so a second copy that drifted would leave the operator behind on
- * every re-seed while every other account was cleared.
+ * The platform operator's own address and password come from
+ * `ctx.platformOperator` (`SEED_PLATFORM_ADMIN_EMAIL`/`SEED_PLATFORM_ADMIN_PASSWORD`
+ * in `cli.ts`) — deliberately NOT a constant in this file, and deliberately
+ * NOT the shared `SEED_PASSWORD` above.
+ *
+ * The operator can suspend any organization, change every org's plan, and read
+ * a global audit log. A hardcoded pair here would mean every clone of this
+ * repository ships the same credential for the most privileged account in the
+ * system, committed in the clear, forever — worse than sharing `SEED_PASSWORD`
+ * with the demo employees, because that one is at least meant to be public
+ * and disposable. Reading it from the environment instead means the operator
+ * simply does not exist in a database seeded with no configuration, which is
+ * the correct default: `identity.users` and `platform.admin` both skip
+ * themselves when `ctx.platformOperator` is null, the same null-is-"skip"
+ * rule `storage`/`telephony`/`keys` already follow.
  */
-export const SEED_OPERATOR_EMAIL = `operations@${SEED_EMAIL_DOMAIN}`;
-
-/** See the note above `SEED_PASSWORD` on why this is separate, and on why its strength buys nothing. */
-export const SEED_OPERATOR_PASSWORD = 'rV#9!wK2$mX5&Tp4';
 
 export interface SeededUser {
   readonly id: string;
@@ -108,12 +89,17 @@ export interface UsersOutput {
    * a seeding artifact: this account logs in, has no org, and `/` sends it to
    * the org picker — which links the console for operators precisely so this
    * is not a dead end.
+   *
+   * `null` when `ctx.platformOperator` is null — no `SEED_PLATFORM_ADMIN_EMAIL`/
+   * `SEED_PLATFORM_ADMIN_PASSWORD` configured, so there is nothing to seed a
+   * login for. `platform.admin` reads this to decide whether it has anything
+   * to grant.
    */
-  readonly operator: SeededUser;
+  readonly operator: SeededUser | null;
   /** The shared tenant-account password. Does NOT work for `operator`. */
   readonly password: string;
-  /** The operator's own password — see `SEED_OPERATOR_PASSWORD`. */
-  readonly operatorPassword: string;
+  /** The operator's own password, or null exactly when `operator` is. */
+  readonly operatorPassword: string | null;
 }
 
 export const usersModule = defineSeedModule({
@@ -125,10 +111,6 @@ export const usersModule = defineSeedModule({
     const rng = ctx.rng.fork('identity.users');
     const names = people(rng, ctx.profile.users);
     const passwordHash = await hashPassword(SEED_PASSWORD);
-    /* Hashed separately, not reused. Argon2id salts per call, so these two
-       hashes would differ even for identical inputs — but the point is that
-       the INPUTS differ, and a reader of this file can see that they do. */
-    const operatorHash = await hashPassword(SEED_OPERATOR_PASSWORD);
 
     const users: SeededUser[] = names.map((name, index) => ({
       id: rng.uuid(ctx.now),
@@ -139,15 +121,22 @@ export const usersModule = defineSeedModule({
       email: `${emailLocalPart(name)}${String(index)}@${SEED_EMAIL_DOMAIN}`,
     }));
 
-    /* A FIXED address, unlike everyone else's generated one. This is the
-       account a person types into a login box to demo the console, so it has
-       to be memorable and stable across runs and profiles — `ops@` is both,
-       where `priya.raghavan7@` is neither. */
-    const operator: SeededUser = {
-      id: rng.uuid(ctx.now),
-      name: { first: 'Platform', last: 'Operations', full: 'Platform Operations' },
-      email: SEED_OPERATOR_EMAIL,
-    };
+    /* null when ctx.platformOperator is null — see PlatformOperatorSeedConfig's
+       own header on why that is the correct default rather than a fallback to
+       a hardcoded pair. Hashed separately from the shared tenant hash, not
+       reused: Argon2id salts per call, so these two would differ even for
+       identical inputs — but the point is that the INPUTS differ, and a
+       reader of this file can see that they do. */
+    const operator: SeededUser | null =
+      ctx.platformOperator === null
+        ? null
+        : {
+            id: rng.uuid(ctx.now),
+            name: { first: 'Platform', last: 'Operations', full: 'Platform Operations' },
+            email: ctx.platformOperator.email,
+          };
+    const operatorHash =
+      ctx.platformOperator === null ? null : await hashPassword(ctx.platformOperator.password);
 
     /* Verified on creation. An unverified account cannot sign in, so a seeder
        that skipped this would produce a database nobody can log into — and the
@@ -166,7 +155,7 @@ export const usersModule = defineSeedModule({
         'updated_at',
         'display_name',
       ],
-      [...users, operator].map((user) => {
+      [...users, ...(operator === null ? [] : [operator])].map((user) => {
         const isOperator = user === operator;
         const createdAt = daysBefore(ctx.now, rng.int(30, 400));
         return [
@@ -189,12 +178,17 @@ export const usersModule = defineSeedModule({
       }),
     );
 
-    ctx.log(`identity.users: ${String(users.length)} accounts + operator ${operator.email}`);
+    ctx.log(
+      `identity.users: ${String(users.length)} accounts` +
+        (operator === null
+          ? ' (no platform operator — SEED_PLATFORM_ADMIN_EMAIL/SEED_PLATFORM_ADMIN_PASSWORD unset)'
+          : ` + operator ${operator.email}`),
+    );
     return {
       users,
       operator,
       password: SEED_PASSWORD,
-      operatorPassword: SEED_OPERATOR_PASSWORD,
+      operatorPassword: ctx.platformOperator?.password ?? null,
     };
   },
 });
