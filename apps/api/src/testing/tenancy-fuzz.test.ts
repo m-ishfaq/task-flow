@@ -482,17 +482,28 @@ describe('the application router', () => {
       .sort();
 
     expect(exempt).toEqual([
-      /* All three read/act on the CALLER's own org (`ctx.principal.org.orgId`,
-         Phase 12 Wave 3 §3.1) and take no id — `createCheckoutSession` is
-         NOT here because it takes a `planId` this technique can substitute.
+      /* All seven read/act on the CALLER's own org (`ctx.principal.org.orgId`,
+         Phase 12 Wave 3 §3.1) and take no id — `createCheckoutSession` and
+         `changePlan` are NOT here because they take a `planId` this
+         technique can substitute.
 
          `billing.listPlans` (Phase 12 Wave 4) is input-less for a stronger
-         reason than the other two: the catalog it reads carries no `org_id`
+         reason than the others: the catalog it reads carries no `org_id`
          AT ALL. A plan belongs to no tenant, so there is no cross-tenant read
          to attempt here — the only thing org-relative about the route is that
-         `org:billing` decides who may see the price list. */
+         `org:billing` decides who may see the price list.
+
+         `cancelPlan`, `overview`, `reconcile` and `resumePlan` (Phase 12
+         Wave 4) are the rest of the billing surface added alongside
+         `changePlan`: each mutates or reads the caller's own subscription by
+         `ctx.principal.org.orgId` alone, with nothing in the request this
+         technique could substitute another org's id into. */
+      'billing.cancelPlan',
       'billing.createPortalSession',
       'billing.listPlans',
+      'billing.overview',
+      'billing.reconcile',
+      'billing.resumePlan',
       'billing.status',
       /* `chat.channels.list` reads the caller's own tuples and their org's
          public channels. There is no id to substitute, so calling it with the

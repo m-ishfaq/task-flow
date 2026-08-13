@@ -690,36 +690,18 @@ describe('suspension enforcement', () => {
   });
 });
 
-describe('billing enforcement (Phase 12 Wave 3 §3.2)', () => {
-  /* Pinned against real Postgres for the identical reason the suspension
-     suite above is: resolveOrgMembership reads billing_status from the SAME
-     withUserScope row as status, in the SAME query, and only an empirical
-     assertion — not a reading of the code — proves that read actually
-     reaches a real row under RLS rather than silently seeing `undefined`
-     and falling through as "not lapsed". */
-  it('refuses a billing-lapsed org for every member, including its owner, with a distinct error', async () => {
-    const orgId = await newOrg('billing-lapsed-enforce');
-    await members.addMember(
-      orgId,
-      { email: 'colleague@tenancy.test', role: 'member' },
-      actorOf(OWNER),
-    );
-
-    await admin.setOrg(orgId);
-    await admin.query(`UPDATE identity.orgs SET billing_status = 'canceled' WHERE id = $1`, [
-      orgId,
-    ]);
-    await admin.setOrg(null);
-
-    await expect(resolveOrgMembership(OWNER, orgId)).rejects.toMatchObject({
-      code: 'ORG_BILLING_LAPSED',
-    });
-    await expect(resolveOrgMembership(COLLEAGUE, orgId)).rejects.toMatchObject({
-      code: 'ORG_BILLING_LAPSED',
-    });
-  });
-
-  it.each(['trialing', 'active', 'past_due'] as const)(
+describe('billing enforcement (Phase 12 Wave 3 §3.2, superseded by Wave 4)', () => {
+  /* Wave 3 refused resolveOrgMembership outright on a lapsed billing_status.
+     Wave 4 replaced that lockout with the trial-to-Free design
+     (resolve.ts's own header): a lapsed org lands on the default plan and
+     keeps its data, enforced per-module by entitlements instead of at this
+     one chokepoint. These assertions now prove the OPPOSITE of Wave 3's —
+     that billing status alone never blocks membership resolution — pinned
+     against real Postgres for the same reason the suspension suite above
+     is: only an empirical run proves the read actually reaches a real row
+     under RLS rather than silently seeing `undefined` and coincidentally
+     reading as "not blocked". */
+  it.each(['trialing', 'active', 'past_due', 'canceled'] as const)(
     'does not block a %s org',
     async (billingStatus) => {
       // `orgs_slug_format` (migration 0004) admits only [a-z0-9-] — swap the
@@ -737,15 +719,13 @@ describe('billing enforcement (Phase 12 Wave 3 §3.2)', () => {
     },
   );
 
-  it('never clobbers the other column: an operator suspension survives billing recovery, and a billing cancellation survives operator reactivation', async () => {
-    /* The whole point of two independent columns (§3.2's migration header):
-       an automated billing recovery must never silently undo a manual
-       operator suspension, and an operator's own action must never silently
-       clear a billing state it knows nothing about. This test writes both
-       columns directly, exactly as the sweep/webhook and the platform
-       console each write only their own — never in combination — and
-       asserts the refusal that actually fires is the one whose column is
-       still in a blocking state. */
+  it('an operator suspension still blocks access regardless of billing status', async () => {
+    /* The two-column argument Wave 3 made (§3.2's migration header) still
+       holds even though billing_status no longer blocks on its own: an
+       operator's manual suspension must not be undoable by anything billing
+       related, including a billing_status this org never even had trouble
+       with. Two orgs, one paid and one canceled, both suspended — both must
+       refuse, on the SAME error, because only `status` is being consulted. */
     const suspendedButPaid = await newOrg('operator-suspended-paid-enforce');
     await admin.setOrg(suspendedButPaid);
     await admin.query(
@@ -757,15 +737,15 @@ describe('billing enforcement (Phase 12 Wave 3 §3.2)', () => {
       code: 'ORG_SUSPENDED',
     });
 
-    const activeButUnpaid = await newOrg('operator-active-unpaid-enforce');
-    await admin.setOrg(activeButUnpaid);
+    const suspendedAndCanceled = await newOrg('operator-suspended-canceled-enforce');
+    await admin.setOrg(suspendedAndCanceled);
     await admin.query(
-      `UPDATE identity.orgs SET status = 'active', billing_status = 'canceled' WHERE id = $1`,
-      [activeButUnpaid],
+      `UPDATE identity.orgs SET status = 'suspended', billing_status = 'canceled' WHERE id = $1`,
+      [suspendedAndCanceled],
     );
     await admin.setOrg(null);
-    await expect(resolveOrgMembership(OWNER, activeButUnpaid)).rejects.toMatchObject({
-      code: 'ORG_BILLING_LAPSED',
+    await expect(resolveOrgMembership(OWNER, suspendedAndCanceled)).rejects.toMatchObject({
+      code: 'ORG_SUSPENDED',
     });
   });
 });
