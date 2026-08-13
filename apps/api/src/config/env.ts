@@ -505,6 +505,10 @@ const KNOWN_VARIABLES = new Set([
   'DATABASE_PLATFORM_ADMIN_URL',
   'DATABASE_AUTOMATION_URL',
   'DATABASE_WEBHOOK_URL',
+  /* The billing sweep's scan role (Phase 12 Wave 3, migration 0056) — read by
+     apps/worker, never here, and the next variable of this exact class to stop
+     a correctly-configured process booting. */
+  'DATABASE_BILLING_SWEEP_URL',
   'DATABASE_API_TOKEN_URL',
   'VAPID_SUBJECT',
   'VAPID_PUBLIC_KEY',
@@ -533,6 +537,7 @@ const KNOWN_VARIABLES = new Set([
   'MAIL_HOST',
   'MAIL_PORT',
   'MAIL_SECURE',
+  'DATABASE_INTEGRATION_URL',
   'MAIL_FROM',
   'GOOGLE_CLIENT_ID',
   'GOOGLE_CLIENT_SECRET',
