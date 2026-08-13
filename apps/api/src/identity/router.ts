@@ -55,7 +55,19 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
     register: publicRoute({
       publicReason: 'Creating an account cannot require an account.',
     })
-      .input(z.object({ email: Email, password: Password }).strict())
+      .input(
+        z
+          .object({
+            email: Email,
+            password: Password,
+            /* Optional, deliberately: an account is identified by its email,
+               and refusing a signup over a missing display name would gate
+               the one flow that must never have avoidable friction. Bounded
+               because it is rendered everywhere a person appears. */
+            name: z.string().trim().min(1).max(80).optional(),
+          })
+          .strict(),
+      )
       .output(z.object({ status: z.literal('verification_sent') }))
       .mutation(({ input, ctx }) => identity.register(deps.identity, input, meta(ctx))),
 
@@ -69,7 +81,19 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
     login: publicRoute({
       publicReason: 'This is how a session is obtained.',
     })
-      .input(z.object({ email: Email, password: Password }).strict())
+      .input(
+        z
+          .object({
+            email: Email,
+            password: Password,
+            /* Optional, deliberately: an account is identified by its email,
+               and refusing a signup over a missing display name would gate
+               the one flow that must never have avoidable friction. Bounded
+               because it is rendered everywhere a person appears. */
+            name: z.string().trim().min(1).max(80).optional(),
+          })
+          .strict(),
+      )
       /* Two shapes (Phase 12 Wave 2 §3.2): the ordinary session, or a signed
          TOTP challenge for an account that has a second factor confirmed.
          `auth.totp.verifyLogin` is the only route that can turn the second

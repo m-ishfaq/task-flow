@@ -89,6 +89,12 @@ async function selectUser(
 export interface CreateUserInput {
   id: string;
   email: string;
+  /**
+   * What they typed at signup. Optional — an account is identified by its
+   * email, and refusing a registration over a missing display name would put
+   * avoidable friction on the one flow that must never have any.
+   */
+  displayName?: string | undefined;
   passwordHash: string;
   verification: { id: string; tokenHash: string; expiresAt: Date };
 }
@@ -116,6 +122,11 @@ export async function createUser(input: CreateUserInput): Promise<UserRow | unde
         emailNormalized: normalizeEmail(input.email),
         passwordHash: input.passwordHash,
         passwordUpdatedAt: new Date(),
+        /* Seeded at registration, on the row being created anyway — no lazy
+           profile row, no second write. people.profiles.display_name is what
+           someone LATER sets and takes precedence on read; this is what they
+           signed up as. */
+        displayName: input.displayName ?? null,
       })
       .onConflictDoNothing({ target: schema.users.emailNormalized })
       .returning({ id: schema.users.id });

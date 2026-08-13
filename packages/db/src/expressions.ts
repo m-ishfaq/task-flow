@@ -114,6 +114,71 @@ export function countRows(column: Column): SQL<string> {
 }
 
 /**
+ * `MIN(column)` over a text column, for collapsing a joined group to one value.
+ *
+ * The use it exists for: a query that already joins a row guaranteed unique
+ * per group — the org's single owner — and needs that row's column in the
+ * SELECT list without adding it to `GROUP BY`. Every non-null value in the
+ * group is identical, so MIN is a deterministic pick rather than a real
+ * aggregate, and NULL when the group has no such row.
+ *
+ * Deterministic matters more than it looks. If the "unique per group"
+ * invariant ever broke — two owners on one org — this keeps returning the same
+ * answer on every read, so the wrongness is stable and reportable instead of
+ * flickering between two values depending on plan order.
+ *
+ * Lives here rather than at the call site because raw `sql` is banned in
+ * feature code (guardrail 7), and the answer to that ban is a named expression
+ * rather than an exemption — the reasoning `compiledPredicate` already states.
+ */
+export function minText(column: Column): SQL<string | null> {
+  return sql<string | null>`MIN(${column})`;
+}
+
+/**
+ * `COALESCE(preferred, fallback)` over two COLUMNS.
+ *
+ * Distinct from `coalesce` above, which takes a literal fallback for the
+ * write path. This is for reads where the same fact lives in two places with
+ * a clear precedence between them.
+ *
+ * The case it exists for: a person's display name. `identity.users
+ * .display_name` is SEEDED at registration — what they typed on the signup
+ * form — while `people.profiles.display_name` is what they later set on the
+ * account page, on a row that is created lazily and is therefore absent for
+ * most accounts. The profile wins where it exists; the signup value is what
+ * everyone else has.
+ *
+ * Without this, the two columns drift into two answers and which one a
+ * surface shows depends on which query somebody wrote first — the operator
+ * console read the profile and showed nothing for every account that had
+ * never opened the account page, including brand-new signups who had just
+ * typed their name in.
+ */
+export function coalesceColumns(preferred: Column, fallback: Column): SQL<string | null> {
+  return sql<string | null>`COALESCE(${preferred}, ${fallback})`;
+}
+
+/**
+ * `MIN(COALESCE(preferred, fallback))` — the two above, composed.
+ *
+ * Its own function rather than nesting them, because `minText` takes a Column
+ * and `coalesceColumns` returns an SQL expression, so the nested form does not
+ * typecheck. Composing them here is better than widening `minText` to accept
+ * either: a helper that takes "a column OR any expression" stops documenting
+ * what it is for.
+ *
+ * The one caller: the org directory picks an owner's display name out of a
+ * joined group. Every non-null row in that group is the same person (the join
+ * is restricted to `role = 'owner'`), so MIN collapses the group rather than
+ * aggregating anything, and COALESCE picks the profile name over the signup
+ * one — see `coalesceColumns`.
+ */
+export function minCoalesced(preferred: Column, fallback: Column): SQL<string | null> {
+  return sql<string | null>`MIN(COALESCE(${preferred}, ${fallback}))`;
+}
+
+/**
  * A predicate compiled elsewhere, converted into a Drizzle expression.
  *
  * The bridge between `@taskflow/filter`'s compiler and the tenant-scoped

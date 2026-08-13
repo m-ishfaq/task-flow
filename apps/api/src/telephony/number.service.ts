@@ -5,7 +5,7 @@ import { newId } from '@taskflow/security';
 import { InboundRoute, type InboundRouteConfig } from '@taskflow/telephony';
 import { phoneNumberPurchased, phoneNumberReleased, phoneNumberRouteChanged } from './events.js';
 import { emitRefusal, refusalMessage } from './refusal.js';
-import { checkOutboundAllowed, recordSpend } from './spend-gate.js';
+import { checkOutboundAllowed, notifySpendThresholds, recordSpend } from './spend-gate.js';
 import { ensureSubaccount } from './subaccount.service.js';
 import { envelopeOf, orgOf, userOf, type TelephonyActor } from './shared.js';
 import type { TelephonyDeps } from './deps.js';
@@ -105,7 +105,7 @@ export async function purchaseNumber(
     smsUrl: `${deps.webhookOrigin ?? ''}/telephony/sms/${phoneNumberId}`,
   });
 
-  return withOrgScope(orgId, async (tx) => {
+  const purchasedNumber = await withOrgScope(orgId, async (tx) => {
     await tx.insert(schema.phoneNumbers).values({
       id: phoneNumberId,
       orgId,
@@ -118,12 +118,18 @@ export async function purchaseNumber(
     /* The ledger row lands in the SAME transaction as the record of the
        purchase (§3.4). A number bought and not charged against the cap is a cap
        that can be walked past one number at a time. */
-    await recordSpend(tx, orgId, {
-      id: newId<'SpendLedgerId'>(),
-      kind: 'number_purchase',
-      estimatedCents: purchased.monthlyCostCents,
-      providerSid: purchased.sid,
-    });
+    await recordSpend(
+      tx,
+      orgId,
+      {
+        id: newId<'SpendLedgerId'>(),
+        kind: 'number_purchase',
+        estimatedCents: purchased.monthlyCostCents,
+        providerSid: purchased.sid,
+        decision,
+      },
+      envelopeOf(actor),
+    );
 
     await outboxWriter.append(tx, [
       createEvent(phoneNumberPurchased, { phoneNumberId, isoCountry: 'US' }, envelopeOf(actor)),
@@ -137,6 +143,11 @@ export async function purchaseNumber(
       inboundRoute: null,
     };
   });
+
+  /* The usage alert, AFTER the commit — see `notifySpendThresholds`. */
+  await notifySpendThresholds(orgId, decision, deps.mail);
+
+  return purchasedNumber;
 }
 
 export async function releaseNumber(

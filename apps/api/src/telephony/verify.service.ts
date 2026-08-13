@@ -5,7 +5,7 @@ import { createEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
 import { verificationFailed, verificationStarted, verificationSucceeded } from './events.js';
 import { emitRefusal, refusalMessage } from './refusal.js';
-import { checkOutboundAllowed, recordSpend } from './spend-gate.js';
+import { checkOutboundAllowed, notifySpendThresholds, recordSpend } from './spend-gate.js';
 import { envelopeOf, orgOf, userOf, type TelephonyActor } from './shared.js';
 import type { TelephonyDeps } from './deps.js';
 
@@ -65,17 +65,26 @@ export async function startPhoneVerification(
   const result = await deps.telephony.startVerification({ to: input.to, channel: input.channel });
 
   await withOrgScope(orgId, async (tx) => {
-    await recordSpend(tx, orgId, {
-      id: newId<'SpendLedgerId'>(),
-      kind: 'verification',
-      estimatedCents: result.costCents,
-      providerSid: result.sid,
-    });
+    await recordSpend(
+      tx,
+      orgId,
+      {
+        id: newId<'SpendLedgerId'>(),
+        kind: 'verification',
+        estimatedCents: result.costCents,
+        providerSid: result.sid,
+        decision,
+      },
+      envelopeOf(actor),
+    );
 
     await outboxWriter.append(tx, [
       createEvent(verificationStarted, { channel: input.channel }, envelopeOf(actor)),
     ]);
   });
+
+  /* The usage alert, AFTER the commit — see `notifySpendThresholds`. */
+  await notifySpendThresholds(orgId, decision, deps.mail);
 
   return { sid: result.sid };
 }

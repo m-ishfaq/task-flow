@@ -34,6 +34,8 @@
     "./events/api-tokens": "./src/automation/api-token-events.ts",
     "./billing/sweep": "./src/billing/sweep.service.ts",
     "./billing/deps": "./src/billing/deps.ts",
+    "./billing/overage": "./src/billing/overage.service.ts",
+    "./billing/billing-mail": "./src/billing/billing-mail.ts",
     "./telephony/call": "./src/telephony/call.service.ts",
     "./telephony/message": "./src/telephony/message.service.ts",
     "./telephony/deps": "./src/telephony/deps.ts"

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { KeyProvider } from '@taskflow/contracts';
 import { publicRoute, router, selfRoute } from './trpc/builder.js';
 import { getResolvedFlags } from './platform-admin/flag-evaluator.js';
+import { getOrgFlagSnapshot } from './billing/entitlement-resolver.js';
 import { createIdentityRouter, type IdentityRouterDeps } from './identity/router.js';
 import { createTenancyRouter } from './tenancy/router.js';
 import { createWorkRouter, type WorkRouterDeps } from './work/router.js';
@@ -172,9 +173,15 @@ export function createAppRouter(deps: AppRouterDeps) {
      * own — cannot ride the transactional outbox: they are emitted by
      * `taskflow_platform_admin`, a role with no grant on `platform.outbox`
      * and no org scope. See `platform-admin/events.ts`'s file header.
+     *
+     * Wave 4 adds the payment processor, for the plan catalog. Unconditional,
+     * unlike `subaccounts` below: `PAYMENTS_PROVIDER` defaults to `fake`, so
+     * every instance has a provider and the Plans tab works end to end with no
+     * Stripe account.
      */
     platformAdmin: createPlatformAdminRouter({
       events: deps.identity.events,
+      payments: deps.billing.payments,
       /* §9: suspend/reactivate also freeze or unfreeze the org's Twilio
          subaccount, when a carrier is configured. The narrowed dep keeps the
          platform-admin module from seeing the storage provider and spend
@@ -265,7 +272,25 @@ export function createAppRouter(deps: AppRouterDeps) {
           'The resolved feature-flag snapshot for the client bootstrap — every logged-in user reads it; non-sensitive product surface (§3.8).',
       })
         .output(z.record(z.boolean()))
-        .query(async () => getResolvedFlags()),
+        .query(async ({ ctx }) => {
+          /* Org-aware since Phase 12 Wave 4: a plan's feature set resolves
+             into the evaluator's per-org tier, so the answer depends on WHICH
+             org the caller has selected.
+
+             Still a `selfRoute`, so `principal.org` is null until the client
+             sends `x-taskflow-org` — during sign-in, on the org picker, and
+             for a user who belongs to none. That case falls back to the
+             global snapshot rather than to an empty one: a nav rendered
+             before an org is chosen must not flicker every module off and
+             then on again a request later.
+
+             The client is not the enforcement point either way. Every gated
+             route re-resolves entitlements server-side (`route({ feature })`),
+             so a stale or over-generous snapshot costs a menu item that
+             answers PLAN_REQUIRED when clicked — never access. */
+          const orgId = ctx.principal.org?.orgId;
+          return orgId === undefined ? getResolvedFlags() : getOrgFlagSnapshot(orgId);
+        }),
     }),
   });
 }

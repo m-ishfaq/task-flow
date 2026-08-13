@@ -7,6 +7,8 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  bigint,
+  boolean,
 } from 'drizzle-orm/pg-core';
 import { users } from './identity.js';
 
@@ -56,6 +58,37 @@ export const orgs = identity.table(
     billingGraceEndsAt: timestamp('billing_grace_ends_at', { withTimezone: true }),
     stripeCustomerId: text('stripe_customer_id'),
     stripeSubscriptionId: text('stripe_subscription_id'),
+    /**
+     * When the paid period renews, mirrored from the processor (0066).
+     *
+     * NULL for any org that has never had a subscription — most of them.
+     * Can be stale if a webhook was missed, so it is INFORMATION and never an
+     * authorization input; nothing gates on it.
+     */
+    currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
+    currentPriceCents: bigint('current_price_cents', { mode: 'number' }),
+    currentPriceInterval: text('current_price_interval').$type<'month' | 'year'>(),
+    /**
+     * A DOWNGRADE parked until the paid period ends (0066).
+     *
+     * An upgrade applies immediately — they pay the difference now. A
+     * downgrade waits, because removing features someone already paid for is
+     * a refund conversation rather than a plan change. Both columns are set
+     * together or not at all, enforced by a CHECK.
+     */
+    pendingPlanId: text('pending_plan_id'),
+    pendingPlanEffectiveAt: timestamp('pending_plan_effective_at', { withTimezone: true }),
+
+    /**
+     * The subscription is set to STOP at `currentPeriodEnd` rather than renew
+     * (migration 0069).
+     *
+     * A separate fact from `billingStatus`, and the reason this column exists
+     * at all: an org here is fully active and paying, and may still change its
+     * mind. Encoding it as a status value would read as "ended" to every path
+     * that consults the status.
+     */
+    cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
   },
   (table) => [
     uniqueIndex('orgs_slug_key').on(table.slug),

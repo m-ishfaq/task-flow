@@ -26,6 +26,7 @@ import { authenticateWithApiToken } from './identity/api-token-auth.js';
 import type { OAuthDeps } from './identity/oauth.service.js';
 import { authenticate, bearerToken } from './identity/authenticate.js';
 import { createMailDelivery } from './identity/deliver.js';
+import type { MailQueue } from '@taskflow/mail';
 import { createLogger } from '@taskflow/observability';
 import { registerRateLimit } from './middleware/rate-limit.js';
 import type { SlidingWindowLimiter } from './middleware/sliding-window.js';
@@ -80,8 +81,13 @@ export interface BuildOptions {
 
 export async function buildServer(options: BuildOptions): Promise<FastifyInstance> {
   const mail = resolveMail(options);
-  const telephonyDeps = buildTelephonyDeps(options.env);
-  const billingDeps = buildBillingDeps(options.env);
+  const billingDeps = buildBillingDeps(options.env, mail.queue);
+  /* Built AFTER billing so the outbound paths can reach the same mailer the
+     billing module uses: the 80%/100% usage alerts are billing email that
+     happens to be triggered by a telephony action, and routing them through a
+     second queue would give them a different sender and a different template
+     base for no reason. */
+  const telephonyDeps = buildTelephonyDeps(options.env, billingDeps.mail);
   const identityDeps = buildIdentityDeps({
     env: options.env,
     ...(options.events === undefined ? {} : { events: options.events }),
@@ -465,6 +471,16 @@ function buildIntegrationDeps(
 function resolveMail(options: BuildOptions): {
   deliver: (message: DeliverableLink) => Promise<void>;
   close: () => Promise<void>;
+  /**
+   * The underlying queue, for billing email (Phase 12 Wave 4).
+   *
+   * Exposed rather than building a SECOND queue: one queue means one retry
+   * policy, one drain on shutdown, and one place where delivery outcomes reach
+   * the operations dashboard. Undefined when a test injected its own
+   * `deliver` — there is no queue in that case, and billing mail is simply
+   * skipped rather than faked.
+   */
+  queue?: MailQueue | undefined;
 } {
   if (options.deliver !== undefined) {
     return { deliver: options.deliver, close: () => Promise.resolve() };
@@ -509,5 +525,11 @@ function resolveMail(options: BuildOptions): {
     },
   });
 
-  return { deliver: delivery.deliver, close: () => delivery.queue.close() };
+  /* The queue rides along so billing email shares it — one retry policy, one
+     drain on shutdown, one path to the operations dashboard. */
+  return {
+    deliver: delivery.deliver,
+    queue: delivery.queue,
+    close: () => delivery.queue.close(),
+  };
 }

@@ -112,22 +112,28 @@ afterAll(async () => {
 });
 
 describe('expireTrial', () => {
-  it('moves a trialing org to past_due with a grace deadline', async () => {
+  it('lands a trialing org on the DEFAULT PLAN, never locked out', async () => {
+    /* The Wave 4 behaviour, and the reason this assertion changed: a trial
+       running out used to mean `past_due` with a grace countdown, which
+       conflated "never had a payment method" with "a real charge was
+       declined" and started a clock on someone who owed nothing. Now they
+       land on the free plan, keep every row they created, and lose only what
+       that plan does not include. */
     const orgId = await newOrg('sweep-expire-trial');
 
-    const applied = await expireTrial(orgId, { pastDueGraceDays: 7 });
+    const applied = await expireTrial(orgId);
     expect(applied).toBe(true);
 
     const row = await readOrgBilling(orgId);
-    expect(row.billingStatus).toBe('past_due');
-    expect(row.billingGraceEndsAt).not.toBeNull();
+    expect(row.billingStatus, 'active, not past_due — nobody is locked out').toBe('active');
+    expect(row.billingGraceEndsAt, 'no countdown: nothing was owed').toBeNull();
   });
 
   it('is a no-op on a non-trialing org', async () => {
     const orgId = await newOrg('sweep-expire-trial-noop');
     await setOrgBillingStatus(orgId, 'active');
 
-    const applied = await expireTrial(orgId, { pastDueGraceDays: 7 });
+    const applied = await expireTrial(orgId);
     expect(applied).toBe(false);
 
     expect((await readOrgBilling(orgId)).billingStatus).toBe('active');
@@ -135,7 +141,11 @@ describe('expireTrial', () => {
 });
 
 describe('expireGracePeriod', () => {
-  it('cancels a past_due org and clears the grace deadline', async () => {
+  it('lands a lapsed org on the default plan rather than locking it out', async () => {
+    /* Same Wave 4 change as `expireTrial`: the grace period ending stops the
+       PAID features, not the product. `resolveOrgMembership` no longer
+       refuses on any billing state, so a `canceled` status here would have
+       been a lockout with nothing left to enforce it. */
     const orgId = await newOrg('sweep-expire-grace');
     await setOrgBillingStatus(orgId, 'past_due', { graceEndsAtNow: true });
 
@@ -143,7 +153,7 @@ describe('expireGracePeriod', () => {
     expect(applied).toBe(true);
 
     const row = await readOrgBilling(orgId);
-    expect(row.billingStatus).toBe('canceled');
+    expect(row.billingStatus).toBe('active');
     expect(row.billingGraceEndsAt).toBeNull();
   });
 
@@ -156,7 +166,10 @@ describe('expireGracePeriod', () => {
     expect((await readOrgBilling(orgId)).billingStatus).toBe('trialing');
   });
 
-  it('never moves a canceled org backward on a redundant call', async () => {
+  it('is a no-op on an org that already lapsed', async () => {
+    /* The conditional UPDATE is what makes a second sweep tick harmless: only
+       a `past_due` row matches, so a redundant call changes nothing and
+       emits nothing. */
     const orgId = await newOrg('sweep-expire-grace-idempotent');
     await setOrgBillingStatus(orgId, 'canceled');
 

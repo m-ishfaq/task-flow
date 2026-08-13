@@ -53,7 +53,7 @@ function actorOf(ctx: {
 export function createDocsRouter() {
   return router({
     spaces: router({
-      list: route({ permission: 'space:read' })
+      list: route({ permission: 'space:read', feature: { flag: 'docs', display: 'Docs' } })
         .output(
           z
             .array(
@@ -63,19 +63,19 @@ export function createDocsRouter() {
         )
         .query(({ ctx }) => spaces.listSpaces(actorOf(ctx))),
 
-      create: route({ permission: 'space:create' })
+      create: route({ permission: 'space:create', feature: { flag: 'docs', display: 'Docs' } })
         .input(z.object({ name: SpaceName }).strict())
         .output(z.object({ spaceId: z.string() }))
         .mutation(({ input, ctx }) => spaces.createSpace(actorOf(ctx), input)),
 
-      archive: route({ permission: 'space:manage' })
+      archive: route({ permission: 'space:manage', feature: { flag: 'docs', display: 'Docs' } })
         .input(z.object({ spaceId: SpaceIdSchema, restore: z.boolean() }).strict())
         .output(z.void())
         .mutation(({ input, ctx }) => spaces.archiveSpace(actorOf(ctx), input)),
     }),
 
     pages: router({
-      list: route({ permission: 'page:read' })
+      list: route({ permission: 'page:read', feature: { flag: 'docs', display: 'Docs' } })
         .input(z.object({ spaceId: SpaceIdSchema }).strict())
         .output(
           z
@@ -93,7 +93,7 @@ export function createDocsRouter() {
         )
         .query(({ input, ctx }) => pages.listPages(actorOf(ctx), input)),
 
-      create: route({ permission: 'page:create' })
+      create: route({ permission: 'page:create', feature: { flag: 'docs', display: 'Docs' } })
         .input(
           z
             .object({
@@ -106,12 +106,12 @@ export function createDocsRouter() {
         .output(z.object({ pageId: z.string() }))
         .mutation(({ input, ctx }) => pages.createPage(actorOf(ctx), input)),
 
-      update: route({ permission: 'page:update' })
+      update: route({ permission: 'page:update', feature: { flag: 'docs', display: 'Docs' } })
         .input(z.object({ pageId: PageIdSchema, title: PageTitle }).strict())
         .output(z.void())
         .mutation(({ input, ctx }) => pages.updatePage(actorOf(ctx), input)),
 
-      move: route({ permission: 'page:update' })
+      move: route({ permission: 'page:update', feature: { flag: 'docs', display: 'Docs' } })
         .input(
           z
             .object({
@@ -125,18 +125,18 @@ export function createDocsRouter() {
         .output(z.object({ rank: z.string(), rebalanced: z.boolean() }))
         .mutation(({ input, ctx }) => pages.movePage(actorOf(ctx), input)),
 
-      archive: route({ permission: 'page:delete' })
+      archive: route({ permission: 'page:delete', feature: { flag: 'docs', display: 'Docs' } })
         .input(z.object({ pageId: PageIdSchema, restore: z.boolean() }).strict())
         .output(z.void())
         .mutation(({ input, ctx }) => pages.archivePage(actorOf(ctx), input)),
 
       /** `page:update` — see publish.service.ts's own header on why publish reuses this tier. */
-      publish: route({ permission: 'page:update' })
+      publish: route({ permission: 'page:update', feature: { flag: 'docs', display: 'Docs' } })
         .input(z.object({ pageId: PageIdSchema }).strict())
         .output(z.void())
         .mutation(({ input, ctx }) => publish.publishPage(actorOf(ctx), input)),
 
-      unpublish: route({ permission: 'page:update' })
+      unpublish: route({ permission: 'page:update', feature: { flag: 'docs', display: 'Docs' } })
         .input(z.object({ pageId: PageIdSchema }).strict())
         .output(z.void())
         .mutation(({ input, ctx }) => publish.unpublishPage(actorOf(ctx), input)),
@@ -152,7 +152,7 @@ export function createDocsRouter() {
        */
       /* PDF rendering is the expensive class's poster child — generated
          fresh from a page_versions row on demand (§6.5). */
-      exportPdf: route({ permission: 'page:read', quotaClass: 'expensive' })
+      exportPdf: route({ permission: 'page:read', quotaClass: 'expensive', feature: { flag: 'docs', display: 'Docs' } })
         .input(
           z
             .object({ pageId: PageIdSchema, versionId: z.string().nullable().default(null) })
@@ -166,7 +166,7 @@ export function createDocsRouter() {
     }),
 
     pageVersions: router({
-      list: route({ permission: 'page:read' })
+      list: route({ permission: 'page:read', feature: { flag: 'docs', display: 'Docs' } })
         .input(z.object({ pageId: PageIdSchema }).strict())
         .output(
           z
@@ -182,19 +182,19 @@ export function createDocsRouter() {
         )
         .query(({ input, ctx }) => pageVersions.listPageVersions(actorOf(ctx), input)),
 
-      save: route({ permission: 'page:update' })
+      save: route({ permission: 'page:update', feature: { flag: 'docs', display: 'Docs' } })
         .input(z.object({ pageId: PageIdSchema }).strict())
         .output(z.object({ versionId: z.string() }))
         .mutation(({ input, ctx }) => pageVersions.savePageVersion(actorOf(ctx), input)),
 
-      restore: route({ permission: 'page:update' })
+      restore: route({ permission: 'page:update', feature: { flag: 'docs', display: 'Docs' } })
         .input(z.object({ pageId: PageIdSchema, versionId: z.string() }).strict())
         .output(z.void())
         .mutation(({ input, ctx }) => pageVersions.restorePageVersion(actorOf(ctx), input)),
     }),
 
     comments: router({
-      list: route({ permission: 'page:read' })
+      list: route({ permission: 'page:read', feature: { flag: 'docs', display: 'Docs' } })
         .input(z.object({ pageId: PageIdSchema }).strict())
         .output(
           z
@@ -219,7 +219,7 @@ export function createDocsRouter() {
         .query(({ input, ctx }) => comments.listComments(actorOf(ctx), input)),
 
       /** `comment:create` — same floor Work's card comments use, for the identical reason (§3.6). */
-      create: route({ permission: 'comment:create' })
+      create: route({ permission: 'comment:create', feature: { flag: 'docs', display: 'Docs' } })
         .input(
           z
             .object({
@@ -234,26 +234,26 @@ export function createDocsRouter() {
         .mutation(({ input, ctx }) => comments.createComment(actorOf(ctx), input)),
 
       /** Author only, enforced in the service — no permission overrides it. */
-      update: route({ permission: 'comment:create' })
+      update: route({ permission: 'comment:create', feature: { flag: 'docs', display: 'Docs' } })
         .input(z.object({ commentId: CommentIdSchema, body: RichTextDocument }).strict())
         .output(z.object({ edited: z.literal(true) }))
         .mutation(({ input, ctx }) => comments.updateComment(actorOf(ctx), input)),
 
       /** Anyone who can comment can resolve — see comment.service.ts's own header. */
-      resolve: route({ permission: 'comment:create' })
+      resolve: route({ permission: 'comment:create', feature: { flag: 'docs', display: 'Docs' } })
         .input(z.object({ commentId: CommentIdSchema, resolved: z.boolean() }).strict())
         .output(z.object({ resolved: z.boolean() }))
         .mutation(({ input, ctx }) => comments.resolveComment(actorOf(ctx), input)),
 
       /** Declared `comment:create` — the floor. The service escalates to `comment:delete` when the caller is not the author. */
-      delete: route({ permission: 'comment:create' })
+      delete: route({ permission: 'comment:create', feature: { flag: 'docs', display: 'Docs' } })
         .input(z.object({ commentId: CommentIdSchema }).strict())
         .output(z.object({ deleted: z.literal(true) }))
         .mutation(({ input, ctx }) => comments.deleteComment(actorOf(ctx), input)),
     }),
 
     suggestions: router({
-      list: route({ permission: 'page:read' })
+      list: route({ permission: 'page:read', feature: { flag: 'docs', display: 'Docs' } })
         .input(z.object({ pageId: PageIdSchema }).strict())
         .output(
           z
@@ -277,7 +277,7 @@ export function createDocsRouter() {
         .query(({ input, ctx }) => suggestions.listSuggestions(actorOf(ctx), input)),
 
       /** `comment:create` — proposing a change needs no edit right. See suggestion.service.ts's header. */
-      create: route({ permission: 'comment:create' })
+      create: route({ permission: 'comment:create', feature: { flag: 'docs', display: 'Docs' } })
         .input(
           z
             .object({
@@ -297,7 +297,7 @@ export function createDocsRouter() {
        * `page:update` unless this is the author withdrawing (rejecting) their
        * own still-pending suggestion, which needs no editing right either.
        */
-      decide: route({ permission: 'comment:create' })
+      decide: route({ permission: 'comment:create', feature: { flag: 'docs', display: 'Docs' } })
         .input(
           z
             .object({ suggestionId: SuggestionIdSchema, status: z.enum(['accepted', 'rejected']) })
@@ -312,7 +312,7 @@ export function createDocsRouter() {
      * why `space:read`/`space:manage` cover this with no new permission.
      */
     templates: router({
-      list: route({ permission: 'space:read' })
+      list: route({ permission: 'space:read', feature: { flag: 'docs', display: 'Docs' } })
         .input(z.object({ spaceId: SpaceIdSchema }).strict())
         .output(
           z
@@ -329,18 +329,18 @@ export function createDocsRouter() {
         )
         .query(({ input, ctx }) => templates.listTemplates(actorOf(ctx), input)),
 
-      create: route({ permission: 'space:manage' })
+      create: route({ permission: 'space:manage', feature: { flag: 'docs', display: 'Docs' } })
         .input(z.object({ pageId: PageIdSchema, name: z.string().trim().min(1).max(200) }).strict())
         .output(z.object({ templateId: z.string() }))
         .mutation(({ input, ctx }) => templates.createTemplateFromPage(actorOf(ctx), input)),
 
-      delete: route({ permission: 'space:manage' })
+      delete: route({ permission: 'space:manage', feature: { flag: 'docs', display: 'Docs' } })
         .input(z.object({ templateId: PageTemplateIdSchema }).strict())
         .output(z.void())
         .mutation(({ input, ctx }) => templates.deleteTemplate(actorOf(ctx), input)),
 
       /** `page:create` — using a template is exactly `pages.create`, see template.service.ts's header. */
-      createPage: route({ permission: 'page:create' })
+      createPage: route({ permission: 'page:create', feature: { flag: 'docs', display: 'Docs' } })
         .input(
           z
             .object({
@@ -362,7 +362,7 @@ export function createDocsRouter() {
      * is no per-row `enforceOnPage`.
      */
     backlinks: router({
-      list: route({ permission: 'page:read' })
+      list: route({ permission: 'page:read', feature: { flag: 'docs', display: 'Docs' } })
         .input(z.object({ pageId: PageIdSchema }).strict())
         .output(
           z

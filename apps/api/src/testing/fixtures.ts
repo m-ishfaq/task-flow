@@ -40,12 +40,14 @@ export const TEST_ENV: Env = parseEnv({
   STORAGE_BUCKET_ATTACHMENTS: 'taskflow-attachments',
   STORAGE_BUCKET_EXPORTS: 'taskflow-exports',
 
-  /* PAYMENTS_PROVIDER defaults to 'fake' (no Stripe account in CI), but the
-     plan -> price id MAPPING is still exercised against the fake provider —
-     it does not care what string it receives, and a route-level test asserting
-     "no price configured" throws needs a configured control case to contrast
-     against. */
-  BILLING_STRIPE_PRICE_ID_PRO: 'price_test_pro',
+  /* BILLING_STRIPE_PRICE_ID_PRO was here until Phase 12 Wave 4, when the
+     catalog moved into `billing.plans`/`billing.plan_prices`. Removing it from
+     the env schema without removing it here would not have been a silent
+     mismatch — `assertNoMisspelledVariables` refuses an unrecognized
+     `BILLING_` name, so every suite importing this fixture failed to COLLECT
+     with the variable named. That is the check working: an env value nothing
+     reads is exactly what it exists to catch. Tests that need a sellable plan
+     now seed a real catalog row (see org-billing.service.test.ts). */
   /* Likewise the webhook secret: FakePaymentProvider compares it literally
      rather than verifying a real HMAC, but the webhook ROUTE 404s with none
      configured at all (§3.5's own "no real endpoint here" answer) — so a

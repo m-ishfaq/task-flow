@@ -467,12 +467,23 @@ export const EnvSchema = z
     STRIPE_SECRET_KEY: OptionalNonEmpty,
     STRIPE_WEBHOOK_SECRET: OptionalNonEmpty,
 
-    /* The one plan this wave ships (§2's own "seats deferred" decision) —
-       this deployment's Stripe Price id for it. A named variable rather than
-       a JSON blob of plan-id -> price-id pairs: there is exactly one plan,
-       and a mapping table for a map with one entry is the premature
-       generalization this codebase's own conventions warn against. */
-    BILLING_STRIPE_PRICE_ID_PRO: OptionalNonEmpty,
+    /* BILLING_STRIPE_PRICE_ID_PRO was here until Phase 12 Wave 4, holding the
+       Stripe Price id of the one hardcoded plan. It is GONE, not renamed.
+
+       Plans and their prices are rows now — `billing.plans` and
+       `billing.plan_prices`, created through the operator console, which
+       writes the Product and Price to Stripe itself — and
+       `createCheckoutSession` resolves the current price per request. A
+       variable that configured THE one plan has no meaning once plans are
+       data, and keeping it would mean two sources for the same fact with the
+       stale one winning silently at boot.
+
+       Recorded here rather than simply deleted so the next person to find it
+       in an old .env learns why it stopped being read. They will find out
+       either way: it is no longer in KNOWN_VARIABLES, so
+       `assertNoMisspelledVariables` now REFUSES to boot on it rather than
+       ignoring it — which is the right direction for a variable someone still
+       believes is doing something. */
 
     /* Business constants, not security boundaries — tunable per deployment
        with no migration, the same reasoning TELEPHONY_DEFAULT_SPEND_CAP_CENTS
@@ -579,6 +590,7 @@ const KNOWN_VARIABLES = new Set([
   'DATABASE_OPS_EVENTS_URL',
   'VAPID_SUBJECT',
   'VAPID_PUBLIC_KEY',
+  'BILLING_TRIAL_ENDING_WARNING_HOURS',
   'VAPID_PRIVATE_KEY',
   /* apps/realtime's own consumer role (Phase 4 §3.5). Listed here — as the
      comment above this set explains — because a developer's environment
@@ -681,7 +693,6 @@ const KNOWN_VARIABLES = new Set([
   'PAYMENTS_PROVIDER',
   'STRIPE_SECRET_KEY',
   'STRIPE_WEBHOOK_SECRET',
-  'BILLING_STRIPE_PRICE_ID_PRO',
   'BILLING_TRIAL_DAYS',
   'BILLING_PAST_DUE_GRACE_DAYS',
 ]);

@@ -15,6 +15,8 @@ import { createActionExecutor } from './automation/executor.js';
 import { startAutomationEngine } from './automation/relay.js';
 import { startWebhookDeliveryLoop } from './webhooks/delivery.js';
 import { startBillingSweep } from './billing/sweep.js';
+import { FakePaymentProvider, StripePaymentProvider } from '@taskflow/payments';
+import type { PaymentProvider } from '@taskflow/contracts';
 
 /**
  * Process entry point for the background worker (ai/phase-10-automation.md,
@@ -171,9 +173,35 @@ const delivery = startWebhookDeliveryLoop({
   intervalMs: env.WORKER_POLL_INTERVAL_MS,
 });
 
+/**
+ * The processor the usage period-close job bills through.
+ *
+ * Built here rather than inside `startBillingSweep` so a `stripe` worker
+ * refuses at BOOT on a missing key, not on the first period that closes —
+ * which could be four weeks after the deploy that broke it, by which time the
+ * failure looks like a billing bug rather than a configuration one. The same
+ * fail-closed-at-boot reasoning `buildBillingDeps` and `buildTelephonyDeps`
+ * both give.
+ */
+function buildPayments(): PaymentProvider {
+  if (env.PAYMENTS_PROVIDER === 'fake') return new FakePaymentProvider();
+
+  if (env.STRIPE_SECRET_KEY === undefined) {
+    throw new Error(
+      'STRIPE_SECRET_KEY is required when PAYMENTS_PROVIDER=stripe. The worker bills usage ' +
+        'overage through it (billing/sweep.ts), so without it every closed period would be ' +
+        'written off silently. Set it, or set PAYMENTS_PROVIDER=fake.',
+    );
+  }
+
+  return new StripePaymentProvider({ secretKey: env.STRIPE_SECRET_KEY });
+}
+
 const billingSweep = startBillingSweep({
   logger,
   pastDueGraceDays: env.BILLING_PAST_DUE_GRACE_DAYS,
+  trialEndingWarningHours: env.BILLING_TRIAL_ENDING_WARNING_HOURS,
+  payments: buildPayments(),
   intervalMs: env.WORKER_BILLING_SWEEP_INTERVAL_MS,
 });
 

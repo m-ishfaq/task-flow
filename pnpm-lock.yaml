@@ -476,6 +476,9 @@ importers:
       '@taskflow/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@taskflow/payments':
+        specifier: workspace:*
+        version: link:../../packages/payments
       '@taskflow/policy':
         specifier: workspace:*
         version: link:../../packages/policy
@@ -713,6 +716,9 @@ importers:
       '@taskflow/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@taskflow/security':
+        specifier: workspace:*
+        version: link:../security
       stripe:
         specifier: ^17.5.0
         version: 17.7.0

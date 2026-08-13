@@ -1,5 +1,6 @@
 import {
   and,
+  coalesceColumns,
   countRows,
   desc,
   eq,
@@ -83,7 +84,7 @@ export async function listUsers(
            that has never opened the account page has none — and an inner
            join would silently drop exactly those users from the operator's
            directory, which is the population most worth seeing. */
-        name: schema.profiles.displayName,
+        name: coalesceColumns(schema.profiles.displayName, schema.users.displayName),
         emailVerifiedAt: schema.users.emailVerifiedAt,
         status: schema.users.status,
         createdAt: schema.users.createdAt,

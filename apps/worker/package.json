@@ -13,6 +13,7 @@
   "dependencies": {
     "@taskflow/api": "workspace:*",
     "@taskflow/contracts": "workspace:*",
+    "@taskflow/payments": "workspace:*",
     "@taskflow/db": "workspace:*",
     "@taskflow/events": "workspace:*",
     "@taskflow/filter": "workspace:*",

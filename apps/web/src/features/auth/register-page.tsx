@@ -21,17 +21,19 @@ import { fieldError, fieldErrors } from '../../lib/field-errors.js';
  */
 
 interface FormValues {
+  name: string;
   email: string;
   password: string;
 }
 
 export function RegisterPage() {
   const { register, handleSubmit } = useForm<FormValues>({
-    defaultValues: { email: '', password: '' },
+    defaultValues: { name: '', email: '', password: '' },
   });
 
   const create = useMutation({
-    mutationFn: (values: FormValues) => api.auth.register.mutate(values),
+    mutationFn: ({ name, ...rest }: FormValues) =>
+      api.auth.register.mutate(name.trim() === '' ? rest : { ...rest, name: name.trim() }),
   });
 
   if (create.isSuccess) {
@@ -66,6 +68,16 @@ export function RegisterPage() {
             router and nowhere else; a `minLength: 12` in this form would be a
             second copy of that number, free to drift the moment the policy
             changes — and the copy users see would be the one nobody tests. */}
+        {/* Optional, and said so on the label rather than enforced: an
+            account is identified by its email, and a required display name
+            would be friction on the one flow that must never have any. What
+            it buys is every surface that shows a person — the org directory,
+            chat, the operator console — having something to render besides an
+            address. */}
+        <Field label="Name (optional)" htmlFor="name" error={fieldError(create.error, 'name')}>
+          <Input id="name" type="text" autoComplete="name" {...register('name')} />
+        </Field>
+
         <Field label="Email" htmlFor="email" error={fieldError(create.error, 'email')}>
           <Input
             id="email"

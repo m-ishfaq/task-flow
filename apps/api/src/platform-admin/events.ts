@@ -141,3 +141,135 @@ export const userReactivated = defineEvent(
   'platform.user_reactivated',
   z.object({ userId: z.string(), operatorUserId: z.string() }).strict(),
 );
+
+/* -------------------------------------------------------------------------- *
+ * The plan catalog (Phase 12 Wave 4, ai/phase-12-wave4-plans.md §4)
+ *
+ * All SYSTEM_ORG on the envelope, for the reason `flagOverrideSet` gives and
+ * more strongly: a plan belongs to no tenant. It is the thing tenants are on.
+ * -------------------------------------------------------------------------- */
+
+/** A new plan exists in the catalog, with its processor product already made. */
+export const planCreated = defineEvent(
+  'platform.plan_created',
+  z
+    .object({
+      planId: z.string(),
+      name: z.string(),
+      stripeProductId: z.string().nullable(),
+      operatorUserId: z.string(),
+    })
+    .strict(),
+);
+
+/**
+ * A plan's metadata, feature set or ceilings changed.
+ *
+ * `changed` is the list of column names, not the values. The values are in the
+ * operator audit chain's `target`, which is the durable, hash-chained record;
+ * duplicating them onto the bus would mean two records of the same fact that
+ * can disagree, and the one a subscriber reads is the one nobody verifies.
+ */
+export const planUpdated = defineEvent(
+  'platform.plan_updated',
+  z
+    .object({
+      planId: z.string(),
+      changed: z.array(z.string()).readonly(),
+      operatorUserId: z.string(),
+    })
+    .strict(),
+);
+
+/**
+ * A plan was repriced: a new price is current and the previous one is retired.
+ *
+ * `grandfatheredOrgs` is the count still billing against the retired price —
+ * the number that makes this event worth having. A subscriber (and the
+ * console) can answer "how many customers did that decision leave behind"
+ * without reconstructing it from two tables later, when the answer has moved.
+ */
+export const planPriceChanged = defineEvent(
+  'platform.plan_price_changed',
+  z
+    .object({
+      planId: z.string(),
+      interval: z.enum(['month', 'year']),
+      previousAmountCents: z.number().int().nonnegative().nullable(),
+      amountCents: z.number().int().nonnegative(),
+      currency: z.string(),
+      grandfatheredOrgs: z.number().int().nonnegative(),
+      operatorUserId: z.string(),
+    })
+    .strict(),
+);
+
+/**
+ * One org moved to a different plan.
+ *
+ * The ORG's own id on the envelope, unlike every other event in this block —
+ * this is a fact about one tenant rather than about the catalog, and their own
+ * audit history should carry it without needing operator access to read.
+ *
+ * `actor` distinguishes the three writers that will exist by the end of this
+ * wave: an operator moving them by hand, the owner's own checkout, and the
+ * trial sweep dropping them to the default plan. A consumer that cannot tell
+ * those apart cannot tell a support action from an automated downgrade, which
+ * is the first question anyone asks when access changes unexpectedly.
+ */
+export const orgPlanChanged = defineEvent(
+  'platform.org_plan_changed',
+  z
+    .object({
+      orgId: z.string(),
+      from: z.string().nullable(),
+      to: z.string(),
+      actor: z.enum(['operator', 'owner', 'sweep']),
+      operatorUserId: z.string().nullable(),
+    })
+    .strict(),
+);
+
+/**
+ * An operator set or cleared one org's entitlement override — tier 1 of the
+ * four-tier resolution (§3.1).
+ *
+ * The org's own id on the envelope, like `orgPlanChanged`: this is a fact
+ * about one tenant. `cleared` distinguishes "the override now grants nothing"
+ * from "there is no longer an override" — the same distinction
+ * `flagOverrideCleared` exists for, and it matters for the same reason: the
+ * first pins behaviour against a later plan change, the second releases it.
+ */
+export const orgEntitlementOverrideSet = defineEvent(
+  'platform.org_entitlement_override_set',
+  z
+    .object({
+      orgId: z.string(),
+      featuresAdd: z.array(z.string()).readonly(),
+      featuresRemove: z.array(z.string()).readonly(),
+      cleared: z.boolean(),
+      reason: z.string(),
+      expiresAt: z.string().nullable(),
+      operatorUserId: z.string(),
+    })
+    .strict(),
+);
+
+/**
+ * A plan was retired from sale.
+ *
+ * `orgsRemaining` is not decoration: retiring a tier must never eject its
+ * tenants (they keep the plan and keep working), so a non-zero count here is
+ * the normal case and the number an operator needs in order to plan a
+ * migration. A zero-count archive is the clean one.
+ */
+export const planArchived = defineEvent(
+  'platform.plan_archived',
+  z
+    .object({
+      planId: z.string(),
+      orgsRemaining: z.number().int().nonnegative(),
+      operatorUserId: z.string(),
+    })
+    .strict(),
+);

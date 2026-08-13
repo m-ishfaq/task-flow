@@ -140,16 +140,26 @@ export async function resolveOrgMembership(
     return null;
   }
 
-  /* Phase 12 Wave 3 (§3.2): billingStatus is read from the SAME row, in the
-     SAME query, deliberately — a second, later read here would open a window
-     where an org already resolved as "not operator-suspended" could still be
-     billing-lapsed by the time this line runs, and vice versa. `canceled` is
-     the only value that blocks (see the column's own migration comment for
-     why 'past_due' does not); a distinct error, not `orgSuspended`, because
-     an Owner staring at a locked-out org needs to know which wall they hit. */
-  if (org?.billingStatus === 'canceled') {
-    throw errors.orgBillingLapsed();
-  }
+  /* NO BILLING STATE BLOCKS ACCESS ANY MORE (Phase 12 Wave 4).
+
+     Wave 3 refused here on `billing_status = 'canceled'`, which was correct
+     while a lapsed subscription meant losing the product. Wave 4 replaced
+     that with the trial-to-Free design: an org whose trial or subscription
+     ends lands on the DEFAULT PLAN and keeps its data, losing only the
+     features that plan does not include. Enforcement moved from this one
+     chokepoint to per-module entitlements, which is both gentler and more
+     honest — a customer sees which capability they lost rather than a locked
+     door.
+
+     Keeping the refusal alongside that would have locked an org out for the
+     length of one sweep interval: `canceled` is now the TRANSIENT state
+     between the processor reporting a cancellation and the sweep moving the
+     org to the default plan. A lockout whose duration is a polling interval
+     is the worst of both designs.
+
+     `status = 'suspended'` above is untouched. Wave 3's central argument
+     holds: two columns, two writers, and an automated billing recovery still
+     cannot undo an operator's manual suspension. */
 
   const tuples = await loadTuples(orgId, userId);
 

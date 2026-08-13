@@ -238,22 +238,22 @@ export function createAutomationRouter(deps: {
      * every route here: only someone who can build rules needs to know what
      * the builder offers.
      */
-    capabilities: route({ permission: 'automation:manage' })
+    capabilities: route({ permission: 'automation:manage', feature: { flag: 'automation', display: 'Automation' } })
       .input(z.object({}).strict())
       .output(z.object({ telephonyActionsEnabled: z.boolean() }))
       .query(() => ({ telephonyActionsEnabled: deps.telephonyActionsEnabled })),
 
-    list: route({ permission: 'automation:manage' })
+    list: route({ permission: 'automation:manage', feature: { flag: 'automation', display: 'Automation' } })
       .input(z.object({}).strict())
       .output(z.array(AutomationSummaryOutput).readonly())
       .query(({ ctx }) => automations.listAutomations(actorOf(ctx))),
 
-    create: route({ permission: 'automation:manage' })
+    create: route({ permission: 'automation:manage', feature: { flag: 'automation', display: 'Automation' } })
       .input(Body.strict())
       .output(z.object({ automationId: z.string() }))
       .mutation(({ input, ctx }) => automations.createAutomation(actorOf(ctx), input)),
 
-    update: route({ permission: 'automation:manage' })
+    update: route({ permission: 'automation:manage', feature: { flag: 'automation', display: 'Automation' } })
       .input(Body.extend({ automationId: z.string().uuid() }).strict())
       .output(z.object({ name: z.string() }))
       .mutation(({ input, ctx }) => automations.updateAutomation(actorOf(ctx), input)),
@@ -264,12 +264,12 @@ export function createAutomationRouter(deps: {
      * body — which would run the emergency path through the same validation that
      * might refuse the very rule someone is trying to stop.
      */
-    setEnabled: route({ permission: 'automation:manage' })
+    setEnabled: route({ permission: 'automation:manage', feature: { flag: 'automation', display: 'Automation' } })
       .input(z.object({ automationId: z.string().uuid(), enabled: z.boolean() }).strict())
       .output(z.object({ enabled: z.boolean() }))
       .mutation(({ input, ctx }) => automations.setAutomationEnabled(actorOf(ctx), input)),
 
-    delete: route({ permission: 'automation:manage' })
+    delete: route({ permission: 'automation:manage', feature: { flag: 'automation', display: 'Automation' } })
       .input(z.object({ automationId: z.string().uuid() }).strict())
       .output(z.object({ deleted: z.literal(true) }))
       .mutation(({ input, ctx }) => automations.deleteAutomation(actorOf(ctx), input)),
@@ -281,7 +281,7 @@ export function createAutomationRouter(deps: {
      * another one — the platform tier is a separate surface reading a separate
      * scope, deliberately not this screen with a filter.
      */
-    runs: route({ permission: 'automation:manage' })
+    runs: route({ permission: 'automation:manage', feature: { flag: 'automation', display: 'Automation' } })
       .input(
         z
           .object({
@@ -329,19 +329,19 @@ export function createAutomationRouter(deps: {
      * delivery; the signing secret is minted here and shown exactly once.
      */
     webhooks: router({
-      list: route({ permission: 'webhook:manage' })
+      list: route({ permission: 'webhook:manage', feature: { flag: 'automation', display: 'Automation' } })
         .input(z.object({}).strict())
         .output(z.array(WebhookSummaryOutput).readonly())
         .query(({ ctx }) => webhooks.listWebhooks(actorOf(ctx))),
 
-      create: route({ permission: 'webhook:manage' })
+      create: route({ permission: 'webhook:manage', feature: { flag: 'automation', display: 'Automation' } })
         .input(z.object({ name: WebhookName, url: WebhookUrl }).strict())
         /* The signing secret rides this one response and nowhere else — the
          output schema is the full contract for "shown once". */
         .output(z.object({ webhookId: z.string(), signingSecret: z.string() }))
         .mutation(({ input, ctx }) => webhooks.createWebhook(actorOf(ctx), input, deps.keys)),
 
-      update: route({ permission: 'webhook:manage' })
+      update: route({ permission: 'webhook:manage', feature: { flag: 'automation', display: 'Automation' } })
         .input(
           z.object({ webhookId: z.string().uuid(), name: WebhookName, url: WebhookUrl }).strict(),
         )
@@ -349,18 +349,18 @@ export function createAutomationRouter(deps: {
         .mutation(({ input, ctx }) => webhooks.updateWebhook(actorOf(ctx), input)),
 
       /* The kill switch, own route, same reasoning as `automation.setEnabled`. */
-      setEnabled: route({ permission: 'webhook:manage' })
+      setEnabled: route({ permission: 'webhook:manage', feature: { flag: 'automation', display: 'Automation' } })
         .input(z.object({ webhookId: z.string().uuid(), enabled: z.boolean() }).strict())
         .output(z.object({ enabled: z.boolean() }))
         .mutation(({ input, ctx }) => webhooks.setWebhookEnabled(actorOf(ctx), input)),
 
-      delete: route({ permission: 'webhook:manage' })
+      delete: route({ permission: 'webhook:manage', feature: { flag: 'automation', display: 'Automation' } })
         .input(z.object({ webhookId: z.string().uuid() }).strict())
         .output(z.object({ deleted: z.literal(true) }))
         .mutation(({ input, ctx }) => webhooks.deleteWebhook(actorOf(ctx), input)),
 
       /** Recent delivery history for one endpoint — the "did it go out" read. */
-      deliveries: route({ permission: 'webhook:manage' })
+      deliveries: route({ permission: 'webhook:manage', feature: { flag: 'automation', display: 'Automation' } })
         .input(
           z
             .object({

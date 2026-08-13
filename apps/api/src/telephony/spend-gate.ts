@@ -1,4 +1,16 @@
-import { and, eq, gte, inArray, schema, sumWithFallback, withOrgScope } from '@taskflow/db';
+import {
+  and,
+  eq,
+  gte,
+  inArray,
+  outboxWriter,
+  schema,
+  sumWithFallback,
+  withOrgScope,
+} from '@taskflow/db';
+import { createEvent } from '@taskflow/events';
+import { spendCapReached } from './events.js';
+import { checkUsageThresholds, type BillingMailDeps } from '../billing/billing-mail.js';
 import type {
   OrgId,
   OutboundKind,
@@ -123,6 +135,15 @@ export interface GateAllowed {
    * the cap, and a threshold recomputed at each call site drifts.
    */
   readonly warnThresholdPercent: number | undefined;
+  /**
+   * The rolling window the spend above was summed over.
+   *
+   * Carried for the same reason `capCents` is: the usage-alert dedupe row is
+   * keyed on the window an alert belongs to, and a window recomputed at the
+   * call site drifts from the one the decision actually used — which shows up
+   * as an alert that either repeats or never fires, both silently.
+   */
+  readonly windowDays: number;
   /** The sub-budget's state at decision time (§5.5) — what an automation
       action has already spent, and the ceiling it burns against (null when
       the org has configured none). Carried on the allowed decision so the
@@ -154,6 +175,7 @@ export interface SpendState {
   readonly orgStatus: string | undefined;
   readonly subaccount: { readonly sid: string; readonly status: string } | undefined;
   readonly capCents: number;
+  readonly windowDays: number;
   readonly spentCents: number;
   /** Automation-attributed spend within the window (§5.5) — sum over the
       `automation_*` kinds only. */
@@ -253,6 +275,7 @@ export async function readSpendState(orgId: OrgId, config: GateConfig): Promise<
       orgStatus: orgRows[0]?.status,
       subaccount: accountRows[0],
       capCents,
+      windowDays,
       /* Postgres SUM over bigint comes back as a STRING through the driver, and
          `Number(undefined)` is NaN — which compares false against every
          threshold, so a parsing slip here reads as "under the cap" forever.
@@ -391,6 +414,7 @@ export async function checkOutboundAllowed(
     spentCents: state.spentCents,
     capCents: state.capCents,
     warnThresholdPercent: crossesWarning ? WARN_PERCENT : undefined,
+    windowDays: state.windowDays,
     automationSpentCents: state.automationSpentCents,
     automationCapCents: state.automationCapCents,
   };
@@ -405,6 +429,14 @@ export interface SpendEntry {
   readonly kind: OutboundKind;
   readonly estimatedCents: number;
   readonly providerSid: string | undefined;
+  /**
+   * The decision that authorized this spend.
+   *
+   * Optional so a caller with no decision in hand (a reconciliation path, a
+   * test) can still append a row — but every real outbound path has one, and
+   * passing it is what emits `spend.cap_reached`.
+   */
+  readonly decision?: GateAllowed | undefined;
 }
 
 /**
@@ -419,6 +451,7 @@ export async function recordSpend(
   tx: Parameters<Parameters<typeof withOrgScope>[1]>[0],
   orgId: OrgId,
   entry: SpendEntry,
+  envelope?: Parameters<typeof createEvent>[2],
 ): Promise<void> {
   await tx.insert(schema.spendLedger).values({
     id: entry.id,
@@ -427,6 +460,51 @@ export async function recordSpend(
     estimatedCents: entry.estimatedCents,
     ...(entry.providerSid === undefined ? {} : { providerSid: entry.providerSid }),
   });
+
+  /* `spend.cap_reached` was DEFINED with this comment on `warnThresholdPercent`
+     — "the caller emits spend.cap_reached for it" — and no caller ever did.
+     The gate computed the crossing on every outbound action and threw it away,
+     so the one notification that arrives while an org can still act on it did
+     not exist. Emitted here rather than at four call sites because it belongs
+     in the ledger write's own transaction (guardrail 11): an event saying "you
+     crossed 80%" that commits without the row that crossed it is a warning
+     about a spend that did not happen. */
+  if (entry.decision?.warnThresholdPercent !== undefined && envelope !== undefined) {
+    await outboxWriter.append(tx, [
+      createEvent(
+        spendCapReached,
+        {
+          spentCents: entry.decision.spentCents + entry.estimatedCents,
+          capCents: entry.decision.capCents,
+          thresholdPercent: entry.decision.warnThresholdPercent,
+        },
+        envelope,
+      ),
+    ]);
+  }
+}
+
+/**
+ * Emails the owner once the ledger row is COMMITTED (§3.8's 80%/100% alerts).
+ *
+ * Called after the transaction, never inside it, and the ordering is the whole
+ * correctness argument: `checkUsageThresholds` re-reads the ledger to get the
+ * post-write total, so calling it before the commit would report every org one
+ * action behind its real spend — forever, and invisibly, because the number it
+ * showed would always look plausible.
+ *
+ * Never throws. An outbound call must not fail because a mailer was down; the
+ * spend cap is the control, and this only tells someone about it.
+ */
+export async function notifySpendThresholds(
+  orgId: OrgId,
+  decision: GateAllowed,
+  mail: BillingMailDeps | undefined,
+): Promise<void> {
+  if (mail === undefined) return;
+  await checkUsageThresholds(mail, orgId, decision.capCents, decision.windowDays).catch(
+    () => undefined,
+  );
 }
 
 /**

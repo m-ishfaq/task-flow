@@ -28,15 +28,48 @@ let admin: AdminConnection;
 const created: OrgId[] = [];
 
 function deps(overrides: Partial<BillingDeps> = {}): BillingDeps {
+  /* No `planPriceIds` any more. Phase 12 Wave 4 moved the catalog into
+     `billing.plans`/`billing.plan_prices`, so a checkout resolves its price
+     from the DATABASE per request rather than from a map built at boot — and
+     these tests now seed a real catalog row instead of a fixture map, which
+     is the point: the map could disagree with the database and the test would
+     never notice. */
   return {
     payments: new FakePaymentProvider(),
     trialDays: 14,
     pastDueGraceDays: 7,
-    planPriceIds: new Map([['pro', 'price_test_pro']]),
     webhookSecret: 'whsec_test',
     webOrigin: TEST_ENV.WEB_ORIGIN,
     ...overrides,
   };
+}
+
+/**
+ * A sellable plan for these tests, written directly as the migrator.
+ *
+ * Its OWN plan rather than 0063's seeded `pro`: that row deliberately carries
+ * no processor product (a migration cannot call Stripe), and mutating a seeded
+ * row would leave every other suite reading a catalog this file changed.
+ */
+const TEST_PLAN = 'billing-suite-plan';
+
+async function seedCatalog(): Promise<void> {
+  await clearCatalog();
+  await admin.query(
+    `INSERT INTO billing.plans (id, name, stripe_product_id) VALUES ($1, 'Billing Suite Plan', $2)`,
+    [TEST_PLAN, `prod_${TEST_PLAN}`],
+  );
+  await admin.query(
+    `INSERT INTO billing.plan_prices (plan_id, interval, amount_cents, stripe_price_id, is_current)
+     VALUES ($1, 'month', 2900, $2, true)`,
+    [TEST_PLAN, `price_${TEST_PLAN}_month`],
+  );
+}
+
+/** Children before parents, and idempotent — `taskflow_test` persists. */
+async function clearCatalog(): Promise<void> {
+  await admin.query(`DELETE FROM billing.plan_prices WHERE plan_id = $1`, [TEST_PLAN]);
+  await admin.query(`DELETE FROM billing.plans WHERE id = $1`, [TEST_PLAN]);
 }
 
 async function newOrg(slug: string): Promise<OrgId> {
@@ -79,6 +112,8 @@ beforeAll(async () => {
      VALUES ($1, 'owner@billing.test', 'owner@billing.test', now())`,
     [OWNER],
   );
+
+  await seedCatalog();
 });
 
 afterAll(async () => {
@@ -95,6 +130,7 @@ afterAll(async () => {
     await admin.setOrg(null);
   }
   await admin.query(`DELETE FROM identity.users WHERE id = $1`, [OWNER]);
+  await clearCatalog();
   await admin.end();
   await closeDatabase();
 });
@@ -120,7 +156,7 @@ describe('createCheckoutSession', () => {
       testDeps,
       orgId,
       { userId: OWNER, email: 'owner@billing.test' },
-      { planId: 'pro' },
+      { planId: TEST_PLAN, interval: 'month' },
     );
 
     expect(result.url).toContain('checkout.fake.test');
@@ -144,13 +180,13 @@ describe('createCheckoutSession', () => {
       testDeps,
       orgId,
       { userId: OWNER, email: 'owner@billing.test' },
-      { planId: 'pro' },
+      { planId: TEST_PLAN, interval: 'month' },
     );
     const second = await billing.createCheckoutSession(
       testDeps,
       orgId,
       { userId: OWNER, email: 'owner@billing.test' },
-      { planId: 'pro' },
+      { planId: TEST_PLAN, interval: 'month' },
     );
 
     expect(second.url).toBe(first.url);
@@ -163,20 +199,63 @@ describe('createCheckoutSession', () => {
     expect(typeof rows.rows[0]?.['n']).toBe('number');
   });
 
-  it('refuses a plan with no configured Stripe price, before calling the provider', async () => {
-    const orgId = await newOrg('billing-no-plan');
-    const testDeps = deps({ planPriceIds: new Map() });
+  it('refuses a plan with no current price, before calling the provider', async () => {
+    /* `free` is 0063's seeded default: a real catalog row, deliberately with
+       no processor product and no price. Asserting against it rather than
+       against an empty fixture map is the whole point of the Wave 4 change —
+       the refusal now depends on what is actually IN the catalog, so a
+       fixture can no longer disagree with the database. */
+    const orgId = await newOrg('billing-no-price');
+    const testDeps = deps();
 
     await expect(
       billing.createCheckoutSession(
         testDeps,
         orgId,
         { userId: OWNER, email: 'owner@billing.test' },
-        { planId: 'pro' },
+        { planId: 'free', interval: 'month' },
       ),
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
 
     // The provider was never reached — no customer id was ever assigned.
+    expect(await readOrgStripeCustomerId(orgId)).toBeNull();
+  });
+
+  it('refuses a plan id that is not in the catalog at all', async () => {
+    /* The route validates the SHAPE of a plan id; only the catalog knows
+       which ids exist. A client naming a plan that was never created must get
+       the same refusal as one naming a plan with no price — and must not
+       reach the provider on the way. */
+    const orgId = await newOrg('billing-unknown-plan');
+
+    await expect(
+      billing.createCheckoutSession(
+        deps(),
+        orgId,
+        { userId: OWNER, email: 'owner@billing.test' },
+        { planId: 'no-such-plan', interval: 'month' },
+      ),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    expect(await readOrgStripeCustomerId(orgId)).toBeNull();
+  });
+
+  it('refuses an interval the plan has no price for', async () => {
+    /* The seeded test plan is monthly-only. An annual checkout against it
+       must be refused rather than silently falling back to the monthly price
+       — which would charge a customer a different amount from the one they
+       chose. */
+    const orgId = await newOrg('billing-wrong-interval');
+
+    await expect(
+      billing.createCheckoutSession(
+        deps(),
+        orgId,
+        { userId: OWNER, email: 'owner@billing.test' },
+        { planId: TEST_PLAN, interval: 'year' },
+      ),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+
     expect(await readOrgStripeCustomerId(orgId)).toBeNull();
   });
 });

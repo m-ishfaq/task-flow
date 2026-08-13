@@ -71,4 +71,6 @@ export type {
   PaymentProvider,
   BillingWebhookEvent,
   BillingWebhookEventKind,
+  BillingInvoice,
+  PlanInterval,
 } from './payment-provider.js';

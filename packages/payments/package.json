@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@taskflow/contracts": "workspace:*",
+    "@taskflow/security": "workspace:*",
     "stripe": "^17.5.0"
   },
   "devDependencies": {

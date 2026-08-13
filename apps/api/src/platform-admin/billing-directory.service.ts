@@ -2,6 +2,7 @@ import {
   and,
   desc,
   eq,
+  inArray,
   insertAuditEntry,
   lt,
   or,
@@ -46,6 +47,31 @@ export interface BillingDirectoryRow {
   readonly trialEndsAt: Date | null;
   readonly billingGraceEndsAt: Date | null;
   readonly stripeCustomerId: string | null;
+
+  /* Wave 4. The tab could say which plan ID and two dates that are usually
+     empty; it could not say what they PAY, when it renews, or whether the
+     last invoice was actually paid — which is the only question an operator
+     opens a billing tab with. */
+  readonly planName: string | null;
+  readonly currentPeriodEnd: Date | null;
+  readonly currentPriceCents: number | null;
+  readonly currentPriceInterval: string | null;
+  readonly pendingPlanId: string | null;
+  readonly pendingPlanEffectiveAt: Date | null;
+  /**
+   * The most recent recorded invoice, or null.
+   *
+   * Read through the operator role, which 0065 grants SELECT and a permissive
+   * read policy — "did this customer actually pay" should not require opening
+   * a tenant scope.
+   */
+  readonly lastInvoice: {
+    readonly status: string;
+    readonly amountDueCents: number;
+    readonly currency: string;
+    readonly issuedAt: Date;
+    readonly hostedInvoiceUrl: string | null;
+  } | null;
 }
 
 export async function listBilling(
@@ -65,9 +91,21 @@ export async function listBilling(
         trialEndsAt: schema.orgs.trialEndsAt,
         billingGraceEndsAt: schema.orgs.billingGraceEndsAt,
         stripeCustomerId: schema.orgs.stripeCustomerId,
+        /* What the tab exists to answer, and could not: which plan by NAME,
+           what they pay, when it renews, and whether the last invoice was
+           actually paid. A plan id and two usually-empty dates were not it. */
+        planName: schema.plans.name,
+        currentPeriodEnd: schema.orgs.currentPeriodEnd,
+        currentPriceCents: schema.orgs.currentPriceCents,
+        currentPriceInterval: schema.orgs.currentPriceInterval,
+        pendingPlanId: schema.orgs.pendingPlanId,
+        pendingPlanEffectiveAt: schema.orgs.pendingPlanEffectiveAt,
         createdAt: schema.orgs.createdAt,
       })
       .from(schema.orgs)
+      /* LEFT — plan_id is nullable (a trialing org has none), and an inner
+         join would drop exactly the orgs an operator most wants to see. */
+      .leftJoin(schema.plans, eq(schema.plans.id, schema.orgs.planId))
       .orderBy(desc(schema.orgs.createdAt), desc(schema.orgs.id))
       .limit(input.limit + 1);
 
@@ -88,6 +126,30 @@ export async function listBilling(
   const page = hasMore ? rows.slice(0, input.limit) : rows;
   const last = page[page.length - 1];
 
+  /* ONE query for the whole page rather than one per row. DISTINCT ON is
+     Postgres picking the newest invoice per org in a single pass — the
+     alternative, a query per org, turns a 25-row page into 26 round trips. */
+  const orgIds = page.map((row) => row.orgId);
+  const lastInvoices =
+    orgIds.length === 0
+      ? []
+      : await withPlatformAdminScope(async (tx) =>
+          tx
+            .selectDistinctOn([schema.invoices.orgId], {
+              orgId: schema.invoices.orgId,
+              status: schema.invoices.status,
+              amountDueCents: schema.invoices.amountDueCents,
+              currency: schema.invoices.currency,
+              issuedAt: schema.invoices.issuedAt,
+              hostedInvoiceUrl: schema.invoices.hostedInvoiceUrl,
+            })
+            .from(schema.invoices)
+            .where(inArray(schema.invoices.orgId, orgIds))
+            .orderBy(schema.invoices.orgId, desc(schema.invoices.issuedAt)),
+        );
+
+  const invoiceByOrg = new Map(lastInvoices.map((invoice) => [invoice.orgId, invoice]));
+
   return {
     orgs: page.map((row) => ({
       orgId: row.orgId as OrgId,
@@ -98,6 +160,13 @@ export async function listBilling(
       trialEndsAt: row.trialEndsAt,
       billingGraceEndsAt: row.billingGraceEndsAt,
       stripeCustomerId: row.stripeCustomerId,
+      planName: row.planName,
+      currentPeriodEnd: row.currentPeriodEnd,
+      currentPriceCents: row.currentPriceCents,
+      currentPriceInterval: row.currentPriceInterval,
+      pendingPlanId: row.pendingPlanId,
+      pendingPlanEffectiveAt: row.pendingPlanEffectiveAt,
+      lastInvoice: invoiceByOrg.get(row.orgId) ?? null,
     })),
     nextCursor:
       hasMore && last !== undefined ? encodeCreatedCursor(last.createdAt, last.orgId) : null,

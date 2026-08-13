@@ -200,6 +200,18 @@ export const keys = {
 
   /** The org's own billing state (Phase 12 Wave 3 §3.1) — `billing.status`, owner-only. */
   billing: (orgId: string) => ['org', orgId, 'billing'] as const,
+  /**
+   * The purchasable catalog, as this org sees it (active plans, current
+   * prices).
+   *
+   * Keyed by org even though the catalog is global — the route is org-scoped
+   * (`org:billing`, Owner-only), so the ANSWER an org gets is org-relative
+   * even when the rows are not, and a shared key would leak a cached list
+   * across an org switch to someone whose role cannot fetch it themselves.
+   */
+  billingPlans: (orgId: string) => ['org', orgId, 'billing', 'plans'] as const,
+  /** Recorded invoices, newest first — our mirror of the processor's. */
+  billingInvoices: (orgId: string) => ['org', orgId, 'billing', 'invoices'] as const,
 
   /**
    * Every projects query for an org, archived or not.
@@ -400,6 +412,20 @@ export const keys = {
   /** One page of the operations dashboard, optionally filtered by kind. */
   platformOperations: (cursor: string | null, kind: string | null) =>
     ['platform', 'operations', kind ?? 'all', cursor ?? 'first'] as const,
+  /**
+   * The whole plan catalog (Phase 12 Wave 4 §3.2). Unpaginated on purpose —
+   * a catalog with enough tiers to need a page is a pricing problem, not a
+   * UI one.
+   */
+  platformPlans: () => ['platform', 'plans'] as const,
+  /** One plan's full price history — the grandfathering ledger. */
+  platformPlanPrices: (planId: string) => ['platform', 'plans', planId, 'prices'] as const,
+  /** One org's full record — the console drill-down. */
+  platformOrgDetail: (orgId: string) => ['platform', 'orgs', orgId, 'detail'] as const,
+  /** One account's full record — memberships across every tenant. */
+  platformUserDetail: (userId: string) => ['platform', 'users', userId, 'detail'] as const,
+  /** The operator chain, filtered to one org. */
+  platformOrgHistory: (orgId: string) => ['platform', 'orgs', orgId, 'history'] as const,
 } as const;
 
 /** The org id every key needs, or a placeholder that matches nothing. */

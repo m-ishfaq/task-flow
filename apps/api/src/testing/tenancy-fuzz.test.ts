@@ -482,10 +482,17 @@ describe('the application router', () => {
       .sort();
 
     expect(exempt).toEqual([
-      /* Both read/act on the CALLER's own org (`ctx.principal.org.orgId`,
+      /* All three read/act on the CALLER's own org (`ctx.principal.org.orgId`,
          Phase 12 Wave 3 §3.1) and take no id — `createCheckoutSession` is
-         NOT here because it takes a `planId` this technique can substitute. */
+         NOT here because it takes a `planId` this technique can substitute.
+
+         `billing.listPlans` (Phase 12 Wave 4) is input-less for a stronger
+         reason than the other two: the catalog it reads carries no `org_id`
+         AT ALL. A plan belongs to no tenant, so there is no cross-tenant read
+         to attempt here — the only thing org-relative about the route is that
+         `org:billing` decides who may see the price list. */
       'billing.createPortalSession',
+      'billing.listPlans',
       'billing.status',
       /* `chat.channels.list` reads the caller's own tuples and their org's
          public channels. There is no id to substitute, so calling it with the

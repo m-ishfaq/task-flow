@@ -4,13 +4,28 @@ import { FLAGS, FLAG_NAMES, type FlagDefinition, type FlagName } from './flags.j
 
 describe('FeatureFlags precedence', () => {
   it('falls back to the registry default', () => {
+    /* Asserted against the REGISTRY's own value rather than a hardcoded
+       `false`. The original spelling of this test said `value: false`, which
+       was true only while every flag happened to be unlaunched — so correcting
+       six shipped modules to `defaultValue: true` (Phase 12 Wave 4) broke a
+       test of the FALLBACK MECHANISM over a change to the DATA it falls back
+       to. What this asserts is that an unconfigured evaluator returns the
+       registry's answer and says so; which answer that is belongs to
+       flags.ts. */
     const flags = new FeatureFlags();
-    expect(flags.evaluate('chat')).toEqual({ value: false, source: 'default' });
+    expect(flags.evaluate('chat')).toEqual({
+      value: FLAGS.chat.defaultValue,
+      source: 'default',
+    });
   });
 
   it('lets environment override the default', () => {
-    const flags = new FeatureFlags({ chat: true });
-    expect(flags.evaluate('chat')).toEqual({ value: true, source: 'environment' });
+    /* Deliberately the OPPOSITE of whatever the registry says, so this proves
+       the environment tier wins rather than coincidentally agreeing with the
+       default it is meant to be overriding. */
+    const opposite = !FLAGS.chat.defaultValue;
+    const flags = new FeatureFlags({ chat: opposite });
+    expect(flags.evaluate('chat')).toEqual({ value: opposite, source: 'environment' });
   });
 
   it('lets a per-org override beat the environment', () => {
@@ -71,9 +86,17 @@ describe('envVarNameFor', () => {
 
 describe('snapshot', () => {
   it('resolves every registered flag', () => {
-    const snapshot = new FeatureFlags({ chat: true }).snapshot();
+    /* `chat` is forced to the OPPOSITE of its registry default so the two
+       assertions below test different things: one flag the environment
+       decided, and one it did not. Hardcoding `true`/`false` here made this
+       silently stop distinguishing them the moment a default changed. */
+    const forced = !FLAGS.chat.defaultValue;
+    const snapshot = new FeatureFlags({ chat: forced }).snapshot();
+
     expect(Object.keys(snapshot).sort()).toEqual([...FLAG_NAMES].sort());
-    expect(snapshot.chat).toBe(true);
-    expect(snapshot.docs).toBe(false);
+    expect(snapshot.chat, 'environment tier wins').toBe(forced);
+    expect(snapshot.docs, 'untouched flag keeps its registry default').toBe(
+      FLAGS.docs.defaultValue,
+    );
   });
 });

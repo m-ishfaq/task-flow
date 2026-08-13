@@ -33,7 +33,7 @@ describe('FakePaymentProvider', () => {
 
     const checkout = await provider.createCheckoutSession({
       customerId,
-      planId: 'pro',
+      priceId: 'price_test_pro_monthly',
       successUrl: 'https://app.test/billing/success',
       cancelUrl: 'https://app.test/billing/cancel',
     });

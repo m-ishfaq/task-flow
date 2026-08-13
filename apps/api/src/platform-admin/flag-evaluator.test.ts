@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { FLAGS } from '@taskflow/feature-flags';
 import { buildFlags } from './flag-evaluator.js';
 
 /**
@@ -23,9 +24,15 @@ describe('buildFlags (§3.8)', () => {
   });
 
   it('falls back to the registry default when no override row exists', () => {
+    /* Asserted against the registry's OWN value, not a hardcoded `false`.
+       This test was written when every flag was unlaunched, so `false` and
+       "the default" were the same string — and correcting the shipped modules
+       to `defaultValue: true` (Phase 12 Wave 4) broke a test of the FALLBACK
+       over a change to the data it falls back to. What matters here is that
+       an empty override set resolves to the registry and reports `default`. */
     const evaluator = buildFlags([]);
 
-    expect(evaluator.isEnabled('automation')).toBe(false);
+    expect(evaluator.isEnabled('automation')).toBe(FLAGS.automation.defaultValue);
     expect(evaluator.evaluate('automation').source).toBe('default');
   });
 
@@ -37,9 +44,11 @@ describe('buildFlags (§3.8)', () => {
   });
 
   it('ignores a row naming a flag the registry no longer defines', () => {
-    /* A deleted flag's leftover row must not crash resolution. */
+    /* A deleted flag's leftover row must not crash resolution, and must not
+       disturb the flags that DO exist — asserted against the registry's own
+       default for the same reason as above. */
     const evaluator = buildFlags([{ flagName: 'deleted_feature', value: true }]);
-    expect(evaluator.snapshot().automation).toBe(false);
+    expect(evaluator.snapshot().automation).toBe(FLAGS.automation.defaultValue);
   });
 
   it('an explicit false override resolves false, not the default', () => {

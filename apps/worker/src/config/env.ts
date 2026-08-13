@@ -92,6 +92,39 @@ export const EnvSchema = z.object({
      independent (this file's own header). Defaults match apps/api's. */
   BILLING_PAST_DUE_GRACE_DAYS: z.coerce.number().int().positive().default(7),
 
+  /* There is deliberately NO BILLING_DEFAULT_PLAN_ID. Which plan an expiring
+     trial lands on is `billing.plans.is_default` — one row, enforced by a
+     partial unique index, moved by the console's own button. An env var
+     naming the same plan would be a second source of truth that can silently
+     disagree with the first, and the disagreement is invisible: trials would
+     land somewhere every screen says they should not. */
+
+  /**
+   * How long before a trial ends the owner is warned.
+   *
+   * The warning is sent once per trial, keyed on the trial's own end date, so
+   * a wide window here does not mean repeated email — it means the warning
+   * goes out earlier. 72 hours is enough to notice on a Monday for a Thursday
+   * deadline.
+   */
+  BILLING_TRIAL_ENDING_WARNING_HOURS: z.coerce.number().int().positive().default(72),
+
+  /* The payment processor, for the period-close job that bills usage overage
+     (Phase 12 Wave 4 §3.8). The SAME variables apps/api validates, duplicated
+     here rather than imported for this file's stated reason — but note the
+     consequence of them disagreeing: an API on `stripe` and a worker left on
+     `fake` would take real money at checkout and record every tenant's
+     overage against an in-memory map that vanishes at restart. `fake` is
+     still the default, because a worker that refused to boot without Stripe
+     credentials would stop automation and webhook delivery over a billing
+     variable.
+
+     The credential itself is optional here for the same reason as in
+     apps/api: a `fake` deployment needs none of it, so the refusal belongs
+     where something was actually asked to be live. */
+  PAYMENTS_PROVIDER: z.enum(['fake', 'stripe']).default('fake'),
+  STRIPE_SECRET_KEY: NonEmpty.optional(),
+
   /* The master key pair. Required, because this process decrypts webhook
      signing secrets at delivery — a deployment that runs the worker runs the
      loop that signs requests, and a worker without the key could not do its

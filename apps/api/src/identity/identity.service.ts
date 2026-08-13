@@ -121,7 +121,7 @@ const clock = (deps: IdentityDeps): Date => (deps.now ?? (() => new Date()))();
  */
 export async function register(
   deps: IdentityDeps,
-  input: { email: string; password: string },
+  input: { email: string; password: string; name?: string | undefined },
   meta: RequestMeta,
 ): Promise<{ status: 'verification_sent' }> {
   await assertPasswordAcceptable(deps, input.password);
@@ -133,6 +133,9 @@ export async function register(
   const created = await repo.createUser({
     id: userId,
     email: input.email,
+    /* Trimmed, and a whitespace-only name is NO name — storing '   ' would
+       render as an invisible display name that reads as a rendering bug. */
+    displayName: input.name?.trim() === '' ? undefined : input.name?.trim(),
     passwordHash: await hashPassword(input.password),
     verification: {
       id: newId<'VerificationId'>(),
