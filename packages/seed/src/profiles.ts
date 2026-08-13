@@ -1519,11 +1519,306 @@ const MARKETING: Profile = {
   ],
 };
 
+/* -------------------------------------------------------------------------- *
+ * showcase — the profile a prospect gets a login to
+ * -------------------------------------------------------------------------- */
+
+/**
+ * One mid-size company that has actually been using this product for a
+ * couple of years, plus a second smaller tenant so the org switcher has
+ * somewhere to go. `marketing`'s ten tenants answer "does every plan and
+ * billing state exist somewhere"; this profile answers a narrower question —
+ * "what does it feel like to be the 40th person added to a real company's
+ * workspace" — which needs ONE org big enough that scrolling a member list,
+ * a channel list, or a board actually means something, not ten small ones.
+ *
+ * Every board, channel and space below is still declared by hand rather than
+ * generated — this file's own rule at the top — because the things a demo
+ * account needs to click through (an incident channel with real threads, a
+ * six-level-deep handbook, an archived project with real cards in it) are
+ * exactly the shapes a uniform range does not reliably produce.
+ *
+ * Reuses `DEMO_MIX`/`DEMO_MESSAGE_MIX`/`DEMO_PAGE_MIX`/`DEMO_PEOPLE_MIX`
+ * rather than inventing new ones — they are already tuned so the states that
+ * break a UI (no label, no due date, an empty checklist) are common enough to
+ * click into by accident, which is exactly what a walkthrough needs.
+ */
+const SHOWCASE: Profile = {
+  name: 'showcase',
+  users: 120,
+  cardEventSampleRate: 0.35,
+  messageEventSampleRate: 0.2,
+  docEventSampleRate: 0.4,
+  attachments: true,
+  card: DEMO_MIX,
+  message: DEMO_MESSAGE_MIX,
+  page: DEMO_PAGE_MIX,
+  people: DEMO_PEOPLE_MIX,
+  orgs: [
+    {
+      name: 'Rivet Technologies',
+      slug: 'rivet',
+      /* The flagship: top plan, healthy renewal, nothing to explain away —
+         this is the org a screenshot is taken of. */
+      billing: { planId: 'business', status: 'active', renewsInDays: 21, priceCents: 14_900 },
+      /* See marketingOrg's own comment on this formula — one team tuple plus
+         members x boards x relations, at two-thirds of that capacity so nine
+         projects is never sitting on the boundary. Boards below total 12. */
+      grants: 82,
+      teams: [
+        'Engineering',
+        'Design',
+        'Product',
+        'Sales',
+        'Marketing',
+        'Customer Success',
+        'Leadership',
+      ],
+      members: [
+        { user: 0, role: 'owner' },
+        { user: 1, role: 'admin' },
+        { user: 2, role: 'admin' },
+        { user: 3, role: 'admin' },
+        ...Array.from({ length: 96 }, (_, i) => ({ user: 4 + i, role: 'member' as const })),
+        { user: 100, role: 'guest' },
+        { user: 101, role: 'guest' },
+        { user: 102, role: 'guest' },
+      ],
+      channels: [
+        /* Everyone, and the one channel large enough for a real unread badge. */
+        { name: 'general', type: 'public', members: 103, messages: 450, topic: true },
+        { name: 'engineering', type: 'public', members: 40, messages: 380, topic: true },
+        { name: 'product', type: 'public', members: 25, messages: 220, topic: true },
+        { name: 'design', type: 'public', members: 15, messages: 160, topic: true },
+        { name: 'sales', type: 'public', members: 20, messages: 200, topic: true },
+        { name: 'customer-success', type: 'public', members: 18, messages: 150, topic: true },
+        { name: 'marketing', type: 'public', members: 12, messages: 90, topic: true },
+        /* Thread-heavy by content, not by plan — the message mix's own
+           threading rate does the work once there is enough traffic. */
+        { name: 'incidents', type: 'public', members: 22, messages: 130, topic: true },
+        { name: 'announcements', type: 'public', members: 103, messages: 60, topic: true },
+        { name: 'random', type: 'public', members: 50, messages: 300 },
+        /* A channel with NO messages — the composer and unread badge's empty
+           state, which a range almost never rolls. */
+        { name: 'watercooler', type: 'public', members: 10, messages: 0, topic: true },
+        { name: 'leadership', type: 'private', members: 5, messages: 180, topic: true },
+        { name: 'security-review', type: 'private', members: 6, messages: 95, topic: true },
+        /* The guests' one channel — signing in as one of them must reach
+           exactly this and nothing else (§3.9). */
+        {
+          name: 'vendor-portal',
+          type: 'private',
+          members: 4,
+          messages: 55,
+          topic: true,
+          withGuest: true,
+        },
+        /* Archived, and populated — "show archived" has to reveal a real
+           conversation, not a channel nobody used. */
+        { name: 'project-phoenix-retro', type: 'public', members: 8, messages: 75, archived: true },
+        { name: null, type: 'dm', members: 2, messages: 140 },
+        { name: null, type: 'dm', members: 2, messages: 60 },
+        { name: null, type: 'dm', members: 2, messages: 22 },
+        { name: null, type: 'group_dm', members: 4, messages: 85 },
+      ],
+      spaces: [
+        /* The one tree that is actually a tree: six levels deep, one parent
+           with two dozen children — the nearest-ancestor grant walk and the
+           `ancestor_ids` prefix match are only exercised here. */
+        {
+          name: 'Engineering Handbook',
+          pages: 60,
+          depth: 6,
+          wide: 20,
+          grants: 6,
+          content: true,
+          templates: 3,
+        },
+        /* A live space with one archived BRANCH — a different state from an
+           archived space (see SpacePlan's own note). */
+        {
+          name: 'Product',
+          pages: 40,
+          depth: 4,
+          wide: 10,
+          grants: 4,
+          archivedSubtree: true,
+          content: true,
+          templates: 1,
+        },
+        { name: 'Design System', pages: 25, depth: 3, grants: 3, content: true },
+        /* The guests' one subtree — a page opening on a tuple alone (§3.3). */
+        { name: 'Runbooks', pages: 20, depth: 2, grants: 2, withGuest: true, content: true },
+        { name: 'Sales Playbook', pages: 18, depth: 2, grants: 2, content: true },
+        { name: 'Support Knowledge Base', pages: 30, depth: 3, wide: 8, grants: 3, content: true },
+        { name: 'Company Wiki', pages: 22, depth: 3, grants: 2, content: true },
+        { name: 'Architecture Decisions', pages: 28, depth: 4, grants: 3, content: true },
+        /* Archived, and populated — same reasoning as the archived channel. */
+        { name: 'Onboarding', pages: 14, depth: 3, grants: 1, archived: true },
+        /* A space with NO pages — the tree, breadcrumb and page picker's
+           empty state. */
+        { name: 'Customer Research', pages: 0, depth: 1, grants: 0 },
+      ],
+      projects: [
+        {
+          name: 'Platform',
+          key: 'PLAT',
+          labels: 8,
+          customFields: 'all-types',
+          sprints: { completed: 8, planned: 2 },
+          boards: [
+            /* The board large enough to mean something — table-view
+               virtualization, rank length after hundreds of appends, and the
+               filter compiler's index use are all invisible at fifty cards. */
+            { name: 'Delivery', lists: 6, cards: 480, views: 9 },
+            { name: 'Design Review', lists: 4, cards: 95, views: 2 },
+            { name: 'Bug Triage', lists: 5, cards: 180, views: 6 },
+          ],
+        },
+        {
+          name: 'Public API',
+          key: 'API',
+          labels: 8,
+          customFields: 'standard',
+          sprints: { completed: 6, planned: 2 },
+          boards: [
+            { name: 'Roadmap', lists: 5, cards: 210, views: 4 },
+            { name: 'Incidents', lists: 4, cards: 70, views: 2 },
+          ],
+        },
+        {
+          name: 'Mobile App',
+          key: 'MOB',
+          labels: 7,
+          customFields: 'standard',
+          sprints: { completed: 5, planned: 1 },
+          boards: [
+            { name: 'Release Train', lists: 5, cards: 190, views: 3 },
+            { name: 'Backlog', lists: 4, cards: 90 },
+          ],
+        },
+        {
+          name: 'Data Platform',
+          key: 'DATA',
+          labels: 6,
+          customFields: 'standard',
+          sprints: { completed: 4, planned: 2 },
+          boards: [
+            { name: 'Pipelines', lists: 5, cards: 150, views: 3 },
+            { name: 'Dashboards', lists: 4, cards: 60 },
+          ],
+        },
+        {
+          name: 'Growth',
+          key: 'GRW',
+          labels: 6,
+          customFields: 'standard',
+          sprints: { completed: 3, planned: 1 },
+          boards: [{ name: 'Experiments', lists: 4, cards: 85, views: 2 }],
+        },
+        {
+          name: 'Customer Portal',
+          key: 'CP',
+          labels: 6,
+          customFields: 'standard',
+          sprints: { completed: 2, planned: 2 },
+          boards: [{ name: 'Roadmap', lists: 5, cards: 120, views: 3 }],
+        },
+        {
+          name: 'Internal Tools',
+          key: 'INT',
+          labels: 5,
+          customFields: 'standard',
+          /* The archived project — populated, so "show archived" reveals a
+             project with real content rather than a folder nobody used. */
+          archived: true,
+          sprints: { completed: 1, planned: 0 },
+          boards: [{ name: 'Backlog', lists: 4, cards: 45 }],
+        },
+        /* A project with NO boards — the projects page, sidebar tree and
+           board picker's empty state. */
+        {
+          name: 'Vendor Integrations',
+          key: 'VEN',
+          labels: 4,
+          customFields: 'standard',
+          boards: [],
+        },
+      ],
+    },
+    {
+      /* The second tenant — smaller, on a different plan, in a different
+         billing state, so a two-org user's switcher shows two genuinely
+         different companies rather than the same shape twice. */
+      name: 'Nimbus Analytics',
+      slug: 'nimbus',
+      /* Past due, with a grace window — the other billing screen a walkthrough
+         needs alongside Rivet's healthy one, and the reason Wave 3 keeps this
+         column independent of operator-controlled status: this org is fully
+         functional today and simply owes money. */
+      billing: {
+        planId: 'pro',
+        status: 'past_due',
+        priceCents: 4900,
+        graceEndsInDays: 5,
+      },
+      grants: 15,
+      teams: ['Engineering', 'Product'],
+      members: [
+        { user: 103, role: 'owner' },
+        { user: 104, role: 'admin' },
+        { user: 105, role: 'admin' },
+        ...Array.from({ length: 14 }, (_, i) => ({ user: 106 + i, role: 'member' as const })),
+        /* Borrowed from Rivet — the two-org users the switcher needs. */
+        { user: 4, role: 'guest' },
+        { user: 5, role: 'member' },
+      ],
+      channels: [
+        { name: 'general', type: 'public', members: 19, messages: 180, topic: true },
+        { name: 'engineering', type: 'public', members: 10, messages: 140, topic: true },
+        { name: 'random', type: 'public', members: 8, messages: 60 },
+        { name: 'leadership', type: 'private', members: 3, messages: 50, topic: true },
+        { name: null, type: 'dm', members: 2, messages: 65 },
+        { name: null, type: 'dm', members: 2, messages: 20 },
+      ],
+      spaces: [
+        { name: 'Handbook', pages: 20, depth: 3, grants: 2, content: true },
+        /* Flat — every page a root. A tree renderer that assumes nesting and
+           a breadcrumb that assumes an ancestor both meet this space first. */
+        { name: 'Meeting Notes', pages: 12, depth: 1, grants: 1, content: true },
+        { name: 'Scratch', pages: 0, depth: 1, grants: 0 },
+      ],
+      projects: [
+        {
+          name: 'Analytics Core',
+          key: 'ANA',
+          labels: 6,
+          customFields: 'standard',
+          sprints: { completed: 4, planned: 1 },
+          boards: [
+            { name: 'Delivery', lists: 5, cards: 140, views: 3 },
+            { name: 'Backlog', lists: 4, cards: 70 },
+          ],
+        },
+        {
+          name: 'Customer Insights',
+          key: 'CI',
+          labels: 5,
+          customFields: 'standard',
+          sprints: { completed: 2, planned: 1 },
+          boards: [{ name: 'Roadmap', lists: 4, cards: 90, views: 2 }],
+        },
+      ],
+    },
+  ],
+};
+
 export const PROFILES: Readonly<Record<string, Profile>> = {
   demo: DEMO,
   minimal: MINIMAL,
   large: LARGE,
   marketing: MARKETING,
+  showcase: SHOWCASE,
 };
 
 export const DEFAULT_PROFILE = 'demo';

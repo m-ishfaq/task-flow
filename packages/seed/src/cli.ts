@@ -119,7 +119,7 @@ function printHelp(): void {
     [
       'pnpm seed [options]',
       '',
-      '  --profile <name>   minimal | demo (default) | large | marketing',
+      '  --profile <name>   minimal | demo (default) | large | marketing | showcase',
       '  --seed <value>     RNG seed — same value always produces the same database',
       "  --reset            remove this package's previously seeded orgs/users first",
       '  --chaos            deliberately create a degenerate rank, to exercise rebalance',
