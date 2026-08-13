@@ -245,6 +245,76 @@ services:
         condition: service_healthy
     command: ['pnpm', '--filter', '@taskflow/db', 'migrate:up']
 
+  # One-shot, manual only — never part of `up -d`, matching `migrate`'s own
+  # profile gating. Reuses the api image (full monorepo source + pnpm via
+  # corepack, same as `migrate`) with its OWN environment block instead of
+  # inheriting api's, so `pnpm --filter @taskflow/seed seed <flags>` reads
+  # every secret straight from THIS FILE's own `${VAR}` substitution against
+  # .env.prod — never a hand-typed `-e VAR=$SHELL_VAR`, which is exactly how
+  # a SASL "password must be a string" failure happened twice in a row: a
+  # shell variable that only ever existed inside .env.prod, not the calling
+  # shell, silently expanded to an empty string.
+  #
+  # `entrypoint` (not `command`) is deliberate: `docker compose run seed
+  # <args>` only replaces the COMMAND half of `entrypoint + command`, so
+  # everything typed after the service name reaches the seed CLI's own flags
+  # directly:
+  #   docker compose --profile tools run --rm seed --reset --profile showcase --seed demo1
+  # — nothing else to type, no -e flags, no shell interpolation.
+  seed:
+    image: ${REGISTRY:-ghcr.io/m-ishfaq}/task-flow-api:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    profiles: ['tools']
+    environment:
+      # NOT `<<: *app-env` — that anchor sets NODE_ENV: production, and the
+      # seeder's own assertSafeToSeed() (packages/seed/src/cli.ts) hard-
+      # refuses to run against one. This is the ONE service in this file
+      # that deliberately runs as development, on purpose, against the
+      # production database, over the ordinary taskflow_migrator connection.
+      NODE_ENV: development
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+      DATABASE_MIGRATION_URL: postgresql://taskflow_migrator:${TASKFLOW_MIGRATOR_PASSWORD:?TASKFLOW_MIGRATOR_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_PLATFORM_ADMIN_URL: postgresql://taskflow_platform_admin:${TASKFLOW_PLATFORM_ADMIN_PASSWORD:?TASKFLOW_PLATFORM_ADMIN_PASSWORD must be set}@postgres:5432/taskflow
+      DATABASE_AUDIT_URL: postgresql://taskflow_audit:${TASKFLOW_AUDIT_PASSWORD:?TASKFLOW_AUDIT_PASSWORD must be set}@postgres:5432/taskflow
+
+      MASTER_KEY_ID: ${MASTER_KEY_ID:?MASTER_KEY_ID must be set}
+      MASTER_KEY_BASE64: ${MASTER_KEY_BASE64:?MASTER_KEY_BASE64 must be set}
+
+      # Optional — attachments are skipped gracefully if these are blank
+      # (packages/seed/src/modules/platform.attachments.ts).
+      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-}
+      STORAGE_REGION: ${STORAGE_REGION:-auto}
+      STORAGE_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-}
+      STORAGE_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-}
+      STORAGE_BUCKET_ATTACHMENTS: taskflow-attachments
+      STORAGE_FORCE_PATH_STYLE: ${STORAGE_FORCE_PATH_STYLE:-true}
+
+      # Optional — telephony data is skipped gracefully if these are blank.
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TELEPHONY_INDEX_KEY: ${TELEPHONY_INDEX_KEY:-}
+
+      # billing.catalog (packages/seed/src/modules/billing.catalog.ts) writes
+      # REAL Stripe Products/Prices when PAYMENTS_PROVIDER=stripe and a key is
+      # present — SEED_PAYMENTS=fake forces the in-memory processor instead
+      # for a showcase run that should never touch the real Stripe account.
+      PAYMENTS_PROVIDER: ${PAYMENTS_PROVIDER:-fake}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      SEED_PAYMENTS: ${SEED_PAYMENTS:-}
+
+      # Optional — omitting either skips the platform-operator account
+      # entirely (packages/seed/src/modules/identity.users.ts's own
+      # null-is-skip contract).
+      SEED_PLATFORM_ADMIN_EMAIL: ${SEED_PLATFORM_ADMIN_EMAIL:-}
+      SEED_PLATFORM_ADMIN_PASSWORD: ${SEED_PLATFORM_ADMIN_PASSWORD:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ['pnpm', '--filter', '@taskflow/seed', 'seed']
+
   api:
     image: ${REGISTRY:-ghcr.io/m-ishfaq}/task-flow-api:${IMAGE_TAG:-local}
     build:
