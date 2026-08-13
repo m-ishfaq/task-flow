@@ -63,6 +63,19 @@ export interface ProjectPlan {
    * exactly one project per run should carry it.
    */
   readonly customFields: 'standard' | 'all-types';
+  /**
+   * How much sprint HISTORY this project has behind its active window.
+   *
+   * Always exactly one active sprint — that is a database invariant, not a
+   * setting — so only the closed run and the planned run are declared. Omitted
+   * takes `DEFAULT_SPRINTS` (3 completed, 2 planned).
+   *
+   * Worth varying across a profile rather than setting once: a project with
+   * `completed: 0` is a team that has just started, and its velocity chart has
+   * nothing to plot — which is a real empty state, and one that only appears
+   * if some project is declared that way.
+   */
+  readonly sprints?: { readonly completed: number; readonly planned: number };
 }
 
 /**
@@ -197,6 +210,42 @@ export interface OrgPlan {
    * this package writes. Omitted means `'active'`.
    */
   readonly status?: 'active' | 'suspended';
+  /**
+   * What this org pays (Phase 12 Waves 3–4). Omitted leaves it where every
+   * seeded org used to be: `trialing`, on no plan, with the entire billing
+   * surface showing its empty state.
+   *
+   * Declared per org rather than rolled because the states worth having are
+   * the ones a random draw never produces — a subscription set to cancel, an
+   * org inside its past-due grace window, a trial hours from expiry. Each is a
+   * distinct screen with its own copy and controls.
+   */
+  readonly billing?: OrgBillingPlan;
+}
+
+/**
+ * One org's billing state.
+ *
+ * `status` is the org's `billing_status`, with one addition: `free` is not a
+ * status the column knows — it is a PLAN. An org on the free tier is
+ * `active`, and the seeder translates. Keeping them separate here means a
+ * profile can say "free" and mean it, rather than encoding the translation at
+ * every call site.
+ */
+export interface OrgBillingPlan {
+  /** Must exist in `billing.catalog`'s CATALOG — the module refuses otherwise. */
+  readonly planId: string;
+  readonly status: 'free' | 'active' | 'past_due' | 'trialing';
+  /** Days until the paid period renews. Ignored for `free`. */
+  readonly renewsInDays?: number;
+  /** What they are charged per month, in cents. Should match the plan's price. */
+  readonly priceCents?: number;
+  /** Set true to seed a subscription that stops at period end (Wave 4). */
+  readonly cancelAtPeriodEnd?: boolean;
+  /** Hours until the trial ends. Under 72 puts it inside the warning window. */
+  readonly trialEndsInHours?: number;
+  /** Days until a past_due org's grace window closes. */
+  readonly graceEndsInDays?: number;
 }
 
 /**
@@ -530,7 +579,7 @@ const DEMO_PAGE_MIX: PageMix = {
 
 const DEMO_PEOPLE_MIX: PeopleMix = {
   profileRate: 0.9,
-  displayNameRate: 0.95,
+  displayNameRate: 1,
   displayNameNicknameShare: 0.4,
   timezoneRate: 0.9,
   workingHoursRate: 0.6,
@@ -562,6 +611,10 @@ const DEMO: Profile = {
     {
       name: 'Acme Corp',
       slug: 'acme',
+      /* The flagship tenant, so the top tier: every feature on, no spend
+         ceiling, and a renewal far enough out that the page is not shouting
+         about a deadline. This is the org a screenshot is taken of. */
+      billing: { planId: 'business', status: 'active', renewsInDays: 18, priceCents: 14_900 },
       grants: 18,
       teams: ['Engineering', 'Design', 'Quality', 'Leadership'],
       members: [
@@ -706,6 +759,18 @@ const DEMO: Profile = {
          suspended state, with its owner and members refused at request time
          until someone reactivates it. See `OrgPlan.status`. */
       status: 'suspended',
+      /* Suspended by an OPERATOR and separately set to cancel at period end.
+         The two columns are deliberately independent (Wave 3's own argument
+         for keeping billing_status apart from Wave 1's status), and this is
+         the one org where both are set — so a console that conflated them
+         would show something visibly wrong here and nowhere else. */
+      billing: {
+        planId: 'pro',
+        status: 'active',
+        renewsInDays: 9,
+        priceCents: 4900,
+        cancelAtPeriodEnd: true,
+      },
       grants: 8,
       teams: ['Compliance', 'Revenue'],
       members: [
@@ -765,6 +830,10 @@ const DEMO: Profile = {
          only tenant where "you are the only member" states are reachable. */
       name: 'Solo Co',
       slug: 'solo-co',
+      /* A trial inside the 72-hour warning window, so `warnTrialEnding` has a
+         subject on the very first sweep tick and the trial -> Free transition
+         is reachable by waiting rather than by editing SQL. */
+      billing: { planId: 'free', status: 'trialing', trialEndsInHours: 40 },
       grants: 2,
       teams: [],
       members: [{ user: 23, role: 'owner' }],
@@ -993,10 +1062,369 @@ const LARGE: Profile = {
   ],
 };
 
+/* -------------------------------------------------------------------------- *
+ * marketing — the profile a screenshot is taken of
+ * -------------------------------------------------------------------------- */
+
+/**
+ * One tenant, described by the handful of things that actually differ between
+ * them.
+ *
+ * A helper rather than ten hand-written literals, and that is a deliberate
+ * departure from this file's "declare the structure" rule — so it is worth
+ * saying where the line still is. Every number a READER of a screenshot would
+ * notice is still declared per org: how many projects, how much sprint
+ * history, which plan, which billing state, how many people. What the helper
+ * removes is the repetition of the same four channel names and the same three
+ * space shapes ten times over, which is the part that would drift rather than
+ * the part that carries meaning.
+ *
+ * `LARGE` already builds its member list with `Array.from` for the same
+ * reason: past a certain count, writing it out stops being clearer.
+ */
+function marketingOrg(spec: {
+  readonly name: string;
+  readonly slug: string;
+  readonly teams: readonly string[];
+  /** Indexes into the user pool. First is the owner, next two are admins. */
+  readonly members: readonly number[];
+  /** Extra members drawn from other orgs — the two-org users the switcher needs. */
+  readonly guests?: readonly number[];
+  readonly billing: OrgBillingPlan;
+  readonly projects: readonly {
+    readonly name: string;
+    readonly key: string;
+    readonly boards: number;
+    readonly cards: number;
+    readonly sprints: { readonly completed: number; readonly planned: number };
+    readonly archived?: boolean;
+  }[];
+  readonly status?: 'active' | 'suspended';
+}): OrgPlan {
+  /* The org's REAL roster — members plus borrowed guests — because that is
+     what `buildRoster` checks a channel plan against. Sizing channels from
+     `spec.members` alone was the first version, and it produced a one-person
+     tenant asking for a three-person channel: a hard error at seed time
+     rather than a smaller channel, which is the right call by that function
+     and the wrong input from this one. */
+  const roster = spec.members.length + (spec.guests?.length ?? 0);
+
+  /* Never ask for more people than exist. `buildRoster` refuses rather than
+     truncating — deliberately, so a profile cannot quietly produce a database
+     that does not match what it declared — so the clamping belongs here, at
+     the place that knows how big the org is. */
+  const upTo = (want: number): number => Math.min(want, roster);
+
+  /* Grants are bounded by a FINITE space, and `authz.tuples` fails loudly
+     when a profile outgrows it rather than looping forever. A tuple is a
+     distinct `(subject, relation, board)`, there are three relations, and
+     every board in the org counts — archived projects included, because the
+     module groups boards by org and never filters them.
+
+     So: one optional team tuple, plus members x boards x relations. Computed
+     rather than guessed, because the first version used a flat
+     `Math.max(4, ...)` floor and a one-member, one-board tenant has only
+     three combinations in total — which is a seed-time error, not a smaller
+     number of grants. */
+  const boards = spec.projects.reduce((total, project) => total + project.boards, 0);
+  const capacity = (spec.teams.length > 0 ? 1 : 0) + roster * boards * 3;
+
+  /* Two-thirds of capacity, so a tenant is never sitting on the boundary
+     where one added relation weight or one archived board tips it over. */
+  const grants = Math.max(1, Math.min(Math.round(roster * 0.8), Math.floor(capacity * 0.66)));
+
+  return {
+    name: spec.name,
+    slug: spec.slug,
+    billing: spec.billing,
+    ...(spec.status === undefined ? {} : { status: spec.status }),
+    grants,
+    teams: [...spec.teams],
+    members: [
+      ...spec.members.map((user, index) => ({
+        user,
+        role: (index === 0 ? 'owner' : index < 3 ? 'admin' : 'member') as Role,
+      })),
+      /* Borrowed from other tenants, and one of them a GUEST. Both matter:
+         the org switcher and `OrgGate`'s stored-org validation are only
+         reachable with users in more than one org, and a guest grants nothing
+         from their role, so every guest surface depends on a tuple existing. */
+      ...(spec.guests ?? []).map((user, index) => ({
+        user,
+        role: (index === 0 ? 'guest' : 'member') as Role,
+      })),
+    ],
+    channels: [
+      /* Everyone, always — the one channel every tenant has. */
+      { name: 'general', type: 'public', members: roster, messages: 320, topic: true },
+
+      /* An archived channel keeps its history and accepts nothing new, and a
+         channel with NO messages is the empty state a demo never reaches by
+         accident. One of each wherever the roster allows. */
+      ...(roster >= 3
+        ? ([
+            {
+              name: 'engineering',
+              type: 'public',
+              members: upTo(Math.max(3, roster - 2)),
+              messages: 260,
+              topic: true,
+            },
+            { name: 'leadership', type: 'private', members: upTo(3), messages: 140, topic: true },
+            {
+              name: 'launch-q1',
+              type: 'public',
+              members: upTo(Math.max(3, roster - 3)),
+              messages: 180,
+              archived: true,
+            },
+          ] as const)
+        : []),
+      ...(roster >= 2
+        ? ([{ name: 'random', type: 'public', members: upTo(2), messages: 0 }] as const)
+        : []),
+
+      /* The guest channel needs the guest AND three others to be worth having. */
+      ...(spec.guests !== undefined && roster >= 4
+        ? ([
+            { name: 'partners', type: 'private', members: 4, messages: 90, withGuest: true },
+          ] as const)
+        : []),
+
+      /* A DM needs exactly two participants and a group DM at least three —
+         `channels_name_matches_type` and `buildRoster` both enforce it, so a
+         single-member tenant legitimately has NO direct messages at all. That
+         is the state Solo Co exists for in the demo profile, and it has to be
+         reachable here too rather than being a seeding error. */
+      ...(roster >= 2
+        ? ([
+            { name: null, type: 'dm', members: 2, messages: 120 },
+            { name: null, type: 'dm', members: 2, messages: 45 },
+          ] as const)
+        : []),
+      ...(roster >= 5 ? ([{ name: null, type: 'group_dm', members: 3, messages: 70 }] as const) : []),
+    ],
+    spaces: [
+      { name: 'Handbook', pages: 34, depth: 4, wide: 8, grants: 4, archivedSubtree: true },
+      { name: 'Engineering', pages: 46, depth: 5, wide: 12, grants: 6 },
+      /* An EMPTY space. Zero pages is a real state and the one the tree's
+         empty rendering depends on. */
+      { name: 'Scratch', pages: 0, depth: 1, grants: 0 },
+    ],
+    projects: spec.projects.map((project) => ({
+      name: project.name,
+      key: project.key,
+      labels: 8,
+      customFields: 'standard' as const,
+      sprints: project.sprints,
+      ...(project.archived === true ? { archived: true } : {}),
+      boards: Array.from({ length: project.boards }, (_, index) => ({
+        name: index === 0 ? 'Delivery' : index === 1 ? 'Backlog' : 'Triage',
+        lists: index === 0 ? 5 : 4,
+        cards: index === 0 ? project.cards : Math.round(project.cards * 0.45),
+        ...(index === 0 ? { views: 3 } : {}),
+      })),
+    })),
+  };
+}
+
+/**
+ * A database that looks like a going concern.
+ *
+ * The other three profiles each answer a narrow question — `demo` is the
+ * correctness fixture, `minimal` is the fast one, `large` is the volume
+ * stress test with its content mixes stripped to keep it seedable. None of
+ * them answers "what does this product look like when real companies use it",
+ * which is the question a marketing screenshot asks.
+ *
+ * So: ten tenants across all four plans and every billing state, each with
+ * several quarters of closed sprints behind an active one, full content mixes
+ * (descriptions, comments, checklists, threads, reactions), and enough people
+ * that a member list scrolls. Deliberately NOT as large as `large` — volume
+ * past a screenful adds seeding time and nothing a screenshot can show.
+ */
+const MARKETING: Profile = {
+  name: 'marketing',
+  users: 52,
+  /* Full mixes, unlike `large`. The whole point is that every panel a
+     screenshot might include has something in it. */
+  cardEventSampleRate: 0.05,
+  messageEventSampleRate: 0.05,
+  docEventSampleRate: 0.05,
+  attachments: true,
+  people: {
+    profileRate: 1,
+    displayNameRate: 1,
+    displayNameNicknameShare: 0.35,
+    timezoneRate: 0.9,
+    workingHoursRate: 0.7,
+    oooRate: 0.15,
+    oooActiveShare: 0.4,
+    membershipProfileRate: 1,
+    jobTitleRate: 0.95,
+    departmentRate: 0.8,
+    workPhoneRate: 0.55,
+    managerRate: 0.75,
+  },
+  message: DEMO_MESSAGE_MIX,
+  card: DEMO_MIX,
+  page: DEMO_PAGE_MIX,
+  orgs: [
+    /* ---- Business, healthy. The flagship. ---- */
+    marketingOrg({
+      name: 'Northwind Labs',
+      slug: 'northwind',
+      teams: ['Engineering', 'Design', 'Quality', 'Leadership'],
+      members: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+      guests: [40, 41],
+      billing: { planId: 'business', status: 'active', renewsInDays: 22, priceCents: 14_900 },
+      projects: [
+        { name: 'Platform', key: 'PLAT', boards: 3, cards: 120, sprints: { completed: 6, planned: 2 } },
+        { name: 'Mobile App', key: 'MOB', boards: 2, cards: 80, sprints: { completed: 4, planned: 1 } },
+        { name: 'Website', key: 'WEB', boards: 2, cards: 60, sprints: { completed: 3, planned: 2 } },
+        /* Archived, so the "show archived" affordance has something to reveal. */
+        { name: 'Legacy Portal', key: 'LEG', boards: 1, cards: 24, sprints: { completed: 8, planned: 0 }, archived: true },
+      ],
+    }),
+
+    /* ---- Pro, healthy, mid-size. ---- */
+    marketingOrg({
+      name: 'Meridian Health',
+      slug: 'meridian',
+      teams: ['Clinical', 'Platform', 'Compliance'],
+      members: [12, 13, 14, 15, 16, 17, 18, 19],
+      guests: [0, 42],
+      billing: { planId: 'pro', status: 'active', renewsInDays: 11, priceCents: 4900 },
+      projects: [
+        { name: 'Patient Portal', key: 'PP', boards: 2, cards: 95, sprints: { completed: 5, planned: 2 } },
+        { name: 'Integrations', key: 'INT', boards: 2, cards: 64, sprints: { completed: 3, planned: 1 } },
+      ],
+    }),
+
+    /* ---- Pro, CANCELLING. The ending notice, the Resume button. ---- */
+    marketingOrg({
+      name: 'Vertex Logistics',
+      slug: 'vertex',
+      teams: ['Operations', 'Engineering'],
+      members: [20, 21, 22, 23, 24, 25],
+      guests: [12],
+      billing: {
+        planId: 'pro',
+        status: 'active',
+        renewsInDays: 6,
+        priceCents: 4900,
+        cancelAtPeriodEnd: true,
+      },
+      projects: [
+        { name: 'Fleet', key: 'FLT', boards: 2, cards: 72, sprints: { completed: 4, planned: 1 } },
+        { name: 'Warehouse', key: 'WH', boards: 1, cards: 40, sprints: { completed: 2, planned: 2 } },
+      ],
+    }),
+
+    /* ---- Starter, PAST DUE inside its grace window. ---- */
+    marketingOrg({
+      name: 'Bluebird Studio',
+      slug: 'bluebird',
+      teams: ['Studio'],
+      members: [26, 27, 28, 29],
+      billing: {
+        planId: 'starter',
+        status: 'past_due',
+        renewsInDays: 3,
+        priceCents: 1900,
+        graceEndsInDays: 4,
+      },
+      projects: [
+        { name: 'Client Work', key: 'CW', boards: 2, cards: 55, sprints: { completed: 3, planned: 1 } },
+      ],
+    }),
+
+    /* ---- Starter, healthy. ---- */
+    marketingOrg({
+      name: 'Cobalt Analytics',
+      slug: 'cobalt',
+      teams: ['Data', 'Product'],
+      members: [30, 31, 32, 33, 34],
+      guests: [20],
+      billing: { planId: 'starter', status: 'active', renewsInDays: 26, priceCents: 1900 },
+      projects: [
+        { name: 'Pipelines', key: 'PIPE', boards: 2, cards: 68, sprints: { completed: 4, planned: 2 } },
+        { name: 'Dashboards', key: 'DASH', boards: 1, cards: 36, sprints: { completed: 1, planned: 1 } },
+      ],
+    }),
+
+    /* ---- Free. No subscription at all: no Cancel, no renewal line. ---- */
+    marketingOrg({
+      name: 'Harbor Collective',
+      slug: 'harbor',
+      teams: ['Core'],
+      members: [35, 36, 37],
+      billing: { planId: 'free', status: 'free' },
+      projects: [
+        { name: 'Roadmap', key: 'RM', boards: 1, cards: 28, sprints: { completed: 2, planned: 1 } },
+      ],
+    }),
+
+    /* ---- Trialing, hours from expiry. Feeds warnTrialEnding. ---- */
+    marketingOrg({
+      name: 'Pinecrest Group',
+      slug: 'pinecrest',
+      teams: ['Team'],
+      members: [38, 39, 43],
+      billing: { planId: 'free', status: 'trialing', trialEndsInHours: 30 },
+      projects: [
+        { name: 'Onboarding', key: 'ONB', boards: 1, cards: 22, sprints: { completed: 0, planned: 2 } },
+      ],
+    }),
+
+    /* ---- SUSPENDED by an operator, while paying. The two states are
+           independent columns, and this is where that shows. ---- */
+    marketingOrg({
+      name: 'Ironbark Mining',
+      slug: 'ironbark',
+      status: 'suspended',
+      teams: ['Site', 'Safety'],
+      members: [44, 45, 46, 47],
+      billing: { planId: 'pro', status: 'active', renewsInDays: 15, priceCents: 4900 },
+      projects: [
+        { name: 'Site Works', key: 'SITE', boards: 1, cards: 34, sprints: { completed: 3, planned: 1 } },
+      ],
+    }),
+
+    /* ---- Business, large team. The member list has to scroll somewhere. ---- */
+    marketingOrg({
+      name: 'Summit Financial',
+      slug: 'summit',
+      teams: ['Trading', 'Risk', 'Platform', 'Compliance', 'Leadership'],
+      members: [48, 49, 50, 51, 1, 2, 13, 14, 21, 22, 31, 32, 36],
+      guests: [26],
+      billing: { planId: 'business', status: 'active', renewsInDays: 4, priceCents: 14_900 },
+      projects: [
+        { name: 'Trading Core', key: 'TC', boards: 3, cards: 140, sprints: { completed: 7, planned: 2 } },
+        { name: 'Risk Engine', key: 'RISK', boards: 2, cards: 88, sprints: { completed: 5, planned: 1 } },
+        { name: 'Client Portal', key: 'CP', boards: 2, cards: 62, sprints: { completed: 2, planned: 2 } },
+      ],
+    }),
+
+    /* ---- One person, one project. Every "you are the only member" state. ---- */
+    marketingOrg({
+      name: 'Juniper Consulting',
+      slug: 'juniper',
+      teams: [],
+      members: [42],
+      billing: { planId: 'starter', status: 'active', renewsInDays: 19, priceCents: 1900 },
+      projects: [
+        { name: 'Engagements', key: 'ENG', boards: 1, cards: 18, sprints: { completed: 1, planned: 1 } },
+      ],
+    }),
+  ],
+};
+
 export const PROFILES: Readonly<Record<string, Profile>> = {
   demo: DEMO,
   minimal: MINIMAL,
   large: LARGE,
+  marketing: MARKETING,
 };
 
 export const DEFAULT_PROFILE = 'demo';

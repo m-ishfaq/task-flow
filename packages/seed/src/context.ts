@@ -1,6 +1,11 @@
 import type { DomainEvent } from '@taskflow/events';
 import type { AdminConnection } from '@taskflow/db/testing';
-import type { KeyProvider, StorageProvider, TelephonyProvider } from '@taskflow/contracts';
+import type {
+  KeyProvider,
+  PaymentProvider,
+  StorageProvider,
+  TelephonyProvider,
+} from '@taskflow/contracts';
 
 export type { KeyProvider } from '@taskflow/contracts';
 import type { SeedModule } from './registry.js';
@@ -92,6 +97,21 @@ export interface SeedContext {
    * pair telephony requires. Configured from the CLI, never read here.
    */
   readonly keys: KeyProvider | null;
+  /**
+   * The payment processor the plan catalog is built through, or null to skip
+   * billing entirely.
+   *
+   * Not the same null-is-"skip" trade as `storage` and `telephony`, and worth
+   * saying why: a `FakePaymentProvider` is a perfectly honest thing to seed
+   * against, because `billing.plan_prices.stripe_price_id` holding a fake id
+   * is only ever read back by the same fake. Nothing decrypts, nothing dials.
+   * So this is normally non-null even with no Stripe account.
+   *
+   * What it must NEVER be is the wrong one. Seeding through a LIVE processor
+   * creates real Products and Prices in that account on every run, and the CLI
+   * says so out loud before it does — see `buildPayments`.
+   */
+  readonly payments: PaymentProvider | null;
   log(message: string): void;
   /**
    * The output of a module this one declared in `requires`.
@@ -243,6 +263,7 @@ export interface CreateContextOptions {
   readonly storage: StorageProvider | null;
   readonly telephony: TelephonySeedConfig | null;
   readonly keys: KeyProvider | null;
+  readonly payments: PaymentProvider | null;
   readonly log: (message: string) => void;
 }
 
@@ -272,6 +293,7 @@ export function createSeedContext(options: CreateContextOptions): SeedContextHan
     storage: options.storage,
     telephony: options.telephony,
     keys: options.keys,
+    payments: options.payments,
     log: options.log,
 
     use: <Out>(module: SeedModule<Out>): Out => {

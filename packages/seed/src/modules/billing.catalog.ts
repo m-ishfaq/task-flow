@@ -1,0 +1,264 @@
+import { InMemoryEventBus } from '@taskflow/events';
+import { unsafeAsId, type RequestId, type UserId } from '@taskflow/contracts';
+import { createPlan, setPrice, listPlans } from '@taskflow/api/platform-admin/plan-catalog';
+import { FLAG_NAMES } from '@taskflow/feature-flags';
+import { defineSeedModule } from '../registry.js';
+import { adminModule } from './platform.admin.js';
+
+/**
+ * The plan catalog — built by calling the OPERATOR CONSOLE'S OWN service
+ * functions, not by inserting rows (Phase 12 Wave 4).
+ *
+ * ## Why the real flow rather than INSERTs
+ *
+ * Every other module in this package writes rows directly, and that is right
+ * for them: a card is a row, and reproducing `createCard`'s transaction would
+ * be duplicating logic to get the same bytes. A plan is not. A plan row is
+ * only half of a plan — the other half is a Product and a Price at the
+ * processor, and `billing.plan_prices.stripe_price_id` is the join between
+ * them. Seeding the row alone produces a catalog that renders perfectly and
+ * cannot be checked out against, which is precisely the "data that is a lie"
+ * this package's own comments argue against for attachments and telephony.
+ *
+ * So this module calls `createPlan` and `setPrice`. Whatever an operator would
+ * get by using the console, a seed run gets — including the ordering those
+ * functions are careful about (product first, then our row; price created
+ * before the old one is archived) and the feature-name validation against the
+ * live registry.
+ *
+ * ## Which processor
+ *
+ * `ctx.payments`, built in `cli.ts`. Normally the in-memory fake, which is a
+ * completely honest thing to seed against: a fake price id is only ever read
+ * back by the same fake. Against a real Stripe key the CLI warns first,
+ * because that run creates real objects in a real account.
+ *
+ * ## Idempotent by necessity, not by politeness
+ *
+ * `billing.plans` grants DELETE to nobody — not `taskflow_app`, not
+ * `taskflow_platform_admin` — because `identity.orgs.plan_id` references it
+ * and every historical price row is what a grandfathered subscriber is still
+ * billed against (migration 0062). So the reset that precedes a seed run
+ * CANNOT clear this table, and a second run necessarily meets the first run's
+ * plans. Existing ids are skipped rather than recreated; without that, run two
+ * fails on `createPlan`'s duplicate check and takes the whole seed with it.
+ *
+ * That also keeps the Stripe side sane: skipping the plan skips the product,
+ * so re-seeding against a live key does not multiply Products.
+ *
+ * ## No `tables` entry, deliberately
+ *
+ * For the same reason — nothing may delete these rows, so declaring them for
+ * reset would ask `reset.ts` to run a DELETE the database refuses.
+ */
+
+/**
+ * The tiers, in display order.
+ *
+ * A literal, like every other structural declaration in this package: a
+ * catalog with plausible names and prices is what a marketing screenshot
+ * needs, and a generated one produces "Plan 3 — $73/month".
+ *
+ * The limits are the interesting part and are NOT uniform. Free has a zero
+ * telephony cap (spend nothing at all — a real, different state from
+ * unlimited); Business has `null` where the others have a number, so the
+ * "unlimited" rendering has a subject; and the markup climbs while the
+ * included allowance climbs faster, which is the shape a real usage-billing
+ * ladder has.
+ */
+export const CATALOG = [
+  {
+    id: 'free',
+    name: 'Free',
+    description: 'For trying things out. Boards, chat and docs for a small team.',
+    sortOrder: 0,
+    features: ['chat', 'docs'],
+    withProduct: false,
+    monthlyCents: null,
+    annualCents: null,
+    limits: {
+      telephonyCapCents: 0,
+      automationRunsPerHour: 0,
+      turnIssuancePerDay: 0,
+      telephonyIncludedCents: 0,
+      telephonyMarkupPct: 0,
+    },
+  },
+  {
+    id: 'starter',
+    name: 'Starter',
+    description: 'For a team that has outgrown spreadsheets. Adds search and voice.',
+    sortOrder: 1,
+    features: ['chat', 'docs', 'tqlTextSyntax', 'telephony'],
+    withProduct: true,
+    monthlyCents: 1900,
+    annualCents: 19_000,
+    limits: {
+      telephonyCapCents: 5000,
+      automationRunsPerHour: 60,
+      turnIssuancePerDay: 200,
+      telephonyIncludedCents: 500,
+      telephonyMarkupPct: 20,
+    },
+  },
+  {
+    id: 'pro',
+    name: 'Pro',
+    description: 'For teams that run on it. Automation, the public API and higher limits.',
+    sortOrder: 2,
+    features: ['chat', 'docs', 'tqlTextSyntax', 'telephony', 'automation', 'publicApi'],
+    withProduct: true,
+    monthlyCents: 4900,
+    annualCents: 49_000,
+    limits: {
+      telephonyCapCents: 25_000,
+      automationRunsPerHour: 600,
+      turnIssuancePerDay: 2000,
+      telephonyIncludedCents: 2500,
+      telephonyMarkupPct: 15,
+    },
+  },
+  {
+    id: 'business',
+    name: 'Business',
+    description: 'Everything, with no ceiling on spend and priority support.',
+    sortOrder: 3,
+    features: ['chat', 'docs', 'tqlTextSyntax', 'telephony', 'automation', 'publicApi'],
+    withProduct: true,
+    monthlyCents: 14_900,
+    annualCents: 149_000,
+    limits: {
+      /* NULL is UNLIMITED, and 0 above is none-at-all. Both are seeded so the
+         two renderings are both reachable — a catalog where every limit is a
+         number never shows the "Unlimited" branch. */
+      telephonyCapCents: null,
+      automationRunsPerHour: null,
+      turnIssuancePerDay: null,
+      telephonyIncludedCents: 10_000,
+      telephonyMarkupPct: 10,
+    },
+  },
+] as const;
+
+export interface CatalogOutput {
+  /** Plan ids that exist and are sellable, in display order. */
+  readonly planIds: readonly string[];
+  readonly created: number;
+  readonly reused: number;
+}
+
+/**
+ * A recognizable request id for the operator-audit rows this module produces.
+ *
+ * `createPlan` writes to the GLOBAL operator audit chain, so a seed run leaves
+ * a real trail there — which is correct (the plans genuinely were created by
+ * that operator) and worth being able to pick out afterwards.
+ */
+const SEED_REQUEST_ID = '00000000-0000-0000-0000-00000000cafe';
+
+export const catalogModule = defineSeedModule({
+  name: 'billing.catalog',
+  /* The operator is the actor every one of these calls is attributed to. */
+  requires: [adminModule],
+  /* Deliberately empty — see the file header on why reset cannot own these. */
+  tables: [],
+
+  async seed(ctx): Promise<CatalogOutput> {
+    if (ctx.payments === null) {
+      ctx.log('billing.catalog: no payment provider — skipped.');
+      return { planIds: [], created: 0, reused: 0 };
+    }
+
+    const { operator } = ctx.use(adminModule);
+    const deps = { events: new InMemoryEventBus(), payments: ctx.payments };
+    const actor = {
+      userId: unsafeAsId<'UserId'>(operator.id) as UserId,
+      requestId: unsafeAsId<'RequestId'>(SEED_REQUEST_ID) as RequestId,
+    };
+
+    /* What is already here, including migration 0063's own `free` and `pro`
+       seeds — which exist in every database before this module ever runs. */
+    const existing = new Set((await listPlans(deps, actor)).map((plan) => plan.id));
+
+    /* Checked BEFORE the first provider call, not per plan as the loop reaches
+       it. `createPlan` validates its own features and throws — but by then it
+       has already created a Stripe Product for an earlier tier, so a typo in
+       the LAST plan leaves orphaned objects behind and a half-built catalog.
+       Failing here costs nothing and names every bad flag at once.
+
+       Not paranoia about a literal: the first version of CATALOG used
+       'search' and 'public_api', neither of which the registry has (they are
+       'tqlTextSyntax' and 'publicApi'), and the run died three plans in —
+       after creating two real Stripe Products. */
+    const unknown = CATALOG.flatMap((tier) =>
+      tier.features.filter((flag) => !FLAG_NAMES.includes(flag)),
+    );
+    if (unknown.length > 0) {
+      throw new Error(
+        `billing.catalog: unknown feature flag(s) ${unknown.join(', ')}. ` +
+          `Registered: ${FLAG_NAMES.join(', ')}.`,
+      );
+    }
+
+    /* Never grantable through a plan — it authorizes REAL CARRIER SPEND, so a
+       pricing table must not be able to hand it out. `createPlan` refuses it
+       too; this only says so before anything has been created. */
+    const spendFlag: string = 'telephonyLiveCredentials';
+    if (CATALOG.some((tier) => (tier.features as readonly string[]).includes(spendFlag))) {
+      throw new Error(`billing.catalog: ${spendFlag} is not grantable through a plan.`);
+    }
+
+    let created = 0;
+    let reused = 0;
+
+    for (const tier of CATALOG) {
+      if (existing.has(tier.id)) {
+        reused += 1;
+      } else {
+        await createPlan(deps, actor, {
+          id: tier.id,
+          name: tier.name,
+          description: tier.description,
+          sortOrder: tier.sortOrder,
+          features: [...tier.features],
+          withProduct: tier.withProduct,
+          ...tier.limits,
+        });
+        created += 1;
+      }
+
+      /* Prices are set for every tier on every run, new or reused, and that is
+         the one place this module is deliberately NOT a no-op on a re-seed.
+         `setPrice` archives the previous current price and creates a new one —
+         which is exactly what makes a re-seed produce a catalog matching the
+         literal above even if somebody edited a price in the console, while
+         leaving every existing subscription billing at the amount it was sold
+         at (§3.2's grandfathering). A skip here would let the console and the
+         seed disagree with no way to reconcile them. */
+      if (tier.monthlyCents !== null) {
+        await setPrice(deps, actor, {
+          planId: tier.id,
+          interval: 'month',
+          amountCents: tier.monthlyCents,
+          currency: 'usd',
+        });
+      }
+      if (tier.annualCents !== null) {
+        await setPrice(deps, actor, {
+          planId: tier.id,
+          interval: 'year',
+          amountCents: tier.annualCents,
+          currency: 'usd',
+        });
+      }
+    }
+
+    const planIds = CATALOG.map((tier) => tier.id);
+    ctx.log(
+      `billing.catalog: ${String(created)} plan(s) created, ${String(reused)} reused, ` +
+        `${String(planIds.length)} priced (${ctx.payments.isLive ? 'LIVE processor' : 'fake processor'})`,
+    );
+
+    return { planIds, created, reused };
+  },
+});

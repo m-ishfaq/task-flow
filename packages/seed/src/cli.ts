@@ -1,12 +1,13 @@
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { initializeAuditDatabase } from '@taskflow/db';
+import { initializeAuditDatabase, initializePlatformAdminDatabase } from '@taskflow/db';
 import { connectAsMigrator } from '@taskflow/db/testing';
 import { S3StorageProvider } from '@taskflow/storage';
+import { FakePaymentProvider, StripePaymentProvider } from '@taskflow/payments';
 import { TwilioTelephonyProvider } from '@taskflow/telephony';
 import { masterKeysFromBase64, SoftwareKeyProvider } from '@taskflow/security';
-import type { KeyProvider, StorageProvider } from '@taskflow/contracts';
+import type { KeyProvider, PaymentProvider, StorageProvider } from '@taskflow/contracts';
 import { createSeedContext, type TelephonySeedConfig } from './context.js';
 import { createRng } from './rng.js';
 import {
@@ -27,6 +28,8 @@ import { orgsModule } from './modules/tenancy.orgs.js';
 // output directly.
 import { auditModule } from './modules/platform.audit.js';
 import { adminModule } from './modules/platform.admin.js';
+import { catalogModule } from './modules/billing.catalog.js';
+import { subscriptionsModule } from './modules/billing.subscriptions.js';
 import { apiTokensModule } from './modules/platform.api-tokens.js';
 import { webhooksModule } from './modules/platform.webhooks.js';
 
@@ -112,7 +115,7 @@ function printHelp(): void {
     [
       'pnpm seed [options]',
       '',
-      '  --profile <name>   minimal | demo (default) | large',
+      '  --profile <name>   minimal | demo (default) | large | marketing',
       '  --seed <value>     RNG seed — same value always produces the same database',
       "  --reset            remove this package's previously seeded orgs/users first",
       '  --chaos            deliberately create a degenerate rank, to exercise rebalance',
@@ -172,6 +175,45 @@ function assertSafeToSeed(migrationUrl: string): void {
     );
     process.exit(1);
   }
+}
+
+/**
+ * The processor the plan catalog is seeded through.
+ *
+ * `fake` unless `PAYMENTS_PROVIDER=stripe` AND a key is present — the same
+ * explicit switch `apps/api` uses, deliberately not credential-sniffed.
+ *
+ * ## The warning is the point
+ *
+ * Seeding the catalog runs the REAL `createPlan`/`setPrice` service functions
+ * — that is what makes the seeded catalog identical to one an operator built
+ * by hand, rather than a set of rows that merely look like it. Against a live
+ * key those functions do exactly what they do in production: create Products
+ * and Prices in that Stripe account, on every run, accumulating.
+ *
+ * That is a side effect on somebody else's system, reached by typing
+ * `pnpm seed`, so it is announced before it happens rather than discovered in
+ * a Stripe dashboard later. `SEED_PAYMENTS=fake` forces the fake regardless
+ * of how the rest of the environment is configured, which is the escape hatch
+ * for a developer whose `.env` points at a shared test account.
+ */
+function buildPayments(): PaymentProvider {
+  if (process.env['SEED_PAYMENTS'] === 'fake') {
+    console.info('billing.catalog: SEED_PAYMENTS=fake — using the in-memory processor.');
+    return new FakePaymentProvider();
+  }
+
+  const secretKey = process.env['STRIPE_SECRET_KEY'];
+  if (process.env['PAYMENTS_PROVIDER'] !== 'stripe' || !secretKey) {
+    return new FakePaymentProvider();
+  }
+
+  console.warn(
+    'billing.catalog: PAYMENTS_PROVIDER=stripe — this run will CREATE REAL Stripe Products and\n' +
+      '  Prices in the account that key belongs to, and will do so again on every subsequent run.\n' +
+      '  Set SEED_PAYMENTS=fake to seed the catalog against the in-memory processor instead.',
+  );
+  return new StripePaymentProvider({ secretKey });
 }
 
 function buildStorage(): StorageProvider | null {
@@ -284,10 +326,34 @@ async function main(): Promise<void> {
     initializeAuditDatabase({ url: auditUrl, applicationName: 'taskflow-seed' });
   }
 
+  /* `billing.catalog` calls the operator console's own service functions, and
+     those run under `withPlatformAdminScope` — a pool of their own, as
+     `taskflow_platform_admin`, which nothing initializes by default. Without
+     this the catalog module throws "Platform-admin database not initialized"
+     rather than seeding, and the seeder is one of the few sanctioned callers
+     of that role (the same reasoning platform.admin.ts gives for writing
+     `platform.operators` as the migrator). */
+  const platformAdminUrl = process.env['DATABASE_PLATFORM_ADMIN_URL'];
+  if (platformAdminUrl) {
+    initializePlatformAdminDatabase({
+      url: platformAdminUrl,
+      applicationName: 'taskflow-seed',
+    });
+  } else {
+    console.warn(
+      'billing.catalog: DATABASE_PLATFORM_ADMIN_URL not set — the plan catalog will be skipped,\n' +
+        '  so seeded orgs will have no plan to be on.',
+    );
+  }
+
   const connection = await connectAsMigrator({ url: migrationUrl });
 
   try {
-    const roots = [auditModule];
+  /* `billing.catalog` is a ROOT rather than a dependency of something else:
+     nothing in the tenant graph requires it (an org's plan is written by
+     `billing.subscriptions`, which does), and a module no root reaches is a
+     module that silently never runs. */
+    const roots = [auditModule, catalogModule, subscriptionsModule];
 
     if (args.reset) {
       await reset({
@@ -327,6 +393,7 @@ async function main(): Promise<void> {
       );
     }
 
+    const payments = buildPayments();
     const keys = buildKeysProvider();
     if (!keys) {
       console.warn(
@@ -343,6 +410,7 @@ async function main(): Promise<void> {
       storage,
       telephony,
       keys,
+      payments,
       log: (message) => {
         console.warn(message);
       },
@@ -357,11 +425,11 @@ async function main(): Promise<void> {
       record(module, output);
     }
 
-    const { users, password } = ctx.use(usersModule);
+    const { users, password, operatorPassword } = ctx.use(usersModule);
     const { orgs } = ctx.use(orgsModule);
     const { operator } = ctx.use(adminModule);
 
-    console.warn('\nSeeded users (all share one password):');
+    console.warn('\nSeeded tenant users (all share one password):');
     console.warn(`  password: ${password}`);
     for (const org of orgs) {
       console.warn(`  ${org.slug.padEnd(12)} owner: ${org.owner.email}`);
@@ -370,8 +438,14 @@ async function main(): Promise<void> {
       `  (${String(users.length)} accounts total, @${users[0]?.email.split('@')[1] ?? ''})`,
     );
     /* The console has no nav link until someone IS an operator — this is the
-       only place a fresh database says who that is. */
-    console.warn(`  platform operator: ${operator.email}`);
+       only place a fresh database says who that is. Its own credentials, on
+       their own lines, because reusing the shared demo password for the one
+       account that can suspend any organization would put the console behind
+       whatever password a demo audience was just shown. */
+    console.warn('\nPlatform operator (separate credentials, belongs to NO org):');
+    console.warn(`  email:    ${operator.email}`);
+    console.warn(`  password: ${operatorPassword}`);
+    console.warn('  sign in, then follow "Platform console" on the org picker.');
 
     /* One-time secrets (Phase 10): the API token and the webhook signing
        secret exist in plaintext exactly once, at mint — the same rule the

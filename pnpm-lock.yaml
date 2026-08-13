@@ -818,6 +818,9 @@ importers:
       '@taskflow/observability':
         specifier: workspace:*
         version: link:../observability
+      '@taskflow/payments':
+        specifier: workspace:*
+        version: link:../payments
       '@taskflow/policy':
         specifier: workspace:*
         version: link:../policy

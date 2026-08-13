@@ -93,16 +93,29 @@ describe('the module graph', () => {
 });
 
 describe('the seeded operator and the suspended org (profile invariants)', () => {
-  it('keeps user 0 in an ACTIVE org in every profile', () => {
-    /* `platform.admin` grants the flag to users[0]. A profile that made user
-       0's only org the suspended one would lock the operator out of the
-       product the console sits next to — the demo must let the same login
-       that opens /platform-admin also open an org. */
+  it('grants the flag to an account no profile can put in an org', () => {
+    /* This replaced an invariant that no longer exists. The old rule was
+       "keep user 0 in an active org", because `platform.admin` granted the
+       operator flag to `users[0]` — Acme's owner — and a profile that put
+       user 0's only org in the suspended state would have locked the operator
+       out of the product its console sits beside.
+     *
+     * The operator is now `usersModule`'s `operator`: a dedicated account
+     * held OUTSIDE the indexable pool. `OrgPlan.members` can only name an
+     * index into `users`, so "the operator is in an org" is not a state any
+     * profile can express — which is why the old test's whole class of failure
+     * is gone rather than merely unobserved.
+     *
+     * What is worth asserting instead is that the structural guarantee holds:
+     * every member index a profile names must be a real index into the pool,
+     * and the pool is exactly the tenant population. An index at or past
+     * `users` would silently be the operator's slot if the arrays were ever
+     * merged again. */
     for (const profile of Object.values(PROFILES)) {
       for (const org of profile.orgs) {
-        const isMember = org.members.some((member) => member.user === 0);
-        if (isMember) {
-          expect(org.status ?? 'active', `${profile.name}/${org.slug}`).not.toBe('suspended');
+        for (const member of org.members) {
+          expect(member.user, `${profile.name}/${org.slug}`).toBeLessThan(profile.users);
+          expect(member.user, `${profile.name}/${org.slug}`).toBeGreaterThanOrEqual(0);
         }
       }
     }
@@ -121,9 +134,17 @@ describe('the seeded operator and the suspended org (profile invariants)', () =>
   it('keeps every other profile fully active', () => {
     /* `minimal` and `large` carry no operator-console demo need, and a
        suspended org there would silently eat most of what they exist to
-       exercise — minimal's whole org, large's only tenant. */
+       exercise — minimal's whole org, large's only tenant.
+     *
+     * `marketing` is excluded for the opposite reason: it suspends Ironbark
+     * DELIBERATELY, and while that org is still paying. Wave 3 keeps
+     * `billing_status` and Wave 1's operator-controlled `status` in separate
+     * columns precisely so an automated billing recovery cannot undo a manual
+     * suspension, and Ironbark is the only fixture anywhere that has both set
+     * at once — which is what makes a console that conflated them visibly
+     * wrong there and nowhere else. */
     for (const [name, profile] of Object.entries(PROFILES)) {
-      if (name === 'demo') continue;
+      if (name === 'demo' || name === 'marketing') continue;
       for (const org of profile.orgs) {
         expect(org.status ?? 'active', `${name}/${org.slug}`).toBe('active');
       }

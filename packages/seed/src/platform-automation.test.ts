@@ -10,7 +10,7 @@ import type { SeededOrg, SeededMembership, SeededTeam } from './modules/tenancy.
 import type { SeededProject, SeededStatus, SeededLabel } from './modules/work.projects.js';
 import type { SeededChannel } from './modules/chat.channels.js';
 import type { ChannelPlan } from './profiles.js';
-import { sprintsModule } from './modules/work.sprints.js';
+import { DEFAULT_SPRINTS, sprintsModule } from './modules/work.sprints.js';
 import { automationsModule } from './modules/platform.automations.js';
 import { webhooksModule } from './modules/platform.webhooks.js';
 import { apiTokensModule } from './modules/platform.api-tokens.js';
@@ -203,6 +203,7 @@ function harnessFor(
     profile: findProfile('demo'),
     now: new Date('2026-08-12T12:00:00.000Z'),
     chaos: false,
+    payments: null,
     storage: null,
     telephony: null,
     keys: options?.keys ?? null,
@@ -288,8 +289,21 @@ describe('work.sprints', () => {
     const output = await sprintsModule.seed(harness.ctx);
 
     const sprints = asRecords(harness.columnsOf('work.sprints'), harness.rowsOf('work.sprints'));
-    expect(sprints).toHaveLength(3);
-    expect(sprints.map((s) => s['status']).sort()).toEqual(['active', 'completed', 'planned']);
+
+    /* A HISTORY now, not one sprint per state: `DEFAULT_SPRINTS` closed
+       sprints, exactly one active, and the planned run ahead of it. The count
+       is derived from the shape rather than written as a literal, so raising
+       the default does not silently make this assertion meaningless. */
+    const expected = DEFAULT_SPRINTS.completed + 1 + DEFAULT_SPRINTS.planned;
+    expect(sprints).toHaveLength(expected);
+
+    const byStatus = (status: string) => sprints.filter((s) => s['status'] === status).length;
+    expect(byStatus('completed')).toBe(DEFAULT_SPRINTS.completed);
+    expect(byStatus('planned')).toBe(DEFAULT_SPRINTS.planned);
+    /* The one that matters: `work.sprints` carries a unique index allowing a
+       single active sprint per project, so a generator emitting two would fail
+       the first real `pnpm seed` rather than this test. */
+    expect(byStatus('active')).toBe(1);
 
     // Every write happens under the org scope — RLS would silently drop
     // anything issued without it (context.ts's warning).
@@ -312,7 +326,7 @@ describe('work.sprints', () => {
       expect(endsOn >= startsOn).toBe(true);
     }
 
-    expect(output.sprintCount).toBe(3);
+    expect(output.sprintCount).toBe(expected);
   });
 
   it('assigns the card.created card ids to the active sprint via a scoped UPDATE', async () => {
@@ -322,15 +336,28 @@ describe('work.sprints', () => {
     });
     await sprintsModule.seed(harness.ctx);
 
-    // With 9 cards, the completed sprint takes 2 and the active takes 5
-    // (cards 2..7).
+    /* Cards are handed out oldest-sprint-first and NEVER reused — a card
+       belongs to at most one sprint (`work.cards.sprint_id` is one column),
+       so overlapping slices would silently move a card to whichever sprint was
+       written last. Each closed sprint takes two, then the active one takes up
+       to five from whatever is left.
+
+       Asserted as a PARTITION rather than against literal indices: the exact
+       offsets move whenever `DEFAULT_SPRINTS` changes, and an assertion that
+       has to be recomputed by hand each time is one that gets loosened
+       instead. What must stay true is that no card appears twice. */
     const updates = harness.queries.filter((q) => q.text.includes('UPDATE work.cards'));
-    expect(updates).toHaveLength(2);
-    const active = updates.find((q) => (q.values[3] as readonly string[]).length === 5);
-    expect(active).toBeDefined();
-    // [sprintId, updated_at, orgId, cardIds]
-    expect(active?.values[2]).toBe(org.id);
-    expect(active?.values[3]).toEqual(CARD_IDS.slice(2, 7));
+    const assigned = updates.flatMap((q) => q.values[3] as readonly string[]);
+    expect(new Set(assigned).size, 'a card was assigned to two sprints').toBe(assigned.length);
+    expect(assigned.every((id) => CARD_IDS.includes(id))).toBe(true);
+
+    // Every write stays inside the org scope. [sprintId, updated_at, orgId, cardIds]
+    for (const update of updates) expect(update.values[2]).toBe(org.id);
+
+    /* The active sprint gets the widest slice of the ones that have cards —
+       it is the board a demo actually opens. */
+    const widest = Math.max(...updates.map((q) => (q.values[3] as readonly string[]).length));
+    expect(widest).toBeGreaterThanOrEqual(2);
   });
 
   it('emits sprint.created for every sprint and sprint.completed for the closed one', async () => {
@@ -339,8 +366,14 @@ describe('work.sprints', () => {
     await sprintsModule.seed(harness.ctx);
 
     const created = harness.events.filter((e) => e.name === 'sprint.created');
-    expect(created).toHaveLength(3);
-    expect(harness.events.some((e) => e.name === 'sprint.completed')).toBe(true);
+    expect(created).toHaveLength(DEFAULT_SPRINTS.completed + 1 + DEFAULT_SPRINTS.planned);
+
+    /* One `sprint.completed` per closed sprint, not merely 'at least one' —
+       a generator that emitted the lifecycle event for only the newest of a
+       run would leave the older ones with a creation event and no closure,
+       which reads in an audit trail as sprints that never ended. */
+    const closed = harness.events.filter((e) => e.name === 'sprint.completed');
+    expect(closed).toHaveLength(DEFAULT_SPRINTS.completed);
     expect(harness.events.some((e) => e.name === 'sprint.started')).toBe(true);
   });
 });

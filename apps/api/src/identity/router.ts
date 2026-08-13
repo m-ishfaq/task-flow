@@ -60,11 +60,22 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
           .object({
             email: Email,
             password: Password,
-            /* Optional, deliberately: an account is identified by its email,
-               and refusing a signup over a missing display name would gate
-               the one flow that must never have avoidable friction. Bounded
-               because it is rendered everywhere a person appears. */
-            name: z.string().trim().min(1).max(80).optional(),
+            /* REQUIRED, reversing this route's original call.
+
+               The old reasoning was that an account is identified by its email
+               and a required name is friction on the one flow that must never
+               have any. True in isolation, and it lost to what the product
+               actually became: every surface that shows a person — the org
+               directory, chat, mentions, the operator console, an audit entry
+               read two years later — falls back to an email address when the
+               name is missing. That fallback is not neutral. It DISCLOSES the
+               address to every colleague who can see the surface, which is a
+               worse default than one extra field at signup.
+
+               Trimmed and bounded here; the service still treats a
+               whitespace-only value as no name, so the two agree rather than
+               relying on this bound alone. */
+            name: z.string().trim().min(1).max(80),
           })
           .strict(),
       )

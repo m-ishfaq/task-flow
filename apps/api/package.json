@@ -33,6 +33,7 @@
     "./events/automation-webhooks": "./src/automation/webhook-events.ts",
     "./events/api-tokens": "./src/automation/api-token-events.ts",
     "./billing/sweep": "./src/billing/sweep.service.ts",
+    "./platform-admin/plan-catalog": "./src/platform-admin/plan-catalog.service.ts",
     "./billing/deps": "./src/billing/deps.ts",
     "./billing/overage": "./src/billing/overage.service.ts",
     "./billing/billing-mail": "./src/billing/billing-mail.ts",

@@ -25,7 +25,8 @@
     "@taskflow/security": "workspace:*",
     "@taskflow/storage": "workspace:*",
     "@taskflow/telephony": "workspace:*",
-    "yjs": "^13.6.32"
+    "yjs": "^13.6.32",
+    "@taskflow/payments": "workspace:*"
   },
   "devDependencies": {
     "@taskflow/collab": "workspace:*",
