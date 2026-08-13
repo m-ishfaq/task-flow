@@ -29,6 +29,36 @@ let app: FastifyInstance;
 let admin: AdminConnection;
 const created: OrgId[] = [];
 
+/**
+ * A sellable plan for this suite, written directly as the migrator — the same
+ * shape `org-billing.service.test.ts` uses, and for the same reason: 0063's
+ * seeded `pro` deliberately carries no `plan_prices` row (a migration cannot
+ * call Stripe), so `resolvePlanFromPrice` has nothing to resolve `event.priceId`
+ * against unless a suite seeds one, and mutating the shared `pro` row would
+ * leave every other suite reading a catalog this file changed.
+ */
+const TEST_PLAN = 'billing-webhook-suite-plan';
+const TEST_PRICE_ID = `price_${TEST_PLAN}_month`;
+
+async function seedCatalog(): Promise<void> {
+  await clearCatalog();
+  await admin.query(
+    `INSERT INTO billing.plans (id, name, stripe_product_id) VALUES ($1, 'Billing Webhook Suite Plan', $2)`,
+    [TEST_PLAN, `prod_${TEST_PLAN}`],
+  );
+  await admin.query(
+    `INSERT INTO billing.plan_prices (plan_id, interval, amount_cents, stripe_price_id, is_current)
+     VALUES ($1, 'month', 2900, $2, true)`,
+    [TEST_PLAN, TEST_PRICE_ID],
+  );
+}
+
+/** Children before parents, and idempotent — `taskflow_test` persists. */
+async function clearCatalog(): Promise<void> {
+  await admin.query(`DELETE FROM billing.plan_prices WHERE plan_id = $1`, [TEST_PLAN]);
+  await admin.query(`DELETE FROM billing.plans WHERE id = $1`, [TEST_PLAN]);
+}
+
 async function newOrgWithCustomer(slug: string, customerId: string): Promise<OrgId> {
   const result = await orgs.createOrg({ name: `Org ${slug}`, slug }, actorOf(OWNER), {
     trialDays: 14,
@@ -110,6 +140,7 @@ beforeAll(async () => {
      VALUES ($1, 'owner@billing-webhook.test', 'owner@billing-webhook.test', now())`,
     [OWNER],
   );
+  await seedCatalog();
 
   initializeDatabase({ url: TEST_ENV.DATABASE_URL, applicationName: 'billing-webhook-test' });
   app = await buildServer({ env: TEST_ENV });
@@ -123,10 +154,14 @@ afterAll(async () => {
     await admin.setOrg(orgId);
     await admin.query(`DELETE FROM identity.memberships WHERE org_id = $1`, [orgId]);
     await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [orgId]);
+    // Children before parents: an activated org's plan_id may reference
+    // TEST_PLAN (orgs_plan_id_fk, ON DELETE RESTRICT), so the org row has to
+    // go before clearCatalog() below can remove the plan it pointed at.
     await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [orgId]);
     await admin.setOrg(null);
   }
   await admin.query(`DELETE FROM identity.users WHERE id = $1`, [OWNER]);
+  await clearCatalog();
   await admin.end();
   await closeDatabase();
 });
@@ -184,6 +219,7 @@ describe('POST /webhooks/billing/stripe', () => {
         providerEventId: 'evt_activate_1',
         customerId: 'cus_webhook_activate',
         subscriptionId: 'sub_activate_1',
+        priceId: TEST_PRICE_ID,
       }),
     });
     expect(response.statusCode).toBe(200);
@@ -194,7 +230,7 @@ describe('POST /webhooks/billing/stripe', () => {
       'stripe_subscription_id',
     ] as const);
     expect(orgRow.billing_status).toBe('active');
-    expect(orgRow.plan_id).toBe('pro');
+    expect(orgRow.plan_id).toBe(TEST_PLAN);
     expect(orgRow.stripe_subscription_id).toBe('sub_activate_1');
 
     expect(await webhookEventExists(orgId, 'evt_activate_1')).toBe(true);

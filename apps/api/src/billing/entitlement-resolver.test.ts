@@ -64,6 +64,7 @@ async function setPlan(orgId: OrgId, planId: string | null): Promise<void> {
   resetEntitlementCache();
 }
 
+/** `billing.org_entitlements` is FORCE RLS'd on app.org_id and the migrator is NOBYPASSRLS. */
 async function setOverride(
   orgId: OrgId,
   input: {
@@ -72,6 +73,7 @@ async function setOverride(
     readonly expiresAt?: Date | null;
   },
 ): Promise<void> {
+  await admin.setOrg(orgId);
   await admin.query(
     `INSERT INTO billing.org_entitlements (org_id, features_add, features_remove, reason, expires_at)
      VALUES ($1, $2, $3, 'resolver test', $4)
@@ -79,11 +81,14 @@ async function setOverride(
        SET features_add = $2, features_remove = $3, expires_at = $4`,
     [orgId, input.add ?? [], input.remove ?? [], input.expiresAt ?? null],
   );
+  await admin.setOrg(null);
   resetEntitlementCache();
 }
 
 async function clearOverride(orgId: OrgId): Promise<void> {
+  await admin.setOrg(orgId);
   await admin.query(`DELETE FROM billing.org_entitlements WHERE org_id = $1`, [orgId]);
+  await admin.setOrg(null);
   resetEntitlementCache();
 }
 
