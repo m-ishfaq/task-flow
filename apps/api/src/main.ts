@@ -5,10 +5,12 @@ import {
   initializeBacklinksDatabase,
   initializeDatabase,
   initializeIntegrationAuthDatabase,
+  initializeOpsEventsDatabase,
   initializePlatformAdminDatabase,
   initializeRecordingIngestDatabase,
   initializeSearchDatabase,
   initializeSweepDatabase,
+  recordOperationalEvent,
 } from '@taskflow/db';
 import { createLogger } from '@taskflow/observability';
 import { loadEnv } from './config/env.js';
@@ -152,6 +154,19 @@ if (env.DATABASE_INTEGRATION_URL !== undefined) {
   });
 }
 
+/* The operations dashboard's writer connection (migration 0061). Optional
+   for the same reason every consumer pool is — recordOperationalEvent()
+   catches the missing-connection error itself (packages/db/src/ops-events.ts's
+   own comment), so an instance without this simply gets no dashboard rows
+   for mail delivery / billing webhook outcomes rather than a broken mail
+   queue or a failing webhook route. */
+if (env.DATABASE_OPS_EVENTS_URL !== undefined) {
+  initializeOpsEventsDatabase({
+    url: env.DATABASE_OPS_EVENTS_URL,
+    applicationName: 'taskflow-ops-events',
+  });
+}
+
 const telephonyDeps = buildTelephonyDeps(env);
 
 const app = await buildServer({ env });
@@ -161,7 +176,34 @@ const app = await buildServer({ env });
    identity's so a notification backlog never contends with a password-reset
    email. Constructed unconditionally: it costs nothing idle, and the relay
    below only ever calls `send` when there is something to send. */
-const notificationMail = createNotificationMailDelivery({ env });
+const notificationMailLogger = createLogger({ name: 'notification-mail', level: env.LOG_LEVEL });
+const notificationMail = createNotificationMailDelivery({
+  env,
+  onFailure: (failure) => {
+    /* This queue never had an onFailure handler before this — a failed
+       notification email abandoned silently, with nothing to grep for
+       even in a live incident. Same redaction as identity's own queue:
+       to/subject only, never the body. */
+    notificationMailLogger.error(
+      { to: failure.to, subject: failure.subject, attempts: failure.attempts },
+      'mail delivery abandoned',
+    );
+    void recordOperationalEvent({
+      kind: 'mail',
+      outcome: 'failure',
+      target: failure.to,
+      detail: { subject: failure.subject, attempts: failure.attempts },
+    });
+  },
+  onSuccess: (success) => {
+    void recordOperationalEvent({
+      kind: 'mail',
+      outcome: 'success',
+      target: success.to,
+      detail: { subject: success.subject },
+    });
+  },
+});
 
 /* The Web Push provider (§3.7). VAPID keys are OPTIONAL in the env schema:
    an instance without them is a valid deployment that simply does not send

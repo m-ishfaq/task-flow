@@ -55,7 +55,19 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
     register: publicRoute({
       publicReason: 'Creating an account cannot require an account.',
     })
-      .input(z.object({ email: Email, password: Password }).strict())
+      .input(
+        z
+          .object({
+            email: Email,
+            password: Password,
+            /* Optional, deliberately: an account is identified by its email,
+               and refusing a signup over a missing display name would gate
+               the one flow that must never have avoidable friction. Bounded
+               because it is rendered everywhere a person appears. */
+            name: z.string().trim().min(1).max(80).optional(),
+          })
+          .strict(),
+      )
       .output(z.object({ status: z.literal('verification_sent') }))
       .mutation(({ input, ctx }) => identity.register(deps.identity, input, meta(ctx))),
 
@@ -69,7 +81,19 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
     login: publicRoute({
       publicReason: 'This is how a session is obtained.',
     })
-      .input(z.object({ email: Email, password: Password }).strict())
+      .input(
+        z
+          .object({
+            email: Email,
+            password: Password,
+            /* Optional, deliberately: an account is identified by its email,
+               and refusing a signup over a missing display name would gate
+               the one flow that must never have avoidable friction. Bounded
+               because it is rendered everywhere a person appears. */
+            name: z.string().trim().min(1).max(80).optional(),
+          })
+          .strict(),
+      )
       /* Two shapes (Phase 12 Wave 2 §3.2): the ordinary session, or a signed
          TOTP challenge for an account that has a second factor confirmed.
          `auth.totp.verifyLogin` is the only route that can turn the second
@@ -249,6 +273,20 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
      * the password step already succeeded.
      */
     totp: router({
+      /**
+       * Whether this account already has a confirmed factor — no `stepUp`,
+       * the same "cheap, no-step-up probe" reasoning `platformAdmin.self.check`
+       * already uses (`shell.tsx`'s own comment on why): the account page
+       * needs this on every load just to decide which button to render, and
+       * gating a read behind a fresh credential would make the settings page
+       * itself demand one before it can even show its own state.
+       */
+      status: selfRoute({
+        selfReason: 'Whether your own account has a confirmed second factor.',
+      })
+        .output(z.object({ enabled: z.boolean() }))
+        .query(({ ctx }) => totp.status({ userId: ctx.principal.userId })),
+
       startEnrollment: selfRoute({
         selfReason: 'Enrolling a second factor on your own account.',
         stepUp: true,

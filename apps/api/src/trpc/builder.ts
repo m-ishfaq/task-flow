@@ -3,6 +3,8 @@ import { ZodError } from 'zod';
 import { AppError, isAppError, type ApiError } from '@taskflow/contracts';
 import { consumeApiTokenQuota } from '@taskflow/db';
 import { couldGrant, type Permission } from '@taskflow/policy';
+import type { FlagName } from '@taskflow/feature-flags';
+import { requireFeature } from '../billing/entitlement-resolver.js';
 import { isPlatformOperator } from '../platform-admin/operator.js';
 import {
   subjectOf,
@@ -353,6 +355,23 @@ export function route(meta: {
   permission: Permission;
   stepUp?: boolean;
   quotaClass?: 'expensive';
+  /**
+   * The flagged module this route belongs to, and the name to show a caller
+   * whose plan does not include it (Phase 12 Wave 4, §3.4).
+   *
+   * Declared here rather than checked inside each handler so "which routes
+   * are Docs?" is answerable by reading the router, and so a new route in a
+   * gated module cannot be added without the author deciding about it.
+   *
+   * ⚠ The check runs AFTER `couldGrant` below, and that order is the whole
+   * guardrail-7 argument: a caller whose ROLE forbids the action gets
+   * FORBIDDEN and never learns whether the plan includes the module, while a
+   * caller whose role permits it gets PLAN_REQUIRED naming what to upgrade.
+   * A plan can therefore only ever REMOVE access. Moving this above the
+   * permission check would turn a pricing table into an authorization
+   * mechanism — and a pricing table is edited from a console.
+   */
+  feature?: { readonly flag: FlagName; readonly display: string };
 }) {
   return procedure.meta(meta).use(async ({ ctx, next, meta: routeMeta }) => {
     const scoped = requireOrg(await requireAuth(ctx, routeMeta));
@@ -383,6 +402,14 @@ export function route(meta: {
         code: 'FORBIDDEN',
         cause: new AppError('FORBIDDEN', 'This token is not scoped for that action.'),
       });
+    }
+
+    /* The plan gate, LAST — after every authorization check above has passed.
+       See the `feature` option's own comment on why the order is the control
+       rather than a preference. `requireFeature` throws `PLAN_REQUIRED`, which
+       `mapErrors` renders as a 403 carrying the module name in `details`. */
+    if (meta.feature !== undefined) {
+      await requireFeature(scoped.principal.org.orgId, meta.feature.flag, meta.feature.display);
     }
 
     return next({ ctx: scoped });

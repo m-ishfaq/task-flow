@@ -145,7 +145,9 @@ describe('creating an organization', () => {
     const rows = await withOrgScope(orgId, async (tx) =>
       tx.select({ name: schema.outbox.name }).from(schema.outbox),
     );
-    expect(rows).toEqual([{ name: 'org.created' }]);
+    // billing.trial_started (Phase 12 Wave 3) writes to the SAME outbox
+    // append call, alongside org.created — one org creation, two events.
+    expect(rows).toEqual([{ name: 'org.created' }, { name: 'billing.trial_started' }]);
   });
 
   it('refuses an account that has not verified its email', async () => {
@@ -512,6 +514,11 @@ describe('the audit projection', () => {
     expect(entries.map((entry) => entry.action)).toEqual([
       'member.role_changed',
       'member.added',
+      // `newOrg` writes `org.created` and `billing.trial_started` (Phase 12
+      // Wave 3) in the SAME transaction, `org.created` first — `uuidv7()` is
+      // monotonic within a process, so the trial event's id always sorts
+      // after the org's, and `ORDER BY seq DESC` lists it first here.
+      'billing.trial_started',
       'org.created',
     ]);
 
@@ -528,7 +535,9 @@ describe('the audit projection', () => {
     await drainOutboxFully();
 
     const entries = await audit.listAuditEntries(orgId, { limit: 50, before: null });
-    expect(entries).toHaveLength(1);
+    // `org.created` + `billing.trial_started` (Phase 12 Wave 3) — one org
+    // creation is two audit entries, not one.
+    expect(entries).toHaveLength(2);
   });
 
   it('verifies an untouched chain', async () => {
@@ -542,7 +551,8 @@ describe('the audit projection', () => {
     await drainOutboxFully();
 
     const result = await audit.verifyAuditLog(orgId);
-    expect(result.verified).toBe(3);
+    // org.created, billing.trial_started, member.added, team.created.
+    expect(result.verified).toBe(4);
     expect(result.intact).toBe(true);
     expect(result.breaks).toEqual([]);
   });
@@ -570,7 +580,8 @@ describe('the audit projection', () => {
     await drainOutboxFully();
 
     const result = await audit.verifyAuditLog(orgId);
-    expect(result.verified).toBe(12);
+    // org.created, billing.trial_started, 11 team.created.
+    expect(result.verified).toBe(13);
     expect(result.intact).toBe(true);
     expect(result.breaks).toEqual([]);
   });
@@ -629,7 +640,9 @@ describe('the audit projection', () => {
     await drainOutboxFully();
 
     const entries = await audit.listAuditEntries(mine, { limit: 50, before: null });
-    expect(entries).toHaveLength(1);
+    // org.created + billing.trial_started for `mine` alone — `audit-seven`'s
+    // own pair must not appear here.
+    expect(entries).toHaveLength(2);
     expect((await audit.verifyAuditLog(mine)).intact).toBe(true);
   });
 });
@@ -674,6 +687,66 @@ describe('suspension enforcement', () => {
     await admin.setOrg(null);
 
     expect(await resolveOrgMembership(OWNER, orgId)).toBeNull();
+  });
+});
+
+describe('billing enforcement (Phase 12 Wave 3 §3.2, superseded by Wave 4)', () => {
+  /* Wave 3 refused resolveOrgMembership outright on a lapsed billing_status.
+     Wave 4 replaced that lockout with the trial-to-Free design
+     (resolve.ts's own header): a lapsed org lands on the default plan and
+     keeps its data, enforced per-module by entitlements instead of at this
+     one chokepoint. These assertions now prove the OPPOSITE of Wave 3's —
+     that billing status alone never blocks membership resolution — pinned
+     against real Postgres for the same reason the suspension suite above
+     is: only an empirical run proves the read actually reaches a real row
+     under RLS rather than silently seeing `undefined` and coincidentally
+     reading as "not blocked". */
+  it.each(['trialing', 'active', 'past_due', 'canceled'] as const)(
+    'does not block a %s org',
+    async (billingStatus) => {
+      // `orgs_slug_format` (migration 0004) admits only [a-z0-9-] — swap the
+      // status's underscore ('past_due') for a hyphen the constraint accepts.
+      const orgId = await newOrg(`billing-${billingStatus.replace('_', '-')}-enforce`);
+
+      await admin.setOrg(orgId);
+      await admin.query(`UPDATE identity.orgs SET billing_status = $2 WHERE id = $1`, [
+        orgId,
+        billingStatus,
+      ]);
+      await admin.setOrg(null);
+
+      expect((await resolveOrgMembership(OWNER, orgId))?.role).toBe('owner');
+    },
+  );
+
+  it('an operator suspension still blocks access regardless of billing status', async () => {
+    /* The two-column argument Wave 3 made (§3.2's migration header) still
+       holds even though billing_status no longer blocks on its own: an
+       operator's manual suspension must not be undoable by anything billing
+       related, including a billing_status this org never even had trouble
+       with. Two orgs, one paid and one canceled, both suspended — both must
+       refuse, on the SAME error, because only `status` is being consulted. */
+    const suspendedButPaid = await newOrg('operator-suspended-paid-enforce');
+    await admin.setOrg(suspendedButPaid);
+    await admin.query(
+      `UPDATE identity.orgs SET status = 'suspended', billing_status = 'active' WHERE id = $1`,
+      [suspendedButPaid],
+    );
+    await admin.setOrg(null);
+    await expect(resolveOrgMembership(OWNER, suspendedButPaid)).rejects.toMatchObject({
+      code: 'ORG_SUSPENDED',
+    });
+
+    const suspendedAndCanceled = await newOrg('operator-suspended-canceled-enforce');
+    await admin.setOrg(suspendedAndCanceled);
+    await admin.query(
+      `UPDATE identity.orgs SET status = 'suspended', billing_status = 'canceled' WHERE id = $1`,
+      [suspendedAndCanceled],
+    );
+    await admin.setOrg(null);
+    await expect(resolveOrgMembership(OWNER, suspendedAndCanceled)).rejects.toMatchObject({
+      code: 'ORG_SUSPENDED',
+    });
   });
 });
 

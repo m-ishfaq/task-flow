@@ -18,7 +18,7 @@ import {
 import { classifyOptOut, isSuppressed, suppress, unsuppress } from './suppression.js';
 import { rethrowCarrierRefusal } from './carrier-error.js';
 import { emitRefusal, refusalMessage } from './refusal.js';
-import { checkOutboundAllowed, recordSpend } from './spend-gate.js';
+import { checkOutboundAllowed, notifySpendThresholds, recordSpend } from './spend-gate.js';
 import { ensureSubaccount } from './subaccount.service.js';
 import { loadNumber } from './number.service.js';
 import { envelopeOf, orgOf, userOf, webhookContext, type TelephonyActor } from './shared.js';
@@ -125,7 +125,7 @@ export async function sendSms(
     })
     .catch(rethrowCarrierRefusal);
 
-  return withOrgScope(orgId, async (tx) => {
+  const sent = await withOrgScope(orgId, async (tx) => {
     const thread = await ensureThread(
       tx,
       orgId,
@@ -156,12 +156,18 @@ export async function sendSms(
     /* Priced per SEGMENT by the provider — a 900-character body is six billable
        messages, and charging the ledger for one lets six times the configured
        spend through the cap. */
-    await recordSpend(tx, orgId, {
-      id: newId<'SpendLedgerId'>(),
-      kind,
-      estimatedCents: result.costCents,
-      providerSid: result.sid,
-    });
+    await recordSpend(
+      tx,
+      orgId,
+      {
+        id: newId<'SpendLedgerId'>(),
+        kind,
+        estimatedCents: result.costCents,
+        providerSid: result.sid,
+        decision,
+      },
+      envelopeOf(actor),
+    );
 
     await outboxWriter.append(tx, [
       createEvent(
@@ -173,6 +179,15 @@ export async function sendSms(
 
     return { threadId: thread.threadId, messageId };
   });
+
+  /* The usage alert, AFTER the commit. `checkUsageThresholds` re-reads the
+     ledger for the post-write total, so running it inside the transaction
+     would report every org one action behind its real spend — permanently,
+     and invisibly, because the figure it showed would always look plausible.
+     Never throws: a call must not fail because a mailer is down. */
+  await notifySpendThresholds(orgId, decision, deps.mail);
+
+  return sent;
 }
 
 /**

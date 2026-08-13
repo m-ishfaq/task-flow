@@ -268,6 +268,39 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'automation.updated': { type: 'automation', key: 'automationId' },
   'automation.deleted': { type: 'automation', key: 'automationId' },
 
+  /* Billing & org lifecycle (Phase 12 Wave 3). All six resolve to the ORG —
+     every one of them is a fact about the org's subscription state, which is
+     exactly what an Owner reviewing their own audit log would ask about, and
+     none names an independently grantable resource of its own. Distinct from
+     `platform.*`'s billing-adjacent events (Wave 1's `org_suspended`/
+     `org_reactivated`): those run as `taskflow_platform_admin` with no outbox
+     grant and reach `platform.operator_audit_log` instead — these six run as
+     the ordinary app role inside `withOrgScope` and reach this consumer like
+     any other tenant event. */
+  'billing.trial_started': { type: 'org', key: 'orgId' },
+  'billing.subscription_activated': { type: 'org', key: 'orgId' },
+  'billing.payment_failed': { type: 'org', key: 'orgId' },
+  'billing.org_suspended_for_nonpayment': { type: 'org', key: 'orgId' },
+  'billing.subscription_canceled': { type: 'org', key: 'orgId' },
+  'billing.grace_extended': { type: 'org', key: 'orgId' },
+  /* The ORG is the subject, not the invoice — there is no `invoice` resource
+     type in the catalog, and adding one would create a tuple level no product
+     surface can grant on (the same reasoning `work.lists` has for not being a
+     resource). "What happened to this org's billing" is the question an access
+     review asks, and the org is what it filters by. */
+  'billing.invoice_recorded': { type: 'org', key: 'orgId' },
+  /* An owner moving their own org between plans — the org is the subject,
+     like every other billing event. */
+  'billing.plan_changed': { type: 'org', key: 'orgId' },
+  /* A closed usage period. The org is the subject for the same reason as
+     `invoice_recorded` — there is no billing-period resource to grant on, and
+     the question an access review asks is about the org. */
+  'billing.usage_period_closed': { type: 'org', key: 'orgId' },
+  'billing.usage_charged': { type: 'org', key: 'orgId' },
+  /* A scheduled cancellation, or one called off. The org is the subject, like
+     every other billing event. */
+  'billing.subscription_cancel_scheduled': { type: 'org', key: 'orgId' },
+
   /* Connectors (Phase 10 Wave 4, §7.8). MAPPED for the same reason the
      automation events are: `integration` has been a real entry in
      RESOURCE_TYPES (and the tuples object_type CHECK) since 0005, and "show
@@ -282,6 +315,16 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
      connect the person abandons at the picker. Same resource as the other
      two: the connector row itself, which is exactly what it names. */
   'integration.pending': { type: 'integration', key: 'integrationId' },
+  /* The OUTBOUND effects (§7.6's own header, above `integrationMessagePosted`
+     in integration-events.ts): what this deployment did to a provider under a
+     rule, as opposed to what a provider told us. These carry `integrationId`
+     and resolve to the connector for the identical reason the connection
+     lifecycle events above do — "show me everything this connector did" is
+     the same query as "show me everything that happened to it". The inbound
+     triggers these actions are keyed off of (`integration.slack_event`,
+     `integration.github_event`) are NOT mapped here — see NEVER_AUDITED. */
+  'integration.message_posted': { type: 'integration', key: 'integrationId' },
+  'integration.issue_created': { type: 'integration', key: 'integrationId' },
 };
 
 /**
@@ -345,6 +388,53 @@ export const NEVER_AUDITED: ReadonlySet<string> = new Set([
   'platform.flag_override_cleared',
   'platform.user_suspended',
   'platform.user_reactivated',
+  /* The plan catalog (Phase 12 Wave 4). Same structural reason as every
+     platform event above: they are emitted by `taskflow_platform_admin`,
+     which holds no grant on `platform.outbox`, and they run with no org scope
+     — `platform.outbox`'s RLS keys on `app.org_id`, and a plan belongs to no
+     tenant at all. There is no org whose chain they could be written to.
+
+     Their durable record is `platform.operator_audit_log`, the global
+     hash-chained sibling, written by `recordOperatorAction` on every one of
+     these routes including the reads. That is a STRONGER record than the
+     outbox path, not a weaker one: it is hash-chained under a lock and the
+     app role cannot write it at all. */
+  'platform.plan_created',
+  'platform.plan_updated',
+  'platform.plan_price_changed',
+  'platform.plan_archived',
+  /* The one plan event carrying a REAL org id on its envelope, and still not
+     audited through this projection.
+
+     `setOrgPlan` runs as `taskflow_platform_admin` on that role's own
+     connection, so it cannot write the outbox even though it knows which org
+     it is acting on — the grant, not the envelope, is what decides. Writing
+     the target org's own chain directly (the way `suspendOrg` does, so an
+     Owner sees the action in their own history) is the right follow-up and is
+     deliberately not smuggled in here: it needs `withAuditScope` and a
+     `tenancy.audit` entry shape, which is a different change from adding a
+     name to this list. The operator chain carries it meanwhile, with the
+     from/to plan and the required reason. */
+  'platform.org_plan_changed',
+  /* Same shape and same reason as `org_plan_changed` above — a real org id on
+     the envelope, emitted by a role with no outbox grant. It carries the
+     override's deltas, its required reason and its expiry, all of which land
+     in `platform.operator_audit_log` where an access review can query them. */
+  'platform.org_entitlement_override_set',
+  /* Phase 10 Wave 4's inbound connector triggers (§7.5, integration-events.ts's
+     own header on `connectorTriggerPayload`). One fires for every Slack
+     workspace event or GitHub repository event a connected integration
+     receives — the same high-frequency shape as `channel.read_advanced` and
+     `page.content_updated` above, not a decision an access review would ever
+     query for. They carry no `integrationId`, only `providerScope` (a team_id
+     or repository full_name, not a UUID), so there is no resource for
+     RESOURCE_OF to name even if the volume argument did not already settle
+     it. The compliance-relevant half of a connector doing something is the
+     OUTBOUND effect it triggers — `integration.message_posted` /
+     `integration.issue_created`, both mapped above — which is what an access
+     review actually needs to trace a rule's action back to its owner. */
+  'integration.slack_event',
+  'integration.github_event',
 ]);
 
 interface Resource {

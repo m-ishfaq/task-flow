@@ -36,7 +36,12 @@ const Slug = z
 const Name = z.string().trim().min(1).max(120);
 const Role = z.enum(['owner', 'admin', 'member', 'guest']);
 
-export function createTenancyRouter() {
+export interface TenancyRouterDeps {
+  /** Phase 12 Wave 3 §3.4 — how long a newly created org's trial runs. */
+  readonly trialDays: number;
+}
+
+export function createTenancyRouter(deps: TenancyRouterDeps) {
   const actorOf = (ctx: {
     principal: { userId: Actor['userId'] };
     requestId: Actor['requestId'];
@@ -50,7 +55,9 @@ export function createTenancyRouter() {
       })
         .input(z.object({ name: Name, slug: Slug }).strict())
         .output(z.object({ orgId: z.string(), slug: z.string() }))
-        .mutation(({ input, ctx }) => orgs.createOrg(input, actorOf(ctx))),
+        .mutation(({ input, ctx }) =>
+          orgs.createOrg(input, actorOf(ctx), { trialDays: deps.trialDays }),
+        ),
 
       list: selfRoute({
         selfReason:

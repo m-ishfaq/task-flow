@@ -111,13 +111,13 @@ export async function resolveOrgMembership(
      falls through, which is the not-suspended answer — the case the spec's
      own §3.7 correction warns to verify empirically rather than assume, and
      the tenancy suite's suspension tests pin it against real Postgres. */
-  const status = await withUserScope(userId, async (tx) => {
+  const org = await withUserScope(userId, async (tx) => {
     const orgRow = await tx
-      .select({ status: schema.orgs.status })
+      .select({ status: schema.orgs.status, billingStatus: schema.orgs.billingStatus })
       .from(schema.orgs)
       .where(eq(schema.orgs.id, orgId))
       .limit(1);
-    return orgRow[0]?.status;
+    return orgRow[0];
   });
 
   /* Suspended and deleted get different treatments on purpose (§3.3):
@@ -133,12 +133,33 @@ export async function resolveOrgMembership(
        used to exist" is exactly the kind of fact a former member should not
        get confirmed by an error message — the same cross-tenant-privacy
        argument member.service.ts already makes for NOT_FOUND. */
-  if (status === 'suspended') {
+  if (org?.status === 'suspended') {
     throw errors.orgSuspended();
   }
-  if (status === 'deleted') {
+  if (org?.status === 'deleted') {
     return null;
   }
+
+  /* NO BILLING STATE BLOCKS ACCESS ANY MORE (Phase 12 Wave 4).
+
+     Wave 3 refused here on `billing_status = 'canceled'`, which was correct
+     while a lapsed subscription meant losing the product. Wave 4 replaced
+     that with the trial-to-Free design: an org whose trial or subscription
+     ends lands on the DEFAULT PLAN and keeps its data, losing only the
+     features that plan does not include. Enforcement moved from this one
+     chokepoint to per-module entitlements, which is both gentler and more
+     honest — a customer sees which capability they lost rather than a locked
+     door.
+
+     Keeping the refusal alongside that would have locked an org out for the
+     length of one sweep interval: `canceled` is now the TRANSIENT state
+     between the processor reporting a cancellation and the sweep moving the
+     org to the default plan. A lockout whose duration is a polling interval
+     is the worst of both designs.
+
+     `status = 'suspended'` above is untouched. Wave 3's central argument
+     holds: two columns, two writers, and an automated billing recovery still
+     cannot undo an operator's manual suspension. */
 
   const tuples = await loadTuples(orgId, userId);
 

@@ -12,6 +12,7 @@
  * | MailProvider     | Mailpit / Resend free | Resend paid / SES     | past 3k/month |
  * | TelephonyProvider| Twilio test creds     | Twilio live / Telnyx  | live demo |
  * | SearchProvider   | Postgres FTS          | Meilisearch           | ~200k rows / fuzzy |
+ * | PaymentProvider  | FakePaymentProvider   | Stripe                | real subscriptions (Phase 12 Wave 3) |
  *
  * Deferred until their phase has a real consumer, because an interface designed
  * without one is a guess:
@@ -65,3 +66,11 @@ export type {
   SearchHitMetadata,
   SearchEntityType,
 } from './search-provider.js';
+
+export type {
+  PaymentProvider,
+  BillingWebhookEvent,
+  BillingWebhookEventKind,
+  BillingInvoice,
+  PlanInterval,
+} from './payment-provider.js';

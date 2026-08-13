@@ -1096,6 +1096,145 @@ export function hasApiTokenAuthDatabase(): boolean {
   return apiTokenAuthDb !== undefined;
 }
 
+/* -------------------------------------------------------------------------- *
+ * The billing-sweep connection (Phase 12 Wave 3 §3.4, migration 0056)
+ * -------------------------------------------------------------------------- */
+
+let billingSweepPool: pg.Pool | undefined;
+let billingSweepDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the trial/grace-expiry sweep's pool, as `taskflow_billing_sweep`.
+ *
+ * A THIRTEENTH role, for the identical reason `taskflow_notification_sweep`
+ * is a sixth: the sweep scans `identity.orgs` across every tenant in one
+ * pass — "every trialing org whose trial has ended", "every past_due org
+ * whose grace has ended" — and no value of `app.org_id` is correct for that.
+ *
+ * CLAIM ONLY — its grant is a column-level SELECT (`id, billing_status,
+ * trial_ends_at, billing_grace_ends_at`, never `status`, Wave 1's operator
+ * column) and NOTHING ELSE. The actual write happens afterward, per matched
+ * org, over the ORDINARY `taskflow_app` connection inside `withOrgScope` —
+ * the same "claim via a narrow cross-tenant role, act via the ordinary one"
+ * split `taskflow_backlinks`/`taskflow_search`/`taskflow_automation` all
+ * already use. A dedicated role rather than widening
+ * `taskflow_notification_sweep`'s existing `identity.orgs` read: this
+ * codebase's own standing habit is one narrow role per distinct cross-tenant
+ * concern (`taskflow_recording_ingest` alongside `taskflow_backlinks`, not
+ * folded into it, for the identical reason).
+ */
+export function initializeBillingSweepDatabase(config: DbConfig): void {
+  if (billingSweepPool) {
+    throw new Error('Billing-sweep database already initialized. This is a boot-time call.');
+  }
+
+  billingSweepPool = new Pool({
+    connectionString: config.url,
+    // Small, matching every other system role: one sweep runs per tick.
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-billing-sweep',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  billingSweepDb = drizzle(billingSweepPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_billing_sweep` — the role that may SCAN every
+ * tenant's trial/grace deadlines. Read-only: the actual `UPDATE` on a
+ * matched org happens over the ordinary `withOrgScope` connection, never
+ * through this one.
+ *
+ * NOT tenant-scoped, for the identical reason every consumer scope in this
+ * file is not: one sweep tick scans across every tenant, so no single value
+ * of `app.org_id` is correct for it. What contains it is the role —
+ * `NOBYPASSRLS`, reaching `identity.orgs` only through migration 0056's
+ * column-level, read-only grant.
+ */
+export async function withBillingSweepScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!billingSweepDb) {
+    throw new Error(
+      'Billing-sweep database not initialized. Call initializeBillingSweepDatabase() during ' +
+        'boot — the trial/grace sweep must not fall back to the application role, which cannot ' +
+        'see identity.orgs across every org and would silently sweep nothing.',
+    );
+  }
+
+  return billingSweepDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the billing-sweep pool has been initialized. */
+export function hasBillingSweepDatabase(): boolean {
+  return billingSweepDb !== undefined;
+}
+
+/* -------------------------------------------------------------------------- *
+ * The operations-dashboard connection (migration 0061)
+ * -------------------------------------------------------------------------- */
+
+let opsEventsPool: pg.Pool | undefined;
+let opsEventsDb: NodePgDatabase | undefined;
+
+/**
+ * Initializes the operations dashboard's writer pool, as `taskflow_ops_events`.
+ *
+ * A FOURTEENTH role, and a different shape from `taskflow_billing_sweep`
+ * above it: not a claim-only scan, because `platform.operational_events`
+ * carries no `org_id` at all — there is no tenant to scan across. Opened
+ * from BOTH `apps/api` (mail delivery, billing webhooks) and `apps/worker`
+ * (the sweep's own heartbeat), each with its own connection pool as this
+ * same role, the same way multiple processes already share
+ * `taskflow_webhook`. Reads go through `taskflow_platform_admin` instead
+ * (migration 0061 grants it SELECT directly) — this pool is the write side.
+ */
+export function initializeOpsEventsDatabase(config: DbConfig): void {
+  if (opsEventsPool) {
+    throw new Error('Ops-events database already initialized. This is a boot-time call.');
+  }
+
+  opsEventsPool = new Pool({
+    connectionString: config.url,
+    max: config.maxConnections ?? 2,
+    application_name: config.applicationName ?? 'taskflow-ops-events',
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+
+  opsEventsDb = drizzle(opsEventsPool);
+}
+
+/**
+ * Runs `fn` as `taskflow_ops_events`. Not tenant-scoped — the table this
+ * role writes has no `org_id` column, so there is nothing to scope to.
+ */
+export async function withOpsEventScope<T>(fn: (tx: GlobalDb) => Promise<T>): Promise<T> {
+  if (!opsEventsDb) {
+    throw new Error(
+      'Ops-events database not initialized. Call initializeOpsEventsDatabase() during boot. ' +
+        'recordOperationalEvent() (packages/db/src/ops-events.ts) catches this throw itself and ' +
+        'reports it through its own onWriteFailure callback rather than propagating — a missing ' +
+        'connection here must degrade to "no dashboard row", never to "mail delivery crashes" or ' +
+        '"the webhook 500s". A caller reaching this function directly gets the throw, uncaught.',
+    );
+  }
+
+  return opsEventsDb.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.org_id', '', true)`);
+    await tx.execute(sql`SELECT set_config('app.user_id', '', true)`);
+    return fn(tx);
+  });
+}
+
+/** True when the ops-events pool has been initialized. */
+export function hasOpsEventsDatabase(): boolean {
+  return opsEventsDb !== undefined;
+}
+
 /** Closes every pool. Shutdown only. */
 export async function closeDatabase(): Promise<void> {
   await pool?.end();
@@ -1150,9 +1289,17 @@ export async function closeDatabase(): Promise<void> {
   apiTokenAuthPool = undefined;
   apiTokenAuthDb = undefined;
 
+  await billingSweepPool?.end();
+  billingSweepPool = undefined;
+  billingSweepDb = undefined;
+
   await integrationAuthPool?.end();
   integrationAuthPool = undefined;
   integrationAuthDb = undefined;
+
+  await opsEventsPool?.end();
+  opsEventsPool = undefined;
+  opsEventsDb = undefined;
 }
 
 /** True when the pool is live and answering. Backs `/health/ready` (§14). */

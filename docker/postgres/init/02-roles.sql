@@ -219,6 +219,23 @@ CREATE ROLE taskflow_api_token_auth WITH LOGIN PASSWORD 'api-token-auth-dev-secr
   NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 
 -- ---------------------------------------------------------------------------
+-- taskflow_billing_sweep — the trial/grace-expiry sweep (Phase 12 Wave 3,
+-- ai/phase-12-wave3.md §3.4, migration 0060's own header —
+-- renumbered to 0059 to land after main's own 0055-0058, see that
+-- migration's own note).
+--
+-- Same CLAIM-ONLY pattern as taskflow_backlinks and taskflow_search:
+-- NOBYPASSRLS, holding only a SELECT on identity.orgs's `id, billing_status,
+-- trial_ends_at, billing_grace_ends_at` — never `status`, Wave 1's operator
+-- column, which this role must be structurally unable to even observe, let
+-- alone move. The actual write happens afterward, per matched org, over the
+-- ORDINARY taskflow_app connection inside withOrgScope — this role never
+-- holds UPDATE anywhere.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_billing_sweep WITH LOGIN PASSWORD 'billing-sweep-dev-secret' NOSUPERUSER
+  NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+
+-- ---------------------------------------------------------------------------
 -- taskflow_integration_auth — the inbound-connector LOOKUP role (Phase 10
 -- Wave 4, ai/phase-10-automation.md §7.2, migration 0056).
 --
@@ -236,6 +253,24 @@ CREATE ROLE taskflow_api_token_auth WITH LOGIN PASSWORD 'api-token-auth-dev-secr
 -- ---------------------------------------------------------------------------
 CREATE ROLE taskflow_integration_auth WITH LOGIN PASSWORD 'integration-auth-dev-secret'
   NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+
+-- ---------------------------------------------------------------------------
+-- taskflow_ops_events — the operations dashboard's writer (migration 0061's
+-- own header).
+--
+-- A FOURTEENTH role, and a different shape from every claim-only role above
+-- it: NOBYPASSRLS like the rest, but holding both INSERT and SELECT on one
+-- table with no org_id column at all — platform.operational_events. Written
+-- from apps/api (mail delivery, billing webhooks) AND apps/worker (the
+-- sweep's own heartbeat), each over its own connection pool as this same
+-- role, the same way multiple processes already share taskflow_webhook.
+-- The platform console reads the table back through taskflow_platform_admin
+-- instead (0061 grants it SELECT directly), not through this role — the
+-- same "write role differs from read role" split platform.operator_audit_log
+-- already established.
+-- ---------------------------------------------------------------------------
+CREATE ROLE taskflow_ops_events WITH LOGIN PASSWORD 'ops-events-dev-secret' NOSUPERUSER
+  NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 
 -- Baseline grants live in 03-grants.sql, NOT here.
 --

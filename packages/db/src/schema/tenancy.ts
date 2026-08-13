@@ -7,6 +7,8 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  bigint,
+  boolean,
 } from 'drizzle-orm/pg-core';
 import { users } from './identity.js';
 
@@ -41,8 +43,62 @@ export const orgs = identity.table(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+
+    /**
+     * Billing state (Phase 12 Wave 3, migration 0059) — deliberately
+     * INDEPENDENT of `status` above. `status` is Wave 1's operator kill
+     * switch; `billingStatus` is written only by the billing worker sweep
+     * and the Stripe webhook handler, so an automated billing recovery can
+     * never silently undo a manual operator suspension, or vice versa. See
+     * `ai/phase-12-wave3.md` §3.2.
+     */
+    billingStatus: text('billing_status').notNull().default('trialing'),
+    planId: text('plan_id'),
+    trialEndsAt: timestamp('trial_ends_at', { withTimezone: true }),
+    billingGraceEndsAt: timestamp('billing_grace_ends_at', { withTimezone: true }),
+    stripeCustomerId: text('stripe_customer_id'),
+    stripeSubscriptionId: text('stripe_subscription_id'),
+    /**
+     * When the paid period renews, mirrored from the processor (0066).
+     *
+     * NULL for any org that has never had a subscription — most of them.
+     * Can be stale if a webhook was missed, so it is INFORMATION and never an
+     * authorization input; nothing gates on it.
+     */
+    currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
+    currentPriceCents: bigint('current_price_cents', { mode: 'number' }),
+    currentPriceInterval: text('current_price_interval').$type<'month' | 'year'>(),
+    /**
+     * A DOWNGRADE parked until the paid period ends (0066).
+     *
+     * An upgrade applies immediately — they pay the difference now. A
+     * downgrade waits, because removing features someone already paid for is
+     * a refund conversation rather than a plan change. Both columns are set
+     * together or not at all, enforced by a CHECK.
+     */
+    pendingPlanId: text('pending_plan_id'),
+    pendingPlanEffectiveAt: timestamp('pending_plan_effective_at', { withTimezone: true }),
+
+    /**
+     * The subscription is set to STOP at `currentPeriodEnd` rather than renew
+     * (migration 0069).
+     *
+     * A separate fact from `billingStatus`, and the reason this column exists
+     * at all: an org here is fully active and paying, and may still change its
+     * mind. Encoding it as a status value would read as "ended" to every path
+     * that consults the status.
+     */
+    cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
   },
-  (table) => [uniqueIndex('orgs_slug_key').on(table.slug)],
+  (table) => [
+    uniqueIndex('orgs_slug_key').on(table.slug),
+    uniqueIndex('orgs_stripe_customer_id_key')
+      .on(table.stripeCustomerId)
+      .where(sql`${table.stripeCustomerId} IS NOT NULL`),
+    uniqueIndex('orgs_stripe_subscription_id_key')
+      .on(table.stripeSubscriptionId)
+      .where(sql`${table.stripeSubscriptionId} IS NOT NULL`),
+  ],
 );
 
 /**

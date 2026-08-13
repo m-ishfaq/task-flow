@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { KeyProvider } from '@taskflow/contracts';
 import { publicRoute, router, selfRoute } from './trpc/builder.js';
 import { getResolvedFlags } from './platform-admin/flag-evaluator.js';
+import { getOrgFlagSnapshot } from './billing/entitlement-resolver.js';
 import { createIdentityRouter, type IdentityRouterDeps } from './identity/router.js';
 import { createTenancyRouter } from './tenancy/router.js';
 import { createWorkRouter, type WorkRouterDeps } from './work/router.js';
@@ -12,6 +13,8 @@ import { createPeopleRouter } from './people/router.js';
 import { createPlatformAdminRouter } from './platform-admin/router.js';
 import { createTelephonyRouter } from './telephony/router.js';
 import type { TelephonyDeps } from './telephony/deps.js';
+import type { BillingDeps } from './billing/deps.js';
+import { createBillingRouter } from './billing/router.js';
 import { createRtcRouter } from './rtc/router.js';
 import type { RtcDeps } from './rtc/deps.js';
 import { createSearchRouter } from './search/router.js';
@@ -74,6 +77,15 @@ export interface AppRouterDeps extends IdentityRouterDeps {
    * is whether `iceServers` includes a relay, which is data rather than shape.
    */
   readonly rtc: RtcDeps;
+  /**
+   * Billing & org lifecycle (Phase 12 Wave 3).
+   *
+   * Not optional, unlike `telephony`: `PAYMENTS_PROVIDER` defaults to `fake`
+   * rather than to an absent credential, so every instance has SOME
+   * `PaymentProvider` and every org gets a real trial. `tenancy.orgs.create`
+   * reads `trialDays` off this same object — see `tenancy/router.ts`.
+   */
+  readonly billing: BillingDeps;
 }
 
 export function createAppRouter(deps: AppRouterDeps) {
@@ -97,12 +109,11 @@ export function createAppRouter(deps: AppRouterDeps) {
     /**
      * Tenancy, authorization and audit (Phase 2).
      *
-     * Takes no dependencies: everything it needs is the tenant-scoped database
-     * and the policy engine, both of which are module-level and stateless.
-     * There is no clock or mailer to inject here, so a `deps` parameter would
-     * be an empty object threaded through for symmetry.
+     * Takes `trialDays` (Phase 12 Wave 3) and nothing else: everything else
+     * it needs is the tenant-scoped database and the policy engine, both of
+     * which are module-level and stateless.
      */
-    tenancy: createTenancyRouter(),
+    tenancy: createTenancyRouter({ trialDays: deps.billing.trialDays }),
 
     /**
      * Work — projects, boards, lists, cards, card detail, attachments (Phase 3).
@@ -162,9 +173,15 @@ export function createAppRouter(deps: AppRouterDeps) {
      * own — cannot ride the transactional outbox: they are emitted by
      * `taskflow_platform_admin`, a role with no grant on `platform.outbox`
      * and no org scope. See `platform-admin/events.ts`'s file header.
+     *
+     * Wave 4 adds the payment processor, for the plan catalog. Unconditional,
+     * unlike `subaccounts` below: `PAYMENTS_PROVIDER` defaults to `fake`, so
+     * every instance has a provider and the Plans tab works end to end with no
+     * Stripe account.
      */
     platformAdmin: createPlatformAdminRouter({
       events: deps.identity.events,
+      payments: deps.billing.payments,
       /* §9: suspend/reactivate also freeze or unfreeze the org's Twilio
          subaccount, when a carrier is configured. The narrowed dep keeps the
          platform-admin module from seeing the storage provider and spend
@@ -193,6 +210,14 @@ export function createAppRouter(deps: AppRouterDeps) {
      * One namespace for both would make every caller disambiguate.
      */
     rtc: createRtcRouter(deps.rtc),
+
+    /**
+     * Billing (Phase 12 Wave 3) — the owner-facing half: what does MY org
+     * pay, and can I change it. The operator-facing half (every org's
+     * billing state) is `platformAdmin.billing`, a deliberately separate
+     * namespace under a deliberately separate permission.
+     */
+    billing: createBillingRouter(deps.billing),
 
     /**
      * Search (Phase 8 Wave 2) — one query over cards, messages, pages and
@@ -247,7 +272,25 @@ export function createAppRouter(deps: AppRouterDeps) {
           'The resolved feature-flag snapshot for the client bootstrap — every logged-in user reads it; non-sensitive product surface (§3.8).',
       })
         .output(z.record(z.boolean()))
-        .query(async () => getResolvedFlags()),
+        .query(async ({ ctx }) => {
+          /* Org-aware since Phase 12 Wave 4: a plan's feature set resolves
+             into the evaluator's per-org tier, so the answer depends on WHICH
+             org the caller has selected.
+
+             Still a `selfRoute`, so `principal.org` is null until the client
+             sends `x-taskflow-org` — during sign-in, on the org picker, and
+             for a user who belongs to none. That case falls back to the
+             global snapshot rather than to an empty one: a nav rendered
+             before an org is chosen must not flicker every module off and
+             then on again a request later.
+
+             The client is not the enforcement point either way. Every gated
+             route re-resolves entitlements server-side (`route({ feature })`),
+             so a stale or over-generous snapshot costs a menu item that
+             answers PLAN_REQUIRED when clicked — never access. */
+          const orgId = ctx.principal.org?.orgId;
+          return orgId === undefined ? getResolvedFlags() : getOrgFlagSnapshot(orgId);
+        }),
     }),
   });
 }

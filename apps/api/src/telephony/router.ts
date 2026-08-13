@@ -67,11 +67,17 @@ export function createTelephonyRouter(maybeDeps: TelephonyDeps | undefined) {
   };
   return router({
     numbers: router({
-      list: route({ permission: 'phoneNumber:read' })
+      list: route({
+        permission: 'phoneNumber:read',
+        feature: { flag: 'telephony', display: 'Voice & Messaging' },
+      })
         .input(z.object({}).strict())
         .query(async ({ ctx }) => numbers.listNumbers(actorOf(ctx).subject.orgId)),
 
-      search: route({ permission: 'phoneNumber:purchase' })
+      search: route({
+        permission: 'phoneNumber:purchase',
+        feature: { flag: 'telephony', display: 'Voice & Messaging' },
+      })
         .input(
           z
             .object({
@@ -96,13 +102,21 @@ export function createTelephonyRouter(maybeDeps: TelephonyDeps | undefined) {
          recurring basis, which is the same bar `recording:export` clears — and
          a stolen session that can silently buy numbers is a slow, quiet way to
          drain a balance without ever placing a call. */
-      purchase: route({ permission: 'phoneNumber:purchase', stepUp: true })
+      purchase: route({
+        permission: 'phoneNumber:purchase',
+        stepUp: true,
+        feature: { flag: 'telephony', display: 'Voice & Messaging' },
+      })
         .input(z.object({ phoneNumber: PhoneNumberSchema }).strict())
         .mutation(async ({ ctx, input }) =>
           numbers.purchaseNumber(actorOf(ctx), deps(), { phoneNumber: input.phoneNumber }),
         ),
 
-      release: route({ permission: 'phoneNumber:release', stepUp: true })
+      release: route({
+        permission: 'phoneNumber:release',
+        stepUp: true,
+        feature: { flag: 'telephony', display: 'Voice & Messaging' },
+      })
         .input(z.object({ phoneNumberId: z.string().uuid() }).strict())
         .mutation(async ({ ctx, input }) => {
           await numbers.releaseNumber(actorOf(ctx), deps(), {
@@ -115,7 +129,10 @@ export function createTelephonyRouter(maybeDeps: TelephonyDeps | undefined) {
          reuses `phoneNumber:purchase` rather than inventing a permission the
          matrix test has never seen; §6.3's point is that this phase consumes
          the catalog rather than extending it. */
-      setRoute: route({ permission: 'phoneNumber:purchase' })
+      setRoute: route({
+        permission: 'phoneNumber:purchase',
+        feature: { flag: 'telephony', display: 'Voice & Messaging' },
+      })
         .input(z.object({ phoneNumberId: z.string().uuid(), route: InboundRoute }).strict())
         .mutation(async ({ ctx, input }) => {
           await numbers.setInboundRoute(actorOf(ctx), {
@@ -126,13 +143,19 @@ export function createTelephonyRouter(maybeDeps: TelephonyDeps | undefined) {
     }),
 
     calls: router({
-      list: route({ permission: 'call:read' })
+      list: route({
+        permission: 'call:read',
+        feature: { flag: 'telephony', display: 'Voice & Messaging' },
+      })
         .input(z.object({ limit: z.number().int().min(1).max(100).default(50) }).strict())
         .query(async ({ ctx, input }) =>
           calls.listCalls(actorOf(ctx).subject.orgId, deps(), { limit: input.limit }),
         ),
 
-      place: route({ permission: 'call:place' })
+      place: route({
+        permission: 'call:place',
+        feature: { flag: 'telephony', display: 'Voice & Messaging' },
+      })
         .input(
           z
             .object({
@@ -155,7 +178,10 @@ export function createTelephonyRouter(maybeDeps: TelephonyDeps | undefined) {
     }),
 
     recordings: router({
-      list: route({ permission: 'recording:read' })
+      list: route({
+        permission: 'recording:read',
+        feature: { flag: 'telephony', display: 'Voice & Messaging' },
+      })
         .input(z.object({ callId: z.string().uuid() }).strict())
         .query(async ({ ctx, input }) =>
           recordings.listRecordings(actorOf(ctx), { callId: input.callId }),
@@ -169,13 +195,21 @@ export function createTelephonyRouter(maybeDeps: TelephonyDeps | undefined) {
        * credential proven more than five minutes ago is refused, so a stolen
        * session cannot quietly export recordings hours later.
        */
-      download: route({ permission: 'recording:export', stepUp: true, quotaClass: 'expensive' })
+      download: route({
+        permission: 'recording:export',
+        stepUp: true,
+        quotaClass: 'expensive',
+        feature: { flag: 'telephony', display: 'Voice & Messaging' },
+      })
         .input(z.object({ recordingId: z.string().uuid() }).strict())
         .mutation(async ({ ctx, input }) =>
           recordings.presignRecording(actorOf(ctx), deps(), { recordingId: input.recordingId }),
         ),
 
-      transcript: route({ permission: 'recording:read' })
+      transcript: route({
+        permission: 'recording:read',
+        feature: { flag: 'telephony', display: 'Voice & Messaging' },
+      })
         .input(z.object({ recordingId: z.string().uuid() }).strict())
         .query(async ({ ctx, input }) =>
           transcripts.getTranscript(actorOf(ctx), { recordingId: input.recordingId }),
@@ -190,13 +224,19 @@ export function createTelephonyRouter(maybeDeps: TelephonyDeps | undefined) {
      * not a `chat.channels` row and does not borrow its permissions.
      */
     messages: router({
-      threads: route({ permission: 'sms:read' })
+      threads: route({
+        permission: 'sms:read',
+        feature: { flag: 'telephony', display: 'Voice & Messaging' },
+      })
         .input(z.object({ limit: z.number().int().min(1).max(100).default(50) }).strict())
         .query(async ({ ctx, input }) =>
           messages.listThreads(actorOf(ctx).subject.orgId, deps(), { limit: input.limit }),
         ),
 
-      list: route({ permission: 'sms:read' })
+      list: route({
+        permission: 'sms:read',
+        feature: { flag: 'telephony', display: 'Voice & Messaging' },
+      })
         .input(
           z
             .object({
@@ -212,7 +252,10 @@ export function createTelephonyRouter(maybeDeps: TelephonyDeps | undefined) {
           }),
         ),
 
-      send: route({ permission: 'sms:send' })
+      send: route({
+        permission: 'sms:send',
+        feature: { flag: 'telephony', display: 'Voice & Messaging' },
+      })
         .input(
           z
             .object({
@@ -244,13 +287,19 @@ export function createTelephonyRouter(maybeDeps: TelephonyDeps | undefined) {
      * open the card.
      */
     cards: router({
-      recordings: route({ permission: 'recording:read' })
+      recordings: route({
+        permission: 'recording:read',
+        feature: { flag: 'telephony', display: 'Voice & Messaging' },
+      })
         .input(z.object({ cardId: CardIdSchema }).strict())
         .query(async ({ ctx, input }) =>
           recordingCards.listCardRecordings(actorOf(ctx), { cardId: input.cardId }),
         ),
 
-      attach: route({ permission: 'recording:read' })
+      attach: route({
+        permission: 'recording:read',
+        feature: { flag: 'telephony', display: 'Voice & Messaging' },
+      })
         .input(z.object({ recordingId: z.string().uuid(), cardId: CardIdSchema }).strict())
         .mutation(async ({ ctx, input }) => {
           await recordingCards.attachRecordingToCard(actorOf(ctx), {
@@ -259,7 +308,10 @@ export function createTelephonyRouter(maybeDeps: TelephonyDeps | undefined) {
           });
         }),
 
-      detach: route({ permission: 'recording:read' })
+      detach: route({
+        permission: 'recording:read',
+        feature: { flag: 'telephony', display: 'Voice & Messaging' },
+      })
         .input(z.object({ recordingId: z.string().uuid(), cardId: CardIdSchema }).strict())
         .mutation(async ({ ctx, input }) => {
           await recordingCards.detachRecordingFromCard(actorOf(ctx), {
@@ -278,7 +330,10 @@ export function createTelephonyRouter(maybeDeps: TelephonyDeps | undefined) {
        * is why, and the figures are the org's own aggregate, not anyone's
        * personal data.
        */
-      current: route({ permission: 'phoneNumber:read' })
+      current: route({
+        permission: 'phoneNumber:read',
+        feature: { flag: 'telephony', display: 'Voice & Messaging' },
+      })
         .input(z.object({}).strict())
         .query(async ({ ctx }) => {
           /* `readSpendState`, NOT `checkOutboundAllowed`. The full gate runs the
@@ -312,7 +367,11 @@ export function createTelephonyRouter(maybeDeps: TelephonyDeps | undefined) {
        * `phoneNumber:purchase` instead of inventing one — §6.3 has this
        * phase consume the permission catalog rather than extend it.
        */
-      report: route({ permission: 'recording:read', quotaClass: 'expensive' })
+      report: route({
+        permission: 'recording:read',
+        quotaClass: 'expensive',
+        feature: { flag: 'telephony', display: 'Voice & Messaging' },
+      })
         .input(z.object({ sinceDays: z.number().int().min(1).max(365).default(30) }).strict())
         .query(async ({ ctx, input }) =>
           spendReport(actorOf(ctx).subject.orgId, { sinceDays: input.sinceDays }),

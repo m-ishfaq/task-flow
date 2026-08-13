@@ -109,7 +109,7 @@ export function createChatRouter(deps: ChatRouterDeps) {
        * — there is no id to substitute — which is correct and is covered by the
        * RLS tests instead.
        */
-      list: route({ permission: 'channel:read' })
+      list: route({ permission: 'channel:read', feature: { flag: 'chat', display: 'Chat' } })
         .output(
           z
             .array(
@@ -128,7 +128,7 @@ export function createChatRouter(deps: ChatRouterDeps) {
         )
         .query(({ ctx }) => channels.listChannels(actorOf(ctx))),
 
-      get: route({ permission: 'channel:read' })
+      get: route({ permission: 'channel:read', feature: { flag: 'chat', display: 'Chat' } })
         .input(z.object({ channelId: ChannelIdSchema }).strict())
         .output(
           z.object({
@@ -151,7 +151,7 @@ export function createChatRouter(deps: ChatRouterDeps) {
         )
         .query(({ input, ctx }) => channels.getChannel(actorOf(ctx), input)),
 
-      create: route({ permission: 'channel:create' })
+      create: route({ permission: 'channel:create', feature: { flag: 'chat', display: 'Chat' } })
         .input(
           z
             .object({
@@ -177,12 +177,12 @@ export function createChatRouter(deps: ChatRouterDeps) {
        * is not the set of people who should be able to do the first. The
        * response says whether a conversation was created or reopened.
        */
-      openDirect: route({ permission: 'channel:read' })
+      openDirect: route({ permission: 'channel:read', feature: { flag: 'chat', display: 'Chat' } })
         .input(z.object({ userIds: z.array(UserIdSchema).min(1).max(20).readonly() }).strict())
         .output(z.object({ channelId: z.string(), created: z.boolean() }))
         .mutation(({ input, ctx }) => channels.openDirectMessage(actorOf(ctx), input)),
 
-      update: route({ permission: 'channel:manage' })
+      update: route({ permission: 'channel:manage', feature: { flag: 'chat', display: 'Chat' } })
         .input(
           z
             .object({
@@ -195,7 +195,7 @@ export function createChatRouter(deps: ChatRouterDeps) {
         .output(z.object({ updated: z.boolean() }))
         .mutation(({ input, ctx }) => channels.updateChannel(actorOf(ctx), input)),
 
-      archive: route({ permission: 'channel:manage' })
+      archive: route({ permission: 'channel:manage', feature: { flag: 'chat', display: 'Chat' } })
         .input(
           z.object({ channelId: ChannelIdSchema, restored: z.boolean().default(false) }).strict(),
         )
@@ -211,13 +211,16 @@ export function createChatRouter(deps: ChatRouterDeps) {
        * and it is known which of the two this is — a distinction the route
        * builder cannot make, because it runs before anything is read.
        */
-      addMember: route({ permission: 'channel:read' })
+      addMember: route({ permission: 'channel:read', feature: { flag: 'chat', display: 'Chat' } })
         .input(z.object({ channelId: ChannelIdSchema, userId: UserIdSchema }).strict())
         .output(z.object({ added: z.boolean() }))
         .mutation(({ input, ctx }) => channels.addChannelMember(actorOf(ctx), input)),
 
       /** Remove someone, or leave. Same layer-1/layer-2 split as `addMember`. */
-      removeMember: route({ permission: 'channel:read' })
+      removeMember: route({
+        permission: 'channel:read',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(z.object({ channelId: ChannelIdSchema, userId: UserIdSchema }).strict())
         .output(z.object({ removed: z.boolean() }))
         .mutation(({ input, ctx }) => channels.removeChannelMember(actorOf(ctx), input)),
@@ -227,13 +230,16 @@ export function createChatRouter(deps: ChatRouterDeps) {
        * participating, so a read-only tuple must be able to mark itself caught
        * up same as a full member (§3.6).
        */
-      markRead: route({ permission: 'channel:read' })
+      markRead: route({ permission: 'channel:read', feature: { flag: 'chat', display: 'Chat' } })
         .input(z.object({ channelId: ChannelIdSchema, messageId: MessageIdSchema }).strict())
         .output(z.object({ advanced: z.boolean() }))
         .mutation(({ input, ctx }) => readCursors.markRead(actorOf(ctx), input)),
 
       /** Unread counts for the sidebar badge, across the named channels. */
-      unreadCounts: route({ permission: 'channel:read' })
+      unreadCounts: route({
+        permission: 'channel:read',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(
           z.object({ channelIds: z.array(ChannelIdSchema).min(1).max(200).readonly() }).strict(),
         )
@@ -252,7 +258,7 @@ export function createChatRouter(deps: ChatRouterDeps) {
     }),
 
     messages: router({
-      list: route({ permission: 'message:read' })
+      list: route({ permission: 'message:read', feature: { flag: 'chat', display: 'Chat' } })
         .input(
           z
             .object({
@@ -265,12 +271,12 @@ export function createChatRouter(deps: ChatRouterDeps) {
         .output(MessageOutput)
         .query(({ input, ctx }) => messages.listMessages(actorOf(ctx), input)),
 
-      thread: route({ permission: 'message:read' })
+      thread: route({ permission: 'message:read', feature: { flag: 'chat', display: 'Chat' } })
         .input(z.object({ messageId: MessageIdSchema }).strict())
         .output(MessageOutput)
         .query(({ input, ctx }) => messages.listThread(actorOf(ctx), input)),
 
-      send: route({ permission: 'message:create' })
+      send: route({ permission: 'message:create', feature: { flag: 'chat', display: 'Chat' } })
         .input(
           z
             .object({
@@ -288,7 +294,7 @@ export function createChatRouter(deps: ChatRouterDeps) {
         .output(z.object({ messageId: z.string() }))
         .mutation(({ input, ctx }) => messages.sendMessage(actorOf(ctx), input)),
 
-      edit: route({ permission: 'message:update' })
+      edit: route({ permission: 'message:update', feature: { flag: 'chat', display: 'Chat' } })
         .input(z.object({ messageId: MessageIdSchema, body: RichTextDocument }).strict())
         .output(z.object({ edited: z.literal(true) }))
         .mutation(({ input, ctx }) => messages.editMessage(actorOf(ctx), input)),
@@ -303,7 +309,7 @@ export function createChatRouter(deps: ChatRouterDeps) {
        * (deleting your own message) unreachable for exactly the people who do it
        * most.
        */
-      delete: route({ permission: 'message:update' })
+      delete: route({ permission: 'message:update', feature: { flag: 'chat', display: 'Chat' } })
         .input(z.object({ messageId: MessageIdSchema }).strict())
         .output(z.object({ deleted: z.literal(true) }))
         .mutation(({ input, ctx }) => messages.deleteMessage(actorOf(ctx), input)),
@@ -313,7 +319,7 @@ export function createChatRouter(deps: ChatRouterDeps) {
        * `reaction.service.ts`'s header on why reacting needs the same
        * permission posting does.
        */
-      react: route({ permission: 'message:create' })
+      react: route({ permission: 'message:create', feature: { flag: 'chat', display: 'Chat' } })
         .input(
           z
             .object({
@@ -327,7 +333,7 @@ export function createChatRouter(deps: ChatRouterDeps) {
         .mutation(({ input, ctx }) => reactions.toggleReaction(actorOf(ctx), input)),
 
       /** Every reaction on the named messages — the reaction bar under each. */
-      reactions: route({ permission: 'message:read' })
+      reactions: route({ permission: 'message:read', feature: { flag: 'chat', display: 'Chat' } })
         .input(
           z
             .object({
@@ -344,18 +350,18 @@ export function createChatRouter(deps: ChatRouterDeps) {
         .query(({ input, ctx }) => reactions.listReactions(actorOf(ctx), input)),
 
       /** Pins a message. `message:create` — pinning curates, it does not moderate. */
-      pin: route({ permission: 'message:create' })
+      pin: route({ permission: 'message:create', feature: { flag: 'chat', display: 'Chat' } })
         .input(z.object({ channelId: ChannelIdSchema, messageId: MessageIdSchema }).strict())
         .output(z.object({ pinned: z.boolean() }))
         .mutation(({ input, ctx }) => pins.pinMessage(actorOf(ctx), input)),
 
-      unpin: route({ permission: 'message:create' })
+      unpin: route({ permission: 'message:create', feature: { flag: 'chat', display: 'Chat' } })
         .input(z.object({ channelId: ChannelIdSchema, messageId: MessageIdSchema }).strict())
         .output(z.object({ unpinned: z.boolean() }))
         .mutation(({ input, ctx }) => pins.unpinMessage(actorOf(ctx), input)),
 
       /** The pinned-messages panel. */
-      pins: route({ permission: 'message:read' })
+      pins: route({ permission: 'message:read', feature: { flag: 'chat', display: 'Chat' } })
         .input(z.object({ channelId: ChannelIdSchema }).strict())
         .output(
           z
@@ -376,7 +382,7 @@ export function createChatRouter(deps: ChatRouterDeps) {
        * surface, next to `chat.saved.list`. Takes no input, same reasoning as
        * `chat.saved.list`: the scope is entirely the caller's own tuples.
        */
-      allPins: route({ permission: 'message:read' })
+      allPins: route({ permission: 'message:read', feature: { flag: 'chat', display: 'Chat' } })
         .output(
           z
             .array(
@@ -408,7 +414,10 @@ export function createChatRouter(deps: ChatRouterDeps) {
      * that outlives the check that produced it.
      */
     attachments: router({
-      presign: route({ permission: 'attachment:upload' })
+      presign: route({
+        permission: 'attachment:upload',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(
           z
             .object({
@@ -429,7 +438,10 @@ export function createChatRouter(deps: ChatRouterDeps) {
         )
         .mutation(({ input, ctx }) => attachments.presignUpload(actorOf(ctx), deps, input)),
 
-      confirm: route({ permission: 'attachment:upload' })
+      confirm: route({
+        permission: 'attachment:upload',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(z.object({ attachmentId: AttachmentIdSchema }).strict())
         .output(
           z.object({
@@ -439,7 +451,10 @@ export function createChatRouter(deps: ChatRouterDeps) {
         )
         .mutation(({ input, ctx }) => attachments.confirmUpload(actorOf(ctx), deps, input)),
 
-      download: route({ permission: 'attachment:download' })
+      download: route({
+        permission: 'attachment:download',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(z.object({ attachmentId: AttachmentIdSchema }).strict())
         .output(
           z.object({
@@ -451,7 +466,7 @@ export function createChatRouter(deps: ChatRouterDeps) {
         .mutation(({ input, ctx }) => attachments.presignDownload(actorOf(ctx), deps, input)),
 
       /** Every live attachment on a page of messages. */
-      list: route({ permission: 'message:read' })
+      list: route({ permission: 'message:read', feature: { flag: 'chat', display: 'Chat' } })
         .input(
           z
             .object({
@@ -479,7 +494,10 @@ export function createChatRouter(deps: ChatRouterDeps) {
         .query(({ input, ctx }) => attachments.listForMessages(actorOf(ctx), input)),
 
       /** Every live attachment in a channel — the details panel's Files tab. */
-      listForChannel: route({ permission: 'message:read' })
+      listForChannel: route({
+        permission: 'message:read',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(
           z
             .object({
@@ -506,7 +524,7 @@ export function createChatRouter(deps: ChatRouterDeps) {
         )
         .query(({ input, ctx }) => attachments.listForChannel(actorOf(ctx), input)),
 
-      delete: route({ permission: 'message:update' })
+      delete: route({ permission: 'message:update', feature: { flag: 'chat', display: 'Chat' } })
         .input(z.object({ attachmentId: AttachmentIdSchema }).strict())
         .output(z.object({ deleted: z.literal(true) }))
         .mutation(({ input, ctx }) => attachments.deleteAttachment(actorOf(ctx), deps, input)),
@@ -521,7 +539,7 @@ export function createChatRouter(deps: ChatRouterDeps) {
      * close, exposed directly.
      */
     unfurls: router({
-      list: route({ permission: 'message:read' })
+      list: route({ permission: 'message:read', feature: { flag: 'chat', display: 'Chat' } })
         .input(
           z
             .object({
@@ -557,7 +575,7 @@ export function createChatRouter(deps: ChatRouterDeps) {
      * a reference to something they were shown.
      */
     saved: router({
-      list: route({ permission: 'channel:read' })
+      list: route({ permission: 'channel:read', feature: { flag: 'chat', display: 'Chat' } })
         .output(
           z
             .array(
@@ -574,12 +592,12 @@ export function createChatRouter(deps: ChatRouterDeps) {
         )
         .query(({ ctx }) => saved.listSaved(actorOf(ctx))),
 
-      save: route({ permission: 'channel:read' })
+      save: route({ permission: 'channel:read', feature: { flag: 'chat', display: 'Chat' } })
         .input(z.object({ messageId: MessageIdSchema }).strict())
         .output(z.object({ saved: z.literal(true) }))
         .mutation(({ input, ctx }) => saved.saveMessage(actorOf(ctx), input)),
 
-      unsave: route({ permission: 'channel:read' })
+      unsave: route({ permission: 'channel:read', feature: { flag: 'chat', display: 'Chat' } })
         .input(z.object({ messageId: MessageIdSchema }).strict())
         .output(z.object({ saved: z.literal(false) }))
         .mutation(({ input, ctx }) => saved.unsaveMessage(actorOf(ctx), input)),
@@ -598,7 +616,10 @@ export function createChatRouter(deps: ChatRouterDeps) {
      * people who run channels.
      */
     compliance: router({
-      setRetention: route({ permission: 'channel:manage' })
+      setRetention: route({
+        permission: 'channel:manage',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(
           z
             .object({
@@ -613,12 +634,18 @@ export function createChatRouter(deps: ChatRouterDeps) {
         .output(z.object({ retentionDays: z.number().int().nullable() }))
         .mutation(({ input, ctx }) => compliance.setRetention(actorOf(ctx), input)),
 
-      holdChannel: route({ permission: 'channel:manage' })
+      holdChannel: route({
+        permission: 'channel:manage',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(z.object({ channelId: ChannelIdSchema, held: z.boolean() }).strict())
         .output(z.object({ held: z.boolean() }))
         .mutation(({ input, ctx }) => compliance.setChannelHold(actorOf(ctx), input)),
 
-      holdMessage: route({ permission: 'channel:manage' })
+      holdMessage: route({
+        permission: 'channel:manage',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(z.object({ messageId: MessageIdSchema, held: z.boolean() }).strict())
         /* `applied` is false when the message was already gone — a hold placed
            just after a retention sweep removed it. Reported rather than
@@ -628,7 +655,10 @@ export function createChatRouter(deps: ChatRouterDeps) {
         .mutation(({ input, ctx }) => compliance.setMessageHold(actorOf(ctx), input)),
 
       /** Who currently holds guest access to this channel, and until when. */
-      listGuests: route({ permission: 'channel:manage' })
+      listGuests: route({
+        permission: 'channel:manage',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(z.object({ channelId: ChannelIdSchema }).strict())
         .output(
           z.array(z.object({ userId: z.string(), expiresAt: z.date().nullable() })).readonly(),
@@ -636,7 +666,7 @@ export function createChatRouter(deps: ChatRouterDeps) {
         .query(({ input, ctx }) => compliance.listChannelGuests(actorOf(ctx), input)),
 
       /** Invite or revoke a guest on ONE private channel (§3.8, §7.4). */
-      setGuest: route({ permission: 'channel:manage' })
+      setGuest: route({ permission: 'channel:manage', feature: { flag: 'chat', display: 'Chat' } })
         .input(
           z
             .object({
@@ -664,7 +694,7 @@ export function createChatRouter(deps: ChatRouterDeps) {
        * a private conversation living somewhere the audit trail says nothing
        * about.
        */
-      export: route({ permission: 'audit:export' })
+      export: route({ permission: 'audit:export', feature: { flag: 'chat', display: 'Chat' } })
         .input(
           z
             .object({

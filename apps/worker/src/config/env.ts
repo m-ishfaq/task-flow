@@ -73,6 +73,58 @@ export const EnvSchema = z.object({
      unset rather than falling back to a role that cannot claim across orgs. */
   DATABASE_WEBHOOK_URL: NonEmpty.optional(),
 
+  /* The billing sweep's CLAIM role (migration 0060, Phase 12 Wave 3 §3.4).
+     Same contract as the two above: optional, and the sweep declines to
+     start when unset rather than falling back to a role that cannot scan
+     identity.orgs across every tenant. */
+  DATABASE_BILLING_SWEEP_URL: NonEmpty.optional(),
+
+  /* The operations dashboard's writer (migration 0061) — this process's own
+     connection as taskflow_ops_events, for the sweep's heartbeat row.
+     Optional, same convention: recordOperationalEvent() catches the
+     missing-connection error itself, so an instance without this simply
+     gets no heartbeat rows rather than a sweep that fails to run. */
+  DATABASE_OPS_EVENTS_URL: NonEmpty.optional(),
+
+  /* The grace period a past_due org gets before the sweep cancels it — the
+     SAME value apps/api's env schema validates, duplicated here rather than
+     imported because the two processes' env schemas are deliberately
+     independent (this file's own header). Defaults match apps/api's. */
+  BILLING_PAST_DUE_GRACE_DAYS: z.coerce.number().int().positive().default(7),
+
+  /* There is deliberately NO BILLING_DEFAULT_PLAN_ID. Which plan an expiring
+     trial lands on is `billing.plans.is_default` — one row, enforced by a
+     partial unique index, moved by the console's own button. An env var
+     naming the same plan would be a second source of truth that can silently
+     disagree with the first, and the disagreement is invisible: trials would
+     land somewhere every screen says they should not. */
+
+  /**
+   * How long before a trial ends the owner is warned.
+   *
+   * The warning is sent once per trial, keyed on the trial's own end date, so
+   * a wide window here does not mean repeated email — it means the warning
+   * goes out earlier. 72 hours is enough to notice on a Monday for a Thursday
+   * deadline.
+   */
+  BILLING_TRIAL_ENDING_WARNING_HOURS: z.coerce.number().int().positive().default(72),
+
+  /* The payment processor, for the period-close job that bills usage overage
+     (Phase 12 Wave 4 §3.8). The SAME variables apps/api validates, duplicated
+     here rather than imported for this file's stated reason — but note the
+     consequence of them disagreeing: an API on `stripe` and a worker left on
+     `fake` would take real money at checkout and record every tenant's
+     overage against an in-memory map that vanishes at restart. `fake` is
+     still the default, because a worker that refused to boot without Stripe
+     credentials would stop automation and webhook delivery over a billing
+     variable.
+
+     The credential itself is optional here for the same reason as in
+     apps/api: a `fake` deployment needs none of it, so the refusal belongs
+     where something was actually asked to be live. */
+  PAYMENTS_PROVIDER: z.enum(['fake', 'stripe']).default('fake'),
+  STRIPE_SECRET_KEY: NonEmpty.optional(),
+
   /* The master key pair. Required, because this process decrypts webhook
      signing secrets at delivery — a deployment that runs the worker runs the
      loop that signs requests, and a worker without the key could not do its
@@ -85,6 +137,17 @@ export const EnvSchema = z.object({
 
   /** How often the engine claims a batch from the outbox. */
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(250).max(60_000).default(2_000),
+
+  /* Trial/grace deadlines are day-granularity, not seconds — a slower,
+     dedicated interval, rather than reusing WORKER_POLL_INTERVAL_MS, so
+     tightening the outbox poll for latency reasons never accidentally
+     multiplies how often this sweep scans every tenant's orgs. */
+  WORKER_BILLING_SWEEP_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(3_600_000)
+    .default(60_000),
 
   /* ------------------------------------------------------------------ *
    * Automation telephony (Phase 10 Wave 4, ai/phase-10-automation.md §5.5)

@@ -5,6 +5,7 @@ import { createAppRouter } from '../router.js';
 import { buildIdentityDeps, buildPasskeyDeps } from '../identity/deps.js';
 import { buildWorkDeps } from '../work/deps.js';
 import { buildRtcDeps } from '../rtc/deps.js';
+import { buildBillingDeps } from '../billing/deps.js';
 import type { OAuthDeps } from '../identity/oauth.service.js';
 import type { AuthenticatedPrincipal, OrgMembership, RequestContext } from '../trpc/context.js';
 import type { DeliverableLink } from '../identity/identity.service.js';
@@ -38,6 +39,21 @@ export const TEST_ENV: Env = parseEnv({
   STORAGE_SECRET_ACCESS_KEY: 'taskflow-dev-secret',
   STORAGE_BUCKET_ATTACHMENTS: 'taskflow-attachments',
   STORAGE_BUCKET_EXPORTS: 'taskflow-exports',
+
+  /* BILLING_STRIPE_PRICE_ID_PRO was here until Phase 12 Wave 4, when the
+     catalog moved into `billing.plans`/`billing.plan_prices`. Removing it from
+     the env schema without removing it here would not have been a silent
+     mismatch — `assertNoMisspelledVariables` refuses an unrecognized
+     `BILLING_` name, so every suite importing this fixture failed to COLLECT
+     with the variable named. That is the check working: an env value nothing
+     reads is exactly what it exists to catch. Tests that need a sellable plan
+     now seed a real catalog row (see org-billing.service.test.ts). */
+  /* Likewise the webhook secret: FakePaymentProvider compares it literally
+     rather than verifying a real HMAC, but the webhook ROUTE 404s with none
+     configured at all (§3.5's own "no real endpoint here" answer) — so a
+     value here is what makes the webhook path testable end-to-end without a
+     Stripe account, not a real secret. */
+  STRIPE_WEBHOOK_SECRET: 'whsec_test',
 });
 
 export function testContext(overrides: Partial<RequestContext> = {}): RequestContext {
@@ -164,6 +180,10 @@ export function testAppRouter(
          cannot spend, so no test that forgets to stub it can. */
       rtc: buildRtcDeps(TEST_ENV),
       oauth: options.oauth ?? NO_OAUTH_PROVIDERS,
+      /* PAYMENTS_PROVIDER defaults to 'fake' in TEST_ENV (no Stripe account
+         in CI) — the same in-memory FakePaymentProvider every billing route
+         must work end-to-end against. */
+      billing: buildBillingDeps(TEST_ENV),
     }),
     events,
     deps,

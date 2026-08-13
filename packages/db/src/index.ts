@@ -58,9 +58,15 @@ export {
   initializeApiTokenAuthDatabase,
   withApiTokenAuthScope,
   hasApiTokenAuthDatabase,
+  initializeBillingSweepDatabase,
+  withBillingSweepScope,
+  hasBillingSweepDatabase,
   initializeIntegrationAuthDatabase,
   withIntegrationAuthScope,
   hasIntegrationAuthDatabase,
+  initializeOpsEventsDatabase,
+  withOpsEventScope,
+  hasOpsEventsDatabase,
   type OrgId,
   type UserId,
   type DbConfig,
@@ -88,7 +94,9 @@ export { listenForOutboxAppends, type OutboxListener, type ListenOptions } from 
  * ordering obligation it puts on its caller.
  */
 export { resolveOrgBySubaccountSid } from './comms-directory.js';
+export { resolveOrgByStripeCustomerId } from './billing-directory.js';
 export { resolveApiToken } from './api-tokens.js';
+export { recordOperationalEvent, type OperationalEventInput } from './ops-events.js';
 
 /**
  * The one connector read that has no org yet (Phase 10 Wave 4, §7.2/§7.4).
@@ -181,6 +189,21 @@ export {
 } from 'drizzle-orm';
 
 /**
+ * Self-joins — the same table joined twice under different names.
+ *
+ * Re-exported here rather than imported from `drizzle-orm/pg-core` at the call
+ * site, for the reason the operators above are: `packages/db` is the ONE door
+ * to the data layer, and a feature module reaching into drizzle directly is a
+ * second one the guardrails do not watch. This is a query-BUILDING helper, not
+ * a connection — it composes nothing that could bypass `withOrgScope`, so
+ * exporting it widens the vocabulary without widening the access.
+ *
+ * The case that needed it: the org directory joins memberships once to COUNT
+ * them and once more to find the owner, and one join cannot do both.
+ */
+export { alias } from 'drizzle-orm/pg-core';
+
+/**
  * The type of a composed SQL expression.
  *
  * Exported as a TYPE only. Feature code needs it to name the return of a helper
@@ -199,6 +222,9 @@ export {
   sumWithFallback,
   sumColumn,
   countRows,
+  minText,
+  coalesceColumns,
+  minCoalesced,
 } from './expressions.js';
 
 /**

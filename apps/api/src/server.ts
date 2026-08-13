@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
-import { isDatabaseHealthy } from '@taskflow/db';
+import { isDatabaseHealthy, recordOperationalEvent } from '@taskflow/db';
 import { masterKeysFromBase64, newId, SoftwareKeyProvider } from '@taskflow/security';
 import { ensureIdentityDataKey } from './identity/secret-key.js';
 import { createAppRouter, type AppRouter } from './router.js';
@@ -8,7 +8,9 @@ import type { IntegrationDeps } from './automation/integration.service.js';
 import { buildWorkDeps } from './work/deps.js';
 import { buildTelephonyDeps } from './telephony/deps.js';
 import { buildRtcDeps } from './rtc/deps.js';
+import { buildBillingDeps } from './billing/deps.js';
 import { registerTelephonyWebhooks } from './telephony/webhook.routes.js';
+import { registerBillingWebhooks } from './billing/webhook.routes.js';
 import { registerIntegrationWebhooks } from './automation/integration-webhooks.js';
 import { assertRoutesDeclarePermissions } from './trpc/manifest.js';
 import type { AuthenticatedPrincipal, RequestContext } from './trpc/context.js';
@@ -24,6 +26,7 @@ import { authenticateWithApiToken } from './identity/api-token-auth.js';
 import type { OAuthDeps } from './identity/oauth.service.js';
 import { authenticate, bearerToken } from './identity/authenticate.js';
 import { createMailDelivery } from './identity/deliver.js';
+import type { MailQueue } from '@taskflow/mail';
 import { createLogger } from '@taskflow/observability';
 import { registerRateLimit } from './middleware/rate-limit.js';
 import type { SlidingWindowLimiter } from './middleware/sliding-window.js';
@@ -78,7 +81,13 @@ export interface BuildOptions {
 
 export async function buildServer(options: BuildOptions): Promise<FastifyInstance> {
   const mail = resolveMail(options);
-  const telephonyDeps = buildTelephonyDeps(options.env);
+  const billingDeps = buildBillingDeps(options.env, mail.queue);
+  /* Built AFTER billing so the outbound paths can reach the same mailer the
+     billing module uses: the 80%/100% usage alerts are billing email that
+     happens to be triggered by a telephony action, and routing them through a
+     second queue would give them a different sender and a different template
+     base for no reason. */
+  const telephonyDeps = buildTelephonyDeps(options.env, billingDeps.mail);
   const identityDeps = buildIdentityDeps({
     env: options.env,
     ...(options.events === undefined ? {} : { events: options.events }),
@@ -136,6 +145,10 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
        answers SERVICE_UNAVAILABLE on the upload routes alone. */
     rtc: buildRtcDeps(options.env),
     oauth: buildOAuthDeps(options.env),
+    /* Always built, like rtc: PAYMENTS_PROVIDER defaults to 'fake' rather
+       than to an absent credential, so there is no "billing not configured"
+       shape for the router to answer with — every org gets a real trial. */
+    billing: billingDeps,
   });
 
   /* Guardrail 4, second half. Before a single connection is accepted: if any
@@ -229,6 +242,13 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
   if (telephonyDeps !== undefined) {
     registerTelephonyWebhooks(app, { telephony: telephonyDeps });
   }
+
+  /* Billing webhook (Phase 12 Wave 3 §3.5) — registered unconditionally,
+     unlike telephony: billingDeps always exists (§3.3's "never returns
+     undefined"), so this route always exists too, the same reasoning `rtc`
+     is always built. Needs its own raw-body JSON parser for the identical
+     reason telephony's needs its own form-encoded one. */
+  registerBillingWebhooks(app, { billing: billingDeps });
 
   /* Connector inbound webhooks (Phase 10 Wave 4 slice 3, §7.3) — plain
      Fastify routes, for the same reason as the carrier webhooks above: the
@@ -451,6 +471,16 @@ function buildIntegrationDeps(
 function resolveMail(options: BuildOptions): {
   deliver: (message: DeliverableLink) => Promise<void>;
   close: () => Promise<void>;
+  /**
+   * The underlying queue, for billing email (Phase 12 Wave 4).
+   *
+   * Exposed rather than building a SECOND queue: one queue means one retry
+   * policy, one drain on shutdown, and one place where delivery outcomes reach
+   * the operations dashboard. Undefined when a test injected its own
+   * `deliver` — there is no queue in that case, and billing mail is simply
+   * skipped rather than faked.
+   */
+  queue?: MailQueue | undefined;
 } {
   if (options.deliver !== undefined) {
     return { deliver: options.deliver, close: () => Promise.resolve() };
@@ -473,8 +503,33 @@ function resolveMail(options: BuildOptions): {
         { to: failure.to, subject: failure.subject, attempts: failure.attempts },
         'mail delivery abandoned',
       );
+      /* recordOperationalEvent() never throws into its caller (its own
+         comment) — a missing ops-events connection must not turn a mail
+         failure into an unhandled rejection in the queue's background loop.
+         `to`/`subject` only, the identical redaction the log line above
+         already applies. */
+      void recordOperationalEvent({
+        kind: 'mail',
+        outcome: 'failure',
+        target: failure.to,
+        detail: { subject: failure.subject, attempts: failure.attempts },
+      });
+    },
+    onSuccess: (success) => {
+      void recordOperationalEvent({
+        kind: 'mail',
+        outcome: 'success',
+        target: success.to,
+        detail: { subject: success.subject },
+      });
     },
   });
 
-  return { deliver: delivery.deliver, close: () => delivery.queue.close() };
+  /* The queue rides along so billing email shares it — one retry policy, one
+     drain on shutdown, one path to the operations dashboard. */
+  return {
+    deliver: delivery.deliver,
+    queue: delivery.queue,
+    close: () => delivery.queue.close(),
+  };
 }

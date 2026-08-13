@@ -25,6 +25,7 @@ import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
 import { useStepUp } from '../auth/use-step-up.js';
 import { membersQuery } from '../org/api.js';
+import { BillingSection } from './billing-section.js';
 
 /**
  * Organization settings: the org itself, its members, its teams.
@@ -68,6 +69,7 @@ export function SettingsPage() {
       </div>
 
       <OrgSection orgId={orgId} />
+      <BillingSection orgId={orgId} />
       <MemberSection orgId={orgId} />
       <TeamSection orgId={orgId} />
     </div>

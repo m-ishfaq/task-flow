@@ -33,6 +33,27 @@ export const ERROR_CODES = [
   // a member deserves to be told what happened and what to do next (Phase 12
   // Wave 1, ai/phase-12-admin.md §3.3).
   'ORG_SUSPENDED',
+  // Distinct from ORG_SUSPENDED too: a lapsed trial/subscription and an
+  // operator's manual suspension are different columns, different writers,
+  // and different next steps for an Owner (Phase 12 Wave 3,
+  // ai/phase-12-wave3.md §3.2).
+  'ORG_BILLING_LAPSED',
+  // The org's PLAN does not include this module (Phase 12 Wave 4,
+  // ai/phase-12-wave4-plans.md §3.4).
+  //
+  // A fourth 403 rather than reusing FORBIDDEN, and the distinction is the
+  // whole point: FORBIDDEN means "your ROLE does not allow this", which no
+  // amount of money changes, and PLAN_REQUIRED means "your role allows it and
+  // your plan does not", which upgrading fixes. Collapsing them would tell an
+  // Owner they lack permission on their own organization.
+  //
+  // It is NOT an authorization code. `can()` runs first and independently; a
+  // caller who fails it gets FORBIDDEN whatever their plan says, and this is
+  // only ever reached by someone whose role already permits the action. A
+  // plan can therefore only ever REMOVE access, never grant it — which is what
+  // keeps guardrail 7 ("never put a security control behind a flag") true
+  // while plans ride the flag mechanism.
+  'PLAN_REQUIRED',
 
   /* --- Resource --------------------------------------------------------- */
   // NOT_FOUND is deliberately returned for resources that exist but are not
@@ -94,6 +115,8 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
   FORBIDDEN: 403,
   NOT_A_MEMBER: 403,
   ORG_SUSPENDED: 403,
+  ORG_BILLING_LAPSED: 403,
+  PLAN_REQUIRED: 403,
 
   NOT_FOUND: 404,
   ALREADY_EXISTS: 409,
@@ -209,6 +232,37 @@ export const errors = {
 
   orgSuspended: (message = 'This organization has been suspended.') =>
     new AppError('ORG_SUSPENDED', message),
+
+  /**
+   * Distinct from `orgSuspended` on purpose (Phase 12 Wave 3,
+   * ai/phase-12-wave3.md §3.2) — an Owner staring at a locked-out org needs
+   * to know WHICH wall they hit ("pay us" vs. "call support"). Thrown by
+   * `resolveOrgMembership` only when `billing_status = 'canceled'`, never
+   * for `trialing`/`active`/`past_due`.
+   */
+  orgBillingLapsed: (
+    message = 'This organization’s trial or subscription has ended. An owner can resolve this from Billing settings.',
+  ) => new AppError('ORG_BILLING_LAPSED', message),
+
+  /**
+   * The caller's ROLE permits this and their PLAN does not (Phase 12 Wave 4,
+   * ai/phase-12-wave4-plans.md §3.4).
+   *
+   * Never a substitute for `forbidden()`. `can()` has already passed by the
+   * time this is thrown — that ordering is what makes a plan check able only
+   * to remove access, and it is why this code can carry the module name
+   * without leaking anything: the caller was entitled to know the module
+   * exists, they simply are not on a plan that includes it.
+   *
+   * The message names what to do, because unlike every other 403 in this list
+   * there IS something the reader can do about it.
+   */
+  planRequired: (
+    feature: string,
+    message = `Your plan does not include ${feature}. An owner can upgrade from Billing settings.`,
+    /* `details`, so the client can offer an upgrade CTA naming the specific
+       module rather than parsing it back out of a sentence. */
+  ) => new AppError('PLAN_REQUIRED', message, { details: { feature } }),
 
   /**
    * Use for resources the caller may not see, as well as those that do not

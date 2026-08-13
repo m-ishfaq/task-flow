@@ -3,6 +3,7 @@ import { errors, type OrgId, type RequestId, type UserId } from '@taskflow/contr
 import { createEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
 import { orgCreated, orgUpdated } from './events.js';
+import { trialStarted } from '../billing/events.js';
 
 /**
  * Organizations (PLAN.md §7, §8.2).
@@ -37,6 +38,13 @@ export interface CreateOrgInput {
   readonly slug: string;
 }
 
+export interface CreateOrgDeps {
+  /** Phase 12 Wave 3 §3.4 — how long a new org's trial runs before the sweep touches it. */
+  readonly trialDays: number;
+  /** Overridable for tests; defaults to the real clock. */
+  readonly now?: () => Date;
+}
+
 /**
  * Creates an organization and makes the caller its owner.
  *
@@ -52,9 +60,17 @@ export interface CreateOrgInput {
  * RLS `WITH CHECK` on identity.orgs is satisfied by the scope this function
  * opened. No privileged path, and nothing for a later change to reach for.
  */
+/**
+ * `deps.trialDays` defaults to 14 — production never relies on the default
+ * (`tenancy/router.ts` always passes the real, env-derived value explicitly)
+ * — it exists so the ~20 unrelated test suites across this codebase that
+ * call `createOrg` purely to get a tenant to test something else against do
+ * not all need updating for a value none of them assert on.
+ */
 export async function createOrg(
   input: CreateOrgInput,
   actor: Actor,
+  deps: CreateOrgDeps = { trialDays: 14 },
 ): Promise<{ orgId: OrgId; slug: string }> {
   /* Phase 12 Wave 1 (§3.4): an unverified account may not create an org. The
      gate lives BEFORE the transaction opens because it is a precondition on
@@ -83,9 +99,20 @@ export async function createOrg(
   const orgId = newId<'OrgId'>();
   const membershipId = newId<'MembershipId'>();
 
+  /* Phase 12 Wave 3 (§3.4): the trial starts HERE, in the same transaction as
+     the org itself — there is no "org exists but has no billing state yet"
+     moment for a later step to fill in, the identical reasoning the founding
+     membership above already follows. `billingStatus` defaults to 'trialing'
+     at the column level (migration 0059); `trialEndsAt` is the one value only
+     this call site can supply. */
+  const now = (deps.now ?? (() => new Date()))();
+  const trialEndsAt = new Date(now.getTime() + deps.trialDays * 24 * 60 * 60 * 1000);
+
   try {
     await withOrgScope(orgId, async (tx) => {
-      await tx.insert(schema.orgs).values({ id: orgId, name: input.name, slug: input.slug });
+      await tx
+        .insert(schema.orgs)
+        .values({ id: orgId, name: input.name, slug: input.slug, trialEndsAt });
 
       await tx.insert(schema.memberships).values({
         id: membershipId,
@@ -102,6 +129,11 @@ export async function createOrg(
         createEvent(
           orgCreated,
           { orgId, name: input.name, slug: input.slug, ownerId: actor.userId },
+          { orgId, actorId: actor.userId, requestId: actor.requestId },
+        ),
+        createEvent(
+          trialStarted,
+          { orgId, trialEndsAt: trialEndsAt.toISOString() },
           { orgId, actorId: actor.userId, requestId: actor.requestId },
         ),
       ]);

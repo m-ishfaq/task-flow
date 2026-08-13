@@ -1,7 +1,9 @@
 import {
   closeDatabase,
   initializeAutomationDatabase,
+  initializeBillingSweepDatabase,
   initializeDatabase,
+  initializeOpsEventsDatabase,
   initializeWebhookDatabase,
 } from '@taskflow/db';
 import { createLogger } from '@taskflow/observability';
@@ -12,6 +14,9 @@ import { createHealthServer } from './health.js';
 import { createActionExecutor } from './automation/executor.js';
 import { startAutomationEngine } from './automation/relay.js';
 import { startWebhookDeliveryLoop } from './webhooks/delivery.js';
+import { startBillingSweep } from './billing/sweep.js';
+import { FakePaymentProvider, StripePaymentProvider } from '@taskflow/payments';
+import type { PaymentProvider } from '@taskflow/contracts';
 
 /**
  * Process entry point for the background worker (ai/phase-10-automation.md,
@@ -21,7 +26,8 @@ import { startWebhookDeliveryLoop } from './webhooks/delivery.js';
  * ## What runs here, and what deliberately does not
  *
  * This process takes only NEW background work: the automation engine, webhook
- * delivery, and (Phase 11) the analytics rollup refresh. The seven loops
+ * delivery, (Phase 11) the analytics rollup refresh, and (Phase 12 Wave 3) the
+ * trial/grace-expiry billing sweep. The seven loops
  * already running on `setInterval` inside `apps/api` — the audit relay, the
  * search indexer, backlinks, chat retention, recording ingest, digests, due
  * reminders — STAY THERE. Moving them is a separate follow-up done one at a
@@ -73,6 +79,30 @@ if (env.DATABASE_WEBHOOK_URL !== undefined) {
   initializeWebhookDatabase({
     url: env.DATABASE_WEBHOOK_URL,
     applicationName: 'taskflow-worker-webhook',
+  });
+}
+
+/* The billing sweep's claim pool, as `taskflow_billing_sweep` (Phase 12
+   Wave 3, migration 0060). Optional like the two pools above: without it
+   the sweep logs a warning and stays off — no trial or grace period will
+   ever expire, which is a valid deployment shape for an instance that has
+   not enabled billing enforcement yet. */
+if (env.DATABASE_BILLING_SWEEP_URL !== undefined) {
+  initializeBillingSweepDatabase({
+    url: env.DATABASE_BILLING_SWEEP_URL,
+    applicationName: 'taskflow-worker-billing-sweep',
+  });
+}
+
+/* The operations dashboard's writer pool, as `taskflow_ops_events`
+   (migration 0061) — this process's own connection, for the sweep's
+   heartbeat row. Optional like every consumer pool above: without it
+   `recordOperationalEvent()` catches the missing-connection error itself,
+   so the sweep still runs, it just produces no heartbeat row. */
+if (env.DATABASE_OPS_EVENTS_URL !== undefined) {
+  initializeOpsEventsDatabase({
+    url: env.DATABASE_OPS_EVENTS_URL,
+    applicationName: 'taskflow-worker-ops-events',
   });
 }
 
@@ -143,6 +173,38 @@ const delivery = startWebhookDeliveryLoop({
   intervalMs: env.WORKER_POLL_INTERVAL_MS,
 });
 
+/**
+ * The processor the usage period-close job bills through.
+ *
+ * Built here rather than inside `startBillingSweep` so a `stripe` worker
+ * refuses at BOOT on a missing key, not on the first period that closes —
+ * which could be four weeks after the deploy that broke it, by which time the
+ * failure looks like a billing bug rather than a configuration one. The same
+ * fail-closed-at-boot reasoning `buildBillingDeps` and `buildTelephonyDeps`
+ * both give.
+ */
+function buildPayments(): PaymentProvider {
+  if (env.PAYMENTS_PROVIDER === 'fake') return new FakePaymentProvider();
+
+  if (env.STRIPE_SECRET_KEY === undefined) {
+    throw new Error(
+      'STRIPE_SECRET_KEY is required when PAYMENTS_PROVIDER=stripe. The worker bills usage ' +
+        'overage through it (billing/sweep.ts), so without it every closed period would be ' +
+        'written off silently. Set it, or set PAYMENTS_PROVIDER=fake.',
+    );
+  }
+
+  return new StripePaymentProvider({ secretKey: env.STRIPE_SECRET_KEY });
+}
+
+const billingSweep = startBillingSweep({
+  logger,
+  pastDueGraceDays: env.BILLING_PAST_DUE_GRACE_DAYS,
+  trialEndingWarningHours: env.BILLING_TRIAL_ENDING_WARNING_HOURS,
+  payments: buildPayments(),
+  intervalMs: env.WORKER_BILLING_SWEEP_INTERVAL_MS,
+});
+
 logger.info({ port: env.WORKER_PORT }, 'worker started');
 
 /**
@@ -160,6 +222,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     void (async () => {
       engine.stop();
       delivery.stop();
+      billingSweep.stop();
       await new Promise<void>((resolveClose) => {
         health.close(() => {
           resolveClose();

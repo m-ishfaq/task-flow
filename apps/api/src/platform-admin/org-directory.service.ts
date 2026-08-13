@@ -4,7 +4,10 @@ import {
   desc,
   eq,
   insertAuditEntry,
+  alias,
   lt,
+  minCoalesced,
+  minText,
   or,
   schema,
   withAuditScope,
@@ -25,6 +28,16 @@ import { SYSTEM_ORG } from '../identity/identity.service.js';
 import { orgDeleted, orgReactivated, orgSuspended } from './events.js';
 import { recordOperatorAction } from './audit.js';
 import { encodeCreatedCursor, parseCreatedCursor } from './pagination.js';
+
+/**
+ * The owner membership, joined a SECOND time under its own name.
+ *
+ * The directory query already joins memberships to COUNT them; reusing that
+ * join to also find the owner would either filter the member count down to one
+ * or multiply it by the owner row — both wrong in a way that looks plausible
+ * in the UI. Two joins, two purposes.
+ */
+const ownerMembership = alias(schema.memberships, 'owner_membership');
 
 /**
  * The org directory — the platform console's cross-tenant view of
@@ -54,6 +67,46 @@ export interface OrgDirectoryRow {
   readonly createdAt: Date;
   /** Active memberships only — counting a suspended or former member inflates the directory. */
   readonly memberCount: number;
+  /* ---------------------------------------------------------------------- *
+   * Phase 12 Wave 4: the three questions the directory could not answer.
+   *
+   * "Which plan is this org on", "are they paying", and "who do I contact"
+   * were each a separate lookup — plan and billing state lived only on the
+   * Billing tab, and the owner's address was not exposed anywhere at all. An
+   * operator triaging a support ticket had to cross-reference two tabs and
+   * still could not find a human to email.
+   *
+   * Joined here rather than fetched per row: this is one page of at most a
+   * hundred orgs, and an N+1 in a console list is how a page that was fine
+   * with three tenants becomes unusable at three hundred.
+   * ---------------------------------------------------------------------- */
+  /** Null means not on a plan — the state a trialing org is in. */
+  readonly planId: string | null;
+  /** `trialing` | `active` | `past_due` | `canceled` — independent of `status`. */
+  readonly billingStatus: string;
+  /** When the trial runs out, or when the past-due grace period does. */
+  readonly trialEndsAt: Date | null;
+  readonly billingGraceEndsAt: Date | null;
+  /**
+   * The org's owner, for a support contact.
+   *
+   * `LIMIT 1` semantics via `min()`: an org has exactly one owner by the role
+   * model (`transferOwnership` is one atomic swap with no observable
+   * zero-owner or two-owner moment), so picking deterministically rather than
+   * aggregating an array is honest here — and if that invariant ever broke,
+   * a stable pick beats a random one.
+   */
+  readonly ownerEmail: string | null;
+  /**
+   * The owner's display name, when they have set one.
+   *
+   * LEFT-joined from people.profiles, which is created LAZILY — an account
+   * that has never opened the account page has no row, so this is null far
+   * more often than an email is. The console renders the name when present
+   * and the address always: an operator needs something to type into a
+   * support ticket, and a name alone is not that.
+   */
+  readonly ownerName: string | null;
 }
 
 /**
@@ -81,12 +134,40 @@ export async function listOrgs(
         status: schema.orgs.status,
         createdAt: schema.orgs.createdAt,
         memberCount: countRows(schema.memberships.id),
+        planId: schema.orgs.planId,
+        billingStatus: schema.orgs.billingStatus,
+        trialEndsAt: schema.orgs.trialEndsAt,
+        billingGraceEndsAt: schema.orgs.billingGraceEndsAt,
+        /* MIN over the joined owner rows rather than a second query. The join
+           below is filtered to role = 'owner', so every non-null value in the
+           group is the same address; MIN just collapses the group without
+           adding it to GROUP BY. */
+        ownerEmail: minText(schema.users.email),
+        /* Profile first, signup value second — see coalesceColumns. */
+        ownerName: minCoalesced(schema.profiles.displayName, schema.users.displayName),
       })
       .from(schema.orgs)
       .leftJoin(
         schema.memberships,
         and(eq(schema.memberships.orgId, schema.orgs.id), eq(schema.memberships.status, 'active')),
       )
+      /* A SECOND membership join, aliased, restricted to the owner — reusing
+         the counting join would either filter the member count down to one or
+         multiply it by the owner row, and both are wrong in a way that looks
+         plausible in the UI. */
+      .leftJoin(
+        ownerMembership,
+        and(
+          eq(ownerMembership.orgId, schema.orgs.id),
+          eq(ownerMembership.role, 'owner'),
+          eq(ownerMembership.status, 'active'),
+        ),
+      )
+      .leftJoin(schema.users, eq(schema.users.id, ownerMembership.userId))
+      /* LEFT again — a profile row is lazy, and an inner join here would drop
+         the owner (and therefore their email) for anyone who has never opened
+         the account page. */
+      .leftJoin(schema.profiles, eq(schema.profiles.userId, ownerMembership.userId))
       .groupBy(schema.orgs.id)
       .orderBy(desc(schema.orgs.createdAt), desc(schema.orgs.id))
       .limit(input.limit + 1);
@@ -121,6 +202,12 @@ export async function listOrgs(
       slug: row.slug,
       status: row.status,
       createdAt: row.createdAt,
+      planId: row.planId,
+      billingStatus: row.billingStatus,
+      trialEndsAt: row.trialEndsAt,
+      billingGraceEndsAt: row.billingGraceEndsAt,
+      ownerEmail: row.ownerEmail,
+      ownerName: row.ownerName,
       memberCount: Number(row.memberCount),
     })),
     nextCursor:

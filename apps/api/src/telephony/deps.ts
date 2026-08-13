@@ -1,3 +1,4 @@
+import type { BillingMailDeps } from '../billing/billing-mail.js';
 import { SoftwareKeyProvider } from '@taskflow/security';
 import { S3StorageProvider } from '@taskflow/storage';
 import { FakeTelephonyProvider, TwilioTelephonyProvider } from '@taskflow/telephony';
@@ -42,6 +43,19 @@ export interface TelephonyDeps {
   readonly maxSpendCapCents: number;
   /** Absolute origin the carrier signs webhook URLs against (§3.11). */
   readonly webhookOrigin: string | undefined;
+  /**
+   * Where the 80%/100% usage alerts go (Phase 12 Wave 4 §3.8).
+   *
+   * Optional, and absent means the alerts are simply not sent — an outbound
+   * call must never fail because a mailer is unconfigured. The spend CAP is
+   * the control and it is enforced regardless; this is the courtesy that gives
+   * someone time to act before the cap stops them.
+   *
+   * Passed in by the caller rather than built here because `buildTelephonyDeps`
+   * takes a structural env subset shared with apps/worker, and a mail queue is
+   * a constructed object, not a variable.
+   */
+  readonly mail?: BillingMailDeps | undefined;
 }
 
 /**
@@ -81,7 +95,10 @@ export interface TelephonyEnv {
   readonly STORAGE_BUCKET_RECORDINGS?: string | undefined;
 }
 
-export function buildTelephonyDeps(env: TelephonyEnv): TelephonyDeps | undefined {
+export function buildTelephonyDeps(
+  env: TelephonyEnv,
+  mail?: BillingMailDeps,
+): TelephonyDeps | undefined {
   const accountSid = env.TWILIO_ACCOUNT_SID;
   const authToken = env.TWILIO_AUTH_TOKEN;
 
@@ -193,6 +210,8 @@ export function buildTelephonyDeps(env: TelephonyEnv): TelephonyDeps | undefined
     defaultSpendCapCents: env.TELEPHONY_DEFAULT_SPEND_CAP_CENTS,
     maxSpendCapCents: env.TELEPHONY_MAX_SPEND_CAP_CENTS,
     webhookOrigin: env.TELEPHONY_WEBHOOK_ORIGIN,
+    /* Absent rather than present-as-undefined, under exactOptionalPropertyTypes. */
+    ...(mail === undefined ? {} : { mail }),
   };
 }
 

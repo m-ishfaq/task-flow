@@ -23,7 +23,7 @@ import {
 } from './counterparty.js';
 import { rethrowCarrierRefusal } from './carrier-error.js';
 import { emitRefusal, refusalMessage } from './refusal.js';
-import { checkOutboundAllowed, recordSpend } from './spend-gate.js';
+import { checkOutboundAllowed, notifySpendThresholds, recordSpend } from './spend-gate.js';
 import { ensureSubaccount } from './subaccount.service.js';
 import { loadNumber } from './number.service.js';
 import { envelopeOf, orgOf, userOf, webhookContext, type TelephonyActor } from './shared.js';
@@ -161,12 +161,12 @@ export async function placeCall(
       announcementRequired: input.record ? consent.announcementRequired : false,
     });
 
-    await recordSpend(tx, orgId, {
-      id: spendId,
-      kind,
-      estimatedCents,
-      providerSid: undefined,
-    });
+    await recordSpend(
+      tx,
+      orgId,
+      { id: spendId, kind, estimatedCents, providerSid: undefined, decision },
+      envelopeOf(actor),
+    );
 
     const events: DomainEvent[] = [
       createEvent(callPlaced, { callId, direction: 'outbound' as const }, envelopeOf(actor)),
@@ -240,6 +240,13 @@ export async function placeCall(
       .set({ providerSid: result.sid })
       .where(and(eq(schema.spendLedger.orgId, orgId), eq(schema.spendLedger.id, spendId)));
   });
+
+  /* The usage alert, AFTER the commit. `checkUsageThresholds` re-reads the
+     ledger for the post-write total, so running it inside the transaction
+     would report every org one action behind its real spend — permanently,
+     and invisibly, because the figure it showed would always look plausible.
+     Never throws: a call must not fail because a mailer is down. */
+  await notifySpendThresholds(orgId, decision, deps.mail);
 
   return { callId, announcementRequired: input.record && consent.announcementRequired };
 }
