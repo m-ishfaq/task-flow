@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { QRCodeSVG } from 'qrcode.react';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import {
@@ -149,6 +150,9 @@ export function TotpSection() {
             Scan this into an authenticator app (Google Authenticator, 1Password, or similar), or
             enter the code manually if it cannot scan:
           </p>
+          <div className="mt-2 inline-block rounded bg-white p-2">
+            <QRCodeSVG value={stage.otpauthUrl} size={160} />
+          </div>
           <p className="mt-2 select-all break-all rounded bg-surface-hover px-2 py-1.5 font-mono text-xs text-ink">
             {stage.secret}
           </p>
