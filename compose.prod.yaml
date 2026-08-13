@@ -284,8 +284,18 @@ services:
       MASTER_KEY_BASE64: ${MASTER_KEY_BASE64:?MASTER_KEY_BASE64 must be set}
 
       # Optional — attachments are skipped gracefully if these are blank
-      # (packages/seed/src/modules/platform.attachments.ts).
-      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-}
+      # (packages/seed/src/modules/platform.attachments.ts). Deliberately
+      # NOT ${STORAGE_ENDPOINT} here, unlike api/worker: that value is the
+      # PUBLIC endpoint browsers use for presigned URLs (compose.prod.yaml's
+      # own comment on minio's `ports:`), and this container sits on the same
+      # Docker network as `minio` itself — hairpinning back out through the
+      # public IP to reach a container one hop away routinely times out on
+      # cloud hosts (the VM can't always reach its own public address). This
+      # is only correct for the self-hosted minio service below; if
+      # STORAGE_ENDPOINT ever points at a real external S3/R2 provider
+      # instead, change this back to ${STORAGE_ENDPOINT} — an external
+      # endpoint has no internal Docker hostname to reach it by.
+      STORAGE_ENDPOINT: http://minio:9000
       STORAGE_REGION: ${STORAGE_REGION:-auto}
       STORAGE_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-}
       STORAGE_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-}
