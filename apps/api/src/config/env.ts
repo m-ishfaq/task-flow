@@ -570,6 +570,10 @@ const KNOWN_VARIABLES = new Set([
   'DATABASE_PLATFORM_ADMIN_URL',
   'DATABASE_AUTOMATION_URL',
   'DATABASE_WEBHOOK_URL',
+  /* The billing sweep's scan role (Phase 12 Wave 3, migration 0060) — read by
+     apps/worker, never here, and the next variable of this exact class to stop
+     a correctly-configured process booting. */
+  'DATABASE_BILLING_SWEEP_URL',
   'DATABASE_API_TOKEN_URL',
   'DATABASE_INTEGRATION_URL',
   'DATABASE_OPS_EVENTS_URL',
