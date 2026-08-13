@@ -268,9 +268,7 @@ function renderHtml(body: string, settingsUrl: string): string {
     .map((line) => `<p>${escapeHtml(line).replaceAll('\n', '<br />')}</p>`)
     .join('');
 
-  return (
-    `${paragraphs}<p><a href="${escapeHtml(settingsUrl)}">Billing settings</a></p>`
-  );
+  return `${paragraphs}<p><a href="${escapeHtml(settingsUrl)}">Billing settings</a></p>`;
 }
 
 /**

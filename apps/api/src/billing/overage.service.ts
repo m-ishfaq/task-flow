@@ -129,10 +129,7 @@ export async function closeUsagePeriod(
             .select({ currency: schema.planPrices.currency })
             .from(schema.planPrices)
             .where(
-              and(
-                eq(schema.planPrices.planId, org.planId),
-                eq(schema.planPrices.isCurrent, true),
-              ),
+              and(eq(schema.planPrices.planId, org.planId), eq(schema.planPrices.isCurrent, true)),
             )
             .limit(1);
 
@@ -300,10 +297,7 @@ export async function closeUsagePeriod(
           : { providerInvoiceItemId: invoiceItemId, chargedAt: new Date() },
       )
       .where(
-        and(
-          eq(schema.usageCharges.orgId, orgId),
-          eq(schema.usageCharges.periodStart, periodStart),
-        ),
+        and(eq(schema.usageCharges.orgId, orgId), eq(schema.usageCharges.periodStart, periodStart)),
       );
 
     await outboxWriter.append(tx, [
@@ -322,7 +316,13 @@ export async function closeUsagePeriod(
     ]);
   });
 
-  return { closed: true, periodStart, periodEnd, billableCents: claim.billableCents, invoiceItemId };
+  return {
+    closed: true,
+    periodStart,
+    periodEnd,
+    billableCents: claim.billableCents,
+    invoiceItemId,
+  };
 }
 
 /* Both events above are appended INLINE rather than through a helper, and

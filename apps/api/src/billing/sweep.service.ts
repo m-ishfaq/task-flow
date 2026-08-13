@@ -110,8 +110,6 @@ export async function expireTrial(orgId: OrgId): Promise<boolean> {
   return moved;
 }
 
-
-
 /**
  * `past_due` -> `canceled`, the sweep's own write — the one write in this
  * whole wave that actually LOCKS a org out (`resolveOrgMembership` refuses
@@ -222,7 +220,6 @@ export async function expireGracePeriod(orgId: OrgId): Promise<boolean> {
     return true;
   });
 }
-
 
 /**
  * A fixed, recognizable request id for every event this sweep publishes —

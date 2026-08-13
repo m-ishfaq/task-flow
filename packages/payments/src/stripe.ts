@@ -37,7 +37,8 @@ export class StripePaymentProvider implements PaymentProvider {
 
   constructor(config: StripeConfig) {
     this.client = new Stripe(config.secretKey);
-    this.isTestMode = config.secretKey.startsWith('sk_test_') || config.secretKey.startsWith('rk_test_');
+    this.isTestMode =
+      config.secretKey.startsWith('sk_test_') || config.secretKey.startsWith('rk_test_');
   }
 
   async ensureCustomer(options: {

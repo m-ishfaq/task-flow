@@ -122,7 +122,7 @@ unless someone decided otherwise". Three things pay for that:
 
 - `reason` is `NOT NULL`. An override with no stated reason cannot be written.
 - The console renders the SOURCE next to every resolved value: `Docs: on — operator override
-  (not from plan)`. A resolved entitlement that does not say where it came from is how "why
+(not from plan)`. A resolved entitlement that does not say where it came from is how "why
   does this Free org have Voice" becomes unanswerable.
 - `expires_at` is nullable but offered in the UI, so a trial extension does not become
   permanent by being forgotten.
@@ -242,11 +242,11 @@ Telephony spend, automation executions per hour, and TURN issuances per day all 
 a per-org table, a working gate, and a deployment default. This wave changes **where the
 number comes from**, and nothing else:
 
-| Gate | Table it reads | Untouched |
-|---|---|---|
+| Gate                   | Table it reads                 | Untouched                            |
+| ---------------------- | ------------------------------ | ------------------------------------ |
 | `checkOutboundAllowed` | `comms.spend_policy.cap_cents` | ⚠ human-review file — **not edited** |
-| automation budget | `platform.automation_budget` | the claim/skip-locked logic |
-| `turn-gate.ts` | `rtc.turn_issuance` | ⚠ human-review file — **not edited** |
+| automation budget      | `platform.automation_budget`   | the claim/skip-locked logic          |
+| `turn-gate.ts`         | `rtc.turn_issuance`            | ⚠ human-review file — **not edited** |
 
 Both human-review surfaces (`apps/api/src/telephony`, `apps/api/src/rtc/turn-gate.ts`) are
 deliberately **not modified**. The plan becomes a writer of the policy rows those gates read,
@@ -372,17 +372,17 @@ Global events (no org) travel the in-process `EventBus` and land in the operator
 never `platform.outbox` — whose RLS policy keys on `app.org_id`, which a catalog change does
 not have. That is `platform-admin/events.ts`'s existing rule, not a new one.
 
-| Event | Scope | Carries |
-|---|---|---|
-| `plan.created` | global | plan id, name, prices |
-| `plan.updated` | global | plan id, changed fields |
-| `plan.price_added` | global | plan id, interval, old/new amount, orgs left on the retired price |
-| `plan.archived` | global | plan id, orgs still on it |
-| `org.plan_changed` | org | from, to, actor (owner \| operator \| sweep) |
-| `org.entitlement_override_set` | org | the delta, reason, expiry |
-| `org.trial_ending` | org | hours remaining |
-| `org.trial_expired` | org | plan landed on |
-| `org.usage_overage_billed` | org | period, cents billed, markup applied |
+| Event                          | Scope  | Carries                                                           |
+| ------------------------------ | ------ | ----------------------------------------------------------------- |
+| `plan.created`                 | global | plan id, name, prices                                             |
+| `plan.updated`                 | global | plan id, changed fields                                           |
+| `plan.price_added`             | global | plan id, interval, old/new amount, orgs left on the retired price |
+| `plan.archived`                | global | plan id, orgs still on it                                         |
+| `org.plan_changed`             | org    | from, to, actor (owner \| operator \| sweep)                      |
+| `org.entitlement_override_set` | org    | the delta, reason, expiry                                         |
+| `org.trial_ending`             | org    | hours remaining                                                   |
+| `org.trial_expired`            | org    | plan landed on                                                    |
+| `org.usage_overage_billed`     | org    | period, cents billed, markup applied                              |
 
 Every `platformAdmin.plans.*` call also lands in the hash-chained operator audit log, reads
 included — Wave 1's rule that every operator call is recorded, without exception.

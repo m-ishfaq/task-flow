@@ -152,7 +152,11 @@ export function createDocsRouter() {
        */
       /* PDF rendering is the expensive class's poster child — generated
          fresh from a page_versions row on demand (§6.5). */
-      exportPdf: route({ permission: 'page:read', quotaClass: 'expensive', feature: { flag: 'docs', display: 'Docs' } })
+      exportPdf: route({
+        permission: 'page:read',
+        quotaClass: 'expensive',
+        feature: { flag: 'docs', display: 'Docs' },
+      })
         .input(
           z
             .object({ pageId: PageIdSchema, versionId: z.string().nullable().default(null) })

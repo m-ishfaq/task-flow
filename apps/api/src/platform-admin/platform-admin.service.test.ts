@@ -311,7 +311,10 @@ describe('the operator console routes', () => {
        honest denial shape. */
     const context = testContext({ principal: testPrincipal('member') });
     const caller = createCallerFactory(
-      createPlatformAdminRouter({ events: new RecordingEventBus(), payments: new FakePaymentProvider() }),
+      createPlatformAdminRouter({
+        events: new RecordingEventBus(),
+        payments: new FakePaymentProvider(),
+      }),
     )(context);
 
     const error = await caller.orgs
@@ -326,7 +329,10 @@ describe('the operator console routes', () => {
        user calls this on every load — so it must NOT be a platformRoute. */
     const context = testContext({ principal: testPrincipal('member') });
     const caller = createCallerFactory(
-      createPlatformAdminRouter({ events: new RecordingEventBus(), payments: new FakePaymentProvider() }),
+      createPlatformAdminRouter({
+        events: new RecordingEventBus(),
+        payments: new FakePaymentProvider(),
+      }),
     )(context);
 
     expect(await caller.self.check()).toEqual({ isOperator: false });

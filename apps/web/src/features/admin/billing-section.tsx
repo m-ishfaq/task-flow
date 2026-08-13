@@ -187,16 +187,16 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
               {data.billingStatus === 'active' &&
                 !data.cancelAtPeriodEnd &&
                 data.deadline?.kind === 'renews' && (
-                <Button
-                  size="sm"
-                  disabled={cancel.isPending}
-                  onClick={() => {
-                    cancel.mutate();
-                  }}
-                >
-                  {cancel.isPending ? 'Cancelling…' : 'Cancel at period end'}
-                </Button>
-              )}
+                  <Button
+                    size="sm"
+                    disabled={cancel.isPending}
+                    onClick={() => {
+                      cancel.mutate();
+                    }}
+                  >
+                    {cancel.isPending ? 'Cancelling…' : 'Cancel at period end'}
+                  </Button>
+                )}
 
               {/* Two routes to the same button. `cancelAtPeriodEnd` is the
                   useful one — the subscription is still live and resuming
@@ -265,8 +265,8 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
                  that day, and that is the only question they have. */
               <p className="mt-2 text-xs text-ink-muted">
                 Nothing changes until then — you keep {data.planName ?? 'your plan'} and every
-                feature it includes, and you will not be charged again. Resume any time before
-                the date to carry on as normal.
+                feature it includes, and you will not be charged again. Resume any time before the
+                date to carry on as normal.
               </p>
             )}
 
@@ -384,7 +384,9 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-ink">
                           {plan.name}
-                          {current && <span className="ml-1.5 text-[10px] text-accent">current</span>}
+                          {current && (
+                            <span className="ml-1.5 text-[10px] text-accent">current</span>
+                          )}
                         </p>
                         {plan.description !== null && (
                           <p className="text-xs text-ink-muted">{plan.description}</p>
@@ -532,8 +534,8 @@ function SwitchPlanDialog({
         <ModalDescription>
           {isUpgrade ? (
             <>
-              This takes effect <strong>immediately</strong>. You will be charged the difference
-              for the rest of the current period, and {planName} becomes available straight away.
+              This takes effect <strong>immediately</strong>. You will be charged the difference for
+              the rest of the current period, and {planName} becomes available straight away.
             </>
           ) : (
             <>
@@ -588,10 +590,7 @@ function InvoiceHistory({ orgId }: { readonly orgId: string }) {
       <h4 className="text-xs font-semibold text-ink">Invoices</h4>
       <ul className="mt-1.5 divide-y divide-line">
         {invoices.data.map((invoice) => (
-          <li
-            key={invoice.providerInvoiceId}
-            className="flex items-center gap-3 py-1.5 text-xs"
-          >
+          <li key={invoice.providerInvoiceId} className="flex items-center gap-3 py-1.5 text-xs">
             <span className="w-24 shrink-0 text-ink-muted">{formatDate(invoice.issuedAt)}</span>
             <span className="min-w-0 flex-1 truncate text-ink">
               {invoice.number ?? invoice.providerInvoiceId}

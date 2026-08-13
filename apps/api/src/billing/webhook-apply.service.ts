@@ -76,7 +76,8 @@ export async function applyBillingWebhookEvent(
          Falls back to the org's CURRENT plan rather than to a literal when
          the price cannot be resolved — an unknown price is a reason to change
          nothing, never a reason to assume a tier. */
-      const planId = (await resolvePlanFromPrice(tx, event.priceId)) ?? (await currentPlanId(tx, orgId));
+      const planId =
+        (await resolvePlanFromPrice(tx, event.priceId)) ?? (await currentPlanId(tx, orgId));
 
       /* No fromStatus restriction: trialing, active (idempotent replay),
          past_due (recovery via a fresh subscription), and even canceled

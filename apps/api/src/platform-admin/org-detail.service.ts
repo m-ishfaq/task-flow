@@ -139,10 +139,7 @@ export interface OrgDetail {
 /** The window `comms.spend_policy.window_days` defaults to, and the gate's own. */
 const SPEND_WINDOW_DAYS = 30;
 
-export async function getOrgDetail(
-  operator: PlatformOperator,
-  orgId: OrgId,
-): Promise<OrgDetail> {
+export async function getOrgDetail(operator: PlatformOperator, orgId: OrgId): Promise<OrgDetail> {
   const base = await withPlatformAdminScope(async (tx) => {
     const rows = await tx
       .select({
@@ -291,9 +288,7 @@ async function readTelephonySpend(orgId: OrgId): Promise<number> {
         total: sumWithFallback(schema.spendLedger.actualCents, schema.spendLedger.estimatedCents),
       })
       .from(schema.spendLedger)
-      .where(
-        and(eq(schema.spendLedger.orgId, orgId), gte(schema.spendLedger.occurredAt, since)),
-      );
+      .where(and(eq(schema.spendLedger.orgId, orgId), gte(schema.spendLedger.occurredAt, since)));
 
     return Number(rows[0]?.total ?? 0);
   });

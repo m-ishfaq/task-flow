@@ -139,7 +139,10 @@ const FlagRow = z
  */
 const PlanIdSchema = z
   .string()
-  .regex(/^[a-z][a-z0-9_-]{1,30}$/, 'Lowercase letters, digits, hyphen and underscore; 2-31 chars.');
+  .regex(
+    /^[a-z][a-z0-9_-]{1,30}$/,
+    'Lowercase letters, digits, hyphen and underscore; 2-31 chars.',
+  );
 
 /**
  * The ceilings, shared by create (required, so a new plan states every bound

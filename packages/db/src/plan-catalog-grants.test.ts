@@ -209,10 +209,9 @@ describe('invariants the database enforces, not the service', () => {
     if (orgId === undefined) return;
 
     await expect(
-      admin.query(
-        `INSERT INTO billing.org_entitlements (org_id, reason) VALUES ($1, '   ')`,
-        [orgId],
-      ),
+      admin.query(`INSERT INTO billing.org_entitlements (org_id, reason) VALUES ($1, '   ')`, [
+        orgId,
+      ]),
     ).rejects.toThrow(/org_entitlements_reason_present/);
   });
 

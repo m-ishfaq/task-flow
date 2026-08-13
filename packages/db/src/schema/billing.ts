@@ -84,9 +84,7 @@ export const invoices = billing.table(
       .references(() => orgs.id, { onDelete: 'cascade' }),
     /** The printed number. Null on a draft, which can arrive before finalization. */
     number: text('number'),
-    status: text('status')
-      .notNull()
-      .$type<'draft' | 'open' | 'paid' | 'uncollectible' | 'void'>(),
+    status: text('status').notNull().$type<'draft' | 'open' | 'paid' | 'uncollectible' | 'void'>(),
     amountDueCents: bigint('amount_due_cents', { mode: 'number' }).notNull(),
     amountPaidCents: bigint('amount_paid_cents', { mode: 'number' }).notNull().default(0),
     currency: text('currency').notNull(),
@@ -121,7 +119,9 @@ export const alertsSent = billing.table(
     orgId: uuid('org_id')
       .notNull()
       .references(() => orgs.id, { onDelete: 'cascade' }),
-    alert: text('alert').notNull().$type<'usage_80' | 'usage_100' | 'usage_over' | 'trial_ending'>(),
+    alert: text('alert')
+      .notNull()
+      .$type<'usage_80' | 'usage_100' | 'usage_over' | 'trial_ending'>(),
     periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
     sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -198,7 +198,10 @@ export const plans = billing.table(
      * reasoning `packages/seed/src/modules/platform.admin.ts` states for its
      * own override list.
      */
-    features: text('features').array().notNull().default(sql`'{}'`),
+    features: text('features')
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
     telephonyCapCents: bigint('telephony_cap_cents', { mode: 'number' }),
     automationRunsPerHour: integer('automation_runs_per_hour'),
     turnIssuancePerDay: integer('turn_issuance_per_day'),
@@ -279,8 +282,14 @@ export const orgEntitlements = billing.table(
     orgId: uuid('org_id')
       .primaryKey()
       .references(() => orgs.id, { onDelete: 'cascade' }),
-    featuresAdd: text('features_add').array().notNull().default(sql`'{}'`),
-    featuresRemove: text('features_remove').array().notNull().default(sql`'{}'`),
+    featuresAdd: text('features_add')
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
+    featuresRemove: text('features_remove')
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
     telephonyCapCents: bigint('telephony_cap_cents', { mode: 'number' }),
     telephonyIncludedCents: bigint('telephony_included_cents', { mode: 'number' }),
     telephonyMarkupPct: integer('telephony_markup_pct'),

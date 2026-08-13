@@ -346,9 +346,7 @@ function OrgsTab({
                             profile row is lazily created so the name is
                             frequently absent, and an operator needs something
                             to put in a support ticket either way. */}
-                        {org.ownerName !== null && (
-                          <p className="text-ink">{org.ownerName}</p>
-                        )}
+                        {org.ownerName !== null && <p className="text-ink">{org.ownerName}</p>}
                         <p className="text-[10px] text-ink-muted">{org.ownerEmail}</p>
                       </>
                     )}
@@ -826,9 +824,7 @@ function UserDetailDialog({
       <ModalContent className="max-h-[85vh] overflow-y-auto p-4">
         <ModalTitle>{data?.name ?? data?.email ?? 'Account'}</ModalTitle>
         <ModalDescription>
-          {data === undefined
-            ? 'Loading…'
-            : `${data.email} · joined ${formatDate(data.createdAt)}`}
+          {data === undefined ? 'Loading…' : `${data.email} · joined ${formatDate(data.createdAt)}`}
         </ModalDescription>
 
         {detail.isPending && <SkeletonRows rows={4} className="mt-3 *:h-10" />}
@@ -852,8 +848,8 @@ function UserDetailDialog({
 
               {data.memberships.length === 0 ? (
                 <p className="mt-1 text-xs text-ink-faint">
-                  This account belongs to no organization. They can sign in and will land on the
-                  org picker with nothing to choose.
+                  This account belongs to no organization. They can sign in and will land on the org
+                  picker with nothing to choose.
                 </p>
               ) : (
                 <ul className="mt-1 divide-y divide-line overflow-hidden rounded-lg border border-line">
@@ -915,14 +911,12 @@ function OrgDetailDialog({
 }) {
   const detail = useQuery({
     queryKey: keys.platformOrgDetail(orgId),
-    queryFn: async () =>
-      wire(await api.platformAdmin.orgs.detail.query({ orgId })),
+    queryFn: async () => wire(await api.platformAdmin.orgs.detail.query({ orgId })),
   });
 
   const history = useQuery({
     queryKey: keys.platformOrgHistory(orgId),
-    queryFn: async () =>
-      wire(await api.platformAdmin.orgs.history.query({ orgId, limit: 15 })),
+    queryFn: async () => wire(await api.platformAdmin.orgs.history.query({ orgId, limit: 15 })),
   });
 
   const data = detail.data;
@@ -971,11 +965,7 @@ function OrgDetailDialog({
                     }`
                   }
                 />
-                <DetailRow
-                  label="Stripe customer"
-                  value={data.stripeCustomerId ?? '—'}
-                  mono
-                />
+                <DetailRow label="Stripe customer" value={data.stripeCustomerId ?? '—'} mono />
                 <DetailRow
                   label="Stripe subscription"
                   value={data.stripeSubscriptionId ?? '—'}
@@ -986,7 +976,9 @@ function OrgDetailDialog({
 
             {data.override !== null && (
               <section className="rounded-lg border border-warning/40 bg-warning/5 p-2">
-                <h3 className="text-xs font-semibold text-ink">Operator override — outranks the plan</h3>
+                <h3 className="text-xs font-semibold text-ink">
+                  Operator override — outranks the plan
+                </h3>
                 <p className="mt-0.5 text-xs text-ink-muted">{data.override.reason}</p>
                 <p className="mt-0.5 text-[10px] text-ink-faint">
                   set {formatDate(data.override.setAt)}
@@ -1756,8 +1748,8 @@ function EditLimitsDialog({
 
           {allowanceNeedsProduct && (
             <p className="text-xs text-danger">
-              This plan is not at the processor yet, so there is no subscription to bill an
-              overage against. Set a price first — that creates the product — then come back.
+              This plan is not at the processor yet, so there is no subscription to bill an overage
+              against. Set a price first — that creates the product — then come back.
             </p>
           )}
 

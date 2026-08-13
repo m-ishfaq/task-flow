@@ -55,9 +55,7 @@ export function buildBillingDeps(env: Env, mailQueue?: MailQueue): BillingDeps {
     webOrigin: env.WEB_ORIGIN,
     /* Absent when no queue was supplied — a test building deps directly gets
        no billing mail rather than a stub that silently swallows it. */
-    ...(mailQueue === undefined
-      ? {}
-      : { mail: { queue: mailQueue, webOrigin: env.WEB_ORIGIN } }),
+    ...(mailQueue === undefined ? {} : { mail: { queue: mailQueue, webOrigin: env.WEB_ORIGIN } }),
   };
 }
 

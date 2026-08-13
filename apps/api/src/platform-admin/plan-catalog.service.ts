@@ -135,7 +135,9 @@ function assertGrantableFeatures(features: readonly string[]): void {
 
   if (invalid.length > 0) {
     throw errors.validation(
-      { features: `Not registered flags: ${invalid.join(', ')}. Available: ${FLAG_NAMES.join(', ')}.` },
+      {
+        features: `Not registered flags: ${invalid.join(', ')}. Available: ${FLAG_NAMES.join(', ')}.`,
+      },
       'One or more features are not recognized.',
     );
   }
@@ -309,10 +311,17 @@ export async function createPlan(
   const features = normalizeFeatures(input.features);
 
   const existing = await withPlatformAdminScope(async (tx) =>
-    tx.select({ id: schema.plans.id }).from(schema.plans).where(eq(schema.plans.id, input.id)).limit(1),
+    tx
+      .select({ id: schema.plans.id })
+      .from(schema.plans)
+      .where(eq(schema.plans.id, input.id))
+      .limit(1),
   );
   if (existing.length > 0) {
-    throw errors.validation({ id: `A plan with id "${input.id}" already exists.` }, 'That plan id is taken.');
+    throw errors.validation(
+      { id: `A plan with id "${input.id}" already exists.` },
+      'That plan id is taken.',
+    );
   }
 
   /* The provider call comes FIRST — see this file's header on which failure is
@@ -667,7 +676,10 @@ export async function archivePlan(
   const now = new Date();
 
   const orgsRemaining = await withPlatformAdminScope(async (tx) => {
-    const rows = await tx.select({ n: countRows(schema.orgs.id) }).from(schema.orgs).where(eq(schema.orgs.planId, planId));
+    const rows = await tx
+      .select({ n: countRows(schema.orgs.id) })
+      .from(schema.orgs)
+      .where(eq(schema.orgs.planId, planId));
     return Number(rows[0]?.n ?? 0);
   });
 
@@ -731,7 +743,10 @@ export async function setDefaultPlan(
 
   if (!plan.isActive) {
     throw errors.validation(
-      { planId: 'An archived plan cannot be the default — expiring trials would land on a plan that is no longer sold.' },
+      {
+        planId:
+          'An archived plan cannot be the default — expiring trials would land on a plan that is no longer sold.',
+      },
       'That plan is archived.',
     );
   }
@@ -739,10 +754,7 @@ export async function setDefaultPlan(
   const now = new Date();
 
   await withPlatformAdminScope(async (tx) => {
-    await tx
-      .update(schema.plans)
-      .set({ isDefault: false })
-      .where(eq(schema.plans.isDefault, true));
+    await tx.update(schema.plans).set({ isDefault: false }).where(eq(schema.plans.isDefault, true));
 
     await tx
       .update(schema.plans)
@@ -794,7 +806,11 @@ export async function setOrgPlan(
   deps: PlanCatalogDeps,
   operator: PlatformOperator,
   input: { readonly orgId: OrgId; readonly planId: string; readonly reason: string },
-): Promise<{ readonly orgId: OrgId; readonly planId: string; readonly previousPlanId: string | null }> {
+): Promise<{
+  readonly orgId: OrgId;
+  readonly planId: string;
+  readonly previousPlanId: string | null;
+}> {
   const plan = await requirePlanRow(input.planId);
 
   if (!plan.isActive) {
@@ -923,9 +939,7 @@ export async function setOrgEntitlements(
 
   await withPlatformAdminScope(async (tx) => {
     if (cleared) {
-      await tx
-        .delete(schema.orgEntitlements)
-        .where(eq(schema.orgEntitlements.orgId, input.orgId));
+      await tx.delete(schema.orgEntitlements).where(eq(schema.orgEntitlements.orgId, input.orgId));
       return;
     }
 

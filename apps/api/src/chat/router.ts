@@ -217,7 +217,10 @@ export function createChatRouter(deps: ChatRouterDeps) {
         .mutation(({ input, ctx }) => channels.addChannelMember(actorOf(ctx), input)),
 
       /** Remove someone, or leave. Same layer-1/layer-2 split as `addMember`. */
-      removeMember: route({ permission: 'channel:read', feature: { flag: 'chat', display: 'Chat' } })
+      removeMember: route({
+        permission: 'channel:read',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(z.object({ channelId: ChannelIdSchema, userId: UserIdSchema }).strict())
         .output(z.object({ removed: z.boolean() }))
         .mutation(({ input, ctx }) => channels.removeChannelMember(actorOf(ctx), input)),
@@ -233,7 +236,10 @@ export function createChatRouter(deps: ChatRouterDeps) {
         .mutation(({ input, ctx }) => readCursors.markRead(actorOf(ctx), input)),
 
       /** Unread counts for the sidebar badge, across the named channels. */
-      unreadCounts: route({ permission: 'channel:read', feature: { flag: 'chat', display: 'Chat' } })
+      unreadCounts: route({
+        permission: 'channel:read',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(
           z.object({ channelIds: z.array(ChannelIdSchema).min(1).max(200).readonly() }).strict(),
         )
@@ -408,7 +414,10 @@ export function createChatRouter(deps: ChatRouterDeps) {
      * that outlives the check that produced it.
      */
     attachments: router({
-      presign: route({ permission: 'attachment:upload', feature: { flag: 'chat', display: 'Chat' } })
+      presign: route({
+        permission: 'attachment:upload',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(
           z
             .object({
@@ -429,7 +438,10 @@ export function createChatRouter(deps: ChatRouterDeps) {
         )
         .mutation(({ input, ctx }) => attachments.presignUpload(actorOf(ctx), deps, input)),
 
-      confirm: route({ permission: 'attachment:upload', feature: { flag: 'chat', display: 'Chat' } })
+      confirm: route({
+        permission: 'attachment:upload',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(z.object({ attachmentId: AttachmentIdSchema }).strict())
         .output(
           z.object({
@@ -439,7 +451,10 @@ export function createChatRouter(deps: ChatRouterDeps) {
         )
         .mutation(({ input, ctx }) => attachments.confirmUpload(actorOf(ctx), deps, input)),
 
-      download: route({ permission: 'attachment:download', feature: { flag: 'chat', display: 'Chat' } })
+      download: route({
+        permission: 'attachment:download',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(z.object({ attachmentId: AttachmentIdSchema }).strict())
         .output(
           z.object({
@@ -479,7 +494,10 @@ export function createChatRouter(deps: ChatRouterDeps) {
         .query(({ input, ctx }) => attachments.listForMessages(actorOf(ctx), input)),
 
       /** Every live attachment in a channel — the details panel's Files tab. */
-      listForChannel: route({ permission: 'message:read', feature: { flag: 'chat', display: 'Chat' } })
+      listForChannel: route({
+        permission: 'message:read',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(
           z
             .object({
@@ -598,7 +616,10 @@ export function createChatRouter(deps: ChatRouterDeps) {
      * people who run channels.
      */
     compliance: router({
-      setRetention: route({ permission: 'channel:manage', feature: { flag: 'chat', display: 'Chat' } })
+      setRetention: route({
+        permission: 'channel:manage',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(
           z
             .object({
@@ -613,12 +634,18 @@ export function createChatRouter(deps: ChatRouterDeps) {
         .output(z.object({ retentionDays: z.number().int().nullable() }))
         .mutation(({ input, ctx }) => compliance.setRetention(actorOf(ctx), input)),
 
-      holdChannel: route({ permission: 'channel:manage', feature: { flag: 'chat', display: 'Chat' } })
+      holdChannel: route({
+        permission: 'channel:manage',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(z.object({ channelId: ChannelIdSchema, held: z.boolean() }).strict())
         .output(z.object({ held: z.boolean() }))
         .mutation(({ input, ctx }) => compliance.setChannelHold(actorOf(ctx), input)),
 
-      holdMessage: route({ permission: 'channel:manage', feature: { flag: 'chat', display: 'Chat' } })
+      holdMessage: route({
+        permission: 'channel:manage',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(z.object({ messageId: MessageIdSchema, held: z.boolean() }).strict())
         /* `applied` is false when the message was already gone — a hold placed
            just after a retention sweep removed it. Reported rather than
@@ -628,7 +655,10 @@ export function createChatRouter(deps: ChatRouterDeps) {
         .mutation(({ input, ctx }) => compliance.setMessageHold(actorOf(ctx), input)),
 
       /** Who currently holds guest access to this channel, and until when. */
-      listGuests: route({ permission: 'channel:manage', feature: { flag: 'chat', display: 'Chat' } })
+      listGuests: route({
+        permission: 'channel:manage',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
         .input(z.object({ channelId: ChannelIdSchema }).strict())
         .output(
           z.array(z.object({ userId: z.string(), expiresAt: z.date().nullable() })).readonly(),

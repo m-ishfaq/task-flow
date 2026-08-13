@@ -232,7 +232,8 @@ export async function getOverview(orgId: OrgId): Promise<BillingOverview> {
       ...status,
       planName: planRows[0]?.name ?? null,
       features: FLAG_NAMES.filter(
-        (name) => FLAGS[name].perOrg && flags.isEnabled(name, { orgOverrides: entitlements.features }),
+        (name) =>
+          FLAGS[name].perOrg && flags.isEnabled(name, { orgOverrides: entitlements.features }),
       ).map((name) => ({ flagName: name, description: FLAGS[name].description })),
       usage: {
         telephonySpentCents: Number(spendRows[0]?.total ?? 0),
@@ -690,10 +691,7 @@ export async function cancelPlan(
      offered the Cancel control that had just been used. The processor knew;
      this database did not. */
   await withOrgScope(orgId, async (tx) => {
-    await tx
-      .update(schema.orgs)
-      .set({ cancelAtPeriodEnd: true })
-      .where(eq(schema.orgs.id, orgId));
+    await tx.update(schema.orgs).set({ cancelAtPeriodEnd: true }).where(eq(schema.orgs.id, orgId));
 
     await outboxWriter.append(tx, [
       createEvent(
@@ -740,10 +738,7 @@ export async function resumePlan(deps: BillingDeps, orgId: OrgId): Promise<void>
   await deps.payments.resumeSubscription(org.subscriptionId);
 
   await withOrgScope(orgId, async (tx) => {
-    await tx
-      .update(schema.orgs)
-      .set({ cancelAtPeriodEnd: false })
-      .where(eq(schema.orgs.id, orgId));
+    await tx.update(schema.orgs).set({ cancelAtPeriodEnd: false }).where(eq(schema.orgs.id, orgId));
 
     await outboxWriter.append(tx, [
       createEvent(

@@ -273,11 +273,7 @@ export async function getOrgFlagSnapshot(orgId: OrgId): Promise<Record<FlagName,
  *   Separate from the flag name so the error reads like the product rather
  *   than like the registry.
  */
-export async function requireFeature(
-  orgId: OrgId,
-  flag: FlagName,
-  display: string,
-): Promise<void> {
+export async function requireFeature(orgId: OrgId, flag: FlagName, display: string): Promise<void> {
   if (await isFeatureEnabled(orgId, flag)) return;
   throw errors.planRequired(display);
 }

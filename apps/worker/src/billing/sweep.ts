@@ -15,10 +15,7 @@ import {
   expireGracePeriod,
   expireTrial,
 } from '@taskflow/api/billing/sweep';
-import {
-  warnTrialEnding,
-  type BillingMailDeps,
-} from '@taskflow/api/billing/billing-mail';
+import { warnTrialEnding, type BillingMailDeps } from '@taskflow/api/billing/billing-mail';
 import { closeUsagePeriod } from '@taskflow/api/billing/overage';
 import type { PaymentProvider } from '@taskflow/contracts';
 
