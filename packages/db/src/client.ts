@@ -1216,7 +1216,7 @@ export async function withOpsEventScope<T>(fn: (tx: GlobalDb) => Promise<T>): Pr
   if (!opsEventsDb) {
     throw new Error(
       'Ops-events database not initialized. Call initializeOpsEventsDatabase() during boot. ' +
-        "recordOperationalEvent() (packages/db/src/ops-events.ts) catches this throw itself and " +
+        'recordOperationalEvent() (packages/db/src/ops-events.ts) catches this throw itself and ' +
         'reports it through its own onWriteFailure callback rather than propagating — a missing ' +
         'connection here must degrade to "no dashboard row", never to "mail delivery crashes" or ' +
         '"the webhook 500s". A caller reaching this function directly gets the throw, uncaught.',
