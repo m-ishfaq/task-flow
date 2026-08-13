@@ -143,7 +143,16 @@ beforeAll(async () => {
   await seedCatalog();
 
   initializeDatabase({ url: TEST_ENV.DATABASE_URL, applicationName: 'billing-webhook-test' });
-  app = await buildServer({ env: TEST_ENV });
+  /* Without an injected `deliver`, resolveMail() (server.ts) builds a REAL
+     SMTP-backed queue against TEST_ENV's MAIL_HOST — Mailpit, which CI's
+     workflow does not start (only Postgres is a service there). The
+     payment_failed/subscription_canceled tests below queue a real
+     sendBillingMail() send, and app.close()'s onClose hook awaits the queue
+     draining that send — which then hangs retrying a connection to a port
+     nothing is listening on. Every other buildServer() test in this app
+     injects `deliver` for the same reason; this file just never sent mail
+     until Wave 4's billing-mail.ts gave it a reason to. */
+  app = await buildServer({ env: TEST_ENV, deliver: () => Promise.resolve() });
 });
 
 afterAll(async () => {

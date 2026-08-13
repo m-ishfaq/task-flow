@@ -122,8 +122,8 @@ afterEach(() => {
 
 afterAll(async () => {
   for (const orgId of created) {
-    await admin.query(`DELETE FROM billing.org_entitlements WHERE org_id = $1`, [orgId]);
     await admin.setOrg(orgId);
+    await admin.query(`DELETE FROM billing.org_entitlements WHERE org_id = $1`, [orgId]);
     await admin.query(`DELETE FROM identity.memberships WHERE org_id = $1`, [orgId]);
     await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [orgId]);
     await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [orgId]);
@@ -237,12 +237,14 @@ describe('ceilings resolve independently per field', () => {
       [RICH_PLAN],
     );
     await setPlan(orgId, RICH_PLAN);
+    await admin.setOrg(orgId);
     await admin.query(
       `INSERT INTO billing.org_entitlements (org_id, telephony_cap_cents, reason)
        VALUES ($1, 0, 'zero cap test')
        ON CONFLICT (org_id) DO UPDATE SET telephony_cap_cents = 0, automation_runs_per_hour = NULL`,
       [orgId],
     );
+    await admin.setOrg(null);
     resetEntitlementCache();
 
     const { limits } = await getEntitlements(orgId);
