@@ -94,7 +94,7 @@ async function registerFresh(email: string): Promise<string> {
   await app.inject({
     method: 'POST',
     url: '/trpc/auth.register',
-    payload: { email, password: PASSWORD },
+    payload: { email, password: PASSWORD, name: 'Test User' },
   });
 
   const link = deliveries.find(

@@ -1,11 +1,36 @@
 import type { DomainEvent } from '@taskflow/events';
 import type { AdminConnection } from '@taskflow/db/testing';
-import type { KeyProvider, StorageProvider, TelephonyProvider } from '@taskflow/contracts';
+import type {
+  KeyProvider,
+  PaymentProvider,
+  StorageProvider,
+  TelephonyProvider,
+} from '@taskflow/contracts';
 
 export type { KeyProvider } from '@taskflow/contracts';
 import type { SeedModule } from './registry.js';
 import type { Profile } from './profiles.js';
 import type { Rng } from './rng.js';
+
+/**
+ * The platform operator's login, or nothing to seed one at all.
+ *
+ * Assembled in `cli.ts` from `SEED_PLATFORM_ADMIN_EMAIL`/
+ * `SEED_PLATFORM_ADMIN_PASSWORD` (guardrail 7: only a CLI entry point may
+ * read raw env) — the same "resolved object or null" shape `TelephonySeedConfig`
+ * and `buildKeysProvider` use, so a module never runs half-configured.
+ *
+ * Unlike `storage`/`telephony`/`keys`, this is not a technical prerequisite —
+ * nothing here decrypts or dials. It is null by DEFAULT on purpose: the
+ * account this seeds can suspend any organization and read a global audit
+ * log, so a fresh clone must not get one for free with no credential anyone
+ * chose. `identity.users` and `platform.admin` both skip themselves when this
+ * is null, exactly like `platform.webhooks` skips on a null `keys`.
+ */
+export interface PlatformOperatorSeedConfig {
+  readonly email: string;
+  readonly password: string;
+}
 
 /**
  * Everything `comms.telephony` needs that a database connection cannot supply.
@@ -92,6 +117,30 @@ export interface SeedContext {
    * pair telephony requires. Configured from the CLI, never read here.
    */
   readonly keys: KeyProvider | null;
+  /**
+   * The payment processor the plan catalog is built through, or null to skip
+   * billing entirely.
+   *
+   * Not the same null-is-"skip" trade as `storage` and `telephony`, and worth
+   * saying why: a `FakePaymentProvider` is a perfectly honest thing to seed
+   * against, because `billing.plan_prices.stripe_price_id` holding a fake id
+   * is only ever read back by the same fake. Nothing decrypts, nothing dials.
+   * So this is normally non-null even with no Stripe account.
+   *
+   * What it must NEVER be is the wrong one. Seeding through a LIVE processor
+   * creates real Products and Prices in that account on every run, and the CLI
+   * says so out loud before it does — see `buildPayments`.
+   */
+  readonly payments: PaymentProvider | null;
+  /**
+   * The platform operator's login, or null to skip seeding one — see
+   * `PlatformOperatorSeedConfig`. `identity.users` reads this to decide
+   * whether to write the operator's `identity.users` row at all, and
+   * `platform.admin` reads `identity.users`' own output rather than this
+   * field directly, so the two modules can never disagree about whether an
+   * operator exists.
+   */
+  readonly platformOperator: PlatformOperatorSeedConfig | null;
   log(message: string): void;
   /**
    * The output of a module this one declared in `requires`.
@@ -243,6 +292,8 @@ export interface CreateContextOptions {
   readonly storage: StorageProvider | null;
   readonly telephony: TelephonySeedConfig | null;
   readonly keys: KeyProvider | null;
+  readonly payments: PaymentProvider | null;
+  readonly platformOperator: PlatformOperatorSeedConfig | null;
   readonly log: (message: string) => void;
 }
 
@@ -272,6 +323,8 @@ export function createSeedContext(options: CreateContextOptions): SeedContextHan
     storage: options.storage,
     telephony: options.telephony,
     keys: options.keys,
+    payments: options.payments,
+    platformOperator: options.platformOperator,
     log: options.log,
 
     use: <Out>(module: SeedModule<Out>): Out => {

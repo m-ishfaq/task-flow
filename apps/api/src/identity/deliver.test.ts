@@ -66,7 +66,7 @@ async function register(email: string): Promise<void> {
   await app.inject({
     method: 'POST',
     url: '/trpc/auth.register',
-    payload: { email, password: 'correct horse battery staple 42' },
+    payload: { email, password: 'correct horse battery staple 42', name: 'Test User' },
   });
 }
 

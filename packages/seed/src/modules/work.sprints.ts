@@ -8,22 +8,30 @@ import { cardsModule } from './work.cards.js';
 /**
  * Sprints (Phase 10.5) — a project's one-active-window plan.
  *
- * ## The seeded shape is the UI's happy path
+ * ## A HISTORY, not one sprint per state
  *
- * Every project gets exactly three sprints, one per lifecycle state:
+ * Every project gets a run of back-to-back fortnightly sprints:
  *
- *   - one COMPLETED (in the past, `completed_at` set), with a couple of cards
+ *   - several COMPLETED (in the past, `completed_at` set), each with cards
  *     still attached — the close transaction's "done cards stay attached"
  *     half, so the board shows what shipped;
- *   - one ACTIVE (now), with live cards assigned — the sprint board a demo
- *     opens already has work in it;
- *   - one PLANNED (ahead) — the window lined up next, empty until the team
- *     pulls cards into it, which is the normal state.
+ *   - exactly one ACTIVE (now), with live cards assigned — the sprint board a
+ *     demo opens already has work in it;
+ *   - one or two PLANNED (ahead) — the windows lined up next, mostly empty
+ *     because that is the normal state.
+ *
+ * The original version seeded exactly one of each, which is the minimum that
+ * proves the three states render and the least that looks like a team. A
+ * velocity chart needs a run of closed sprints to plot; a sprint picker with
+ * three entries never wraps; and "what did we ship last quarter" has no
+ * answer at all. The counts come from `ProjectPlan.sprints` so the shape is
+ * declared per project, like boards and lists, rather than rolled.
  *
  * The active sprint is a real sprint by the migration's lights: `starts_on` is
  * in the past and `ends_on` in the future, `started_at` is set, and the
  * project has exactly ONE active sprint (the unique index would refuse a
- * second — which is also the property the seed is exercising).
+ * second — which is also the property the seed is exercising). The generator
+ * below emits exactly one by construction rather than by hoping.
  *
  * ## Card membership is written by UPDATE, and the ids come from events
  *
@@ -84,45 +92,9 @@ export const sprintsModule = defineSeedModule({
       const members = project.org.members;
       const actorId = members[0]?.id ?? project.org.owner.id;
       const cardIds = cardsByProject.get(project.id) ?? [];
-      const completed = cardIds.length >= 4 ? cardIds.slice(0, 2) : [];
-      const active = cardIds.length >= 8 ? cardIds.slice(2, 7) : cardIds.slice(2);
+      const shape = project.plan.sprints ?? DEFAULT_SPRINTS;
 
-      // One sprint per lifecycle state. The completed and active windows also
-      // carry their lifecycle timestamps, and the active one must be the
-      // project's ONLY active sprint — the unique index enforces it, and a
-      // seeded second one would make the first demo `pnpm seed` fail.
-      const sprints = [
-        {
-          name: 'Sprint 1',
-          status: 'completed' as const,
-          goal: 'Finish the first pass of the web app — the board, the card detail and the filters.',
-          startsOn: daysBefore(ctx.now, 19),
-          endsOn: daysBefore(ctx.now, 12),
-          startedAt: daysBefore(ctx.now, 19),
-          completedAt: daysBefore(ctx.now, 12),
-          attached: completed,
-        },
-        {
-          name: 'Sprint 2',
-          status: 'active' as const,
-          goal: 'Close the remaining design-review items and ship the export polish.',
-          startsOn: daysBefore(ctx.now, 4),
-          endsOn: daysAfter(ctx.now, 3),
-          startedAt: daysBefore(ctx.now, 4),
-          completedAt: null,
-          attached: active,
-        },
-        {
-          name: 'Sprint 3',
-          status: 'planned' as const,
-          goal: null,
-          startsOn: daysAfter(ctx.now, 4),
-          endsOn: daysAfter(ctx.now, 17),
-          startedAt: null,
-          completedAt: null,
-          attached: [],
-        },
-      ];
+      const sprints = buildSprintHistory(ctx.now, shape, cardIds);
 
       for (const sprint of sprints) {
         const sprintId = ctx.rng.uuid(ctx.now);
@@ -230,3 +202,142 @@ export const sprintsModule = defineSeedModule({
     return { sprintCount, assignedCards };
   },
 });
+
+/** A fortnight. Long enough that a completed run spans a readable quarter. */
+const SPRINT_DAYS = 14;
+
+/** How much of the active window has already elapsed, so "now" sits inside it. */
+const ACTIVE_ELAPSED_DAYS = 4;
+
+/** Used by any project that does not declare its own shape. */
+export const DEFAULT_SPRINTS: SprintShape = { completed: 3, planned: 2 };
+
+export interface SprintShape {
+  readonly completed: number;
+  readonly planned: number;
+}
+
+/**
+ * Goals for the closed sprints, cycled in order.
+ *
+ * A literal list rather than generated text, for `profiles.ts`'s stated
+ * reason: a velocity chart with six sprints called "Sprint N" and no goals
+ * reads as placeholder data in a screenshot, and that is the one place this
+ * dataset is meant to hold up.
+ */
+const GOALS = [
+  'Ship the board, the card detail and the filter bar end to end.',
+  'Close the design-review backlog and land the keyboard shortcuts.',
+  'Cut first-paint time on the board below a second at 500 cards.',
+  'Move search onto the new index and retire the old query path.',
+  'Harden the import pipeline against partial failures.',
+  'Finish the mobile layout for the three most-used screens.',
+  'Pay down the flaky tests blocking the release train.',
+  'Instrument the slow endpoints and publish the dashboard.',
+];
+
+/**
+ * A back-to-back run of sprints ending in one active window.
+ *
+ * Built BACKWARDS from the active sprint so that "now" always falls inside it
+ * regardless of how many closed sprints precede it. Tiling forwards from an
+ * arbitrary start instead would make the active window's position depend on
+ * the count — and a project with four completed sprints would quietly have no
+ * active one, which the UI renders as an empty sprint board rather than as an
+ * error.
+ *
+ * Exactly one `active` is produced by construction. `work.sprints`' unique
+ * index would refuse a second, so this is the difference between a seed run
+ * that fails loudly and one that cannot express the failure.
+ */
+export function buildSprintHistory(
+  now: Date,
+  shape: SprintShape,
+  cardIds: readonly string[],
+): readonly {
+  name: string;
+  status: 'completed' | 'active' | 'planned';
+  goal: string | null;
+  startsOn: Date;
+  endsOn: Date;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  attached: readonly string[];
+}[] {
+  const activeStart = daysBefore(now, ACTIVE_ELAPSED_DAYS);
+  const out: {
+    name: string;
+    status: 'completed' | 'active' | 'planned';
+    goal: string | null;
+    startsOn: Date;
+    endsOn: Date;
+    startedAt: Date | null;
+    completedAt: Date | null;
+    attached: readonly string[];
+  }[] = [];
+
+  /* Cards are handed out oldest-sprint-first and never reused: a card belongs
+     to at most one sprint (`work.cards.sprint_id` is a single column), so an
+     overlapping slice would silently move it to whichever sprint was written
+     last. Two per closed sprint, a wider slice for the active one, and
+     whatever is left stays in the backlog — which is where most work lives. */
+  let taken = 0;
+  const take = (count: number): readonly string[] => {
+    const slice = cardIds.slice(taken, taken + count);
+    taken += slice.length;
+    return slice;
+  };
+
+  for (let index = 0; index < shape.completed; index += 1) {
+    /* Counting back from the active window: the OLDEST closed sprint is
+       furthest away, so its offset is the largest. */
+    const back = shape.completed - index;
+    const startsOn = daysBefore(activeStart, SPRINT_DAYS * back);
+    const endsOn = daysBefore(activeStart, SPRINT_DAYS * (back - 1));
+
+    out.push({
+      name: `Sprint ${String(index + 1)}`,
+      status: 'completed',
+      goal: GOALS[index % GOALS.length] ?? null,
+      startsOn,
+      endsOn,
+      startedAt: startsOn,
+      /* Closed the day the window ended. A completed sprint whose
+         `completed_at` sat outside its own window would be a row the product
+         never produces. */
+      completedAt: endsOn,
+      attached: take(2),
+    });
+  }
+
+  out.push({
+    name: `Sprint ${String(shape.completed + 1)}`,
+    status: 'active',
+    goal: GOALS[shape.completed % GOALS.length] ?? null,
+    startsOn: activeStart,
+    endsOn: daysAfter(activeStart, SPRINT_DAYS),
+    startedAt: activeStart,
+    completedAt: null,
+    attached: take(5),
+  });
+
+  for (let index = 0; index < shape.planned; index += 1) {
+    const startsOn = daysAfter(activeStart, SPRINT_DAYS * (index + 1));
+
+    out.push({
+      name: `Sprint ${String(shape.completed + 2 + index)}`,
+      status: 'planned',
+      /* The nearest future sprint usually has a goal written already; the ones
+         after it usually do not, which is what a real backlog looks like. */
+      goal: index === 0 ? (GOALS[(shape.completed + 1) % GOALS.length] ?? null) : null,
+      startsOn,
+      endsOn: daysAfter(startsOn, SPRINT_DAYS),
+      startedAt: null,
+      completedAt: null,
+      /* Only the next one gets pulled-in work, and only a little. */
+      attached: index === 0 ? take(2) : [],
+    });
+  }
+
+  return out;
+}

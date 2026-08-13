@@ -32,8 +32,11 @@ export function RegisterPage() {
   });
 
   const create = useMutation({
+    /* Trimmed but always sent — the API requires it now, so the old
+       "omit when blank" branch would produce a request the server rejects on
+       shape rather than a field error the form can render. */
     mutationFn: ({ name, ...rest }: FormValues) =>
-      api.auth.register.mutate(name.trim() === '' ? rest : { ...rest, name: name.trim() }),
+      api.auth.register.mutate({ ...rest, name: name.trim() }),
   });
 
   if (create.isSuccess) {
@@ -68,14 +71,20 @@ export function RegisterPage() {
             router and nowhere else; a `minLength: 12` in this form would be a
             second copy of that number, free to drift the moment the policy
             changes — and the copy users see would be the one nobody tests. */}
-        {/* Optional, and said so on the label rather than enforced: an
-            account is identified by its email, and a required display name
-            would be friction on the one flow that must never have any. What
-            it buys is every surface that shows a person — the org directory,
-            chat, the operator console — having something to render besides an
-            address. */}
-        <Field label="Name (optional)" htmlFor="name" error={fieldError(create.error, 'name')}>
-          <Input id="name" type="text" autoComplete="name" {...register('name')} />
+        {/* Required, matching the API. Without it every surface that shows a
+            person falls back to their email address — which quietly discloses
+            it to everyone who can see a member list, a mention or an audit
+            entry. One field at signup is the cheaper side of that trade. */}
+        <Field label="Name" htmlFor="name" error={fieldError(create.error, 'name')}>
+          <Input
+            id="name"
+            type="text"
+            autoComplete="name"
+            aria-describedby={
+              fieldError(create.error, 'name') === undefined ? undefined : 'name-error'
+            }
+            {...register('name', { required: true })}
+          />
         </Field>
 
         <Field label="Email" htmlFor="email" error={fieldError(create.error, 'email')}>

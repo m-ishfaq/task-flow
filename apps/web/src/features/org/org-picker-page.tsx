@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { OrgId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
@@ -35,6 +35,22 @@ interface CreateValues {
 
 export function OrgPickerPage() {
   const orgs = useQuery(orgsQuery());
+
+  /* The same probe the account menu runs, for the one person this page is a
+     DEAD END for: a platform operator who belongs to no org.
+     `/` redirects them here (orgId is null), and everything on this page is
+     about joining or creating a tenant — while the console they actually came
+     for sits behind `requireSession` and is perfectly reachable, just
+     unlinked. Wave 1's own design makes org membership and operator power
+     unrelated, so an operator with zero orgs is a state the product intends,
+     not an accident to route around.
+
+     Server-answered, never inferred: `self.check` is the same selfRoute the
+     shell uses, and the page behind the link still refuses non-operators. */
+  const isOperator = useQuery({
+    queryKey: keys.platformSelf(),
+    queryFn: async () => (await api.platformAdmin.self.check.query(undefined)).isOperator,
+  });
   const selectOrg = useSession((state) => state.selectOrg);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -75,6 +91,23 @@ export function OrgPickerPage() {
             : 'Everything you see afterwards belongs to the one you pick.'}
         </p>
       </div>
+
+      {isOperator.data === true && (
+        <Link
+          to="/platform-admin"
+          className="flex items-center gap-3 rounded-lg border border-line bg-surface-raised p-3 transition-colors hover:border-accent/40 hover:bg-surface-hover"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium text-ink">Platform console</span>
+            <span className="block text-[11px] text-ink-faint">
+              Operator tools — organizations, users, plans and the operator audit log.
+            </span>
+          </span>
+          <span aria-hidden="true" className="text-ink-faint">
+            &rarr;
+          </span>
+        </Link>
+      )}
 
       <CreateOrgPanel startOpen={isEmpty} onCreated={choose} />
 

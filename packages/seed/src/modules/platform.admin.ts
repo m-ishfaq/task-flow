@@ -30,13 +30,24 @@ import { usersModule, type SeededUser } from './identity.users.js';
  * `set_by`/`updated_at` on each override — exactly as migration 0035's
  * bootstrap records the operator it creates.
  *
- * ## The operator is user index 0
+ * ## The operator belongs to NO organization
  *
- * The first seeded account — Acme's owner in the demo profile. The console
- * is a console for a person, and the same login that demos the product
- * should demo it. `granted_by` equals the operator's own id, mirroring the
- * migration's `SELECT id, id, ...` self-bootstrap: the script granting is
- * the account itself, there being no operator before the first one.
+ * It used to be user index 0 — Acme's owner in the demo profile — on the
+ * reasoning that the same login which demos the product should demo the
+ * console. That reads well and quietly contradicts the thing Wave 1 exists
+ * to establish: `platform.operators` has no relationship to org membership,
+ * and an operator who is also a tenant owner cannot demonstrate that. It
+ * also left the more interesting state — an operator with no org at all —
+ * unreachable from any fixture, which is how the org picker came to be a
+ * dead end for exactly that account.
+ *
+ * So the operator is now `usersModule`'s `operator`: a dedicated
+ * `ops@` account, held OUTSIDE the indexable user pool so no `OrgPlan` can
+ * name it even by mistake.
+ *
+ * `granted_by` equals the operator's own id, mirroring the migration's
+ * `SELECT id, id, ...` self-bootstrap: the script granting is the account
+ * itself, there being no operator before the first one.
  */
 
 /**
@@ -59,8 +70,15 @@ export const OVERRIDES = [
 ] as const;
 
 export interface PlatformAdminOutput {
-  /** The seeded operator — user index 0 of the shared pool. */
-  readonly operator: SeededUser;
+  /**
+   * The seeded operator — a dedicated account in zero orgs — or null when
+   * `identity.users` seeded none (`SEED_PLATFORM_ADMIN_EMAIL`/
+   * `SEED_PLATFORM_ADMIN_PASSWORD` unset). This module skips its own writes
+   * entirely in that case: `platform.flag_overrides.set_by` references the
+   * operator, so there is no operator to grant and nothing to attribute an
+   * override to.
+   */
+  readonly operator: SeededUser | null;
   readonly overrides: readonly { readonly flagName: string; readonly value: boolean }[];
 }
 
@@ -74,13 +92,15 @@ export const adminModule = defineSeedModule({
   tables: ['platform.operators', 'platform.flag_overrides'],
 
   async seed(ctx): Promise<PlatformAdminOutput> {
-    const { users } = ctx.use(usersModule);
-    const operator = users[0];
-    if (!operator) {
-      throw new Error(
-        'platform.admin: the user pool is empty — cannot grant the operator flag. ' +
-          'Raise `users` on the profile.',
+    const { operator } = ctx.use(usersModule);
+
+    if (operator === null) {
+      ctx.log(
+        'platform.admin: no platform operator (SEED_PLATFORM_ADMIN_EMAIL/' +
+          'SEED_PLATFORM_ADMIN_PASSWORD unset) — skipped. The seeded database has no ' +
+          '/platform-admin console access.',
       );
+      return { operator: null, overrides: [] };
     }
 
     /* No orgScope — see the file header. `granted_at` is the run's `now`,

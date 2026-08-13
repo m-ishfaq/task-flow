@@ -192,7 +192,7 @@ describe('refresh cookie', () => {
     await app.inject({
       method: 'POST',
       url: '/trpc/auth.register',
-      payload: { email, password: 'correct horse battery staple 42' },
+      payload: { email, password: 'correct horse battery staple 42', name: 'Test User' },
     });
 
     const link = deliveries.find((message) => message.kind === 'verify_email');
@@ -251,7 +251,7 @@ describe('bearer authentication', () => {
     await app.inject({
       method: 'POST',
       url: '/trpc/auth.register',
-      payload: { email, password: 'correct horse battery staple 42' },
+      payload: { email, password: 'correct horse battery staple 42', name: 'Test User' },
     });
 
     const link = deliveries.find(
