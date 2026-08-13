@@ -63,26 +63,27 @@ description = "Published test vectors and example data — not credentials"
 # name+value pair is already in history and gitleaks scans that too.
 #
 # The `signingSecret` from `packages/security/src/slack-signature.test.ts`'s
-# `VECTOR` (present on the `phase-10.5-sprints` branch).
+# `VECTOR`.
 #
 # Slack's OWN published worked example
 # (https://api.slack.com/authentication/verifying-requests-from-slack),
-# copied verbatim. High-entropy hex next to a field named `signingSecret` is
-# exactly what `generic-api-key` is built to flag, and it authenticates
-# nothing — it is not bound to any Slack workspace this project has ever
-# touched. Gitleaks scans every reachable commit in the clone regardless of
-# which ref is checked out (`--source=/repo`, no `--log-opts` restriction),
-# so this entry is needed here even though the file itself lives on a
-# different branch.
+# copied verbatim — signing secret, timestamp, body and expected signature —
+# so the test proves `signSlackRequest`/`verifySlackSignature` match a REAL
+# reference rather than merely agreeing with each other (see that file's own
+# comment on `VECTOR`). It cannot be derived at runtime the way
+# `breach.test.ts`'s hash was: its whole value is being a specific published
+# constant. High-entropy hex next to a field named `signingSecret` is exactly
+# what `generic-api-key` is built to flag, and it authenticates nothing —
+# it is not bound to any Slack workspace this project has ever touched.
 #
 # `GITHUB_VERIFY_SECRET` from
-# `apps/api/src/automation/integration-webhooks.test.ts` (same branch, same
-# reason).
+# `apps/api/src/automation/integration-webhooks.test.ts`.
 #
-# A fake GitHub webhook verify secret, invented for that suite to compute
-# HMAC signatures against, never issued by GitHub. The `ghs_` prefix mimics
-# a real GitHub token's shape, which combined with the trailing hex is
-# exactly what `generic-api-key` is built to flag.
+# A fake GitHub webhook verify secret, invented for this suite to compute
+# HMAC signatures against — never issued by GitHub, never bound to any real
+# repository or app this project has touched. The `ghs_` prefix mimics a
+# real GitHub token's shape, which combined with the trailing hex is exactly
+# what `generic-api-key` is built to flag.
 regexes = [
   '''5BAA61E4C9B93F3F0682250B6CF8331B7EE68FD8''',
   '''1E4C9B93F3F0682250B6CF8331B7EE68FD8''',

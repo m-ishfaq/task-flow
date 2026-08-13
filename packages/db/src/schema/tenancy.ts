@@ -43,7 +43,7 @@ export const orgs = identity.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 
     /**
-     * Billing state (Phase 12 Wave 3, migration 0055) — deliberately
+     * Billing state (Phase 12 Wave 3, migration 0059) — deliberately
      * INDEPENDENT of `status` above. `status` is Wave 1's operator kill
      * switch; `billingStatus` is written only by the billing worker sweep
      * and the Stripe webhook handler, so an automated billing recovery can

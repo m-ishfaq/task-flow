@@ -115,12 +115,21 @@ export const spendPolicy = comms.table(
     capCents: bigint('cap_cents', { mode: 'number' }).notNull().default(2500),
     windowDays: integer('window_days').notNull().default(30),
 
+    /* The org's separate ceiling for automation-initiated spend (Phase 10
+       Wave 4 §5.5, migration 0055). NULL = no separate ceiling — the org cap
+       alone bounds automation, which is the pre-feature behaviour. */
+    automationCapCents: bigint('automation_cap_cents', { mode: 'number' }),
+
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
   },
   (table) => [
     check('spend_policy_cap_nonnegative', sql`${table.capCents} >= 0`),
     check('spend_policy_window_sane', sql`${table.windowDays} BETWEEN 1 AND 365`),
+    check(
+      'spend_policy_automation_cap_nonnegative',
+      sql`${table.automationCapCents} IS NULL OR ${table.automationCapCents} >= 0`,
+    ),
   ],
 );
 
@@ -153,7 +162,7 @@ export const spendLedger = comms.table(
     index('spend_ledger_org_window_idx').on(table.orgId, table.occurredAt.desc()),
     check(
       'spend_ledger_kind_valid',
-      sql`${table.kind} IN ('call', 'sms', 'number_purchase', 'verification')`,
+      sql`${table.kind} IN ('call', 'sms', 'number_purchase', 'verification', 'automation_call', 'automation_sms')`,
     ),
     check('spend_ledger_estimate_nonnegative', sql`${table.estimatedCents} >= 0`),
     check(

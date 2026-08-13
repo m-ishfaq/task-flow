@@ -381,7 +381,23 @@ const automationKeys = new SoftwareKeyProvider({
   }),
 });
 
-const automationRouter = createAutomationRouter({ keys: automationKeys });
+const automationRouter = createAutomationRouter({
+  keys: automationKeys,
+  /* The flag is off in tests (its default): this suite drives webhook routes,
+     which the flag does not touch, and a rule containing a telephony action
+     cannot be saved through a default-shaped router — the honest fixture. */
+  telephonyActionsEnabled: false,
+  /* No connector is configured in this suite — the honest fixture for a
+     suite that never drives the connect flow: begin/complete would answer
+     NOT_FOUND rather than the router failing to build. */
+  integration: {
+    providers: {},
+    redirectUri: (provider) => `https://app.test/integrations/callback/${provider}`,
+    webhookOrigin: undefined,
+    jwtSecret: Buffer.alloc(32, 9),
+    keys: automationKeys,
+  },
+});
 
 describe('a token principal on the real automation router', () => {
   async function principalOf(token: string) {

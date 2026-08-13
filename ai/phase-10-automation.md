@@ -6,12 +6,38 @@ in review before building. Written 2026-08-11 against `pre-launch-hardening` HEA
 and wants its own spec written and approved before implementation). Phase 8 followed this
 route and it worked; this is the same route.
 
-**Waves 3–4 (public API with scoped tokens, Slack/GitHub connectors, importers/exporters, and
-wave 4's cost-bearing telephony actions behind the env flag) are NOT complete.** Wave 3's
-slices 1–3 shipped 2026-08-11 (see the §6 status header) — the token store, the mint/list/
-revoke lifecycle, and the full authentication path — with slices 4 (quota), 5 (UI) and 6
-(remaining suites) still open. Waves 1–2 are the engine and the webhook delivery path; the
-wave list below says exactly what shipped in each.
+**Wave 3 COMPLETE** — all six slices shipped 2026-08-11 (see the §6 status header): the token
+store, the mint/list/revoke lifecycle, the full authentication path, the durable per-token
+quota, the web UI, and the closing suites.
+
+**Wave 4's cost-bearing telephony slice (§5.5) SHIPPED 2026-08-12** — `call.place` and
+`sms.send` as rule actions behind the off-by-default `AUTOMATION_TELEPHONY_ACTIONS_ENABLED`
+flag, the automation sub-budget (migration 0055), the worker executor branches, and the
+rule-builder + spend-panel UI. See the "Wave 4 — the cost-bearing telephony actions (§5.5)"
+header below.
+
+**Wave 4 COMPLETE 2026-08-12: the connectors (Slack/GitHub) and the CSV/JSON
+importers/exporters (§7).** Slice 1 SHIPPED 2026-08-12 (commit `66349c8`) — migration 0056 + the two
+signing primitives + the `taskflow_integration_auth` role + the grants suite. **Slice 2
+SHIPPED 2026-08-12** — the OAuth connect/disconnect flow for Slack and GitHub
+(`integration.service.ts` + the 7-route router, `begin`/`selectRepo`/`disconnect` step-up
+and `complete` a public route trusting a signed state token carrying org+user+PKCE
+verifier), migration 0057 (disconnect WIPES the credential — a revoked connector is
+genuinely dead, not merely hidden), the Integrations tab on `/automations` with the
+one-time webhook URL reveal, and the `/integrations/callback` page (Slack lands straight
+back; GitHub shows the repo picker + one-time verify secret). **Slice 3 SHIPPED
+2026-08-12** — the inbound routes (`/integrations/slack`, `/integrations/github`, see the
+§7 header below). **Slice 5 SHIPPED 2026-08-12** — import/export (`work.cards.export`
+CSV/JSON + `work.cards.import` with the dry-run, per-row line-numbered errors, and the
+board-toolbar Import/Export dialog — see the §7 header below). **§7.8b SHIPPED 2026-08-12** —
+connector-event CONDITIONS, built FIRST inside slice 4 exactly as §7.9's ordering note
+demands: the `connector` field set, `resourceForTrigger`, `evaluableRowFor`'s payload branch,
+and save-time validation, so a rule on a GitHub event can finally be narrowed to one event
+type and one repository instead of firing on every `workflow_job`. **Slice 4 SHIPPED
+2026-08-12** — the outbound `slack.post_message` / `github.create_issue` actions (§7.6 below:
+the action service, the executor branches, the five-place change, and the connector picker).
+**Wave 4 is complete, and with it the phase's slice list.** Waves 1–2 are the engine and the
+webhook delivery path; the wave list below says exactly what shipped in each.
 
 **Two recommendations were overturned in that review, and both were overturned correctly:**
 
@@ -155,6 +181,75 @@ inside this file:** Phase 11's only route to historical data is replaying `card.
 out of `platform.outbox`, which nothing has ever pruned. **This phase does not prune it** —
 see §9 decision 7 and [ai/phase-11-analytics.md](ai/phase-11-analytics.md) §2.4.
 
+### Wave 4 — the cost-bearing telephony actions (§5.5), COMPLETE (commit `1e48295`)
+
+The slice §9 decision 3 put last and behind the flag: `call.place` and `sms.send` as rule
+actions, available only when `AUTOMATION_TELEPHONY_ACTIONS_ENABLED` is true — off by default
+in BOTH the API's and the worker's validated env schemas, parsed from the literal string
+(the `RETENTION_SWEEP_ENABLED` lesson). Migration 0055, the API and worker changes, and the
+rule-builder and spend-panel UI shipped together.
+
+Backend:
+
+1. **Migration 0055** — `comms.spend_ledger.kind` gains `automation_call` and `automation_sms`
+   (the CHECK widens rather than being replaced; the provider is never asked to price them —
+   a call costs what a call costs), and `comms.spend_policy.automation_cap_cents`, the org's
+   separate ceiling for unattended spend, with a non-negativity CHECK. NULL means "no separate
+   ceiling" — the org cap alone bounds automation, which is the pre-feature behaviour. The
+   sub-budget is per-ORG and in the DATABASE for the identical reason `cap_cents` is: policy
+   is not a redeploy.
+2. **The write boundary is a function of the flag.** `buildAutomationActionSchema` adds the
+   two variants only when enabled, so with the flag off a rule containing one cannot be SAVED
+   at all — the same error a mistyped action type gets. `to` is validated against
+   `PhoneNumberTextSchema` (the plain-string E.164, because a branded output would make the
+   exported schema un-nameable for `tsc --declaration`; the executor re-brands at the
+   boundary). `record` is deliberately absent: an unattended rule must never be able to start
+   recording a person. `automation.capabilities` answers the flag to the builder through the
+   real router, so the UI never hard-codes a copy of the deployment env.
+3. **The actions are NOT a second gate.** `placeCall`/`sendSms` take an
+   `{ initiatedBy: 'automation' }` option that changes ONLY the kind the gate sees and the
+   ledger records — the same `checkOutboundAllowed` chain (geo table, org freeze, subaccount
+   status, rolling cap, velocity limiter) runs identically, and the velocity table gives the
+   automation kinds their OWN per-owner buckets so a rule cannot drain the allowance a human
+   needs for a real call. The sub-budget is summed over the automation kinds in the SAME
+   window as the org cap and checked IN ADDITION to it, never instead of it; a refusal cites
+   the sub-budget's own figures, so an operator alerting on `automation_budget_exceeded` is
+   not woken by a plain overspend.
+4. **The executor** runs the actions through the same service functions a human's call uses —
+   `record: false` always — and `telephonyFor` refuses loudly, as a recorded failed action,
+   when the flag is off (a rule saved under an earlier configuration) or when no carrier is
+   configured. Loop protection lists `call.placed`/`call.status_changed` for `call.place` and
+   `sms.sent` for `sms.send`, conservatively per the table's own header.
+5. **One construction, two processes.** `buildTelephonyDeps` now takes a structural
+   `TelephonyEnv` subset, so the worker builds the identical provider selection, spend
+   defaults and boot validations (including `TELEPHONY_WEBHOOK_ORIGIN` being required for a
+   live carrier) from the same function the API uses.
+
+Web:
+
+6. **The rule builder** offers the two actions only when `automation.capabilities` says the
+   flag is on (`offeredActions`, false until the answer arrives — the safe side). The `To`
+   field is a `phoneTarget` picker: the org's members with a work phone offered as prefilled
+   options (the same `phoneContactsQuery` click-to-call uses), plus a "Custom number…"
+   fall-through to a typed E.164 for anyone not in the directory; the server validates.
+   `From (your number)` is a `phoneNumber` picker over the org's OWN numbers, because the
+   service resolves the id under `withOrgScope` and a number the org does not hold is a 404.
+   A rule saved while the flag was on stays visible and editable after it is turned off —
+   the server refuses to save it unchanged with a real message rather than the UI swapping
+   the action for whatever sorts first.
+7. **The spend panel** shows an "Automation allowance" bar (the same figures
+   `checkOutboundAllowed` enforces against) when the org has configured a sub-budget, and the
+   cost-attribution table labels the automation kinds instead of printing `automation_call`
+   raw.
+
+Verified: lint + typecheck clean across web/api/worker/db; web 341/341 (including the
+11-test `vocabulary.test.ts`); the API automation + telephony suites 56/56; the worker
+executor 7/7. The full `pnpm verify` had not completed when this slice was committed — the
+turbo run exceeds an agent's per-command cap, not because anything failed; the remaining
+package suites (db, seed, realtime, collab, telephony) are in the commit's status note.
+**Browser verification was in progress when this slice was committed** — the standing
+caveat, and the reason Wave 1 shipped with gaps a single click found.
+
 ---
 
 ## What already exists (checked, not assumed)
@@ -268,9 +363,9 @@ thing it gates.
 - **Wave 4 — connectors, import/export, and the cost-bearing actions.** Slack and GitHub as
   the two named integrations, plus CSV/JSON importers and exporters. A connector is a webhook
   with a known shape and an OAuth credential, so everything here is built on Waves 2–3's
-  primitives. **`place call` / `send SMS` land here too** (§5.5) — last, behind an
-  off-by-default env flag and their own sub-budget, once the engine, its loop protection and
-  its run history have all been exercised on actions that cannot cost anything.
+  primitives. **`place call` / `send SMS` SHIPPED 2026-08-12** (§5.5 — off-by-default env
+  flag and their own sub-budget, commit `1e48295`); **the connectors and import/export are
+  spec'd in §7, not yet built.**
 
 ---
 
@@ -709,13 +804,518 @@ down → up. **Not verified in a browser** — slice 5 is the UI.
 
 ---
 
-## 7. Connectors and import/export (Wave 4)
+## 7. Connectors and import/export (Wave 4, remainder)
 
-Slack and GitHub, both OAuth, both storing credentials through
-`packages/security/encryption.ts`'s envelope encryption rather than in plaintext columns.
-Importers accept CSV/JSON and write **through the service layer**, so an import cannot create
-a card that a user could not have created — the same rule §1.3 applies to actions, applied to
-a bulk path where it is much more tempting to bypass for speed.
+Status: the §5.5 telephony slice shipped 2026-08-12 (commit `1e48295`). **Slice 1
+SHIPPED 2026-08-12 (commit `66349c8`)** — migration 0056 (`platform.integrations` + the
+`taskflow_integration_auth` lookup role: column-level SELECT of the lookup + GitHub
+verify columns, never `token_*`, plus the 0036 `REVOKE DELETE` from `taskflow_app`),
+`slack-signature.ts` + `github-signature.ts` (the `twilio-signature` precedent twice
+over, with published-vector tests — Slack's own worked example, plus a pinned GitHub
+known-answer), and `integration-grants.test.ts` (7/7, real roles). **Slice 2 SHIPPED
+2026-08-12** — the connect/disconnect flow below. **Slice 3 SHIPPED 2026-08-12** —
+inbound ingestion (the two routes below, with migration 0058's GitHub delivery
+dedupe). **Slice 5 SHIPPED 2026-08-12** — import/export (§7.7, below: the
+project-scoped CSV/JSON export, the list-targeted import through the real create
+path with the dry-run, and the web surface). **§7.8b SHIPPED 2026-08-12** —
+connector-event conditions, built first inside slice 4 per §7.9's ordering note.
+**Slice 4 SHIPPED 2026-08-12** — the outbound actions (§7.6). **All five slices
+are done.**
+Decisions 1–8 below are PROPOSED as of 2026-08-12; review resolves them before building,
+the same route §6 took.
+
+#### Slice 3 — inbound ingestion (SHIPPED 2026-08-12)
+
+The two plain Fastify routes (§7.3–§7.5), both reading the raw body as the
+string the tRPC adapter's JSON pass-through delivers — the signature covers the
+EXACT bytes, so re-serializing before verifying would fail every request.
+
+- **`POST /integrations/slack`** — verify FIRST with the deployment-wide
+  `SLACK_SIGNING_SECRET` (freshness window inside `verifySlackSignature`,
+  the replay control), then `team_id` from the VERIFIED body resolves the org
+  via `taskflow_integration_auth` (`packages/db/src/integrations-directory.ts`,
+  the api_token_auth recipe for webhooks). The `url_verification` challenge is
+  echoed after verification, app-level, emitting nothing. The status guard
+  (`status = 'connected'`, read in the SAME transaction as the emission) is
+  what makes a disconnect stop inbound Slack traffic — the one per-org check
+  Slack has, since verification is deployment-wide. No signing secret
+  configured → 503, fail-closed.
+- **`POST /integrations/github`** — the mirror order: org from
+  `repository.full_name` in the UNVERIFIED body (a lookup key selecting WHICH
+  secret to check), then verified against the org's stored per-org secret
+  (envelope-decrypted under the org data key with the row-bound AAD).
+  **Every refusal after a parseable body is the same 403** — unknown repo,
+  revoked row, wrong secret, replay — because this lookup runs BEFORE
+  verification and a distinguishable 404 would be a repo-existence oracle to
+  an unauthenticated attacker (the telephony uniform-403 rule, applied where
+  the order forces it; Slack's 404 is safe because only verified requests
+  reach its lookup). `X-GitHub-Delivery` dedupes on SUCCESS inside the
+  handler's own transaction (migration 0058, the nonce-on-success lesson): a
+  failed attempt rolls the dedupe row back and GitHub's retry — same delivery
+  id — proceeds normally.
+- **The synthetic triggers**: `integration.slack_event` /
+  `integration.github_event` carrying `{ providerScope, providerEvent,
+payload }`, `actorId: null` (the event came from the provider, not a user).
+  `payload` is `unknown` by design — the body's shape belongs to
+  Slack/GitHub — bounded by the API's 1MB bodyLimit. The one deliberate edit:
+  Slack's deprecated legacy `token` field is stripped from the stored copy
+  (the signature was checked against the unedited bytes). The engine fires any
+  rule keyed on these; a rule with card actions records a failed run
+  (`cardIdOf` refuses the missing card), the designed behaviour for a trigger
+  with no card. The builder's `TRIGGER_OPTIONS` lists them with the "no card"
+  note.
+
+Verified: the 17-test suite drives both routes through real Fastify with
+GENUINELY signed requests (signSlackRequest/signGitHubRequest — a webhook test
+whose signature is mocked asserts the wrong thing): Slack ok/challenge/
+tampered/stale/unknown/unsigned/disconnected/503/token-strip; GitHub
+ok/wrong-secret/unknown-repo/no-repo/replay/revoked/no-delivery-id/cross-org.
+API 976/976 (the full suite, pre-review-fix; the uniform-403 change re-ran its
+own suite 17/17), lint + typecheck clean across api/web/db, guardrail selftest,
+the RLS checker across 116 migrations, `migrate:verify` for 0058.
+
+#### Slice 5 — import/export (SHIPPED 2026-08-12)
+
+- **Export** (`work.cards.export`, `project:read`, `quotaClass: 'expensive'`):
+  one call renders every live card in the project to CSV or JSON, from the
+  same query shape the board reads — `description` comes from the already-
+  flattened `description_text` column, never by parsing TipTap. The CSV
+  writer is RFC 4180, hand-rolled (the repo carries no CSV dependency), and
+  it NEUTRALIZES formula-leading cells (`= + - @` get a `'` prefix,
+  CWE-1236): a card titled `=HYPERLINK(...)` must not execute the moment an
+  exported file is opened. The import's `unneutralize` is the exact inverse,
+  applied only when the remainder would itself trigger the rule, so the
+  format round-trips and a title that genuinely begins with an apostrophe
+  keeps it. The per-project layer is `requireProject` inside the org-scoped
+  transaction — the route's `project:read` is only layer 1.
+- **Import** (`work.cards.import`, `project:update` — the bulk-write tier,
+  not `card:create`): structured rows targeting one list, bounded 1–1,000 at
+  the route AND in the service (the copy a non-tRPC caller would hit). Every
+  field arrives as `unknown` on purpose — the dry-run's job is to report
+  PER-ROW errors with line numbers, and a route schema that rejected
+  `title: 42` would turn one bad row into a whole-request 400 with no line
+  number. `.strict()` still pins the row's KEYS, so a typo'd column is
+  refused loudly. Validation resolves statuses/labels case-insensitively
+  (exact-first, refusing to guess on a case-collision) and assignees by
+  email against the org's ACTIVE members — all against the target project's
+  live vocabulary, so a row naming another project's status is a row error,
+  never a write. Rows then go through the REAL services (`createCard` →
+  `setCardStatus`/`assignCard`/`setCardLabels`/`updateCard`), so an import
+  cannot create a card a user could not have created, and every card emits
+  its own events, audit entries and search re-indexes. `dryRun: true`
+  validates every row and writes nothing.
+- **The row-isolation shape is the §7.7 answer, and it has one documented
+  gap.** Each row's writes are per-service transactions (that IS "the same
+  service path"), so a setter can fail after `createCard` succeeded — a
+  status deleted between the vocabulary read and this row's write. The loop
+  compensates by best-effort archiving the created card (needs `card:delete`;
+  a restrictive board tuple could take even that, but the row error is
+  reported either way), so a "failed" row does not stay live as a partial
+  card.
+- **Web** — the Import/Export dialog in the board toolbar: export downloads
+  the server's answer; import parses the file CLIENT-side (a hand-rolled
+  RFC-4180 reader; the API takes rows, not file formats), maps headers
+  case-insensitively (ignoring the export-only columns), runs the server
+  dry-run as the preview, and only then imports — invalidating the board's
+  card and list queries.
+
+Verified: the 16-test service suite (dry-run reports every bad row with line
+numbers and writes nothing; a valid import creates through the real path with
+all five events; a bad row mid-batch fails alone; cross-project vocabulary
+refused; member without `project:update` refused; 1,001 rows refused; export
+project-scoped with RFC-4180 quoting and the formula guard round-tripping),
+12 CSV-parser tests, API + web typecheck and lint clean, prettier clean.
+
+#### Slice 2 — connect/disconnect (SHIPPED 2026-08-12)
+
+The OAuth round trip, org-flavoured: `integration.begin` (`integration:manage`, step-up)
+mints a signed `connector-state` JWT (new in `packages/security/jwt.ts`, distinct
+`connector-state` audience) carrying { provider, PKCE verifier, ORG, USER } and returns
+the provider's authorization URL. The browser round trip loses the session, so
+`integration.complete` is a PUBLIC route that trusts the state — the org the connector
+row is written under, and the person the connect is attributed to, come from the state,
+never from a request. An attacker without a session cannot mint state, and a holder of
+`integration:manage` can only mint it for orgs where they hold it (the login flow's
+`linkUserId` trust model).
+
+Two completion shapes. Slack connects in one hop (token exchange + `auth.test`, least
+privilege `chat:write` scope, PKCE with the verifier riding in the state): the row is keyed
+on `team_id` and the upsert makes RECONNECT land on the same row with a fresh token.
+GitHub is account-level OAuth keyed on the REPOSITORY, and the repo choice can only happen
+after consent: `complete` stores the credential in a row keyed on the login (status
+'disconnected', `integration.pending` event — the guardrail-11 record that the credential
+ever existed), returns the repos the token can reach plus a one-time verify secret, and
+`selectRepo` validates the chosen full_name against that token-owned list (a repo the
+credential cannot access is not a connector), re-keys the row, flips it connected, and
+emits `integration.connected`.
+
+The credential is the webhook secret's recipe: envelope-encrypted under a per-org data
+key with AAD bound to (org, row) — `integrationTokenAad`, exported for slice 4's executor
+— so a ciphertext transplanted into another org fails to decrypt BEFORE any network call.
+
+**Migration 0057 came out of the adversarial review.** The first version of disconnect
+flipped status and left the credential decryptable — a stale picker could resurrect a
+revoked connector with the old token, contradicting the "dead" guarantee. 0057 makes the
+six credential columns NULLABLE and `disconnectIntegration` NULLs them: a revoked
+connector is genuinely dead, `tokenForRow` answers notFound, and slice 4's executor
+refuses an action naming it for the same reason. One 'disconnected' status now means both
+"pending repo choice" (credential present) and "revoked" (credential gone) — the
+presence of the credential is the discriminator. `selectRepo` is claim-guarded the same
+way disconnect is (`status = 'disconnected'` in the WHERE).
+
+The router (7 routes: `capabilities`, `list`, `begin`, `complete` (public), `repos`,
+`selectRepo`, `disconnect` — the three mutations step-up) is wired through the automation
+router, and the Integrations tab on `/automations` renders connect buttons only for
+configured providers (`capabilities`), the one-time webhook URL reveal, and two-click
+disconnect. The `/integrations/callback/$provider` page drives both flows: Slack
+straight back to the tab; GitHub through the repo picker with the verify secret shown
+exactly once (the webhook reveal precedent). Connector env vars are
+`SLACK_CONNECTOR_CLIENT_*`/`GITHUB_CONNECTOR_CLIENT_*`/`INTEGRATION_WEBHOOK_ORIGIN`, in
+`.env.example` and the typo-guard prefix list.
+
+Events: `integration.connected` / `integration.pending` / `integration.disconnected`
+through the outbox; the audit projection maps them (`integration` was already in
+`RESOURCE_TYPES`, so no CHECK widening). Verified: API 958/958 (the 19-test service suite
+covers connect/reconnect/pending/selectRepo/refusals/disconnect-wipe/no-resurrection/the
+AAD transplant with fake fetch and real Postgres and real keys), lint + typecheck clean
+across api/web/security, guardrail selftest, `migrate:verify` for 0057, and the db grants
+suite. **Not verified in a browser** — the standing caveat.
+
+### 7.1 What a connector is
+
+A connector is **one org's authorization of one provider**, in both directions:
+
+- **Inbound** — Slack and GitHub call OUR webhook URLs with events; the org resolves from the
+  payload, the request is signature-verified (D3/D4), and the event enters the outbox as a
+  synthetic trigger, so a rule can act on it exactly like it acts on a card event.
+- **Outbound** — two new automation actions (`slack.post_message`, `github.create_issue`)
+  run through the service layer like every other action, using the org's stored credential
+  (D6).
+
+Deliberately NOT in scope, per §10: bi-directional reconciliation of two systems' state. This
+pushes and receives webhooks; it never diffs.
+
+### 7.2 The model — one row per (org, provider)
+
+```sql
+CREATE TABLE platform.integrations (
+  id               uuid        PRIMARY KEY,
+  org_id           uuid        NOT NULL,
+  provider         text        NOT NULL CHECK (provider IN ('slack', 'github')),
+  name             text        NOT NULL,      -- human label: the workspace/repo name
+  provider_scope   text        NOT NULL,      -- Slack team_id, or GitHub repository full_name
+  status           text        NOT NULL DEFAULT 'connected'
+                               CHECK (status IN ('connected', 'disconnected')),
+  -- Outbound credential, envelope-encrypted under a per-org data key (the webhook
+  -- secret's recipe, including the AAD binding to org+row — see webhook.service.ts).
+  -- Non-expiring by construction: a Slack bot token or a GitHub PAT. GitHub App
+  -- installation tokens are JWT-minted and expire, which buys nothing here and
+  -- costs a refresh path (D2).
+  token_ciphertext   bytea      NOT NULL,
+  token_wrapped      bytea      NOT NULL,
+  token_master_id    text       NOT NULL,
+  -- Inbound verification secret, if the provider needs one (D4 — GitHub only).
+  verify_ciphertext  bytea,
+  verify_wrapped     bytea,
+  verify_master_id   text,
+  created_by         uuid       REFERENCES identity.users (id) ON DELETE SET NULL,
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT integrations_one_scope UNIQUE (org_id, provider, provider_scope)
+);
+```
+
+- Org-scoped, RLS-forced, `taskflow_app` CRUD — with the two standing lessons applied
+  explicitly: the `platform` schema's `ALTER DEFAULT PRIVILEGES` gives the app role full
+  CRUD on anything created here, so the migration must say what the table should NOT have
+  (the 0036/0050 lesson), and `REVOKE DELETE` on the connection rows (a disconnect is a
+  status flip, never a row gone — the api_tokens shape).
+- **The inbound lookup needs a narrow auth role**, `taskflow_integration_auth`, with
+  column-level SELECT of exactly `(provider, provider_scope, org_id, verify_ciphertext,
+verify_wrapped, verify_master_id)` — the api_token_auth recipe. The role that resolves
+  "who is this webhook for" must not be able to read anyone's outbound token or name.
+  It needs the GitHub verify secret because GitHub verification is per-ORG (D4); it must
+  never see `token_ciphertext`.
+- **Env config (all optional)**: `SLACK_CONNECTOR_CLIENT_ID` / `SLACK_CONNECTOR_CLIENT_SECRET`
+  (OAuth) and `SLACK_SIGNING_SECRET` (inbound — app-level, see D3) for Slack;
+  `GITHUB_CONNECTOR_CLIENT_ID` / `GITHUB_CONNECTOR_CLIENT_SECRET` for GitHub; and
+  `INTEGRATION_WEBHOOK_ORIGIN` — the absolute origin the UI builds each connector's webhook
+  URL from (Slack app config takes one URL, deployment-wide; GitHub takes one per org's
+  repo). Absent provider credentials = that provider's connect route refuses, the
+  oauth.service precedent. These are a SEPARATE Slack app and GitHub OAuth app from the
+  login-linking ones — different scope, different trust, never shared credentials.
+
+### 7.3 Inbound — two providers, two verification shapes, both in `packages/security`
+
+Both primitives are new files in `packages/security` — ⚠ webhook-signature-verification
+surfaces (§2.2) — following the `twilio-signature.ts` precedent exactly: constant-time
+comparison, tests against published real-world vectors, and a header that states the failure
+mode being prevented.
+
+- **Slack (`slack-signature.ts`)** — HMAC-SHA256, `X-Slack-Signature: v0=<hex>` over
+  `v0:<X-Slack-Request-Timestamp>:<raw body>`, with the timestamp checked to be within
+  five minutes BEFORE the HMAC (a replay of an old body carries a valid old signature).
+  The signing secret is the APP's, shared by every workspace, so it is deployment env
+  (`SLACK_SIGNING_SECRET`), never a per-org column. Verification happens FIRST; only then
+  is `team_id` from the verified body used as a lookup key — the same order of operations
+  as the telephony webhook's `AccountSid`.
+- **GitHub (`github-signature.ts`)** — HMAC-SHA256, `X-Hub-Signature-256: sha256=<hex>`
+  over the raw body with the PER-WEBHOOK secret, `secureEqual` compare. Because each org
+  creates its own repo webhook, each org's secret lives on its own integration row
+  (D4). `X-GitHub-Delivery` is the dedupe key.
+- Both raw-body requirements are the telephony lesson restated: the signature covers the
+  EXACT bytes, so the route must capture the raw body before any parser touches it, and a
+  retry carries a byte-identical body (Twilio's `webhook_nonces` recipe — nonce written on
+  SUCCESS inside the handler's transaction).
+
+### 7.4 Decision D3/D4 — the resolution order, which is the control
+
+- **Slack**: verify with the deployment secret first, then resolve `team_id` → org. The
+  signature is the assertion; the body's team id is a lookup key, exactly like the
+  telephony webhook's `AccountSid`. No row → 404 with a logged team id.
+- **GitHub**: the per-org secret forces the opposite order — the org is resolved from
+  `repository.full_name` in the UNVERIFIED body (a lookup key, never an assertion), and
+  then the request is verified against THAT org's stored secret. A body naming a repo with
+  no integration row, or a secret mismatch, is refused BEFORE anything is written. A
+  payload carrying no recognizable repo is refused, never silently dropped. The dedupe row
+  (`X-GitHub-Delivery`) is written on SUCCESS in the handler's own transaction — the
+  nonce-on-success lesson.
+- Both routes are plain Fastify routes (like `/telephony/*`), never tRPC: the caller is a
+  third party with no session. The 5-minute freshness window is the replay control for
+  Slack; the delivery-id unique index is the one for GitHub.
+
+### 7.5 What inbound events become — synthetic triggers, no card
+
+Two new registry events, `integration.slack_event` and `integration.github_event`, carrying
+`{ providerScope, providerEvent, payload }`. They are triggers a rule can key on, with one
+structural difference from every existing trigger: **they carry no `cardId`.** The executor's
+`cardIdOf` already refuses such events with a clear error, so a rule with card actions
+records a failed run rather than acting on nothing — and the builder's `TRIGGER_OPTIONS`
+lists them with a "no card" note, and its `ProjectScopePicker`-free pickers still work.
+This deliberately does NOT teach the executor to act on arbitrary payloads; a connector
+event's actions are the non-card ones (chat post, webhook call, the D6 actions).
+
+### 7.6 Outbound — two actions through the service layer
+
+**Status: BUILT 2026-08-12.** `integration-action.service.ts` (`postSlackMessage`,
+`createGithubIssue`), the export-map entry `"./automation/integration-actions"`, executor
+branches + `integrationsFor`, the five-place change on both sides, the `integration` argument
+kind with a provider-filtered picker, and two new registry events
+(`integration.message_posted`, `integration.issue_created`). Tests in
+`integration.service.test.ts`, `executor.test.ts`, `action-schema.test.ts` and
+`vocabulary.test.ts`.
+
+**Four decisions that departed from this section as written, all deliberately:**
+
+- **`github.create_issue` takes NO repository.** The parenthetical below says "repo
+  full_name"; the repo is the connector row's own `provider_scope`, read server-side. A
+  repository named by the rule would be a stored string interpolated into a URL path, and the
+  org's token usually reaches far more repositories than the one it connected — so the action
+  could open issues anywhere. Naming the connector row instead is the `call_webhook` rule
+  ("an org-registered entry, never a URL") applied to a second provider. `.strict()` refuses a
+  `repository` key, and a test pins that.
+- **`repoPath` re-checks the scope's shape anyway**, because it is interpolated into a path.
+  `selectRepo` validated it against GitHub's own list three slices ago; that is not the code
+  building the URL. `owner/../../user/repos` would reach a different endpoint on the same host
+  with the org's token attached. `encodeURIComponent` is not the fix — it would encode the
+  legitimate separating slash and 404 every call.
+- **Not flag-gated, unlike the telephony pair.** These cost nothing and reach only a provider
+  the org authorized through its own OAuth consent, so there is no deployment flag and
+  `offeredActions` never hides them. The gate is `integration:manage` plus the existence of a
+  connector row, both org-controlled.
+- **`EVENTS_EMITTED_BY` lists the OUTBOUND events, not the inbound triggers.** A loop through
+  a provider — our Slack post returning as `integration.slack_event` — is invisible to this
+  process and is what the depth counter is for. Listing the inbound names would refuse "post
+  to Slack when something happens in GitHub", the most useful rule in the phase, while
+  stopping no real loop.
+
+**The trap worth knowing: Slack answers HTTP 200 with `{ ok: false }`.** A channel the bot is
+not in, an archived channel, a revoked token — all 200. A handler checking only `response.ok`
+records a SUCCEEDED action while nothing was posted, which is the worst outcome available: a
+rule that reports working and does nothing. Slack's own error code is carried through
+(`not_in_channel` vs `channel_not_found` vs `token_revoked` are three different fixes), the
+`TwilioApiError` lesson from Phase 7.
+
+**The outbound event is written AFTER the provider confirms, never before.** Every other
+action's event goes to the outbox in the mutation's own transaction; this effect is on
+somebody else's platform and cannot be. An event claiming a post that Slack refused would be a
+false entry in a hash-chained log, which is worse than a missing one. Neither event carries the
+message or issue body: the log records that the org posted and where, not what was said.
+
+The original section, kept for its reasoning:
+
+`slack.post_message` (a `channel` name) and `github.create_issue` (repo full_name, title,
+body) join the closed action union, the full five-place change: schema variants in
+`buildAutomationActionSchema`, union members + `EVENTS_EMITTED_BY` on both sides,
+executor branches, and an `"./integrations/…"` export-map entry for the worker.
+
+- The new `integrations` service in `apps/api` runs them, resolving the org's stored
+  credential (decrypting under the per-org data key with the row-bound AAD), and the
+  executor's `integrationsFor` refusal mirrors `telephonyFor`: no connector row → the
+  action fails with a recorded reason, never a silent pass.
+- **Authorization is `integration:manage`, enforced at EXECUTION, not by a route** — the
+  `enqueueWebhookDelivery` precedent, applied to an action with no HTTP boundary. A member
+  who cannot manage integrations cannot write a rule that spends the org's Slack/GitHub
+  identity. `integration:manage` is already org-level (§9 decision 4), so the check is a
+  single no-target `can()`, the same shape as the webhook enqueue.
+- The outbound call is a real outbound HTTP request — the worker's delivery loop pattern
+  applies: `outbound-url.ts`'s per-hop SSRF gate on a fixed, provider-owned hostname
+  (api.slack.com, api.github.com — no user-supplied URL anywhere), a timeout, and a
+  bounded response body.
+
+### 7.7 Import/export — bulk, through the service layer
+
+- **Export** (`work.cards.export`, `project:read`, `quotaClass: 'expensive'`): a project's
+  cards as CSV or JSON, generated server-side from the same queries the board uses.
+- **Import** (`work.cards.import`, `project:update`): CSV/JSON rows create cards **through
+  the same service path the UI's create uses** — title, description (parsed from plain text
+  into the TipTap paragraph shape, the rule-body rule), status, assignees, labels, due
+  date — so an import cannot create a card a user could not have created, and every card
+  emits its own event, audit entry and search re-index for free. `project:update` rather
+  than `card:create` because a bulk write is a project-level operation: one wrong import is
+  a whole board's event, and the tier that manages the project's vocabulary is the tier
+  that may reshape its work at once. A dry-run preview (validate every row, return per-row
+  errors, write nothing) ships with the first version, and the batch is bounded (1,000
+  rows) and atomic per row — a bad row fails alone with its line number, never the batch.
+
+### 7.8 Permissions and events
+
+- `integration:manage` (owner/admin — already in the matrix) gates connector
+  connect/disconnect/list and the D6 actions. Connect is `stepUp: true`, the
+  `phoneNumber:purchase` bar: wiring the org's outbound identity is a standing-capability
+  decision, not a refresh-click.
+- Service mutations emit `integration.connected` / `integration.disconnected` through the
+  outbox like everything else.
+
+### 7.8b Connector-event CONDITIONS — the gap slice 3 shipped with
+
+**Status: BUILT 2026-08-12, ahead of the rest of slice 4, exactly as the ordering note below
+demands.** `packages/filter`'s `connector` field set (`provider_event`, `provider_scope`, both
+`sql: null`), `resourceForTrigger` as the one place a trigger is mapped to a vocabulary,
+`evaluableRowFor`'s payload branch, save-time validation on both `createAutomation` and
+`updateAutomation`, and the builder's per-trigger field set. Tests in `filter.test.ts`,
+`engine.test.ts` and `automation.service.test.ts`.
+
+Four things worth carrying forward from building it:
+
+- **`FieldDefinition.sql` became nullable, and that immediately found two callers.**
+  `postgres-provider.ts` builds `to_tsvector(...)` and `ORDER BY` from `field.sql` directly;
+  both now refuse a null rather than interpolating one. Neither could ever receive a connector
+  field — but a `null` reaching either would have produced a query that RUNS and matches
+  nothing, which is the failure mode this repo keeps finding. Widening a type is how the
+  compiler enumerates the code that assumed otherwise.
+- **The operator table is keyed by TYPE, and `in`/`not_in` on the connector fields is a
+  per-FIELD override.** Adding them to `text` would have silently widened `title`,
+  `description` and search's `text` too. `operatorsFor(field)` is now the only correct way to
+  ask, and `OPERATORS_BY_TYPE[field.type]` is the bug — it ignores the override, so the
+  builder's menu offers an operator `validate()` refuses.
+- **A list operator on a TEXT field had no value editor**, because until now no text field had
+  one. The scalar `<Input>` emitted a string where the AST requires an array, which
+  `FilterTree` rejects — a chip that renders fine and cannot be applied, the same shape
+  `checkValue`'s own comment documents for `@me`.
+- **Changing a rule's trigger across the card/connector boundary CLEARS its condition.** The
+  sets do not overlap, so a condition carried across is invalid in every chip at once and
+  cannot be repaired from a builder that only offers the new set's fields.
+
+The original finding, kept because the reasoning is what justifies the shape:
+
+**Found 2026-08-12 by driving a real GitHub webhook end to end, after
+slice 3 was already working.** Nothing in §7.5 is wrong; what it does not say is that a rule
+keyed on a connector event **cannot carry a condition at all**, which makes the trigger far
+less useful than the section implies. Slice 4 must close this, or the outbound actions it
+adds will mostly be wired to rules that fire far too often.
+
+**What happens today.** `engine.ts`'s `evaluableRowFor` builds the row a condition is
+evaluated against by re-reading the trigger's CARD. A connector event has no `cardId`, so it
+returns null and the engine records `trigger_not_evaluable` and REFUSES the rule. The
+practical consequence is that the only legal connector rule is one with no condition — which
+fires on **every event type from every connected repo or workspace**. A repo with GitHub
+Actions emits `workflow_job` continuously, so the first rule anyone writes is immediately
+noise, and their only recourse is unchecking events in GitHub's own webhook config.
+
+That §7.5 says a rule "keys on `providerScope` (which workspace/repo) and `providerEvent`
+(which Slack event type / X-GitHub-Event)" makes this sharper, not softer: the payload was
+deliberately shaped to carry exactly those two fields, and no code can reach them.
+
+**The fix is a third FIELD SET, not a special case in the engine.** `packages/filter`'s
+`FIELD_SETS` is already keyed by resource — `card` since Phase 3, `search` since Phase 8 —
+and `evaluate()` already takes that key, which is why `engine.ts` says `evaluate('card', …)`
+today. So:
+
+- Add `connector` to `FIELD_SETS` with a CLOSED, two-field set: `provider_event` and
+  `provider_scope`, both text, supporting `=`, `!=`, `in`, `not_in`, `contains`. Nothing
+  else. The provider's own body stays `unknown` (§7.5's argument holds — its shape belongs
+  to GitHub and Slack); these two fields are the wrapper WE own and already validate.
+- `evaluableRowFor` returns `{ provider_event, provider_scope }` from the event payload for
+  the two connector triggers, and the engine evaluates with `'connector'` rather than
+  `'card'`. Which field set a trigger uses is a property OF THE TRIGGER, derived from the
+  registry — never a flag on the rule, or a rule saved under one reading evaluates under
+  another after an edit.
+- `trigger_not_evaluable` stays exactly as it is for every other card-less trigger. This
+  narrows when it fires; it does not remove it.
+- The builder picks the field set from the selected trigger, so choosing "A GitHub event
+  arrives" offers `provider_event`/`provider_scope` and choosing a card trigger offers the
+  card fields. The two sets do NOT overlap, the same closed-and-disjoint property Phase 8
+  documents for card vs search — and the same trap: an example written against the wrong set
+  validates in a person's head and is refused by `validate()`.
+
+**Save-time validation is what makes this safe to add.** A condition naming a card field on
+a connector trigger must be refused when the rule is SAVED, not silently at execution — the
+`assertConditionUsable` precedent. Otherwise the failure mode is a rule that looks correct in
+the builder and records `condition_unusable` forever.
+
+**Both backends still have to agree.** `packages/filter`'s whole purpose is that the SQL
+compiler and the JavaScript evaluator answer identically. A connector field set is
+evaluator-only — no card table to compile against — so either the compiler refuses the
+`connector` resource explicitly, or `filter.parity.test.ts` grows a case proving it does.
+Silently compiling to something is the failure this package exists to prevent.
+
+### 7.9 Slices
+
+1. **Migration 0056** + `packages/db` schema + the two signing primitives
+   (`slack-signature.ts`, `github-signature.ts` with published-vector tests) + the
+   `taskflow_integration_auth` role + grants/RLS suite (the REVOKEs, the auth role's
+   column matrix, the lookup-confined test).
+2. **Connect/disconnect** — the OAuth flow (the oauth.service hand-rolled code+PKCE shape,
+   state token minted with the same secret, connector-scoped claims), the service + routes
+   (`integration:manage`, `stepUp`), and the web UI (an Integrations tab on /automations:
+   connect buttons, the org's webhook URLs shown once, disconnect as the two-click
+   ConfirmButton discipline).
+3. **Inbound ingestion** — the two Fastify routes, verification, freshness/dedupe, the
+   auth-role lookup, synthetic-trigger emission, and the suite that drives both routes
+   with real signed requests.
+4. **Outbound actions** — the two union variants through the five-place change, executor
+   branches + `integrationsFor`, loop-protection entries, worker deps. **Do §7.8b FIRST,
+   inside this slice**: the `connector` field set, `evaluableRowFor`'s payload row, the
+   builder's per-trigger field set, and save-time validation. The ordering is not cosmetic —
+   an outbound action is the first rule action that costs money on someone else's platform,
+   and until a connector rule can be narrowed to one event type it fires on all of them. The
+   natural first rule a person writes ("post to Slack when something happens in GitHub")
+   becomes "post to Slack on every `workflow_job`", which is how an org turns its own
+   integration off on day one.
+5. **Import/export** — export + import routes, the dry-run, and the web surface.
+
+### 7.10 Tests
+
+- The signing primitives against published Slack/GitHub vectors (the twilio-signature
+  standard); a tampered body, a stale timestamp, a wrong-secret GitHub request all refused.
+- The resolution order: a GitHub body naming an org with no row refused before any write;
+  a Slack body verified first, team_id unknown → 404; replay/dedupe rows written only on
+  success.
+- Connector lifecycle: connect stores an encrypted token with the row-bound AAD (a
+  ciphertext transplanted to another org fails to decrypt); disconnect flips status, never
+  deletes; list never exposes a token.
+- Outbound actions: `integration:manage` enforced at execution (a member who cannot manage
+  integrations cannot write the rule); no connector row → recorded failed action;
+  provider-call refusal before the network when the credential is absent.
+- Connector conditions (§7.8b): a rule keyed on `integration.github_event` with
+  `provider_event = "push"` fires on a push and is SKIPPED (`condition_not_met`, not
+  `trigger_not_evaluable`) on a `workflow_job` — the assertion that would have failed the
+  day slice 3 shipped; `provider_scope` narrows to one repo when two are connected; a
+  condition naming a CARD field on a connector trigger is refused at SAVE time; and the SQL
+  compiler refuses the `connector` resource rather than compiling it to anything.
+- Import: dry-run rejects every invalid row with line numbers and writes nothing; a valid
+  import creates cards through the real service path (events + audit for every card);
+  a member without `project:update` refused; 1,001 rows refused.
 
 ---
 

@@ -34,13 +34,31 @@ export interface FieldDefinition {
   readonly name: string;
   readonly type: FieldType;
   /**
-   * The SQL expression this field compiles to.
+   * The SQL expression this field compiles to, or `null` for a field that has
+   * no SQL form at all.
    *
    * A literal written in this file. It is interpolated into the generated SQL
    * without escaping — which is safe ONLY because it is never derived from
    * input, and is why this file is short and boring on purpose.
+   *
+   * `null` is the connector set (§7.8b): those fields describe an event
+   * payload the worker holds in memory, and there is no table to compile them
+   * against. The compiler THROWS on one rather than skipping it — a field that
+   * silently disappeared from a WHERE clause would widen the filter, which is
+   * the direction that returns rows the author did not ask for.
    */
-  readonly sql: string;
+  readonly sql: string | null;
+  /**
+   * Operators this field supports, overriding `OPERATORS_BY_TYPE[type]`.
+   *
+   * The table is keyed by TYPE because that is nearly always the right axis —
+   * what you can ask of a date follows from it being a date. The override
+   * exists for a field whose type is right but whose vocabulary should be
+   * narrower or wider than its type's, and it is read through `operatorsFor`
+   * so the validator and the builder's operator menu cannot disagree about
+   * which one applies.
+   */
+  readonly operators?: readonly Operator[];
   /** Legal values, for `enum` fields. The compiler still parameterizes them. */
   readonly options?: readonly string[];
   /**
@@ -205,13 +223,103 @@ const SEARCH_FIELD_MAP: ReadonlyMap<string, FieldDefinition> = new Map(
   SEARCH_FIELDS.map((field) => [field.name, field]),
 );
 
-/** Resources that can be filtered. `card` today; `search` since Phase 8. */
+/**
+ * Connector-event fields (ai/phase-10-automation.md §7.8b).
+ *
+ * The third field set, and the first one with NO SQL behind it. An automation
+ * rule keyed on `integration.slack_event` / `integration.github_event` is
+ * evaluated against the event payload the worker already holds, never against
+ * a table — so every entry here has `sql: null` and the compiler refuses the
+ * whole resource (see `compile`).
+ *
+ * ## Why exactly two fields
+ *
+ * The provider's own body stays `unknown` (§7.5): its shape belongs to GitHub
+ * and Slack, and a field set over it would be this repo asserting a schema it
+ * does not own and cannot keep current. These two are the WRAPPER — the part
+ * the inbound routes build and validate themselves — so they are the part that
+ * can be promised to a rule author.
+ *
+ * ## The gap this closes
+ *
+ * Until this existed, a rule on a connector event could carry no condition at
+ * all: `evaluableRowFor` re-read the trigger's CARD, a connector event has
+ * none, and the engine recorded `trigger_not_evaluable` and refused. So the
+ * only rule that could run was one with no condition — which fires on EVERY
+ * event type from EVERY connected repo. A repo with GitHub Actions emits
+ * `workflow_job` continuously, so the first rule anybody wrote was immediately
+ * noise.
+ *
+ * ## Operators
+ *
+ * Overridden per field rather than by widening `text`, which `title` and
+ * `description` also use. "Is one of these event types" is the natural way to
+ * write a connector rule (`provider_event in ["push", "pull_request"]`), and
+ * `in`/`not_in` on a scalar text column is already correct in BOTH backends —
+ * but adding it to the type table would silently change the card and search
+ * vocabularies too, and a widening nobody asked for is how a closed set stops
+ * being closed.
+ */
+const CONNECTOR_OPERATORS: readonly Operator[] = ['eq', 'neq', 'in', 'not_in', 'contains'];
+
+const CONNECTOR_FIELDS: readonly FieldDefinition[] = [
+  /* Slack's `event.type` (or the top-level type), or GitHub's X-GitHub-Event
+     header — normalized to one name because a rule author is asking the same
+     question of both. Free text, not an enum: the legal values are the
+     provider's to add to, and a closed list here would refuse a brand-new
+     GitHub event type as if the author had made it up. */
+  { name: 'provider_event', type: 'text', sql: null, operators: CONNECTOR_OPERATORS },
+  /* Slack team_id, or GitHub `repository.full_name` — WHICH workspace or repo.
+     This is what narrows a rule to one repository when an org has connected
+     several, and it is why the wrapper carries it separately from the body. */
+  { name: 'provider_scope', type: 'text', sql: null, operators: CONNECTOR_OPERATORS },
+];
+
+const CONNECTOR_FIELD_MAP: ReadonlyMap<string, FieldDefinition> = new Map(
+  CONNECTOR_FIELDS.map((field) => [field.name, field]),
+);
+
+/**
+ * Resources that can be filtered. `card` since Phase 3, `search` since Phase 8,
+ * `connector` since Phase 10 Wave 4 (§7.8b).
+ *
+ * The three sets are CLOSED and do NOT overlap, which is deliberate and is also
+ * a trap worth knowing: an example written against the wrong set validates in a
+ * person's head and is refused by `validate()`. Check one before writing it
+ * anywhere a person will read it.
+ */
 export const FIELD_SETS = {
   card: CARD_FIELD_MAP,
   search: SEARCH_FIELD_MAP,
+  connector: CONNECTOR_FIELD_MAP,
 } as const;
 
 export type Resource = keyof typeof FIELD_SETS;
+
+/**
+ * The triggers whose conditions are evaluated against the connector set.
+ *
+ * **Which field set a trigger uses is a property OF THE TRIGGER**, never a flag
+ * on the rule — a rule saved under one reading and evaluated under another
+ * after an edit is a rule that changes meaning without anybody touching it.
+ * This table is that property, in one place, because four callers need the same
+ * answer: the API's save-time validation, its list projection, the worker's
+ * stored-condition parse, and the builder's field picker.
+ *
+ * It lives here rather than in `@taskflow/events` because `apps/web` does not
+ * depend on that package, and three copies of a mapping is exactly the drift
+ * this package exists to prevent. The cost is that this file knows two event
+ * names; the alternative cost was that they disagreed.
+ */
+const CONNECTOR_TRIGGERS: ReadonlySet<string> = new Set([
+  'integration.slack_event',
+  'integration.github_event',
+]);
+
+/** The field set a rule on `triggerEvent` is validated and evaluated against. */
+export function resourceForTrigger(triggerEvent: string): Resource {
+  return CONNECTOR_TRIGGERS.has(triggerEvent) ? 'connector' : 'card';
+}
 
 /**
  * Looks a field up, or returns undefined.
@@ -230,7 +338,20 @@ export function fieldsOf(resource: Resource): readonly FieldDefinition[] {
   return [...FIELD_SETS[resource].values()];
 }
 
-/** True when `operator` makes sense for `type`. */
-export function supportsOperator(type: FieldType, operator: Operator): boolean {
-  return OPERATORS_BY_TYPE[type].includes(operator);
+/**
+ * The operators a field supports — its own list, or its type's.
+ *
+ * Every caller that offers or checks an operator goes through this, so the
+ * builder's menu and the validator's refusal are computed from one expression.
+ * Reading `OPERATORS_BY_TYPE[field.type]` directly is the bug: it ignores a
+ * per-field override, and the failure is a chip the builder renders as valid
+ * and the server refuses on save.
+ */
+export function operatorsFor(field: FieldDefinition): readonly Operator[] {
+  return field.operators ?? OPERATORS_BY_TYPE[field.type];
+}
+
+/** True when `operator` makes sense for `field`. */
+export function supportsOperator(field: FieldDefinition, operator: Operator): boolean {
+  return operatorsFor(field).includes(operator);
 }

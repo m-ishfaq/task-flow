@@ -132,6 +132,83 @@ export async function listSprints(
   });
 }
 
+/** The active sprint of one project — the sidebar's line, and nothing more. */
+export interface ActiveSprintSummary {
+  readonly projectId: string;
+  readonly sprintId: string;
+  readonly name: string;
+  readonly endsOn: string;
+  readonly cardCount: number;
+}
+
+/**
+ * Every project's ACTIVE sprint, in one query (ai/phase-10.6-sprint-flow.md D3).
+ *
+ * The sidebar shows a running sprint beside its project without anyone opening
+ * anything — which is the whole point of the phase, and the reason this is not
+ * `listSprints` called per project: that is N queries for N projects, and it
+ * only has an answer once a project is expanded.
+ *
+ * At most one row per project is a DATABASE fact, not an assumption here —
+ * migration 0054's partial unique index on `(project_id) WHERE status =
+ * 'active'`. So this returns a flat list and callers may key it by project id
+ * without deciding what two active sprints would mean.
+ *
+ * Authorization is the route's `project:read` floor plus RLS, exactly as
+ * `listProjects` does it — deliberately NOT a per-project `can()` loop. The
+ * sidebar lists every project in the org already; a sprint line that appeared
+ * for fewer projects than the tree it hangs off would be a second, quieter
+ * answer to "which projects are mine", and the two would drift. Archived and
+ * deleted projects are excluded for the same reason: they are absent from the
+ * tree, so a sprint line under them would attach to nothing.
+ */
+export async function listActiveSprints(actor: WorkActor): Promise<readonly ActiveSprintSummary[]> {
+  return withOrgScope(orgOf(actor), async (tx) => {
+    const rows = await tx
+      .select({
+        projectId: schema.sprints.projectId,
+        sprintId: schema.sprints.id,
+        name: schema.sprints.name,
+        endsOn: schema.sprints.endsOn,
+      })
+      .from(schema.sprints)
+      .innerJoin(schema.projects, eq(schema.projects.id, schema.sprints.projectId))
+      .where(
+        and(
+          eq(schema.sprints.status, 'active'),
+          isNull(schema.projects.deletedAt),
+          isNull(schema.projects.archivedAt),
+        ),
+      )
+      .orderBy(schema.sprints.endsOn);
+
+    if (rows.length === 0) return [];
+
+    /* Counted for the active sprints only — bounded by the number of projects
+       running one, rather than a scan of every attached card in the org. */
+    const attached = await tx
+      .select({ sprintId: schema.cards.sprintId })
+      .from(schema.cards)
+      .where(
+        and(
+          inArray(
+            schema.cards.sprintId,
+            rows.map((row) => row.sprintId),
+          ),
+          isNull(schema.cards.deletedAt),
+        ),
+      );
+
+    const counts = new Map<string, number>();
+    for (const row of attached) {
+      if (row.sprintId === null) continue;
+      counts.set(row.sprintId, (counts.get(row.sprintId) ?? 0) + 1);
+    }
+
+    return rows.map((row) => ({ ...row, cardCount: counts.get(row.sprintId) ?? 0 }));
+  });
+}
+
 export async function createSprint(
   actor: WorkActor,
   input: {
@@ -327,7 +404,22 @@ export async function startSprint(
  */
 export async function completeSprint(
   actor: WorkActor,
-  input: { readonly sprintId: SprintId },
+  input: {
+    readonly sprintId: SprintId;
+    /**
+     * Where unfinished cards go (ai/phase-10.6-sprint-flow.md D1).
+     *
+     * `null` — the default, and the whole of Phase 10.5's behaviour — sends
+     * them to the backlog. A sprint id moves them straight into that sprint
+     * instead, which is what a team running back-to-back sprints does by hand
+     * every fortnight otherwise: 10.5 decision 5 declined to AUTO-roll work
+     * over, and it was right to, because rolling over silently is how a sprint
+     * quietly accumulates two sprints' worth of work. This is not automatic —
+     * it is a destination the person closing the sprint chooses, once, with
+     * the counts in front of them.
+     */
+    readonly moveUnfinishedTo?: SprintId | null;
+  },
 ): Promise<{
   readonly status: 'completed';
   readonly shippedCount: number;
@@ -341,6 +433,31 @@ export async function completeSprint(
       throw errors.conflict(
         `Only the active sprint can be completed — this one is ${sprint.status}.`,
       );
+    }
+
+    /* The destination, validated before anything is written.
+       The composite FK `(org_id, project_id, sprint_id)` already makes a
+       cross-project target unwritable — but a foreign key violation surfaces
+       as a 500, and "that sprint is in another project" is a caller error that
+       deserves a 404. So the row is loaded and checked here, and the FK stays
+       the backstop it was designed to be rather than the error path.
+
+       A COMPLETED or CANCELLED target is refused too: moving live work into a
+       closed sprint would make its shipped record grow after the fact, which
+       is the one thing a completed sprint must never do. */
+    const destination = input.moveUnfinishedTo ?? null;
+    if (destination !== null) {
+      if (destination === input.sprintId) {
+        throw errors.conflict('A sprint cannot roll its own unfinished work into itself.');
+      }
+
+      const target = await loadSprint(tx, destination);
+      if (target.projectId !== sprint.projectId) throw errors.notFound();
+      if (target.status !== 'planned' && target.status !== 'active') {
+        throw errors.conflict(
+          `Unfinished work can only move into a planned or active sprint — that one is ${target.status}.`,
+        );
+      }
     }
 
     const attached = await tx
@@ -359,7 +476,7 @@ export async function completeSprint(
     if (released.length > 0) {
       await tx
         .update(schema.cards)
-        .set({ sprintId: null, updatedAt: new Date() })
+        .set({ sprintId: destination, updatedAt: new Date() })
         .where(
           and(
             eq(schema.cards.sprintId, input.sprintId),
@@ -378,10 +495,20 @@ export async function completeSprint(
       .where(eq(schema.sprints.id, input.sprintId));
 
     await outboxWriter.append(tx, [
+      /* `after` names the DESTINATION, so the audit trail says where the work
+         went rather than only that it left. The registry entry already types
+         `after` as nullable (a release to the backlog), so carrying a sprint
+         id here needs no event change and every existing consumer keeps
+         working — which is why D1 could be additive. */
       ...released.map((card) =>
         createEvent(
           cardSprintChanged,
-          { cardId: card.cardId, boardId: card.boardId, before: input.sprintId, after: null },
+          {
+            cardId: card.cardId,
+            boardId: card.boardId,
+            before: input.sprintId,
+            after: destination,
+          },
           envelopeOf(actor),
         ),
       ),

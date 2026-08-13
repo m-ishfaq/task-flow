@@ -101,6 +101,24 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'card.assigned': { type: 'card', key: 'cardId' },
   'card.archived': { type: 'card', key: 'cardId' },
 
+  /* Sprints (Phase 10.5, migration 0054) resolve to their PROJECT, on exactly
+     the reasoning `list.*` resolves to its board: there is no `sprint`
+     resource type, because a sprint is not independently grantable — nobody
+     shares one iteration of a project's plan — so the resource an entry names
+     is the thing a grant could actually name. Every one of these payloads
+     carries `projectId`, which is what makes the key honest rather than
+     convenient.
+
+     `card.sprint_changed` is the exception and resolves to the CARD, like
+     every other per-card event: the fact recorded is "this card's membership
+     changed", and its payload carries no `projectId` to key on anyway. */
+  'sprint.created': { type: 'project', key: 'projectId' },
+  'sprint.started': { type: 'project', key: 'projectId' },
+  'sprint.completed': { type: 'project', key: 'projectId' },
+  'sprint.cancelled': { type: 'project', key: 'projectId' },
+  'sprint.updated': { type: 'project', key: 'projectId' },
+  'card.sprint_changed': { type: 'card', key: 'cardId' },
+
   /* Card detail. Labels and custom field DEFINITIONS resolve to their project,
      because that is what they belong to and what a grant could name; the
      per-card events resolve to the card. Checklists and their items have no
@@ -250,19 +268,6 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'automation.updated': { type: 'automation', key: 'automationId' },
   'automation.deleted': { type: 'automation', key: 'automationId' },
 
-  /* Sprints (Phase 10.5). No `sprint` entry in RESOURCE_TYPES — mirroring
-     `label.*`/`custom_field.*` above, a sprint is project vocabulary, not an
-     independently grantable resource, so it resolves to the PROJECT and
-     `sprintId` stays in the payload for a reader to see. `card.sprint_changed`
-     is the exception, matching `card.moved`/`card.assigned`: it is a fact
-     about the CARD that changed, so it resolves there instead. */
-  'sprint.created': { type: 'project', key: 'projectId' },
-  'sprint.updated': { type: 'project', key: 'projectId' },
-  'sprint.started': { type: 'project', key: 'projectId' },
-  'sprint.completed': { type: 'project', key: 'projectId' },
-  'sprint.cancelled': { type: 'project', key: 'projectId' },
-  'card.sprint_changed': { type: 'card', key: 'cardId' },
-
   /* Billing & org lifecycle (Phase 12 Wave 3). All six resolve to the ORG —
      every one of them is a fact about the org's subscription state, which is
      exactly what an Owner reviewing their own audit log would ask about, and
@@ -278,6 +283,21 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'billing.org_suspended_for_nonpayment': { type: 'org', key: 'orgId' },
   'billing.subscription_canceled': { type: 'org', key: 'orgId' },
   'billing.grace_extended': { type: 'org', key: 'orgId' },
+
+  /* Connectors (Phase 10 Wave 4, §7.8). MAPPED for the same reason the
+     automation events are: `integration` has been a real entry in
+     RESOURCE_TYPES (and the tuples object_type CHECK) since 0005, and "show
+     me everything that happened to this connector" is a query an access
+     review will actually run. These record changes to the CONNECTION, never
+     what it carried — the outbound actions those connectors enable are
+     ordinary `chat.message`/`issue.*` work recorded under their own
+     resources by the service layer. */
+  'integration.connected': { type: 'integration', key: 'integrationId' },
+  'integration.disconnected': { type: 'integration', key: 'integrationId' },
+  /* The credential-stored-but-no-repo-yet fact — the ONLY record of a GitHub
+     connect the person abandons at the picker. Same resource as the other
+     two: the connector row itself, which is exactly what it names. */
+  'integration.pending': { type: 'integration', key: 'integrationId' },
 };
 
 /**

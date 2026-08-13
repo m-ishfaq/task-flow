@@ -62,6 +62,11 @@ const PRICES: Readonly<Record<OutboundKind, number>> = {
   sms: 1,
   number_purchase: 115,
   verification: 5,
+  /* Phase 10 Wave 4 (§5.5): same price as the base kind — a rule's call is
+     still a call. The map stays total over the union so the contract test's
+     ALL_KINDS pricing loop covers it rather than returning undefined. */
+  automation_call: 2,
+  automation_sms: 1,
 };
 
 export class FakeTelephonyProvider implements TelephonyProvider {

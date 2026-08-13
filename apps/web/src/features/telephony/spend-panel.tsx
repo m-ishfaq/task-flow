@@ -26,6 +26,10 @@ const KIND_LABELS: ReadonlyMap<string, string> = new Map([
   ['sms', 'SMS'],
   ['number_purchase', 'Number purchases'],
   ['verification', 'Verification'],
+  /* Phase 10 Wave 4 (§5.5) — the automation-attributed kinds. Separate rows so
+     a reader can see what the rules are costing without doing the addition. */
+  ['automation_call', 'Automation calls'],
+  ['automation_sms', 'Automation SMS'],
 ]);
 
 export function SpendPanel({ orgId }: { readonly orgId: string }) {
@@ -36,6 +40,20 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
   const capCents = current.data?.capCents;
   const ratio = capCents === undefined || capCents === 0 ? 0 : (spentCents ?? 0) / capCents;
   const over = ratio > 1;
+
+  /* The automation sub-budget (§5.5): the org's separate ceiling for what a
+     RULE may spend, checked IN ADDITION to the org cap. Null means the org has
+     configured no separate ceiling — the org cap alone bounds automation — and
+     the section is hidden entirely: a rule's spend still appears in the report
+     below, so nothing is invisible, and a phantom bar saying “no ceiling”
+     would be noise. */
+  const automationCapCents = current.data?.automationCapCents ?? null;
+  const automationSpentCents = current.data?.automationSpentCents ?? 0;
+  const automationRatio =
+    automationCapCents === null || automationCapCents === 0
+      ? 0
+      : automationSpentCents / automationCapCents;
+  const automationOver = automationRatio > 1;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -86,6 +104,56 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
                 style={{ width: `${String(Math.min(ratio * 100, 100))}%` }}
               />
             </div>
+
+            {automationCapCents !== null && (
+              /* The sub-budget is the same shape as the org cap, one level
+                 down — same figures that `checkOutboundAllowed` enforces
+                 against (`readSpendState` feeds both), so what this bar shows
+                 and what a rule's refusal cites cannot drift. */
+              <div className="mt-3 border-t border-line/60 pt-2.5">
+                <div className="flex items-baseline gap-2">
+                  <p className="text-[11px] font-medium text-ink-muted">Automation allowance</p>
+                  <p className="text-[11px] text-ink-faint">
+                    {formatCents(automationSpentCents)} of {formatCents(automationCapCents)} · rules
+                    only, in addition to the org cap
+                  </p>
+                  <span
+                    className={cn(
+                      'ml-auto rounded-full px-2 py-0.5 text-[10px] font-medium',
+                      automationOver
+                        ? 'bg-danger/15 text-danger'
+                        : automationRatio > 0.8
+                          ? 'bg-warning/15 text-warning'
+                          : 'bg-surface-sunken text-ink-faint',
+                    )}
+                  >
+                    {automationOver
+                      ? 'Allowance reached'
+                      : `${String(Math.round(automationRatio * 100))}% used`}
+                  </span>
+                </div>
+                <div
+                  role="progressbar"
+                  aria-valuenow={Math.min(Math.round(automationRatio * 100), 100)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label="Automation spend against allowance"
+                  className="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-sunken"
+                >
+                  <div
+                    className={cn(
+                      'h-full rounded-full transition-all',
+                      automationOver
+                        ? 'bg-danger'
+                        : automationRatio > 0.8
+                          ? 'bg-warning'
+                          : 'bg-accent',
+                    )}
+                    style={{ width: `${String(Math.min(automationRatio * 100, 100))}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
       </section>

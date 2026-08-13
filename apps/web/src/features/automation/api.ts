@@ -65,6 +65,18 @@ export function apiTokensQuery(orgId: string) {
 }
 
 /**
+ * Whether the cost-bearing telephony actions exist in the builder (§5.5) —
+ * the server's answer to the same env flag the write boundary is built from,
+ * so the builder cannot offer a rule the server will refuse to save.
+ */
+export function automationCapabilitiesQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.automationCapabilities(orgId),
+    queryFn: async () => wire(await api.automation.capabilities.query({})),
+  });
+}
+
+/**
  * The scope checklist's options — the caller's held permissions, answered by
  * the same live `can()` the mint route validates with, so the form can never
  * offer a scope the server will refuse.
@@ -73,6 +85,30 @@ export function heldApiTokenScopesQuery(orgId: string) {
   return queryOptions({
     queryKey: keys.apiTokenScopes(orgId),
     queryFn: async () => wire(await api.apiToken.heldScopes.query({})),
+  });
+}
+
+/**
+ * Every connector row in the org (Wave 4 slice 2, §7) — the Integrations
+ * tab's list. Feeds both the management section and, indirectly, the rule
+ * builder's connector picker (slice 4).
+ */
+export function integrationsQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.integrations(orgId),
+    queryFn: async () => wire(await api.automation.integration.list.query({})),
+  });
+}
+
+/**
+ * Which connector providers this server has credentials for, plus the webhook
+ * origin — read before any connect button renders, so an unconfigured
+ * provider's button never appears (the `auth.oauth.providers` precedent).
+ */
+export function integrationCapabilitiesQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.integrationCapabilities(orgId),
+    queryFn: async () => wire(await api.automation.integration.capabilities.query({})),
   });
 }
 

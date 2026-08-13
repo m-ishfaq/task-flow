@@ -1,4 +1,4 @@
--- 0055 down — remove billing & org lifecycle's data half (Phase 12 Wave 3).
+-- 0059 down — remove billing & org lifecycle's data half (Phase 12 Wave 3).
 
 DROP TABLE IF EXISTS billing.webhook_events;
 DROP TABLE IF EXISTS billing.customer_orgs;

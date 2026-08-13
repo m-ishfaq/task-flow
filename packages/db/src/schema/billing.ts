@@ -2,7 +2,7 @@ import { index, pgSchema, primaryKey, text, timestamp, uuid } from 'drizzle-orm/
 import { orgs } from './tenancy.js';
 
 /**
- * Billing tables (migration 0055, Phase 12 Wave 3, ai/phase-12-wave3.md §3.2,
+ * Billing tables (migration 0059, Phase 12 Wave 3, ai/phase-12-wave3.md §3.2,
  * §3.5). As with every other schema file, this is the TypeScript mirror; the
  * migration is the source and carries the RLS policies and the reasoning no
  * generated diff can express.

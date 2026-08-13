@@ -5,7 +5,7 @@ import { customerOrgs } from './schema/billing.js';
 
 /**
  * The Stripe-customer-id → org lookup an inbound webhook needs before it has
- * a scope (ai/phase-12-wave3.md §3.5; migration 0055's own header). The
+ * a scope (ai/phase-12-wave3.md §3.5; migration 0059's own header). The
  * identical shape and reasoning as `resolveOrgBySubaccountSid` — lives here
  * rather than in `apps/api/src/billing` because `withGlobalScope` is
  * lint-restricted to `packages/db` and the identity module, and rather than

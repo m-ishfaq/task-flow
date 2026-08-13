@@ -1,4 +1,4 @@
--- 0056 down — remove the billing sweep's grants and policies (Phase 12
+-- 0060 down — remove the billing sweep's grants and policies (Phase 12
 -- Wave 3 §3.4). The role itself is dropped in docker/postgres/init, never
 -- here — the same split its creation follows.
 

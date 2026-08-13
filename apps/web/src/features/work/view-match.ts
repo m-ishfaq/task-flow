@@ -44,7 +44,7 @@ export function matchingView(
          collide with an unfiltered board and highlight a tab that cannot be
          applied. */
       !view.filterBroken &&
-      (view.type ?? 'board') === current.type &&
+      view.type === current.type &&
       (view.groupBy ?? 'list') === current.groupBy &&
       (view.sortBy ?? 'manual') === current.sortBy &&
       JSON.stringify(view.filter ?? null) === currentFilter,

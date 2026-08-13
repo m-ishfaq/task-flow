@@ -1,10 +1,11 @@
+import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { BoardId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { Skeleton } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
-import { myCardsQuery } from './api.js';
+import { activeSprintsQuery, myCardsQuery } from './api.js';
 import { ListView } from './list-view.js';
 
 /**
@@ -32,6 +33,11 @@ export function HomePage() {
   const navigate = useNavigate();
 
   const cards = useQuery(myCardsQuery(orgId));
+  /* The running sprints, so "this sprint" can mean something on a page that
+     spans every board (10.6 D5). Cheap and usually cached — the sidebar runs
+     the same query. */
+  const activeSprints = useQuery({ ...activeSprintsQuery(orgId), enabled: orgId !== '' });
+  const [scope, setScope] = useState<'all' | 'sprint' | 'backlog'>('all');
 
   if (cards.isPending) {
     return (
@@ -54,19 +60,79 @@ export function HomePage() {
 
   const boardOf = new Map(cards.data.map((card) => [card.cardId, card.boardId]));
 
+  /* "In a running sprint" is membership of ANY active sprint, not one chosen
+     sprint: My Tasks spans every board in the org, so a person assigned work
+     in two teams' sprints is in both, and asking them to pick one first would
+     hide half their week. `sprintId` rides the card summary already (0054's
+     slice 3), so this is a client-side narrowing of a list already in hand —
+     no second query, and no server-side variant of `listMyCards` to keep in
+     step with this one. */
+  const runningSprintIds = new Set((activeSprints.data ?? []).map((sprint) => sprint.sprintId));
+  const visible =
+    scope === 'all'
+      ? cards.data
+      : scope === 'backlog'
+        ? cards.data.filter((card) => card.sprintId === null)
+        : cards.data.filter(
+            (card) => card.sprintId !== null && runningSprintIds.has(card.sprintId),
+          );
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 border-b border-line px-4 py-3">
-        <h1 className="text-sm font-semibold text-ink">My tasks</h1>
-        <p className="text-xs text-ink-faint">
-          {cards.data.length} {cards.data.length === 1 ? 'card' : 'cards'} assigned to you, across
-          every board.
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h1 className="text-sm font-semibold text-ink">My tasks</h1>
+            <p className="text-xs text-ink-faint">
+              {visible.length} {visible.length === 1 ? 'card' : 'cards'}
+              {scope === 'all'
+                ? ' assigned to you, across every board.'
+                : scope === 'sprint'
+                  ? ' assigned to you in a running sprint.'
+                  : ' assigned to you and not in any sprint.'}
+            </p>
+          </div>
+
+          {/* Offered only when a sprint is actually running. A team that does
+              not use sprints would otherwise get two filters that both mean
+              "everything" and one that is always empty. */}
+          {runningSprintIds.size > 0 && (
+            <div
+              className="flex shrink-0 gap-1 rounded border border-line p-0.5"
+              role="group"
+              aria-label="Filter by sprint"
+            >
+              {(
+                [
+                  ['all', 'All'],
+                  ['sprint', 'This sprint'],
+                  ['backlog', 'Backlog'],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={scope === value}
+                  onClick={() => {
+                    setScope(value);
+                  }}
+                  className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                    scope === value
+                      ? 'bg-accent text-accent-ink'
+                      : 'text-ink-muted hover:bg-surface-hover'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <ListView
         lists={[]}
-        cards={cards.data}
+        cards={visible}
         statuses={[]}
         people={[]}
         groupBy="due"

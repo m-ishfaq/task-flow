@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
-import type { FilterNode } from '@taskflow/filter';
+import { resourceForTrigger, type FilterNode } from '@taskflow/filter';
 import type { ProjectId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { api } from '../../lib/trpc.js';
@@ -16,20 +16,25 @@ import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { FilterBuilder } from '../work/filter/filter-builder.js';
 import {
   apiTokensQuery,
+  automationCapabilitiesQuery,
   automationRunsQuery,
   automationsQuery,
+  integrationsQuery,
   webhookDeliveriesQuery,
   webhooksQuery,
 } from './api.js';
 import { ApiTokensSection } from './api-tokens-section.js';
+import { IntegrationsSection } from './integrations-section.js';
 import {
   ACTION_LABELS,
   ARGUMENTS,
+  TELEPHONY_ACTIONS,
   TRIGGER_OPTIONS,
   type ActionDraft,
   blankAction,
   describeAction,
   needsProject,
+  offeredActions,
 } from './vocabulary.js';
 import { ArgumentPicker, ProjectScopePicker } from './action-pickers.js';
 
@@ -48,6 +53,7 @@ function triggerLabel(event: string): string {
 function actionsComplete(actions: readonly ActionDraft[]): boolean {
   return actions.every((action) =>
     (ARGUMENTS[action.value.type] ?? []).every((spec) => {
+      if (spec.optional === true) return true;
       const value = (action.value as unknown as Record<string, string>)[spec.field];
       return typeof value === 'string' && value.trim() !== '';
     }),
@@ -129,13 +135,14 @@ function draftsFrom(stored: readonly unknown[] | undefined): ActionDraft[] {
    and the page grew a third tab the router never heard of — clicking it
    navigated to `?tab=apiTokens`, the validator refused it, and nothing
    happened. */
-export const AUTOMATION_TAB_IDS = ['rules', 'webhooks', 'apiTokens'] as const;
+export const AUTOMATION_TAB_IDS = ['rules', 'webhooks', 'apiTokens', 'integrations'] as const;
 export type AutomationTabId = (typeof AUTOMATION_TAB_IDS)[number];
 
 const TABS = [
   { id: 'rules', label: 'Rules' },
   { id: 'webhooks', label: 'Webhooks' },
   { id: 'apiTokens', label: 'API tokens' },
+  { id: 'integrations', label: 'Integrations' },
 ] as const;
 
 type TabId = AutomationTabId;
@@ -166,11 +173,15 @@ export function AutomationsPage() {
   const automations = useQuery({ ...automationsQuery(orgId), enabled: orgId !== '' });
   const webhooks = useQuery({ ...webhooksQuery(orgId), enabled: orgId !== '' });
   const apiTokens = useQuery({ ...apiTokensQuery(orgId), enabled: orgId !== '' });
+  const integrations = useQuery({ ...integrationsQuery(orgId), enabled: orgId !== '' });
 
   const counts: Readonly<Record<TabId, number | undefined>> = {
     rules: automations.data?.length,
     webhooks: webhooks.data?.length,
     apiTokens: apiTokens.data?.length,
+    /* Connected rows only — a disconnected row is a past authorization, not
+       something the tab's badge should claim exists today. */
+    integrations: integrations.data?.filter((row) => row.status === 'connected').length,
   };
 
   return (
@@ -227,8 +238,10 @@ export function AutomationsPage() {
             <RulesPanel orgId={orgId} automations={automations} />
           ) : tab === 'webhooks' ? (
             <WebhooksSection orgId={orgId} />
-          ) : (
+          ) : tab === 'apiTokens' ? (
             <ApiTokensSection orgId={orgId} />
+          ) : (
+            <IntegrationsSection orgId={orgId} />
           )}
         </div>
       </div>
@@ -612,7 +625,9 @@ const REASON_TEXT: Readonly<Record<string, string>> = {
   budget_exhausted: 'this organization hit its hourly automation limit',
   unauthorized: 'the rule owner no longer has permission to do this',
   condition_unusable: 'the saved condition no longer parses — edit the rule to fix it',
-  trigger_not_evaluable: 'this trigger has no card for the condition to check',
+  /* Two ways to reach this now (§7.8b): a card trigger with no card, and a
+     connector event missing the wrapper fields a connector condition reads. */
+  trigger_not_evaluable: 'this trigger carried nothing for the condition to check',
 };
 
 function explainReason(reason: string): string {
@@ -665,6 +680,20 @@ function RuleEditor({
     (initial?.condition as FilterNode | null | undefined) ?? null,
   );
   const [actions, setActions] = useState<ActionDraft[]>(() => draftsFrom(initial?.actions));
+
+  /* Which vocabulary the condition is written in — derived, never stored. The
+     server derives the same answer from the same function when it validates the
+     save, so the builder cannot offer a field the save will refuse. */
+  const conditionResource = resourceForTrigger(triggerEvent);
+  /* Wave 4 (§5.5) — whether the cost-bearing telephony actions may be offered
+     at all. The SERVER answers (the same env flag the write boundary is built
+     from), never a client-side copy of the deployment's env; false until the
+     answer arrives, which is the safe side — the server refuses to save a
+     rule containing one while the flag is off. */
+  const capabilities = useQuery({
+    ...automationCapabilitiesQuery(orgId),
+    enabled: orgId !== '',
+  });
   /* Which project's vocabulary the list/status/label pickers offer. Local to
      the editor and never stored — see the field's own comment below. Starts
      unset even when editing, because the stored action carries an id and not
@@ -728,7 +757,17 @@ function RuleEditor({
           id="automation-trigger"
           value={triggerEvent}
           onChange={(event) => {
-            setTriggerEvent(event.target.value);
+            const next = event.target.value;
+            /* Changing the trigger can change WHICH field set the condition is
+               read against (§7.8b) — card fields for most triggers, the two
+               connector fields for a Slack/GitHub event. The sets do not
+               overlap, so a condition carried across that boundary is invalid
+               in every chip at once and cannot be repaired from the builder,
+               which only offers the new set's fields. Clearing it is the only
+               recoverable outcome; keeping it would be a form that cannot be
+               submitted and does not say why. */
+            if (resourceForTrigger(next) !== resourceForTrigger(triggerEvent)) setCondition(null);
+            setTriggerEvent(next);
           }}
           className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
         >
@@ -743,11 +782,25 @@ function RuleEditor({
       <Field label="If (optional)" htmlFor="automation-condition">
         {/* The board's builder, unchanged — same component, same AST, same
             validator. `projectId` is null because a rule is org-wide and not
-            scoped to one project's vocabulary. */}
+            scoped to one project's vocabulary.
+
+            `resource` is derived from the trigger, never chosen here: a Slack
+            or GitHub rule filters on `provider_event` / `provider_scope`, and
+            everything else filters on the card. See §7.8b. */}
         <div id="automation-condition" className="flex items-center gap-2">
-          <FilterBuilder orgId={orgId} projectId={null} value={condition} onChange={setCondition} />
+          <FilterBuilder
+            orgId={orgId}
+            projectId={null}
+            resource={conditionResource}
+            value={condition}
+            onChange={setCondition}
+          />
           {condition === null && (
-            <span className="text-[11px] text-ink-faint">Runs every time the trigger fires.</span>
+            <span className="text-[11px] text-ink-faint">
+              {conditionResource === 'connector'
+                ? 'Runs on every event from every connected workspace or repository.'
+                : 'Runs every time the trigger fires.'}
+            </span>
           )}
         </div>
       </Field>
@@ -782,6 +835,7 @@ function RuleEditor({
               orgId={orgId}
               projectId={scopeProject}
               action={action}
+              telephonyActionsEnabled={capabilities.data?.telephonyActionsEnabled ?? false}
               onChange={(next) => {
                 setActions(actions.map((item, i) => (i === index ? next : item)));
               }}
@@ -838,17 +892,40 @@ function ActionRow({
   orgId,
   projectId,
   action,
+  telephonyActionsEnabled,
   onChange,
   onRemove,
 }: {
   readonly orgId: string;
   readonly projectId: ProjectId | null;
   readonly action: ActionDraft;
+  /** Wave 4 (§5.5) — the server's answer to whether telephony actions exist. */
+  readonly telephonyActionsEnabled: boolean;
   readonly onChange: (next: ActionDraft) => void;
   readonly onRemove?: () => void;
 }) {
   const specs = ARGUMENTS[action.value.type] ?? [];
   const values = action.value as unknown as Record<string, string>;
+
+  /* The offerable actions, minus the cost-bearing ones when the deployment
+     has not enabled them. A rule SAVED while the flag was on keeps its
+     telephony action in the editor after the flag is turned off: the row
+     must stay legible, and saving unchanged is refused by the server with a
+     real message — silently swapping the type for whatever sorts first
+     would be an edit that replaced the action while the author watched. */
+  const offered = offeredActions(telephonyActionsEnabled);
+  /* `ACTION_LABELS[type] ?? type`: the label is present for every telephony
+     type (the invariant vocabulary.test.ts pins), but `noUncheckedIndexedAccess`
+     cannot know that, and the fallback is the type itself — the same fallback
+     `describeAction` uses for a rule written by a newer build. */
+  const options =
+    TELEPHONY_ACTIONS.has(action.value.type) &&
+    !offered.some(([type]) => type === action.value.type)
+      ? ([
+          ...offered,
+          [action.value.type, ACTION_LABELS[action.value.type] ?? action.value.type],
+        ] as const)
+      : offered;
 
   return (
     <div className="flex items-start gap-2">
@@ -860,7 +937,7 @@ function ActionRow({
         aria-label="Action"
         className="shrink-0 rounded border border-line bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent"
       >
-        {Object.entries(ACTION_LABELS).map(([type, text]) => (
+        {options.map(([type, text]) => (
           <option key={type} value={type}>
             {text}
           </option>
@@ -878,6 +955,9 @@ function ActionRow({
             projectId={projectId}
             kind={spec.kind}
             label={spec.label}
+            /* Only the `integration` kind reads it — to offer the right
+               provider's connectors (§7.6). */
+            actionType={action.value.type}
             value={values[spec.field] ?? ''}
             onChange={(next) => {
               onChange({

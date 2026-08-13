@@ -44,7 +44,7 @@ async function newOrgWithCustomer(slug: string, customerId: string): Promise<Org
     customerId,
   ]);
   await admin.setOrg(null);
-  // billing.customer_orgs has NO RLS (migration 0055's own header) — the
+  // billing.customer_orgs has NO RLS (migration 0059's own header) — the
   // pre-tenant lookup a webhook resolves an org THROUGH, before any scope
   // can be opened.
   await admin.query(
@@ -73,7 +73,7 @@ async function readOrgRow<T extends string>(
   return row;
 }
 
-/** billing.webhook_events is org-scoped RLS (migration 0055) — same reasoning. */
+/** billing.webhook_events is org-scoped RLS (migration 0059) — same reasoning. */
 async function webhookEventExists(orgId: OrgId, providerEventId: string): Promise<boolean> {
   await admin.setOrg(orgId);
   const result = await admin.query(

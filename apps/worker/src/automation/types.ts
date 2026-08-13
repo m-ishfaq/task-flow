@@ -58,7 +58,52 @@ export type AutomationAction =
      org-registered webhook (never a URL), so the SSRF gate can live in the
      delivery loop instead of on the rule, and the enqueue itself is
      authorized as `webhook:manage` (§2). */
-  | { readonly type: 'call_webhook'; readonly webhookId: string };
+  | { readonly type: 'call_webhook'; readonly webhookId: string }
+  /* Wave 4 — the cost-bearing actions (ai/phase-10-automation.md §5.5).
+
+     Available only when the deployment enables them
+     (AUTOMATION_TELEPHONY_ACTIONS_ENABLED, default OFF — the API refuses to
+     even save a rule containing them while it is off), and they run through
+     the SAME outbound gate a human's call runs through: geo table, org
+     freeze, subaccount check, rolling cap, velocity limiter, and the
+     automation SUB-budget. The ledger attributes their spend under
+     `automation_call`/`automation_sms` kinds so a broken rule burns its own
+     allowance and stops while the phone still works for people.
+
+     A rule can never request recording: the union has no field for it, and
+     the executor always passes `record: false`. */
+  | { readonly type: 'call.place'; readonly to: string; readonly fromPhoneNumberId: string }
+  | {
+      readonly type: 'sms.send';
+      readonly to: string;
+      readonly fromPhoneNumberId: string;
+      readonly body: string;
+    }
+  /* Wave 4 slice 4 (§7.6) — the outbound connector actions, and the first
+     ones that act as the ORG on a platform this deployment does not run.
+
+     Both name a connector ROW, never a URL and never a repository string — the
+     `call_webhook` rule applied to a second provider. The GitHub repository is
+     the row's own `provider_scope`, so a rule cannot open an issue on a repo
+     the org never connected even though the stored token would usually reach
+     it. Slack's `channel` IS a rule input, because a workspace has many
+     channels and the connector is the workspace.
+
+     Authorization is `integration:manage`, enforced at EXECUTION inside the
+     service (the `enqueueWebhookDelivery` precedent) — a member who cannot
+     manage integrations cannot write a rule that speaks as the org. */
+  | {
+      readonly type: 'slack.post_message';
+      readonly integrationId: string;
+      readonly channel: string;
+      readonly text: string;
+    }
+  | {
+      readonly type: 'github.create_issue';
+      readonly integrationId: string;
+      readonly title: string;
+      readonly body: string;
+    };
 
 /** Every action type, for the route's schema and the executor's exhaustiveness check. */
 export const ACTION_TYPES = [
@@ -72,6 +117,10 @@ export const ACTION_TYPES = [
   'card.add_comment',
   'chat.post_message',
   'call_webhook',
+  'call.place',
+  'sms.send',
+  'slack.post_message',
+  'github.create_issue',
 ] as const;
 
 export type ActionType = (typeof ACTION_TYPES)[number];

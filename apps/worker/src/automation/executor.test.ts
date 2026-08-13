@@ -129,3 +129,133 @@ describe('the executor — what it refuses to invent', () => {
     expect(results[0]?.error).toContain('no cardId');
   });
 });
+
+describe('the executor — the cost-bearing actions (Phase 10 Wave 4 §5.5)', () => {
+  const member = { orgId: ORG, role: 'admin' as const, tuples: [] };
+  const telephonyRule = (type: 'call.place' | 'sms.send') =>
+    rule({
+      actions: [
+        type === 'call.place'
+          ? {
+              type: 'call.place' as const,
+              to: '+14155550100',
+              fromPhoneNumberId: '018f4d1e-7c3a-7b2e-8f1a-0000000000ab',
+            }
+          : {
+              type: 'sms.send' as const,
+              to: '+14155550100',
+              fromPhoneNumberId: '018f4d1e-7c3a-7b2e-8f1a-0000000000ab',
+              body: 'hello',
+            },
+      ],
+    });
+
+  it('refuses to run a telephony action while the flag is off, with a recorded reason', async () => {
+    /* The execution-time half of the env flag: a rule saved while the flag was
+       on must stop the moment the deployment turns it off — recorded as a
+       failed action, never silent. Default (no deps) IS off. */
+    const executor = createActionExecutor({
+      resolveMembership: vi.fn().mockResolvedValue(member),
+    });
+
+    for (const type of ['call.place', 'sms.send'] as const) {
+      const results = await executor.execute({
+        rule: telephonyRule(type),
+        event,
+        nextDepth: 2,
+      });
+      expect(results[0]?.status).toBe('failed');
+      expect(results[0]?.error).toContain('disabled');
+    }
+  });
+
+  it('refuses when the flag is on but no carrier is configured', async () => {
+    /* A valid deployment with the flag enabled and no telephony configured:
+       the action fails with the API's own "not configured" language, so the
+       rule author sees why, and nothing reaches a carrier. */
+    const executor = createActionExecutor({
+      resolveMembership: vi.fn().mockResolvedValue(member),
+      telephonyActionsEnabled: true,
+    });
+
+    const results = await executor.execute({
+      rule: telephonyRule('call.place'),
+      event,
+      nextDepth: 2,
+    });
+
+    expect(results[0]?.status).toBe('failed');
+    expect(results[0]?.error).toContain('not configured');
+  });
+});
+
+/**
+ * The outbound connector actions (§7.6, slice 4).
+ *
+ * These are the first actions that act as the ORG on a platform this deployment
+ * does not run, so the acceptance bar is Phase 7's: the assertion that matters
+ * is not that a refusal is returned, it is that **the provider was never
+ * reached** — asserted against a fake `fetch` that would have recorded it.
+ * A refusal returned after the message was already posted reads correctly in a
+ * diff and is visible in somebody's Slack channel.
+ */
+describe('the executor — the outbound connector actions (§7.6)', () => {
+  const member = { orgId: ORG, role: 'admin' as const, tuples: [] };
+
+  const slackRule = () =>
+    rule({
+      actions: [
+        {
+          type: 'slack.post_message' as const,
+          integrationId: '018f4d1e-7c3a-7b2e-8f1a-0000000000f1',
+          channel: '#general',
+          text: 'shipped',
+        },
+      ],
+    });
+
+  const githubRule = () =>
+    rule({
+      actions: [
+        {
+          type: 'github.create_issue' as const,
+          integrationId: '018f4d1e-7c3a-7b2e-8f1a-0000000000f2',
+          title: 'Something broke',
+          body: '',
+        },
+      ],
+    });
+
+  it('refuses when connectors are not configured, without reaching a provider', async () => {
+    const fetchImpl = vi.fn();
+    /* No `integrations` dep — a worker with no master key configured. */
+    const executor = createActionExecutor({
+      resolveMembership: vi.fn().mockResolvedValue(member),
+    });
+
+    for (const built of [slackRule(), githubRule()]) {
+      const results = await executor.execute({ rule: built, event, nextDepth: 2 });
+      expect(results[0]?.status).toBe('failed');
+      expect(results[0]?.error).toContain('not configured');
+    }
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('never reaches the provider when the rule owner is gone', async () => {
+    /* The membership check runs before any action, so a rule whose owner left
+       cannot spend the org's Slack identity on the way out. The fake fetch is
+       the assertion — a `failed` result alone would be returned either way. */
+    const fetchImpl = vi.fn();
+    const executor = createActionExecutor({
+      resolveMembership: vi.fn().mockResolvedValue(null),
+      integrations: { keys: {} as never, fetchImpl },
+    });
+
+    const results = await executor.execute({ rule: slackRule(), event, nextDepth: 2 });
+
+    expect(results[0]?.status).toBe('failed');
+    expect(results[0]?.error).toContain('no longer an active member');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});

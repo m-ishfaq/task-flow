@@ -70,5 +70,12 @@ export function refusalMessage(reason: TelephonyRefusal): string {
       return 'Telephony is disabled for this organization.';
     case 'no_subaccount':
       return 'Telephony is not set up for this organization yet.';
+    case 'automation_budget_exceeded':
+      /* Says "the rule's own allowance", not the org's number: a human who
+         sees this on a run history row needs to know it is the automation
+         budget that is gone, not the phone line. The org's real cap is
+         reported by `spend_cap_exceeded`, which is the case they must not
+         be confused with. */
+      return "This organization's automation telephony budget is exhausted.";
   }
 }

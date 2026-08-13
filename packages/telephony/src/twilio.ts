@@ -75,6 +75,13 @@ const FALLBACK_PRICE_CENTS: Readonly<Record<OutboundKind, number>> = {
   sms: 2,
   number_purchase: 200,
   verification: 10,
+  /* Phase 10 Wave 4 (§5.5): the union is total, so a call priced under an
+     automation kind costs what a call costs. The services never ask for one
+     — they price with the base kind — but `undefined` here would be NaN in
+     the gate's estimate, which is the one direction a spend control must
+     never fail in. */
+  automation_call: 5,
+  automation_sms: 2,
 };
 
 export class TwilioTelephonyProvider implements TelephonyProvider {

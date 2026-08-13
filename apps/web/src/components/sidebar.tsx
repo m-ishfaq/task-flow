@@ -6,7 +6,12 @@ import { useSession } from '../lib/session.js';
 import { pinKey, pinnedProjectIds, useUi } from '../lib/ui-store.js';
 import { useIsDesktop } from '../lib/use-media-query.js';
 import { cn } from '../lib/cn.js';
-import { boardsQuery, projectsQuery, type BoardSummary } from '../features/work/api.js';
+import {
+  activeSprintsQuery,
+  boardsQuery,
+  projectsQuery,
+  type BoardSummary,
+} from '../features/work/api.js';
 import { api } from '../lib/trpc.js';
 import { keys } from '../lib/query.js';
 import { FocusOnMountInput, Skeleton } from './primitives.js';
@@ -362,6 +367,15 @@ function ProjectNode({
         </Link>
       </div>
 
+      {/* The running sprint, OUTSIDE the collapse (10.6 D3).
+          Deliberately not inside the expanded section with the boards: the
+          whole point is that a running sprint is visible without clicking
+          anything, and a line that hides when the project is collapsed would
+          be the dropdown problem again one level up. Absent entirely when the
+          project has no active sprint, so projects that do not run sprints
+          gain no noise. */}
+      <ActiveSprintLine orgId={orgId} projectId={projectId} />
+
       {!collapsed && (
         <ul className="mb-1 ml-5 border-l border-line pl-2">
           {boards.isPending ? (
@@ -386,6 +400,67 @@ function ProjectNode({
       )}
     </li>
   );
+}
+
+/**
+ * One project's active sprint, as a single ambient line (10.6 D3).
+ *
+ * Reads the org-wide `sprints.active` query rather than the per-project sprint
+ * list: the sidebar renders every project at once, so a per-project read would
+ * be one request per project and a tree that fills in raggedly. One query,
+ * shared by every row, and each row picks its own out of it.
+ *
+ * Renders NOTHING while loading and nothing when there is no active sprint —
+ * no skeleton. A placeholder here would make every project look like it has a
+ * sprint for the first moment of every page load, which is worse than the line
+ * appearing a beat late.
+ */
+function ActiveSprintLine({
+  orgId,
+  projectId,
+}: {
+  readonly orgId: string;
+  readonly projectId: ProjectId;
+}) {
+  const active = useQuery({ ...activeSprintsQuery(orgId), enabled: orgId !== '' });
+  const sprint = (active.data ?? []).find((entry) => entry.projectId === projectId);
+  if (sprint === undefined) return null;
+
+  const remaining = daysRemaining(sprint.endsOn);
+
+  return (
+    <Link
+      to="/projects/$projectId/sprints"
+      params={{ projectId }}
+      className="ml-5 flex items-center gap-1.5 rounded py-0.5 pr-1 pl-2 text-[11px] text-ink-faint hover:text-ink"
+      activeProps={{ className: 'text-accent' }}
+      title={`${sprint.name} — ends ${sprint.endsOn}`}
+    >
+      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-success" />
+      <span className="min-w-0 flex-1 truncate">{sprint.name}</span>
+      <span className="shrink-0 tabular-nums">{remaining}</span>
+    </Link>
+  );
+}
+
+/**
+ * "3d left", "today", or "overdue".
+ *
+ * Computed from the DATE string the server sends (`ends_on` is a `date`, not a
+ * timestamp — a sprint is a span of days). Parsed as UTC midnight and compared
+ * against local midnight so a person three hours ahead of the server does not
+ * see a sprint expire early; the value is a rough count for a sidebar, and
+ * pretending to more precision than a `date` column carries would be a lie.
+ */
+function daysRemaining(endsOn: string): string {
+  const end = new Date(`${endsOn}T00:00:00Z`).getTime();
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const days = Math.round((end - todayUtc) / 86_400_000);
+
+  if (days < 0) return 'overdue';
+  if (days === 0) return 'today';
+  return `${String(days)}d left`;
 }
 
 /**
