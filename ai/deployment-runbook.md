@@ -285,6 +285,47 @@ existing TLS cert. Verify with a plain `curl -I https://.../logs/` first — a
 401 with no prompt shown means the proxy is misrouting, not that auth is
 working.
 
+## Seeding demo/showcase data against production
+
+```bash
+docker compose --env-file .env.prod -f compose.prod.yaml --profile tools run --rm \
+  seed --reset --profile showcase --seed <any-string>
+```
+
+`seed` is a `tools`-profile service (same gating as `migrate`/`ensure-roles`
+— never runs as a side effect of `up -d`) that reads every secret
+`packages/seed` can use straight out of `.env.prod` via this file's own
+`${VAR}` substitution — `DATABASE_PLATFORM_ADMIN_URL`, `MASTER_KEY_BASE64`,
+`STORAGE_*`, `TWILIO_*`, `SEED_PLATFORM_ADMIN_EMAIL`/`PASSWORD`, and so on.
+Nothing needs to be typed as a one-off `-e VAR=value` flag, which is exactly
+where an earlier attempt at this failed twice: `-e DATABASE_PLATFORM_ADMIN_URL
+="postgresql://...${TASKFLOW_PLATFORM_ADMIN_PASSWORD}..."` relies on the
+CALLING SHELL to expand that variable, and it only ever existed inside
+`.env.prod`, not the shell — so it silently expanded to an empty password
+and Postgres refused the connection with `SASL: ... client password must be a
+string`. Compose's own `${VAR}` substitution against `--env-file .env.prod`
+has no such gap.
+
+`entrypoint: ['pnpm', '--filter', '@taskflow/seed', 'seed']` rather than
+`command:` is what lets `docker compose run seed <flags>` hand those flags
+straight to the seed CLI — `docker compose run SERVICE <args>` only replaces
+the COMMAND half of `entrypoint + command`, so nothing about the entrypoint
+needs restating on every invocation.
+
+`NODE_ENV: development` is hardcoded in this service's own environment block
+(not inherited from the shared `x-app-env` anchor, which sets
+`production`) — the seeder's own `assertSafeToSeed()` refuses to run
+against `NODE_ENV=production` unconditionally, and this is the one service
+in this file meant to run as development, deliberately, against the real
+production database, over the ordinary `taskflow_migrator` connection.
+
+Any variable this service references with a plain `${VAR:-}` fallback
+(`STORAGE_*`, `TWILIO_*`, `STRIPE_SECRET_KEY`, `SEED_PLATFORM_ADMIN_*`) is
+genuinely optional — the seeder's own modules skip that content gracefully
+and say so in their output (`platform.attachments: STORAGE_* not fully
+configured — attachments will be skipped.` and similarly for telephony,
+webhooks, and the platform operator). Nothing fails; you just get less data.
+
 ## Enabling the TURN profile (in-app voice relay)
 
 Set `RTC_TURN_URLS` and `RTC_TURN_SECRET` to real values in `.env.prod` FIRST,
