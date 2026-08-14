@@ -1,6 +1,6 @@
 import { and, eq, ne, schema, withOrgScope, outboxWriter } from '@taskflow/db';
 import { errors, type OrgId, type UserId } from '@taskflow/contracts';
-import { createEvent } from '@taskflow/events';
+import { createEvent, type DomainEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
 import {
   isDirectlyAssignable,
@@ -9,6 +9,8 @@ import {
   sameRole,
   type Role,
 } from '@taskflow/policy';
+import { leaveAllActiveSessionsFor } from '../rtc/participants.js';
+import { rtcSessionEnded, rtcSessionLeft } from '../rtc/events.js';
 import { memberAdded, memberRemoved, memberRoleChanged, ownershipTransferred } from './events.js';
 import type { Actor } from './org.service.js';
 
@@ -253,13 +255,49 @@ export async function removeMember(
 
     await tx.delete(schema.teamMembers).where(eq(schema.teamMembers.userId, target.userId));
 
-    await outboxWriter.append(tx, [
+    const envelope = { orgId, actorId: actor.userId, requestId: actor.requestId };
+    const events: DomainEvent[] = [
       createEvent(
         memberRemoved,
         { membershipId: membership.id, userId: target.userId, role: currentRole },
-        { orgId, actorId: actor.userId, requestId: actor.requestId },
+        envelope,
       ),
-    ]);
+    ];
+
+    /* A person removed from the org is still `joined` on any call they were
+       actually on — their own client's follow-up "I left" call is refused
+       (they are no longer a member, which is the whole point of removing
+       them) and its failure is silently swallowed as best-effort. Without
+       this, that leaves the call open forever: see `leaveAllActiveSessionsFor`'s
+       own header for the full failure mode. Same transaction as the removal
+       itself, so a call is never left dangling because the removal committed
+       and this half did not. */
+    const leftCalls = await leaveAllActiveSessionsFor(tx, {
+      orgId,
+      userId: target.userId,
+      now: new Date(),
+    });
+    for (const call of leftCalls) {
+      events.push(createEvent(rtcSessionLeft, { sessionId: call.sessionId }, envelope));
+      if (call.ended && call.endedDetails) {
+        events.push(
+          createEvent(
+            rtcSessionEnded,
+            {
+              sessionId: call.sessionId,
+              channelId: call.channelId,
+              reason: call.endedDetails.reason,
+              durationSeconds: call.endedDetails.durationSeconds,
+              notifyUserIds: [...call.endedDetails.notifyUserIds],
+              missedUserIds: [...call.endedDetails.missedUserIds],
+            },
+            envelope,
+          ),
+        );
+      }
+    }
+
+    await outboxWriter.append(tx, events);
 
     return { removed: true as const };
   });
