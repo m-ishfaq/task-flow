@@ -342,6 +342,12 @@ services:
       DATABASE_API_TOKEN_URL: postgresql://taskflow_api_token_auth:${TASKFLOW_API_TOKEN_AUTH_PASSWORD:?TASKFLOW_API_TOKEN_AUTH_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_SEARCH_URL: postgresql://taskflow_search:${TASKFLOW_SEARCH_PASSWORD:?TASKFLOW_SEARCH_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_OPS_EVENTS_URL: postgresql://taskflow_ops_events:${TASKFLOW_OPS_EVENTS_PASSWORD:?TASKFLOW_OPS_EVENTS_PASSWORD must be set}@postgres:5432/taskflow
+      # taskflow_integration_auth already gets a real password from
+      # ensure-roles/05-set-passwords; nothing handed it a connection string
+      # until now, which is why the connector webhook routes answered 503
+      # even with SLACK_/GITHUB_CONNECTOR_* credentials set below — see
+      # .env.prod.example's own "NOT WIRED INTO compose.prod.yaml" note.
+      DATABASE_INTEGRATION_URL: postgresql://taskflow_integration_auth:${TASKFLOW_INTEGRATION_AUTH_PASSWORD:?TASKFLOW_INTEGRATION_AUTH_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
 
       STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:?STORAGE_ENDPOINT must be set — a publicly reachable S3-compatible endpoint; see minio's own port comment}
@@ -372,6 +378,18 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+
+      # Phase 10 Wave 4 — Slack/GitHub automation connectors. A SEPARATE
+      # Slack app and GitHub OAuth app from the sign-in ones above (different
+      # scope, never shared credentials — apps/api/src/config/env.ts's own
+      # comment). All optional: an unconfigured provider's connect route
+      # answers NOT_FOUND rather than the app failing to boot.
+      SLACK_CONNECTOR_CLIENT_ID: ${SLACK_CONNECTOR_CLIENT_ID:-}
+      SLACK_CONNECTOR_CLIENT_SECRET: ${SLACK_CONNECTOR_CLIENT_SECRET:-}
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
+      GITHUB_CONNECTOR_CLIENT_ID: ${GITHUB_CONNECTOR_CLIENT_ID:-}
+      GITHUB_CONNECTOR_CLIENT_SECRET: ${GITHUB_CONNECTOR_CLIENT_SECRET:-}
+      INTEGRATION_WEBHOOK_ORIGIN: ${INTEGRATION_WEBHOOK_ORIGIN:-}
 
       MASTER_KEY_ID: ${MASTER_KEY_ID:?MASTER_KEY_ID must be set}
       MASTER_KEY_BASE64: ${MASTER_KEY_BASE64:?MASTER_KEY_BASE64 must be set — generate with the command in .env.prod.example, never reuse the dev value}
