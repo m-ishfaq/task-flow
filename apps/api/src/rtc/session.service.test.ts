@@ -414,7 +414,7 @@ describe('session lifecycle', () => {
     ).toBe('CONFLICT');
   });
 
-  it('ends the call when the last person leaves, and frees the conversation', async () => {
+  it('ends a 1:1 call the moment EITHER party leaves, and frees the conversation', async () => {
     const orgId = await newOrg('rtc-empty');
     await seedMembers(orgId, [BOB]);
     const channelId = await dmBetween(orgId, [ALICE, BOB]);
@@ -424,19 +424,51 @@ describe('session lifecycle', () => {
     const { sessionId } = await sessions.startSession(alice, { channelId, kind: 'audio' });
     await sessions.joinSession(bob, { sessionId });
 
+    /* Only two people were ever part of this call, so Bob leaving is the
+       whole call ending — Alice must not be left talking to nobody until she
+       also clicks "leave". */
     await sessions.leaveSession(bob, { sessionId });
-    expect((await sessionRow(orgId, sessionId))?.status).toBe('active');
-
-    await sessions.leaveSession(alice, { sessionId });
 
     const ended = await sessionRow(orgId, sessionId);
     expect(ended?.status).toBe('ended');
     expect(ended?.endReason).toBe('empty');
 
+    /* A second leave from the party already gone is a no-op, not an error —
+       `leaveSession` returns early once the session reads `ended`. */
+    await sessions.leaveSession(alice, { sessionId });
+    expect((await sessionRow(orgId, sessionId))?.status).toBe('ended');
+
     /* The live-session index is what would otherwise make a dead call block
        every future one in that conversation, forever. */
     const next = await sessions.startSession(alice, { channelId, kind: 'audio' });
     expect(next.sessionId).not.toBe(sessionId);
+  });
+
+  it('does NOT end a group call early when it drops to one person', async () => {
+    const orgId = await newOrg('rtc-group-thin');
+    await seedMembers(orgId, [BOB, CAROL]);
+    const channelId = await dmBetween(orgId, [ALICE, BOB, CAROL]);
+
+    const alice = await actorFor(orgId, ALICE, 'owner');
+    const bob = await actorFor(orgId, BOB);
+    const carol = await actorFor(orgId, CAROL);
+    const { sessionId } = await sessions.startSession(alice, { channelId, kind: 'audio' });
+    await sessions.joinSession(bob, { sessionId });
+    await sessions.joinSession(carol, { sessionId });
+
+    /* Three people were ever part of this call, so one leaving is not the
+       whole call ending — the remaining two are still on it. */
+    await sessions.leaveSession(carol, { sessionId });
+    expect((await sessionRow(orgId, sessionId))?.status).toBe('active');
+
+    /* Down to Alice alone now — still not ended. A person left in a group
+       call may be waiting for someone to rejoin, unlike a 1:1 call which has
+       structurally nobody else it could ever reconnect to. */
+    await sessions.leaveSession(bob, { sessionId });
+    expect((await sessionRow(orgId, sessionId))?.status).toBe('active');
+
+    await sessions.leaveSession(alice, { sessionId });
+    expect((await sessionRow(orgId, sessionId))?.status).toBe('ended');
   });
 
   it('ends a ringing 1:1 call when the only invitee declines', async () => {

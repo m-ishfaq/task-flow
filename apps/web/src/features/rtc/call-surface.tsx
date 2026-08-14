@@ -317,6 +317,36 @@ function ActiveCallBar() {
     };
   }, [waiting]);
 
+  /* ## Hanging up when the SERVER says the call is over
+   *
+   * `session.service.ts`'s `leaveSession` is the authority on when a call has
+   * actually ended — a 1:1 call the moment either party leaves, a group call
+   * only once everyone has — and it broadcasts `rtc_session.ended` as
+   * `call:ended` when it decides that. This tab defers to that decision
+   * rather than guessing from `peers.length` dropping to zero: a lone person
+   * left in a GROUP call is deliberately still "in" it (they may be waiting
+   * for someone to rejoin — the server does not end that session), and a
+   * client-side guess based on peer count alone cannot tell that case apart
+   * from a 1:1 call whose other party just left. Only the session that was
+   * actually ended can.
+   *
+   * Without this, this tab's own `peers` reaching zero mid-call reads
+   * identically to the pre-answer ring: `waiting` above goes true, the
+   * ringback tone restarts, and the microphone stays live until the person
+   * notices and clicks "Hang up" themselves. */
+  useEffect(() => {
+    return onCallEnded((message) => {
+      /* Read fresh from the store rather than closing over the `channelId`
+         variable above: this effect subscribes once (empty deps), so a
+         closure would capture whatever call — or no call — was active on
+         MOUNT, not the one this message is actually about. */
+      const current = useCallStore.getState();
+      if (current.sessionId !== message.sessionId) return;
+      void hangUp().then(() => invalidateCalls(queryClient, orgId, current.channelId ?? undefined));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- queryClient/orgId are stable for this component's lifetime; the session/channel are read fresh from the store above
+  }, []);
+
   /* Both notices outlive the call they refer to — `hangUp` preserves the
      flags precisely so either can still be shown after everything else is
      torn down. "You were removed from this conversation" and "the recording

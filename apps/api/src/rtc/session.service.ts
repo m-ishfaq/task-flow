@@ -401,11 +401,28 @@ export async function leaveSession(
       createEvent(rtcSessionLeft, { sessionId: session.id }, envelopeOf(actor)),
     ];
 
+    const joinedCount = remaining[0]?.joinedCount ?? 0;
+
+    /* A 1:1 call has nobody left to talk to the moment EITHER person leaves —
+       waiting for `joinedCount` to reach zero means the remaining party sits
+       in a call with no one on the other end until they, too, click "leave".
+       A group call dropping to one person is different: that person may be
+       waiting for others to rejoin, so only a call with exactly two
+       participants total ever gets this early ending. */
+    let shouldEnd = joinedCount <= 0;
+    if (!shouldEnd && joinedCount === 1) {
+      const participants = await tx
+        .select({ userId: schema.rtcParticipants.userId })
+        .from(schema.rtcParticipants)
+        .where(eq(schema.rtcParticipants.sessionId, session.id));
+      shouldEnd = participants.length === 2;
+    }
+
     /* The last leg out ends the call. Without this a session stays `active`
        forever with nobody in it, holding the one-live-session-per-channel
        index and making the next call in that conversation impossible to
        start — a dead call that blocks every future one. */
-    if ((remaining[0]?.joinedCount ?? 0) <= 0) {
+    if (shouldEnd) {
       const ended = await endSessionRow(tx, session, 'empty', now);
       events.push(
         createEvent(
