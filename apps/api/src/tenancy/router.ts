@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { OrgIdSchema, TeamIdSchema, UserIdSchema } from '@taskflow/contracts';
 import { route, router, selfRoute } from '../trpc/builder.js';
+import { subjectOf } from '../trpc/context.js';
 import type { Actor } from './org.service.js';
 import * as orgs from './org.service.js';
 import * as members from './member.service.js';
@@ -84,9 +85,21 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
             name: z.string(),
             slug: z.string(),
             createdAt: z.date(),
+            /* Read by the Settings page so a control an unusable route
+               backs does not render, the same shape chat's channel
+               `capabilities` uses. */
+            capabilities: z
+              .object({
+                updateOrg: z.boolean(),
+                inviteMember: z.boolean(),
+                manageMembers: z.boolean(),
+                removeMembers: z.boolean(),
+                manageTeams: z.boolean(),
+              })
+              .strict(),
           }),
         )
-        .query(({ ctx }) => orgs.getOrg(ctx.principal.org.orgId)),
+        .query(({ ctx }) => orgs.getOrg(ctx.principal.org.orgId, subjectOf(ctx.principal))),
 
       update: route({ permission: 'org:update' })
         .input(z.object({ name: Name }).strict())

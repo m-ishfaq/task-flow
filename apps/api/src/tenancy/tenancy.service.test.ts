@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { unsafeAsId, type OrgId, type RequestId, type UserId } from '@taskflow/contracts';
+import type { Subject } from '@taskflow/policy';
 import {
   closeDatabase,
   initializeAuditDatabase,
@@ -158,6 +159,71 @@ describe('creating an organization', () => {
     await expect(
       orgs.createOrg({ name: 'No Verify', slug: 'no-verify' }, actorOf(UNVERIFIED)),
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+  });
+});
+
+describe('settings capabilities', () => {
+  /* getOrg's capabilities exist so the Settings page can hide a control an
+     unusable route backs, without the frontend re-deriving the permission
+     matrix — see org.service.ts's own comment. This asserts the SAME thing
+     the route asserts (can()), through the one function the route calls, so
+     a drift between "what capabilities says" and "what the mutation actually
+     allows" would show up here. */
+  it("reports what the caller's own role permits, not what any button assumes", async () => {
+    const orgId = await newOrg('capabilities-one');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'member' },
+      actorOf(OWNER),
+    );
+
+    const ownerSubject: Subject = { orgId, userId: OWNER, role: 'owner', tuples: [] };
+    const memberSubject: Subject = { orgId, userId: COLLEAGUE, role: 'member', tuples: [] };
+
+    const asOwner = await orgs.getOrg(orgId, ownerSubject);
+    const asMember = await orgs.getOrg(orgId, memberSubject);
+
+    expect(asOwner.capabilities).toEqual({
+      updateOrg: true,
+      inviteMember: true,
+      manageMembers: true,
+      removeMembers: true,
+      manageTeams: true,
+    });
+
+    // A plain Member holds none of the five — card:create and friends do not
+    // touch org, member, or team administration at all.
+    expect(asMember.capabilities).toEqual({
+      updateOrg: false,
+      inviteMember: false,
+      manageMembers: false,
+      removeMembers: false,
+      manageTeams: false,
+    });
+  });
+
+  it('gives an Admin invite/team capabilities but not the Owner-only ones', async () => {
+    /* The role matrix's own asymmetry (packages/policy/src/roles.ts): Admin
+       gets member:invite and team:manage, but org:update, member:manage, and
+       member:remove stay Owner-only. A capabilities object that collapsed
+       these into one "isAdmin" flag would be wrong for exactly this role. */
+    const orgId = await newOrg('capabilities-two');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'admin' },
+      actorOf(OWNER),
+    );
+
+    const adminSubject: Subject = { orgId, userId: COLLEAGUE, role: 'admin', tuples: [] };
+    const result = await orgs.getOrg(orgId, adminSubject);
+
+    expect(result.capabilities).toEqual({
+      updateOrg: false,
+      inviteMember: true,
+      manageMembers: false,
+      removeMembers: false,
+      manageTeams: true,
+    });
   });
 });
 
