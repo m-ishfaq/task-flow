@@ -143,6 +143,26 @@ jobs:
           rsync -az --delete -e 'ssh -o StrictHostKeyChecking=accept-new' \
             docker/postgres/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/docker/postgres/"
 
+      # Runs BEFORE the pull rather than after the deploy, because the failure
+      # this prevents IS a pull that runs the disk out. Old SHA-tagged images
+      # are only a local cache; GHCR retains the SHA-tagged images for rollback.
+      #
+      # `until=24h` removes unused images and builder cache older than 24 hours.
+      # Running containers' images are not removed because they are still in use.
+      #
+      # Housekeeping is deliberately non-fatal: a cleanup failure must not
+      # prevent an otherwise valid deployment.
+      - name: Reclaim disk on the target host
+        if: steps.gate.outputs.configured == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new "$DEPLOY_USER@$DEPLOY_HOST" \
+            "docker image prune -af --filter 'until=24h' || true; \
+             docker builder prune -af --filter 'until=24h' || true; \
+             df -h /; docker system df"
+
       # ensure-roles BEFORE migrate, migrate BEFORE recreating the app
       # containers — none of these are side effects app startup triggers,
       # per compose.prod.yaml's own header and the runbook. `--profile

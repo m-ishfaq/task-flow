@@ -81,7 +81,7 @@ const CHANNELS: readonly ChannelOption[] = [
   {
     value: 'sms',
     label: 'SMS',
-    disabledReason: 'Coming soon — SMS depends on Phase 7 (Voice & Messaging).',
+    disabledReason: 'Coming soon...',
   },
 ];
 
