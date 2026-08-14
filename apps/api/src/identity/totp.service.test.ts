@@ -144,6 +144,15 @@ describe('enrollment', () => {
     expect(recoveryCodes).toHaveLength(10);
     expect(new Set(recoveryCodes).size).toBe(10);
   });
+
+  it('emails the account owner that two-factor was enabled', async () => {
+    const email = 'totp-mail@example.test';
+    const token = await signedInUser(email);
+    await enrollTotp(token);
+
+    const notice = deliveries.find((m) => m.kind === 'totp_enabled' && m.email === email);
+    expect(notice).toBeDefined();
+  });
 });
 
 /* -------------------------------------------------------------------------- *

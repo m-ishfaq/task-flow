@@ -127,6 +127,15 @@ export async function confirmEnrollment(
     ),
   ]);
 
+  /* Security-relevant account change, told to the person it happened to —
+     the same reasoning `issueSession`'s impossible-travel send gives.
+     Best-effort: a mail failure must not undo a TOTP enrollment that
+     already succeeded. */
+  const user = await repo.findUserById(input.userId);
+  if (user !== undefined) {
+    await deps.identity.deliver({ kind: 'totp_enabled', email: user.email });
+  }
+
   return { recoveryCodes: codes };
 }
 

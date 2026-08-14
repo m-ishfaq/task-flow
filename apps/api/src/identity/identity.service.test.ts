@@ -599,6 +599,22 @@ describe('password reset', () => {
     ).toBe('TOKEN_EXPIRED');
   });
 
+  it('emails a confirmation once the reset actually completes', async () => {
+    // The reset link itself is not the confirmation — someone requesting the
+    // link may not be the account owner, but whoever's password just changed
+    // definitely owns the inbox that just got told.
+    const email = await registeredUser();
+    await identity.requestPasswordReset(deps(), { email }, meta);
+    const token = delivered.find((m) => m.kind === 'password_reset')?.token ?? '';
+    delivered.length = 0;
+
+    await identity.resetPassword(deps(), { token, password: 'a brand new passphrase' });
+
+    const confirmation = delivered.find((m) => m.kind === 'password_changed');
+    expect(confirmation).toBeDefined();
+    expect(confirmation?.email).toBe(email);
+  });
+
   it('refuses a reused link', async () => {
     const email = await registeredUser();
     await identity.requestPasswordReset(deps(), { email }, meta);

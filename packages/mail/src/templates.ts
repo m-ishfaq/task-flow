@@ -347,6 +347,137 @@ export function renderImpossibleTravel(context: {
   };
 }
 
+/**
+ * Sent to an org's owner when a platform operator suspends or deletes it
+ * (Phase 12 Wave 1/Wave 2, `platform-admin/org-directory.service.ts`).
+ *
+ * Carries no link — unlike an ordinary notification email, there is nothing
+ * left to click: a suspended org's owner cannot open it (`resolveOrgMembership`
+ * refuses every route the moment `status` flips), and a deleted org no
+ * longer exists to link to at all.
+ */
+export function renderOrgSuspended(context: { readonly orgName: string }): RenderedMail {
+  const org = escapeHtml(context.orgName);
+
+  return {
+    subject: `${context.orgName} has been suspended`,
+    text: textDocument([
+      `${context.orgName} has been suspended by a TaskFlow platform operator.`,
+      '',
+      'Nobody can sign in to it or access its data while it is suspended. This',
+      'does not delete anything — the organization can be reactivated.',
+      '',
+      'If you believe this is a mistake, contact support.',
+    ]),
+    html: htmlDocument(
+      [
+        `<p>${org} has been suspended by a TaskFlow platform operator.</p>`,
+        '<p>Nobody can sign in to it or access its data while it is suspended. This does not delete anything — the organization can be reactivated.</p>',
+        '<p style="font-size:13px;color:#666">If you believe this is a mistake, contact support.</p>',
+      ].join('\n'),
+    ),
+  };
+}
+
+export function renderOrgDeleted(context: { readonly orgName: string }): RenderedMail {
+  const org = escapeHtml(context.orgName);
+
+  return {
+    subject: `${context.orgName} has been deleted`,
+    text: textDocument([
+      `${context.orgName} has been permanently deleted by a TaskFlow platform`,
+      'operator. Every project, message, document and file it contained is',
+      'gone and cannot be recovered.',
+      '',
+      'If you believe this is a mistake, contact support immediately.',
+    ]),
+    html: htmlDocument(
+      [
+        `<p>${org} has been permanently deleted by a TaskFlow platform operator. Every project, message, document and file it contained is gone and cannot be recovered.</p>`,
+        '<p style="font-size:13px;color:#666">If you believe this is a mistake, contact support immediately.</p>',
+      ].join('\n'),
+    ),
+  };
+}
+
+/**
+ * Sent when a password reset actually completes (`identity/identity.service.ts`'s
+ * `resetPassword`). Not the reset LINK — the confirmation that it was used.
+ *
+ * Carries no link, the same reasoning as `renderImpossibleTravel`: whoever
+ * used the link just proved they control the account by the definition this
+ * system uses, but that "whoever" is exactly who this message needs to
+ * reach if it was an attacker rather than the real owner.
+ */
+export function renderPasswordChanged(): RenderedMail {
+  return {
+    subject: 'Your TaskFlow password was changed',
+    text: textDocument([
+      'Your TaskFlow password was just changed, and every other session was',
+      'signed out.',
+      '',
+      'If this was you, no action is needed.',
+      '',
+      'If it was not you, someone else may have access to your account. Go to',
+      'TaskFlow the way you normally do and use "forgot password" again to',
+      'regain control — do not use a link from this message.',
+    ]),
+    html: htmlDocument(
+      [
+        '<p>Your TaskFlow password was just changed, and every other session was signed out.</p>',
+        '<p>If this was you, no action is needed.</p>',
+        '<p style="font-size:13px;color:#666">If it was not you, someone else may have access to your account. Go to TaskFlow the way you normally do and use "forgot password" again to regain control — do not use a link from this message.</p>',
+      ].join('\n'),
+    ),
+  };
+}
+
+/** Sent when TOTP two-factor is enabled on an account. */
+export function renderTotpEnabled(): RenderedMail {
+  return {
+    subject: 'Two-factor authentication was enabled on your TaskFlow account',
+    text: textDocument([
+      'Two-factor authentication (an authenticator app) was just enabled on',
+      'your TaskFlow account.',
+      '',
+      'If this was you, no action is needed.',
+      '',
+      'If it was not you, go to TaskFlow the way you normally do and change',
+      'your password — do not use a link from this message.',
+    ]),
+    html: htmlDocument(
+      [
+        '<p>Two-factor authentication (an authenticator app) was just enabled on your TaskFlow account.</p>',
+        '<p>If this was you, no action is needed.</p>',
+        '<p style="font-size:13px;color:#666">If it was not you, go to TaskFlow the way you normally do and change your password — do not use a link from this message.</p>',
+      ].join('\n'),
+    ),
+  };
+}
+
+/** Sent when a new passkey is registered on an account. */
+export function renderPasskeyRegistered(): RenderedMail {
+  return {
+    subject: 'A new passkey was added to your TaskFlow account',
+    text: textDocument([
+      'A new passkey was just registered on your TaskFlow account.',
+      '',
+      'If this was you, no action is needed.',
+      '',
+      'If it was not you, go to TaskFlow the way you normally do, remove the',
+      'passkey you do not recognize, and change your password — do not use a',
+      'link from this message.',
+    ]),
+    html: htmlDocument(
+      [
+        '<p>A new passkey was just registered on your TaskFlow account.</p>',
+        '<p>If this was you, no action is needed.</p>',
+        '<p style="font-size:13px;color:#666">If it was not you, go to TaskFlow the way you normally do, remove the passkey you do not recognize, and change your password — do not use a link from this message.</p>',
+      ].join('\n'),
+    ),
+  };
+}
+
 export function renderDuplicateRegistration(): RenderedMail {
   return {
     subject: 'Someone tried to sign up with your email address',

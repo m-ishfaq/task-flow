@@ -182,6 +182,9 @@ export function createAppRouter(deps: AppRouterDeps) {
     platformAdmin: createPlatformAdminRouter({
       events: deps.identity.events,
       payments: deps.billing.payments,
+      /* Reuses billing's own mail deps — see PlatformAdminRouterDeps's own
+         comment on why a second queue is not worth opening for this. */
+      ...(deps.billing.mail === undefined ? {} : { mail: deps.billing.mail }),
       /* §9: suspend/reactivate also freeze or unfreeze the org's Twilio
          subaccount, when a carrier is configured. The narrowed dep keeps the
          platform-admin module from seeing the storage provider and spend

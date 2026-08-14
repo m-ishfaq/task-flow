@@ -23,6 +23,8 @@ import {
 } from '@taskflow/contracts';
 import { createEvent, type EventBus } from '@taskflow/events';
 import { newId } from '@taskflow/security';
+import { renderOrgDeleted, renderOrgSuspended } from '@taskflow/mail';
+import type { BillingMailDeps } from '../billing/billing-mail.js';
 import { setSubaccountStatus, type SubaccountDeps } from '../telephony/subaccount.service.js';
 import { SYSTEM_ORG } from '../identity/identity.service.js';
 import { orgDeleted, orgReactivated, orgSuspended } from './events.js';
@@ -237,15 +239,20 @@ export async function listOrgs(
  * too, LAST and best-effort — see `syncSubaccountStatus`.
  */
 export async function suspendOrg(
-  deps: { readonly events: EventBus; readonly subaccounts?: SubaccountDeps },
+  deps: {
+    readonly events: EventBus;
+    readonly subaccounts?: SubaccountDeps;
+    /** Optional, like `subaccounts` — with none, the org is still suspended, nobody is emailed. */
+    readonly mail?: BillingMailDeps;
+  },
   operator: PlatformOperator,
   orgId: OrgId,
 ): Promise<{ readonly orgId: OrgId; readonly status: 'suspended' }> {
   const now = new Date();
 
-  await withPlatformAdminScope(async (tx) => {
+  const owner = await withPlatformAdminScope(async (tx) => {
     const existing = await tx
-      .select({ id: schema.orgs.id, status: schema.orgs.status })
+      .select({ id: schema.orgs.id, status: schema.orgs.status, name: schema.orgs.name })
       .from(schema.orgs)
       .where(eq(schema.orgs.id, orgId))
       .limit(1);
@@ -260,6 +267,27 @@ export async function suspendOrg(
       .update(schema.orgs)
       .set({ status: 'suspended', updatedAt: now })
       .where(eq(schema.orgs.id, orgId));
+
+    /* Read INSIDE the same transaction the status write is in — an owner who
+       was removed a moment earlier must not be emailed about an org they no
+       longer have anything to do with. Null is a real answer, not an error:
+       an org whose owner account was deleted is still suspendable, and
+       failing the operator's action over an unreachable mailbox would be
+       backwards. */
+    const ownerRows = await tx
+      .select({ email: schema.users.email })
+      .from(schema.memberships)
+      .innerJoin(schema.users, eq(schema.users.id, schema.memberships.userId))
+      .where(
+        and(
+          eq(schema.memberships.orgId, orgId),
+          eq(schema.memberships.role, 'owner'),
+          eq(schema.memberships.status, 'active'),
+        ),
+      )
+      .limit(1);
+
+    return { orgName: org.name, email: ownerRows[0]?.email ?? null };
   });
 
   /* The org's own chain. `insertAuditEntry` omits seq/prev_hash/hash — the
@@ -296,6 +324,17 @@ export async function suspendOrg(
      freeze is the follow-through, never the gate. */
   if (deps.subaccounts !== undefined) {
     await syncSubaccountStatus(deps.subaccounts, orgId, operator, 'suspended');
+  }
+
+  /* The owner, told directly — not through the notification projection,
+     which has no outbox access for this role to write into (see the file
+     header on `orgSuspended`'s event bus publish above) and would batch it
+     into a digest regardless. Queued, not awaited: a dead SMTP relay must
+     not turn a successful suspension into an error response to the
+     operator who just performed it. */
+  if (deps.mail !== undefined && owner.email !== null) {
+    const rendered = renderOrgSuspended({ orgName: owner.orgName });
+    deps.mail.queue.enqueue({ to: owner.email, ...rendered });
   }
 
   return { orgId, status: 'suspended' as const };
@@ -396,17 +435,18 @@ export async function reactivateOrg(
  * here so it is a known follow-up rather than a surprise.
  */
 export async function deleteOrg(
-  deps: { readonly events: EventBus },
+  deps: { readonly events: EventBus; readonly mail?: BillingMailDeps },
   operator: PlatformOperator,
   input: { readonly orgId: OrgId; readonly confirmSlug: string },
 ): Promise<{ readonly orgId: OrgId; readonly slug: string }> {
   const now = new Date();
 
-  const { slug, memberCount } = await withPlatformAdminScope(async (tx) => {
+  const { slug, memberCount, orgName, ownerEmail } = await withPlatformAdminScope(async (tx) => {
     const existing = await tx
       .select({
         id: schema.orgs.id,
         slug: schema.orgs.slug,
+        name: schema.orgs.name,
         status: schema.orgs.status,
         memberCount: countRows(schema.memberships.id),
       })
@@ -442,11 +482,32 @@ export async function deleteOrg(
       });
     }
 
+    /* Read BEFORE the delete below — every membership row is about to
+       cascade away, and there is no owner left to find on the far side of
+       it. */
+    const ownerRows = await tx
+      .select({ email: schema.users.email })
+      .from(schema.memberships)
+      .innerJoin(schema.users, eq(schema.users.id, schema.memberships.userId))
+      .where(
+        and(
+          eq(schema.memberships.orgId, input.orgId),
+          eq(schema.memberships.role, 'owner'),
+          eq(schema.memberships.status, 'active'),
+        ),
+      )
+      .limit(1);
+
     /* The one statement. 0044's trigger removes the org's audit chain in
        the same transaction; every other row cascades by foreign key. */
     await tx.delete(schema.orgs).where(eq(schema.orgs.id, input.orgId));
 
-    return { slug: org.slug, memberCount: Number(org.memberCount) };
+    return {
+      slug: org.slug,
+      memberCount: Number(org.memberCount),
+      orgName: org.name,
+      ownerEmail: ownerRows[0]?.email ?? null,
+    };
   });
 
   /* The final accountability record — global, so it survives the org. The
@@ -471,6 +532,15 @@ export async function deleteOrg(
       },
     ),
   ]);
+
+  /* The owner, told directly, for the identical reason `suspendOrg` tells
+     them — no outbox access for this role, and there is now no org left for
+     a notification row to even reference. `ownerEmail` was captured before
+     the delete cascaded the membership away. */
+  if (deps.mail !== undefined && ownerEmail !== null) {
+    const rendered = renderOrgDeleted({ orgName });
+    deps.mail.queue.enqueue({ to: ownerEmail, ...rendered });
+  }
 
   return { orgId: input.orgId, slug };
 }

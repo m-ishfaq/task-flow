@@ -69,9 +69,19 @@ export interface IdentityDeps {
 }
 
 export interface DeliverableLink {
-  readonly kind: 'verify_email' | 'password_reset' | 'duplicate_registration' | 'impossible_travel';
+  readonly kind:
+    | 'verify_email'
+    | 'password_reset'
+    | 'duplicate_registration'
+    | 'impossible_travel'
+    | 'password_changed'
+    | 'totp_enabled'
+    | 'passkey_registered';
   readonly email: string;
-  /** Absent for `duplicate_registration`/`impossible_travel`, which carry no link. */
+  /* Absent for every kind below `password_reset` — none of the security
+     notices carry a link, for the same reason `duplicate_registration`
+     doesn't: a "click here" in a message an attacker's own action could
+     trigger is a phishing shape, not a courtesy. */
   readonly token?: string;
   /** Present only for `impossible_travel`. */
   readonly previousCountry?: string;
@@ -563,6 +573,17 @@ export async function resetPassword(
       ),
     ),
   ]);
+
+  /* The one-line reset email already warns "using this will sign you out
+     everywhere" — this is the confirmation that it actually happened,
+     which matters most to the person who did NOT request it: the reset
+     email went to whoever asked, but if an attacker asked, this is the
+     first thing the real owner ever sees. Best-effort, same reasoning as
+     `issueSession`'s impossible-travel send. */
+  const user = await repo.findUserById(consumed.userId);
+  if (user !== undefined) {
+    await deps.deliver({ kind: 'password_changed', email: user.email });
+  }
 
   return { status: 'reset' };
 }
