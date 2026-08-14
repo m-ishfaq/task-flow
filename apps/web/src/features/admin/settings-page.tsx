@@ -168,6 +168,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
     manageMembers: false,
     removeMembers: false,
     manageTeams: false,
+    createProject: false,
   };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.members(orgId) });

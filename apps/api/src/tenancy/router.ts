@@ -95,6 +95,7 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
                 manageMembers: z.boolean(),
                 removeMembers: z.boolean(),
                 manageTeams: z.boolean(),
+                createProject: z.boolean(),
               })
               .strict(),
           }),

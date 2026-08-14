@@ -1,5 +1,5 @@
 import { errors, type OrgId, type RequestId, type UserId } from '@taskflow/contracts';
-import { enforce, type Permission, type ResourceRef, type Subject } from '@taskflow/policy';
+import { can, enforce, type Permission, type ResourceRef, type Subject } from '@taskflow/policy';
 
 /**
  * Shared plumbing for the Work services (PLAN.md §3.1, §8.2).
@@ -133,6 +133,39 @@ export function enforceOn(
     resource,
     ancestors,
   });
+}
+
+export interface ManageCapabilities {
+  readonly update: boolean;
+  readonly delete: boolean;
+}
+
+/**
+ * What the client may hide or disable for one project/board row, computed
+ * from the SAME `can()` that `enforceOn` above uses for the real check — the
+ * chat channel `capabilitiesFor` precedent (`chat/shared.ts`). A client may
+ * hide a control it is told it does not have; it never decides anything
+ * itself. If this and `enforceOn` ever disagreed, `enforceOn` is what would
+ * refuse the request.
+ *
+ * Computed PER RESOURCE, not from role alone: `share-board.tsx` grants
+ * board-specific tuples independent of a project-level grant, so a Member
+ * with no org-wide `board:update` can still legitimately hold it on one
+ * shared board — collapsing this to a role check would hide a control that
+ * board's own tuple actually grants.
+ */
+export function manageCapabilitiesFor(
+  subject: Subject,
+  permissions: { readonly update: Permission; readonly delete: Permission },
+  resource: ResourceRef,
+  row: { readonly orgId: string },
+  ancestors: readonly ResourceRef[],
+): ManageCapabilities {
+  const target = { orgId: row.orgId as OrgId, resource, ancestors };
+  return {
+    update: can(subject, permissions.update, target).allowed,
+    delete: can(subject, permissions.delete, target).allowed,
+  };
 }
 
 /* -------------------------------------------------------------------------- *

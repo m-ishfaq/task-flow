@@ -92,7 +92,11 @@ export function ProjectSettingsPage() {
       </div>
 
       <ProjectDetails orgId={orgId} project={project} />
-      <BoardSection orgId={orgId} projectId={projectId} />
+      <BoardSection
+        orgId={orgId}
+        projectId={projectId}
+        canCreateBoard={project.capabilities.update}
+      />
       <LabelSettings orgId={orgId} projectId={projectId} />
       <StatusSettings orgId={orgId} projectId={projectId} />
       <FieldSettings orgId={orgId} projectId={projectId} />
@@ -105,7 +109,12 @@ function ProjectDetails({
   project,
 }: {
   readonly orgId: string;
-  readonly project: { projectId: string; name: string; description: string | null };
+  readonly project: {
+    projectId: string;
+    name: string;
+    description: string | null;
+    capabilities: { readonly update: boolean; readonly delete: boolean };
+  };
 }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -149,6 +158,12 @@ function ProjectDetails({
           <Input
             id="project-name"
             value={name}
+            disabled={!project.capabilities.update}
+            title={
+              project.capabilities.update
+                ? undefined
+                : 'You do not have permission to edit this project.'
+            }
             onChange={(event) => {
               setName(event.target.value);
             }}
@@ -159,6 +174,7 @@ function ProjectDetails({
           <Input
             id="project-description"
             value={description}
+            disabled={!project.capabilities.update}
             onChange={(event) => {
               setDescription(event.target.value);
             }}
@@ -166,24 +182,30 @@ function ProjectDetails({
         </Field>
 
         <div className="flex items-center gap-2">
-          <Button type="submit" variant="primary" disabled={update.isPending}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={!project.capabilities.update || update.isPending}
+          >
             Save
           </Button>
           {/* Confirmed despite being restorable, unlike the other archive
               buttons on this page: this one also NAVIGATES AWAY, so a stray
               click loses the page you were working on as well as hiding the
               project from everyone else. */}
-          <div className="ml-auto">
-            <ConfirmButton
-              label="Archive project"
-              confirmLabel="Archive and leave"
-              size="md"
-              disabled={archive.isPending}
-              onConfirm={() => {
-                archive.mutate();
-              }}
-            />
-          </div>
+          {project.capabilities.delete && (
+            <div className="ml-auto">
+              <ConfirmButton
+                label="Archive project"
+                confirmLabel="Archive and leave"
+                size="md"
+                disabled={archive.isPending}
+                onConfirm={() => {
+                  archive.mutate();
+                }}
+              />
+            </div>
+          )}
         </div>
       </form>
 
@@ -204,9 +226,12 @@ function ProjectDetails({
 function BoardSection({
   orgId,
   projectId,
+  canCreateBoard,
 }: {
   readonly orgId: string;
   readonly projectId: ProjectId;
+  /** project:update on the PARENT project — createBoard enforces it there, not board:create. */
+  readonly canCreateBoard: boolean;
 }) {
   const queryClient = useQueryClient();
   const boards = useQuery(boardsQuery(orgId, projectId));
@@ -301,29 +326,36 @@ function BoardSection({
                   >
                     {board.name}
                   </Link>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setEditing(board.boardId);
-                      setName(board.name);
-                    }}
-                  >
-                    Rename
-                  </Button>
+                  {/* Per-board, not the project's own capability — a board
+                      can carry its own share grant (share-board.tsx)
+                      independent of project-level access. */}
+                  {board.capabilities.update && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setEditing(board.boardId);
+                        setName(board.name);
+                      }}
+                    >
+                      Rename
+                    </Button>
+                  )}
                   {/* No confirm: archiving is reversible and the board's cards
                       are untouched. Guarding an undoable action is the noise
                       that trains people to click through the confirms that
                       matter — the Delete buttons further down this page. */}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      archive.mutate(board.boardId as BoardId);
-                    }}
-                  >
-                    Archive
-                  </Button>
+                  {board.capabilities.delete && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        archive.mutate(board.boardId as BoardId);
+                      }}
+                    >
+                      Archive
+                    </Button>
+                  )}
                 </>
               )}
             </li>
@@ -335,26 +367,28 @@ function BoardSection({
           on the projects list, and this section's own description pointed
           there — a settings page that can rename and archive a thing but not
           make one sends you elsewhere to finish a job you started here. */}
-      <form
-        className="mt-2 flex items-center gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (newName.trim() !== '') create.mutate(newName.trim());
-        }}
-      >
-        <Input
-          aria-label="New board name"
-          placeholder="New board name"
-          value={newName}
-          onChange={(event) => {
-            setNewName(event.target.value);
+      {canCreateBoard && (
+        <form
+          className="mt-2 flex items-center gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (newName.trim() !== '') create.mutate(newName.trim());
           }}
-          className="h-7 max-w-xs text-xs"
-        />
-        <Button type="submit" size="sm" disabled={create.isPending || newName.trim() === ''}>
-          {create.isPending ? 'Adding…' : 'Add board'}
-        </Button>
-      </form>
+        >
+          <Input
+            aria-label="New board name"
+            placeholder="New board name"
+            value={newName}
+            onChange={(event) => {
+              setNewName(event.target.value);
+            }}
+            className="h-7 max-w-xs text-xs"
+          />
+          <Button type="submit" size="sm" disabled={create.isPending || newName.trim() === ''}>
+            {create.isPending ? 'Adding…' : 'Add board'}
+          </Button>
+        </form>
+      )}
 
       {rename.isError && <ErrorText error={rename.error} />}
       {archive.isError && <ErrorText error={archive.error} />}
