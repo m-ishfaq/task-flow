@@ -46,6 +46,7 @@ const CATEGORY_OF_KIND: Readonly<Record<string, NotificationCategory>> = {
      promoted, demoted, or added somewhere you didn't expect. */
   'member.added': 'direct',
   'member.role_changed': 'direct',
+  'member.removed': 'direct',
 };
 
 export function categoryOfKind(kind: string): NotificationCategory {

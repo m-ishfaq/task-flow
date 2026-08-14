@@ -358,6 +358,31 @@ describe('member.role_changed — tenancy (migration 0071)', () => {
   });
 });
 
+describe('member.removed — tenancy (migration 0072)', () => {
+  const MEMBERSHIP = '0195ee05-0000-7000-8000-000000000062';
+  const base = { membershipId: MEMBERSHIP, userId: BOB, role: 'member' };
+
+  it('tells the person removed, not the person who removed them', () => {
+    const planned = planNotifications(row('member.removed', base, ALICE));
+    expect(planned).toEqual([
+      {
+        userId: BOB,
+        kind: 'member.removed',
+        subjectType: 'membership',
+        subjectId: MEMBERSHIP,
+        title: 'You were removed from this organization',
+        excerpt: null,
+        channelId: null,
+        boardId: null,
+      },
+    ]);
+  });
+
+  it('survives a payload missing membershipId', () => {
+    expect(planNotifications(row('member.removed', { userId: BOB, role: 'member' }))).toEqual([]);
+  });
+});
+
 describe('unrelated event names', () => {
   it('ignores events this projection does not consume', () => {
     expect(planNotifications(row('card.updated', { cardId: '1' }))).toEqual([]);

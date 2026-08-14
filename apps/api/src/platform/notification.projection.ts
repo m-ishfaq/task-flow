@@ -119,7 +119,8 @@ type NotificationKind =
   | 'page.comment_mention'
   | 'call.missed'
   | 'member.added'
-  | 'member.role_changed';
+  | 'member.role_changed'
+  | 'member.removed';
 
 interface PlannedNotification {
   readonly userId: string;
@@ -155,6 +156,8 @@ export function planNotifications(row: OutboxRow): readonly PlannedNotification[
       return planMemberAdded(row);
     case 'member.role_changed':
       return planMemberRoleChanged(row);
+    case 'member.removed':
+      return planMemberRemoved(row);
     default:
       return [];
   }
@@ -231,6 +234,43 @@ function planMemberRoleChanged(row: OutboxRow): readonly PlannedNotification[] {
       subjectType: 'membership',
       subjectId: membershipId,
       title: `Your role changed to ${roleLabel(to)}`,
+      excerpt: null,
+      channelId: null,
+      boardId: null,
+    },
+  ];
+}
+
+/**
+ * "You were removed from this organization" (migration 0072).
+ *
+ * The in-app HALF of this notification is effectively unreachable the
+ * moment it is written: `notifications.listMine` runs under
+ * `withOrgScope(orgOf(actor))`, and a removed member can no longer resolve
+ * that org at all — it drops out of `tenancy.orgs.list` the same request the
+ * membership row does, so there is no page left from which to open the
+ * bell. Planned here anyway, the same shape every other kind takes, because
+ * the EMAIL half — the one channel that still reaches them — is what
+ * actually matters, and `planChannelDeliveries` is what decides that, not
+ * this function.
+ */
+function planMemberRemoved(row: OutboxRow): readonly PlannedNotification[] {
+  const record = asRecord(row.payload);
+  if (record === null) return [];
+  const fields = record as { readonly membershipId?: unknown; readonly userId?: unknown };
+
+  const membershipId = typeof fields.membershipId === 'string' ? fields.membershipId : null;
+  const userId = typeof fields.userId === 'string' ? fields.userId : null;
+  if (membershipId === null || userId === null) return [];
+  if (userId === row.actorId) return [];
+
+  return [
+    {
+      userId,
+      kind: 'member.removed',
+      subjectType: 'membership',
+      subjectId: membershipId,
+      title: 'You were removed from this organization',
       excerpt: null,
       channelId: null,
       boardId: null,
