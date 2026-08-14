@@ -9,6 +9,7 @@
 export {
   escapeHtml,
   renderDuplicateRegistration,
+  renderImpossibleTravel,
   renderNotificationDigest,
   renderNotificationEmail,
   renderPasswordReset,

@@ -38,6 +38,14 @@ const CATEGORY_OF_KIND: Readonly<Record<string, NotificationCategory>> = {
      `activity` would also park it in the daily digest, which is the wrong
      latency for "someone called you" by about a day. */
   'call.missed': 'direct',
+  /* Migration 0071. Both are facts about YOUR OWN standing in the org, not
+     somebody else's activity — the same reasoning `call.missed` gives, and
+     the reasoning matters more here: `member.role_changed` is "the single
+     most security-relevant event in the system" (tenancy/events.ts), and a
+     day-late digest is the wrong latency for finding out you were just
+     promoted, demoted, or added somewhere you didn't expect. */
+  'member.added': 'direct',
+  'member.role_changed': 'direct',
 };
 
 export function categoryOfKind(kind: string): NotificationCategory {

@@ -69,10 +69,13 @@ export interface IdentityDeps {
 }
 
 export interface DeliverableLink {
-  readonly kind: 'verify_email' | 'password_reset' | 'duplicate_registration';
+  readonly kind: 'verify_email' | 'password_reset' | 'duplicate_registration' | 'impossible_travel';
   readonly email: string;
-  /** Absent for `duplicate_registration`, which deliberately carries no link. */
+  /** Absent for `duplicate_registration`/`impossible_travel`, which carry no link. */
   readonly token?: string;
+  /** Present only for `impossible_travel`. */
+  readonly previousCountry?: string;
+  readonly newCountry?: string;
 }
 
 export interface RequestMeta {
@@ -684,6 +687,26 @@ export async function issueSession(
         { orgId: SYSTEM_ORG, actorId: null, occurredAt: now },
       ),
     ]);
+
+    /* The person, not just the audit log — this is the one branch of login
+       that a stolen password reaches with no other control in front of it
+       (§3.4 is explicit that this flag is informational, never blocking, so
+       it does not stop the sign-in itself). Looked up here rather than
+       threaded through all four callers of `issueSession`: none of them
+       currently carry the user's email this deep, and paying one extra read
+       only on the rare flagged path is cheaper than widening every caller's
+       signature for a lookup that almost never runs. Best-effort: a mail
+       failure here must not turn a successful, already-committed sign-in
+       into an error response. */
+    const user = await repo.findUserById(userId);
+    if (user !== undefined) {
+      await deps.deliver({
+        kind: 'impossible_travel',
+        email: user.email,
+        previousCountry,
+        newCountry: country,
+      });
+    }
   }
 
   const accessToken = await signAccessToken(

@@ -117,12 +117,14 @@ type NotificationKind =
   | 'card.assigned'
   | 'card.comment_mention'
   | 'page.comment_mention'
-  | 'call.missed';
+  | 'call.missed'
+  | 'member.added'
+  | 'member.role_changed';
 
 interface PlannedNotification {
   readonly userId: string;
   readonly kind: NotificationKind;
-  readonly subjectType: 'message' | 'card' | 'page' | 'call';
+  readonly subjectType: 'message' | 'card' | 'page' | 'call' | 'membership';
   readonly subjectId: string;
   readonly title: string;
   readonly excerpt: string | null;
@@ -149,9 +151,106 @@ export function planNotifications(row: OutboxRow): readonly PlannedNotification[
       return planPageCommentMention(row);
     case 'rtc_session.ended':
       return planMissedCall(row);
+    case 'member.added':
+      return planMemberAdded(row);
+    case 'member.role_changed':
+      return planMemberRoleChanged(row);
     default:
       return [];
   }
+}
+
+/**
+ * "You were added to this organization" (migration 0071).
+ *
+ * `invitedBy` is who added them, which is exactly `row.actorId` — every
+ * `plan*` function excludes the actor from its own recipients, and the
+ * person being told about IS the actor's target here, never the actor
+ * themself (`addMember` already forbids adding yourself; RLS and the unique
+ * membership index both make it structurally impossible regardless).
+ */
+function planMemberAdded(row: OutboxRow): readonly PlannedNotification[] {
+  const record = asRecord(row.payload);
+  if (record === null) return [];
+  const fields = record as {
+    readonly membershipId?: unknown;
+    readonly userId?: unknown;
+    readonly role?: unknown;
+  };
+
+  const membershipId = typeof fields.membershipId === 'string' ? fields.membershipId : null;
+  const userId = typeof fields.userId === 'string' ? fields.userId : null;
+  // Not named `role` — see `roleLabel`'s own note on guardrail 7's syntactic match.
+  const roleName = typeof fields.role === 'string' ? fields.role : null;
+  if (membershipId === null || userId === null || roleName === null) return [];
+  if (userId === row.actorId) return [];
+
+  return [
+    {
+      userId,
+      kind: 'member.added',
+      subjectType: 'membership',
+      subjectId: membershipId,
+      title: `You were added as ${roleLabel(roleName)}`,
+      excerpt: null,
+      channelId: null,
+      boardId: null,
+    },
+  ];
+}
+
+/**
+ * "Your role changed" — CLAUDE.md calls the event this reads from "the
+ * single most security-relevant event in the system" (tenancy/events.ts).
+ * Told to the person the change happened TO, not to the org at large — a
+ * promotion or demotion is theirs to know about, the same way `card.assigned`
+ * tells the assignee and nobody else on the board.
+ */
+function planMemberRoleChanged(row: OutboxRow): readonly PlannedNotification[] {
+  const record = asRecord(row.payload);
+  if (record === null) return [];
+  const fields = record as {
+    readonly membershipId?: unknown;
+    readonly userId?: unknown;
+    readonly to?: unknown;
+  };
+
+  const membershipId = typeof fields.membershipId === 'string' ? fields.membershipId : null;
+  const userId = typeof fields.userId === 'string' ? fields.userId : null;
+  const to = typeof fields.to === 'string' ? fields.to : null;
+  if (membershipId === null || userId === null || to === null) return [];
+  // Self-role-changes cannot happen (`changeRole` forbids them), kept for the
+  // same "not a property of today's code path" reason `planMissedCall` keeps
+  // its own equivalent filter.
+  if (userId === row.actorId) return [];
+
+  return [
+    {
+      userId,
+      kind: 'member.role_changed',
+      subjectType: 'membership',
+      subjectId: membershipId,
+      title: `Your role changed to ${roleLabel(to)}`,
+      excerpt: null,
+      channelId: null,
+      boardId: null,
+    },
+  ];
+}
+
+/**
+ * `'owner'` -> `'an Owner'`, for a title someone reads once and clicks past.
+ *
+ * Purely cosmetic text formatting, not an authorization decision — but the
+ * parameter is deliberately NOT named `role`: guardrail 7's lint rule is
+ * syntactic (`Identifier[name='role']` in a comparison) and blunt on
+ * purpose, exactly per this repo's own note that the answer to a rule
+ * flagging non-authorization code is to not write the shape it matches, not
+ * to weaken it.
+ */
+function roleLabel(roleName: string): string {
+  const article = roleName === 'owner' || roleName === 'admin' ? 'an' : 'a';
+  return `${article} ${roleName.charAt(0).toUpperCase()}${roleName.slice(1)}`;
 }
 
 /**

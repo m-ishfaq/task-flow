@@ -1,6 +1,7 @@
 import {
   MailQueue,
   renderDuplicateRegistration,
+  renderImpossibleTravel,
   renderPasswordReset,
   renderVerifyEmail,
   SmtpMailer,
@@ -101,5 +102,11 @@ function render(message: DeliverableLink, webOrigin: string): RenderedMail {
     case 'duplicate_registration':
       // Carries no token by design — see the template.
       return renderDuplicateRegistration();
+
+    case 'impossible_travel':
+      return renderImpossibleTravel({
+        previousCountry: message.previousCountry ?? '',
+        newCountry: message.newCountry ?? '',
+      });
   }
 }

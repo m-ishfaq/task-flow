@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   escapeHtml,
   renderDuplicateRegistration,
+  renderImpossibleTravel,
   renderNotificationDigest,
   renderPasswordReset,
   renderVerifyEmail,
@@ -159,6 +160,38 @@ describe('renderNotificationDigest', () => {
   it('tolerates a trailing slash on the origin', () => {
     const mail = renderNotificationDigest({ webOrigin: 'http://localhost:5173/', items });
     expect(mail.text).not.toContain('5173//chat');
+  });
+});
+
+describe('renderImpossibleTravel', () => {
+  const CONTEXT = { previousCountry: 'US', newCountry: 'RU' };
+
+  it('names both countries', () => {
+    const mail = renderImpossibleTravel(CONTEXT);
+    expect(mail.text).toContain('RU');
+    expect(mail.text).toContain('US');
+    expect(mail.html).toContain('RU');
+    expect(mail.html).toContain('US');
+  });
+
+  it('carries no link — an unsolicited "secure your account" link is a phishing shape', () => {
+    const mail = renderImpossibleTravel(CONTEXT);
+    expect(mail.text).not.toMatch(/https?:\/\//);
+    expect(mail.html).not.toContain('<a ');
+    expect(mail.html).not.toContain('href');
+  });
+
+  it('tells someone who was not affected that no action is needed', () => {
+    const mail = renderImpossibleTravel(CONTEXT);
+    expect(mail.text).toMatch(/If this was you.*no action is needed/s);
+  });
+
+  it('escapes the country codes', () => {
+    const mail = renderImpossibleTravel({
+      previousCountry: 'US',
+      newCountry: '<script>alert(1)</script>',
+    });
+    expect(mail.html).not.toContain('<script>alert');
   });
 });
 

@@ -301,6 +301,52 @@ export function renderNotificationDigest(
   };
 }
 
+/**
+ * Sent when a login is flagged for impossible travel (Phase 12 Wave 2,
+ * `identity/identity.service.ts`'s `issueSession`).
+ *
+ * Carries no link, for the identical reason `renderDuplicateRegistration`
+ * carries none: this message can be triggered by an attacker who has the
+ * account's password, and a "secure your account" link in an unsolicited
+ * mail is exactly the shape of a phishing message. The one actionable
+ * instruction is to go reset the password the way the recipient normally
+ * would, not to follow anything this message provides.
+ *
+ * `previousCountry`/`newCountry` are ISO country codes read off the session
+ * rows (`identity.sessions.country`) — informational text, not a credential,
+ * but still escaped like every other caller-reachable value this package
+ * renders (rule 1 in this file's header).
+ */
+export function renderImpossibleTravel(context: {
+  readonly previousCountry: string;
+  readonly newCountry: string;
+}): RenderedMail {
+  const previous = escapeHtml(context.previousCountry);
+  const next = escapeHtml(context.newCountry);
+
+  return {
+    subject: 'New sign-in from an unusual location',
+    text: textDocument([
+      `Your TaskFlow account was just signed in to from ${context.newCountry}, shortly`,
+      `after a sign-in from ${context.previousCountry} — too soon for the same person to`,
+      'have traveled between them.',
+      '',
+      'If this was you (a VPN, a trip, a new device), no action is needed.',
+      '',
+      'If it was not you, change your password now and sign out your other',
+      'sessions from Settings — do not use a link from this message, go to',
+      'TaskFlow the way you normally do.',
+    ]),
+    html: htmlDocument(
+      [
+        `<p>Your TaskFlow account was just signed in to from ${next}, shortly after a sign-in from ${previous} — too soon for the same person to have traveled between them.</p>`,
+        '<p>If this was you (a VPN, a trip, a new device), no action is needed.</p>',
+        '<p style="font-size:13px;color:#666">If it was not you, change your password now and sign out your other sessions from Settings — do not use a link from this message, go to TaskFlow the way you normally do.</p>',
+      ].join('\n'),
+    ),
+  };
+}
+
 export function renderDuplicateRegistration(): RenderedMail {
   return {
     subject: 'Someone tried to sign up with your email address',
