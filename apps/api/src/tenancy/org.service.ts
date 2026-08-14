@@ -2,6 +2,7 @@ import { and, eq, schema, withOrgScope, withUserScope, outboxWriter } from '@tas
 import { errors, type OrgId, type RequestId, type UserId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
+import { can, type Subject } from '@taskflow/policy';
 import { orgCreated, orgUpdated } from './events.js';
 import { trialStarted } from '../billing/events.js';
 
@@ -181,11 +182,37 @@ export async function listMyOrgs(userId: UserId): Promise<readonly OrgSummary[]>
   );
 }
 
+/**
+ * What the Settings page's admin controls are for, computed once from the
+ * SAME `can()` the routes themselves enforce — the chat channel precedent
+ * (`capabilitiesFor` in `chat/shared.ts`). The client may hide a control it is
+ * told it does not have; it never decides anything. If this and the route's
+ * own permission check ever disagreed, the route is what would refuse the
+ * request — these booleans are a rendering hint, not a second gate.
+ *
+ * All five are ORG_LEVEL permissions (`packages/policy/src/permissions.ts`),
+ * so a plain role check with no target is the correct and complete answer —
+ * there is no per-resource tuple that could grant any of them.
+ */
+export interface SettingsCapabilities {
+  /** Rename the organization. */
+  readonly updateOrg: boolean;
+  /** Add an existing user as a member. */
+  readonly inviteMember: boolean;
+  /** Change a member's role; transfer ownership (both are `member:manage`). */
+  readonly manageMembers: boolean;
+  /** Remove a member from the organization. */
+  readonly removeMembers: boolean;
+  /** Create a team; add or remove a team's members. */
+  readonly manageTeams: boolean;
+}
+
 export interface OrgDetail {
   readonly orgId: string;
   readonly name: string;
   readonly slug: string;
   readonly createdAt: Date;
+  readonly capabilities: SettingsCapabilities;
 }
 
 /**
@@ -194,9 +221,11 @@ export interface OrgDetail {
  * Deliberately does not return the caller's role: it is already on the
  * principal, having come from the membership read that authorized this call.
  * Returning it here would be a second source for one fact, and the two would
- * eventually disagree.
+ * eventually disagree. `capabilities` is not that — it is the OUTCOME of the
+ * role, not a restatement of it, the same distinction `getOrg`'s doc comment
+ * already draws for `role` itself.
  */
-export async function getOrg(orgId: OrgId): Promise<OrgDetail> {
+export async function getOrg(orgId: OrgId, subject: Subject): Promise<OrgDetail> {
   const rows = await withOrgScope(orgId, async (tx) =>
     tx
       .select({
@@ -211,7 +240,17 @@ export async function getOrg(orgId: OrgId): Promise<OrgDetail> {
 
   const org = rows[0];
   if (!org) throw errors.notFound();
-  return org;
+
+  return {
+    ...org,
+    capabilities: {
+      updateOrg: can(subject, 'org:update').allowed,
+      inviteMember: can(subject, 'member:invite').allowed,
+      manageMembers: can(subject, 'member:manage').allowed,
+      removeMembers: can(subject, 'member:remove').allowed,
+      manageTeams: can(subject, 'team:manage').allowed,
+    },
+  };
 }
 
 export async function updateOrg(

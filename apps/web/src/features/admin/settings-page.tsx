@@ -24,7 +24,7 @@ import {
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
 import { useStepUp } from '../auth/use-step-up.js';
-import { membersQuery } from '../org/api.js';
+import { membersQuery, orgDetailQuery, type SettingsCapabilities } from '../org/api.js';
 import { BillingSection } from './billing-section.js';
 
 /**
@@ -83,10 +83,7 @@ export function SettingsPage() {
 function OrgSection({ orgId }: { readonly orgId: string }) {
   const queryClient = useQueryClient();
 
-  const org = useQuery({
-    queryKey: [...keys.org(orgId), 'detail'],
-    queryFn: async () => wire(await api.tenancy.orgs.get.query(undefined)),
-  });
+  const org = useQuery(orgDetailQuery(orgId));
 
   const [name, setName] = useState<string | null>(null);
 
@@ -104,6 +101,7 @@ function OrgSection({ orgId }: { readonly orgId: string }) {
 
   if (org.data === undefined) return null;
   const current = name ?? org.data.name;
+  const canRename = org.data.capabilities.updateOrg;
 
   return (
     <Section title="Organization">
@@ -120,6 +118,8 @@ function OrgSection({ orgId }: { readonly orgId: string }) {
               <Input
                 id="org-name"
                 value={current}
+                disabled={!canRename}
+                title={canRename ? undefined : 'Only the org Owner can rename the organization.'}
                 onChange={(event) => {
                   setName(event.target.value);
                 }}
@@ -129,7 +129,7 @@ function OrgSection({ orgId }: { readonly orgId: string }) {
           <Button
             type="submit"
             variant="primary"
-            disabled={rename.isPending || current === org.data.name}
+            disabled={!canRename || rename.isPending || current === org.data.name}
           >
             Save
           </Button>
@@ -154,8 +154,21 @@ function OrgSection({ orgId }: { readonly orgId: string }) {
 function MemberSection({ orgId }: { readonly orgId: string }) {
   const queryClient = useQueryClient();
   const members = useQuery(membersQuery(orgId));
+  const org = useQuery(orgDetailQuery(orgId));
   const { guard, dialog } = useStepUp();
   const currentUserId = useSession((state) => state.userId);
+
+  /* Same cache as OrgSection's own query (identical key), so this costs no
+     extra request — React Query dedupes by key. Undefined only while the
+     very first load of the page is still in flight; every control below
+     defaults to hidden/disabled until it resolves, never the other way. */
+  const capabilities: SettingsCapabilities = org.data?.capabilities ?? {
+    updateOrg: false,
+    inviteMember: false,
+    manageMembers: false,
+    removeMembers: false,
+    manageTeams: false,
+  };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.members(orgId) });
 
@@ -237,71 +250,89 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
       count={members.data?.length}
       description="Everyone with access to this organization. A role decides what they can do across it; a team grant can narrow or widen that on one resource."
     >
-      <AddPanel>
-        <form
-          className="flex flex-wrap gap-2 items-center"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (email.trim() !== '') add.mutate({ email: email.trim(), role });
-          }}
-        >
-          <div className="min-w-[16rem] flex-1">
-            <Field
-              label="Add a member"
-              htmlFor="member-email"
-              hint="The person must already have a TaskFlow account — email invitations arrive in a later phase."
-            >
-              <Input
-                id="member-email"
-                type="email"
-                placeholder="colleague@example.com"
-                value={email}
-                onChange={(event) => {
-                  setEmail(event.target.value);
-                }}
-              />
-            </Field>
-          </div>
-
-          <select
-            aria-label="Role for the new member"
-            value={role}
-            onChange={(event) => {
-              setRole(event.target.value as Role);
+      {/* A whole multi-field form nobody without member:invite could ever
+          submit is clutter, not information — unlike the org-name field
+          above, there is nothing here worth seeing disabled. Hidden rather
+          than shown-and-refused; the member LIST below still renders fully,
+          so nothing about visibility into the org is lost, only the ability
+          to change it. */}
+      {capabilities.inviteMember && (
+        <AddPanel>
+          <form
+            className="flex flex-wrap gap-2 items-center"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (email.trim() !== '') add.mutate({ email: email.trim(), role });
             }}
-            className="h-9 rounded border border-line bg-surface px-2 text-sm text-ink"
           >
-            {DIRECTLY_ASSIGNABLE_ROLES.map((entry) => (
-              <option key={entry} value={entry}>
-                {entry}
-              </option>
-            ))}
-          </select>
+            <div className="min-w-[16rem] flex-1">
+              <Field
+                label="Add a member"
+                htmlFor="member-email"
+                hint="The person must already have a TaskFlow account — email invitations arrive in a later phase."
+              >
+                <Input
+                  id="member-email"
+                  type="email"
+                  placeholder="colleague@example.com"
+                  value={email}
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                  }}
+                />
+              </Field>
+            </div>
 
-          <Button type="submit" variant="primary" disabled={add.isPending || email.trim() === ''}>
-            {add.isPending ? 'Adding…' : 'Add'}
+            <select
+              aria-label="Role for the new member"
+              value={role}
+              onChange={(event) => {
+                setRole(event.target.value as Role);
+              }}
+              className="h-9 rounded border border-line bg-surface px-2 text-sm text-ink"
+            >
+              {DIRECTLY_ASSIGNABLE_ROLES.map((entry) => (
+                <option key={entry} value={entry}>
+                  {entry}
+                </option>
+              ))}
+            </select>
+
+            <Button type="submit" variant="primary" disabled={add.isPending || email.trim() === ''}>
+              {add.isPending ? 'Adding…' : 'Add'}
+            </Button>
+          </form>
+
+          {add.isError && <ErrorText error={add.error} />}
+        </AddPanel>
+      )}
+
+      {/* Ownership has exactly one holder, so this button is NEVER usable by
+          anyone but the current Owner — not "usually not," never. That is
+          different from every other control on this page (an Admin might
+          plausibly gain member:invite later; nobody gains "is the current
+          Owner" by having a role), so hiding it for non-Owners is complete,
+          not just today's approximation. The server is still what actually
+          enforces it (member:manage) — this only stops showing the action to
+          the (org.memberCount - 1) people who structurally cannot take it. */}
+      {capabilities.manageMembers && (
+        <div className="flex justify-end">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={transferCandidates.length === 0}
+            title={
+              transferCandidates.length === 0
+                ? 'There is nobody else to transfer to yet.'
+                : undefined
+            }
+            onClick={openTransfer}
+            className="text-ink-muted hover:text-ink"
+          >
+            Transfer ownership…
           </Button>
-        </form>
-
-        {add.isError && <ErrorText error={add.error} />}
-      </AddPanel>
-
-      {/* Rendered for everyone — see the transfer comment above on why the
-          role check is the server's, not this button's. */}
-      <div className="flex justify-end">
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={transferCandidates.length === 0}
-          title={
-            transferCandidates.length === 0 ? 'There is nobody else to transfer to yet.' : undefined
-          }
-          onClick={openTransfer}
-          className="text-ink-muted hover:text-ink"
-        >
-          Transfer ownership…
-        </Button>
-      </div>
+        </div>
+      )}
 
       {members.isPending && <SkeletonRows rows={4} className="*:h-12" />}
       {members.isError && <ErrorView error={members.error} title="Could not load members" />}
@@ -314,6 +345,8 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
               member={member}
               isSelf={member.userId === currentUserId}
               busy={changeRole.isPending || remove.isPending}
+              canChangeRole={capabilities.manageMembers}
+              canRemove={capabilities.removeMembers}
               onRoleChange={(next) => {
                 changeRole.mutate({ userId: member.userId as UserId, role: next });
               }}
@@ -424,11 +457,23 @@ interface MemberRowProps {
   };
   readonly isSelf: boolean;
   readonly busy: boolean;
+  /** member:manage — role changes are repeated per row; hide rather than show fifty disabled selects. */
+  readonly canChangeRole: boolean;
+  /** member:remove — same reasoning as canChangeRole. */
+  readonly canRemove: boolean;
   readonly onRoleChange: (role: Role) => void;
   readonly onRemove: () => void;
 }
 
-function MemberRow({ member, isSelf, busy, onRoleChange, onRemove }: MemberRowProps) {
+function MemberRow({
+  member,
+  isSelf,
+  busy,
+  canChangeRole,
+  canRemove,
+  onRoleChange,
+  onRemove,
+}: MemberRowProps) {
   return (
     <li className="group flex items-center gap-3 px-3 py-2 transition-colors hover:bg-surface-hover">
       <Avatar userId={member.userId} label={member.email} />
@@ -444,36 +489,46 @@ function MemberRow({ member, isSelf, busy, onRoleChange, onRemove }: MemberRowPr
         </p>
       </div>
 
-      <select
-        aria-label={`Role for ${member.email}`}
-        value={member.role}
-        disabled={busy}
-        onChange={(event) => {
-          onRoleChange(event.target.value as Role);
-        }}
-        className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
-      >
-        {/* The CURRENT role is always present as an option even when it is not
-            directly assignable — an owner's row would otherwise render showing
-            "admin", which is a lie about who they are. */}
-        {[...new Set<string>([member.role, ...DIRECTLY_ASSIGNABLE_ROLES])].map((entry) => (
-          <option key={entry} value={entry}>
-            {entry}
-          </option>
-        ))}
-      </select>
+      {/* member:read (every role) still shows the role — only the ABILITY to
+          change it is gated. A badge in place of the select when the viewer
+          cannot act keeps the roster informative instead of hiding a fact
+          nobody's permission was ever about. */}
+      {canChangeRole ? (
+        <select
+          aria-label={`Role for ${member.email}`}
+          value={member.role}
+          disabled={busy}
+          onChange={(event) => {
+            onRoleChange(event.target.value as Role);
+          }}
+          className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+        >
+          {/* The CURRENT role is always present as an option even when it is not
+              directly assignable — an owner's row would otherwise render showing
+              "admin", which is a lie about who they are. */}
+          {[...new Set<string>([member.role, ...DIRECTLY_ASSIGNABLE_ROLES])].map((entry) => (
+            <option key={entry} value={entry}>
+              {entry}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <Badge>{member.role}</Badge>
+      )}
 
       {/* Revealed on hover, but always reachable by keyboard — `opacity-0` still
           takes focus, and `focus-visible:opacity-100` brings it back into view
           when it does. A control that only exists under a pointer is a control
           that does not exist for a keyboard. */}
-      <ConfirmButton
-        label="Remove"
-        confirmLabel={`Remove ${member.email}`}
-        disabled={busy}
-        onConfirm={onRemove}
-        className="focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
-      />
+      {canRemove && (
+        <ConfirmButton
+          label="Remove"
+          confirmLabel={`Remove ${member.email}`}
+          disabled={busy}
+          onConfirm={onRemove}
+          className="focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+        />
+      )}
     </li>
   );
 }
@@ -492,6 +547,10 @@ function TeamSection({ orgId }: { readonly orgId: string }) {
   });
 
   const members = useQuery(membersQuery(orgId));
+  // Same cache as OrgSection's query — team:read is every role's own, so the
+  // roster below always renders; canManageTeams only gates create/add/remove.
+  const org = useQuery(orgDetailQuery(orgId));
+  const canManageTeams = org.data?.capabilities.manageTeams ?? false;
   const refresh = () => queryClient.invalidateQueries({ queryKey: [...keys.org(orgId), 'teams'] });
 
   const create = useMutation({
@@ -521,41 +580,51 @@ function TeamSection({ orgId }: { readonly orgId: string }) {
       count={teams.data?.length}
       description="A team is a subject a grant can name. Adding someone to a team gives them everything that team has been granted, immediately — which is why it is an authorization change and is audited as one."
     >
-      <AddPanel>
-        <form
-          className="flex items-center gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (name.trim() !== '') create.mutate(name.trim());
-          }}
-        >
-          <div className="flex-1">
-            <Field
-              label="New team"
-              htmlFor="team-name"
-              hint={
-                name.trim() === ''
-                  ? 'The address is derived from the name and must be unique.'
-                  : `Address: ${slugify(name)}`
-              }
+      {/* Same reasoning as the member-invite form: a multi-field create form
+          nobody without team:manage could submit is clutter, not signal. The
+          roster below stays fully visible either way — team:read is every
+          role's own. */}
+      {canManageTeams && (
+        <AddPanel>
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (name.trim() !== '') create.mutate(name.trim());
+            }}
+          >
+            <div className="flex-1">
+              <Field
+                label="New team"
+                htmlFor="team-name"
+                hint={
+                  name.trim() === ''
+                    ? 'The address is derived from the name and must be unique.'
+                    : `Address: ${slugify(name)}`
+                }
+              >
+                <Input
+                  id="team-name"
+                  placeholder="Engineering"
+                  value={name}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                  }}
+                />
+              </Field>
+            </div>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={create.isPending || name.trim() === ''}
             >
-              <Input
-                id="team-name"
-                placeholder="Engineering"
-                value={name}
-                onChange={(event) => {
-                  setName(event.target.value);
-                }}
-              />
-            </Field>
-          </div>
-          <Button type="submit" variant="primary" disabled={create.isPending || name.trim() === ''}>
-            {create.isPending ? 'Creating…' : 'Create'}
-          </Button>
-        </form>
+              {create.isPending ? 'Creating…' : 'Create'}
+            </Button>
+          </form>
 
-        {create.isError && <ErrorText error={create.error} />}
-      </AddPanel>
+          {create.isError && <ErrorText error={create.error} />}
+        </AddPanel>
+      )}
 
       {teams.isPending && <SkeletonRows rows={2} className="*:h-24" />}
       {teams.isError && <ErrorView error={teams.error} title="Could not load teams" />}
@@ -573,6 +642,7 @@ function TeamSection({ orgId }: { readonly orgId: string }) {
             key={team.teamId}
             team={team}
             orgMembers={members.data ?? []}
+            canManage={canManageTeams}
             onAdd={(userId) => {
               addMember.mutate({ teamId: team.teamId as TeamId, userId });
             }}
@@ -598,6 +668,8 @@ interface TeamCardProps {
     readonly members: readonly { readonly userId: string; readonly email: string }[];
   };
   readonly orgMembers: readonly { readonly userId: string; readonly email: string }[];
+  /** team:manage — gates the add picker and every roster chip's remove control. */
+  readonly canManage: boolean;
   readonly onAdd: (userId: UserId) => void;
   readonly onRemove: (userId: UserId) => void;
   readonly busy: boolean;
@@ -622,7 +694,7 @@ interface TeamCardProps {
  * only candidates: an empty picker means everyone is already here, which is a
  * fact worth rendering rather than a dropdown that silently does nothing.
  */
-function TeamCard({ team, orgMembers, onAdd, onRemove, busy }: TeamCardProps) {
+function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCardProps) {
   const [confirming, setConfirming] = useState<string | null>(null);
 
   const onTeam = new Set(team.members.map((member) => member.userId));
@@ -638,35 +710,39 @@ function TeamCard({ team, orgMembers, onAdd, onRemove, busy }: TeamCardProps) {
         </Badge>
       </div>
 
-      {/* Add first, then the roster — the same order as every other section. */}
-      <div className="mt-2.5">
-        {candidates.length === 0 ? (
-          <p className="text-[11px] text-ink-faint">
-            {orgMembers.length === 0
-              ? 'No org members to add.'
-              : 'Everyone in the organization is on this team.'}
-          </p>
-        ) : (
-          <select
-            aria-label={`Add someone to ${team.name}`}
-            value=""
-            disabled={busy}
-            onChange={(event) => {
-              const userId = event.target.value;
-              if (userId === '') return;
-              onAdd(userId as UserId);
-            }}
-            className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
-          >
-            <option value="">Add member…</option>
-            {candidates.map((member) => (
-              <option key={member.userId} value={member.userId}>
-                {member.email}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
+      {/* Add first, then the roster — the same order as every other section.
+          Hidden rather than a disabled dropdown of every org member, which
+          would be noisy on every one of potentially many team cards. */}
+      {canManage && (
+        <div className="mt-2.5">
+          {candidates.length === 0 ? (
+            <p className="text-[11px] text-ink-faint">
+              {orgMembers.length === 0
+                ? 'No org members to add.'
+                : 'Everyone in the organization is on this team.'}
+            </p>
+          ) : (
+            <select
+              aria-label={`Add someone to ${team.name}`}
+              value=""
+              disabled={busy}
+              onChange={(event) => {
+                const userId = event.target.value;
+                if (userId === '') return;
+                onAdd(userId as UserId);
+              }}
+              className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+            >
+              <option value="">Add member…</option>
+              {candidates.map((member) => (
+                <option key={member.userId} value={member.userId}>
+                  {member.email}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
 
       {team.members.length === 0 ? (
         <p className="mt-2.5 text-xs text-ink-faint">
@@ -687,50 +763,54 @@ function TeamCard({ team, orgMembers, onAdd, onRemove, busy }: TeamCardProps) {
                 <Avatar userId={member.userId} label={member.email} size="xs" />
                 <span className="text-xs text-ink">{member.email}</span>
 
-                {isConfirming ? (
-                  <>
+                {/* Chip-per-member removal, gated the same way the add picker
+                    above is: hidden rather than a disabled × on every chip of
+                    every team a viewer without team:manage can see. */}
+                {canManage &&
+                  (isConfirming ? (
+                    <>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          onRemove(member.userId as UserId);
+                          setConfirming(null);
+                        }}
+                        className="rounded-full px-1.5 text-[11px] font-medium text-danger hover:underline"
+                      >
+                        Remove
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirming(null);
+                        }}
+                        className="rounded-full px-1 text-[11px] text-ink-muted hover:underline"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    /* Two clicks, not a window.confirm: removing someone from a
+                       team is an authorization change that takes effect
+                       immediately, and a single stray click on a chip is too cheap
+                       for that. The confirm is inline so it cannot be dismissed by
+                       clicking the wrong thing. */
                     <button
                       type="button"
-                      disabled={busy}
+                      aria-label={`Remove ${member.email} from ${team.name}`}
                       onClick={() => {
-                        onRemove(member.userId as UserId);
-                        setConfirming(null);
+                        setConfirming(member.userId);
                       }}
-                      className="rounded-full px-1.5 text-[11px] font-medium text-danger hover:underline"
+                      className={cn(
+                        'flex size-4 items-center justify-center rounded-full text-ink-faint',
+                        'hover:bg-danger/15 hover:text-danger',
+                        'focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100',
+                      )}
                     >
-                      Remove
+                      <span aria-hidden="true">&times;</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setConfirming(null);
-                      }}
-                      className="rounded-full px-1 text-[11px] text-ink-muted hover:underline"
-                    >
-                      Cancel
-                    </button>
-                  </>
-                ) : (
-                  /* Two clicks, not a window.confirm: removing someone from a
-                     team is an authorization change that takes effect
-                     immediately, and a single stray click on a chip is too cheap
-                     for that. The confirm is inline so it cannot be dismissed by
-                     clicking the wrong thing. */
-                  <button
-                    type="button"
-                    aria-label={`Remove ${member.email} from ${team.name}`}
-                    onClick={() => {
-                      setConfirming(member.userId);
-                    }}
-                    className={cn(
-                      'flex size-4 items-center justify-center rounded-full text-ink-faint',
-                      'hover:bg-danger/15 hover:text-danger',
-                      'focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100',
-                    )}
-                  >
-                    <span aria-hidden="true">&times;</span>
-                  </button>
-                )}
+                  ))}
               </li>
             );
           })}

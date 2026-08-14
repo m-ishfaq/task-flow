@@ -7,11 +7,14 @@ import { wire, type Wire } from '../../lib/wire.js';
 
 interface Outputs {
   orgs: Awaited<ReturnType<typeof api.tenancy.orgs.list.query>>;
+  org: Awaited<ReturnType<typeof api.tenancy.orgs.get.query>>;
   members: Awaited<ReturnType<typeof api.tenancy.members.list.query>>;
   explain: Awaited<ReturnType<typeof api.tenancy.authz.explain.query>>;
 }
 
 export type OrgMembership = Wire<Outputs['orgs']>[number];
+export type OrgDetail = Wire<Outputs['org']>;
+export type SettingsCapabilities = OrgDetail['capabilities'];
 export type Member = Wire<Outputs['members']>[number];
 export type Explanation = Wire<Outputs['explain']>;
 
@@ -29,6 +32,19 @@ export function orgsQuery() {
     // Explicit `undefined`: the route takes no input, and tRPC types the
     // argument as required-but-void.
     queryFn: async () => wire(await api.tenancy.orgs.list.query(undefined)),
+  });
+}
+
+/**
+ * The current org, including the caller's own `capabilities` — what the
+ * Settings page's admin controls are for. Keyed with a `'detail'` suffix so
+ * it does not collide with `keys.org(orgId)`'s own prefix, which other
+ * queries (member/team mutations' invalidation) address as a group.
+ */
+export function orgDetailQuery(orgId: string) {
+  return queryOptions({
+    queryKey: [...keys.org(orgId), 'detail'],
+    queryFn: async () => wire(await api.tenancy.orgs.get.query(undefined)),
   });
 }
 
