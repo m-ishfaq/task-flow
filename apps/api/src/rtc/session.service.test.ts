@@ -322,6 +322,41 @@ describe('first-answer-wins', () => {
     expect(row?.joinedCount).toBe(3);
   });
 
+  it('does not let the INITIATOR answer their own call (§3.6 correction)', async () => {
+    // The real web client joins the WebRTC mesh — and therefore calls this
+    // same join route — the instant it PLACES a call, not only when someone
+    // answers. Without excluding the initiator, that self-join reaches
+    // Postgres before any human can react to a ring, and the caller's own
+    // request wins first-answer-wins against their own callee.
+    const orgId = await newOrg('rtc-self-join');
+    await seedMembers(orgId, [BOB]);
+    const channelId = await dmBetween(orgId, [ALICE, BOB]);
+
+    const alice = await actorFor(orgId, ALICE, 'owner');
+    const { sessionId } = await sessions.startSession(alice, { channelId, kind: 'audio' });
+
+    // The caller's own client joining its own just-created session.
+    const view = await sessions.joinSession(alice, { sessionId });
+    expect(view.status).toBe('ringing');
+
+    const row = await sessionRow(orgId, sessionId);
+    expect(row?.status).toBe('ringing');
+    expect(row?.startedAt).toBeNull();
+
+    const answered = await withOrgScope(orgId, async (tx) =>
+      tx
+        .select({ name: schema.outbox.name })
+        .from(schema.outbox)
+        .where(eq(schema.outbox.name, 'rtc_session.answered')),
+    );
+    expect(answered).toHaveLength(0);
+
+    // A real answer from the actual callee still works normally afterward.
+    const bob = await actorFor(orgId, BOB);
+    const answeredView = await sessions.joinSession(bob, { sessionId });
+    expect(answeredView.status).toBe('active');
+  });
+
   it('does not count a second join from the same person twice', async () => {
     const orgId = await newOrg('rtc-rejoin');
     await seedMembers(orgId, [BOB]);
@@ -487,6 +522,31 @@ describe('session lifecycle', () => {
     expect(ended?.endReason).toBe('declined');
   });
 
+  it('ends a ringing 1:1 call on decline even after the CALLER has joined their own session', async () => {
+    // This is the real client sequence, not the shortcut the test above
+    // takes: `call-button.tsx` calls `joinCall()` — which hits this same
+    // join route — for the caller too, immediately after `startSession`.
+    // Before the initiator exclusion above, that self-join corrupted
+    // `status` to 'active', which silently defeated `declineSession`'s
+    // `status === 'ringing'` guard below — the callee's decline updated
+    // their own participant row but never ended the session, so the
+    // caller's screen never cleared.
+    const orgId = await newOrg('rtc-decline-after-selfjoin');
+    await seedMembers(orgId, [BOB]);
+    const channelId = await dmBetween(orgId, [ALICE, BOB]);
+
+    const alice = await actorFor(orgId, ALICE, 'owner');
+    const bob = await actorFor(orgId, BOB);
+    const { sessionId } = await sessions.startSession(alice, { channelId, kind: 'audio' });
+    await sessions.joinSession(alice, { sessionId });
+
+    await sessions.declineSession(bob, { sessionId });
+
+    const ended = await sessionRow(orgId, sessionId);
+    expect(ended?.status).toBe('ended');
+    expect(ended?.endReason).toBe('declined');
+  });
+
   it('does not end an answered call when a second invitee declines', async () => {
     const orgId = await newOrg('rtc-late-decline');
     await seedMembers(orgId, [BOB, CAROL]);
@@ -556,5 +616,75 @@ describe('session lifecycle', () => {
     expect(
       await rejectionCode(() => sessions.startSession(alice, { channelId, kind: 'audio' })),
     ).toBe('CONFLICT');
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * Removed from the org mid-call — the phantom-session gap
+ * -------------------------------------------------------------------------- */
+
+describe('removeMember cleans up an active call (tenancy/member.service.ts)', () => {
+  it('ends a 1:1 call when the joined party is removed from the org mid-call', async () => {
+    // The real failure mode this closes: the removed party's own client would
+    // try to leave gracefully and be refused with NOT_A_MEMBER (correctly —
+    // they are not one anymore), and that failure was silently swallowed —
+    // leaving the session `active` forever with a party who can never speak
+    // to anyone again in it.
+    const orgId = await newOrg('rtc-evict-1on1');
+    await seedMembers(orgId, [BOB]);
+    const channelId = await dmBetween(orgId, [ALICE, BOB]);
+
+    const alice = await actorFor(orgId, ALICE, 'owner');
+    const bob = await actorFor(orgId, BOB);
+    const { sessionId } = await sessions.startSession(alice, { channelId, kind: 'audio' });
+    await sessions.joinSession(bob, { sessionId });
+    expect((await sessionRow(orgId, sessionId))?.status).toBe('active');
+
+    await members.removeMember(orgId, { userId: BOB }, { userId: ALICE, requestId });
+
+    const ended = await sessionRow(orgId, sessionId);
+    expect(ended?.status).toBe('ended');
+    expect(ended?.endReason).toBe('empty');
+
+    /* The live-session index is freed too — the same proof `leaveSession`'s
+       own test uses — otherwise a phantom session blocks every future call
+       in the conversation. */
+    const next = await sessions.startSession(alice, { channelId, kind: 'audio' });
+    expect(next.sessionId).not.toBe(sessionId);
+  });
+
+  it('does not end a group call when the removed party was not the last leg', async () => {
+    const orgId = await newOrg('rtc-evict-group');
+    await seedMembers(orgId, [BOB, CAROL]);
+    const channelId = await dmBetween(orgId, [ALICE, BOB, CAROL]);
+
+    const alice = await actorFor(orgId, ALICE, 'owner');
+    const bob = await actorFor(orgId, BOB);
+    const carol = await actorFor(orgId, CAROL);
+    const { sessionId } = await sessions.startSession(alice, { channelId, kind: 'audio' });
+    await sessions.joinSession(bob, { sessionId });
+    await sessions.joinSession(carol, { sessionId });
+
+    await members.removeMember(orgId, { userId: CAROL }, { userId: ALICE, requestId });
+
+    const row = await sessionRow(orgId, sessionId);
+    expect(row?.status).toBe('active');
+    expect(row?.joinedCount).toBe(2);
+  });
+
+  it('does nothing to a call the removed party was never on', async () => {
+    const orgId = await newOrg('rtc-evict-unrelated');
+    await seedMembers(orgId, [BOB, CAROL]);
+    const channelId = await dmBetween(orgId, [ALICE, BOB]);
+
+    const alice = await actorFor(orgId, ALICE, 'owner');
+    const bob = await actorFor(orgId, BOB);
+    const { sessionId } = await sessions.startSession(alice, { channelId, kind: 'audio' });
+    await sessions.joinSession(bob, { sessionId });
+
+    // Carol is a member of the org but not part of this call at all.
+    await members.removeMember(orgId, { userId: CAROL }, { userId: ALICE, requestId });
+
+    expect((await sessionRow(orgId, sessionId))?.status).toBe('active');
   });
 });

@@ -1,6 +1,6 @@
-import { and, eq, increment, isNull, ne, schema, type withOrgScope } from '@taskflow/db';
+import { and, decrement, eq, increment, isNull, ne, schema, type withOrgScope } from '@taskflow/db';
 import type { OrgId, UserId } from '@taskflow/contracts';
-import { durationSecondsOf, type SessionRow } from './shared.js';
+import { durationSecondsOf, loadSession, type SessionRow } from './shared.js';
 
 /**
  * Participant and session-row writes — the repository behind `session.service.ts`.
@@ -243,4 +243,151 @@ export async function endSessionRow(
     notifyUserIds: audience.map((row) => row.userId),
     missedUserIds,
   };
+}
+
+/**
+ * Whether the leg that just left was the last one worth keeping the call
+ * open for — shared by `session.service.ts`'s `leaveSession` and
+ * `leaveAllActiveSessionsFor` below, which needs the identical rule from a
+ * different door (a membership removal, not a person clicking "leave").
+ *
+ * A 1:1 call has nobody left to talk to the moment EITHER person leaves —
+ * waiting for `joinedCount` to reach zero means the remaining party sits in
+ * a call with no one on the other end until they, too, click "leave". A
+ * group call dropping to one person is different: that person may be
+ * waiting for others to rejoin, so only a call with exactly two participants
+ * total ever gets this early ending.
+ */
+export async function isLastLegOut(
+  tx: RtcTx,
+  sessionId: string,
+  joinedCount: number,
+): Promise<boolean> {
+  if (joinedCount <= 0) return true;
+  if (joinedCount !== 1) return false;
+
+  const participants = await tx
+    .select({ userId: schema.rtcParticipants.userId })
+    .from(schema.rtcParticipants)
+    .where(eq(schema.rtcParticipants.sessionId, sessionId));
+  return participants.length === 2;
+}
+
+/**
+ * Force-leaves a user from every RTC session they are currently `joined` to
+ * in this org — called from WITHIN another operation's own transaction
+ * (`tenancy/member.service.ts`'s `removeMember`), never through its own
+ * `withOrgScope`, because the fact that triggers this — the membership row
+ * itself is about to disappear — has to commit atomically with the leave.
+ *
+ * ## Why this cannot just be `leaveSession`, called once per session
+ *
+ * `leaveSession` reads the caller's OWN identity from an `RtcActor` and asks
+ * "did *I* leave" — there is no actor here, only a person being removed by
+ * someone else, so this takes the target explicitly and mirrors the same
+ * participant-leave / `isLastLegOut` / `endSessionRow` shape by hand.
+ *
+ * ## The gap this closes
+ *
+ * Without it, removing someone from an org left their `rtc.participants`
+ * row `joined` forever: their own client's follow-up "I left" call is
+ * refused with `NOT_A_MEMBER` (they are not a member anymore, that is the
+ * whole point), and the failure is silently swallowed as best-effort. The
+ * session then never ends — `joined_count` stays inflated, the channel's
+ * one-live-session-per-channel index blocks any new call in that
+ * conversation, and anyone still on the call is left listening to nobody.
+ *
+ * Returns what happened per session so the caller — a `*.service.ts` file,
+ * and therefore the one guardrail 11 requires to emit the event, not this
+ * repository — can build `rtc_session.left`/`.ended` exactly as
+ * `leaveSession` itself does.
+ */
+export async function leaveAllActiveSessionsFor(
+  tx: RtcTx,
+  input: { readonly orgId: OrgId; readonly userId: UserId; readonly now: Date },
+): Promise<
+  readonly {
+    readonly sessionId: string;
+    readonly channelId: string;
+    readonly ended: boolean;
+    readonly endedDetails?: {
+      readonly reason: EndReason;
+      readonly durationSeconds: number;
+      readonly notifyUserIds: readonly string[];
+      readonly missedUserIds: readonly string[];
+    };
+  }[]
+> {
+  const joinedRows = await tx
+    .select({ sessionId: schema.rtcParticipants.sessionId })
+    .from(schema.rtcParticipants)
+    .innerJoin(schema.rtcSessions, eq(schema.rtcSessions.id, schema.rtcParticipants.sessionId))
+    .where(
+      and(
+        eq(schema.rtcParticipants.orgId, input.orgId),
+        eq(schema.rtcParticipants.userId, input.userId),
+        eq(schema.rtcParticipants.state, 'joined'),
+        ne(schema.rtcSessions.status, 'ended'),
+      ),
+    );
+
+  const results: {
+    sessionId: string;
+    channelId: string;
+    ended: boolean;
+    endedDetails?: {
+      reason: EndReason;
+      durationSeconds: number;
+      notifyUserIds: readonly string[];
+      missedUserIds: readonly string[];
+    };
+  }[] = [];
+
+  for (const row of joinedRows) {
+    const session = await loadSession(tx, row.sessionId);
+    if (session.status === 'ended') continue; // Ended by an earlier iteration's own end, or a race.
+
+    const left = await tx
+      .update(schema.rtcParticipants)
+      .set({ state: 'left', leftAt: input.now })
+      .where(
+        and(
+          eq(schema.rtcParticipants.sessionId, session.id),
+          eq(schema.rtcParticipants.userId, input.userId),
+          eq(schema.rtcParticipants.state, 'joined'),
+        ),
+      )
+      .returning({ userId: schema.rtcParticipants.userId });
+
+    if (left.length === 0) continue;
+
+    const remaining = await tx
+      .update(schema.rtcSessions)
+      .set({ joinedCount: decrement(schema.rtcSessions.joinedCount), updatedAt: input.now })
+      .where(eq(schema.rtcSessions.id, session.id))
+      .returning({ joinedCount: schema.rtcSessions.joinedCount });
+
+    const joinedCount = remaining[0]?.joinedCount ?? 0;
+    const shouldEnd = await isLastLegOut(tx, session.id, joinedCount);
+
+    if (!shouldEnd) {
+      results.push({ sessionId: session.id, channelId: session.channelId, ended: false });
+      continue;
+    }
+
+    const ended = await endSessionRow(tx, session, 'empty', input.now);
+    results.push({
+      sessionId: session.id,
+      channelId: session.channelId,
+      ended: true,
+      endedDetails: {
+        reason: ended.reason,
+        durationSeconds: ended.durationSeconds,
+        notifyUserIds: ended.notifyUserIds,
+        missedUserIds: ended.missedUserIds,
+      },
+    });
+  }
+
+  return results;
 }
