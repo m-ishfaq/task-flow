@@ -16,9 +16,11 @@ set -euo pipefail
 # exited 0.
 #
 # This script fixes both by construction: IMAGE_TAG is a required argument,
-# never a default; every one-shot job runs with --rm; and the two gates
-# .env.prod.example already documents (no ENTER_HERE placeholders, compose
-# config resolves) run BEFORE anything is built, pulled, or recreated.
+# never a default; every one-shot job runs with --rm; and check-env-prod.sh
+# (a full audit of every variable compose.prod.yaml references — missing,
+# blank, or a leftover ENTER_HERE/CHANGE_ME placeholder from .env.prod.example,
+# ALL of them at once rather than the one-at-a-time failures `docker compose
+# config` gives you) runs BEFORE anything is built, pulled, or recreated.
 #
 # Usage:
 #   scripts/deploy-prod.sh <image-tag>              # pull pre-built images (normal path)
@@ -52,17 +54,10 @@ fi
 
 COMPOSE=(docker compose --env-file .env.prod -f compose.prod.yaml)
 
-echo "== [1/7] gate: no placeholder secrets =="
-if grep -n ENTER_HERE .env.prod; then
-  echo "" >&2
-  echo "ENTER_HERE placeholder(s) printed above — fill them in before deploying." >&2
-  echo "See .env.prod.example's own header for why this must be checked explicitly:" >&2
-  echo "compose's \${VAR:?} only refuses an EMPTY string, and ENTER_HERE is not empty." >&2
-  exit 1
-fi
-echo "  none found"
+echo "== [1/7] gate: full .env.prod audit =="
+"$(dirname "$0")/check-env-prod.sh" compose.prod.yaml .env.prod
 
-echo "== [2/7] gate: compose config resolves (every required var is set) =="
+echo "== [2/7] gate: compose config resolves (belt-and-suspenders on the check above) =="
 "${COMPOSE[@]}" config --quiet
 echo "  ok"
 
