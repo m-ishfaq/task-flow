@@ -162,6 +162,15 @@ export async function finishRegistration(
     ),
   ]);
 
+  /* Security-relevant account change, told to the person it happened to —
+     the same reasoning `issueSession`'s impossible-travel send gives.
+     Best-effort: a mail failure must not undo a passkey that already
+     registered successfully. */
+  const user = await repo.findUserById(input.userId);
+  if (user !== undefined) {
+    await deps.deliver({ kind: 'passkey_registered', email: user.email });
+  }
+
   return { credentialId: credential.credentialId };
 }
 

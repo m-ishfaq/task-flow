@@ -297,6 +297,92 @@ describe('page.comment_created — docs page comment mentions', () => {
   });
 });
 
+describe('member.added — tenancy (migration 0071)', () => {
+  const MEMBERSHIP = '0195ee05-0000-7000-8000-000000000060';
+  const base = { membershipId: MEMBERSHIP, userId: BOB, email: 'bob@example.com', role: 'member' };
+
+  it('tells the person added, not the person who added them', () => {
+    const planned = planNotifications(row('member.added', base, ALICE));
+    expect(planned).toEqual([
+      {
+        userId: BOB,
+        kind: 'member.added',
+        subjectType: 'membership',
+        subjectId: MEMBERSHIP,
+        title: 'You were added as a Member',
+        excerpt: null,
+        channelId: null,
+        boardId: null,
+      },
+    ]);
+  });
+
+  it('capitalizes and articles the role', () => {
+    expect(planNotifications(row('member.added', { ...base, role: 'owner' }))[0]?.title).toBe(
+      'You were added as an Owner',
+    );
+    expect(planNotifications(row('member.added', { ...base, role: 'admin' }))[0]?.title).toBe(
+      'You were added as an Admin',
+    );
+  });
+
+  it('survives a payload missing membershipId', () => {
+    expect(planNotifications(row('member.added', { userId: BOB, role: 'member' }))).toEqual([]);
+  });
+});
+
+describe('member.role_changed — tenancy (migration 0071)', () => {
+  const MEMBERSHIP = '0195ee05-0000-7000-8000-000000000061';
+  const base = { membershipId: MEMBERSHIP, userId: BOB, from: 'member', to: 'admin' };
+
+  it('tells the person whose role changed, not the actor who changed it', () => {
+    const planned = planNotifications(row('member.role_changed', base, ALICE));
+    expect(planned).toEqual([
+      {
+        userId: BOB,
+        kind: 'member.role_changed',
+        subjectType: 'membership',
+        subjectId: MEMBERSHIP,
+        title: 'Your role changed to an Admin',
+        excerpt: null,
+        channelId: null,
+        boardId: null,
+      },
+    ]);
+  });
+
+  it('survives a payload missing the target role', () => {
+    expect(
+      planNotifications(row('member.role_changed', { membershipId: MEMBERSHIP, userId: BOB })),
+    ).toEqual([]);
+  });
+});
+
+describe('member.removed — tenancy (migration 0072)', () => {
+  const MEMBERSHIP = '0195ee05-0000-7000-8000-000000000062';
+  const base = { membershipId: MEMBERSHIP, userId: BOB, role: 'member' };
+
+  it('tells the person removed, not the person who removed them', () => {
+    const planned = planNotifications(row('member.removed', base, ALICE));
+    expect(planned).toEqual([
+      {
+        userId: BOB,
+        kind: 'member.removed',
+        subjectType: 'membership',
+        subjectId: MEMBERSHIP,
+        title: 'You were removed from this organization',
+        excerpt: null,
+        channelId: null,
+        boardId: null,
+      },
+    ]);
+  });
+
+  it('survives a payload missing membershipId', () => {
+    expect(planNotifications(row('member.removed', { userId: BOB, role: 'member' }))).toEqual([]);
+  });
+});
+
 describe('unrelated event names', () => {
   it('ignores events this projection does not consume', () => {
     expect(planNotifications(row('card.updated', { cardId: '1' }))).toEqual([]);

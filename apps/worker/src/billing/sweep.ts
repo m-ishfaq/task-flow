@@ -15,7 +15,11 @@ import {
   expireGracePeriod,
   expireTrial,
 } from '@taskflow/api/billing/sweep';
-import { warnTrialEnding, type BillingMailDeps } from '@taskflow/api/billing/billing-mail';
+import {
+  sendBillingMail,
+  warnTrialEnding,
+  type BillingMailDeps,
+} from '@taskflow/api/billing/billing-mail';
 import { closeUsagePeriod } from '@taskflow/api/billing/overage';
 import type { PaymentProvider } from '@taskflow/contracts';
 
@@ -110,6 +114,15 @@ export function startBillingSweep(options: {
 
         if (await expireTrial(orgId)) {
           trialsExpired += 1;
+
+          /* The follow-up to `warnTrialEnding` above — sent once the switch
+             has actually happened, on the same tick that made it true.
+             Best-effort, exactly like every other billing send here: a
+             worker with no mailer configured still applies the transition
+             and simply tells nobody, rather than failing the sweep. */
+          if (options.mail !== undefined) {
+            void sendBillingMail(options.mail, orgId, 'trial_ended');
+          }
         }
       }
 

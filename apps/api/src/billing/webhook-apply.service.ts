@@ -141,10 +141,19 @@ export async function applyBillingWebhookEvent(
          `subscription_activated` already has an event for, and a payment
          recovering onto an EXISTING subscription is not a new fact worth a
          second audit entry beyond the state itself changing. */
-      await tx
+      const result = await tx
         .update(schema.orgs)
         .set({ billingStatus: 'active', billingGraceEndsAt: null })
         .where(and(eq(schema.orgs.id, orgId), eq(schema.orgs.billingStatus, 'past_due')));
+      if (result.rowCount === 0) return;
+
+      /* The owner who was told to worry by `payment_failed` is the one
+         entitled to be told it is resolved — queued, not awaited, for the
+         identical reason `payment_failed`'s own send is: a dead SMTP relay
+         must not roll back the transaction that recorded a real recovery. */
+      if (deps.mail !== undefined) {
+        void sendBillingMail(deps.mail, orgId, 'payment_recovered');
+      }
       return;
     }
 

@@ -69,10 +69,23 @@ export interface IdentityDeps {
 }
 
 export interface DeliverableLink {
-  readonly kind: 'verify_email' | 'password_reset' | 'duplicate_registration';
+  readonly kind:
+    | 'verify_email'
+    | 'password_reset'
+    | 'duplicate_registration'
+    | 'impossible_travel'
+    | 'password_changed'
+    | 'totp_enabled'
+    | 'passkey_registered';
   readonly email: string;
-  /** Absent for `duplicate_registration`, which deliberately carries no link. */
+  /* Absent for every kind below `password_reset` — none of the security
+     notices carry a link, for the same reason `duplicate_registration`
+     doesn't: a "click here" in a message an attacker's own action could
+     trigger is a phishing shape, not a courtesy. */
   readonly token?: string;
+  /** Present only for `impossible_travel`. */
+  readonly previousCountry?: string;
+  readonly newCountry?: string;
 }
 
 export interface RequestMeta {
@@ -561,6 +574,17 @@ export async function resetPassword(
     ),
   ]);
 
+  /* The one-line reset email already warns "using this will sign you out
+     everywhere" — this is the confirmation that it actually happened,
+     which matters most to the person who did NOT request it: the reset
+     email went to whoever asked, but if an attacker asked, this is the
+     first thing the real owner ever sees. Best-effort, same reasoning as
+     `issueSession`'s impossible-travel send. */
+  const user = await repo.findUserById(consumed.userId);
+  if (user !== undefined) {
+    await deps.deliver({ kind: 'password_changed', email: user.email });
+  }
+
   return { status: 'reset' };
 }
 
@@ -684,6 +708,26 @@ export async function issueSession(
         { orgId: SYSTEM_ORG, actorId: null, occurredAt: now },
       ),
     ]);
+
+    /* The person, not just the audit log — this is the one branch of login
+       that a stolen password reaches with no other control in front of it
+       (§3.4 is explicit that this flag is informational, never blocking, so
+       it does not stop the sign-in itself). Looked up here rather than
+       threaded through all four callers of `issueSession`: none of them
+       currently carry the user's email this deep, and paying one extra read
+       only on the rare flagged path is cheaper than widening every caller's
+       signature for a lookup that almost never runs. Best-effort: a mail
+       failure here must not turn a successful, already-committed sign-in
+       into an error response. */
+    const user = await repo.findUserById(userId);
+    if (user !== undefined) {
+      await deps.deliver({
+        kind: 'impossible_travel',
+        email: user.email,
+        previousCountry,
+        newCountry: country,
+      });
+    }
   }
 
   const accessToken = await signAccessToken(

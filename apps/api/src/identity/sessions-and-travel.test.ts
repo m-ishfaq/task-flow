@@ -45,7 +45,12 @@ const JWT_SECRET = new Uint8Array(Buffer.alloc(32, 7));
 const PASSWORD = 'correct horse battery staple 42';
 
 let events: RecordingEventBus;
-let delivered: { kind: string; token?: string }[];
+let delivered: {
+  kind: string;
+  token?: string;
+  previousCountry?: string;
+  newCountry?: string;
+}[];
 /** Mutable clock — advancing it is how \"too little time between logins\" is expressed. */
 let now: Date;
 
@@ -175,6 +180,13 @@ describe('impossible-travel detection at login (§3.4)', () => {
       previousCountry: 'US',
       newCountry: 'FR',
     });
+
+    /* The audit event alone reaches nobody but a log reader — the person
+       whose account this is finds out only if they are actually emailed. */
+    const mail = delivered.find((message) => message.kind === 'impossible_travel');
+    expect(mail).toBeDefined();
+    expect(mail?.previousCountry).toBe('US');
+    expect(mail?.newCountry).toBe('FR');
   });
 
   it('does not flag the same country twice', async () => {
@@ -188,6 +200,7 @@ describe('impossible-travel detection at login (§3.4)', () => {
 
     expect(rows[0]?.impossibleTravelAt).toBeNull();
     expect(events.names()).not.toContain('session.impossible_travel_detected');
+    expect(delivered.some((message) => message.kind === 'impossible_travel')).toBe(false);
   });
 
   it('does not flag the same distance when enough time passed', async () => {

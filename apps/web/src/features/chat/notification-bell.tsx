@@ -115,6 +115,10 @@ export function NotificationBell() {
       void navigate({ to: '/docs', search: { page: notification.subjectId } });
       return;
     }
+    if (notification.subjectType === 'membership') {
+      void navigate({ to: '/settings' });
+      return;
+    }
     if (notification.channelId !== null) {
       void navigate({ to: '/chat', search: { channel: notification.channelId } });
     }

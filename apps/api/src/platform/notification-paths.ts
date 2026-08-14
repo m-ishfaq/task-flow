@@ -33,6 +33,11 @@ export function notificationPath(input: {
        wants after seeing "you missed a call" is the place to call back from. */
     case 'call':
       return input.channelId === null ? null : `/chat?channel=${input.channelId}`;
+    /* A membership event (added, role changed) links to Settings — there is
+       no per-event page, and Settings' member list is where the fact it
+       describes is actually visible (migration 0071). */
+    case 'membership':
+      return '/settings';
     default:
       return null;
   }

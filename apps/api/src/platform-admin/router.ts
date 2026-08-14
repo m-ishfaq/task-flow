@@ -5,6 +5,7 @@ import { isPlatformOperator } from './operator.js';
 import { FLAG_NAMES, type FlagName } from '@taskflow/feature-flags';
 import { platformRoute, router, selfRoute } from '../trpc/builder.js';
 import type { SubaccountDeps } from '../telephony/subaccount.service.js';
+import type { BillingMailDeps } from '../billing/billing-mail.js';
 import * as directory from './org-directory.service.js';
 import * as users from './user-directory.service.js';
 import * as flags from './flags.service.js';
@@ -41,6 +42,15 @@ export interface PlatformAdminRouterDeps {
    * `org-directory.service.ts`'s `syncSubaccountStatus`.
    */
   readonly subaccounts?: SubaccountDeps;
+  /**
+   * Where the org-suspended/org-deleted emails go — reuses billing's own
+   * mail deps rather than building a second queue, since both are the same
+   * shape of thing: an urgent, un-batched notice sent directly, bypassing
+   * the notification projection this role has no outbox access to write
+   * into. Optional, like `subaccounts`: with none, both actions still
+   * happen and nobody is emailed.
+   */
+  readonly mail?: BillingMailDeps;
   /**
    * The payment processor, for the plan catalog (Phase 12 Wave 4).
    *

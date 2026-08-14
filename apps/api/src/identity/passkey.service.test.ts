@@ -137,6 +137,15 @@ describe('enrollment', () => {
     expect((result.body.result?.data as { credentialId?: string }).credentialId).toBeTruthy();
   });
 
+  it('emails the account owner that a new passkey was registered', async () => {
+    const email = 'passkey-mail@example.test';
+    const token = await signedInUser(email);
+    await enroll(token, newDevice(), 'Test key');
+
+    const notice = deliveries.find((m) => m.kind === 'passkey_registered' && m.email === email);
+    expect(notice).toBeDefined();
+  });
+
   it('lists it back with the label, and without the key material', async () => {
     const token = await signedInUser('passkey-list@example.test');
     await enroll(token, newDevice(), 'MacBook Touch ID');

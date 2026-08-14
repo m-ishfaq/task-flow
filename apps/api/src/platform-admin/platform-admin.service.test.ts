@@ -26,6 +26,8 @@ import type { PlatformOperator } from './org-directory.service.js';
 import { isPlatformOperator } from './operator.js';
 import { createPlatformAdminRouter } from './router.js';
 import { FakePaymentProvider } from '@taskflow/payments';
+import { MailQueue, MemoryMailer } from '@taskflow/mail';
+import type { BillingMailDeps } from '../billing/billing-mail.js';
 
 /**
  * The platform-admin slice (ai/phase-12-admin.md §6), against real Postgres.
@@ -300,6 +302,31 @@ describe('the org directory', () => {
     /* Reactivation reverses the state, and the membership reads again. */
     await directory.reactivateOrg({ events }, operatorOf(OPERATOR), orgId);
     expect((await resolveOrgMembership(OWNER, orgId))?.role).toBe('owner');
+  });
+
+  it('emails the owner when suspending, and does nothing when no mail deps are given', async () => {
+    const orgId = await newOrg('suspend-mail');
+    const mailer = new MemoryMailer();
+    const queue = new MailQueue({ mailer, sleep: () => Promise.resolve() });
+    const mail: BillingMailDeps = { queue, webOrigin: 'http://localhost:5173' };
+
+    await directory.suspendOrg(
+      { events: new RecordingEventBus(), mail },
+      operatorOf(OPERATOR),
+      orgId,
+    );
+    await queue.drain();
+
+    expect(mailer.sent).toHaveLength(1);
+    expect(mailer.sent[0]?.to).toBe('owner@platform.test');
+    expect(mailer.sent[0]?.subject).toMatch(/suspended/i);
+
+    /* No `mail` in deps — the org still suspends, nobody is emailed. Not
+       a hang, not a throw: the same optional-dep shape `subaccounts` has. */
+    const orgId2 = await newOrg('suspend-nomail');
+    await expect(
+      directory.suspendOrg({ events: new RecordingEventBus() }, operatorOf(OPERATOR), orgId2),
+    ).resolves.toBeDefined();
   });
 });
 
@@ -604,5 +631,24 @@ describe('org deletion (Phase 12 Wave 2 §3.5)', () => {
       slug: 'delete-cascade',
       confirmSlug: 'delete-cascade',
     });
+  });
+
+  it('emails the owner when deleting, resolved BEFORE the membership row cascades away', async () => {
+    const orgId = await newOrg('delete-mail');
+    await directory.suspendOrg({ events: new RecordingEventBus() }, operatorOf(OPERATOR), orgId);
+
+    const mailer = new MemoryMailer();
+    const queue = new MailQueue({ mailer, sleep: () => Promise.resolve() });
+    const mail: BillingMailDeps = { queue, webOrigin: 'http://localhost:5173' };
+
+    await directory.deleteOrg({ events: new RecordingEventBus(), mail }, operatorOf(OPERATOR), {
+      orgId,
+      confirmSlug: 'delete-mail',
+    });
+    await queue.drain();
+
+    expect(mailer.sent).toHaveLength(1);
+    expect(mailer.sent[0]?.to).toBe('owner@platform.test');
+    expect(mailer.sent[0]?.subject).toMatch(/deleted/i);
   });
 });

@@ -2,8 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   escapeHtml,
   renderDuplicateRegistration,
+  renderImpossibleTravel,
   renderNotificationDigest,
+  renderOrgDeleted,
+  renderOrgSuspended,
+  renderPasskeyRegistered,
+  renderPasswordChanged,
   renderPasswordReset,
+  renderTotpEnabled,
   renderVerifyEmail,
 } from './templates.js';
 
@@ -159,6 +165,120 @@ describe('renderNotificationDigest', () => {
   it('tolerates a trailing slash on the origin', () => {
     const mail = renderNotificationDigest({ webOrigin: 'http://localhost:5173/', items });
     expect(mail.text).not.toContain('5173//chat');
+  });
+});
+
+describe('renderImpossibleTravel', () => {
+  const CONTEXT = { previousCountry: 'US', newCountry: 'RU' };
+
+  it('names both countries', () => {
+    const mail = renderImpossibleTravel(CONTEXT);
+    expect(mail.text).toContain('RU');
+    expect(mail.text).toContain('US');
+    expect(mail.html).toContain('RU');
+    expect(mail.html).toContain('US');
+  });
+
+  it('carries no link — an unsolicited "secure your account" link is a phishing shape', () => {
+    const mail = renderImpossibleTravel(CONTEXT);
+    expect(mail.text).not.toMatch(/https?:\/\//);
+    expect(mail.html).not.toContain('<a ');
+    expect(mail.html).not.toContain('href');
+  });
+
+  it('tells someone who was not affected that no action is needed', () => {
+    const mail = renderImpossibleTravel(CONTEXT);
+    expect(mail.text).toMatch(/If this was you.*no action is needed/s);
+  });
+
+  it('escapes the country codes', () => {
+    const mail = renderImpossibleTravel({
+      previousCountry: 'US',
+      newCountry: '<script>alert(1)</script>',
+    });
+    expect(mail.html).not.toContain('<script>alert');
+  });
+});
+
+describe('renderOrgSuspended', () => {
+  it('names the org and says nothing was deleted', () => {
+    const mail = renderOrgSuspended({ orgName: 'Acme' });
+    expect(mail.subject).toContain('Acme');
+    expect(mail.text).toMatch(/does not delete anything/);
+  });
+
+  it('carries no link — a suspended owner has nowhere left to click through to', () => {
+    const mail = renderOrgSuspended({ orgName: 'Acme' });
+    expect(mail.text).not.toMatch(/https?:\/\//);
+    expect(mail.html).not.toContain('<a ');
+  });
+
+  it('escapes the org name', () => {
+    const mail = renderOrgSuspended({ orgName: '<script>alert(1)</script>' });
+    expect(mail.html).not.toContain('<script>alert');
+  });
+});
+
+describe('renderOrgDeleted', () => {
+  it('names the org and says the data is gone', () => {
+    const mail = renderOrgDeleted({ orgName: 'Acme' });
+    expect(mail.subject).toContain('Acme');
+    expect(mail.text).toMatch(/cannot be recovered/);
+  });
+
+  it('carries no link — nothing left to link to', () => {
+    const mail = renderOrgDeleted({ orgName: 'Acme' });
+    expect(mail.text).not.toMatch(/https?:\/\//);
+    expect(mail.html).not.toContain('<a ');
+  });
+
+  it('escapes the org name', () => {
+    const mail = renderOrgDeleted({ orgName: '<script>alert(1)</script>' });
+    expect(mail.html).not.toContain('<script>alert');
+  });
+});
+
+describe('renderPasswordChanged', () => {
+  it('tells someone who did not request it that their account may be compromised', () => {
+    const mail = renderPasswordChanged();
+    expect(mail.text).toMatch(/someone else may have access/);
+  });
+
+  it('says every other session was signed out', () => {
+    const mail = renderPasswordChanged();
+    expect(mail.text).toMatch(/signed out/);
+  });
+
+  it('carries no link', () => {
+    const mail = renderPasswordChanged();
+    expect(mail.text).not.toMatch(/https?:\/\//);
+    expect(mail.html).not.toContain('<a ');
+  });
+});
+
+describe('renderTotpEnabled', () => {
+  it('tells someone who did not enable it what to do', () => {
+    const mail = renderTotpEnabled();
+    expect(mail.text).toMatch(/go to TaskFlow.*change\s*\n?\s*your password/);
+  });
+
+  it('carries no link', () => {
+    const mail = renderTotpEnabled();
+    expect(mail.text).not.toMatch(/https?:\/\//);
+    expect(mail.html).not.toContain('<a ');
+  });
+});
+
+describe('renderPasskeyRegistered', () => {
+  it('tells someone who did not register it to remove it', () => {
+    const mail = renderPasskeyRegistered();
+    expect(mail.text).toMatch(/remove the/);
+  });
+
+  it('carries no link', () => {
+    const mail = renderPasskeyRegistered();
+    expect(mail.text).not.toMatch(/https?:\/\//);
+    expect(mail.html).not.toContain('<a ');
   });
 });
 

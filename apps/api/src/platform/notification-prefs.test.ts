@@ -10,6 +10,9 @@ describe('categoryOfKind', () => {
     expect(categoryOfKind('card.comment_mention')).toBe('direct');
     expect(categoryOfKind('card.due_soon')).toBe('activity');
     expect(categoryOfKind('page.comment_mention')).toBe('direct');
+    expect(categoryOfKind('member.added')).toBe('direct');
+    expect(categoryOfKind('member.role_changed')).toBe('direct');
+    expect(categoryOfKind('member.removed')).toBe('direct');
   });
 
   it('falls back to the conservative default for an unknown kind', () => {

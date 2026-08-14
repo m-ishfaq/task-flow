@@ -294,6 +294,60 @@ describe('POST /webhooks/billing/stripe', () => {
     expect(orgRow.billing_grace_ends_at).not.toBeNull();
   });
 
+  it('moves a past_due org back to active on payment_recovered, clearing the grace deadline', async () => {
+    const orgId = await newOrgWithCustomer('webhook-recovered', 'cus_webhook_recovered');
+
+    await app.inject({
+      method: 'POST',
+      url: '/webhooks/billing/stripe',
+      ...signedRequest({
+        kind: 'payment_failed',
+        providerEventId: 'evt_recovered_setup',
+        customerId: 'cus_webhook_recovered',
+      }),
+    });
+    expect((await readOrgRow(orgId, ['billing_status'] as const)).billing_status).toBe('past_due');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/webhooks/billing/stripe',
+      ...signedRequest({
+        kind: 'payment_recovered',
+        providerEventId: 'evt_recovered_1',
+        customerId: 'cus_webhook_recovered',
+      }),
+    });
+    expect(response.statusCode).toBe(200);
+
+    const orgRow = await readOrgRow(orgId, ['billing_status', 'billing_grace_ends_at'] as const);
+    expect(orgRow.billing_status).toBe('active');
+    expect(orgRow.billing_grace_ends_at).toBeNull();
+  });
+
+  it('does nothing on payment_recovered for an org that was never past_due', async () => {
+    // The conditional UPDATE's WHERE clause is the guard against emailing
+    // "you're recovered" to someone who was never warned in the first place —
+    // a webhook replayed out of order, or a customer id resolving to the
+    // wrong org, must not silently activate billing that was never at risk.
+    const orgId = await newOrgWithCustomer('webhook-recovered-noop', 'cus_webhook_recovered_noop');
+    const before = await readOrgRow(orgId, ['billing_status'] as const);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/webhooks/billing/stripe',
+      ...signedRequest({
+        kind: 'payment_recovered',
+        providerEventId: 'evt_recovered_noop_1',
+        customerId: 'cus_webhook_recovered_noop',
+      }),
+    });
+    expect(response.statusCode).toBe(200);
+
+    expect((await readOrgRow(orgId, ['billing_status'] as const)).billing_status).toBe(
+      before.billing_status,
+    );
+  });
+
   it('cancels a subscription immediately on subscription_canceled, skipping past_due', async () => {
     const orgId = await newOrgWithCustomer('webhook-cancel', 'cus_webhook_cancel');
 
