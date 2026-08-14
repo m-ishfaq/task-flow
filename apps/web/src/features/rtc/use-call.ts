@@ -135,11 +135,60 @@ function dropPeer(userId: string): void {
 }
 
 /**
+ * Guards two `joinCall` invocations racing to completion — most concretely,
+ * answering a second incoming call while the first is still sitting on the
+ * microphone permission prompt. Bumped once per invocation; a step that
+ * resolves after a NEWER call has already taken over the module-level
+ * `mesh`/`localStream`/`unsubscribers` must not touch them — the newer call
+ * already owns cleanup, and touching them here is how a stale
+ * `getUserMedia()` reply used to leak a microphone the user thinks is off,
+ * or tear down a mesh the newer call had just built.
+ */
+let generation = 0;
+
+/**
+ * Races a promise against a timer. Exists because two of `joinCall`'s steps
+ * have no timeout of their own: `joinCallRoom`'s ack-wait resolves its
+ * promise only on a reply that, if the socket never delivers it, simply
+ * never arrives, and a bare fetch has no deadline either — both read from
+ * the UI as "Connecting…" forever with no way out, which is exactly the
+ * "shows connecting long after call is placed" report.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, step: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Timed out waiting for ${step}.`));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+}
+
+const STEP_TIMEOUT_MS = 15_000;
+/* Generous, and deliberately not the same budget as the network steps above:
+   this one is waiting on a PERSON, not a server, and must not fire while a
+   permission dialog is legitimately still open on screen. It exists only as
+   a last-resort escape from a browser that never resolves the promise at
+   all, not as a UX nudge. */
+const MIC_TIMEOUT_MS = 120_000;
+
+/**
  * Joins (or answers) a call.
  *
  * Throws whatever the server said. Callers surface it in a toast rather than
  * this module doing it, for the reason `call-button.tsx` gives about telephony:
  * the UI never re-derives authorization, it reports what the server answered.
+ *
+ * A call superseded by a newer `joinCall` mid-flight (see `generation` above)
+ * resolves quietly instead — it was never an error, just overtaken.
  */
 export async function joinCall(input: {
   readonly orgId: string;
@@ -147,8 +196,11 @@ export async function joinCall(input: {
   readonly channelId: string;
   readonly selfId: string;
 }): Promise<void> {
+  const myGeneration = ++generation;
+
   /* One call at a time — see the header. */
   if (useCallStore.getState().sessionId !== null) await hangUp();
+  if (myGeneration !== generation) return;
 
   useCallStore.setState({
     sessionId: input.sessionId,
@@ -163,12 +215,38 @@ export async function joinCall(input: {
     recordingSaveError: null,
   });
 
+  /* Tracked locally, separately from the module-level `localStream`, so a
+     superseded attempt can release the mic IT acquired without guessing
+     whether the shared variable still points at its stream or a newer
+     call's. */
+  let ownedStream: MediaStream | null = null;
+
   try {
-    await api.rtc.join.mutate({ sessionId: input.sessionId });
-    const ice = await api.rtc.iceServers.mutate({ sessionId: input.sessionId });
+    await withTimeout(
+      api.rtc.join.mutate({ sessionId: input.sessionId }),
+      STEP_TIMEOUT_MS,
+      'the call to be accepted',
+    );
+    if (myGeneration !== generation) return;
+
+    const ice = await withTimeout(
+      api.rtc.iceServers.mutate({ sessionId: input.sessionId }),
+      STEP_TIMEOUT_MS,
+      'call credentials',
+    );
+    if (myGeneration !== generation) return;
 
     /* Only now. See the header on why the microphone prompt comes third. */
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    ownedStream = await withTimeout(
+      navigator.mediaDevices.getUserMedia({ audio: true, video: false }),
+      MIC_TIMEOUT_MS,
+      'microphone access',
+    );
+    if (myGeneration !== generation) {
+      for (const track of ownedStream.getTracks()) track.stop();
+      return;
+    }
+    localStream = ownedStream;
 
     mesh = new PeerMesh({
       selfId: input.selfId,
@@ -211,15 +289,28 @@ export async function joinCall(input: {
     ];
 
     /* Last, so no signal can arrive before there is a mesh to hand it to. */
-    const admitted = await joinCallRoom(input.orgId, input.sessionId);
+    const admitted = await withTimeout(
+      joinCallRoom(input.orgId, input.sessionId),
+      STEP_TIMEOUT_MS,
+      'the signalling room',
+    );
+    if (myGeneration !== generation) return;
     if (!admitted) throw new Error('The call could not be joined.');
 
     useCallStore.setState({ status: 'in_call' });
   } catch (error) {
-    /* Everything acquired so far is released, including the microphone. A
-       failed join that leaves the mic indicator lit is the single most alarming
-       way for this feature to break. */
-    await hangUp({ silent: true });
+    if (myGeneration === generation) {
+      /* Everything acquired so far is released, including the microphone. A
+         failed join that leaves the mic indicator lit is the single most
+         alarming way for this feature to break. */
+      await hangUp({ silent: true });
+    } else if (ownedStream !== null && localStream !== ownedStream) {
+      /* Superseded before `hangUp` (run by the newer call) had a chance to
+         see this stream as the active one — release it directly. Stopping
+         an already-stopped track is a harmless no-op, so this is safe even
+         when the newer call's own `hangUp` got there first. */
+      for (const track of ownedStream.getTracks()) track.stop();
+    }
     throw error;
   }
 }
