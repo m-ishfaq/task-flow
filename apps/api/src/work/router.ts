@@ -240,6 +240,10 @@ export function createWorkRouter(deps: WorkRouterDeps) {
                 description: z.string().nullable(),
                 archivedAt: z.date().nullable(),
                 boardCount: z.number().int().nonnegative(),
+                /* Read by the client to hide rename/archive/+Board/labels/
+                   statuses/fields/sprints/import controls a viewer cannot
+                   use — see ManageCapabilities' own comment. */
+                capabilities: z.object({ update: z.boolean(), delete: z.boolean() }).strict(),
               }),
             )
             .readonly(),
@@ -459,6 +463,10 @@ export function createWorkRouter(deps: WorkRouterDeps) {
                 name: z.string(),
                 rank: z.string(),
                 archivedAt: z.date().nullable(),
+                /* Per-board, not inherited from the project — see
+                   BoardSummary's own comment on why a share grant makes
+                   this genuinely resource-specific. */
+                capabilities: z.object({ update: z.boolean(), delete: z.boolean() }).strict(),
               }),
             )
             .readonly(),

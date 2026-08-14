@@ -17,17 +17,21 @@ import {
 } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { boardsQuery, projectsQuery } from './api.js';
+import { orgDetailQuery } from '../org/api.js';
 
 /**
  * Projects, and the boards inside them.
  *
- * Nothing here checks a role before rendering a button. A member who cannot
- * create a project sees the form, and the API answers FORBIDDEN — which is the
- * deliberate choice §8.2 describes: the UI consuming `can()` is fine, but the UI
- * REIMPLEMENTING it produces two authorization models that drift, and the one
- * users see is the one that is never tested. Phase 4 wires the decision trace
- * into affordances; until then the server is the only authority and the error is
- * honest.
+ * Nothing here compares a role before rendering a button — that would be the
+ * UI REIMPLEMENTING `can()`, producing a second authorization model that
+ * drifts from the tested one (§8.2). Instead every control keys off a
+ * `capabilities` object the SERVER already computed with the real `can()`:
+ * `createProject`/`duplicate` from `orgs.get` (role-only — creating has no
+ * existing resource to hold a tuple), and each project/board's own
+ * `capabilities.update`/`.delete` from `projects.list`/`boards.list`
+ * (per-resource — `share-board.tsx` can grant `board:update` on one board
+ * independent of the project's own access). The client hides a control it is
+ * told it cannot use; the server is still what actually refuses the mutation.
  *
  * ## Archived projects are reachable from here
  *
@@ -42,6 +46,8 @@ export function ProjectsPage() {
   const orgId = useSession((state) => state.orgId) ?? '';
   const [showArchived, setShowArchived] = useState(false);
   const projects = useQuery(projectsQuery(orgId, showArchived));
+  const orgDetail = useQuery(orgDetailQuery(orgId));
+  const canCreateProject = orgDetail.data?.capabilities.createProject ?? false;
   const [creating, setCreating] = useState(false);
 
   if (projects.isPending) {
@@ -77,18 +83,23 @@ export function ProjectsPage() {
           </p>
         </div>
 
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => {
-            setCreating((open) => !open);
-          }}
-        >
-          {creating ? 'Cancel' : 'New project'}
-        </Button>
+        {/* Hidden rather than disabled: a create form nobody without
+            project:create could submit is clutter, and the list below stays
+            fully visible either way. */}
+        {canCreateProject && (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setCreating((open) => !open);
+            }}
+          >
+            {creating ? 'Cancel' : 'New project'}
+          </Button>
+        )}
       </div>
 
-      {creating && (
+      {creating && canCreateProject && (
         <CreateProjectForm
           orgId={orgId}
           onDone={() => {
@@ -110,6 +121,7 @@ export function ProjectsPage() {
               orgId={orgId}
               project={project}
               showArchived={showArchived}
+              canDuplicate={canCreateProject}
             />
           ))}
         </ul>
@@ -140,11 +152,14 @@ interface ProjectCardProps {
     readonly description: string | null;
     readonly archivedAt: string | null;
     readonly boardCount: number;
+    readonly capabilities: { readonly update: boolean; readonly delete: boolean };
   };
   readonly showArchived: boolean;
+  /** project:create, role-only — same flag "New project" uses, not this project's own capabilities. */
+  readonly canDuplicate: boolean;
 }
 
-function ProjectCard({ orgId, project, showArchived }: ProjectCardProps) {
+function ProjectCard({ orgId, project, showArchived, canDuplicate }: ProjectCardProps) {
   const isArchived = project.archivedAt !== null;
   const [duplicating, setDuplicating] = useState(false);
 
@@ -166,7 +181,7 @@ function ProjectCard({ orgId, project, showArchived }: ProjectCardProps) {
           {/* Not offered on an archived project: duplicating one would create a
               live copy of something somebody deliberately put away, and the
               first question would be why it came back. */}
-          {!isArchived && (
+          {!isArchived && canDuplicate && (
             <button
               type="button"
               onClick={() => {
@@ -206,6 +221,7 @@ function ProjectCard({ orgId, project, showArchived }: ProjectCardProps) {
         orgId={orgId}
         projectId={project.projectId as ProjectId}
         showArchived={showArchived}
+        canCreateBoard={project.capabilities.update}
       />
     </li>
   );
@@ -342,10 +358,13 @@ function BoardList({
   orgId,
   projectId,
   showArchived,
+  canCreateBoard,
 }: {
   readonly orgId: string;
   readonly projectId: ProjectId;
   readonly showArchived: boolean;
+  /** project:update on THIS project — createBoard enforces it on the parent, not board:create. */
+  readonly canCreateBoard: boolean;
 }) {
   const boards = useQuery(boardsQuery(orgId, projectId));
   const queryClient = useQueryClient();
@@ -389,59 +408,60 @@ function BoardList({
           </span>
         )}
 
-        {adding ? (
-          <form
-            className="flex items-center gap-1.5"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (name.trim() !== '') create.mutate(name.trim());
-            }}
-          >
-            {/* `FocusOnMountInput`, not `autoFocus`: the attribute is banned by
-                jsx-a11y because it steals focus on page load. This input is
-                mounted by a click, so focusing it is following the user rather
-                than surprising them. */}
-            <FocusOnMountInput
-              aria-label="New board name"
-              placeholder="Board name"
-              value={name}
-              onChange={(event) => {
-                setName(event.target.value);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') {
-                  setName('');
-                  setAdding(false);
-                }
-              }}
-              className="h-7 w-40 text-xs"
-            />
-            <Button type="submit" size="sm" disabled={create.isPending || name.trim() === ''}>
-              Add
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setName('');
-                setAdding(false);
+        {canCreateBoard &&
+          (adding ? (
+            <form
+              className="flex items-center gap-1.5"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (name.trim() !== '') create.mutate(name.trim());
               }}
             >
-              Cancel
-            </Button>
-          </form>
-        ) : (
-          <button
-            type="button"
-            onClick={() => {
-              setAdding(true);
-            }}
-            className="rounded border border-dashed border-line px-2 py-1 text-xs text-ink-faint hover:border-line hover:bg-surface-hover hover:text-ink"
-          >
-            + Board
-          </button>
-        )}
+              {/* `FocusOnMountInput`, not `autoFocus`: the attribute is banned by
+                  jsx-a11y because it steals focus on page load. This input is
+                  mounted by a click, so focusing it is following the user rather
+                  than surprising them. */}
+              <FocusOnMountInput
+                aria-label="New board name"
+                placeholder="Board name"
+                value={name}
+                onChange={(event) => {
+                  setName(event.target.value);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    setName('');
+                    setAdding(false);
+                  }
+                }}
+                className="h-7 w-40 text-xs"
+              />
+              <Button type="submit" size="sm" disabled={create.isPending || name.trim() === ''}>
+                Add
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setName('');
+                  setAdding(false);
+                }}
+              >
+                Cancel
+              </Button>
+            </form>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setAdding(true);
+              }}
+              className="rounded border border-dashed border-line px-2 py-1 text-xs text-ink-faint hover:border-line hover:bg-surface-hover hover:text-ink"
+            >
+              + Board
+            </button>
+          ))}
 
         {/* The count is only interesting when it disagrees with what is shown —
             which is exactly the archived case, and otherwise it is noise. */}

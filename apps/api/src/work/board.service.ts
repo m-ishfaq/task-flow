@@ -8,8 +8,10 @@ import {
   ancestorsOfBoard,
   enforceOn,
   envelopeOf,
+  manageCapabilitiesFor,
   orgOf,
   translatingConstraints,
+  type ManageCapabilities,
   type WorkActor,
 } from './shared.js';
 
@@ -33,6 +35,15 @@ export interface BoardSummary {
   readonly name: string;
   readonly rank: string;
   readonly archivedAt: Date | null;
+  /**
+   * Per-BOARD, not inherited from the project's own capabilities — a share
+   * grant (`share-board.tsx`) can give a Member `board:update` on one board
+   * with no project-wide access at all, and `nearestApplicable` picking the
+   * board-level tuple over any project-level one is the whole point of the
+   * ancestor hierarchy (`ancestorsOfBoard`). Approximating this from the
+   * project's flag would hide a control that board's own tuple grants.
+   */
+  readonly capabilities: ManageCapabilities;
 }
 
 export async function listBoards(
@@ -45,29 +56,39 @@ export async function listBoards(
     // reads as "no boards" rather than "not yours".
     await requireProject(tx, actor, input.projectId, 'project:read');
 
-    return (
-      tx
-        .select({
-          boardId: schema.boards.id,
-          projectId: schema.boards.projectId,
-          name: schema.boards.name,
-          rank: schema.boards.rank,
-          archivedAt: schema.boards.archivedAt,
-        })
-        .from(schema.boards)
-        .where(
-          input.includeArchived
-            ? and(eq(schema.boards.projectId, input.projectId), isNull(schema.boards.deletedAt))
-            : and(
-                eq(schema.boards.projectId, input.projectId),
-                isNull(schema.boards.deletedAt),
-                isNull(schema.boards.archivedAt),
-              ),
-        )
-        // The (rank, id) tiebreak from §10.1. Equal ranks are legal and this is
-        // what keeps two clients rendering them in the same order.
-        .orderBy(asc(schema.boards.rank), asc(schema.boards.id))
-    );
+    const rows = await tx
+      .select({
+        boardId: schema.boards.id,
+        projectId: schema.boards.projectId,
+        name: schema.boards.name,
+        rank: schema.boards.rank,
+        archivedAt: schema.boards.archivedAt,
+      })
+      .from(schema.boards)
+      .where(
+        input.includeArchived
+          ? and(eq(schema.boards.projectId, input.projectId), isNull(schema.boards.deletedAt))
+          : and(
+              eq(schema.boards.projectId, input.projectId),
+              isNull(schema.boards.deletedAt),
+              isNull(schema.boards.archivedAt),
+            ),
+      )
+      // The (rank, id) tiebreak from §10.1. Equal ranks are legal and this is
+      // what keeps two clients rendering them in the same order.
+      .orderBy(asc(schema.boards.rank), asc(schema.boards.id));
+
+    const orgId = orgOf(actor);
+    return rows.map((row) => ({
+      ...row,
+      capabilities: manageCapabilitiesFor(
+        actor.subject,
+        { update: 'board:update', delete: 'board:delete' },
+        { type: 'board', id: row.boardId },
+        { orgId },
+        ancestorsOfBoard(row),
+      ),
+    }));
   });
 }
 

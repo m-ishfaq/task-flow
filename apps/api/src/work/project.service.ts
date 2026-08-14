@@ -3,7 +3,15 @@ import { errors, type ProjectId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
 import { projectArchived, projectCreated, projectUpdated } from './events.js';
-import { enforceOn, envelopeOf, orgOf, translatingConstraints, type WorkActor } from './shared.js';
+import {
+  enforceOn,
+  envelopeOf,
+  manageCapabilitiesFor,
+  orgOf,
+  translatingConstraints,
+  type ManageCapabilities,
+  type WorkActor,
+} from './shared.js';
 
 /**
  * Projects (PLAN.md §3.1, §7.2).
@@ -23,6 +31,15 @@ export interface ProjectSummary {
   readonly description: string | null;
   readonly archivedAt: Date | null;
   readonly boardCount: number;
+  /**
+   * `update` covers rename, labels, statuses, custom fields, sprints, card
+   * import, AND creating a board — `board.service.ts`'s `createBoard` enforces
+   * `project:update` on the PARENT project, not `board:create` on anything
+   * (the route floor names `board:create` only as the coarse pre-check;
+   * `requireProject(..., 'project:update')` is what actually decides it), so
+   * this one flag is genuinely what gates the "+Board" control too.
+   */
+  readonly capabilities: ManageCapabilities;
 }
 
 /**
@@ -62,7 +79,18 @@ export async function listProjects(
       counts.set(board.projectId, (counts.get(board.projectId) ?? 0) + 1);
     }
 
-    return rows.map((row) => ({ ...row, boardCount: counts.get(row.projectId) ?? 0 }));
+    const orgId = orgOf(actor);
+    return rows.map((row) => ({
+      ...row,
+      boardCount: counts.get(row.projectId) ?? 0,
+      capabilities: manageCapabilitiesFor(
+        actor.subject,
+        { update: 'project:update', delete: 'project:delete' },
+        { type: 'project', id: row.projectId },
+        { orgId },
+        [],
+      ),
+    }));
   });
 }
 

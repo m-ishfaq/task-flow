@@ -205,6 +205,19 @@ export interface SettingsCapabilities {
   readonly removeMembers: boolean;
   /** Create a team; add or remove a team's members. */
   readonly manageTeams: boolean;
+  /**
+   * Create a project, or duplicate an existing one (`work/project.service.ts`
+   * — `duplicate` is floored on the identical `project:create`). Not one of
+   * `packages/policy`'s formal ORG_LEVEL_PERMISSIONS, but behaves the same
+   * way here for the same reason: creating a project has no existing
+   * resource to hold a tuple, so `can()` called with no target resolves from
+   * role alone regardless of that list's membership (`decide.ts`'s own `if
+   * (!target)` branch). Bundled onto this org-wide object rather than a
+   * separate query — Work's per-project/per-board capabilities are computed
+   * where those rows already are (`work/project.service.ts`,
+   * `work/board.service.ts`), because THOSE really do vary by resource.
+   */
+  readonly createProject: boolean;
 }
 
 export interface OrgDetail {
@@ -249,6 +262,7 @@ export async function getOrg(orgId: OrgId, subject: Subject): Promise<OrgDetail>
       manageMembers: can(subject, 'member:manage').allowed,
       removeMembers: can(subject, 'member:remove').allowed,
       manageTeams: can(subject, 'team:manage').allowed,
+      createProject: can(subject, 'project:create').allowed,
     },
   };
 }
