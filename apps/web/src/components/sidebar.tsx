@@ -296,6 +296,7 @@ export function Sidebar() {
                     projectId={project.projectId as ProjectId}
                     name={project.name}
                     projectKey={project.key}
+                    canCreateBoard={project.capabilities.update}
                   />
                 ))}
               </ul>
@@ -323,11 +324,14 @@ function ProjectNode({
   projectId,
   name,
   projectKey,
+  canCreateBoard,
 }: {
   readonly orgId: string;
   readonly projectId: ProjectId;
   readonly name: string;
   readonly projectKey: string;
+  /** project:update on THIS project — createBoard enforces it on the parent, not board:create. */
+  readonly canCreateBoard: boolean;
 }) {
   const collapsed = useUi((state) => state.collapsedProjects.includes(projectId));
   const toggleProject = useUi((state) => state.toggleProject);
@@ -393,7 +397,7 @@ function ProjectNode({
               navigate from, with the only `+ Board` button sitting on the
               /projects page. A project without a board has nowhere to put
               cards, so this is the one place the affordance is most needed. */}
-          {!boards.isPending && (
+          {!boards.isPending && canCreateBoard && (
             <AddBoard orgId={orgId} projectId={projectId} isFirst={live.length === 0} />
           )}
         </ul>
