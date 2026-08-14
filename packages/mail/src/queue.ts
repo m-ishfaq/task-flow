@@ -31,6 +31,31 @@ import type { Mailer, OutboundMessage } from './transport.js';
  * change when that arrives.
  */
 
+/**
+ * What `onFailure` reports about an abandoned message.
+ *
+ * `reason` is the TRANSPORT's own failure text (nodemailer's error message —
+ * "535 authentication failed", "ECONNREFUSED", and so on) and nothing else.
+ * It is not the message body: an SMTP error string cannot contain a
+ * verification link or a reset token, because it never had one — the mailer
+ * throws before or independent of anything about the message's content. That
+ * is what makes it safe to log where the body is not: without it, "delivery
+ * abandoned" was the whole incident record, and finding out WHY meant
+ * reproducing the failure by hand against a live mailbox rather than reading
+ * the log that already ran into it.
+ */
+export interface MailFailure {
+  readonly to: string;
+  readonly subject: string;
+  readonly attempts: number;
+  readonly reason: string;
+}
+
+/** Renders a caught value as a short, safe log string — never the mail body. */
+function reasonOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export interface MailQueueOptions {
   readonly mailer: Mailer;
   /** Attempts per message, including the first. */
@@ -41,11 +66,12 @@ export interface MailQueueOptions {
   /**
    * Called when a message is abandoned.
    *
-   * Takes the message KIND and recipient, never the body — a queue that logs a
-   * failed verification mail in full writes the credential it was carrying into
-   * the log file.
+   * Takes the message KIND, recipient and failure reason, never the body — a
+   * queue that logs a failed verification mail in full writes the credential
+   * it was carrying into the log file. See `MailFailure`'s own comment for why
+   * `reason` does not carry that same risk.
    */
-  readonly onFailure?: (failure: { to: string; subject: string; attempts: number }) => void;
+  readonly onFailure?: (failure: MailFailure) => void;
   /**
    * Called when a message sends successfully — the same shape as `onFailure`,
    * for the same redaction reason. Optional and separate rather than folded
@@ -76,6 +102,8 @@ const MAX_QUEUED = 10_000;
 interface QueueEntry {
   readonly message: OutboundMessage;
   attempts: number;
+  /** The most recent send attempt's failure reason, if any have failed yet. */
+  lastError: string;
 }
 
 export class MailQueue {
@@ -83,7 +111,7 @@ export class MailQueue {
   readonly #maxAttempts: number;
   readonly #baseDelayMs: number;
   readonly #backoffFactor: number;
-  readonly #onFailure: (failure: { to: string; subject: string; attempts: number }) => void;
+  readonly #onFailure: (failure: MailFailure) => void;
   readonly #onSuccess: (success: { to: string; subject: string }) => void;
   readonly #sleep: (ms: number) => Promise<void>;
 
@@ -124,11 +152,16 @@ export class MailQueue {
 
     if (this.#pending.length >= MAX_QUEUED) {
       this.#abandoned += 1;
-      this.#onFailure({ to: message.to, subject: message.subject, attempts: 0 });
+      this.#onFailure({
+        to: message.to,
+        subject: message.subject,
+        attempts: 0,
+        reason: `queue full (${String(MAX_QUEUED)} pending)`,
+      });
       return;
     }
 
-    this.#pending.push({ message, attempts: 0 });
+    this.#pending.push({ message, attempts: 0, lastError: '' });
     this.#pump();
   }
 
@@ -189,20 +222,25 @@ export class MailQueue {
         this.#pending.shift();
         this.#onSuccess({ to: entry.message.to, subject: entry.message.subject });
         continue;
-      } catch {
+      } catch (error) {
         entry.attempts += 1;
+        entry.lastError = reasonOf(error);
       }
 
       if (entry.attempts >= this.#maxAttempts) {
         this.#pending.shift();
         this.#abandoned += 1;
-        /* The recipient and subject only. The body holds the link, and a link in
-           a log file is a credential in a log file — readable by anyone with log
-           access, and retained far longer than the token's own lifetime. */
+        /* The recipient, subject and TRANSPORT'S failure reason — never the
+           body. The body holds the link, and a link in a log file is a
+           credential in a log file — readable by anyone with log access, and
+           retained far longer than the token's own lifetime. `lastError` is
+           nodemailer's own error text, which describes the SMTP failure, not
+           the message it failed to send — see `MailFailure`'s own comment. */
         this.#onFailure({
           to: entry.message.to,
           subject: entry.message.subject,
           attempts: entry.attempts,
+          reason: entry.lastError,
         });
         continue;
       }

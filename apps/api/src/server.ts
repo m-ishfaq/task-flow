@@ -498,9 +498,19 @@ function resolveMail(options: BuildOptions): {
     onFailure: (failure) => {
       /* The only record that a user never got their link. No body and no token:
          a link in a log file is a credential in a log file, readable by anyone
-         with log access and retained far longer than the token's own lifetime. */
+         with log access and retained far longer than the token's own lifetime.
+         `reason` IS safe to log — it is the SMTP transport's own error text
+         ("535 authentication failed", ECONNREFUSED, ...), never anything about
+         the message it failed to send. Without it, this line was the entire
+         incident record and said nothing about WHY — see MailFailure's own
+         comment in @taskflow/mail. */
       logger.error(
-        { to: failure.to, subject: failure.subject, attempts: failure.attempts },
+        {
+          to: failure.to,
+          subject: failure.subject,
+          attempts: failure.attempts,
+          reason: failure.reason,
+        },
         'mail delivery abandoned',
       );
       /* recordOperationalEvent() never throws into its caller (its own
@@ -512,7 +522,7 @@ function resolveMail(options: BuildOptions): {
         kind: 'mail',
         outcome: 'failure',
         target: failure.to,
-        detail: { subject: failure.subject, attempts: failure.attempts },
+        detail: { subject: failure.subject, attempts: failure.attempts, reason: failure.reason },
       });
     },
     onSuccess: (success) => {

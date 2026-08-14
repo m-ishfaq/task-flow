@@ -90,7 +90,7 @@ describe('retries', () => {
     const mailer = new MemoryMailer();
     mailer.failNext(100);
 
-    const failures: { to: string; subject: string; attempts: number }[] = [];
+    const failures: { to: string; subject: string; attempts: number; reason: string }[] = [];
     const queue = new MailQueue({
       mailer,
       maxAttempts: 2,
@@ -104,6 +104,47 @@ describe('retries', () => {
     expect(failures).toHaveLength(1);
     expect(JSON.stringify(failures)).not.toContain('SECRET');
     expect(failures[0]?.to).toBe('user@example.test');
+  });
+
+  it('reports the transport failure reason, so a real cause is diagnosable', async () => {
+    /* Before this, the queue's catch block discarded whatever the transport
+       threw — "mail delivery abandoned" was the entire incident record, with
+       no way to tell an auth failure from a blocked port from a timeout
+       without reproducing the failure by hand. */
+    const mailer = new MemoryMailer();
+    mailer.failNext(100);
+
+    const failures: { to: string; subject: string; attempts: number; reason: string }[] = [];
+    const queue = new MailQueue({
+      mailer,
+      maxAttempts: 2,
+      sleep: instant,
+      onFailure: (failure) => failures.push(failure),
+    });
+
+    queue.enqueue(MESSAGE);
+    await queue.drain();
+
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.reason).toBe('simulated transport failure');
+  });
+
+  it('reports a reason when the queue itself is full, not just when sending fails', () => {
+    const mailer = new MemoryMailer();
+    const failures: { to: string; subject: string; attempts: number; reason: string }[] = [];
+    const queue = new MailQueue({
+      mailer,
+      sleep: instant,
+      onFailure: (failure) => failures.push(failure),
+    });
+
+    // Fill the queue past capacity without draining it, so the next enqueue
+    // hits the MAX_QUEUED guard rather than a transport failure.
+    for (let index = 0; index < 10_001; index += 1) queue.enqueue(MESSAGE);
+
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.attempts).toBe(0);
+    expect(failures[0]?.reason).toContain('queue full');
   });
 
   it('keeps going after abandoning one message', async () => {
