@@ -47,7 +47,9 @@ export interface BillingMailDeps {
 /** Every billing email this system sends. A closed union, like the flag registry. */
 export type BillingMailKind =
   | 'payment_failed'
+  | 'payment_recovered'
   | 'trial_ending'
+  | 'trial_ended'
   | 'plan_changed'
   | 'subscription_canceled'
   | 'usage_80'
@@ -143,6 +145,17 @@ function copyFor(
           '\n\nNothing has changed yet — everything is still available.',
       };
 
+    /* The follow-up to `payment_failed` — the person who was told to worry
+       is the one entitled to be told it is resolved, not left to notice on
+       their own that the warning stopped mattering. */
+    case 'payment_recovered':
+      return {
+        subject: `Payment received for ${org}`,
+        body:
+          `A payment for ${org} succeeded and the organization is back in good standing.\n\n` +
+          'No action is needed.',
+      };
+
     case 'trial_ending':
       return {
         subject: `${org}'s trial ends ${when ?? 'soon'}`,
@@ -151,6 +164,18 @@ function copyFor(
           'Choose a plan to keep everything you have set up. If you do nothing, the ' +
           'organization moves to the free plan — your data stays exactly where it is, ' +
           'and the features the free plan does not include become unavailable until you upgrade.',
+      };
+
+    /* The follow-up to `trial_ending` — sent once the switch has already
+       happened, not another warning. Nobody is locked out (§ Wave 4's
+       trial-to-Free design), so this is informational, not a countdown. */
+    case 'trial_ended':
+      return {
+        subject: `${org}'s trial has ended`,
+        body:
+          `The trial for ${org} has ended and the organization is now on the free plan.\n\n` +
+          'Everything you set up is exactly where you left it. Choose a plan in Billing ' +
+          'settings to bring back the features the free plan does not include.',
       };
 
     case 'plan_changed':
