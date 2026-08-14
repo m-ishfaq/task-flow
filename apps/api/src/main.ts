@@ -183,16 +183,22 @@ const notificationMail = createNotificationMailDelivery({
     /* This queue never had an onFailure handler before this — a failed
        notification email abandoned silently, with nothing to grep for
        even in a live incident. Same redaction as identity's own queue:
-       to/subject only, never the body. */
+       to/subject/reason only, never the body — reason is the transport's
+       own error text, see MailFailure's own comment in @taskflow/mail. */
     notificationMailLogger.error(
-      { to: failure.to, subject: failure.subject, attempts: failure.attempts },
+      {
+        to: failure.to,
+        subject: failure.subject,
+        attempts: failure.attempts,
+        reason: failure.reason,
+      },
       'mail delivery abandoned',
     );
     void recordOperationalEvent({
       kind: 'mail',
       outcome: 'failure',
       target: failure.to,
-      detail: { subject: failure.subject, attempts: failure.attempts },
+      detail: { subject: failure.subject, attempts: failure.attempts, reason: failure.reason },
     });
   },
   onSuccess: (success) => {

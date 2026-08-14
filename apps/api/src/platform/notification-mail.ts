@@ -4,6 +4,7 @@ import {
   renderNotificationEmail,
   SmtpMailer,
   type Mailer,
+  type MailFailure,
 } from '@taskflow/mail';
 import type { Env } from '../config/env.js';
 import type { PendingEmailSend } from './notification.projection.js';
@@ -26,7 +27,7 @@ export interface NotificationMailDeliveryOptions {
   readonly env: Env;
   /** Injected by tests. Production builds an SmtpMailer from the environment. */
   readonly mailer?: Mailer;
-  readonly onFailure?: (failure: { to: string; subject: string; attempts: number }) => void;
+  readonly onFailure?: (failure: MailFailure) => void;
   readonly onSuccess?: (success: { to: string; subject: string }) => void;
 }
 

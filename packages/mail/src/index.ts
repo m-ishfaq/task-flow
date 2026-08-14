@@ -26,4 +26,4 @@ export {
   type SmtpConfig,
 } from './transport.js';
 
-export { MailQueue, type MailQueueOptions } from './queue.js';
+export { MailQueue, type MailFailure, type MailQueueOptions } from './queue.js';
