@@ -7,6 +7,7 @@ import { formatBytes } from '../../../lib/format.js';
 import { cn } from '../../../lib/cn.js';
 import { Button } from '../../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../../components/error-view.js';
+import { ACCEPTED_FILE_TYPES } from '../../../lib/accepted-file-types.js';
 import { attachmentsQuery } from '../api.js';
 
 /**
@@ -199,6 +200,7 @@ export function AttachmentSection({ orgId, cardId }: AttachmentSectionProps) {
         ref={inputRef}
         type="file"
         aria-label="Attach a file"
+        accept={ACCEPTED_FILE_TYPES}
         disabled={upload.isPending}
         onChange={(event) => {
           const file = event.target.files?.[0];
