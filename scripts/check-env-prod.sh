@@ -32,17 +32,25 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 1
 fi
 
+# Full-line comments are stripped first. compose.prod.yaml's own header uses
+# `${VAR:?}` and `${VAR}` as prose examples of the substitution syntax — real
+# YAML, not a reference to an actual variable named VAR — and scanning
+# comments picked that up as a phantom required variable.
+UNCOMMENTED=$(grep -vE '^[[:space:]]*#' "$COMPOSE_FILE")
+
 # Variables referenced anywhere with :? are required, full stop — even if the
 # same name also appears elsewhere with a :- default, the :? reference is the
 # one that will actually refuse to boot.
 mapfile -t REQUIRED_VARS < <(
-  grep -oE '\$\{[A-Z_][A-Z0-9_]*:\?' "$COMPOSE_FILE" |
+  printf '%s\n' "$UNCOMMENTED" |
+    grep -oE '\$\{[A-Z_][A-Z0-9_]*:\?' |
     sed -E 's/\$\{([A-Z_][A-Z0-9_]*):\?/\1/' |
     sort -u
 )
 
 mapfile -t DEFAULTED_VARS < <(
-  grep -oE '\$\{[A-Z_][A-Z0-9_]*:-' "$COMPOSE_FILE" |
+  printf '%s\n' "$UNCOMMENTED" |
+    grep -oE '\$\{[A-Z_][A-Z0-9_]*:-' |
     sed -E 's/\$\{([A-Z_][A-Z0-9_]*):-/\1/' |
     sort -u
 )
