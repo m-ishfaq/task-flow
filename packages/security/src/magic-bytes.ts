@@ -136,6 +136,18 @@ const TYPE_RULES: Readonly<Record<string, TypeRule>> = {
     signatures: [],
     refine: (prefix) => !prefix.includes(0x00) && !looksLikeMarkup(prefix),
   },
+  /**
+   * Same negative check as the other text types, not a JSON parse — this
+   * function only ever sees the first `MAGIC_BYTE_PREFIX_LENGTH` bytes, and a
+   * truncated prefix is not valid JSON on its own even for a genuine file, so
+   * `JSON.parse` would reject good uploads as often as bad ones. What actually
+   * matters here is the same thing it is for `text/plain`: reject a binary
+   * file (a NUL byte) or one that opens with markup wearing a `.json` name.
+   */
+  'application/json': {
+    signatures: [],
+    refine: (prefix) => !prefix.includes(0x00) && !looksLikeMarkup(prefix),
+  },
 };
 
 /** Every content type an upload may declare. */

@@ -6,6 +6,7 @@ import type { ChannelId, MessageId, UserId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { cn } from '../../lib/cn.js';
 import { useToast } from '../../lib/toast-context.js';
+import { ACCEPTED_FILE_TYPES } from '../../lib/accepted-file-types.js';
 import {
   Avatar,
   Button,
@@ -2389,6 +2390,7 @@ function AttachFileButton({
       <input
         ref={inputRef}
         type="file"
+        accept={ACCEPTED_FILE_TYPES}
         className="hidden"
         onChange={(event) => {
           const file = event.target.files?.[0];

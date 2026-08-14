@@ -43,12 +43,58 @@ import {
  * rang.
  */
 export function CallSurface() {
+  useLeaveOnTabClose();
+
   return (
     <>
       <IncomingCallBanner />
       <ActiveCallBar />
     </>
   );
+}
+
+/**
+ * A best-effort "I'm gone" on tab close, crash-adjacent navigation, or
+ * putting the tab to sleep — the gap behind the "phantom beep" report: a
+ * tab that just disappears (closed, not hung up) leaves this browser's own
+ * mic open and, more importantly, its `rtc.participants` row `joined`
+ * forever server-side, since nothing else in this app ever tells the API
+ * that tab is gone. `apps/realtime`'s own disconnect handler cannot do this
+ * instead — its file header is explicit that nothing in that namespace
+ * writes to the database (guardrail 8); the write has to come from here.
+ *
+ * `pagehide`, not `beforeunload` — the latter also fires on a normal
+ * back/forward-cache-eligible navigation and defeats bfcache in most
+ * browsers just by being registered, which is a real performance cost to
+ * pay on every navigation for a handler that only matters when a call is
+ * live. `pagehide` fires in the same situations `beforeunload` does (tab
+ * close, navigation, refresh) without that cost, and still fires when the
+ * page is about to be frozen or discarded.
+ *
+ * This is NOT a substitute for a real reaper on the server: a genuine crash
+ * (process killed, network severed with no chance to run JavaScript) fires
+ * no browser event at all, and no client-side handler can close that gap.
+ * What this closes is the much more common case — a tab closed or
+ * navigated away from mid-call — which previously left the exact same
+ * phantom session a true crash does.
+ */
+function useLeaveOnTabClose(): void {
+  useEffect(() => {
+    const onPageHide = (): void => {
+      if (useCallStore.getState().sessionId === null) return;
+      /* Not awaited — `pagehide` gives no time to wait for a network round
+         trip, and the page may already be gone before this resolves. Best
+         effort: it either lands before the tab finishes closing or it does
+         not, the same honesty `hangUp`'s own leave-mutate call already has
+         for every OTHER way it can fail. */
+      void hangUp();
+    };
+
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+    };
+  }, []);
 }
 
 /**
@@ -306,16 +352,33 @@ function ActiveCallBar() {
    * `connecting` — that is the local setup (permission prompt, ICE) and a tone
    * there would start before the far side has been told anything. The moment a
    * peer's audio arrives, `peers` is non-empty and the tone stops, which is the
-   * same instant the person can actually hear them. */
-  const waiting = status === 'in_call' && peers.length === 0;
+   * same instant the person can actually hear them.
+   *
+   * ## "Nobody has answered yet" and "everyone already left" are NOT the same
+   * state, even though `peers.length === 0` is true for both
+   *
+   * `connectedAt` is the tell: it is set once, on this tab's first genuine
+   * remote peer, and never cleared until the call itself ends (see
+   * `use-call.ts`'s own comment on it). So `connectedAt === null` can only
+   * mean "still waiting for the first answer" — the ringback case — and
+   * `connectedAt !== null` with an empty `peers` can only mean this tab WAS
+   * actually talking to someone and now is not: for a 1:1 call the server
+   * ends that session and the `onCallEnded` effect below hangs this tab up
+   * before it is ever seen, but a GROUP call is deliberately left open at
+   * one remaining person (`isLastLegOut` in `participants.ts`), so this
+   * state is real and reachable. Playing the pre-answer ringback tone here
+   * would be a lie — nobody is being rung — and showing "Ringing…" reads as
+   * this tab failing to connect rather than what actually happened. */
+  const waitingForFirstAnswer = status === 'in_call' && peers.length === 0 && connectedAt === null;
+  const abandoned = status === 'in_call' && peers.length === 0 && connectedAt !== null;
 
   useEffect(() => {
-    if (!waiting) return;
+    if (!waitingForFirstAnswer) return;
     const ringing = startRingback();
     return () => {
       ringing.stop();
     };
-  }, [waiting]);
+  }, [waitingForFirstAnswer]);
 
   /* ## Hanging up when the SERVER says the call is over
    *
@@ -414,7 +477,9 @@ function ActiveCallBar() {
         <span
           className={cn(
             'flex h-2.5 w-2.5 shrink-0 rounded-full',
-            status === 'connecting' || waiting ? 'animate-pulse bg-warning' : 'bg-success',
+            status === 'connecting' || waitingForFirstAnswer || abandoned
+              ? 'animate-pulse bg-warning'
+              : 'bg-success',
           )}
           aria-hidden="true"
         />
@@ -423,9 +488,11 @@ function ActiveCallBar() {
           <p className="truncate text-sm text-ink">
             {status === 'connecting'
               ? 'Connecting…'
-              : others.length === 0
+              : waitingForFirstAnswer
                 ? 'Ringing…'
-                : `${others.join(', ')} · ${formatCallDuration(durationSeconds)}`}
+                : abandoned
+                  ? 'Everyone else has left'
+                  : `${others.join(', ')} · ${formatCallDuration(durationSeconds)}`}
           </p>
           {recordingState === 'active' && (
             /* Every participant sees this, not only the person capturing. A

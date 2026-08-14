@@ -19,7 +19,7 @@ import { enforceOnChannel, loadChannel } from '../chat/shared.js';
 /* Repositories, not services — they mutate by design and the EVENT belongs to
    the operation a person performed, which this file knows and they do not. See
    `participants.ts`' own header, and `chat/membership.ts` for the precedent. */
-import { endSessionRow, joinParticipant } from './participants.js';
+import { endSessionRow, isLastLegOut, joinParticipant } from './participants.js';
 import {
   rtcSessionAnswered,
   rtcSessionDeclined,
@@ -276,12 +276,30 @@ export async function joinSession(
 
     const now = new Date();
 
-    /* The conditional UPDATE. `returning` length is the race's verdict. */
-    const answered = await tx
-      .update(schema.rtcSessions)
-      .set({ status: 'active', startedAt: now, updatedAt: now })
-      .where(and(eq(schema.rtcSessions.id, session.id), eq(schema.rtcSessions.status, 'ringing')))
-      .returning({ id: schema.rtcSessions.id });
+    /* The conditional UPDATE. `returning` length is the race's verdict.
+     *
+     * Skipped entirely for the session's own INITIATOR. The web client joins
+     * the WebRTC mesh — mic, ICE, the lot — the instant it places a call, for
+     * the same reason every other caller in every phone system does: audio
+     * has to be ready to flow the moment somebody picks up, not fetched
+     * afterward. That mesh join calls this same function, and without this
+     * exclusion the caller's own request reaches Postgres faster than any
+     * human can react to a ring, so the caller answers their own call before
+     * the callee gets a chance to. `startedAt` gets stamped on a call nobody
+     * has picked up yet, and — the more damaging half — `declineSession`'s
+     * `status === 'ringing'` guard (below) is already false by the time a
+     * real decline arrives, so a 1:1 call the callee declines never ends:
+     * nothing was still `ringing` to decline. */
+    const answered =
+      userId === session.initiatedBy
+        ? []
+        : await tx
+            .update(schema.rtcSessions)
+            .set({ status: 'active', startedAt: now, updatedAt: now })
+            .where(
+              and(eq(schema.rtcSessions.id, session.id), eq(schema.rtcSessions.status, 'ringing')),
+            )
+            .returning({ id: schema.rtcSessions.id });
 
     const wonTheRace = answered.length === 1;
 
@@ -402,21 +420,7 @@ export async function leaveSession(
     ];
 
     const joinedCount = remaining[0]?.joinedCount ?? 0;
-
-    /* A 1:1 call has nobody left to talk to the moment EITHER person leaves —
-       waiting for `joinedCount` to reach zero means the remaining party sits
-       in a call with no one on the other end until they, too, click "leave".
-       A group call dropping to one person is different: that person may be
-       waiting for others to rejoin, so only a call with exactly two
-       participants total ever gets this early ending. */
-    let shouldEnd = joinedCount <= 0;
-    if (!shouldEnd && joinedCount === 1) {
-      const participants = await tx
-        .select({ userId: schema.rtcParticipants.userId })
-        .from(schema.rtcParticipants)
-        .where(eq(schema.rtcParticipants.sessionId, session.id));
-      shouldEnd = participants.length === 2;
-    }
+    const shouldEnd = await isLastLegOut(tx, session.id, joinedCount);
 
     /* The last leg out ends the call. Without this a session stays `active`
        forever with nobody in it, holding the one-live-session-per-channel
