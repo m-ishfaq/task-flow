@@ -133,8 +133,8 @@ export async function setBranding(
   deps: BrandingDeps,
   operator: PlatformOperator,
   input: {
-    readonly productName?: string;
-    readonly paletteId?: PaletteId;
+    readonly productName?: string | undefined;
+    readonly paletteId?: PaletteId | undefined;
   },
 ): Promise<BrandingRow> {
   const now = new Date();
