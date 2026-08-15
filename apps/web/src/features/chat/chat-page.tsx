@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Lock, Pin, X } from 'lucide-react';
 import { PopoverClose, PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import type { ChannelId, MessageId, UserId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
@@ -258,6 +259,29 @@ function ChannelListPanel({
   );
 }
 
+/**
+ * The public "#" / private lock glyph shown before a channel name, wherever
+ * one appears (`ChannelRow`, `PinnedMessageSidebarRow`, `SavedMessageRow`) —
+ * one place rather than three copies of the same ternary drifting apart.
+ * `#` stays literal text (Slack's own convention, and every font already has
+ * it); the lock was an emoji, inconsistent with this app's monochrome icon
+ * set everywhere else, so it becomes one. Both sit inside the caller's own
+ * `truncate` span, same as the string they replace.
+ */
+function ChannelTypePrefix({ type }: { readonly type: string }) {
+  if (type === 'public') return <>{'# '}</>;
+  if (type === 'private') {
+    return (
+      <Lock
+        aria-hidden="true"
+        className="mr-1 inline size-3 -translate-y-px shrink-0"
+        strokeWidth={2.25}
+      />
+    );
+  }
+  return null;
+}
+
 function ChannelRow({
   channel,
   label,
@@ -286,7 +310,7 @@ function ChannelRow({
         )}
       >
         <span className="min-w-0 flex-1 truncate">
-          {channel.type === 'public' ? '# ' : channel.type === 'private' ? '🔒 ' : ''}
+          <ChannelTypePrefix type={channel.type} />
           {label}
         </span>
         {unreadCount > 0 && (
@@ -354,7 +378,7 @@ function PinnedMessagesButton({
           className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm text-ink-muted hover:bg-surface-hover hover:text-ink"
         >
           <span className="flex items-center gap-1.5">
-            <span aria-hidden>📌</span>
+            <Pin aria-hidden="true" className="size-3.5" strokeWidth={2} />
             Pinned messages
           </span>
           {list.length > 0 && (
@@ -419,7 +443,7 @@ function PinnedMessageSidebarRow({
     <li className="border-b border-line px-3 py-2 last:border-b-0">
       <button type="button" onClick={onOpen} className="flex w-full flex-col gap-0.5 text-left">
         <span className="truncate text-xs font-medium text-ink">
-          {row.channelType === 'public' ? '# ' : row.channelType === 'private' ? '🔒 ' : ''}
+          <ChannelTypePrefix type={row.channelType} />
           {row.channelName ?? 'Direct message'}
         </span>
         <span className="line-clamp-2 text-xs text-ink-muted">
@@ -547,7 +571,7 @@ function SavedMessageRow({
     <li className="border-b border-line px-3 py-2 last:border-b-0">
       <button type="button" onClick={onOpen} className="flex w-full flex-col gap-0.5 text-left">
         <span className="truncate text-xs font-medium text-ink">
-          {row.channelType === 'public' ? '# ' : row.channelType === 'private' ? '🔒 ' : ''}
+          <ChannelTypePrefix type={row.channelType} />
           {row.channelName ?? 'Direct message'}
         </span>
         <span className="line-clamp-2 text-xs text-ink-muted">
@@ -1830,9 +1854,9 @@ function ThreadPanel({
           type="button"
           onClick={onClose}
           aria-label="Close thread"
-          className="rounded px-1.5 py-0.5 text-ink-faint hover:bg-surface-hover hover:text-ink"
+          className="rounded p-1 text-ink-faint hover:bg-surface-hover hover:text-ink"
         >
-          ✕
+          <X aria-hidden="true" className="size-4" strokeWidth={2} />
         </button>
       </header>
 
@@ -2115,7 +2139,7 @@ function MessageBubble({
                instead means every child resolves against the 75% the message
                column actually has, rather than the bubble growing to fit them
                and taking the message list's horizontal scrollbar with it. */
-            'min-w-0 rounded-2xl px-3 py-1.5',
+            'min-w-0 rounded-2xl px-3 py-1.5 shadow-sm',
             isOwn ? 'bg-accent text-accent-ink' : 'bg-surface-raised text-ink',
             cornerClass,
           )}
@@ -2129,7 +2153,7 @@ function MessageBubble({
           >
             <span>{formatTime(message.createdAt)}</span>
             {message.editedAt !== null && <span>edited</span>}
-            {pinned && <span>· 📌</span>}
+            {pinned && <Pin aria-label="Pinned" className="size-2.5" strokeWidth={2.25} />}
           </div>
         </div>
 
