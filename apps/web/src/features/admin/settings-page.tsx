@@ -23,6 +23,7 @@ import {
 } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
+import { useBranding } from '../../lib/branding-context.js';
 import { useStepUp } from '../auth/use-step-up.js';
 import { membersQuery, orgDetailQuery, type SettingsCapabilities } from '../org/api.js';
 import { BillingSection } from './billing-section.js';
@@ -157,6 +158,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
   const org = useQuery(orgDetailQuery(orgId));
   const { guard, dialog } = useStepUp();
   const currentUserId = useSession((state) => state.userId);
+  const { productName } = useBranding();
 
   /* Same cache as OrgSection's own query (identical key), so this costs no
      extra request — React Query dedupes by key. Undefined only while the
@@ -270,7 +272,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
               <Field
                 label="Add a member"
                 htmlFor="member-email"
-                hint="The person must already have a TaskFlow account — email invitations arrive in a later phase."
+                hint={`The person must already have a ${productName} account — email invitations arrive in a later phase.`}
               >
                 <Input
                   id="member-email"

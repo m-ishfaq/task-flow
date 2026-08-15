@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, apiErrorOf, errorCodeOf } from '../../lib/trpc.js';
 import { useSession } from '../../lib/session.js';
 import { resetCache } from '../../lib/query.js';
+import { useBranding } from '../../lib/branding-context.js';
 import { Button, Field, Input } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import {
@@ -49,6 +50,7 @@ export function LoginPage() {
   const search = useSearch({ from: '/login' });
   const adopt = useSession((state) => state.adopt);
   const queryClient = useQueryClient();
+  const { productName } = useBranding();
   /* Computed once — a browser's WebAuthn support does not change over the
      component's lifetime, so there is nothing to re-derive on a later render. */
   const [passkeySupported] = useState(() => browserSupportsWebAuthn());
@@ -123,7 +125,7 @@ export function LoginPage() {
   return (
     <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-6 p-6">
       <div>
-        <h1 className="text-lg font-semibold text-ink">Sign in to TaskFlow</h1>
+        <h1 className="text-lg font-semibold text-ink">Sign in to {productName}</h1>
         <p className="mt-1 text-sm text-ink-muted">Use your email and password.</p>
       </div>
 
@@ -228,9 +230,10 @@ export function LoginPage() {
             answer via `ErrorView` for a completed-but-rejected assertion. */}
         {signInWithPasskeyMutation.isError &&
           (signInWithPasskeyMutation.error instanceof PasskeyCeremonyError ? (
-            passkeyCeremonyMessage(signInWithPasskeyMutation.error.reason) !== null && (
+            passkeyCeremonyMessage(signInWithPasskeyMutation.error.reason, productName) !==
+              null && (
               <p role="alert" className="text-xs text-danger">
-                {passkeyCeremonyMessage(signInWithPasskeyMutation.error.reason)}
+                {passkeyCeremonyMessage(signInWithPasskeyMutation.error.reason, productName)}
               </p>
             )
           ) : (

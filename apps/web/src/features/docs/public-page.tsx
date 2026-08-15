@@ -3,6 +3,7 @@ import type { OrgId, PageId } from '@taskflow/contracts';
 import { formatDateTime } from '../../lib/format.js';
 import { Skeleton } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
+import { useBranding } from '../../lib/branding-context.js';
 import { RichTextView } from '../work/detail/rich-text-editor.js';
 import { publicPageQuery } from './api.js';
 
@@ -29,6 +30,7 @@ export function PublicPageView({
   readonly pageId: PageId;
 }) {
   const page = useQuery(publicPageQuery(orgId, pageId));
+  const { productName, logoUrl } = useBranding();
 
   if (page.isPending) {
     return (
@@ -54,6 +56,17 @@ export function PublicPageView({
         <p className="text-xs text-ink-faint">Published {formatDateTime(page.data.publishedAt)}</p>
       </div>
       <RichTextView value={page.data.content} />
+
+      {/* The one piece of chrome an anonymous, shell-less page gets: who
+          published it. `useBranding()` already resolves app-wide via
+          `BrandingProvider` in app.tsx, which wraps the router — including
+          this bare route — so nothing extra needs fetching here. */}
+      <div className="flex items-center gap-2 border-t border-line pt-4 text-xs text-ink-faint">
+        {logoUrl !== null && (
+          <img src={logoUrl} alt="" className="size-4 shrink-0 rounded object-contain" />
+        )}
+        <span>Published with {productName}</span>
+      </div>
     </div>
   );
 }

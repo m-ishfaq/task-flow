@@ -14,6 +14,7 @@ import {
 } from '../features/work/api.js';
 import { api } from '../lib/trpc.js';
 import { keys } from '../lib/query.js';
+import { useBranding } from '../lib/branding-context.js';
 import { FocusOnMountInput, Skeleton } from './primitives.js';
 
 /**
@@ -169,6 +170,7 @@ function NavLink({ to, label }: { readonly to: string; readonly label: string })
 
 export function Sidebar() {
   const orgId = useSession((state) => state.orgId);
+  const { productName, logoUrl } = useBranding();
   const collapsed = useUi((state) => !state.sidebarOpen);
   const toggleSidebar = useUi((state) => state.toggleSidebar);
   const isDesktop = useIsDesktop();
@@ -207,8 +209,14 @@ export function Sidebar() {
     >
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line px-2">
         {open && (
-          <Link to="/projects" className="truncate px-1 text-sm font-semibold text-ink">
-            TaskFlow
+          <Link
+            to="/projects"
+            className="flex min-w-0 items-center gap-2 truncate px-1 text-sm font-semibold text-ink"
+          >
+            {logoUrl !== null && (
+              <img src={logoUrl} alt="" className="size-5 shrink-0 rounded object-contain" />
+            )}
+            <span className="truncate">{productName}</span>
           </Link>
         )}
         {/* The collapse toggle only makes sense as a desktop rail control —

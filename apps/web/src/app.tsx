@@ -5,6 +5,7 @@ import { createQueryClient, dropOrgScopedQueries, onOrgLost } from './lib/query.
 import { restore, useSession } from './lib/session.js';
 import { createAppRouter } from './router.js';
 import { OrgGate } from './features/org/org-gate.js';
+import { BrandingProvider } from './features/branding/branding-provider.js';
 import { ToastProvider } from './components/toast.js';
 import { Spinner } from './components/primitives.js';
 
@@ -71,17 +72,22 @@ export function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Outside `OrgGate` so a toast survives the gate's spinner, and outside
-          the router so a mutation's rollback message is not unmounted by the
-          navigation that failure may have caused. */}
-      <ToastProvider>
-        {/* Inside the query provider because it asks a query, and outside the
-            router because its whole job is to settle before a route can issue
-            one. */}
-        <OrgGate>
-          <RouterProvider router={router} />
-        </OrgGate>
-      </ToastProvider>
+      {/* Outermost of the three: it fires pre-auth (the login page needs the
+          real product name and logo) and never blocks, so there is no reason
+          for it to wait behind `OrgGate`'s spinner or `ToastProvider`. */}
+      <BrandingProvider>
+        {/* Outside `OrgGate` so a toast survives the gate's spinner, and outside
+            the router so a mutation's rollback message is not unmounted by the
+            navigation that failure may have caused. */}
+        <ToastProvider>
+          {/* Inside the query provider because it asks a query, and outside the
+              router because its whole job is to settle before a route can issue
+              one. */}
+          <OrgGate>
+            <RouterProvider router={router} />
+          </OrgGate>
+        </ToastProvider>
+      </BrandingProvider>
     </QueryClientProvider>
   );
 }

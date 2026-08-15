@@ -19,6 +19,7 @@ import { hangUp } from '../features/rtc/use-call.js';
 import { useUi } from '../lib/ui-store.js';
 import { useIsDesktop } from '../lib/use-media-query.js';
 import { orgsQuery } from '../features/org/api.js';
+import { useBranding } from '../lib/branding-context.js';
 import { cn } from '../lib/cn.js';
 import { Avatar, Button } from './primitives.js';
 import { Sidebar } from './sidebar.js';
@@ -391,6 +392,7 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
  */
 function Breadcrumbs() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const { productName } = useBranding();
 
   const label = pathname.startsWith('/boards/')
     ? 'Board'
@@ -416,7 +418,7 @@ function Breadcrumbs() {
                         ? 'Platform admin'
                         : pathname.startsWith('/orgs')
                           ? 'Organizations'
-                          : 'TaskFlow';
+                          : productName;
 
   /* `min-w-0` is load-bearing, not decorative: a flex item's default
      min-width is `auto`, which means it will NOT shrink below its own content
