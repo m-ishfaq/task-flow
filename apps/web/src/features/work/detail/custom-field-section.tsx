@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { SlidersHorizontal } from 'lucide-react';
 import type { BoardId, CardId, CustomFieldId, ProjectId } from '@taskflow/contracts';
 import { api } from '../../../lib/trpc.js';
 import { keys } from '../../../lib/query.js';
@@ -54,7 +55,10 @@ export function CustomFieldSection({ orgId, boardId, cardId, projectId }: Custom
 
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Fields</h3>
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-ink-muted uppercase">
+        <SlidersHorizontal aria-hidden="true" className="size-3" strokeWidth={2.25} />
+        Fields
+      </h3>
 
       {live.length === 0 && (
         <p className="text-xs text-ink-faint">

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { MapPin } from 'lucide-react';
 import type { BoardId, CardId, ListId, ProjectId } from '@taskflow/contracts';
 import { api } from '../../../lib/trpc.js';
 import { keys } from '../../../lib/query.js';
@@ -120,7 +121,10 @@ export function LocationSection({
 
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Location</h3>
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-ink-muted uppercase">
+        <MapPin aria-hidden="true" className="size-3" strokeWidth={2.25} />
+        Location
+      </h3>
 
       {projectId !== null && (
         <BoardSelect

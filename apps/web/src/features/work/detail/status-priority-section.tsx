@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { CircleDot, Flag } from 'lucide-react';
 import type { BoardId, CardId, ProjectId, StatusId } from '@taskflow/contracts';
 import { api } from '../../../lib/trpc.js';
 import { keys } from '../../../lib/query.js';
@@ -51,7 +52,10 @@ export function StatusSection({ orgId, boardId, cardId, projectId, statusId }: S
 
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Status</h3>
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-ink-muted uppercase">
+        <CircleDot aria-hidden="true" className="size-3" strokeWidth={2.25} />
+        Status
+      </h3>
       <select
         aria-label="Status"
         value={statusId ?? ''}
@@ -92,7 +96,10 @@ export function PrioritySection({ orgId, boardId, cardId, priority }: PrioritySe
 
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Priority</h3>
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-ink-muted uppercase">
+        <Flag aria-hidden="true" className="size-3" strokeWidth={2.25} />
+        Priority
+      </h3>
       {/* The swatch previews the SELECTED value — a native `<option>` cannot
           carry its own background color, so this is the one place the
           priority-colors.ts palette becomes visible in this control. Absent

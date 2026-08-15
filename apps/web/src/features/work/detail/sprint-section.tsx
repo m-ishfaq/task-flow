@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { Timer } from 'lucide-react';
 import type { BoardId, CardId, ProjectId } from '@taskflow/contracts';
 import { api } from '../../../lib/trpc.js';
 import { keys } from '../../../lib/query.js';
@@ -60,7 +61,10 @@ export function SprintSection({ orgId, boardId, cardId, projectId, sprintId }: S
 
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Sprint</h3>
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-ink-muted uppercase">
+        <Timer aria-hidden="true" className="size-3" strokeWidth={2.25} />
+        Sprint
+      </h3>
       <select
         aria-label="Sprint"
         value={sprintId ?? ''}

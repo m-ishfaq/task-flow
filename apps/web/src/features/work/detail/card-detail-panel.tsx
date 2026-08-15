@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ModalClose, ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Archive, Calendar, X } from 'lucide-react';
 import type { BoardId, CardId, ProjectId } from '@taskflow/contracts';
 import { Button, Input, Skeleton } from '../../../components/primitives.js';
 import { ErrorView } from '../../../components/error-view.js';
@@ -100,8 +101,8 @@ export function CardDetailPanel({
               onArchived={onClose}
             />
             <ModalClose asChild>
-              <Button size="sm" variant="ghost">
-                Close
+              <Button size="sm" variant="ghost" aria-label="Close">
+                <X aria-hidden="true" className="size-4" strokeWidth={2} />
               </Button>
             </ModalClose>
           </div>
@@ -273,6 +274,7 @@ function ArchiveCardButton({
           setConfirming(true);
         }}
       >
+        <Archive aria-hidden="true" className="size-3.5" strokeWidth={2} />
         Archive
       </Button>
     );
@@ -405,7 +407,10 @@ function DatesSection({
   return (
     <section className="grid grid-cols-2 gap-3">
       <label className="space-y-1 text-xs text-ink-muted">
-        <span className="block">Start</span>
+        <span className="flex items-center gap-1">
+          <Calendar aria-hidden="true" className="size-3" strokeWidth={2.25} />
+          Start
+        </span>
         <input
           type="date"
           value={card.startDate?.slice(0, 10) ?? ''}
@@ -417,7 +422,10 @@ function DatesSection({
       </label>
 
       <label className="space-y-1 text-xs text-ink-muted">
-        <span className="block">Due</span>
+        <span className="flex items-center gap-1">
+          <Calendar aria-hidden="true" className="size-3" strokeWidth={2.25} />
+          Due
+        </span>
         <input
           type="date"
           value={card.dueDate?.slice(0, 10) ?? ''}

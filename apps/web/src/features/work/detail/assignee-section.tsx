@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import { useMutation } from '@tanstack/react-query';
+import { Users } from 'lucide-react';
 import type { BoardId, CardId, UserId } from '@taskflow/contracts';
 import { api } from '../../../lib/trpc.js';
 import { keys } from '../../../lib/query.js';
@@ -85,7 +86,10 @@ export function AssigneeSection({ orgId, boardId, cardId, assigneeIds }: Assigne
 
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Assignees</h3>
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-ink-muted uppercase">
+        <Users aria-hidden="true" className="size-3" strokeWidth={2.25} />
+        Assignees
+      </h3>
 
       <div className="flex flex-wrap items-center gap-1.5">
         {assigned.length === 0 && <span className="text-xs text-ink-faint">Unassigned</span>}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import * as Checkbox from '@radix-ui/react-checkbox';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { SquareCheck } from 'lucide-react';
 import type { BoardId, CardId, ChecklistId, ChecklistItemId } from '@taskflow/contracts';
 import { api } from '../../../lib/trpc.js';
 import { keys } from '../../../lib/query.js';
@@ -172,7 +173,10 @@ export function ChecklistSection({ orgId, boardId, cardId }: ChecklistSectionPro
 
   return (
     <section className="space-y-3">
-      <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Checklists</h3>
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-ink-muted uppercase">
+        <SquareCheck aria-hidden="true" className="size-3" strokeWidth={2.25} />
+        Checklists
+      </h3>
 
       {(checklists.data ?? []).map((checklist) => {
         const done = checklist.items.filter((item) => item.done).length;
