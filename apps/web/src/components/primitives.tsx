@@ -24,8 +24,22 @@ import { cn } from '../lib/cn.js';
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type ButtonSize = 'sm' | 'md';
 
+/**
+ * `primary` carries the only elevation on a Button — a permanent `shadow-sm`
+ * (resolving through `styles.css`'s `@theme` override of Tailwind's own
+ * shadow tokens, not a bespoke value) — because it is the one variant making
+ * a claim to be THE action on its surface; giving every variant a shadow
+ * would just make the page noisier, not clearer. A bigger shadow on HOVER
+ * was tried and cut: `--shadow-lg` is tuned for Popover/Modal-sized panels,
+ * and jumping to it on a `h-9` button read as the button floating rather
+ * than lifting. The hover/press feedback stays where it already read
+ * correctly — `bg-accent-hover` and the `press` class's active-state scale
+ * (`styles.css`). `secondary` and `danger` stay flat, matching their
+ * border-defined shape; `ghost` never had a shape to raise in the first
+ * place.
+ */
 const BUTTON_VARIANTS: Readonly<Record<ButtonVariant, string>> = {
-  primary: 'bg-accent text-accent-ink hover:bg-accent-hover',
+  primary: 'bg-accent text-accent-ink shadow-sm hover:bg-accent-hover',
   secondary: 'bg-surface-raised text-ink border border-line hover:bg-surface-hover',
   ghost: 'text-ink-muted hover:bg-surface-hover hover:text-ink',
   danger: 'bg-danger text-danger-ink hover:opacity-90',
@@ -55,7 +69,7 @@ export function Button({
          which in this app means saving a half-edited card. */
       type={type ?? 'button'}
       className={cn(
-        'inline-flex items-center justify-center rounded font-medium transition-colors',
+        'press inline-flex items-center justify-center rounded font-medium transition-colors',
         'disabled:pointer-events-none disabled:opacity-50',
         BUTTON_VARIANTS[variant],
         BUTTON_SIZES[size],
@@ -74,8 +88,16 @@ export function Input({ className, ...props }: InputProps) {
   return (
     <input
       className={cn(
-        'h-9 w-full rounded border border-line bg-surface-sunken px-2.5 text-sm text-ink',
-        'placeholder:text-ink-faint focus:border-accent focus:outline-none',
+        'h-9 w-full rounded border border-line bg-surface-sunken px-2.5 text-sm text-ink transition-colors',
+        /* `focus:bg-surface` — a step lighter than the resting `surface-sunken`
+           — is the "considered" touch here: a field that visibly comes
+           forward when it takes focus, rather than only its border changing
+           color. Deliberately not a `focus:ring-*` glow layered under the
+           existing global `:focus-visible` outline (`styles.css`) — that
+           outline is load-bearing for the board's keyboard drag path, and a
+           second ring on top of it read as a thick double-border rather than
+           an addition. */
+        'placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:outline-none',
         'disabled:opacity-50',
         className,
       )}
@@ -111,8 +133,9 @@ export function Textarea({ className, ...props }: TextareaProps) {
   return (
     <textarea
       className={cn(
-        'w-full rounded border border-line bg-surface-sunken px-2.5 py-2 text-sm text-ink',
-        'placeholder:text-ink-faint focus:border-accent focus:outline-none',
+        'w-full rounded border border-line bg-surface-sunken px-2.5 py-2 text-sm text-ink transition-colors',
+        /* Same reasoning as Input's `focus:bg-surface` above. */
+        'placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:outline-none',
         className,
       )}
       {...props}

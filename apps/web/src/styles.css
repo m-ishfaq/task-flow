@@ -84,10 +84,20 @@
      measured a hard 2.58:1, and no value lighter than accent itself can pass
      4.5:1 with the same white text. Darkening on hover is also the more
      conventional direction for a filled button, so this is a case where the
-     fix and a house-style improvement point the same way. */
-  --color-accent: oklch(55% 0.17 258);
-  --color-accent-ink: oklch(98% 0.01 258);
-  --color-accent-hover: oklch(50% 0.17 258);
+     fix and a house-style improvement point the same way.
+
+     Hue moved 258 -> 285 in the UI/UX redesign pass (see PLAN.md-adjacent
+     ai/ notes on that pass): a generic Bootstrap-blue read as templated
+     rather than considered. Same L/C discipline, so the same audit method
+     applies — recomputed with the identical relative-luminance calculation
+     (not eyeballed): accent-vs-accent-ink now 4.86:1 (was 4.67:1),
+     accent-hover-vs-ink 6.04:1 (was 5.79:1), accent-vs-surface 3.44:1 and
+     accent-vs-surface-raised 3.11:1 (both still clear the 3:1 non-text bar,
+     was 3.59:1 against --color-surface). `branding-palettes.ts`'s `default`
+     palette must stay in sync with this hue — see that file's own header. */
+  --color-accent: oklch(55% 0.17 285);
+  --color-accent-ink: oklch(98% 0.01 285);
+  --color-accent-hover: oklch(50% 0.17 285);
 
   /* 62% -> 55%: white text on the danger fill measured 3.76:1, below AA.
      55% clears it at 5.04:1. Same audit as --color-accent above. */
@@ -96,6 +106,30 @@
   --color-warning: oklch(76% 0.15 75);
   --color-success: oklch(70% 0.15 155);
 
+  /**
+   * A priority signal — the UI/UX redesign pass's one deliberate signature
+   * (a colored left edge on a card tile), and the one thing this codebase
+   * had NO color for at all: priority was plain text with nothing to scan a
+   * board by. Deliberately reused tokens for three of the four levels rather
+   * than four brand-new ones — `--color-warning` (high), `--color-accent`
+   * (medium), `--color-ink-faint` (low) are already audited and cost zero
+   * new risk. Only `--color-priority-urgent` is new: `--color-danger` itself
+   * measures 2.99:1 against `--color-surface-raised` (the card tile's own
+   * background) — a hair under the 3:1 WCAG 1.4.11 non-text bar for a
+   * graphical indicator's boundary — so this is danger's hue/chroma with L
+   * nudged from 55% to 58%, which clears it at 3.39:1. `--color-danger`
+   * itself is untouched; its own (different) pairing is still exactly what
+   * the audit above verified.
+   *
+   * These are NON-TEXT swatches only (a bar, a dot, a ring) — never rendered
+   * as colored text on a bare surface. `--color-priority-urgent` and
+   * `--color-accent` both clear only the 3:1 non-text bar against
+   * `--color-surface`/`--color-surface-raised`, not the 4.5:1 text bar; a
+   * priority LABEL ("Urgent") is neutral `--color-ink`/`--color-ink-muted`
+   * text next to the swatch, never the swatch's own color as text.
+   */
+  --color-priority-urgent: oklch(58% 0.19 22);
+
   /* A modal scrim, given one token rather than left to each dialog to pick its
      own opacity — the duplication census in ai/phase-6.5-ui-polish.md Wave 1
      found five independent Radix Dialog implementations, none of which agreed
@@ -103,6 +137,45 @@
   --color-overlay: oklch(15% 0.02 265 / 60%);
 
   --radius-card: 0.5rem;
+
+  /**
+   * Elevation. Before this pass the whole app had exactly two ad hoc shadow
+   * uses (`shadow-lg` on Popover/DropdownMenu, `shadow-xl` on Modal, both in
+   * packages/ui, both Tailwind's stock light-mode-tuned recipes) and nothing
+   * else — every other "raised" surface was a flat border-only swap.
+   *
+   * These OVERRIDE Tailwind v4's own `--shadow-sm`/`--shadow-lg`/`--shadow-xl`
+   * theme keys rather than inventing new names, which is deliberate: Popover
+   * and DropdownMenu already use the `shadow-lg` utility and Modal already
+   * uses `shadow-xl` (see packages/ui), so redefining the same three keys
+   * upgrades all three to a soft, low-opacity, dark-appropriate recipe with
+   * no edit needed in packages/ui at all — a light-mode shadow recipe reads
+   * as a grey halo on a dark surface, not a shadow. `sm` is new: a hover-
+   * raised card tile (`Button`'s primary variant here, `card-tile.tsx` later
+   * in the redesign) had no elevation step below Popover's before this.
+   */
+  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 20%), 0 1px 1px oklch(0% 0 0 / 12%);
+  --shadow-lg: 0 8px 20px oklch(0% 0 0 / 30%), 0 2px 6px oklch(0% 0 0 / 18%);
+  --shadow-xl: 0 16px 40px oklch(0% 0 0 / 38%), 0 6px 12px oklch(0% 0 0 / 22%);
+
+  /**
+   * Display and mono type, added for the UI/UX redesign pass.
+   *
+   * `--font-sans` (body/UI copy — everything read for hours) is deliberately
+   * UNTOUCHED: the system stack costs zero network latency and zero layout
+   * shift, which matters more for text read constantly than a distinctive
+   * face does. These two are additive, generating `font-display`/`font-mono`
+   * utilities per Tailwind v4's `@theme` convention, used ONLY for page/panel
+   * titles and the wordmark (`font-display`) and literal codes — card
+   * reference numbers, timestamps, ids (`font-mono`) — never for body text.
+   * Both are Geist (SIL OFL 1.1, self-hosted from `public/fonts/`, see the
+   * `@font-face` rules and `public/fonts/OFL.txt` below/alongside), chosen
+   * over Inter specifically because Inter is now the default a generic
+   * AI-assisted redesign reaches for — see the frontend-design skill's own
+   * note on generic clusters.
+   */
+  --font-display: 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
 
   /* Motion tokens: nothing in this file used a duration or an easing curve
      before this phase (grep confirmed zero `transition-*` beyond a bare
@@ -124,6 +197,37 @@
     --motion-fast: 0.01ms;
     --motion-base: 0.01ms;
   }
+}
+
+/**
+ * Geist Sans/Mono (SIL OFL 1.1 — `public/fonts/OFL.txt`), self-hosted rather
+ * than pulled from a font CDN: a third-party font request is both a
+ * dependency this app does not otherwise have on an external origin and,
+ * for the sign-in page specifically, one more thing that can fail before
+ * someone can authenticate.
+ *
+ * `font-display: swap` and a single variable-weight file per family (both
+ * files are Latin-subset, ~70KB each) rather than static per-weight files:
+ * these two faces are used sparingly (`--font-display`/`--font-mono` in the
+ * @theme block above, applied to headings and structural/data text only —
+ * never body copy), so the FOUT window swap can cost is brief and there is
+ * no CLS risk from a size-mismatched fallback the way there would be if this
+ * were the primary reading face.
+ */
+@font-face {
+  font-family: 'Geist';
+  src: url('/fonts/Geist-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('/fonts/GeistMono-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
 }
 
 @layer base {
@@ -218,6 +322,26 @@
     .ui-fade[data-state='open'] {
       opacity: 0;
     }
+  }
+
+  /**
+   * Press feedback for anything clickable — primarily `Button` (primitives.tsx).
+   * A small `transform: scale()` on `:active`, gated the same way `.ui-fade`
+   * is: through the `--motion-fast` token, which the reduced-motion media
+   * query above already collapses to ~instant, so this needs no separate
+   * `prefers-reduced-motion` rule of its own.
+   *
+   * A shared class rather than inline Tailwind `active:scale-*` at every call
+   * site: `active:` has no built-in way to reference `--motion-fast` for its
+   * transition duration without an arbitrary-value utility repeated
+   * everywhere, and a raw `active:scale-[0.98]` with no `transition` at all
+   * snaps rather than eases.
+   */
+  .press {
+    transition: transform var(--motion-fast) var(--motion-ease);
+  }
+  .press:active {
+    transform: scale(0.98);
   }
 
   /**

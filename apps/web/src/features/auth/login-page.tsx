@@ -125,8 +125,13 @@ export function LoginPage() {
   return (
     <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-6 p-6">
       <div>
-        <h1 className="text-lg font-semibold text-ink">Sign in to {productName}</h1>
-        <p className="mt-1 text-sm text-ink-muted">Use your email and password.</p>
+        {/* `font-display` (Geist Sans, `styles.css`) — the first real use of
+            the redesign's display face, on the one page every visitor sees
+            before anything else. Body copy below stays on the system stack. */}
+        <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">
+          Sign in to {productName}
+        </h1>
+        <p className="mt-1.5 text-sm text-ink-muted">Use your email and password.</p>
       </div>
 
       <form

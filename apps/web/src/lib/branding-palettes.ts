@@ -5,9 +5,13 @@ import { PALETTE_IDS, type PaletteId } from '@taskflow/contracts';
  * values themselves, which only the client ever needs.
  *
  * `default` reproduces `styles.css`'s existing hand-audited accent trio
- * exactly (`oklch(55% 0.17 258)` / `oklch(50% 0.17 258)` / `oklch(98% 0.01
- * 258)`), so a deployment that never touches branding renders pixel-identical
- * to before this feature existed.
+ * exactly (`oklch(55% 0.17 285)` / `oklch(50% 0.17 285)` / `oklch(98% 0.01
+ * 285)`), so a deployment that never touches branding renders pixel-identical
+ * to before this feature existed. That hue moved from 258 to 285 in the
+ * UI/UX redesign pass — see `styles.css`'s own comment on `--color-accent`
+ * for the re-verified contrast numbers. This file's `default` entry has to
+ * move with it or the branding feature's own "no-op" default silently stops
+ * matching the app's real default.
  *
  * The other five hold `default`'s LIGHTNESS and CHROMA fixed and vary only
  * HUE. That is not a shortcut — it is the one property OKLCH was designed to
@@ -38,12 +42,15 @@ const INK = 'oklch(98% 0.01 258)';
 
 /** Hue angle for each palette, degrees on the OKLCH hue wheel. */
 const HUES: Record<PaletteId, number> = {
-  default: 258, // blue — the original, unchanged
-  violet: 302,
+  default: 285, // indigo-violet — the app's own default accent (styles.css)
+  // 302 (35° from the old default's 258) was fine when default was blue; at
+  // 285 it sat only 17° away — close enough that the two swatches were hard
+  // to tell apart. Moved to 320 (magenta-violet) to stay clearly distinct.
+  violet: 320,
   green: 152,
   amber: 75,
   rose: 18,
-  slate: 258, // same hue as default, near-zero chroma below — a desaturated neutral
+  slate: 285, // same hue as default, near-zero chroma below — a desaturated neutral
 };
 
 /** `slate` is the one deliberate exception to "same L/C, different H" — it wants LOW chroma, not a hue shift. */
