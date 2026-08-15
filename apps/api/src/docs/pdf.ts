@@ -283,7 +283,11 @@ export function layoutDocument(
   return lines;
 }
 
-export async function renderPdf(title: string, document: RenderedNode): Promise<Uint8Array> {
+export async function renderPdf(
+  title: string,
+  document: RenderedNode,
+  productName = 'TaskFlow',
+): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   const fonts: Record<FontVariant, PDFFont> = {
     regular: await pdf.embedFont(StandardFonts.Helvetica),
@@ -331,6 +335,22 @@ export async function renderPdf(title: string, document: RenderedNode): Promise<
     }
 
     y -= lineHeight(size) + line.spaceAfter;
+  }
+
+  /* Drawn once the page count is final, not per-page as content is laid out —
+     `layoutDocument`/pagination above adds pages on demand, so the total is
+     only known once the loop finishes. */
+  const footerText = `Exported from ${productName}`;
+  const footerSize = 8;
+  const footerWidth = fonts.regular.widthOfTextAtSize(footerText, footerSize);
+  for (const footerPage of pdf.getPages()) {
+    footerPage.drawText(footerText, {
+      x: (PAGE_WIDTH - footerWidth) / 2,
+      y: MARGIN / 2,
+      size: footerSize,
+      font: fonts.regular,
+      color: rgb(0.5, 0.5, 0.5),
+    });
   }
 
   return pdf.save();

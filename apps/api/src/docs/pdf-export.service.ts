@@ -4,6 +4,7 @@ import { enforceOnPage, loadPage, orgOf, type DocsActor } from './shared.js';
 import { materializeCurrentState } from './page-version.service.js';
 import { renderState } from './render.js';
 import { renderPdf } from './pdf.js';
+import { getResolvedBranding } from '../platform-admin/branding-cache.js';
 
 /**
  * PDF export's "which content" resolution (ai/phase-6-docs.md §3.9, Wave 4).
@@ -67,6 +68,7 @@ export async function exportPagePdf(
     };
   });
 
-  const bytes = await renderPdf(title, renderState(state));
+  const { productName } = await getResolvedBranding();
+  const bytes = await renderPdf(title, renderState(state), productName);
   return { filename: filenameOf(title), bytes };
 }
