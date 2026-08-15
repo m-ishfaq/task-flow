@@ -221,9 +221,9 @@ export async function resendVerification(
   const now = clock(deps);
   const user = await repo.findUserByEmail(input.email);
 
-  if (!user || user.status !== 'active' || user.emailVerifiedAt !== null) {
-    return { status: 'sent' };
-  }
+  if (!user) return { status: 'sent' };
+  if (user.status !== 'active') return { status: 'sent' };
+  if (user.emailVerifiedAt !== null) return { status: 'sent' };
 
   const verification = issueToken('emailVerify');
   await repo.createEmailVerification({
