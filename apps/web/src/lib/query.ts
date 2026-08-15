@@ -405,6 +405,8 @@ export const keys = {
   platformUsers: (cursor: string | null) => ['platform', 'users', cursor ?? 'first'] as const,
   /** The flag registry with resolved values. */
   platformFlags: () => ['platform', 'flags'] as const,
+  /** The deployment's branding — the console tab's own read, always fresh. */
+  platformBranding: () => ['platform', 'branding'] as const,
   /** One page of the billing directory (Phase 12 Wave 3 §3.6). */
   platformBilling: (cursor: string | null) => ['platform', 'billing', cursor ?? 'first'] as const,
   /** One page of the operator chain. Keyset on seq — the page is `before`. */

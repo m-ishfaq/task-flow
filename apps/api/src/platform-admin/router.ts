@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import type { EventBus } from '@taskflow/events';
-import { OrgIdSchema, UserIdSchema } from '@taskflow/contracts';
+import { OrgIdSchema, PALETTE_IDS, UserIdSchema } from '@taskflow/contracts';
 import { isPlatformOperator } from './operator.js';
 import { FLAG_NAMES, type FlagName } from '@taskflow/feature-flags';
-import { platformRoute, router, selfRoute } from '../trpc/builder.js';
+import { platformRoute, publicRoute, router, selfRoute } from '../trpc/builder.js';
 import type { SubaccountDeps } from '../telephony/subaccount.service.js';
 import type { BillingMailDeps } from '../billing/billing-mail.js';
 import * as directory from './org-directory.service.js';
@@ -13,8 +13,10 @@ import * as billing from './billing-directory.service.js';
 import * as operations from './operations.js';
 import * as plans from './plan-catalog.service.js';
 import * as detail from './org-detail.service.js';
+import * as branding from './branding.service.js';
 import { readOperatorAudit, recordOperatorAction } from './audit.js';
-import type { PaymentProvider } from '@taskflow/contracts';
+import type { PaymentProvider, StorageProvider } from '@taskflow/contracts';
+import type { ScannerConfig } from '@taskflow/security';
 
 /**
  * Platform-admin routes (Phase 12 Wave 1, ai/phase-12-admin.md §3.6).
@@ -60,6 +62,22 @@ export interface PlatformAdminRouterDeps {
    * `buildBillingDeps` gives for never returning undefined.
    */
   readonly payments: PaymentProvider;
+  /**
+   * Object storage and the virus scanner, for the branding logo/favicon
+   * upload (migration 0073).
+   *
+   * REQUIRED, like `payments` and unlike `subaccounts`/`mail`: every
+   * instance has these configured (Work's attachments cannot function
+   * without them), so this is the SAME provider and scanner
+   * `apps/api/src/router.ts` already passes to Work and Chat — not a second
+   * pair — the identical reuse `createChatRouter(deps.work.attachments)`
+   * already established. Branding's own `MAX_LOGO_BYTES` stays local to
+   * `branding.service.ts` rather than arriving here, since it is a much
+   * smaller limit than Work's attachment cap and has nothing to do with
+   * either of those two services' own configuration.
+   */
+  readonly storage: StorageProvider;
+  readonly scanner: ScannerConfig;
 }
 
 const ListInput = z
@@ -304,6 +322,35 @@ const PlanRow = z
   })
   .strict();
 
+const PaletteIdSchema = z.enum(PALETTE_IDS);
+
+const BrandingRow = z
+  .object({
+    productName: z.string(),
+    logoKey: z.string().nullable(),
+    faviconKey: z.string().nullable(),
+    paletteId: PaletteIdSchema,
+    updatedBy: z.string().nullable(),
+    updatedAt: z.date(),
+  })
+  .strict();
+
+const PresignedAsset = z
+  .object({
+    storageKey: z.string(),
+    url: z.string(),
+    headers: z.record(z.string(), z.string()),
+    expiresAt: z.date(),
+  })
+  .strict();
+
+const ConfirmedAsset = z
+  .object({
+    status: z.enum(['clean', 'infected', 'rejected']),
+    reason: z.string().optional(),
+  })
+  .strict();
+
 export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
   const operatorOf = (ctx: {
     principal: { userId: string };
@@ -318,6 +365,12 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
   const catalogDeps = (): plans.PlanCatalogDeps => ({
     events: deps.events,
     payments: deps.payments,
+  });
+
+  const brandingDeps = (): branding.BrandingDeps => ({
+    events: deps.events,
+    storage: deps.storage,
+    scanner: deps.scanner,
   });
 
   return router({
@@ -516,6 +569,90 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
         )
         .output(z.object({ flagName: z.string(), value: z.boolean().nullable() }).strict())
         .mutation(({ input, ctx }) => flags.setFlag(deps, operatorOf(ctx), input)),
+    }),
+
+    /**
+     * Platform-wide branding (migration 0073) — product name, logo,
+     * favicon, and accent palette for this whole deployment. Every mutation
+     * is `platformRoute`; `public` is the one exception, deliberately
+     * `publicRoute` rather than even `selfRoute` — the login page and the
+     * public Docs page need it before any session exists, and `selfRoute`
+     * still calls `requireAuth` (see `builder.ts`).
+     */
+    branding: router({
+      get: platformRoute({
+        platformReason: 'Branding is global by design — no org permission applies.',
+      })
+        .output(
+          BrandingRow.extend({
+            logoUrl: z.string().nullable(),
+            faviconUrl: z.string().nullable(),
+          }),
+        )
+        .query(({ ctx }) =>
+          branding.getBrandingWithPreview({ storage: deps.storage }, operatorOf(ctx)),
+        ),
+
+      set: platformRoute({
+        platformReason: 'Branding changes what every organization sees — global by design.',
+      })
+        .input(
+          z
+            .object({
+              productName: z.string().trim().min(1).max(80).optional(),
+              paletteId: PaletteIdSchema.optional(),
+            })
+            .strict(),
+        )
+        .output(BrandingRow)
+        .mutation(({ input, ctx }) => branding.setBranding(brandingDeps(), operatorOf(ctx), input)),
+
+      presignLogo: platformRoute({
+        platformReason: 'Issuing an upload URL for the deployment logo — global by design.',
+      })
+        .input(z.object({ contentType: z.string(), sizeBytes: z.number().int().positive() }).strict())
+        .output(PresignedAsset)
+        .mutation(({ input, ctx }) => branding.presignLogo(brandingDeps(), operatorOf(ctx), input)),
+
+      confirmLogo: platformRoute({
+        platformReason: 'Confirming and scanning the uploaded logo — global by design.',
+      })
+        .input(z.object({ storageKey: z.string() }).strict())
+        .output(ConfirmedAsset)
+        .mutation(({ input, ctx }) => branding.confirmLogo(brandingDeps(), operatorOf(ctx), input)),
+
+      presignFavicon: platformRoute({
+        platformReason: 'Issuing an upload URL for the deployment favicon — global by design.',
+      })
+        .input(z.object({ contentType: z.string(), sizeBytes: z.number().int().positive() }).strict())
+        .output(PresignedAsset)
+        .mutation(({ input, ctx }) =>
+          branding.presignFavicon(brandingDeps(), operatorOf(ctx), input),
+        ),
+
+      confirmFavicon: platformRoute({
+        platformReason: 'Confirming and scanning the uploaded favicon — global by design.',
+      })
+        .input(z.object({ storageKey: z.string() }).strict())
+        .output(ConfirmedAsset)
+        .mutation(({ input, ctx }) =>
+          branding.confirmFavicon(brandingDeps(), operatorOf(ctx), input),
+        ),
+
+      public: publicRoute({
+        publicReason: 'The login page and the public Docs page need the brand before any session exists.',
+      })
+        .output(
+          z
+            .object({
+              productName: z.string(),
+              logoUrl: z.string().nullable(),
+              faviconUrl: z.string().nullable(),
+              paletteId: PaletteIdSchema,
+            })
+            .strict(),
+        )
+        .query(() => branding.publicBrandingSnapshot({ storage: deps.storage })),
     }),
 
     /**

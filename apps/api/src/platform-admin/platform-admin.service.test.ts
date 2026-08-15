@@ -1,5 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { unsafeAsId, type OrgId, type RequestId, type UserId } from '@taskflow/contracts';
+import {
+  unsafeAsId,
+  type OrgId,
+  type RequestId,
+  type StorageProvider,
+  type UserId,
+} from '@taskflow/contracts';
 import { RecordingEventBus } from '@taskflow/events';
 import {
   closeDatabase,
@@ -330,6 +336,25 @@ describe('the org directory', () => {
   });
 });
 
+/**
+ * Neither test in this block reaches a branding route, so this stands in for
+ * the router's now-required `storage`/`scanner` deps without giving them
+ * real behavior — every method throws if actually called, which would mean
+ * one of these tests started exercising branding and needs a real fake
+ * instead (see `branding.service.test.ts` for that).
+ */
+const unusedStorage: StorageProvider = new Proxy(
+  {},
+  {
+    get(_target, method) {
+      return () => {
+        throw new Error(`StorageProvider.${String(method)} was not expected to be called here.`);
+      };
+    },
+  },
+) as StorageProvider;
+const unusedScanner = { host: '127.0.0.1', port: 1, timeoutMs: 500 };
+
 describe('the operator console routes', () => {
   it('answers FORBIDDEN for an ordinary org member, not a 404 and not a pass-through', async () => {
     /* The guardrail-8 mirror case: platform routes take no org context to
@@ -341,6 +366,8 @@ describe('the operator console routes', () => {
       createPlatformAdminRouter({
         events: new RecordingEventBus(),
         payments: new FakePaymentProvider(),
+        storage: unusedStorage,
+        scanner: unusedScanner,
       }),
     )(context);
 
@@ -359,6 +386,8 @@ describe('the operator console routes', () => {
       createPlatformAdminRouter({
         events: new RecordingEventBus(),
         payments: new FakePaymentProvider(),
+        storage: unusedStorage,
+        scanner: unusedScanner,
       }),
     )(context);
 
