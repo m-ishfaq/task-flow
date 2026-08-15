@@ -53,6 +53,60 @@ import { StepUpDialog } from '../auth/step-up.js';
  * renders `ErrorView`. The UI never re-derives authorization (§8.2) — the
  * server's answer is the access-denied screen.
  */
+/**
+ * A `role="tablist"` bar — the shell this console needed twice (the
+ * top-level section switcher below, and `OperationsTab`'s kind filter
+ * further down) and had, until now, copied verbatim both times, right down
+ * to the `bg-surface-raised text-ink shadow-sm` active-state classes.
+ * Generic over the value type so a nullable "All" filter and a plain
+ * non-null string union share one implementation instead of one being a
+ * near-copy of the other with a `?? 'all'` key fallback bolted on.
+ */
+function TabBar<T extends string | null>({
+  items,
+  value,
+  onChange,
+  ariaLabel,
+  size = 'sm',
+  className,
+}: {
+  readonly items: readonly (readonly [T, string])[];
+  readonly value: T;
+  readonly onChange: (value: T) => void;
+  readonly ariaLabel: string;
+  readonly size?: 'sm' | 'xs';
+  readonly className?: string;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      className={cn('flex gap-1 rounded-lg border border-line bg-surface-sunken p-1', className)}
+    >
+      {items.map(([itemValue, label]) => (
+        <button
+          key={itemValue ?? 'null'}
+          type="button"
+          role="tab"
+          aria-selected={value === itemValue}
+          onClick={() => {
+            onChange(itemValue);
+          }}
+          className={cn(
+            'flex-1 rounded-md px-3 py-1.5 font-medium transition-colors',
+            size === 'sm' ? 'text-sm' : 'text-xs',
+            value === itemValue
+              ? 'bg-surface-raised text-ink shadow-sm'
+              : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+          )}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function PlatformAdminPage() {
   const queryClient = useQueryClient();
   const { guard, dialog } = useStepUp();
@@ -82,12 +136,12 @@ export function PlatformAdminPage() {
       {/* Tabs, not routes: the console is one surface with four views, and a
           child route per tab would mount a fresh component tree on every
           switch for no benefit — the queries are already keyed per page. */}
-      <div
-        role="tablist"
-        aria-label="Platform administration sections"
-        className="flex gap-1 rounded-lg border border-line bg-surface-sunken p-1 whitespace-nowrap overflow-x-auto"
-      >
-        {(
+      <TabBar
+        ariaLabel="Platform administration sections"
+        className="overflow-x-auto whitespace-nowrap"
+        value={tab}
+        onChange={setTab}
+        items={
           [
             ['orgs', 'Organizations'],
             ['users', 'Users'],
@@ -98,25 +152,8 @@ export function PlatformAdminPage() {
             ['audit', 'Operator audit'],
             ['operations', 'Operations'],
           ] as const
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            role="tab"
-            aria-selected={tab === value}
-            onClick={() => {
-              setTab(value);
-            }}
-            className={cn(
-              'flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-              tab === value
-                ? 'bg-surface-raised text-ink shadow-sm'
-                : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+        }
+      />
 
       {tab === 'orgs' && (
         <OrgsTab
@@ -2651,31 +2688,17 @@ function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
         </p>
       </div>
 
-      <div
-        role="tablist"
-        aria-label="Filter by kind"
-        className="mb-3 flex gap-1 rounded-lg border border-line bg-surface-sunken p-1"
-      >
-        {OPERATIONAL_EVENT_KINDS.map(([value, label]) => (
-          <button
-            key={value ?? 'all'}
-            role="tab"
-            aria-selected={kind === value}
-            onClick={() => {
-              setKind(value);
-              setCursor(null);
-            }}
-            className={cn(
-              'flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-              kind === value
-                ? 'bg-surface-raised text-ink shadow-sm'
-                : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <TabBar
+        ariaLabel="Filter by kind"
+        className="mb-3"
+        size="xs"
+        value={kind}
+        onChange={(value) => {
+          setKind(value);
+          setCursor(null);
+        }}
+        items={OPERATIONAL_EVENT_KINDS}
+      />
 
       {events.isPending && <SkeletonRows rows={5} className="*:h-12" />}
       {events.isError && <ErrorView error={events.error} title="Could not load operations" />}
