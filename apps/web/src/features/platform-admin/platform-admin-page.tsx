@@ -879,10 +879,7 @@ function useAssetUpload({
   inputRef,
   onSettled,
 }: {
-  readonly presign: (input: {
-    contentType: string;
-    sizeBytes: number;
-  }) => Promise<PresignedAsset>;
+  readonly presign: (input: { contentType: string; sizeBytes: number }) => Promise<PresignedAsset>;
   readonly confirm: (input: { storageKey: string }) => Promise<ConfirmedAsset>;
   readonly guard: (error: unknown, retry: () => void) => boolean;
   readonly setProgress: (value: string | null) => void;
@@ -1110,7 +1107,9 @@ function BrandingAssetUpload({
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-ink">{label}</p>
         <p className="text-[11px] text-ink-faint">{description}</p>
-        {error !== null && <ErrorView error={error} title={`Could not save the ${label.toLowerCase()}`} />}
+        {error !== null && (
+          <ErrorView error={error} title={`Could not save the ${label.toLowerCase()}`} />
+        )}
       </div>
 
       <input

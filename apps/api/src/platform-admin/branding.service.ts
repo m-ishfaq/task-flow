@@ -123,8 +123,7 @@ export async function getBrandingWithPreview(
   const row = await getBranding(operator);
   return {
     ...row,
-    logoUrl:
-      row.logoKey === null ? null : await deps.storage.presignDownload(row.logoKey, 60 * 5),
+    logoUrl: row.logoKey === null ? null : await deps.storage.presignDownload(row.logoKey, 60 * 5),
     faviconUrl:
       row.faviconKey === null ? null : await deps.storage.presignDownload(row.faviconKey, 60 * 5),
   };

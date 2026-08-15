@@ -49,9 +49,7 @@ export function asPaletteId(value: string): PaletteId {
 }
 
 async function loadBranding(): Promise<BrandingSnapshot> {
-  const rows = await withGlobalScope(async (tx) =>
-    tx.select().from(schema.branding).limit(1),
-  );
+  const rows = await withGlobalScope(async (tx) => tx.select().from(schema.branding).limit(1));
 
   /* The singleton is seeded by migration 0073 and never deleted, so this row
      is always present in practice. Falling back to the default snapshot

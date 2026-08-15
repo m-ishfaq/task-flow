@@ -610,7 +610,9 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
       presignLogo: platformRoute({
         platformReason: 'Issuing an upload URL for the deployment logo — global by design.',
       })
-        .input(z.object({ contentType: z.string(), sizeBytes: z.number().int().positive() }).strict())
+        .input(
+          z.object({ contentType: z.string(), sizeBytes: z.number().int().positive() }).strict(),
+        )
         .output(PresignedAsset)
         .mutation(({ input, ctx }) => branding.presignLogo(brandingDeps(), operatorOf(ctx), input)),
 
@@ -624,7 +626,9 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
       presignFavicon: platformRoute({
         platformReason: 'Issuing an upload URL for the deployment favicon — global by design.',
       })
-        .input(z.object({ contentType: z.string(), sizeBytes: z.number().int().positive() }).strict())
+        .input(
+          z.object({ contentType: z.string(), sizeBytes: z.number().int().positive() }).strict(),
+        )
         .output(PresignedAsset)
         .mutation(({ input, ctx }) =>
           branding.presignFavicon(brandingDeps(), operatorOf(ctx), input),
@@ -640,7 +644,8 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
         ),
 
       public: publicRoute({
-        publicReason: 'The login page and the public Docs page need the brand before any session exists.',
+        publicReason:
+          'The login page and the public Docs page need the brand before any session exists.',
       })
         .output(
           z

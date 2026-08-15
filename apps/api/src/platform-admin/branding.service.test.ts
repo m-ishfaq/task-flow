@@ -263,9 +263,7 @@ describe('the branding singleton', () => {
       { productName: 'Acme Works' },
     );
 
-    const result = await admin.query(
-      `SELECT action FROM platform.operator_audit_log ORDER BY seq`,
-    );
+    const result = await admin.query(`SELECT action FROM platform.operator_audit_log ORDER BY seq`);
     const actions = result.rows.map((row) => row['action'] as string);
     expect(actions).toContain('branding.get');
     expect(actions).toContain('branding.set');
