@@ -1,6 +1,24 @@
-import { useState } from 'react';
+import { useState, type ComponentType } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  Folder,
+  ListChecks,
+  MessageSquare,
+  Pin,
+  Phone,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Search,
+  Star,
+  Users,
+  Workflow,
+  type LucideProps,
+} from 'lucide-react';
 import type { BoardId, ProjectId } from '@taskflow/contracts';
 import { useSession } from '../lib/session.js';
 import { pinKey, pinnedProjectIds, useUi } from '../lib/ui-store.js';
@@ -69,24 +87,31 @@ import { FocusOnMountInput, Skeleton } from './primitives.js';
  * honest refusal from the page, never a menu that quietly differs by role —
  * §8.2, because the hidden version is the one that never gets tested.
  */
+/** A `lucide-react` icon component — every nav row's leading glyph. */
+type NavIcon = ComponentType<LucideProps>;
+
 const PRIMARY_SECTIONS: readonly {
   readonly id: string;
-  readonly items: readonly { readonly to: string; readonly label: string }[];
+  readonly items: readonly {
+    readonly to: string;
+    readonly label: string;
+    readonly icon: NavIcon;
+  }[];
 }[] = [
   {
     id: 'start',
     items: [
-      { to: '/home', label: 'My tasks' },
-      { to: '/search', label: 'Search' },
+      { to: '/home', label: 'My tasks', icon: ListChecks },
+      { to: '/search', label: 'Search', icon: Search },
     ],
   },
   {
     id: 'products',
     items: [
-      { to: '/chat', label: 'Chat' },
-      { to: '/docs', label: 'Docs' },
-      { to: '/calls', label: 'Calls' },
-      { to: '/people', label: 'People' },
+      { to: '/chat', label: 'Chat', icon: MessageSquare },
+      { to: '/docs', label: 'Docs', icon: FileText },
+      { to: '/calls', label: 'Calls', icon: Phone },
+      { to: '/people', label: 'People', icon: Users },
     ],
   },
 ];
@@ -108,9 +133,11 @@ const PRIMARY_SECTIONS: readonly {
  * muscle memory. Slack's and Linear's rails are shaped this way for the same
  * reason.
  */
-const CONFIG_ITEMS: readonly { readonly to: string; readonly label: string }[] = [
-  { to: '/automations', label: 'Automations' },
-];
+const CONFIG_ITEMS: readonly {
+  readonly to: string;
+  readonly label: string;
+  readonly icon: NavIcon;
+}[] = [{ to: '/automations', label: 'Automations', icon: Workflow }];
 
 /**
  * The active-state contract, defined once for every navigable thing in the rail.
@@ -135,9 +162,16 @@ const CONFIG_ITEMS: readonly { readonly to: string; readonly label: string }[] =
  * the ROW — so the bar lands at the row's left edge no matter how deep in the
  * row the link itself begins, and it reserves no layout space to begin with.
  * Every row that uses it is marked `relative`.
+ *
+ * The gradient (`from-accent to-accent/0`, top to bottom) is the redesign's
+ * signature active-indicator — the same "flow" idea as the priority color
+ * bar on a card tile (`styles.css`'s `--color-priority-urgent` comment):
+ * one considered visual motif reused in the two places a viewer's eye
+ * actually needs to land on "where am I / what matters here", not a
+ * decorative flourish added somewhere unrelated.
  */
 const ACTIVE_BAR =
-  'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-accent';
+  'before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-gradient-to-b before:from-accent before:to-accent/0';
 
 /**
  * The tint, applied to the ROW rather than to the link.
@@ -150,20 +184,29 @@ const ACTIVE_BAR =
  */
 const ACTIVE_ROW = 'has-[a[data-status=active]]:bg-accent/10';
 
-/** One top-level nav item. */
-function NavLink({ to, label }: { readonly to: string; readonly label: string }) {
+/** One top-level nav item — icon-leading, per the Slack/Teams rail reference. */
+function NavLink({
+  to,
+  label,
+  icon: Icon,
+}: {
+  readonly to: string;
+  readonly label: string;
+  readonly icon: NavIcon;
+}) {
   return (
     <Link
       to={to}
       className={cn(
-        'relative mb-0.5 block rounded px-2 py-1 text-xs font-medium text-ink-muted',
+        'relative mb-0.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-ink-muted',
         'hover:bg-surface-hover hover:text-ink',
       )}
       activeProps={{
         className: cn('bg-accent/10 text-accent hover:bg-accent/10 hover:text-accent', ACTIVE_BAR),
       }}
     >
-      {label}
+      <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={2} />
+      <span className="truncate">{label}</span>
     </Link>
   );
 }
@@ -207,7 +250,7 @@ export function Sidebar() {
         open ? 'w-72 md:w-60' : 'w-12',
       )}
     >
-      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line px-2">
+      <div className="flex h-14 shrink-0 items-center gap-1 border-b border-line px-3">
         {open && (
           <Link
             to="/projects"
@@ -216,7 +259,9 @@ export function Sidebar() {
             {logoUrl !== null && (
               <img src={logoUrl} alt="" className="size-5 shrink-0 rounded object-contain" />
             )}
-            <span className="truncate">{productName}</span>
+            {/* `font-display` (Geist Sans) — the wordmark is the other headline
+                use of the display face alongside the login page's heading. */}
+            <span className="font-display truncate tracking-tight">{productName}</span>
           </Link>
         )}
         {/* The collapse toggle only makes sense as a desktop rail control —
@@ -229,9 +274,13 @@ export function Sidebar() {
             onClick={toggleSidebar}
             aria-label={open ? 'Collapse sidebar' : 'Expand sidebar'}
             aria-expanded={open}
-            className="ml-auto rounded px-1.5 py-1 text-xs text-ink-faint hover:bg-surface-hover hover:text-ink"
+            className="ml-auto rounded p-1.5 text-ink-faint hover:bg-surface-hover hover:text-ink"
           >
-            {open ? '«' : '»'}
+            {open ? (
+              <PanelLeftClose aria-hidden="true" className="size-4" strokeWidth={2} />
+            ) : (
+              <PanelLeftOpen aria-hidden="true" className="size-4" strokeWidth={2} />
+            )}
           </button>
         )}
       </div>
@@ -248,7 +297,7 @@ export function Sidebar() {
             {PRIMARY_SECTIONS.map((section, index) => (
               <div key={section.id} className={cn(index > 0 && 'mt-2 border-t border-line pt-2')}>
                 {section.items.map((item) => (
-                  <NavLink key={item.to} to={item.to} label={item.label} />
+                  <NavLink key={item.to} to={item.to} label={item.label} icon={item.icon} />
                 ))}
               </div>
             ))}
@@ -272,7 +321,7 @@ export function Sidebar() {
             <Link
               to="/projects"
               className={cn(
-                'relative mb-1 block rounded px-2 pt-1 pb-1 text-[10px] font-semibold tracking-wide uppercase',
+                'relative mb-1 flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-semibold tracking-wide uppercase',
                 'text-ink-faint hover:bg-surface-hover hover:text-ink',
               )}
               activeProps={{
@@ -282,6 +331,7 @@ export function Sidebar() {
                 ),
               }}
             >
+              <Folder aria-hidden="true" className="size-3" strokeWidth={2.25} />
               Projects
             </Link>
 
@@ -318,7 +368,7 @@ export function Sidebar() {
             className="shrink-0 border-t border-line px-2 pt-2 pb-1.5"
           >
             {CONFIG_ITEMS.map((item) => (
-              <NavLink key={item.to} to={item.to} label={item.label} />
+              <NavLink key={item.to} to={item.to} label={item.label} icon={item.icon} />
             ))}
           </nav>
         </>
@@ -355,7 +405,7 @@ function ProjectNode({
       {/* `relative` so the active bar has something to pin to, and ACTIVE_ROW
           so the tint covers the disclosure triangle too — see those constants
           for why the styling is split across the row and the link. */}
-      <div className={cn('group relative flex items-center rounded', ACTIVE_ROW)}>
+      <div className={cn('group relative flex items-center rounded-md', ACTIVE_ROW)}>
         <button
           type="button"
           onClick={() => {
@@ -363,9 +413,13 @@ function ProjectNode({
           }}
           aria-expanded={!collapsed}
           aria-label={collapsed ? `Expand ${name}` : `Collapse ${name}`}
-          className="w-5 shrink-0 py-1 text-center text-[10px] text-ink-faint hover:text-ink"
+          className="flex w-5 shrink-0 items-center justify-center py-1 text-ink-faint hover:text-ink"
         >
-          {collapsed ? '▸' : '▾'}
+          {collapsed ? (
+            <ChevronRight aria-hidden="true" className="size-3.5" strokeWidth={2.25} />
+          ) : (
+            <ChevronDown aria-hidden="true" className="size-3.5" strokeWidth={2.25} />
+          )}
         </button>
 
         <Link
@@ -518,9 +572,10 @@ function AddBoard({
           onClick={() => {
             setAdding(true);
           }}
-          className="w-full rounded px-1 py-1 text-left text-[11px] text-ink-faint hover:bg-surface-hover hover:text-ink"
+          className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[11px] text-ink-faint hover:bg-surface-hover hover:text-ink"
         >
-          {isFirst ? '+ Add the first board' : '+ Board'}
+          <Plus aria-hidden="true" className="size-3" strokeWidth={2.25} />
+          {isFirst ? 'Add the first board' : 'Board'}
         </button>
       </li>
     );
@@ -575,7 +630,10 @@ function BoardLink({
 
   return (
     <li
-      className={cn('group relative flex items-center rounded hover:bg-surface-hover', ACTIVE_ROW)}
+      className={cn(
+        'group relative flex items-center rounded-md hover:bg-surface-hover',
+        ACTIVE_ROW,
+      )}
     >
       <Link
         to="/boards/$boardId"
@@ -607,13 +665,18 @@ function BoardLink({
            hover puts it out of reach of the keyboard entirely, which is the
            standard way this pattern excludes people. */
         className={cn(
-          'shrink-0 px-1.5 py-1 text-[10px] focus-visible:opacity-100',
+          'shrink-0 px-1.5 py-1 focus-visible:opacity-100',
           pinned
             ? 'text-warning opacity-100'
             : 'text-ink-faint opacity-0 group-hover:opacity-100 hover:text-ink',
         )}
       >
-        ★
+        <Star
+          aria-hidden="true"
+          className="size-3"
+          strokeWidth={2.25}
+          fill={pinned ? 'currentColor' : 'none'}
+        />
       </button>
     </li>
   );
@@ -640,7 +703,8 @@ function PinnedBoards() {
 
   return (
     <>
-      <p className="px-2 pb-1 text-[10px] font-semibold tracking-wide text-ink-faint uppercase">
+      <p className="flex items-center gap-1.5 px-2 pb-1 text-[10px] font-semibold tracking-wide text-ink-faint uppercase">
+        <Pin aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Pinned
       </p>
       <ul>
