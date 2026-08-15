@@ -50,6 +50,10 @@ const OPERATION_RULES: Readonly<Record<string, RateLimitRule>> = {
      not control, so this doubles as anti-spam for other people's inboxes. */
   'auth.requestPasswordReset': { limit: 3, windowMs: 60 * 60_000 },
 
+  /* Same shape and same reason as requestPasswordReset immediately above —
+     the input is just an email, unproven, and each hit sends mail. */
+  'auth.resendVerification': { limit: 3, windowMs: 60 * 60_000 },
+
   /* Also sends mail. Slightly looser than reset because a genuine signup can
      legitimately be retried after a typo'd address. */
   'auth.register': { limit: 5, windowMs: 60 * 60_000 },

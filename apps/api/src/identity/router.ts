@@ -89,6 +89,21 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
       .output(z.object({ status: z.literal('verified') }))
       .mutation(({ input }) => identity.verifyEmail(deps.identity, input)),
 
+    /**
+     * The door `login` leaves someone at when their original verification
+     * mail never arrived — a lost message, a spam filter, a typo'd inbox
+     * rule. Same shape as `requestPasswordReset`: requested precisely
+     * because the caller cannot sign in, so it cannot require a session, and
+     * it answers identically regardless of whether the address is
+     * registered, already verified, or suspended.
+     */
+    resendVerification: publicRoute({
+      publicReason: 'Requested precisely because the caller cannot sign in yet.',
+    })
+      .input(z.object({ email: Email }).strict())
+      .output(z.object({ status: z.literal('sent') }))
+      .mutation(({ input, ctx }) => identity.resendVerification(deps.identity, input, meta(ctx))),
+
     login: publicRoute({
       publicReason: 'This is how a session is obtained.',
     })
