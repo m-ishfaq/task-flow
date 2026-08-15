@@ -191,7 +191,7 @@ describe('the branding singleton', () => {
       faviconKey: null,
       paletteId: 'default',
       updatedBy: null,
-      updatedAt: expect.any(Date) as unknown as Date,
+      updatedAt: expect.any(Date) as unknown,
     });
   });
 
@@ -246,7 +246,7 @@ describe('the branding singleton', () => {
     const published = events.events.find((event) => event.name === 'platform.branding_updated');
     expect(published?.payload).toMatchObject({
       operatorUserId: OPERATOR,
-      fields: expect.arrayContaining(['productName', 'paletteId']) as unknown as string[],
+      fields: expect.arrayContaining(['productName', 'paletteId']) as unknown,
     });
   });
 
