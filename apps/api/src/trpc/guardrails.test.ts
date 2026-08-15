@@ -295,6 +295,10 @@ describe('the real application router', () => {
       'auth.refresh',
       'auth.register',
       'auth.requestPasswordReset',
+      /* The way out of EMAIL_NOT_VERIFIED (§8.1 follow-up) — requested
+         precisely because the caller cannot sign in yet, same as
+         auth.requestPasswordReset immediately above. */
+      'auth.resendVerification',
       'auth.resetPassword',
       /* Phase 12 Wave 2 §3.2. The caller has no session yet at this point — the
          signed challenge token from `auth.login` IS the proof the password

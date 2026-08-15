@@ -89,6 +89,10 @@ const UNMAPPED: ReadonlySet<string> = new Set([
   'user.login_failed',
   'user.password_changed',
   'user.password_reset_requested',
+  // Resend-verification (§8.1 follow-up) — same shape as
+  // password_reset_requested immediately above: the fact names the account
+  // that requested it, already in `actor_id`.
+  'user.email_verification_resent',
   'user.account_locked',
   'user.passkey_registered',
   'user.passkey_removed',
