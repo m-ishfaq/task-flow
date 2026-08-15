@@ -449,7 +449,19 @@ async function publishFailure(
   ]);
 }
 
-/** One error for every sign-in failure. See property 2 in the file header. */
+/**
+ * One error for every sign-in failure. See property 2 in the file header.
+ *
+ * Same `INVALID_CREDENTIALS` code as password login — the frontend's
+ * generic handling still applies — but a passkey ceremony never involves an
+ * email or password field, so the default "Incorrect email or password."
+ * copy is actively wrong here, not just generic. This is the one place that
+ * message is overridden without changing what it discloses: every reason
+ * (unknown credential, bad signature, locked, suspended) still collapses to
+ * this identical text.
+ */
 function invalidPasskey(): Error {
-  return errors.invalidCredentials();
+  return errors.invalidCredentials(
+    'That passkey was not recognized. Try a different passkey or sign in another way.',
+  );
 }
