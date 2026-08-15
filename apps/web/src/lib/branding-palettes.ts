@@ -58,8 +58,8 @@ export const PALETTES: Record<PaletteId, PaletteColors> = Object.fromEntries(
     return [
       id,
       {
-        base: `oklch(${BASE_LIGHTNESS}% ${chroma} ${hue})`,
-        hover: `oklch(${HOVER_LIGHTNESS}% ${chroma} ${hue})`,
+        base: `oklch(${String(BASE_LIGHTNESS)}% ${String(chroma)} ${String(hue)})`,
+        hover: `oklch(${String(HOVER_LIGHTNESS)}% ${String(chroma)} ${String(hue)})`,
         ink: INK,
       },
     ];
