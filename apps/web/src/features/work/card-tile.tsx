@@ -132,10 +132,22 @@ export function CardTile({
   );
 
   const tileClassName = cn(
-    'relative w-full overflow-hidden rounded-card border border-line bg-surface-raised px-2.5 py-2 text-left transition-[color,background-color,border-color,box-shadow]',
+    'relative w-full overflow-hidden rounded-card border border-line bg-surface-raised px-2.5 py-2 text-left',
+    'transition-[color,background-color,border-color,box-shadow,transform] duration-[var(--motion-fast)] ease-[var(--motion-ease)]',
     dragging
-      ? 'shadow-lg ring-1 ring-accent'
-      : 'hover:border-line-strong hover:bg-surface-hover hover:shadow-sm',
+      ? /* The dragged tile's OWN transform stays inert — see SortableCard's
+           inline `style` comment on why the ancestor wrapper, not this
+           element, is what dnd-kit moves. A hover lift here would be
+           imperceptible anyway: the DragOverlay ghost is what the pointer
+           is actually over during a drag. */
+        'shadow-lg ring-1 ring-accent'
+      : /* The lift is on THIS element (the tile's own div/button), never the
+           `SortableCard` wrapper dnd-kit applies its transform to — two
+           separate nodes, so the two transforms compose rather than
+           collide. `-translate-y-px` is subtle on purpose: this fires on
+           every card under the pointer while scanning a column, and
+           anything larger reads as jitter rather than depth. */
+        'hover:-translate-y-px hover:border-line-strong hover:bg-surface-hover hover:shadow-sm',
   );
 
   /* The drag overlay is not interactive — it is a picture following the pointer

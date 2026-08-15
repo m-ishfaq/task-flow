@@ -110,25 +110,38 @@
    * A priority signal — the UI/UX redesign pass's one deliberate signature
    * (a colored left edge on a card tile), and the one thing this codebase
    * had NO color for at all: priority was plain text with nothing to scan a
-   * board by. Deliberately reused tokens for three of the four levels rather
-   * than four brand-new ones — `--color-warning` (high), `--color-accent`
-   * (medium), `--color-ink-faint` (low) are already audited and cost zero
-   * new risk. Only `--color-priority-urgent` is new: `--color-danger` itself
-   * measures 2.99:1 against `--color-surface-raised` (the card tile's own
-   * background) — a hair under the 3:1 WCAG 1.4.11 non-text bar for a
-   * graphical indicator's boundary — so this is danger's hue/chroma with L
-   * nudged from 55% to 58%, which clears it at 3.39:1. `--color-danger`
-   * itself is untouched; its own (different) pairing is still exactly what
-   * the audit above verified.
+   * board by. `high` (`--color-warning`) and `low` (`--color-ink-faint`)
+   * reuse existing audited tokens outright — both clear 3:1 against all four
+   * surface tones with wide margin (6.4:1+ and 4.2:1+ respectively), so no
+   * new token earns its keep for either.
+   *
+   * `urgent` and `medium` get their OWN tokens rather than reusing
+   * `--color-danger`/`--color-accent` directly, and this is the one place in
+   * this pass where a first-pass value shipped, was re-checked by the
+   * Phase E full audit below, and turned out wrong: `--color-danger` at 55%
+   * clears 2.99:1 against `--color-surface-raised` (a card tile's resting
+   * background) — a hair under the 3:1 WCAG 1.4.11 non-text bar — and
+   * `--color-accent` at 55% clears only 2.74:1 against `--color-surface-hover`,
+   * which is `list-view.tsx`'s Badge's own RESTING background, not a hover
+   * edge case. A single-surface spot-check (what the first pass did) missed
+   * both; checking against all four surface tones a swatch can actually sit
+   * on — `surface`, `surface-raised`, `surface-hover`, `surface-sunken` — is
+   * what caught them. Both nudged to L 60% (from danger's 55% / accent's
+   * 55%), which clears 3:1 against the hardest case (`surface-hover`, the
+   * lightest neutral) at 3.25:1 / 3.38:1 with real margin, and clears every
+   * other surface more easily still. `--color-danger` and `--color-accent`
+   * themselves are UNCHANGED — their own (different) pairings are still
+   * exactly what their own audits verified; this is why they get separate
+   * tokens instead of a shared one.
    *
    * These are NON-TEXT swatches only (a bar, a dot, a ring) — never rendered
-   * as colored text on a bare surface. `--color-priority-urgent` and
-   * `--color-accent` both clear only the 3:1 non-text bar against
-   * `--color-surface`/`--color-surface-raised`, not the 4.5:1 text bar; a
-   * priority LABEL ("Urgent") is neutral `--color-ink`/`--color-ink-muted`
-   * text next to the swatch, never the swatch's own color as text.
+   * as colored text on a bare surface, so the 3:1 non-text bar is the right
+   * threshold throughout, not 4.5:1. A priority LABEL ("Urgent") is neutral
+   * `--color-ink`/`--color-ink-muted` text next to the swatch, never the
+   * swatch's own color as text.
    */
-  --color-priority-urgent: oklch(58% 0.19 22);
+  --color-priority-urgent: oklch(60% 0.19 22);
+  --color-priority-medium: oklch(60% 0.17 285);
 
   /* A modal scrim, given one token rather than left to each dialog to pick its
      own opacity — the duplication census in ai/phase-6.5-ui-polish.md Wave 1

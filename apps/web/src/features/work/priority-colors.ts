@@ -7,12 +7,16 @@ import type { Priority } from './api.js';
  * picker preview) reads from, so the four colors and their order can never
  * drift between surfaces the way four independent inline maps would.
  *
- * Reuses existing, already-audited tokens for three of the four levels
- * rather than inventing new ones — see `styles.css`'s own comment on
- * `--color-priority-urgent` for why only `urgent` needed a new token and
- * the exact contrast numbers behind all four. These are NON-TEXT swatch
- * classes (`bg-*`) only: pair with neutral `text-ink`/`text-ink-muted` for
- * the label, never render the swatch color as the label's own text color.
+ * `high` and `low` reuse `--color-warning`/`--color-ink-faint` outright —
+ * both already clear 3:1 against every surface tone with real margin.
+ * `urgent` and `medium` are their OWN tokens (`--color-priority-urgent`,
+ * `--color-priority-medium`), not `--color-danger`/`--color-accent` — see
+ * `styles.css`'s own comment on `--color-priority-urgent` for the Phase E
+ * audit that found the direct reuse failing 3:1 against `surface-hover`
+ * (this file's own first-pass choice, corrected there) and the exact
+ * numbers behind the fix. These are NON-TEXT swatch classes (`bg-*`) only:
+ * pair with neutral `text-ink`/`text-ink-muted` for the label, never render
+ * the swatch color as the label's own text color.
  */
 
 export const PRIORITIES: readonly Priority[] = ['urgent', 'high', 'normal', 'low'];
@@ -27,6 +31,6 @@ export const PRIORITY_LABEL: Readonly<Record<Priority, string>> = {
 export const PRIORITY_SWATCH: Readonly<Record<Priority, string>> = {
   urgent: 'bg-priority-urgent',
   high: 'bg-warning',
-  normal: 'bg-accent',
+  normal: 'bg-priority-medium',
   low: 'bg-ink-faint',
 };
