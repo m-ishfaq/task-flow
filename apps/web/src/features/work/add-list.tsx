@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Plus } from 'lucide-react';
 import type { BoardId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
@@ -63,7 +64,8 @@ export function AddListColumn({ orgId, boardId }: AddListProps) {
             setOpen(true);
           }}
         >
-          + Add list
+          <Plus aria-hidden="true" className="size-3.5" strokeWidth={2} />
+          Add list
         </Button>
       </div>
     );

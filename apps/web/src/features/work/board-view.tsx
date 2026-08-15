@@ -530,7 +530,7 @@ function ColumnHeader({ group }: { readonly group: Group }) {
       <h2 className="min-w-0 flex-1 truncate text-xs font-semibold tracking-wide text-ink-muted uppercase">
         {group.label}
       </h2>
-      <span className="text-[11px] text-ink-faint">{group.cards.length}</span>
+      <span className="font-mono text-[11px] text-ink-faint">{group.cards.length}</span>
     </header>
   );
 }
