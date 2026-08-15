@@ -311,8 +311,6 @@ function OrgsTab({
                 <th className="px-3 py-2 font-medium">Organization</th>
                 <th className="px-3 py-2 font-medium">Owner</th>
                 <th className="px-3 py-2 font-medium">Plan</th>
-                <th className="px-3 py-2 font-medium">Renews</th>
-                <th className="px-3 py-2 font-medium">Last invoice</th>
                 <th className="px-3 py-2 font-medium">Status</th>
                 <th className="px-3 py-2 font-medium">Members</th>
                 <th className="px-3 py-2 font-medium">Created</th>
