@@ -9,6 +9,7 @@ import {
   PopoverTrigger,
 } from '@taskflow/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Calendar, MessageSquare, MoreHorizontal, SquareCheck, User } from 'lucide-react';
 import type { BoardId, CardId, UserId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
@@ -18,6 +19,7 @@ import { formatDueDate } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
 import { useMembers } from '../org/use-members.js';
 import { useUpdateCard } from './use-update-card.js';
+import { PRIORITY_SWATCH } from './priority-colors.js';
 import { invalidateCard, patchBoardCards, type CardSummary } from './api.js';
 
 /**
@@ -80,6 +82,18 @@ export function CardTile({
 
   const body = (
     <>
+      {/* The priority signature (`styles.css`'s `--color-priority-urgent`
+          comment, `priority-colors.ts`) — absent entirely for an
+          unprioritized card, since there is no color for "none" to show.
+          Clipped to the tile's rounded corners by `tileClassName`'s
+          `overflow-hidden`, not by rounding the bar itself. */}
+      {card.priority !== null && (
+        <span
+          aria-hidden="true"
+          className={cn('absolute inset-y-0 left-0 w-[3px]', PRIORITY_SWATCH[card.priority])}
+        />
+      )}
+
       <span className="block text-sm leading-snug text-ink">{card.title}</span>
 
       <div className="mt-2 flex items-center gap-1.5">
@@ -94,11 +108,17 @@ export function CardTile({
             title="Checklist progress"
             className={cn(card.checklistDone === card.checklistTotal && 'text-success')}
           >
-            ☑ {card.checklistDone}/{card.checklistTotal}
+            <SquareCheck aria-hidden="true" className="size-3" strokeWidth={2} />
+            {card.checklistDone}/{card.checklistTotal}
           </Badge>
         )}
 
-        {card.commentCount > 0 && <Badge title="Comments">💬 {card.commentCount}</Badge>}
+        {card.commentCount > 0 && (
+          <Badge title="Comments">
+            <MessageSquare aria-hidden="true" className="size-3" strokeWidth={2} />
+            {card.commentCount}
+          </Badge>
+        )}
 
         {/* Pushed right and kept on the metadata row rather than wrapping with
             it. Faces are what the eye scans a column for, so they need a fixed
@@ -112,8 +132,10 @@ export function CardTile({
   );
 
   const tileClassName = cn(
-    'w-full rounded-card border border-line bg-surface-raised px-2.5 py-2 text-left transition-colors',
-    dragging ? 'shadow-lg ring-1 ring-accent' : 'hover:border-line-strong hover:bg-surface-hover',
+    'relative w-full overflow-hidden rounded-card border border-line bg-surface-raised px-2.5 py-2 text-left transition-[color,background-color,border-color,box-shadow]',
+    dragging
+      ? 'shadow-lg ring-1 ring-accent'
+      : 'hover:border-line-strong hover:bg-surface-hover hover:shadow-sm',
   );
 
   /* The drag overlay is not interactive — it is a picture following the pointer
@@ -193,7 +215,7 @@ export function CardTile({
 }
 
 const ICON_BUTTON =
-  'flex h-6 w-6 items-center justify-center rounded bg-surface-raised text-xs text-ink-muted ' +
+  'flex h-6 w-6 items-center justify-center rounded bg-surface-raised text-ink-muted ' +
   'ring-1 ring-line hover:text-ink hover:ring-line-strong focus:outline-none focus-visible:ring-accent';
 
 /**
@@ -239,7 +261,7 @@ function QuickAssignee({ orgId, card }: { readonly orgId: string; readonly card:
     <PopoverRoot>
       <PopoverTrigger asChild>
         <button type="button" aria-label="Quick-assign" className={ICON_BUTTON}>
-          👤
+          <User aria-hidden="true" className="size-3.5" strokeWidth={2} />
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-56 p-2">
@@ -304,7 +326,7 @@ function QuickDueDate({
     <PopoverRoot open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button type="button" aria-label="Quick due date" className={ICON_BUTTON}>
-          📅
+          <Calendar aria-hidden="true" className="size-3.5" strokeWidth={2} />
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="p-2">
@@ -364,7 +386,7 @@ function QuickOverflow({
     >
       <DropdownMenuTrigger asChild>
         <button type="button" aria-label="More actions" className={ICON_BUTTON}>
-          ⋯
+          <MoreHorizontal aria-hidden="true" className="size-3.5" strokeWidth={2} />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-36">
