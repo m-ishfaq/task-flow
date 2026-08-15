@@ -204,6 +204,49 @@ export async function verifyEmail(
   return { status: 'verified' };
 }
 
+/**
+ * Re-sends the verification link — the door `login` leaves someone at when
+ * their original mail never arrived (§8.1 follow-up).
+ *
+ * Same no-answer shape as `requestPasswordReset`, and for the same reason: a
+ * different response for an unregistered address, an already-verified one,
+ * or a suspended account is an account-existence oracle. All three return
+ * the identical `{ status: 'sent' }` with nothing sent.
+ */
+export async function resendVerification(
+  deps: IdentityDeps,
+  input: { email: string },
+  meta: RequestMeta,
+): Promise<{ status: 'sent' }> {
+  const now = clock(deps);
+  const user = await repo.findUserByEmail(input.email);
+
+  if (!user) return { status: 'sent' };
+  if (user.status !== 'active') return { status: 'sent' };
+  if (user.emailVerifiedAt !== null) return { status: 'sent' };
+
+  const verification = issueToken('emailVerify');
+  await repo.createEmailVerification({
+    id: newId<'VerificationId'>(),
+    userId: user.id,
+    email: user.email,
+    tokenHash: verification.hash,
+    expiresAt: new Date(now.getTime() + deps.config.verificationTtlMs),
+  });
+
+  await deps.deliver({ kind: 'verify_email', email: user.email, token: verification.token });
+
+  await deps.events.publish([
+    createEvent(
+      identityEvents.emailVerificationResent,
+      { userId: user.id, email: user.email, ip: meta.ip },
+      { orgId: SYSTEM_ORG, actorId: null, occurredAt: now },
+    ),
+  ]);
+
+  return { status: 'sent' };
+}
+
 /* -------------------------------------------------------------------------- *
  * Login
  * -------------------------------------------------------------------------- */

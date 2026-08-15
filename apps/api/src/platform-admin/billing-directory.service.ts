@@ -2,7 +2,6 @@ import {
   and,
   desc,
   eq,
-  inArray,
   insertAuditEntry,
   lt,
   or,
@@ -17,6 +16,7 @@ import type { PlatformOperator } from './org-directory.service.js';
 import { graceExtended } from '../billing/events.js';
 import { recordOperatorAction } from './audit.js';
 import { encodeCreatedCursor, parseCreatedCursor } from './pagination.js';
+import { fetchLastInvoices } from './invoices.js';
 
 /**
  * The platform console's billing view (Phase 12 Wave 3 §3.6,
@@ -126,29 +126,10 @@ export async function listBilling(
   const page = hasMore ? rows.slice(0, input.limit) : rows;
   const last = page[page.length - 1];
 
-  /* ONE query for the whole page rather than one per row. DISTINCT ON is
-     Postgres picking the newest invoice per org in a single pass — the
-     alternative, a query per org, turns a 25-row page into 26 round trips. */
-  const orgIds = page.map((row) => row.orgId);
-  const lastInvoices =
-    orgIds.length === 0
-      ? []
-      : await withPlatformAdminScope(async (tx) =>
-          tx
-            .selectDistinctOn([schema.invoices.orgId], {
-              orgId: schema.invoices.orgId,
-              status: schema.invoices.status,
-              amountDueCents: schema.invoices.amountDueCents,
-              currency: schema.invoices.currency,
-              issuedAt: schema.invoices.issuedAt,
-              hostedInvoiceUrl: schema.invoices.hostedInvoiceUrl,
-            })
-            .from(schema.invoices)
-            .where(inArray(schema.invoices.orgId, orgIds))
-            .orderBy(schema.invoices.orgId, desc(schema.invoices.issuedAt)),
-        );
-
-  const invoiceByOrg = new Map(lastInvoices.map((invoice) => [invoice.orgId, invoice]));
+  /* ONE query for the whole page rather than one per row — see
+     `invoices.ts`'s own header on why this is shared with the Organizations
+     tab rather than reimplemented here. */
+  const invoiceByOrg = await fetchLastInvoices(page.map((row) => row.orgId as OrgId));
 
   return {
     orgs: page.map((row) => ({

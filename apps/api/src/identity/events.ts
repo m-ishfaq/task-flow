@@ -22,6 +22,11 @@ export const emailVerified = defineEvent(
   z.object({ userId: z.string(), email: z.string() }).strict(),
 );
 
+export const emailVerificationResent = defineEvent(
+  'user.email_verification_resent',
+  z.object({ userId: z.string(), email: z.string(), ip: z.string().nullable() }).strict(),
+);
+
 export const userLoggedIn = defineEvent(
   'user.logged_in',
   z

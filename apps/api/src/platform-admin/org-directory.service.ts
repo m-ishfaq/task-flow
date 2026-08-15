@@ -30,6 +30,7 @@ import { SYSTEM_ORG } from '../identity/identity.service.js';
 import { orgDeleted, orgReactivated, orgSuspended } from './events.js';
 import { recordOperatorAction } from './audit.js';
 import { encodeCreatedCursor, parseCreatedCursor } from './pagination.js';
+import { fetchLastInvoices, type LastInvoiceRow } from './invoices.js';
 
 /**
  * The owner membership, joined a SECOND time under its own name.
@@ -89,6 +90,10 @@ export interface OrgDirectoryRow {
   /** When the trial runs out, or when the past-due grace period does. */
   readonly trialEndsAt: Date | null;
   readonly billingGraceEndsAt: Date | null;
+  /** When the current billing period renews. Null outside an active subscription. */
+  readonly currentPeriodEnd: Date | null;
+  /** The most recent recorded invoice, or null — see `invoices.ts`'s own header. */
+  readonly lastInvoice: LastInvoiceRow | null;
   /**
    * The org's owner, for a support contact.
    *
@@ -140,6 +145,7 @@ export async function listOrgs(
         billingStatus: schema.orgs.billingStatus,
         trialEndsAt: schema.orgs.trialEndsAt,
         billingGraceEndsAt: schema.orgs.billingGraceEndsAt,
+        currentPeriodEnd: schema.orgs.currentPeriodEnd,
         /* MIN over the joined owner rows rather than a second query. The join
            below is filtered to role = 'owner', so every non-null value in the
            group is the same address; MIN just collapses the group without
@@ -197,6 +203,11 @@ export async function listOrgs(
   const page = hasMore ? rows.slice(0, input.limit) : rows;
   const last = page[page.length - 1];
 
+  /* ONE query for the whole page rather than one per row — see
+     `invoices.ts`'s own header on why this is shared with the Billing tab
+     rather than reimplemented here. */
+  const invoiceByOrg = await fetchLastInvoices(page.map((row) => row.orgId as OrgId));
+
   return {
     orgs: page.map((row) => ({
       orgId: row.orgId,
@@ -208,6 +219,8 @@ export async function listOrgs(
       billingStatus: row.billingStatus,
       trialEndsAt: row.trialEndsAt,
       billingGraceEndsAt: row.billingGraceEndsAt,
+      currentPeriodEnd: row.currentPeriodEnd,
+      lastInvoice: invoiceByOrg.get(row.orgId) ?? null,
       ownerEmail: row.ownerEmail,
       ownerName: row.ownerName,
       memberCount: Number(row.memberCount),

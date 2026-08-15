@@ -198,6 +198,35 @@ export async function consumeEmailVerification(
   });
 }
 
+/**
+ * Issues a fresh verification link for an already-registered, still-unverified
+ * account — the resend path (§8.1 follow-up).
+ *
+ * No uniqueness constraint on `user_id`, only on `token_hash` (migration
+ * 0001's index), so this is a plain insert: an old, unconsumed link from the
+ * original registration is simply left to expire on its own schedule rather
+ * than being revoked. Both links working is the safe direction — the account
+ * is still not verified, so nobody is granted anything early — and revoking
+ * the old one would need its own conditional UPDATE for no security benefit.
+ */
+export async function createEmailVerification(input: {
+  id: string;
+  userId: string;
+  email: string;
+  tokenHash: string;
+  expiresAt: Date;
+}): Promise<void> {
+  await withGlobalScope(async (tx) => {
+    await tx.insert(schema.emailVerifications).values({
+      id: input.id,
+      userId: input.userId,
+      email: normalizeEmail(input.email),
+      tokenHash: input.tokenHash,
+      expiresAt: input.expiresAt,
+    });
+  });
+}
+
 export async function recordFailedLogin(
   userId: string,
   lockThreshold: number,

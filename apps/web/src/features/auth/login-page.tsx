@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '../../lib/trpc.js';
+import { api, apiErrorOf, errorCodeOf } from '../../lib/trpc.js';
 import { useSession } from '../../lib/session.js';
 import { resetCache } from '../../lib/query.js';
 import { Button, Field, Input } from '../../components/primitives.js';
@@ -89,6 +89,16 @@ export function LoginPage() {
     onSuccess: (session) => afterSignIn(session),
   });
 
+  /* The way out of EMAIL_NOT_VERIFIED (§8.1 follow-up): the account exists,
+     the password was correct — `login` only reaches this error after
+     confirming both — so there is a real inbox to send another link to.
+     `resendVerification` answers `{ status: 'sent' }` unconditionally
+     server-side either way, so this mutation never itself reveals anything
+     login's own error didn't already. */
+  const resendVerification = useMutation({
+    mutationFn: (email: string) => api.auth.resendVerification.mutate({ email }),
+  });
+
   const oauthProviders = useOAuthProviders();
   const startOAuth = useMutation({
     mutationFn: (provider: OAuthProvider) => api.auth.oauth.start.mutate({ provider }),
@@ -143,7 +153,43 @@ export function LoginPage() {
           />
         </Field>
 
-        {signIn.isError && <ErrorView error={signIn.error} />}
+        {/* EMAIL_NOT_VERIFIED gets its own block — the plain ErrorView leaves
+            someone whose original mail never arrived with no way forward but
+            to keep resubmitting the same form. Everything else (wrong
+            password, unknown address, locked, suspended — all
+            INVALID_CREDENTIALS, indistinguishable on purpose) still falls
+            through to ErrorView. */}
+        {signIn.isError &&
+          (errorCodeOf(signIn.error) === 'EMAIL_NOT_VERIFIED' ? (
+            <div className="rounded-md border border-line bg-surface-sunken p-3 text-sm">
+              <p className="text-ink">
+                {apiErrorOf(signIn.error)?.error.message ??
+                  'Please verify your email address before signing in.'}
+              </p>
+              {resendVerification.isSuccess ? (
+                <p className="mt-1.5 text-xs text-ink-muted">
+                  If that address has an account, a new link is on its way.
+                </p>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="mt-1.5"
+                  disabled={resendVerification.isPending}
+                  onClick={() => {
+                    const email = signIn.variables?.email;
+                    if (email !== undefined) resendVerification.mutate(email);
+                  }}
+                >
+                  {resendVerification.isPending ? 'Sending…' : 'Resend verification email'}
+                </Button>
+              )}
+              {resendVerification.isError && <ErrorView error={resendVerification.error} />}
+            </div>
+          ) : (
+            <ErrorView error={signIn.error} />
+          ))}
 
         <Button
           type="submit"
