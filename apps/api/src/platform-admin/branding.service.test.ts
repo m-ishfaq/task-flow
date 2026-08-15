@@ -157,7 +157,6 @@ beforeAll(async () => {
     timeoutMs: 2_000,
   });
   if (!scannerReady) {
-    // eslint-disable-next-line no-console -- the same visible skip note attachment.service.test.ts uses.
     console.warn('[branding.service.test] clamd not reachable — upload assertions skipped.');
   }
 });
@@ -192,7 +191,7 @@ describe('the branding singleton', () => {
       faviconKey: null,
       paletteId: 'default',
       updatedBy: null,
-      updatedAt: expect.any(Date),
+      updatedAt: expect.any(Date) as unknown as Date,
     });
   });
 
@@ -247,7 +246,7 @@ describe('the branding singleton', () => {
     const published = events.events.find((event) => event.name === 'platform.branding_updated');
     expect(published?.payload).toMatchObject({
       operatorUserId: OPERATOR,
-      fields: expect.arrayContaining(['productName', 'paletteId']),
+      fields: expect.arrayContaining(['productName', 'paletteId']) as unknown as string[],
     });
   });
 
