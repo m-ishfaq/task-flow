@@ -84,6 +84,17 @@ const OrgRow = z
     billingStatus: z.string(),
     trialEndsAt: z.date().nullable(),
     billingGraceEndsAt: z.date().nullable(),
+    currentPeriodEnd: z.date().nullable(),
+    lastInvoice: z
+      .object({
+        status: z.string(),
+        amountDueCents: z.number().int().nonnegative(),
+        currency: z.string(),
+        issuedAt: z.date(),
+        hostedInvoiceUrl: z.string().nullable(),
+      })
+      .strict()
+      .nullable(),
     ownerEmail: z.string().nullable(),
     ownerName: z.string().nullable(),
   })

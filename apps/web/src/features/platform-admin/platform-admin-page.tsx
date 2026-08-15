@@ -311,6 +311,8 @@ function OrgsTab({
                 <th className="px-3 py-2 font-medium">Organization</th>
                 <th className="px-3 py-2 font-medium">Owner</th>
                 <th className="px-3 py-2 font-medium">Plan</th>
+                <th className="px-3 py-2 font-medium">Renews</th>
+                <th className="px-3 py-2 font-medium">Last invoice</th>
                 <th className="px-3 py-2 font-medium">Status</th>
                 <th className="px-3 py-2 font-medium">Members</th>
                 <th className="px-3 py-2 font-medium">Created</th>
@@ -366,6 +368,28 @@ function OrgsTab({
                         org.billingGraceEndsAt !== null &&
                         ` — grace ends ${formatDate(org.billingGraceEndsAt)}`}
                     </p>
+                  </td>
+                  <td className="px-3 py-2 text-ink-muted">
+                    {org.currentPeriodEnd === null ? '—' : formatDate(org.currentPeriodEnd)}
+                  </td>
+                  <td className="px-3 py-2">
+                    {org.lastInvoice === null ? (
+                      <span className="text-ink-faint">—</span>
+                    ) : (
+                      <>
+                        <p
+                          className={
+                            org.lastInvoice.status === 'paid' ? 'text-success' : 'text-danger'
+                          }
+                        >
+                          {org.lastInvoice.status}{' '}
+                          {money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)}
+                        </p>
+                        <p className="text-[10px] text-ink-faint">
+                          {formatDate(org.lastInvoice.issuedAt)}
+                        </p>
+                      </>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     <StatusBadge status={org.status} />
