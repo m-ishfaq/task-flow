@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { ChevronRight, MessageSquare, SquareCheck } from 'lucide-react';
 import { AvatarStack, Badge, Empty } from '../../components/primitives.js';
 import { formatDueDate } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
 import { useMembers } from '../org/use-members.js';
 import { groupCards, sortCards, type GroupBy, type SortBy } from './grouping.js';
+import { PRIORITY_LABEL, PRIORITY_SWATCH } from './priority-colors.js';
 import type { CardSummary, ListSummary, Status } from './api.js';
 import type { Person } from '../org/use-members.js';
 
@@ -88,12 +90,14 @@ export function ListView({
                 aria-expanded={!isCollapsed}
                 className="flex w-full items-center gap-2 px-3 py-2 text-left"
               >
-                <span
+                <ChevronRight
                   aria-hidden="true"
-                  className={cn('text-ink-faint transition-transform', !isCollapsed && 'rotate-90')}
-                >
-                  ▸
-                </span>
+                  strokeWidth={2.25}
+                  className={cn(
+                    'size-3.5 shrink-0 text-ink-faint transition-transform',
+                    !isCollapsed && 'rotate-90',
+                  )}
+                />
                 {group.color !== null && (
                   <span
                     className="size-2.5 shrink-0 rounded-full"
@@ -104,7 +108,7 @@ export function ListView({
                 <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
                   {group.label}
                 </h2>
-                <span className="text-[11px] text-ink-faint">{group.cards.length}</span>
+                <span className="font-mono text-[11px] text-ink-faint">{group.cards.length}</span>
               </button>
 
               {!isCollapsed && (
@@ -130,7 +134,16 @@ export function ListView({
                           </span>
 
                           {card.priority !== null && (
-                            <Badge className="capitalize">{card.priority}</Badge>
+                            <Badge>
+                              <span
+                                aria-hidden="true"
+                                className={cn(
+                                  'size-1.5 rounded-full',
+                                  PRIORITY_SWATCH[card.priority],
+                                )}
+                              />
+                              {PRIORITY_LABEL[card.priority]}
+                            </Badge>
                           )}
 
                           {due !== null && (
@@ -145,11 +158,21 @@ export function ListView({
                                 card.checklistDone === card.checklistTotal && 'text-success',
                               )}
                             >
-                              ☑ {card.checklistDone}/{card.checklistTotal}
+                              <SquareCheck aria-hidden="true" className="size-3" strokeWidth={2} />
+                              {card.checklistDone}/{card.checklistTotal}
                             </Badge>
                           )}
 
-                          {card.commentCount > 0 && <Badge>💬 {card.commentCount}</Badge>}
+                          {card.commentCount > 0 && (
+                            <Badge>
+                              <MessageSquare
+                                aria-hidden="true"
+                                className="size-3"
+                                strokeWidth={2}
+                              />
+                              {card.commentCount}
+                            </Badge>
+                          )}
 
                           <AvatarStack people={assignees} />
                         </button>
