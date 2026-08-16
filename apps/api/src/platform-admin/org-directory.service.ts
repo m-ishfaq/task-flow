@@ -31,6 +31,7 @@ import { orgDeleted, orgReactivated, orgSuspended } from './events.js';
 import { recordOperatorAction } from './audit.js';
 import { encodeCreatedCursor, parseCreatedCursor } from './pagination.js';
 import { fetchLastInvoices, type LastInvoiceRow } from './invoices.js';
+import { getResolvedBranding } from './branding-cache.js';
 
 /**
  * The owner membership, joined a SECOND time under its own name.
@@ -346,7 +347,8 @@ export async function suspendOrg(
      not turn a successful suspension into an error response to the
      operator who just performed it. */
   if (deps.mail !== undefined && owner.email !== null) {
-    const rendered = renderOrgSuspended({ orgName: owner.orgName });
+    const { productName } = await getResolvedBranding();
+    const rendered = renderOrgSuspended({ orgName: owner.orgName, productName });
     deps.mail.queue.enqueue({ to: owner.email, ...rendered });
   }
 
@@ -551,7 +553,8 @@ export async function deleteOrg(
      a notification row to even reference. `ownerEmail` was captured before
      the delete cascaded the membership away. */
   if (deps.mail !== undefined && ownerEmail !== null) {
-    const rendered = renderOrgDeleted({ orgName });
+    const { productName } = await getResolvedBranding();
+    const rendered = renderOrgDeleted({ orgName, productName });
     deps.mail.queue.enqueue({ to: ownerEmail, ...rendered });
   }
 
