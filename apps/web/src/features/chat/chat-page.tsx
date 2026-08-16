@@ -2283,7 +2283,7 @@ function MessageBubble({
                Discord) sets its message body to. The base 16px is a reading
                size for document surfaces; a message column at 16px reads as
                shouting, and the bubble is the container that owns the size. */
-            'min-w-0 rounded-2xl px-3 py-1.5 text-sm shadow-sm',
+            'min-w-0 rounded-2xl px-3 py-1.5 max-w-2xl text-sm shadow-sm',
             isOwn ? 'bg-accent text-accent-ink' : 'bg-surface-raised text-ink',
             /* Links inside the viewer's own bubble would otherwise be the
                accent hue on an accent fill — invisible (see styles.css's
