@@ -392,7 +392,7 @@ export function SprintsManagerDialog({
                               {sprint.name}
                             </span>
                             <span
-                              className={`text-[10px] uppercase ${STATUS_COLOR[sprint.status]}`}
+                              className={`text-[11px] font-medium ${STATUS_COLOR[sprint.status]}`}
                             >
                               {STATUS_LABEL[sprint.status]}
                             </span>

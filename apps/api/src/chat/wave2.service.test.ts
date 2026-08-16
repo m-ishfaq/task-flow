@@ -72,6 +72,31 @@ async function removeOrg(orgId: string): Promise<void> {
   await admin.setOrg(null);
 }
 
+/** The outbox rows this org wrote, oldest first — proves which domain events
+    a mutation emitted (guardrail 11's contract; same pattern as
+    api-token.service.test.ts). */
+async function outboxEvents(
+  orgId: string,
+): Promise<readonly { name: string; payload: Record<string, unknown> }[]> {
+  await admin.setOrg(orgId);
+  const rows = await admin.query(
+    /* `ORDER BY id`, not `created_at`: every row in ONE transaction shares the
+       transaction's `created_at`, so the two events a replace emits tie and
+       Postgres may return them in either order — the flake that made this
+       suite's replace-order assertion fail once and pass once. The id is the
+       project's monotonic UUIDv7 (packages/security/src/uuid.ts), which is
+       exactly insertion order within a millisecond, and the same tiebreaker
+       `claimPending`'s own `ORDER BY occurred_at, id` falls back on. */
+    `SELECT name, payload FROM platform.outbox WHERE org_id = $1 ORDER BY id`,
+    [orgId],
+  );
+  await admin.setOrg(null);
+  return rows.rows.map((row) => ({
+    name: String(row['name']),
+    payload: (row['payload'] ?? {}) as Record<string, unknown>,
+  }));
+}
+
 interface Fixture {
   readonly orgId: OrgId;
   readonly alice: ChatActor;
@@ -159,6 +184,128 @@ describe('reactions', () => {
     expect(listedAfter).toEqual([]);
 
     void orgId;
+  });
+
+  it('replaces the previous reaction when a different emoji is added', async () => {
+    const { orgId, alice } = await scaffold('react-replace');
+    const channel = await channels.createChannel(alice, { type: 'public', name: 'general' });
+    const sent = await messages.sendMessage(alice, {
+      channelId: channel.channelId,
+      body: body('hi'),
+    });
+
+    const first = await reactions.toggleReaction(alice, {
+      channelId: channel.channelId,
+      messageId: sent.messageId,
+      emoji: '👍',
+    });
+    expect(first.reacted).toBe(true);
+
+    const replaced = await reactions.toggleReaction(alice, {
+      channelId: channel.channelId,
+      messageId: sent.messageId,
+      emoji: '❤️',
+    });
+    expect(replaced.reacted).toBe(true);
+
+    /* ONE row — the old emoji is gone and the new one holds the same slot
+       (migration 0076's (message_id, user_id) primary key). */
+    const listed = await reactions.listReactions(alice, {
+      channelId: channel.channelId,
+      messageIds: [sent.messageId],
+    });
+    expect(listed).toEqual([{ messageId: sent.messageId, userId: ALICE, emoji: '❤️' }]);
+
+    /* The now-current emoji still toggles OFF, exactly like the first click
+       on any reaction. */
+    const off = await reactions.toggleReaction(alice, {
+      channelId: channel.channelId,
+      messageId: sent.messageId,
+      emoji: '❤️',
+    });
+    expect(off.reacted).toBe(false);
+    expect(
+      await reactions.listReactions(alice, {
+        channelId: channel.channelId,
+        messageIds: [sent.messageId],
+      }),
+    ).toEqual([]);
+
+    void orgId;
+  });
+
+  it('replaces only the caller\u2019s own reaction — other people\u2019s stay untouched', async () => {
+    const { orgId, alice } = await scaffold('react-replace-isolate');
+    const channel = await channels.createChannel(alice, { type: 'public', name: 'general' });
+    const sent = await messages.sendMessage(alice, {
+      channelId: channel.channelId,
+      body: body('hi'),
+    });
+
+    const bob = await actorFor(orgId, BOB, 'member');
+
+    await reactions.toggleReaction(alice, {
+      channelId: channel.channelId,
+      messageId: sent.messageId,
+      emoji: '👍',
+    });
+    await reactions.toggleReaction(bob, {
+      channelId: channel.channelId,
+      messageId: sent.messageId,
+      emoji: '👍',
+    });
+    await reactions.toggleReaction(alice, {
+      channelId: channel.channelId,
+      messageId: sent.messageId,
+      emoji: '❤️',
+    });
+
+    const listed = await reactions.listReactions(alice, {
+      channelId: channel.channelId,
+      messageIds: [sent.messageId],
+    });
+    expect(listed).toHaveLength(2);
+    expect(listed).toEqual(
+      expect.arrayContaining([
+        { messageId: sent.messageId, userId: ALICE, emoji: '❤️' },
+        { messageId: sent.messageId, userId: BOB, emoji: '👍' },
+      ]),
+    );
+  });
+
+  it('announces a replace as the old emoji leaving and the new one arriving', async () => {
+    const { orgId, alice } = await scaffold('react-replace-events');
+    const channel = await channels.createChannel(alice, { type: 'public', name: 'general' });
+    const sent = await messages.sendMessage(alice, {
+      channelId: channel.channelId,
+      body: body('hi'),
+    });
+
+    await reactions.toggleReaction(alice, {
+      channelId: channel.channelId,
+      messageId: sent.messageId,
+      emoji: '👍',
+    });
+    await reactions.toggleReaction(alice, {
+      channelId: channel.channelId,
+      messageId: sent.messageId,
+      emoji: '❤️',
+    });
+
+    const reactionEvents = (await outboxEvents(orgId)).filter((event) =>
+      event.name.startsWith('message.reaction'),
+    );
+    /* The replace is announced as two events, not a third "replaced" one:
+       removed(👍) then added(❤️), both in the same transaction — the existing
+       audit and realtime wiring handles both, and no consumer ever sees the
+       user holding two reactions at once. */
+    expect(reactionEvents.map((event) => event.name)).toEqual([
+      'message.reaction_added',
+      'message.reaction_removed',
+      'message.reaction_added',
+    ]);
+    expect(reactionEvents[1]?.payload).toMatchObject({ emoji: '👍', userId: ALICE });
+    expect(reactionEvents[2]?.payload).toMatchObject({ emoji: '❤️', userId: ALICE });
   });
 
   it('refuses to react to a message in a different channel', async () => {

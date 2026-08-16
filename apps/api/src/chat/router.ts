@@ -111,20 +111,27 @@ export function createChatRouter(deps: ChatRouterDeps) {
        */
       list: route({ permission: 'channel:read', feature: { flag: 'chat', display: 'Chat' } })
         .output(
-          z
-            .array(
-              z.object({
-                channelId: z.string(),
-                type: z.string(),
-                name: z.string().nullable(),
-                topic: z.string().nullable(),
-                archivedAt: z.date().nullable(),
-                createdAt: z.date(),
-                joined: z.boolean(),
-                participantIds: z.array(z.string()).readonly(),
-              }),
-            )
-            .readonly(),
+          z.object({
+            /* Whether the caller may create a channel — gates the sidebar's
+               "new channel" control on the server's verdict (see
+               `listChannels`). */
+            canCreateChannel: z.boolean(),
+            channels: z
+              .array(
+                z.object({
+                  channelId: z.string(),
+                  type: z.string(),
+                  name: z.string().nullable(),
+                  topic: z.string().nullable(),
+                  archivedAt: z.date().nullable(),
+                  createdAt: z.date(),
+                  joined: z.boolean(),
+                  participantIds: z.array(z.string()).readonly(),
+                }),
+              )
+              .readonly(),
+          })
+          .strict(),
         )
         .query(({ ctx }) => channels.listChannels(actorOf(ctx))),
 
@@ -348,6 +355,15 @@ export function createChatRouter(deps: ChatRouterDeps) {
             .readonly(),
         )
         .query(({ input, ctx }) => reactions.listReactions(actorOf(ctx), input)),
+
+      /** "Remove for me" — hides a message from the VIEWER's own list only
+          (Slack's two-way delete, per-viewer half). The message stays live for
+          everyone else; see `message.service.ts`'s `hideMessage` on why this is
+          `message:read` and why no event is emitted. */
+      hide: route({ permission: 'message:read', feature: { flag: 'chat', display: 'Chat' } })
+        .input(z.object({ messageId: MessageIdSchema }).strict())
+        .output(z.object({ hidden: z.literal(true) }))
+        .mutation(({ input, ctx }) => messages.hideMessage(actorOf(ctx), input)),
 
       /** Pins a message. `message:create` — pinning curates, it does not moderate. */
       pin: route({ permission: 'message:create', feature: { flag: 'chat', display: 'Chat' } })

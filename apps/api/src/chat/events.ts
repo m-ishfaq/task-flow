@@ -244,6 +244,30 @@ export const messageDeleted = defineEvent(
     .strict(),
 );
 
+/**
+ * A viewer hid a message for themselves only — Slack's "remove for me".
+ *
+ * Not a deletion: the message stays live for every other member; only this
+ * viewer's list excludes it. `userId` is the hider, never the author — the
+ * message's own author is read from the row by any consumer that needs it.
+ *
+ * Emitted because the mutation writes a row, and guardrail 11's rule is that
+ * state-mutating service methods emit — no consumer reads this today, which
+ * is fine: the event stream is the contract, and a future "what did each
+ * member hide" report or per-user export reads it instead of the table.
+ */
+export const messageHidden = defineEvent(
+  'message.hidden',
+  z
+    .object({
+      messageId: z.string(),
+      channelId: z.string(),
+      /** The viewer who hid it — always the actor, never input. */
+      userId: z.string(),
+    })
+    .strict(),
+);
+
 /* -------------------------------------------------------------------------- *
  * Reactions and pins (Wave 2, ai/phase-5-chat.md §5)
  * -------------------------------------------------------------------------- */

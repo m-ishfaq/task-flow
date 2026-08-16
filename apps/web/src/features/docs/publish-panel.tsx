@@ -94,7 +94,7 @@ export function PublishPanel({
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Publish</h3>
+        <h3 className="text-[13px] font-semibold text-ink">Publish</h3>
         {publishedAt !== null && <Badge className="text-success">published</Badge>}
       </div>
 

@@ -49,7 +49,7 @@ export function AccountPage() {
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-10 p-6">
       <div>
-        <h1 className="text-lg font-semibold text-ink">Account</h1>
+        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Account</h1>
         <p className="text-xs text-ink-muted">
           Yours alone — not tied to any organization, and the same wherever you sign in.
         </p>

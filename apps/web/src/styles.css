@@ -46,33 +46,44 @@
  * that assumed it.
  */
 @theme {
-  --color-surface: oklch(21% 0.02 265);
-  --color-surface-raised: oklch(25% 0.02 265);
-  --color-surface-sunken: oklch(17% 0.02 265);
-  --color-surface-hover: oklch(29% 0.02 265);
+  /*
+   * The surface ramp — re-tuned 2026-08-16 to GitHub's dark theme (#0d1117
+   * family), after the third round of "the design reads basic" feedback named
+   * the actual cause: this app's ramp was a MEDIUM-dark blue-grey (L 21%)
+   * with STRONG borders (L 52-58%) on every card, input and panel. That is
+   * the visual signature of a default admin panel — medium grey boxes with
+   * visible outlines. GitHub's elegance is the opposite: a near-black
+   * background, panels one whisper above it, and borders so subtle they read
+   * as hairlines.
+   *
+   * Hue moved 265 -> 262 and chroma dropped to match GitHub's cool blue-grey
+   * (the #0d1117/#161b22/#30363d ramp maps to oklch L 17.8/21.4/30.5 at
+   * chroma 0.01-0.02, hue ~262). Every light-on-dark contrast pair gets MORE
+   * contrast than before (a darker background raises light text's ratio), so
+   * the ink/priority/accent audits all still hold with margin; the
+   * border-heavy tokens were deliberately demoted from "identifying
+   * boundary" (WCAG 1.4.11's 3:1 case) to "divider" (GitHub's own model) —
+   * boundaries are now carried by the SURFACE DIFFERENCE between bg and
+   * panel, and by the accent focus states on interactive controls, never by
+   * a border alone. Inputs keep the darker sunken fill so their boundary is
+   * dual-coded even with a hairline border.
+   */
+  --color-surface: oklch(17.5% 0.014 262);
+  --color-surface-raised: oklch(21% 0.016 262);
+  --color-surface-sunken: oklch(13.5% 0.012 262);
+  --color-surface-hover: oklch(24% 0.016 262);
 
-  --color-ink: oklch(94% 0.01 265);
-  --color-ink-muted: oklch(72% 0.02 265);
-  /* 58% measured 4.14:1 on --color-surface and 3.74:1 on --color-surface-raised
-     against text this small (placeholders, hints, badge counts) — both below
-     WCAG AA's 4.5:1 for normal text. 64% clears both (5.27:1 / 4.76:1) while
-     keeping a real gap under --color-ink-muted's 72%. ai/phase-6.5-ui-polish.md
-     Wave 1's audit, verified with apps/web's actual oklch->sRGB conversion, not
-     eyeballed. */
-  --color-ink-faint: oklch(64% 0.02 265);
+  --color-ink: oklch(93% 0.008 262);
+  --color-ink-muted: oklch(66% 0.015 262);
+  /* GitHub's tertiary (#6e7681, L ~53%) — the two-step grey hierarchy its
+     secondary/tertiary pair uses: muted for real content one step down,
+     faint for placeholders, hints and captions. On the darker surface the
+     faint still clears 4.5:1 for the small text it is used on (a darker
+     background only raises light text's contrast). */
+  --color-ink-faint: oklch(56% 0.014 262);
 
-  /* 32%/42% -> 52%/58%. WCAG 1.4.11 (non-text contrast) needs 3:1 for a border
-     that is the sole way to identify a functional UI component's boundary — an
-     Input's border, a card tile's edge — and 32% measured 1.40:1 against
-     --color-surface, 42% measured 2.09:1: both well under. 52% clears 3:1 at
-     3.22:1; --color-line-strong moves to 58% (4.14:1) to keep a real gap over
-     the base line rather than the two converging as both get darker. Applied
-     as part of ai/phase-6.5-ui-polish.md Wave 2, after being deliberately left
-     unfixed at first — see that file's §5.1 for why a border-weight change
-     this visible across every card/input/panel in the app needed an explicit
-     go-ahead rather than being pushed through as a same-class token edit. */
-  --color-line: oklch(52% 0.02 265);
-  --color-line-strong: oklch(58% 0.02 265);
+  --color-line: oklch(30% 0.012 262);
+  --color-line-strong: oklch(38% 0.014 262);
 
   /* Both darkened from the audit's 65%/70%: white text on 65% measured
      3.09:1, below AA's 4.5:1 for the primary button label. 55% clears it
@@ -139,6 +150,10 @@
    * threshold throughout, not 4.5:1. A priority LABEL ("Urgent") is neutral
    * `--color-ink`/`--color-ink-muted` text next to the swatch, never the
    * swatch's own color as text.
+   *
+   * The 2026-08-16 surface re-tune (above) darkens every background, which
+   * only raises these ratios — the swatches were re-checked against the new
+   * four surface tones and still clear 3:1 with margin.
    */
   --color-priority-urgent: oklch(60% 0.19 22);
   --color-priority-medium: oklch(60% 0.17 285);
@@ -172,21 +187,29 @@
   --shadow-xl: 0 16px 40px oklch(0% 0 0 / 38%), 0 6px 12px oklch(0% 0 0 / 22%);
 
   /**
-   * Display and mono type, added for the UI/UX redesign pass.
+   * The type system, added for the UI/UX redesign pass.
    *
-   * `--font-sans` (body/UI copy — everything read for hours) is deliberately
-   * UNTOUCHED: the system stack costs zero network latency and zero layout
-   * shift, which matters more for text read constantly than a distinctive
-   * face does. These two are additive, generating `font-display`/`font-mono`
-   * utilities per Tailwind v4's `@theme` convention, used ONLY for page/panel
-   * titles and the wordmark (`font-display`) and literal codes — card
-   * reference numbers, timestamps, ids (`font-mono`) — never for body text.
-   * Both are Geist (SIL OFL 1.1, self-hosted from `public/fonts/`, see the
-   * `@font-face` rules and `public/fonts/OFL.txt` below/alongside), chosen
-   * over Inter specifically because Inter is now the default a generic
+   * ALL THREE faces are Geist (SIL OFL 1.1, self-hosted from `public/fonts/`,
+   * see the `@font-face` rules and `public/fonts/OFL.txt` below), chosen over
+   * Inter specifically because Inter is now the default a generic
    * AI-assisted redesign reaches for — see the frontend-design skill's own
    * note on generic clusters.
+   *
+   * `--font-sans` is BODY copy — everything read for hours. The first pass of
+   * the redesign deliberately left it on the system stack (zero latency, zero
+   * layout shift), and that is exactly what "basic" reads as: system UI text
+   * is the default of every half-finished admin panel, and no amount of
+   * spacing polish overcomes it. The Geist variable file is ALREADY fetched
+   * for `font-display`/`font-mono`, so switching body text to it costs no
+   * additional request — the same ~70KB Latin file is on every page already.
+   * `font-display: swap` means a brief fallback render on the very first
+   * paint of a cold load, then the real face; the file is cached by the
+   * second page.
+   *
+   * `--font-display` (page/panel titles, the wordmark) and `--font-mono`
+   * (literal codes — card references, timestamps, ids) complete the set.
    */
+  --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
   --font-display: 'Geist', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
 
@@ -266,6 +289,21 @@
    */
   :root {
     color-scheme: dark;
+    /* One line that makes every NATIVE form control — checkboxes, radios,
+       the calendar button on a date input, range sliders — render in the
+       product's accent instead of the browser's default blue. These are the
+       controls this app cannot otherwise style (the same blindness as the
+       `color-scheme` comment above), and the browser's stock blue on a dark
+       indigo-violet theme is precisely the "default admin panel" tell. */
+    accent-color: var(--color-accent);
+  }
+
+  /* Text selection in the product's hue, so even selecting text feels
+     on-brand rather than the OS default. Subtle — 35% alpha over the surface
+     keeps the selected text readable (ink-on-tint, same reasoning as the
+     `--color-accent/10` nav tint). */
+  ::selection {
+    background: color-mix(in oklab, var(--color-accent) 35%, transparent);
   }
 
   /* The scrollbars a kanban board lives inside. Styled because the default light
@@ -289,15 +327,53 @@
   }
 
   body {
-    font-family:
-      ui-sans-serif,
-      system-ui,
-      -apple-system,
-      'Segoe UI',
-      Roboto,
-      'Helvetica Neue',
-      Arial,
-      sans-serif;
+    /* Geist, the app's own face — see the `--font-sans` comment in @theme.
+       The first pass left body text on the system stack and the app read as
+       an admin panel; the same self-hosted variable file already served for
+       display/mono costs nothing extra to use for body copy. */
+    font-family: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  /**
+   * Every NATIVE `<select>` in the app, styled as one designed control.
+   *
+   * Native selects are the single most "basic" thing a dark SaaS can ship:
+   * the OS draws its own arrow and box, so on Windows a dark app's selects
+   * render as a light-grey stock widget with a tiny blue arrow — one of the
+   * first things a reviewer notices. `color-scheme: dark` fixes the colours
+   * but not the arrow or the shape.
+   *
+   * An element-level rule (specificity 0,1,1) rather than a utility class,
+   * deliberately: it must WIN against the per-site `px-*`, `bg-surface` and
+   * `border` utilities every select carries (0,1,0), so the control looks
+   * identical no matter which of the ~30 call sites renders it. The per-site
+   * classes keep what they should own — height, width, font size — while
+   * the chevron, the padding that makes room for it, and the background are
+   * this rule's job. `appearance: none` removes the OS arrow; the chevron is
+   * an inline SVG in the theme's `--color-line-strong` so it stays legible
+   * against the sunken background.
+   */
+  select:not([multiple]) {
+    appearance: none;
+    -webkit-appearance: none;
+    border-radius: 0.375rem;
+    border: 1px solid var(--color-line);
+    background-color: var(--color-surface-sunken);
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'><path d='M4 6l4 4 4-4' stroke='oklch(56% 0.014 262)' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    background-size: 1rem;
+    padding-inline: 0.625rem 1.9rem;
+    color: var(--color-ink);
+    transition: border-color var(--motion-fast) var(--motion-ease);
+  }
+  /* `:focus:not(:focus-visible)`: the border change alone marks a POINTER
+     click (no ring — a click has no keyboard position to show); a KEYBOARD
+     focus keeps the global 2px `:focus-visible` outline, which the border
+     would otherwise have removed. */
+  select:not([multiple]):focus:not(:focus-visible) {
+    outline: none;
+    border-color: var(--color-accent);
   }
 }
 
@@ -443,6 +519,22 @@
     color: var(--color-accent);
     text-decoration: underline;
   }
+
+  /* Links INSIDE a message bubble on the accent fill (the sender's own
+     bubbles, `bg-accent`). The rule above colors every link the accent hue
+     itself — which is invisible on an accent background: a URL pasted into
+     chat rendered accent-on-accent, reading as an empty bubble while the
+     white text around it showed fine. The link keeps its affordance via the
+     underline (drawn at partial opacity so it reads as a link, not a rule)
+     and the text goes to the same near-white the bubble already uses, with
+     the 0.7 tint applied to the underline only — full-ink text, 55%-ink
+     underline, which is how WhatsApp's own light links on green bubbles
+     work. `chat-page.tsx` hangs this class on the bubble when it is the
+     viewer's own (`isOwn`). */
+  .rich-text-on-accent .rich-text a {
+    color: var(--color-accent-ink);
+    text-decoration-color: color-mix(in oklch, var(--color-accent-ink) 55%, transparent);
+  }
   .rich-text hr {
     border-color: var(--color-line);
     margin-block: 1rem;
@@ -456,6 +548,49 @@
     float: left;
     height: 0;
     pointer-events: none;
+  }
+
+  /**
+   * A data table — the org directory, the user directory, the audit log.
+   *
+   * The redesign pass's standardization of the three hand-rolled `<table>`s
+   * in the admin surfaces (all of which had drifted into `text-xs` cells and
+   * inconsistent padding). One class instead: 13px body cells (the same floor
+   * as everything else this pass touches), an uppercase 11px header row that
+   * stays small BECAUSE it is a column label and not content, per-cell padding
+   * that survives a hover highlight without the row visibly jumping, and a
+   * row hover so a long directory reads like a list of rows rather than a
+   * wall of text.
+   */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+    font-size: 13px;
+  }
+  .data-table thead th {
+    padding: 0.625rem 0.875rem;
+    border-bottom: 1px solid var(--color-line);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-ink-faint);
+    white-space: nowrap;
+  }
+  .data-table tbody td {
+    padding: 0.625rem 0.875rem;
+    vertical-align: top;
+    border-bottom: 1px solid color-mix(in oklab, var(--color-line) 45%, transparent);
+  }
+  .data-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  .data-table tbody tr {
+    transition: background-color var(--motion-fast) var(--motion-ease);
+  }
+  .data-table tbody tr:hover {
+    background: var(--color-surface-hover);
   }
 }
 
@@ -489,4 +624,49 @@
     transform: translateX(0);
     width: 100%;
   }
+}
+
+/* --------------------------------------------------------------------------
+ * The auth pages' backdrop — the one decorative background in the app.
+ *
+ * Two radial glows in the ACCENT's own hue at very low opacity, so the page
+ * reads as "the product" rather than a flat form on a flat surface, without
+ * the purple-gradient cliché that screams AI-template (the glow is 8-14%
+ * opacity, drawn with `color-mix` so it stays exactly on the deployment's
+ * audited palette and follows branding overrides). Purely decorative:
+ * `aria-hidden` and `pointer-events-none` are the consumers' job, and the
+ * form itself sits on the same `--color-surface` every other surface uses,
+ * so contrast is unchanged from before this existed.
+ * -------------------------------------------------------------------------- */
+.auth-backdrop {
+  position: relative;
+  background-image:
+    radial-gradient(
+      ellipse 70% 45% at 50% -8%,
+      color-mix(in oklab, var(--color-accent) 14%, transparent),
+      transparent 72%
+    ),
+    radial-gradient(
+      ellipse 45% 35% at 88% 108%,
+      color-mix(in oklab, var(--color-accent) 7%, transparent),
+      transparent 70%
+    );
+}
+
+/* -------------------------------------------------------------------------- *
+ * Mentions on the sender's own bubble
+ * -------------------------------------------------------------------------- */
+/* The mention chip (`lib/tiptap/mention-extension.ts` renderHTML) is
+   accent-on-transparent: `bg-accent/15 text-accent`. On a RECEIVED bubble
+   (dark surface) that reads fine. On the sender's OWN bubble — `bg-accent` —
+   it is accent-on-accent: the name vanishes into the fill, exactly the
+   "both colors become the same" the chat review reported.
+
+   Unlayered on purpose. The chip's classes are Tailwind utilities, which win
+   over anything inside `@layer base/components`; an unlayered rule beats every
+   layer, and the descendant selector scopes it to exactly the own-bubble case
+   (`bg-accent` is the own bubble's fill — see `MessageBubble`). */
+.bg-accent [data-mention] {
+  background-color: color-mix(in oklab, var(--color-accent-ink) 24%, transparent);
+  color: var(--color-accent-ink);
 }

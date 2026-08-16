@@ -124,7 +124,7 @@ function ChartCard({
 }) {
   return (
     <div className="rounded-lg border border-line p-4">
-      <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">{title}</h2>
+      <h2 className="text-[13px] font-semibold text-ink">{title}</h2>
       {people.length === 0 ? (
         <p className="mt-2 text-sm text-ink-faint">{empty}</p>
       ) : (

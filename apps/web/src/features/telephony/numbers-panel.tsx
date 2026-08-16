@@ -88,7 +88,7 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
     <div className="mx-auto max-w-3xl space-y-6">
       <section className="space-y-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
+          <h2 className="text-[13px] font-semibold text-ink">
             This org's numbers
           </h2>
           {numbers.data !== undefined && (
@@ -139,7 +139,7 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
 
       <section className="space-y-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
+          <h2 className="text-[13px] font-semibold text-ink">
             Buy a number
           </h2>
         </div>

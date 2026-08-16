@@ -791,7 +791,7 @@ function PagePanel({
   const isArchived = page.archivedAt !== null;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4 p-6">
+    <div className="mx-auto max-w-5xl space-y-4 p-6">
       {/* The only way back to the space tree below `md` — see `DocsPage`'s
           comment on the list/detail split this belongs to. */}
       <button
@@ -839,7 +839,7 @@ function PagePanel({
           </form>
         ) : (
           <>
-            <h1 className="flex items-center gap-2 text-xl font-semibold text-ink">
+            <h1 className="flex items-center gap-2 font-display text-xl font-semibold tracking-tight text-ink">
               {page.title}
               {isArchived && <Badge className="text-warning">archived</Badge>}
             </h1>

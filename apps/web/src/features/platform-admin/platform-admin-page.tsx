@@ -15,6 +15,7 @@ import {
   Empty,
   Field,
   Input,
+  PageHeader,
   SkeletonRows,
   Spinner,
 } from '../../components/primitives.js';
@@ -124,14 +125,11 @@ export function PlatformAdminPage() {
   };
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-lg font-semibold text-ink">Platform administration</h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          Every organization, user, and release flag. There is no organization selected here on
-          purpose — this console spans them all.
-        </p>
-      </header>
+    <div className="mx-auto flex max-w-7xl flex-col gap-7 p-8">
+      <PageHeader
+        title="Platform administration"
+        description="Every organization, user, and release flag. There is no organization selected here on purpose — this console spans them all."
+      />
 
       {/* Tabs, not routes: the console is one surface with four views, and a
           child route per tab would mount a fresh component tree on every
@@ -352,24 +350,24 @@ function OrgsTab({
 
       {orgs.data !== undefined && (
         <div className="overflow-x-auto rounded border border-line">
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-line text-ink-faint">
+          <table className="data-table">
+            <thead>
               <tr>
-                <th className="px-3 py-2 font-medium">Organization</th>
-                <th className="px-3 py-2 font-medium">Owner</th>
-                <th className="px-3 py-2 font-medium">Plan</th>
-                <th className="px-3 py-2 font-medium">Renews</th>
-                <th className="px-3 py-2 font-medium">Last invoice</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Members</th>
-                <th className="px-3 py-2 font-medium">Created</th>
-                <th className="px-3 py-2 font-medium" />
+                <th>Organization</th>
+                <th>Owner</th>
+                <th>Plan</th>
+                <th>Renews</th>
+                <th>Last invoice</th>
+                <th>Status</th>
+                <th>Members</th>
+                <th>Created</th>
+                <th />
               </tr>
             </thead>
             <tbody>
               {orgs.data.orgs.map((org) => (
                 <tr key={org.orgId} className="border-b border-line/50 last:border-0">
-                  <td className="px-3 py-2">
+                  <td>
                     {/* The clickable name. A button rather than a route: the
                         detail opens as a panel over this table, so the page's
                         cursor position survives opening and closing one. */}
@@ -382,9 +380,9 @@ function OrgsTab({
                     >
                       {org.name}
                     </button>
-                    <p className="font-mono text-[10px] text-ink-faint">{org.slug}</p>
+                    <p className="font-mono text-[11px] text-ink-faint">{org.slug}</p>
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     {org.ownerEmail === null ? (
                       <span className="text-ink-faint">—</span>
                     ) : (
@@ -394,11 +392,11 @@ function OrgsTab({
                             frequently absent, and an operator needs something
                             to put in a support ticket either way. */}
                         {org.ownerName !== null && <p className="text-ink">{org.ownerName}</p>}
-                        <p className="text-[10px] text-ink-muted">{org.ownerEmail}</p>
+                        <p className="text-[11px] text-ink-muted">{org.ownerEmail}</p>
                       </>
                     )}
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     <p className="text-ink">
                       {org.planId ?? <span className="text-ink-faint">no plan</span>}
                     </p>
@@ -406,7 +404,7 @@ function OrgsTab({
                         `status` is the operator kill switch, `billingStatus` is
                         what the processor says. Showing them in the same cell
                         would suggest one derives from the other. */}
-                    <p className="text-[10px] text-ink-faint">
+                    <p className="text-[11px] text-ink-faint">
                       {org.billingStatus}
                       {org.billingStatus === 'trialing' &&
                         org.trialEndsAt !== null &&
@@ -416,10 +414,10 @@ function OrgsTab({
                         ` — grace ends ${formatDate(org.billingGraceEndsAt)}`}
                     </p>
                   </td>
-                  <td className="px-3 py-2 text-ink-muted">
+                  <td className="text-ink-muted">
                     {org.currentPeriodEnd === null ? '—' : formatDate(org.currentPeriodEnd)}
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     {org.lastInvoice === null ? (
                       <span className="text-ink-faint">—</span>
                     ) : (
@@ -432,20 +430,18 @@ function OrgsTab({
                           {org.lastInvoice.status}{' '}
                           {money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)}
                         </p>
-                        <p className="text-[10px] text-ink-faint">
+                        <p className="text-[11px] text-ink-faint">
                           {formatDate(org.lastInvoice.issuedAt)}
                         </p>
                       </>
                     )}
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     <StatusBadge status={org.status} />
                   </td>
-                  <td className="px-3 py-2 text-ink-muted">{org.memberCount}</td>
-                  <td className="px-3 py-2 whitespace-nowrap text-ink-muted">
-                    {formatDate(org.createdAt)}
-                  </td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="text-ink-muted">{org.memberCount}</td>
+                  <td className="whitespace-nowrap text-ink-muted">{formatDate(org.createdAt)}</td>
+                  <td className="text-right">
                     <div className="flex justify-end gap-1.5">
                       <Button
                         size="sm"
@@ -663,19 +659,19 @@ function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
 
       {users.data !== undefined && (
         <div className="overflow-x-auto rounded border border-line">
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-line text-ink-faint">
+          <table className="data-table">
+            <thead>
               <tr>
-                <th className="px-3 py-2 font-medium">User</th>
-                <th className="px-3 py-2 font-medium">Email verified</th>
-                <th className="px-3 py-2 font-medium">Orgs</th>
-                <th className="px-3 py-2 font-medium">Created</th>
+                <th>User</th>
+                <th>Email verified</th>
+                <th>Orgs</th>
+                <th>Created</th>
               </tr>
             </thead>
             <tbody>
               {users.data.users.map((user) => (
                 <tr key={user.userId} className="border-b border-line/50 last:border-0">
-                  <td className="px-3 py-2">
+                  <td>
                     {/* Null for an account that never set a profile name, which
                         is why this renders conditionally rather than falling
                         back to the email — that is already the line below. */}
@@ -692,17 +688,15 @@ function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
                       {user.name ?? user.email}
                     </button>
                     {user.name !== null && <p className="truncate text-ink-muted">{user.email}</p>}
-                    <p className="font-mono text-[10px] text-ink-faint">
+                    <p className="font-mono text-[11px] text-ink-faint">
                       {user.userId.slice(0, 8)}
                     </p>
                   </td>
-                  <td className="px-3 py-2 text-ink-muted">
+                  <td className="text-ink-muted">
                     {user.emailVerifiedAt === null ? 'no' : formatDate(user.emailVerifiedAt)}
                   </td>
-                  <td className="px-3 py-2 text-ink-muted">{user.orgCount}</td>
-                  <td className="px-3 py-2 whitespace-nowrap text-ink-muted">
-                    {formatDate(user.createdAt)}
-                  </td>
+                  <td className="text-ink-muted">{user.orgCount}</td>
+                  <td className="whitespace-nowrap text-ink-muted">{formatDate(user.createdAt)}</td>
                 </tr>
               ))}
             </tbody>
@@ -799,13 +793,13 @@ function FlagsTab({
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink">
                     {flag.flagName}
-                    <span className="font-mono text-[10px] text-ink-faint">Phase {flag.phase}</span>
+                    <span className="font-mono text-[11px] text-ink-faint">Phase {flag.phase}</span>
                     {flag.perOrg && (
-                      <span className="text-[10px] text-ink-faint">org-toggleable</span>
+                      <span className="text-[11px] text-ink-faint">org-toggleable</span>
                     )}
                   </p>
                   <p className="truncate text-xs text-ink-muted">{flag.description}</p>
-                  <p className="text-[10px] text-ink-faint">
+                  <p className="text-[11px] text-ink-faint">
                     {flag.source === 'override' ? (
                       <>
                         overridden — default was {String(flag.defaultValue)}
@@ -1137,7 +1131,7 @@ function BrandingAssetUpload({
         {currentUrl !== null ? (
           <img src={currentUrl} alt="" className="max-h-full max-w-full object-contain" />
         ) : (
-          <span className="text-[10px] text-ink-faint">None</span>
+          <span className="text-[11px] text-ink-faint">None</span>
         )}
       </div>
 
@@ -1238,7 +1232,7 @@ function UserDetailDialog({
                         </span>
                         <Badge>{membership.role}</Badge>
                         {membership.status !== 'active' && (
-                          <span className="text-[10px] text-ink-faint">{membership.status}</span>
+                          <span className="text-[11px] text-ink-faint">{membership.status}</span>
                         )}
                       </div>
                       {/* The ORG's own state, not the membership's. A valid
@@ -1246,7 +1240,7 @@ function UserDetailDialog({
                           request time by resolveOrgMembership, and from the
                           user's side that is indistinguishable from having
                           been removed. */}
-                      <p className="text-[10px] text-ink-faint">
+                      <p className="text-[11px] text-ink-faint">
                         {membership.orgSlug} · org {membership.orgStatus} ·{' '}
                         {membership.orgBillingStatus} · since {formatDate(membership.joinedAt)}
                       </p>
@@ -1357,7 +1351,7 @@ function OrgDetailDialog({
                   Operator override — outranks the plan
                 </h3>
                 <p className="mt-0.5 text-xs text-ink-muted">{data.override.reason}</p>
-                <p className="mt-0.5 text-[10px] text-ink-faint">
+                <p className="mt-0.5 text-[11px] text-ink-faint">
                   set {formatDate(data.override.setAt)}
                   {data.override.expiresAt === null
                     ? ' · no expiry'
@@ -1383,13 +1377,13 @@ function OrgDetailDialog({
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="text-ink">{featureLabel(feature.flagName)}</span>
-                      <span className="block text-[10px] text-ink-faint">
+                      <span className="block text-[11px] text-ink-faint">
                         {featureDescription(feature.flagName) ?? feature.description}
                       </span>
                     </span>
                     {/* WHERE the answer came from — see this component's own
                         header on why an override is only tolerable with it. */}
-                    <span className="shrink-0 text-[10px] text-ink-faint">
+                    <span className="shrink-0 text-[11px] text-ink-faint">
                       {feature.source === 'default' ? 'registry default' : `from ${feature.source}`}
                     </span>
                   </li>
@@ -1407,12 +1401,12 @@ function OrgDetailDialog({
                     <span className="min-w-0 flex-1 truncate text-ink">
                       {member.name ?? member.email}
                       {member.name !== null && (
-                        <span className="ml-1 text-[10px] text-ink-faint">{member.email}</span>
+                        <span className="ml-1 text-[11px] text-ink-faint">{member.email}</span>
                       )}
                     </span>
                     <Badge>{member.role}</Badge>
                     {member.status !== 'active' && (
-                      <span className="text-[10px] text-ink-faint">{member.status}</span>
+                      <span className="text-[11px] text-ink-faint">{member.status}</span>
                     )}
                   </li>
                 ))}
@@ -1468,7 +1462,7 @@ function OrgDetailDialog({
                     No operator has acted on this organization.
                   </p>
                 ) : (
-                  <ul className="mt-1 flex flex-col gap-0.5 text-[10px] text-ink-muted">
+                  <ul className="mt-1 flex flex-col gap-0.5 text-[11px] text-ink-muted">
                     {history.data.map((entry, index) => (
                       <li key={`${entry.action}-${String(index)}`}>
                         {formatDateTime(entry.at)} · {entry.action} · {entry.by}
@@ -1500,7 +1494,7 @@ function DetailRow({
   return (
     <>
       <dt className="text-ink-faint">{label}</dt>
-      <dd className={cn('truncate text-ink', mono === true && 'font-mono text-[10px]')}>{value}</dd>
+      <dd className={cn('truncate text-ink', mono === true && 'font-mono text-[11px]')}>{value}</dd>
     </>
   );
 }
@@ -1614,7 +1608,7 @@ function ChangeOrgPlanDialog({
                 setReason(event.target.value);
               }}
             />
-            <p className="mt-0.5 text-[10px] text-ink-faint">
+            <p className="mt-0.5 text-[11px] text-ink-faint">
               Recorded in the operator audit chain. Required.
             </p>
           </Field>
@@ -1758,7 +1752,7 @@ function PlansTab({
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink">
                       {plan.name}
-                      <span className="font-mono text-[10px] text-ink-faint">{plan.id}</span>
+                      <span className="font-mono text-[11px] text-ink-faint">{plan.id}</span>
                       {plan.isDefault && <Badge>default</Badge>}
                       {!plan.isActive && <Badge>retired</Badge>}
                       {plan.stripeProductId === null && <Badge>no processor product</Badge>}
@@ -1780,7 +1774,7 @@ function PlansTab({
                       )}
                     </p>
 
-                    <p className="mt-1 text-[10px] text-ink-faint">
+                    <p className="mt-1 text-[11px] text-ink-faint">
                       {plan.orgCount} org{plan.orgCount === 1 ? '' : 's'} · telephony{' '}
                       {ceiling(plan.telephonyCapCents, 'cents')} · automation{' '}
                       {ceiling(plan.automationRunsPerHour, 'runs/hr')} · TURN{' '}
@@ -1791,7 +1785,7 @@ function PlansTab({
                         ` · +${String(plan.telephonyMarkupPct)}% markup`}
                     </p>
 
-                    <p className="mt-1 text-[10px] text-ink-faint">
+                    <p className="mt-1 text-[11px] text-ink-faint">
                       {plan.features.length === 0
                         ? 'core only — no flagged modules'
                         : plan.features.join(', ')}
@@ -1803,7 +1797,7 @@ function PlansTab({
                         or that it belongs to the Stripe account this
                         deployment currently points at. Only looking settles
                         that, so the console makes looking one click. */}
-                    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[10px] text-ink-faint">
+                    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] text-ink-faint">
                       {plan.stripeProductId === null ? (
                         <span>not yet at the processor — created on first price</span>
                       ) : (
@@ -2073,7 +2067,7 @@ function EditLimitsDialog({
           onChange(event.target.value);
         }}
       />
-      <p className="mt-0.5 text-[10px] text-ink-faint">{LIMIT_COPY[field] ?? ''}</p>
+      <p className="mt-0.5 text-[11px] text-ink-faint">{LIMIT_COPY[field] ?? ''}</p>
     </Field>
   );
 
@@ -2294,7 +2288,7 @@ function EditFeaturesDialog({
                     >
                       <span className="block text-sm text-ink">
                         {featureLabel(flag.flagName)}
-                        <span className="ml-1.5 font-mono text-[10px] text-ink-faint">
+                        <span className="ml-1.5 font-mono text-[11px] text-ink-faint">
                           {flag.flagName}
                         </span>
                       </span>
@@ -2582,28 +2576,28 @@ function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
         ) : (
           <>
             <div className="overflow-x-auto rounded border border-line">
-              <table className="w-full text-left text-xs">
-                <thead className="border-b border-line text-ink-faint">
+              <table className="data-table">
+                <thead>
                   <tr>
-                    <th className="px-3 py-2 font-medium">Seq</th>
-                    <th className="px-3 py-2 font-medium">When</th>
-                    <th className="px-3 py-2 font-medium">Action</th>
-                    <th className="px-3 py-2 font-medium">Target</th>
-                    <th className="px-3 py-2 font-medium">Operator</th>
+                    <th>Seq</th>
+                    <th>When</th>
+                    <th>Action</th>
+                    <th>Target</th>
+                    <th>Operator</th>
                   </tr>
                 </thead>
                 <tbody>
                   {entries.data.entries.map((entry) => (
                     <tr key={entry.seq} className="border-b border-line/50 last:border-0">
-                      <td className="px-3 py-1.5 font-mono text-ink-faint">{entry.seq}</td>
-                      <td className="px-3 py-1.5 whitespace-nowrap text-ink-muted">
+                      <td className="font-mono text-ink-faint">{entry.seq}</td>
+                      <td className="whitespace-nowrap text-ink-muted">
                         {formatDateTime(entry.occurredAt)}
                       </td>
-                      <td className="px-3 py-1.5 font-medium text-ink">{entry.action}</td>
-                      <td className="px-3 py-1.5 font-mono text-[10px] text-ink-muted">
+                      <td className="font-medium text-ink">{entry.action}</td>
+                      <td className="font-mono text-[11px] text-ink-muted">
                         {entry.target === null ? '—' : JSON.stringify(entry.target)}
                       </td>
-                      <td className="px-3 py-1.5 text-ink-muted">
+                      <td className="text-ink-muted">
                         <span className="truncate" title={entry.operatorId}>
                           {entry.operatorEmail}
                         </span>
@@ -2709,30 +2703,30 @@ function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
         ) : (
           <>
             <div className="overflow-x-auto rounded border border-line">
-              <table className="w-full text-left text-xs">
-                <thead className="border-b border-line text-ink-faint">
+              <table className="data-table">
+                <thead>
                   <tr>
-                    <th className="px-3 py-2 font-medium">When</th>
-                    <th className="px-3 py-2 font-medium">Kind</th>
-                    <th className="px-3 py-2 font-medium">Outcome</th>
-                    <th className="px-3 py-2 font-medium">Target</th>
-                    <th className="px-3 py-2 font-medium">Detail</th>
+                    <th>When</th>
+                    <th>Kind</th>
+                    <th>Outcome</th>
+                    <th>Target</th>
+                    <th>Detail</th>
                   </tr>
                 </thead>
                 <tbody>
                   {events.data.events.map((event) => (
                     <tr key={event.id} className="border-b border-line/50 last:border-0">
-                      <td className="px-3 py-1.5 whitespace-nowrap text-ink-muted">
+                      <td className="whitespace-nowrap text-ink-muted">
                         {formatDateTime(event.occurredAt)}
                       </td>
-                      <td className="px-3 py-1.5 font-medium text-ink">{event.kind}</td>
+                      <td className="font-medium text-ink">{event.kind}</td>
                       <td className="px-3 py-1.5">
                         <OutcomeBadge outcome={event.outcome} />
                       </td>
-                      <td className="px-3 py-1.5 font-mono text-[10px] text-ink-muted">
+                      <td className="font-mono text-[11px] text-ink-muted">
                         {event.target ?? '—'}
                       </td>
-                      <td className="px-3 py-1.5 font-mono text-[10px] text-ink-muted">
+                      <td className="font-mono text-[11px] text-ink-muted">
                         {event.detail === null || event.detail === undefined
                           ? '—'
                           : JSON.stringify(event.detail)}
@@ -2824,23 +2818,23 @@ function BillingTab({
 
       {billing.data !== undefined && (
         <div className="overflow-x-auto rounded border border-line">
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-line text-ink-faint">
+          <table className="data-table">
+            <thead>
               <tr>
-                <th className="px-3 py-2 font-medium">Organization</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Plan</th>
-                <th className="px-3 py-2 font-medium">Renews</th>
-                <th className="px-3 py-2 font-medium">Last invoice</th>
-                <th className="px-3 py-2 font-medium">Trial / grace ends</th>
-                <th className="px-3 py-2 font-medium">Stripe customer</th>
-                <th className="px-3 py-2 font-medium" />
+                <th>Organization</th>
+                <th>Status</th>
+                <th>Plan</th>
+                <th>Renews</th>
+                <th>Last invoice</th>
+                <th>Trial / grace ends</th>
+                <th>Stripe customer</th>
+                <th />
               </tr>
             </thead>
             <tbody>
               {billing.data.orgs.map((org) => (
                 <tr key={org.orgId} className="border-b border-line/50 last:border-0">
-                  <td className="px-3 py-2">
+                  <td>
                     {/* Clickable here too — the drill-down is the same panel
                         the Orgs tab opens, and an operator triaging a payment
                         should not have to switch tabs to reach it. */}
@@ -2853,15 +2847,15 @@ function BillingTab({
                     >
                       {org.name}
                     </button>
-                    <p className="font-mono text-[10px] text-ink-faint">{org.slug}</p>
+                    <p className="font-mono text-[11px] text-ink-faint">{org.slug}</p>
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     <BillingStatusBadge billingStatus={org.billingStatus} />
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     <p className="text-ink">{org.planName ?? org.planId ?? '—'}</p>
                     {org.currentPriceCents !== null && (
-                      <p className="text-[10px] text-ink-faint">
+                      <p className="text-[11px] text-ink-faint">
                         {money(org.currentPriceCents, 'usd')}/{org.currentPriceInterval ?? 'month'}
                       </p>
                     )}
@@ -2869,15 +2863,15 @@ function BillingTab({
                         row — "renews on the 14th" is true and misleading when
                         what happens on the 14th is a plan change. */}
                     {org.pendingPlanId !== null && org.pendingPlanEffectiveAt !== null && (
-                      <p className="text-[10px] text-warning">
+                      <p className="text-[11px] text-warning">
                         → {org.pendingPlanId} {formatDate(org.pendingPlanEffectiveAt)}
                       </p>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-ink-muted">
+                  <td className="text-ink-muted">
                     {org.currentPeriodEnd === null ? '—' : formatDate(org.currentPeriodEnd)}
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     {org.lastInvoice === null ? (
                       <span className="text-ink-faint">—</span>
                     ) : (
@@ -2890,23 +2884,23 @@ function BillingTab({
                           {org.lastInvoice.status}{' '}
                           {money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)}
                         </p>
-                        <p className="text-[10px] text-ink-faint">
+                        <p className="text-[11px] text-ink-faint">
                           {formatDate(org.lastInvoice.issuedAt)}
                         </p>
                       </>
                     )}
                   </td>
-                  <td className="px-3 py-2 whitespace-nowrap text-ink-muted">
+                  <td className="whitespace-nowrap text-ink-muted">
                     {org.billingStatus === 'past_due' && org.billingGraceEndsAt !== null
                       ? formatDate(org.billingGraceEndsAt)
                       : org.trialEndsAt !== null
                         ? formatDate(org.trialEndsAt)
                         : '—'}
                   </td>
-                  <td className="px-3 py-2 font-mono text-[10px] text-ink-faint">
+                  <td className="font-mono text-[11px] text-ink-faint">
                     {org.stripeCustomerId ?? '—'}
                   </td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="text-right">
                     {org.billingStatus === 'past_due' && (
                       <Button
                         size="sm"

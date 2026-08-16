@@ -7,6 +7,10 @@
          the default policy sends the full URL to any third-party origin an
          embedded image or link reaches. -->
     <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <!-- The default mark (`public/favicon.svg`). `branding-provider.tsx`
+         swaps this link for an operator-uploaded favicon when one is set —
+         this entry only stops the browser's bare /favicon.ico 404. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>TaskFlow</title>
   </head>
   <body class="h-full bg-surface text-ink antialiased">

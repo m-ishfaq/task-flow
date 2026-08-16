@@ -522,6 +522,14 @@ function ActiveCallBar() {
             channelId={channelId}
             state={recordingState}
             capturing={capturing}
+            /* The server refuses recording while the session is still
+               ringing (`requestRecording` requires status 'active'), so a
+               button shown before the first answer is a CTA whose only
+               outcome is a 409 — the exact "why show me this if I can't do
+               it" failure this file is built to avoid. Hidden until the
+               first remote peer connects, which is the same instant the
+               session flips to 'active' server-side. */
+            connected={!waitingForFirstAnswer}
           />
 
           <Button
@@ -599,12 +607,16 @@ function RecordButton({
   channelId,
   state,
   capturing,
+  connected,
 }: {
   readonly sessionId: string;
   readonly orgId: string;
   readonly channelId: string | null;
   readonly state: string;
   readonly capturing: boolean;
+  /** False while the call is still ringing — the record button is not
+      shown until somebody has actually answered. */
+  readonly connected: boolean;
 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -639,6 +651,12 @@ function RecordButton({
       void invalidateCalls(queryClient, orgId, channelId ?? undefined, sessionId);
     },
   });
+
+  /* Not shown while the call is still ringing, or after everyone else has
+     left — see the caller's comment on `connected`. The server is still the
+     gate (`requestRecording` requires the session to be 'active'); this
+     merely stops offering an action that could only fail. */
+  if (!connected) return null;
 
   if (state === 'active') {
     /* Only the tab that pressed start holds the MediaRecorder, so only it can

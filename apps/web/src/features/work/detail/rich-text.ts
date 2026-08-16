@@ -155,6 +155,15 @@ export function flatten(node: unknown): string {
 
   const candidate = node as Partial<DocumentNode>;
   if (typeof candidate.text === 'string') return candidate.text;
+
+  /* A mention (and a page-link) carries its visible text in `attrs.label`
+     rather than a `text` child — the whole reason the node is atomic. Without
+     this, a message that is ONLY a mention flattens to '' and `isEmptyDocument`
+     answers true, which disables Send on exactly the message the person
+     composed. The `@` prefix mirrors how the node renders. */
+  const attrs = (candidate as { attrs?: { label?: unknown } }).attrs;
+  if (typeof attrs?.label === 'string') return `@${attrs.label}`;
+
   if (!Array.isArray(candidate.content)) return '';
 
   return candidate.content.map(flatten).join(' ');

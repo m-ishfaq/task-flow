@@ -186,6 +186,45 @@ describe('objects are private', () => {
     expect(await response.text()).toBe('readable via signature');
   }, 30_000);
 
+  it('names the download via Content-Disposition when given a filename', async () => {
+    if (!available) return;
+
+    const key = newStorageKey(ORG);
+    await put(key, encode('download me'), 'application/pdf');
+
+    /* The whole point of the filename argument: without the disposition the
+       browser NAVIGATES to the object and renders a PDF or image inline — the
+       "Download did nothing" bug. With it, the response must say `attachment`
+       and carry the name, so the browser saves the file instead. */
+    const url = await provider.presignDownload(key, 60, 'Quarterly planning.pdf');
+    const response = await fetch(url);
+
+    expect(response.ok).toBe(true);
+    expect(response.headers.get('content-disposition')).toBe(
+      'attachment; filename="Quarterly planning.pdf"',
+    );
+  }, 30_000);
+
+  it('strips header-breaking characters from a disposition filename', async () => {
+    if (!available) return;
+
+    const key = newStorageKey(ORG);
+    await put(key, encode('safe'), 'text/plain');
+
+    /* A filename is user-supplied text and lands in a response header
+       verbatim. Quotes and control characters would end the quoted-string
+       early and let the rest of the name become header parameters — the
+       disposition must never echo them back. */
+    const hostile = 'evil"; inject: true.pdf';
+    const url = await provider.presignDownload(key, 60, hostile);
+    const response = await fetch(url);
+
+    expect(response.ok).toBe(true);
+    expect(response.headers.get('content-disposition')).toBe(
+      'attachment; filename="evil; inject: true.pdf"',
+    );
+  }, 30_000);
+
   it('issues download URLs that expire', async () => {
     if (!available) return;
 

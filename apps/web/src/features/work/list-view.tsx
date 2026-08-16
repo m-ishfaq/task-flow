@@ -70,8 +70,10 @@ export function ListView({
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-3">
-      <div className="mx-auto flex max-w-4xl flex-col gap-3">
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* `pb-10` so the last group has room below it before the window edge — a
+          list that ends flush with the bottom border reads as truncated. */}
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-6 pb-10">
         {groups.map((group) => {
           const isCollapsed = collapsed.has(group.key);
           /* List keeps rank order regardless of `sortBy` — the same rule
@@ -81,20 +83,23 @@ export function ListView({
           const ordered = groupBy === 'list' ? group.cards : sortCards(group.cards, sortBy);
 
           return (
-            <section key={group.key} className="rounded-card border border-line bg-surface-raised">
+            <section
+              key={group.key}
+              className="overflow-hidden rounded-xl border border-line bg-surface-raised shadow-sm"
+            >
               <button
                 type="button"
                 onClick={() => {
                   toggle(group.key);
                 }}
                 aria-expanded={!isCollapsed}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left"
+                className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-surface-hover/60"
               >
                 <ChevronRight
                   aria-hidden="true"
                   strokeWidth={2.25}
                   className={cn(
-                    'size-3.5 shrink-0 text-ink-faint transition-transform',
+                    'size-4 shrink-0 text-ink-faint transition-transform',
                     !isCollapsed && 'rotate-90',
                   )}
                 />
@@ -105,10 +110,15 @@ export function ListView({
                     aria-hidden="true"
                   />
                 )}
-                <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
+                {/* Sentence-case 13px, matching `Section` — the uppercase
+                    micro-label this used to be read as an admin panel's
+                    column heading, not as the title of a group of work. */}
+                <h2 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
                   {group.label}
                 </h2>
-                <span className="font-mono text-[11px] text-ink-faint">{group.cards.length}</span>
+                <span className="rounded-full bg-surface-hover px-2 py-0.5 text-xs font-medium text-ink-muted">
+                  {group.cards.length}
+                </span>
               </button>
 
               {!isCollapsed && (
@@ -124,11 +134,9 @@ export function ListView({
                           onClick={() => {
                             onOpenCard(card.cardId);
                           }}
-                          className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-surface-hover"
+                          className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-hover/60"
                         >
-                          <span className="font-mono text-[11px] text-ink-faint">
-                            {card.reference}
-                          </span>
+                          <span className="font-mono text-xs text-ink-faint">{card.reference}</span>
                           <span className="min-w-0 flex-1 truncate text-sm text-ink">
                             {card.title}
                           </span>

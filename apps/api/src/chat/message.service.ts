@@ -1,8 +1,19 @@
-import { and, asc, desc, eq, lt, schema, withOrgScope, outboxWriter } from '@taskflow/db';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  lt,
+  not,
+  schema,
+  withOrgScope,
+  outboxWriter,
+} from '@taskflow/db';
 import { errors, type ChannelId, type MessageId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
-import { messageDeleted, messageEdited, messageSent } from './events.js';
+import { messageDeleted, messageEdited, messageHidden, messageSent } from './events.js';
 import { unfurlMessage } from './unfurl.service.js';
 import { channelMemberIds } from './membership.js';
 import { flattenToText, mentionedUserIds, type RichTextNode } from '../work/richtext.js';
@@ -65,6 +76,35 @@ export interface MessageSummary {
 const MAX_PAGE_SIZE = 100;
 
 /**
+ * The predicate `messages.list` and `listThread` both append to exclude
+ * hidden messages: a message the CURRENT VIEWER has "removed for me" is not
+ * returned to them, and is returned to everyone else unchanged — the hide row
+ * is keyed on the viewer, so this is a per-viewer filter even though it reads
+ * like a global one. The exclusion happens in SQL, not in JavaScript, because
+ * paging happens here: a hidden message filtered out after the page was
+ * selected would silently shorten a 100-message page and pull older messages
+ * up into view.
+ *
+ * `userOf(actor)` is the value from the verified token, never client input,
+ * and the hide row itself is tenant-scoped by RLS — so this can never test
+ * against another tenant's hide, and a caller cannot name a victim. */
+function notHiddenBy(actor: ChatActor, tx: ChatTx) {
+  return not(
+    exists(
+      tx
+        .select({ one: schema.messageHidden.userId })
+        .from(schema.messageHidden)
+        .where(
+          and(
+            eq(schema.messageHidden.userId, userOf(actor)),
+            eq(schema.messageHidden.messageId, schema.messages.id),
+          ),
+        ),
+    ),
+  );
+}
+
+/**
  * A channel's messages, newest first, paged by id.
  *
  * ## Why the cursor is an id and not an offset or a timestamp
@@ -110,9 +150,12 @@ export async function listMessages(
       })
       .from(schema.messages)
       .where(
-        olderThan === null
-          ? eq(schema.messages.channelId, input.channelId)
-          : and(eq(schema.messages.channelId, input.channelId), lt(schema.messages.id, olderThan)),
+        and(
+          notHiddenBy(actor, tx),
+          olderThan === null
+            ? eq(schema.messages.channelId, input.channelId)
+            : and(eq(schema.messages.channelId, input.channelId), lt(schema.messages.id, olderThan)),
+        ),
       )
       .orderBy(desc(schema.messages.id))
       .limit(limit);
@@ -148,7 +191,7 @@ export async function listThread(
         createdAt: schema.messages.createdAt,
       })
       .from(schema.messages)
-      .where(eq(schema.messages.parentMessageId, input.messageId))
+      .where(and(notHiddenBy(actor, tx), eq(schema.messages.parentMessageId, input.messageId)))
       .orderBy(asc(schema.messages.id))
       .limit(MAX_PAGE_SIZE);
 
@@ -389,6 +432,62 @@ export async function deleteMessage(
     ]);
 
     return { deleted: true as const };
+  });
+}
+
+/**
+ * "Remove for me" — the per-viewer half of Slack's two-way delete.
+ *
+ * Writes a `chat.message_hidden` row and does NOT touch the message itself: a
+ * hidden message stays live for every other member, and the tombstone delete
+ * above is what "remove for everyone" means. The row is keyed on the ACTOR's
+ * verified user id, never on input, so a caller cannot hide a message on
+ * someone else's behalf — the same trust split `message_reactions` draws, and
+ * the same reason the composite FK pins the row to a real message.
+ *
+ * Permission is `message:read`: hiding changes the VIEWER's own list, exactly
+ * like marking a channel read, and is offered to anyone who can read the
+ * channel at all. No domain event — nothing happened to the message, and the
+ * outbox is for things other consumers need to know about.
+ */
+export async function hideMessage(
+  actor: ChatActor,
+  input: { readonly messageId: MessageId },
+): Promise<{ readonly hidden: true }> {
+  return withOrgScope(orgOf(actor), async (tx) => {
+    const message = await loadMessage(tx, input.messageId);
+    const channel = await loadChannel(tx, message.channelId as ChannelId);
+
+    if (message.deletedAt !== null) throw errors.notFound();
+    enforceOnChannel(actor, 'message:read', channel);
+
+    /* `onConflictDoNothing` — a repeat "remove for me" on a message that is
+       already hidden resolves to the same `{ hidden: true }` instead of
+       throwing the composite PK's unique violation (0075). Clicking a button
+       twice is not an error the person needs to see. */
+    await tx
+      .insert(schema.messageHidden)
+      .values({
+        orgId: orgOf(actor),
+        channelId: message.channelId as ChannelId,
+        messageId: input.messageId,
+        userId: userOf(actor),
+      })
+      .onConflictDoNothing();
+
+    await outboxWriter.append(tx, [
+      createEvent(
+        messageHidden,
+        {
+          messageId: input.messageId,
+          channelId: message.channelId,
+          userId: userOf(actor),
+        },
+        envelopeOf(actor),
+      ),
+    ]);
+
+    return { hidden: true as const };
   });
 }
 

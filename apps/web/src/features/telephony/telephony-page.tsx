@@ -45,8 +45,10 @@ export function TelephonyPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="border-b border-line px-4 pt-4 pb-2">
-        <h1 className="text-base font-semibold text-ink">Voice &amp; Messaging</h1>
-        <p className="mt-0.5 text-xs text-ink-muted">
+        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
+          Voice &amp; Messaging
+        </h1>
+        <p className="mt-1 text-sm text-ink-muted">
           Phone numbers, calls, SMS, and spend — one carrier account per organization.
         </p>
         <nav aria-label="Voice & Messaging sections" className="mt-3 flex gap-1">

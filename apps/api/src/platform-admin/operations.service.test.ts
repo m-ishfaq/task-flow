@@ -60,6 +60,15 @@ beforeAll(async () => {
   });
 
   await admin.setOrg(null);
+  /* Children before parents (the `clearTenant` discipline): the sibling
+     branding suite leaves BOTH the global operator chain and the branding
+     singleton's `updated_by` pointing at the same OPERATOR id — deleting the
+     user first would trip their foreign keys and skip this whole file. The
+     operator chain is global and shared, so it is reset here rather than
+     assumed clean. */
+  await admin.query(`DELETE FROM platform.operational_events`);
+  await admin.query(`DELETE FROM platform.operator_audit_log`);
+  await admin.query(`UPDATE platform.branding SET updated_by = NULL WHERE id = true`);
   await admin.query(`DELETE FROM identity.users WHERE id = $1`, [OPERATOR]);
   await admin.query(
     `INSERT INTO identity.users (id, email, email_normalized, email_verified_at)
@@ -82,8 +91,12 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await admin.setOrg(null);
+  /* Same children-before-parents order as beforeAll: the branding singleton
+     can still point at OPERATOR (a mid-chain run leaves it set), and the
+     next suite's beforeAll deletes this user. */
   await admin.query(`DELETE FROM platform.operational_events`);
   await admin.query(`DELETE FROM platform.operator_audit_log`);
+  await admin.query(`UPDATE platform.branding SET updated_by = NULL WHERE id = true`);
   await admin.query(`DELETE FROM identity.users WHERE id = $1`, [OPERATOR]);
   await admin.end();
   await closeDatabase();

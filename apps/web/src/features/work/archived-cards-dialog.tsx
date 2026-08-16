@@ -74,7 +74,7 @@ export function ArchivedCardsDialog({ orgId, boardId }: ArchivedCardsDialogProps
 function Section({ title, children }: { readonly title: string; readonly children: ReactNode }) {
   return (
     <section className="mt-4">
-      <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">{title}</h3>
+      <h3 className="text-[13px] font-semibold text-ink">{title}</h3>
       {children}
     </section>
   );

@@ -1,7 +1,7 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useLayoutEffect, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Lock, Pin, X } from 'lucide-react';
+import { Check, ChevronLeft, Hash, Lock, Pin, Users, X } from 'lucide-react';
 import { PopoverClose, PopoverContent, PopoverRoot, PopoverTrigger } from '@taskflow/ui';
 import type { ChannelId, MessageId, UserId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
@@ -29,6 +29,7 @@ import {
   channelsQuery,
   createChannel,
   deleteMessage,
+  hideMessage,
   editMessage,
   invalidateAllPins,
   invalidateChannels,
@@ -162,7 +163,12 @@ function ChannelListPanel({
   readonly hideWhenChannelOpen: boolean;
 }) {
   const channels = useQuery({ ...channelsQuery(orgId), enabled: orgId !== '' });
-  const list = channels.data ?? [];
+  /* The server's verdict on whether THIS caller may create a channel — the
+     "new channel" control renders only when it is true, so a member with no
+     `channel:create` is not offered a CTA whose only outcome is FORBIDDEN
+     (CLAUDE.md §8.2: the server decides, the client never re-derives). */
+  const canCreateChannel = channels.data?.canCreateChannel ?? false;
+  const list = channels.data?.channels ?? [];
   const { personOf } = useMembers();
 
   const unread = useQuery({
@@ -200,8 +206,8 @@ function ChannelListPanel({
       </div>
 
       <div className="flex items-center justify-between px-3 pt-3 pb-1">
-        <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Channels</h2>
-        <NewChannelPopover orgId={orgId} onCreated={onSelect} />
+        <h2 className="text-[13px] font-semibold text-ink">Channels</h2>
+        {canCreateChannel && <NewChannelPopover orgId={orgId} onCreated={onSelect} />}
       </div>
 
       {channels.isLoading ? (
@@ -228,9 +234,7 @@ function ChannelListPanel({
       )}
 
       <div className="flex items-center justify-between px-3 pt-3 pb-1">
-        <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
-          Direct messages
-        </h2>
+        <h2 className="text-[13px] font-semibold text-ink">Direct messages</h2>
         <NewDirectMessagePopover orgId={orgId} onOpened={onSelect} />
       </div>
 
@@ -878,15 +882,17 @@ function ChannelPanel({
   readonly onBack: () => void;
 }) {
   const navigate = useNavigate();
-  const { presence } = useChannelRoom(orgId, channelId);
+  /* `useChannelRoom` still runs — its broadcast invalidation is what makes
+     live messages appear — but presence is deliberately not rendered in the
+     header anymore: the member/presence readout moved out of the header to
+     keep it about the conversation, and the details panel is where who's
+     here belongs. */
+  useChannelRoom(orgId, channelId);
 
   const channel = useQuery(channelQuery(orgId, channelId));
   const messages = useQuery(messagesQuery(orgId, channelId));
   const viewerId = useSession((state) => state.userId);
-  const { personOf, peopleOf } = useMembers();
-  /* "Who else is here" (§9), not a roster the viewer is already part of —
-     same exclusion `board-page.tsx` applies to its own presence list. */
-  const othersPresent = peopleOf(presence.filter((userId) => userId !== viewerId));
+  const { personOf } = useMembers();
   const toast = useToast();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<string | null>(null);
@@ -949,6 +955,15 @@ function ChannelPanel({
     mutationFn: (body: DocumentNode) => sendMessage({ channelId, body }),
     onSuccess: () => {
       invalidateMessages(queryClient, orgId, channelId);
+      /* Scroll NOW, before the refetch lands — this is the sender's own
+         message, and it must be visible without the reader doing anything.
+         Doing it here rather than in the scroll effect removes the race
+         where the effect measures the DOM before the refetch adds the
+         message and declines to move. (The effect still covers live inbound
+         messages; the near-bottom check there is what keeps a reader who has
+         scrolled up reading history in place.) */
+      const node = scrollRef.current;
+      if (node !== null) node.scrollTop = node.scrollHeight;
     },
     onError: (error, body) => {
       toast.failure('The message was not sent', error);
@@ -979,6 +994,19 @@ function ChannelPanel({
     },
     onError: (error) => {
       toast.failure('The message was not deleted', error);
+    },
+  });
+
+  /* "Remove for me" — the per-viewer hide. No tombstone, no event: the message
+     stays live for everyone else and this viewer's next refetch simply stops
+     returning it. */
+  const hide = useMutation({
+    mutationFn: (messageId: MessageId) => hideMessage(messageId),
+    onSuccess: () => {
+      invalidateMessages(queryClient, orgId, channelId);
+    },
+    onError: (error) => {
+      toast.failure('The message could not be hidden', error);
     },
   });
 
@@ -1197,6 +1225,11 @@ function ChannelPanel({
     entryCursor.data,
     topLevel.map((message) => message.messageId),
   );
+  /* The author of that first unread message — the divider render gates on
+     `!== viewerId` (see the render site's comment on why a viewer's own
+     message is not "new"). */
+  const firstUnreadAuthorId =
+    topLevel.find((message) => message.messageId === firstUnreadId)?.authorId ?? null;
 
   /* Computed from the same page rather than a separate count query — a
      channel's first 100 messages are already loaded whole, replies included,
@@ -1209,18 +1242,43 @@ function ChannelPanel({
   }
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  /* The last message id we SCROLLED to. Opening a conversation must land at
+     the newest line no matter what — that is the "open a chat, see the
+     latest" contract — and a message sent from this tab must be visible
+     without scrolling. After the first anchor, a new message only auto-scrolls
+     when the reader is already near the bottom; someone scrolled up reading
+     history must not be yanked down. */
+  const lastAnchoredIdRef = useRef<string | null>(null);
 
   /* Bottom-anchored, like every chat product trains people to expect: a
      conversation is read newest-first from the bottom, not discovered by
-     scrolling down from wherever the list happened to mount. Re-runs on
-     every length change — a message arriving live (`use-channel-room.ts`
-     invalidating this same query) re-triggers it exactly like one this tab
-     just sent. */
-  useEffect(() => {
+     scrolling down from wherever the list happened to mount.
+
+     `useLayoutEffect` — the scroll runs after the DOM mutation and before
+     paint, so `scrollHeight` already counts the message that just rendered;
+     an ordinary effect can fire against the pre-update layout. The panel is
+     keyed by channel, so a new `lastMessageId` is exactly "a new last
+     message rendered" — send, live arrival, or the first page landing after
+     the skeleton.
+
+     Keyed on the LAST MESSAGE ID: it changes exactly when a genuinely new
+     last message renders. */
+  const lastMessageId = topLevel.at(-1)?.messageId;
+  useLayoutEffect(() => {
+    if (lastMessageId === undefined) return;
     const node = scrollRef.current;
     if (node === null) return;
+    const firstAnchor = lastAnchoredIdRef.current === null;
+    /* 160, not 80: the message list's own bottom padding (the composer gap
+       and the last bubble's margin) keeps a reader who IS at the bottom
+       ~90-100px from `scrollHeight` — an 80px threshold measured them as
+       scrolled up and refused to follow the new message. Measured live: a
+       bottom-anchored reader sat at sh-st-ch = 99. */
+    const atBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 160;
+    if (!firstAnchor && !atBottom) return;
     node.scrollTop = node.scrollHeight;
-  }, [topLevel.length, channelId]);
+    lastAnchoredIdRef.current = lastMessageId;
+  }, [lastMessageId, channelId]);
 
   /* Marks the channel read up to the newest message every time one arrives
      while this panel is mounted — "open" is the closest signal this build has
@@ -1228,7 +1286,6 @@ function ChannelPanel({
      position tracking). `markRead` itself is the one that refuses to move
      backward, so calling it on every render of a new last message is safe to
      repeat. */
-  const lastMessageId = topLevel.at(-1)?.messageId;
   useEffect(() => {
     if (lastMessageId === undefined) return;
 
@@ -1247,6 +1304,15 @@ function ChannelPanel({
     markChannelRead({ channelId, messageId: lastMessageId as MessageId })
       .then(() => {
         invalidateUnreadCounts(queryClient, orgId);
+        /* `entryCursorQuery` is a FROZEN snapshot (`staleTime: Infinity`)
+           captured when the channel opened — so without this, the "new
+           messages" divider would be computed against the PRE-SEND cursor
+           and stay above the sender's own just-sent message, which is the
+           "it shows new-msg to me" report. The cursor just advanced on the
+           server (that is what this `.then` is waiting for), so invalidating
+           the channel key (which `entry-cursor` extends) re-freezes it at
+           the new position. */
+        invalidateChannel(queryClient, orgId, channelId);
       })
       .catch(() => {
         // Best-effort — an unread badge staying one message stale is not
@@ -1294,7 +1360,13 @@ function ChannelPanel({
   }
 
   return (
-    <div className="flex min-h-0 flex-1">
+    /* `relative`: the positioning context for the details and thread panels'
+       mobile overlays below. On a phone those panels sit ON TOP of the
+       conversation (their own `absolute inset-y-0 w-full`), because a fixed
+       `w-72`/`w-80` child next to the message column would crush it into a
+       sliver — 288px of the ~360px a phone has, spent on a roster. At `md`
+       they are ordinary flex children again and this class changes nothing. */
+    <div className="relative flex min-h-0 flex-1">
       {/* `min-w-0` is what makes the comment on the details panel below true.
           A flex item's `min-width` defaults to `auto`, which is its content's
           min-content width — so without this the message column cannot shrink
@@ -1303,51 +1375,50 @@ function ChannelPanel({
           shrinks rather than either panel overflowing the page". `min-h-0`
           already carries the identical argument for the other axis. */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3 sm:px-4">
-          {/* The only way back to the channel list below `md` — see
-              `ChatPage`'s comment on the list/detail split this belongs to. */}
+        <header className="flex h-13 shrink-0 items-center gap-2.5 border-b border-line px-3 sm:px-4">
+          {/* The whole header is the way back to the channel list below `md`
+              (tap the name, not a tiny arrow) — see `ChatPage`'s comment on
+              the list/detail split this belongs to. */}
           <button
             type="button"
             onClick={onBack}
             aria-label="Back to conversations"
-            className="-ml-1.5 shrink-0 rounded p-1.5 text-ink-muted hover:bg-surface-hover hover:text-ink md:hidden"
+            className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-1 py-1.5 text-left hover:bg-surface-hover md:cursor-default md:hover:bg-transparent"
           >
-            <span aria-hidden="true">←</span>
-          </button>
-          <div className="flex min-w-0 flex-1 flex-col">
-            <h2 className="min-w-0 truncate text-sm font-medium text-ink">
-              {channel.data === undefined ? '…' : channelTitle(channel.data, viewerId, personOf)}
-            </h2>
-            {/* The second line carries whichever of the two things the channel
-                actually has: a topic for a named channel, the other person for
-                a DM. Rendered only when there is something to say — an empty
-                sub-line makes every header taller for no information. */}
-            {channel.data !== undefined && channelSubtitle(channel.data) !== null && (
-              <p className="min-w-0 truncate text-xs text-ink-faint">
-                {channelSubtitle(channel.data)}
-              </p>
+            <ChevronLeft aria-hidden="true" className="size-4 shrink-0 text-ink-faint md:hidden" />
+            {/* The channel glyph — `#` for a public channel, a lock for a
+                private one, nothing for a DM (the person's name IS the
+                identity). */}
+            {channel.data?.type === 'public' && (
+              <Hash
+                aria-hidden="true"
+                className="size-4 shrink-0 text-ink-faint"
+                strokeWidth={2.5}
+              />
             )}
-          </div>
-          {othersPresent.length > 0 && (
-            <div
-              className="flex items-center -space-x-1.5"
-              title={othersPresent.map((person) => person.label).join(', ')}
-            >
-              {othersPresent.slice(0, 5).map((person) => (
-                <span
-                  key={person.userId}
-                  className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-accent text-[10px] font-medium text-accent-ink"
-                >
-                  {person.label.slice(0, 2).toUpperCase()}
-                </span>
-              ))}
-              {othersPresent.length > 5 && (
-                <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-surface-sunken text-[10px] font-medium text-ink-muted">
-                  +{othersPresent.length - 5}
+            {channel.data?.type === 'private' && (
+              <Lock
+                aria-hidden="true"
+                className="size-4 shrink-0 text-ink-faint"
+                strokeWidth={2.5}
+              />
+            )}
+            <span className="min-w-0 flex-1">
+              <span className="block min-w-0 truncate font-display text-[15px] font-semibold leading-tight text-ink">
+                {channel.data === undefined ? '…' : channelTitle(channel.data, viewerId, personOf)}
+              </span>
+              {/* The second line carries whichever of the two things the
+                  channel actually has: a topic for a named channel, the other
+                  person for a DM. Rendered only when there is something to say
+                  — an empty sub-line makes every header taller for no
+                  information. */}
+              {channel.data !== undefined && channelSubtitle(channel.data) !== null && (
+                <span className="block min-w-0 truncate text-xs leading-tight text-ink-faint">
+                  {channelSubtitle(channel.data)}
                 </span>
               )}
-            </div>
-          )}
+            </span>
+          </button>
           {/* In-app voice (Phase 13). Public channels cannot start a call in
               Wave 1 — the ring list comes from the channel's member tuples and
               a public channel has none, so the control is not offered rather
@@ -1356,19 +1427,24 @@ function ChannelPanel({
           {channel.data !== undefined && channel.data.type !== 'public' && (
             <CallButton orgId={orgId} channelId={channelId} />
           )}
+          {/* Channel details (members, media, retention). Icon-only — the
+              member COUNT is intentionally not shown here: it is one tap
+              away in the panel, and a number in the header is noise next to
+              the conversation's identity. */}
           <button
             type="button"
             onClick={() => {
               setDetailsOpen((open) => !open);
             }}
+            aria-label="Channel details"
             className={cn(
-              'flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs',
+              'flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors',
               detailsOpen
-                ? 'bg-accent text-accent-ink'
+                ? 'bg-accent/10 text-accent'
                 : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
             )}
           >
-            👥 {channel.data?.memberIds.length ?? 0}
+            <Users aria-hidden="true" className="size-4" strokeWidth={2.25} />
           </button>
         </header>
 
@@ -1404,8 +1480,15 @@ function ChannelPanel({
                         than by counting back from the end. A count-based position
                         lands somewhere plausible and wrong the moment a message
                         is deleted or the page is partially loaded — and it does so
-                        silently, which is the worst property a divider can have. */}
+                        silently, which is the worst property a divider can have.
+
+                        Suppressed when the first unread message is the viewer's
+                        OWN — the cursor advances in the same beat as the send,
+                        so the line would otherwise flash above your own just-sent
+                        message for a render or two. "New" means "arrived while
+                        you were away", and your own message is not that. */}
                     {firstUnreadId !== null &&
+                      firstUnreadAuthorId !== viewerId &&
                       item.group.messages.some(
                         (message) => message.messageId === firstUnreadId,
                       ) && (
@@ -1433,6 +1516,9 @@ function ChannelPanel({
                       editPending={edit.isPending}
                       onDelete={(messageId) => {
                         remove.mutate(messageId as MessageId);
+                      }}
+                      onHide={(messageId) => {
+                        hide.mutate(messageId as MessageId);
                       }}
                       reactionsByMessage={reactionsByMessage}
                       attachmentsByMessage={attachmentsByMessage}
@@ -1485,6 +1571,9 @@ function ChannelPanel({
             <SlashCommandMenu draft={draft} />
             <RichTextEditor
               value={draft}
+              /* The composer matches the bubbles: 14px, so the message you are
+                 writing reads at the same size it will be sent at. */
+              className="text-sm"
               placeholder="Message… (Enter to send, Shift+Enter for a new line)"
               onChange={(next) => {
                 setDraft(next);
@@ -1667,8 +1756,11 @@ function channelTitle(
   viewerId: string | null,
   personOf: (userId: string) => { readonly label: string },
 ): string {
-  if (channel.type === 'public') return `# ${channel.name ?? ''}`;
-  if (channel.type === 'private') return `🔒 ${channel.name ?? ''}`;
+  /* No emoji/`#` prefix here — the header renders a Hash or Lock glyph next
+     to the name (see the ChannelPanel header), so the title itself carries
+     just the name. */
+  if (channel.type === 'public') return channel.name ?? '';
+  if (channel.type === 'private') return channel.name ?? '';
 
   const others = channel.memberIds.filter((userId) => userId !== viewerId);
   if (others.length === 0) return 'Direct message';
@@ -1796,6 +1888,21 @@ function ThreadPanel({
   const replies = useQuery(threadQuery(orgId, channelId, rootMessage.messageId as MessageId));
   const [draft, setDraft] = useState<DocumentNode>(EMPTY_DOCUMENT);
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  /* Bottom-anchored, the same contract as the main channel's scrollRef: a
+     thread is read newest-last, so a reply landing (sent here, or arriving
+     live through the socket invalidation) must be visible without scrolling.
+     Deps are the reply COUNT rather than the array identity — the query's
+     data reference can change on refetch without a new reply, and scrolling
+     then would yank a reader mid-thread for no message. */
+  const replyCount = (replies.data ?? []).length;
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (node === null) return;
+    node.scrollTop = node.scrollHeight;
+  }, [rootMessage.messageId, replyCount]);
+
   const reply = useMutation({
     mutationFn: (body: DocumentNode) =>
       sendMessage({
@@ -1828,26 +1935,43 @@ function ThreadPanel({
     }
 
     return (
-      <div className={cn('flex flex-col gap-0.5', isOwn && 'items-end')}>
+      <div className={cn('flex flex-col gap-1', isOwn && 'items-end')}>
         <span className="px-1 text-xs font-medium text-ink-muted">{label}</span>
         <div
           className={cn(
-            'max-w-full rounded-2xl px-3 py-1.5',
+            /* text-sm: same 14px floor as the main channel's bubbles — a
+               thread is a chat surface, not a document surface. */
+            'max-w-full rounded-2xl px-3 py-1.5 text-sm shadow-sm',
             isOwn ? 'bg-accent text-accent-ink' : 'bg-surface-raised text-ink',
+            /* Same as the main channel's bubble — see the comment there. */
+            isOwn && 'rich-text-on-accent',
           )}
         >
           <RichTextView value={message.body} bare />
-          <div className={cn('text-[10px]', isOwn ? 'text-accent-ink/70' : 'text-ink-faint')}>
-            {formatTime(message.createdAt)}
-            {message.editedAt !== null && ' · edited'}
+          {/* Same bottom-right timestamp as the main channel's bubbles — the
+              thread is the same WhatsApp-style surface, so the metadata sits
+              in the same corner rather than drifting to the left edge. */}
+          <div
+            className={cn(
+              'mt-0.5 flex items-center justify-end gap-1 text-[10px] leading-none',
+              isOwn ? 'text-accent-ink/70' : 'text-ink-faint',
+            )}
+          >
+            <span>{formatTime(message.createdAt)}</span>
+            {message.editedAt !== null && <span>edited</span>}
           </div>
         </div>
       </div>
     );
   };
 
+  /* Below `md` this panel is a full-width overlay on top of the message
+     column (the channel pane is the `relative` parent, see `ChannelPanel`)
+     rather than a fixed-width sibling squeezing it — the phone has no room
+     for a 320px sidebar next to a conversation. `md:static md:w-80` restores
+     the side-by-side layout above the breakpoint. */
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-l border-line bg-surface-raised">
+    <aside className="absolute inset-y-0 right-0 z-30 flex w-full flex-col border-l border-line bg-surface-raised md:static md:w-80">
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-line px-3">
         <h3 className="text-sm font-medium text-ink">Thread</h3>
         <button
@@ -1860,7 +1984,7 @@ function ThreadPanel({
         </button>
       </header>
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">
+      <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">
         {renderPlain(rootMessage)}
 
         <div className="border-t border-line pt-3">
@@ -1879,6 +2003,7 @@ function ThreadPanel({
       <div className="shrink-0 border-t border-line px-3 py-2">
         <RichTextEditor
           value={draft}
+          className="text-sm"
           placeholder="Reply in thread…"
           onChange={setDraft}
           onSubmit={submit}
@@ -1918,6 +2043,7 @@ function MessageGroupView({
   onSaveEdit,
   editPending,
   onDelete,
+  onHide,
   reactionsByMessage,
   attachmentsByMessage,
   previewsByMessage,
@@ -1941,6 +2067,8 @@ function MessageGroupView({
   readonly onSaveEdit: (messageId: string, body: DocumentNode) => void;
   readonly editPending: boolean;
   readonly onDelete: (messageId: string) => void;
+  /** "Remove for me" — hides the message from this viewer's own list. */
+  readonly onHide: (messageId: string) => void;
   readonly reactionsByMessage: Map<string, Map<string, string[]>>;
   readonly attachmentsByMessage: ReadonlyMap<string, readonly MessageAttachment[]>;
   readonly savedIds: ReadonlySet<string>;
@@ -2012,6 +2140,9 @@ function MessageGroupView({
             onDelete={() => {
               onDelete(message.messageId);
             }}
+            onHide={() => {
+              onHide(message.messageId);
+            }}
             reactions={reactionsByMessage.get(message.messageId) ?? new Map()}
             attachments={attachmentsByMessage.get(message.messageId) ?? []}
             isSaved={savedIds.has(message.messageId)}
@@ -2051,6 +2182,7 @@ function MessageBubble({
   onSaveEdit,
   editPending,
   onDelete,
+  onHide,
   reactions,
   attachments,
   previews,
@@ -2075,6 +2207,8 @@ function MessageBubble({
   readonly onSaveEdit: (body: DocumentNode) => void;
   readonly editPending: boolean;
   readonly onDelete: () => void;
+  /** "Remove for me" — hides this message from the viewer's own list only. */
+  readonly onHide: () => void;
   readonly reactions: Map<string, string[]>;
   readonly attachments: readonly MessageAttachment[];
   readonly isSaved: boolean;
@@ -2123,8 +2257,14 @@ function MessageBubble({
     : cn(!isFirstInGroup && 'rounded-tl-md', !isLastInGroup && 'rounded-bl-md');
 
   return (
-    <div className={cn('group/message relative flex flex-col gap-0.5', isOwn && 'items-end')}>
-      <div className={cn('flex items-end gap-1', isOwn && 'flex-row-reverse')}>
+    <div className={cn('group/message relative flex flex-col gap-1', isOwn && 'items-end')}>
+      {/* The bubble's wrapper: a row with exactly one in-flow child (the
+          bubble) whose only other job is to be the positioning context for
+          the hover toolbar's `absolute top-full` — the toolbar floats BELOW
+          the bubble, so it is out of flow and never widens this row. `flex`
+          (not a plain block) is what keeps the bubble's `min-w-0` a real
+          bound against its widest child (see the bubble's own comment). */}
+      <div className="relative flex items-end">
         <div
           className={cn(
             /* `min-w-0` because the bubble is a flex item whose automatic
@@ -2139,15 +2279,29 @@ function MessageBubble({
                instead means every child resolves against the 75% the message
                column actually has, rather than the bubble growing to fit them
                and taking the message list's horizontal scrollbar with it. */
-            'min-w-0 rounded-2xl px-3 py-1.5 shadow-sm',
+            /* `text-sm` — 14px, the size every chat product (Slack, WhatsApp,
+               Discord) sets its message body to. The base 16px is a reading
+               size for document surfaces; a message column at 16px reads as
+               shouting, and the bubble is the container that owns the size. */
+            'min-w-0 rounded-2xl px-3 py-1.5 text-sm shadow-sm',
             isOwn ? 'bg-accent text-accent-ink' : 'bg-surface-raised text-ink',
+            /* Links inside the viewer's own bubble would otherwise be the
+               accent hue on an accent fill — invisible (see styles.css's
+               `.rich-text-on-accent` rule). Hanging it here scopes that
+               override to the accent bubble only; the receiver's side keeps
+               the normal accent link color on the light surface. */
+            isOwn && 'rich-text-on-accent',
             cornerClass,
           )}
         >
           <RichTextView value={message.body} bare />
+          {/* The timestamp sits bottom-RIGHT inside the bubble, under the last
+              text line, in a muted tint of the bubble's own colour — metadata
+              about the bubble, not a second row of chrome (WhatsApp's own
+              placement; right-aligned in both the viewer's and others'). */}
           <div
             className={cn(
-              'flex items-center gap-1 text-[10px]',
+              'mt-0.5 flex items-center justify-end gap-1 text-[10px] leading-none',
               isOwn ? 'text-accent-ink/70' : 'text-ink-faint',
             )}
           >
@@ -2157,10 +2311,26 @@ function MessageBubble({
           </div>
         </div>
 
-        {/* Hover actions sit OUTSIDE the bubble, on its outer edge, rather than
-            overlapping the text — the same `opacity-0 group-hover:opacity-100`
-            shape `card-tile.tsx`'s quick actions already use, visible on hover
-            or keyboard focus rather than as permanent clutter on every bubble.
+        {/* Hover actions float over the bubble's TOP edge, aligned to its
+            outer corner (`right-0` for the viewer's own bubble, `left-0` for
+            everyone else's) — the Slack placement. Chosen over "below the
+            bubble" for a concrete reason: reactions and the reply count live
+            BELOW the bubble, so a toolbar parked there covers the exact
+            things a hovering reader is about to click. At the top it
+            transiently overlaps the first line of the message's own text,
+            which is the trade Slack itself makes and nothing interactive is
+            ever hidden. Floating, not in-flow: the row appears on hover
+            only, and reserving space would push reactions and the next
+            message down for every message nobody is hovering.
+
+            `pointer-events-none` is not cosmetic — it is the other half of
+            the fix. An invisible `opacity-0` element still intercepts
+            clicks, so a toolbar parked below the bubble was blocking the
+            reaction pills beneath it even when it could not be seen.
+            Click-through while hidden, interactive only once actually
+            shown. The same `opacity-0 group-hover:opacity-100` shape
+            `card-tile.tsx`'s quick actions use, visible on hover or
+            keyboard focus rather than as permanent clutter on every bubble.
 
             Edit is author-only with no override, same reasoning as Work's
             comments (CLAUDE.md, §8.2) — nobody else's edit control would ever
@@ -2172,8 +2342,9 @@ function MessageBubble({
             `pin.service.ts` on why neither needs a stronger permission. */}
         <div
           className={cn(
-            'mb-1 flex items-center gap-0.5 rounded border border-line bg-surface-raised px-0.5 opacity-0 shadow-sm transition-opacity',
-            'group-hover/message:opacity-100 group-focus-within/message:opacity-100',
+            'pointer-events-none absolute top-0 z-20 flex items-center gap-0.5 rounded-lg border border-line bg-surface-raised px-1 py-0.5 opacity-0 shadow-md transition-opacity',
+            isOwn ? 'right-0' : 'left-0',
+            'group-hover/message:pointer-events-auto group-hover/message:opacity-100 group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100',
           )}
         >
           <EmojiPickerButton onPick={onToggleReaction} />
@@ -2212,15 +2383,14 @@ function MessageBubble({
               Edit
             </Button>
           )}
-          {/* Deleting is authorship OR moderation. The second half is the
-              server's decision, delivered on the channel (`capabilitiesFor`) —
-              not recomputed here. Hidden rather than shown-and-refused because
-              a button whose only outcome is an error toast is not a control. */}
-          {(isOwn || canModerate) && (
-            <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onDelete}>
-              Delete
-            </Button>
-          )}
+          {/* Deleting is now TWO actions, Slack-style. "Remove for me" is
+              offered to everyone — it only changes the viewer's own list, so
+              it can never be refused. "Remove for everyone" is authorship OR
+              moderation, and the moderation half is the server's decision
+              (`capabilitiesFor`), not recomputed here — but the option is
+              hidden rather than shown-and-refused because a button whose only
+              outcome is an error toast is not a control. */}
+          <DeleteMenu isOwn={isOwn} canModerate={canModerate} onHide={onHide} onDelete={onDelete} />
         </div>
       </div>
 
@@ -2253,7 +2423,77 @@ function MessageBubble({
   );
 }
 
-/** The reaction bar under a bubble — one pill per emoji, with its count. */
+/**
+ * The bubble's delete control — Slack's two-way delete in one popover.
+ *
+ * "Remove for me" (hide) is always available: it writes a per-viewer hide
+ * row and the message stays live for everyone else, so there is nothing to
+ * moderate. "Remove for everyone" (tombstone) is authorship or moderation —
+ * the moderation half is the server's `capabilitiesFor` answer, not
+ * recomputed here.
+ */
+function DeleteMenu({
+  isOwn,
+  canModerate,
+  onHide,
+  onDelete,
+}: {
+  readonly isOwn: boolean;
+  readonly canModerate: boolean;
+  readonly onHide: () => void;
+  readonly onDelete: () => void;
+}) {
+  const canRemoveForEveryone = isOwn || canModerate;
+  return (
+    <PopoverRoot>
+      <PopoverTrigger asChild>
+        <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]">
+          Delete
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent side="top" align="end" className="w-64 p-1.5">
+        <p className="px-1.5 pb-1 pt-0.5 text-xs font-medium text-ink-muted">Delete message</p>
+        <div className="flex flex-col gap-0.5">
+          <button
+            type="button"
+            onClick={onHide}
+            className="flex flex-col items-start rounded px-1.5 py-1.5 text-left hover:bg-surface-hover"
+          >
+            <span className="text-sm font-medium text-ink">Remove for me</span>
+            <span className="text-xs text-ink-faint">
+              Only you won&apos;t see this message anymore.
+            </span>
+          </button>
+          {canRemoveForEveryone && (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="flex flex-col items-start rounded px-1.5 py-1.5 text-left hover:bg-surface-hover"
+            >
+              <span className="text-sm font-medium text-danger">Remove for everyone</span>
+              <span className="text-xs text-ink-faint">
+                {isOwn
+                  ? 'Delete this message for everyone in the conversation.'
+                  : 'Only available to moderators. Removes the message for everyone.'}
+              </span>
+            </button>
+          )}
+        </div>
+      </PopoverContent>
+    </PopoverRoot>
+  );
+}
+
+/**
+ * The reaction bar under a bubble — one pill per emoji, with its count.
+ *
+ * Each pill is a popover trigger: clicking it shows WHO reacted (the names the
+ * bar itself deliberately does not show, so the row stays scannable) and — for
+ * the viewer's own reaction — the same click that opened it can be repeated to
+ * remove it. The viewer's own reaction is additionally marked on the pill
+ * itself: filled accent + a check, so "did I react?" is answered by the bar
+ * without opening anything, and "who else did?" is one click away.
+ */
 function ReactionBar({
   reactions,
   viewerId,
@@ -2267,25 +2507,59 @@ function ReactionBar({
 }) {
   return (
     <div className="flex flex-wrap gap-1 px-1">
-      {[...reactions.entries()].map(([emoji, userIds]) => (
-        <button
-          key={emoji}
-          type="button"
-          onClick={() => {
-            onToggle(emoji);
-          }}
-          title={userIds.map((userId) => personOf(userId).label).join(', ')}
-          className={cn(
-            'flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs',
-            viewerId !== null && userIds.includes(viewerId)
-              ? 'border-accent bg-accent/10 text-accent'
-              : 'border-line bg-surface-raised text-ink-muted hover:bg-surface-hover',
-          )}
-        >
-          <span>{emoji}</span>
-          <span>{userIds.length}</span>
-        </button>
-      ))}
+      {[...reactions.entries()].map(([emoji, userIds]) => {
+        const mine = viewerId !== null && userIds.includes(viewerId);
+        return (
+          <PopoverRoot key={emoji}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                aria-label={`${emoji} — ${String(userIds.length)} ${userIds.length === 1 ? 'reaction' : 'reactions'}`}
+                className={cn(
+                  'flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs transition-colors',
+                  mine
+                    ? 'border-accent bg-accent text-accent-ink'
+                    : 'border-line bg-surface-raised text-ink-muted hover:bg-surface-hover',
+                )}
+              >
+                <span>{emoji}</span>
+                <span>{userIds.length}</span>
+                {mine && <Check aria-hidden="true" className="size-3" strokeWidth={2.5} />}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent side="top" align="start" className="w-52 p-1.5">
+              <p className="px-1.5 pb-1 pt-0.5 text-xs font-medium text-ink-muted">
+                {emoji} — {userIds.length} {userIds.length === 1 ? 'reaction' : 'reactions'}
+              </p>
+              <ul className="flex flex-col">
+                {userIds.map((userId) => (
+                  <li
+                    key={userId}
+                    className={cn(
+                      'flex items-center justify-between rounded px-1.5 py-1 text-sm text-ink',
+                      userId === viewerId && 'font-medium text-accent',
+                    )}
+                  >
+                    <span>{personOf(userId).label}</span>
+                    {userId === viewerId && <span className="text-xs text-ink-faint">You</span>}
+                  </li>
+                ))}
+              </ul>
+              {mine && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onToggle(emoji);
+                  }}
+                  className="mt-1 w-full rounded border-t border-line px-1.5 pt-1.5 text-left text-xs font-medium text-danger"
+                >
+                  Remove your reaction
+                </button>
+              )}
+            </PopoverContent>
+          </PopoverRoot>
+        );
+      })}
     </div>
   );
 }

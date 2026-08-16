@@ -41,8 +41,8 @@ export function HomePage() {
 
   if (cards.isPending) {
     return (
-      <div aria-busy="true" className="mx-auto max-w-4xl space-y-2 p-6">
-        <Skeleton className="h-4 w-40" />
+      <div aria-busy="true" className="mx-auto max-w-7xl space-y-2 px-6 py-8">
+        <Skeleton className="h-5 w-40" />
         <Skeleton className="h-16 w-full" />
         <Skeleton className="h-16 w-full" />
         <Skeleton className="h-16 w-full" />
@@ -52,7 +52,7 @@ export function HomePage() {
 
   if (cards.isError) {
     return (
-      <div className="mx-auto max-w-2xl p-6">
+      <div className="mx-auto max-w-2xl px-6 py-8">
         <ErrorView error={cards.error} title="Could not load your tasks" />
       </div>
     );
@@ -79,11 +79,16 @@ export function HomePage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 border-b border-line px-4 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+      {/* One column for the whole page — the header and the list share the same
+          max-width and horizontal padding, so the title, the filter and the
+          rows all start on the same edge. The header used to span the full
+          window while the list was a centered max-w-4xl, which put the title at
+          the far left and the rows ~170px in with nothing explaining the jump. */}
+      <div className="mx-auto w-full max-w-7xl shrink-0 px-6 py-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-sm font-semibold text-ink">My tasks</h1>
-            <p className="text-xs text-ink-faint">
+            <h1 className="font-display text-xl font-semibold tracking-tight text-ink">My tasks</h1>
+            <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">
               {visible.length} {visible.length === 1 ? 'card' : 'cards'}
               {scope === 'all'
                 ? ' assigned to you, across every board.'
@@ -98,7 +103,7 @@ export function HomePage() {
               "everything" and one that is always empty. */}
           {runningSprintIds.size > 0 && (
             <div
-              className="flex shrink-0 gap-1 rounded border border-line p-0.5"
+              className="flex shrink-0 gap-1 rounded-lg border border-line bg-surface-raised p-1"
               role="group"
               aria-label="Filter by sprint"
             >
@@ -116,10 +121,10 @@ export function HomePage() {
                   onClick={() => {
                     setScope(value);
                   }}
-                  className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                     scope === value
                       ? 'bg-accent text-accent-ink'
-                      : 'text-ink-muted hover:bg-surface-hover'
+                      : 'text-ink-muted hover:bg-surface-hover hover:text-ink'
                   }`}
                 >
                   {label}

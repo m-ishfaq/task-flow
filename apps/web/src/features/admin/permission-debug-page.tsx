@@ -220,7 +220,7 @@ export function PermissionDebugPage() {
           </div>
 
           <div>
-            <h2 className="mb-2 text-xs font-semibold tracking-wide text-ink-muted uppercase">
+            <h2 className="mb-2 text-[13px] font-semibold text-ink">
               Decision trace
             </h2>
 

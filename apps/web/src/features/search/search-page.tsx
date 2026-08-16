@@ -16,7 +16,8 @@ import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useToast } from '../../lib/toast-context.js';
 import { formatRelative } from '../../lib/format.js';
-import { Button, Empty, Skeleton } from '../../components/primitives.js';
+import { Search } from 'lucide-react';
+import { Button, Empty, PageHeader, Skeleton } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { savedSearchesQuery, searchResultsQuery } from './api.js';
 import { freeTextTermOf, splitOnTerm } from './term.js';
@@ -198,14 +199,11 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
   };
 
   return (
-    <div className="mx-auto flex h-full max-w-3xl flex-col gap-4 overflow-y-auto p-4 md:p-6">
-      <header className="shrink-0">
-        <h1 className="text-sm font-semibold text-ink">Search</h1>
-        <p className="text-xs text-ink-faint">
-          One query across cards, messages, pages, comments and call transcripts — TQL, the same
-          language the board filter speaks.
-        </p>
-      </header>
+    <div className="mx-auto flex h-full max-w-3xl flex-col gap-5 overflow-y-auto p-4 md:p-8">
+      <PageHeader
+        title="Search"
+        description="One query across cards, messages, pages, comments and call transcripts — TQL, the same language the board filter speaks."
+      />
 
       <div className="shrink-0 space-y-2">
         <QueryInput
@@ -278,6 +276,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
       <main className="min-h-0 flex-1">
         {text.trim() === '' ? (
           <Empty
+            icon={<Search aria-hidden="true" className="size-5" strokeWidth={1.75} />}
             title="Search your workspace"
             description="Try “deploy outage”, or type `assignee = me AND due < -7d` to combine filters with free text."
           />
@@ -311,7 +310,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
                     open(hit);
                   }}
                   className={cn(
-                    'flex w-full flex-col gap-1 rounded-lg border px-3 py-2.5 text-left transition-colors',
+                    'flex w-full flex-col gap-1 rounded-lg border px-3 py-2.5 text-left shadow-sm transition-colors',
                     index === active
                       ? 'border-accent/40 bg-surface-hover'
                       : 'border-line bg-surface-raised hover:bg-surface-hover',
@@ -320,7 +319,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
                   <div className="flex items-center gap-2">
                     <span
                       className={cn(
-                        'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide uppercase',
+                        'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold tracking-wide uppercase',
                         TYPE_BADGE[hit.type].className,
                       )}
                     >

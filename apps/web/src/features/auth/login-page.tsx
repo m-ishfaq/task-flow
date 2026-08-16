@@ -7,6 +7,7 @@ import { useSession } from '../../lib/session.js';
 import { resetCache } from '../../lib/query.js';
 import { useBranding } from '../../lib/branding-context.js';
 import { Button, Field, Input } from '../../components/primitives.js';
+import { BrandMark } from '../../components/brand-mark.js';
 import { ErrorView } from '../../components/error-view.js';
 import {
   browserSupportsWebAuthn,
@@ -111,28 +112,37 @@ export function LoginPage() {
 
   if (challenge !== null) {
     return (
-      <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-6 p-6">
-        <TotpChallengeForm
-          challengeToken={challenge.token}
-          onSuccess={(session) => {
-            void afterSignIn(session, challenge.email);
-          }}
-        />
+      <div className="auth-backdrop min-h-full">
+        <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-center gap-6 p-6">
+          <TotpChallengeForm
+            challengeToken={challenge.token}
+            onSuccess={(session) => {
+              void afterSignIn(session, challenge.email);
+            }}
+          />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-6 p-6">
-      <div>
-        {/* `font-display` (Geist Sans, `styles.css`) — the first real use of
-            the redesign's display face, on the one page every visitor sees
-            before anything else. Body copy below stays on the system stack. */}
-        <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">
-          Sign in to {productName}
-        </h1>
-        <p className="mt-1.5 text-sm text-ink-muted">Use your email and password.</p>
-      </div>
+    <div className="auth-backdrop min-h-full">
+      <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-center gap-6 p-6">
+        <div className="flex flex-col items-center gap-3 text-center">
+          {/* The product's mark — the uploaded logo when branding sets one,
+              else the geometric accent-flow mark (`brand-mark.tsx`), on the
+              one page every visitor sees before anything else. */}
+          <BrandMark size={44} />
+          <div>
+            <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">
+              Sign in to {productName}
+            </h1>
+            {/* Body copy is Geist too — the redesign moved the whole app onto
+                the self-hosted face (`styles.css` `--font-sans`), so there is
+                no system-stack line to keep. */}
+            <p className="mt-1.5 text-sm text-ink-muted">Use your email and password.</p>
+          </div>
+        </div>
 
       <form
         className="space-y-4"
@@ -279,6 +289,7 @@ export function LoginPage() {
         <Link to="/forgot-password" className="text-accent underline">
           Forgot password?
         </Link>
+      </div>
       </div>
     </div>
   );

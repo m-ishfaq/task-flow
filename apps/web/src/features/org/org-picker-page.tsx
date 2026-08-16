@@ -80,9 +80,9 @@ export function OrgPickerPage() {
   const isEmpty = orgs.data.length === 0;
 
   return (
-    <div className="mx-auto flex w-full max-w-lg flex-col gap-5 p-6">
+    <div className="mx-auto flex w-full max-w-lg flex-col gap-6 p-8">
       <div>
-        <h1 className="text-lg font-semibold text-ink">
+        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
           {isEmpty ? 'Create your first organization' : 'Choose an organization'}
         </h1>
         <p className="mt-0.5 text-xs text-ink-muted">
@@ -120,7 +120,7 @@ export function OrgPickerPage() {
                 onClick={() => {
                   choose(org.orgId as OrgId);
                 }}
-                className="group flex w-full items-center gap-3 rounded-lg border border-line bg-surface-raised p-3 text-left transition-colors hover:border-accent/40 hover:bg-surface-hover"
+                className="group flex w-full items-center gap-3 rounded-lg border border-line bg-surface-raised p-3 text-left shadow-sm transition-colors hover:border-accent/40 hover:bg-surface-hover"
               >
                 <OrgMark name={org.name} />
 

@@ -293,7 +293,7 @@ export function CallsSection({
 
   return (
     <section className="flex flex-col gap-2 border-t border-line pt-3">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-ink-faint">Calls</h3>
+      <h3 className="text-xs font-semibold text-ink-muted">Calls</h3>
 
       {history.isLoading ? (
         <Skeleton className="h-8 w-full" />
@@ -369,7 +369,7 @@ export function PinnedSection({
 
   return (
     <section className="flex flex-col gap-2 border-t border-line pt-3">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-ink-faint">
+      <h3 className="text-xs font-semibold text-ink-muted">
         Pinned · {rows.length}
       </h3>
 
@@ -438,7 +438,7 @@ export function SavedSection({
 
   return (
     <section className="flex flex-col gap-2 border-t border-line pt-3">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-ink-faint">
+      <h3 className="text-xs font-semibold text-ink-muted">
         Starred by you · {inThisChannel.length}
       </h3>
 
@@ -489,7 +489,7 @@ export function FilesSection({
 
   return (
     <section className="flex flex-col gap-2 border-t border-line pt-3">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-ink-faint">
+      <h3 className="text-xs font-semibold text-ink-muted">
         Files · {(files.data ?? []).length}
       </h3>
 

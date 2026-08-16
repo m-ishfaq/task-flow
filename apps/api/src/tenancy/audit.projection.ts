@@ -162,6 +162,12 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'message.sent': { type: 'message', key: 'messageId' },
   'message.edited': { type: 'message', key: 'messageId' },
   'message.deleted': { type: 'message', key: 'messageId' },
+  /* "Remove for me" — a viewer hid a message from their own list. The
+     message is the subject (the fact recorded is "this message was hidden by
+     whom"), matching its sibling events; `userId` in the payload names the
+     hider but is not the resource, the same split `message.deleted`'s author
+     has. */
+  'message.hidden': { type: 'message', key: 'messageId' },
 
   /* Wave 3 — file sharing and link previews.
 

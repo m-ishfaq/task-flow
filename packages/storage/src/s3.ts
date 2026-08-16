@@ -13,6 +13,7 @@ import type {
   PresignedUpload,
   StorageProvider,
 } from '@taskflow/contracts';
+import { safeDispositionName } from './keys.js';
 
 /**
  * S3-compatible object storage (PLAN.md §5, §8.4).
@@ -140,8 +141,32 @@ export class S3StorageProvider implements StorageProvider {
    * before calling this, and must keep the TTL short. Both are stated on the
    * interface; this implementation only enforces the second.
    */
-  async presignDownload(key: string, expiresInSeconds?: number): Promise<string> {
-    const command = new GetObjectCommand({ Bucket: this.bucket, Key: key });
+  async presignDownload(
+    key: string,
+    expiresInSeconds?: number,
+    filename?: string,
+  ): Promise<string> {
+    const command = new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      /* `ResponseContentDisposition` is what makes the browser DOWNLOAD the
+         object rather than navigate to it: without it a PDF or image opens
+         inline in the tab, which is the "Download did nothing" bug. The name
+         goes through `safeDispositionName` because it lands in a response
+         header verbatim — a filename full of quotes or control characters
+         would end the quoted-string early and let the rest become header
+         parameters (see keys.ts).
+
+         The real filename comes from the DATABASE row, never from a key or a
+         client: the storage key is server-generated and contains nothing a
+         person chose (keys.ts), so the disposition is the one place the
+         human-readable name is allowed to exist. */
+      ...(filename === undefined
+        ? {}
+        : {
+            ResponseContentDisposition: `attachment; filename="${safeDispositionName(filename)}"`,
+          }),
+    });
     return getSignedUrl(this.client, command, {
       expiresIn: expiresInSeconds ?? DEFAULT_DOWNLOAD_TTL_SECONDS,
     });

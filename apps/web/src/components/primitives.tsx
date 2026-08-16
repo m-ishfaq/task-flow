@@ -39,10 +39,16 @@ type ButtonSize = 'sm' | 'md';
  * place.
  */
 const BUTTON_VARIANTS: Readonly<Record<ButtonVariant, string>> = {
-  primary: 'bg-accent text-accent-ink shadow-sm hover:bg-accent-hover',
-  secondary: 'bg-surface-raised text-ink border border-line hover:bg-surface-hover',
+  /* The inset white ring is the machined edge real SaaS buttons have — a
+     flat colour block on a dark surface reads as a sticker, and a hairline
+     highlight along the top edge is what makes it read as a physical
+     control. On the accent fill it is nearly invisible, which is the point:
+     it is a boundary, not a decoration. */
+  primary:
+    'bg-accent text-accent-ink shadow-sm ring-1 ring-inset ring-white/10 hover:bg-accent-hover',
+  secondary: 'bg-surface-raised text-ink border border-line shadow-sm hover:bg-surface-hover',
   ghost: 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-  danger: 'bg-danger text-danger-ink hover:opacity-90',
+  danger: 'bg-danger text-danger-ink shadow-sm ring-1 ring-inset ring-white/10 hover:opacity-90',
 };
 
 const BUTTON_SIZES: Readonly<Record<ButtonSize, string>> = {
@@ -88,16 +94,16 @@ export function Input({ className, ...props }: InputProps) {
   return (
     <input
       className={cn(
-        'h-9 w-full rounded border border-line bg-surface-sunken px-2.5 text-sm text-ink transition-colors',
+        'h-9 w-full rounded-md border border-line bg-surface-sunken px-2.5 text-sm text-ink transition-all',
         /* `focus:bg-surface` — a step lighter than the resting `surface-sunken`
            — is the "considered" touch here: a field that visibly comes
-           forward when it takes focus, rather than only its border changing
-           color. Deliberately not a `focus:ring-*` glow layered under the
-           existing global `:focus-visible` outline (`styles.css`) — that
-           outline is load-bearing for the board's keyboard drag path, and a
-           second ring on top of it read as a thick double-border rather than
-           an addition. */
-        'placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:outline-none',
+           forward when it takes focus. A soft `ring-2` at 25% accent is the
+           same glow the focused select gets, so every form control in the
+           app announces focus the same way; it sits OUTSIDE the border where
+           the global `:focus-visible` outline lives, so the two do not
+           collide — and `:focus-visible` never fires for a mouse click
+           anyway, which is the case this ring is for. */
+        'placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:outline-none',
         'disabled:opacity-50',
         className,
       )}
@@ -133,9 +139,9 @@ export function Textarea({ className, ...props }: TextareaProps) {
   return (
     <textarea
       className={cn(
-        'w-full rounded border border-line bg-surface-sunken px-2.5 py-2 text-sm text-ink transition-colors',
+        'w-full rounded-md border border-line bg-surface-sunken px-2.5 py-2 text-sm text-ink transition-all',
         /* Same reasoning as Input's `focus:bg-surface` above. */
-        'placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:outline-none',
+        'placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:outline-none',
         className,
       )}
       {...props}
@@ -202,7 +208,14 @@ export function Badge({ children, className, title }: BadgeProps) {
     <span
       title={title}
       className={cn(
-        'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium',
+        /* `text-xs`, not the 11px this used to be. 11px is below the floor the
+           UI/UX redesign pass sets for anything a person reads by scanning —
+           badge text was the single most common 11px offender (292 instances
+           of 9-11px across the app), and a count or a role label is read far
+           more often than it is decorative. The slightly larger footprint is
+           the same 12px the board's other metadata uses, so badges sit level
+           with their neighbours rather than one size down from them. */
+        'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium',
         'bg-surface-hover text-ink-muted',
         className,
       )}
@@ -281,7 +294,10 @@ export function Avatar({ userId, label, size = 'sm', className }: AvatarProps) {
       className={cn(
         'inline-flex shrink-0 items-center justify-center rounded-full font-medium text-white',
         'ring-1 ring-surface-raised',
-        size === 'xs' ? 'size-5 text-[9px]' : 'size-6 text-[10px]',
+        /* 10/11px initials, not the 9/10px this used to be — two characters in
+           9px on a 20px disc are a smudge, and initials are the identifier a
+           stack of avatars is scanned by. */
+        size === 'xs' ? 'size-5 text-[10px]' : 'size-6 text-[11px]',
         className,
       )}
     >
@@ -322,7 +338,7 @@ export function AvatarStack({
           className={cn(
             'inline-flex shrink-0 items-center justify-center rounded-full',
             'bg-surface-hover text-ink-muted ring-1 ring-surface-raised',
-            size === 'xs' ? 'size-5 text-[9px]' : 'size-6 text-[10px]',
+            size === 'xs' ? 'size-5 text-[10px]' : 'size-6 text-[11px]',
           )}
         >
           +{hidden.length}
@@ -394,21 +410,38 @@ export function SkeletonRows({
  * Distinct from an error and from a spinner on purpose. Rendering nothing for
  * all three makes "you have no projects", "the request failed", and "still
  * loading" indistinguishable, and the user's next action differs in each case.
+ *
+ * The redesign pass's version: an optional icon in a ringed disc (the same
+ * container the app uses for its other lone-glyph moments), a larger
+ * max-width'd description, and a touch more vertical room. An empty state is
+ * where a product has the most freedom to look designed, because nothing is
+ * competing with it — a bare dashed box reads as "unfinished", which is the
+ * exact impression a demo with no data leaves.
  */
 export function Empty({
   title,
   description,
   action,
+  icon,
 }: {
   readonly title: string;
   readonly description?: string;
   readonly action?: ReactNode;
+  /** A lone glyph above the title — the same "icon in a disc" shape the app uses elsewhere. */
+  readonly icon?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded border border-dashed border-line p-8 text-center">
-      <p className="text-sm font-medium text-ink">{title}</p>
-      {description !== undefined && <p className="text-xs text-ink-muted">{description}</p>}
-      {action}
+    <div className="flex flex-col items-center justify-center gap-2.5 rounded-card border border-dashed border-line bg-surface-sunken/40 p-10 text-center">
+      {icon !== undefined && (
+        <span className="mb-1 flex size-11 items-center justify-center rounded-full bg-surface-raised text-ink-faint ring-1 ring-line">
+          {icon}
+        </span>
+      )}
+      <p className="text-[15px] font-semibold text-ink">{title}</p>
+      {description !== undefined && (
+        <p className="max-w-sm text-[13px] leading-relaxed text-ink-muted">{description}</p>
+      )}
+      {action !== undefined && <div className="mt-1">{action}</div>}
     </div>
   );
 }
@@ -423,10 +456,49 @@ export function Empty({
  * -------------------------------------------------------------------------- */
 
 /**
+ * The page header — one pattern for every surface in the app.
+ *
+ * Before this, every page hand-rolled its own `h1 + p` block and they had
+ * drifted into four different sizes and rhythms (`text-base`, `text-lg`, one
+ * at `text-xl`), which is exactly how an app reads as "assembled" rather than
+ * designed. One component, `font-display` (Geist) at `text-xl` like the login
+ * page's own heading, description at `text-sm`, actions pinned right — the
+ * same hierarchy Linear/ClickUp/Twilio use on every one of their pages.
+ */
+export function PageHeader({
+  title,
+  description,
+  actions,
+}: {
+  readonly title: string;
+  readonly description?: string | undefined;
+  readonly actions?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0">
+        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">{title}</h1>
+        {description !== undefined && (
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-ink-muted">{description}</p>
+        )}
+      </div>
+      {actions !== undefined && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+    </div>
+  );
+}
+
+/**
  * A titled block, with an optional count and description.
  *
  * Exists because the heading markup was duplicated eight times and had already
  * drifted: two spacing rhythms, and sections that silently lacked a description.
+ *
+ * The redesign pass moved the title off the ALL-CAPS micro-label (`text-xs
+ * uppercase`) onto a sentence-case 13px heading. Uppercase micro-labels are
+ * the visual signature of a default admin panel — real SaaS settings surfaces
+ * (Linear, Twilio console, Stripe) set section titles in the same size and
+ * weight as the content around them, one rung below the page title, and let
+ * the type hierarchy carry the grouping instead of the tracking.
  */
 export function Section({
   title,
@@ -445,10 +517,10 @@ export function Section({
   return (
     <section className="space-y-3">
       <div className="flex items-center gap-2">
-        <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">{title}</h2>
+        <h2 className="text-[13px] font-semibold text-ink">{title}</h2>
         {count !== undefined && <Badge>{count}</Badge>}
       </div>
-      {description !== undefined && <p className="text-xs text-ink-muted">{description}</p>}
+      {description !== undefined && <p className="text-[13px] leading-relaxed text-ink-muted">{description}</p>}
       {children}
     </section>
   );

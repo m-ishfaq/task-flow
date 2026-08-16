@@ -214,7 +214,7 @@ describe('channel visibility', () => {
     const bob = await actorFor(orgId, BOB, 'member');
     const visible = await channels.listChannels(bob);
 
-    expect(visible.map((channel) => channel.name)).toEqual(['general']);
+    expect(visible.channels.map((channel) => channel.name)).toEqual(['general']);
   });
 
   it('refuses a second channel with the same name', async () => {
@@ -429,6 +429,59 @@ describe('messages', () => {
     expect(tombstone).toBeDefined();
     expect(tombstone?.body).toBeNull();
     expect(tombstone?.bodyText).toBe('');
+  });
+
+  it('hides a message for the viewer only — everyone else still sees it', async () => {
+    const { orgId, alice } = await scaffold('hide-per-viewer');
+    const channel = await channels.createChannel(alice, { type: 'public', name: 'general' });
+
+    const bob = await actorFor(orgId, BOB, 'member');
+    const carol = await actorFor(orgId, CAROL, 'member');
+    const posted = await messages.sendMessage(bob, {
+      channelId: channel.channelId,
+      body: body('bob wrote this'),
+    });
+
+    // A plain member hides someone else's message — "remove for me" needs no
+    // moderation permission, it only changes the hider's own list.
+    await expect(messages.hideMessage(bob, { messageId: posted.messageId })).resolves.toEqual({
+      hidden: true,
+    });
+
+    const forBob = await messages.listMessages(bob, { channelId: channel.channelId });
+    expect(forBob.find((message) => message.messageId === posted.messageId)).toBeUndefined();
+
+    // Carol, who never hid it, still reads it.
+    const forCarol = await messages.listMessages(carol, { channelId: channel.channelId });
+    const visible = forCarol.find((message) => message.messageId === posted.messageId);
+    expect(visible).toBeDefined();
+    expect(visible?.bodyText).toBe('bob wrote this');
+  });
+
+  it('hides a message only for the hider, not for the author', async () => {
+    const { orgId, alice } = await scaffold('hide-author-keeps');
+    const channel = await channels.createChannel(alice, { type: 'public', name: 'general' });
+
+    const bob = await actorFor(orgId, BOB, 'member');
+    const posted = await messages.sendMessage(bob, {
+      channelId: channel.channelId,
+      body: body('still mine'),
+    });
+
+    // The AUTHOR hides their own message from their view — the row must not
+    // affect what the hider sees anywhere else, and hiding is not deletion.
+    await messages.hideMessage(bob, { messageId: posted.messageId });
+
+    const forAlice = await messages.listMessages(alice, { channelId: channel.channelId });
+    const visible = forAlice.find((message) => message.messageId === posted.messageId);
+    expect(visible).toBeDefined();
+    expect(visible?.bodyText).toBe('still mine');
+
+    // Hiding again is idempotent — the composite PK is (user, message), so a
+    // second hide of the same message must not violate it.
+    await expect(messages.hideMessage(bob, { messageId: posted.messageId })).resolves.toEqual({
+      hidden: true,
+    });
   });
 
   it('refuses a reply to a message in a different channel', async () => {

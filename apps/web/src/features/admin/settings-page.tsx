@@ -18,6 +18,7 @@ import {
   Empty,
   Field,
   Input,
+  PageHeader,
   Section,
   SkeletonRows,
 } from '../../components/primitives.js';
@@ -55,19 +56,19 @@ export function SettingsPage() {
   const orgId = useSession((state) => state.orgId) ?? '';
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-10 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-ink">Organization settings</h1>
-          <p className="text-xs text-ink-muted">Members, teams, and who can reach what.</p>
-        </div>
-        <Link
-          to="/settings/audit"
-          className="rounded border border-line px-2 py-1 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
-        >
-          Audit log
-        </Link>
-      </div>
+    <div className="mx-auto flex max-w-3xl flex-col gap-9 p-8">
+      <PageHeader
+        title="Organization settings"
+        description="Members, teams, and who can reach what."
+        actions={
+          <Link
+            to="/settings/audit"
+            className="rounded border border-line px-2.5 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
+          >
+            Audit log
+          </Link>
+        }
+      />
 
       <OrgSection orgId={orgId} />
       <BillingSection orgId={orgId} />
@@ -704,7 +705,7 @@ function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCa
   const candidates = orgMembers.filter((member) => !onTeam.has(member.userId));
 
   return (
-    <li className="rounded-lg border border-line bg-surface-raised p-3">
+    <li className="rounded-lg border border-line bg-surface-raised p-3 shadow-sm">
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-ink">{team.name}</span>
         <span className="font-mono text-[11px] text-ink-faint">{team.slug}</span>

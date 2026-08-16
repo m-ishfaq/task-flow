@@ -97,7 +97,10 @@ export function CardTile({
       <span className="block text-sm leading-snug text-ink">{card.title}</span>
 
       <div className="mt-2 flex items-center gap-1.5">
-        <span className="font-mono text-[11px] text-ink-faint">{card.reference}</span>
+        {/* 12px, not the 11px this used to be — the reference is one of the
+            most-scanned pieces of a tile, and 11px sat below the pass's
+            readability floor for anything read repeatedly. */}
+        <span className="font-mono text-xs text-ink-faint">{card.reference}</span>
 
         {due !== null && (
           <Badge className={cn(due.overdue && 'bg-danger/20 text-danger')}>{due.label}</Badge>
@@ -132,7 +135,11 @@ export function CardTile({
   );
 
   const tileClassName = cn(
-    'relative w-full overflow-hidden rounded-card border border-line bg-surface-raised px-2.5 py-2 text-left',
+    /* `shadow-sm` separates the tile from its sunken column by DEPTH rather
+       than by border alone — the border stays (it survives on any surface)
+       but the resting shadow is what makes the stack of cards read as
+       elevated objects on the board. */
+    'relative w-full overflow-hidden rounded-card border border-line bg-surface-raised px-3 py-2.5 text-left shadow-sm',
     'transition-[color,background-color,border-color,box-shadow,transform] duration-[var(--motion-fast)] ease-[var(--motion-ease)]',
     dragging
       ? /* The dragged tile's OWN transform stays inert — see SortableCard's

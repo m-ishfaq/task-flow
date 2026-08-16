@@ -152,7 +152,7 @@ function ChannelPicker({ orgId, value, onChange, label }: PickerProps) {
       /* DMs are excluded: a rule posting into someone's direct message is
          either a mistake or a thing that should be a notification, and the
          channel a rule posts to should be one other people can see. */
-      options={(channels.data ?? [])
+      options={(channels.data?.channels ?? [])
         .filter((channel) => channel.type !== 'dm' && channel.type !== 'group_dm')
         .map((channel) => ({ id: channel.channelId, name: `#${channel.name ?? 'channel'}` }))}
       emptyText="No channels"

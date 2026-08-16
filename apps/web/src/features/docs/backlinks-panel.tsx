@@ -29,7 +29,7 @@ export function BacklinksPanel({
 
   return (
     <div className="space-y-2">
-      <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
+      <h3 className="text-[13px] font-semibold text-ink">
         What links here
       </h3>
 

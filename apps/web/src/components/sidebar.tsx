@@ -321,7 +321,7 @@ export function Sidebar() {
             <Link
               to="/projects"
               className={cn(
-                'relative mb-1 flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-semibold tracking-wide uppercase',
+                'relative mb-1 flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold tracking-wide uppercase',
                 'text-ink-faint hover:bg-surface-hover hover:text-ink',
               )}
               activeProps={{
@@ -703,7 +703,7 @@ function PinnedBoards() {
 
   return (
     <>
-      <p className="flex items-center gap-1.5 px-2 pb-1 text-[10px] font-semibold tracking-wide text-ink-faint uppercase">
+      <p className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
         <Pin aria-hidden="true" className="size-3" strokeWidth={2.25} />
         Pinned
       </p>

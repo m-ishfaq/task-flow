@@ -48,13 +48,13 @@ export function ListColumn({ orgId, boardId, list, count, siblings, children }: 
         isOver && 'ring-1 ring-accent',
       )}
     >
-      <header className="flex items-center justify-between gap-1 px-3 py-2">
-        <h2 className="min-w-0 flex-1 truncate text-xs font-semibold tracking-wide text-ink-muted uppercase">
+      <header className="flex items-center justify-between gap-1 px-3 py-2.5">
+        <h2 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
           {list.name}
         </h2>
         <span
           className={cn(
-            'font-mono text-[11px] text-ink-faint',
+            'font-mono text-xs text-ink-faint',
             overLimit && 'font-semibold text-warning',
           )}
           title={

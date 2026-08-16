@@ -58,8 +58,16 @@ export interface StorageProvider {
    * Callers must perform an authorization check immediately before calling this
    * — the URL itself carries no identity, so anyone holding it can fetch the
    * object until it expires. Keep `expiresInSeconds` small (default 60).
+   *
+   * `filename` — when given, the URL's response carries a
+   * `Content-Disposition: attachment` header naming it, so the browser
+   * DOWNLOADS the object under the caller's real filename instead of
+   * navigating to it and rendering it inline (a PDF or image opened in the
+   * tab is the "Download did nothing" bug). The value travels through the
+   * storage layer's own sanitizer (`safeDispositionName`) because it lands in
+   * a response header verbatim.
    */
-  presignDownload(key: string, expiresInSeconds?: number): Promise<string>;
+  presignDownload(key: string, expiresInSeconds?: number, filename?: string): Promise<string>;
 
   /** Reads object metadata. Used to verify a claimed upload actually landed. */
   head(key: string): Promise<ObjectMetadata | undefined>;

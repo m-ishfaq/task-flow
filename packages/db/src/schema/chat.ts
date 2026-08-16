@@ -177,8 +177,29 @@ export const messageReactions = chat.table(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    primaryKey({ columns: [table.messageId, table.userId, table.emoji] }),
+    /* ONE current reaction per person per message (migration 0076): the PK is
+       (message_id, user_id), so reacting with a second emoji REPLACES the
+       first — a row is a person's reaction slot, not one of their reactions.
+       Same-emoji toggle-off and replace-both directions live in the service;
+       the constraint is what makes two reactions ever coexisting impossible. */
+    primaryKey({ columns: [table.messageId, table.userId] }),
     index('message_reactions_message_idx').on(table.orgId, table.messageId),
+  ],
+);
+
+export const messageHidden = chat.table(
+  'message_hidden',
+  {
+    orgId: uuid('org_id').notNull(),
+    channelId: uuid('channel_id').notNull(),
+    messageId: uuid('message_id').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('message_hidden_user_idx').on(table.orgId, table.userId, table.messageId),
   ],
 );
 

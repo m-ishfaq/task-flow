@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../../lib/trpc.js';
 import { Button, Field, Input } from '../../components/primitives.js';
+import { BrandMark } from '../../components/brand-mark.js';
 import { ErrorView } from '../../components/error-view.js';
 import { fieldError, fieldErrors } from '../../lib/field-errors.js';
 
@@ -41,22 +42,32 @@ export function RegisterPage() {
 
   if (create.isSuccess) {
     return (
-      <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-4 p-6">
-        <h1 className="text-lg font-semibold text-ink">Check your email</h1>
-        <p className="text-sm text-ink-muted">
-          If that address can be registered, a verification link is on its way. The link is
-          single-use and expires.
-        </p>
-        <Link to="/login" className="text-sm text-accent underline">
-          Back to sign in
-        </Link>
+      <div className="auth-backdrop min-h-full">
+        <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-4 p-6">
+          <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
+            Check your email
+          </h1>
+          <p className="text-sm text-ink-muted">
+            If that address can be registered, a verification link is on its way. The link is
+            single-use and expires.
+          </p>
+          <Link to="/login" className="text-sm text-accent underline">
+            Back to sign in
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-6 p-6">
-      <h1 className="text-lg font-semibold text-ink">Create an account</h1>
+    <div className="auth-backdrop min-h-full">
+      <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-center gap-6 p-6">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <BrandMark size={44} />
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">
+            Create an account
+          </h1>
+        </div>
 
       <form
         className="space-y-4"
@@ -134,6 +145,7 @@ export function RegisterPage() {
           Sign in
         </Link>
       </p>
+      </div>
     </div>
   );
 }

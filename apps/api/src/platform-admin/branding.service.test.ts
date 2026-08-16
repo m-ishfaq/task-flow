@@ -137,6 +137,12 @@ beforeAll(async () => {
   admin = await connectAsMigrator();
 
   await admin.setOrg(null);
+  /* Children before parents (the `clearTenant` discipline): the sibling
+     operations suite leaves operator_audit_log rows pointing at the same
+     OPERATOR id, and this suite's own previous run leaves the singleton's
+     `updated_by` set — both must go before the user row. */
+  await admin.query(`DELETE FROM platform.operator_audit_log`);
+  await admin.query(`UPDATE platform.branding SET updated_by = NULL WHERE id = true`);
   await admin.query(`DELETE FROM identity.users WHERE id = $1`, [OPERATOR]);
   await admin.query(
     `INSERT INTO identity.users (id, email, email_normalized, email_verified_at)
@@ -178,7 +184,23 @@ beforeEach(async () => {
   );
 });
 
+/* Leave the global tables pristine for whatever runs next — the operations
+   suite's beforeAll deletes the SAME OPERATOR user and would die on the
+   operator chain rows and the singleton's `updated_by` otherwise. Same
+   children-before-parents order the beforeEach already uses. */
 afterAll(async () => {
+  await admin.setOrg(null);
+  await admin.query(`DELETE FROM platform.operator_audit_log`);
+  await admin.query(
+    `UPDATE platform.branding
+     SET product_name = 'TaskFlow', logo_key = NULL, favicon_key = NULL,
+         palette_id = 'default', updated_by = NULL, updated_at = now()
+     WHERE id = true`,
+  );
+  await admin.query(
+    `UPDATE platform.operator_chain_head SET seq = 0, hash = '\\x'::bytea WHERE id = true`,
+  );
+  await admin.query(`DELETE FROM identity.users WHERE id = $1`, [OPERATOR]);
   await closeDatabase();
 });
 
