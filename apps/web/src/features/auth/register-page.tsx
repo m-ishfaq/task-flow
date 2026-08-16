@@ -69,82 +69,82 @@ export function RegisterPage() {
           </h1>
         </div>
 
-      <form
-        className="space-y-4"
-        onSubmit={(event) => {
-          void handleSubmit((values) => {
-            create.mutate(values);
-          })(event);
-        }}
-      >
-        {/* The reason comes from the SERVER's `details`, never from a rule
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            void handleSubmit((values) => {
+              create.mutate(values);
+            })(event);
+          }}
+        >
+          {/* The reason comes from the SERVER's `details`, never from a rule
             restated here. `Password` is `z.string().min(12)` in the API's
             router and nowhere else; a `minLength: 12` in this form would be a
             second copy of that number, free to drift the moment the policy
             changes — and the copy users see would be the one nobody tests. */}
-        {/* Required, matching the API. Without it every surface that shows a
+          {/* Required, matching the API. Without it every surface that shows a
             person falls back to their email address — which quietly discloses
             it to everyone who can see a member list, a mention or an audit
             entry. One field at signup is the cheaper side of that trade. */}
-        <Field label="Name" htmlFor="name" error={fieldError(create.error, 'name')}>
-          <Input
-            id="name"
-            type="text"
-            autoComplete="name"
-            aria-describedby={
-              fieldError(create.error, 'name') === undefined ? undefined : 'name-error'
-            }
-            {...register('name', { required: true })}
-          />
-        </Field>
+          <Field label="Name" htmlFor="name" error={fieldError(create.error, 'name')}>
+            <Input
+              id="name"
+              type="text"
+              autoComplete="name"
+              aria-describedby={
+                fieldError(create.error, 'name') === undefined ? undefined : 'name-error'
+              }
+              {...register('name', { required: true })}
+            />
+          </Field>
 
-        <Field label="Email" htmlFor="email" error={fieldError(create.error, 'email')}>
-          <Input
-            id="email"
-            type="email"
-            autoComplete="username"
-            aria-describedby={
-              fieldError(create.error, 'email') === undefined ? undefined : 'email-error'
-            }
-            {...register('email', { required: true })}
-          />
-        </Field>
+          <Field label="Email" htmlFor="email" error={fieldError(create.error, 'email')}>
+            <Input
+              id="email"
+              type="email"
+              autoComplete="username"
+              aria-describedby={
+                fieldError(create.error, 'email') === undefined ? undefined : 'email-error'
+              }
+              {...register('email', { required: true })}
+            />
+          </Field>
 
-        <Field
-          label="Password"
-          htmlFor="password"
-          hint="At least 12 characters. Checked against known breach corpora."
-          error={fieldError(create.error, 'password')}
-        >
-          <Input
-            id="password"
-            type="password"
-            autoComplete="new-password"
-            aria-describedby={
-              fieldError(create.error, 'password') === undefined ? undefined : 'password-error'
-            }
-            {...register('password', { required: true })}
-          />
-        </Field>
+          <Field
+            label="Password"
+            htmlFor="password"
+            hint="At least 12 characters. Checked against known breach corpora."
+            error={fieldError(create.error, 'password')}
+          >
+            <Input
+              id="password"
+              type="password"
+              autoComplete="new-password"
+              aria-describedby={
+                fieldError(create.error, 'password') === undefined ? undefined : 'password-error'
+              }
+              {...register('password', { required: true })}
+            />
+          </Field>
 
-        {/* Only shown when the failure was not attributable to a field — a rate
+          {/* Only shown when the failure was not attributable to a field — a rate
             limit, an outage. A duplicate banner repeating what is already
             beside the input trains people to ignore both. */}
-        {create.isError && fieldErrors(create.error).length === 0 && (
-          <ErrorView error={create.error} />
-        )}
+          {create.isError && fieldErrors(create.error).length === 0 && (
+            <ErrorView error={create.error} />
+          )}
 
-        <Button type="submit" variant="primary" className="w-full" disabled={create.isPending}>
-          {create.isPending ? 'Creating…' : 'Create account'}
-        </Button>
-      </form>
+          <Button type="submit" variant="primary" className="w-full" disabled={create.isPending}>
+            {create.isPending ? 'Creating…' : 'Create account'}
+          </Button>
+        </form>
 
-      <p className="text-sm text-ink-muted">
-        Already have one?{' '}
-        <Link to="/login" className="text-accent underline">
-          Sign in
-        </Link>
-      </p>
+        <p className="text-sm text-ink-muted">
+          Already have one?{' '}
+          <Link to="/login" className="text-accent underline">
+            Sign in
+          </Link>
+        </p>
       </div>
     </div>
   );

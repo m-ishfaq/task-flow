@@ -206,14 +206,9 @@ export const messagesModule = defineSeedModule({
              collide and fail the whole insert rather than one row. */
           const reactedBy = new Set<string>();
           for (const emoji of rng.sample(EMOJI_PALETTE, emojiCount)) {
-            const available = channel.members.filter(
-              (member) => !reactedBy.has(member.user.id),
-            );
+            const available = channel.members.filter((member) => !reactedBy.has(member.user.id));
             if (available.length === 0) break;
-            const reactors = rng.sample(
-              available,
-              rng.int(1, Math.min(4, available.length)),
-            );
+            const reactors = rng.sample(available, rng.int(1, Math.min(4, available.length)));
             for (const reactor of reactors) {
               reactedBy.add(reactor.user.id);
               const reactedAt = minutesAfter(draft.createdAt, rng.int(1, 240));

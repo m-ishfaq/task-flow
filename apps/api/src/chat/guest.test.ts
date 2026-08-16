@@ -249,7 +249,9 @@ describe('a guest granted one channel', () => {
 
     const guest = await actorFor(orgId, GUEST, 'guest');
 
-    expect((await channels.listChannels(guest)).channels.map((row) => row.name)).toEqual(['project-x']);
+    expect((await channels.listChannels(guest)).channels.map((row) => row.name)).toEqual([
+      'project-x',
+    ]);
     expect(
       await rejectionCode(() => channels.getChannel(guest, { channelId: other.channelId })),
     ).toBe('NOT_FOUND');

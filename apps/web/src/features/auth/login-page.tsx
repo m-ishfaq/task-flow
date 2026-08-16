@@ -144,152 +144,152 @@ export function LoginPage() {
           </div>
         </div>
 
-      <form
-        className="space-y-4"
-        onSubmit={(event) => {
-          void handleSubmit((values) => {
-            signIn.mutate(values);
-          })(event);
-        }}
-      >
-        <Field label="Email" htmlFor="email">
-          <Input
-            id="email"
-            type="email"
-            autoComplete="username"
-            {...register('email', { required: true })}
-          />
-        </Field>
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            void handleSubmit((values) => {
+              signIn.mutate(values);
+            })(event);
+          }}
+        >
+          <Field label="Email" htmlFor="email">
+            <Input
+              id="email"
+              type="email"
+              autoComplete="username"
+              {...register('email', { required: true })}
+            />
+          </Field>
 
-        <Field label="Password" htmlFor="password">
-          <Input
-            id="password"
-            type="password"
-            autoComplete="current-password"
-            {...register('password', { required: true })}
-          />
-        </Field>
+          <Field label="Password" htmlFor="password">
+            <Input
+              id="password"
+              type="password"
+              autoComplete="current-password"
+              {...register('password', { required: true })}
+            />
+          </Field>
 
-        {/* EMAIL_NOT_VERIFIED gets its own block — the plain ErrorView leaves
+          {/* EMAIL_NOT_VERIFIED gets its own block — the plain ErrorView leaves
             someone whose original mail never arrived with no way forward but
             to keep resubmitting the same form. Everything else (wrong
             password, unknown address, locked, suspended — all
             INVALID_CREDENTIALS, indistinguishable on purpose) still falls
             through to ErrorView. */}
-        {signIn.isError &&
-          (errorCodeOf(signIn.error) === 'EMAIL_NOT_VERIFIED' ? (
-            <div className="rounded-md border border-line bg-surface-sunken p-3 text-sm">
-              <p className="text-ink">
-                {apiErrorOf(signIn.error)?.error.message ??
-                  'Please verify your email address before signing in.'}
-              </p>
-              {resendVerification.isSuccess ? (
-                <p className="mt-1.5 text-xs text-ink-muted">
-                  If that address has an account, a new link is on its way.
+          {signIn.isError &&
+            (errorCodeOf(signIn.error) === 'EMAIL_NOT_VERIFIED' ? (
+              <div className="rounded-md border border-line bg-surface-sunken p-3 text-sm">
+                <p className="text-ink">
+                  {apiErrorOf(signIn.error)?.error.message ??
+                    'Please verify your email address before signing in.'}
                 </p>
-              ) : (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  className="mt-1.5"
-                  disabled={resendVerification.isPending}
-                  onClick={() => {
-                    const email = signIn.variables?.email;
-                    if (email !== undefined) resendVerification.mutate(email);
-                  }}
-                >
-                  {resendVerification.isPending ? 'Sending…' : 'Resend verification email'}
-                </Button>
-              )}
-              {resendVerification.isError && <ErrorView error={resendVerification.error} />}
-            </div>
-          ) : (
-            <ErrorView error={signIn.error} />
-          ))}
+                {resendVerification.isSuccess ? (
+                  <p className="mt-1.5 text-xs text-ink-muted">
+                    If that address has an account, a new link is on its way.
+                  </p>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="mt-1.5"
+                    disabled={resendVerification.isPending}
+                    onClick={() => {
+                      const email = signIn.variables?.email;
+                      if (email !== undefined) resendVerification.mutate(email);
+                    }}
+                  >
+                    {resendVerification.isPending ? 'Sending…' : 'Resend verification email'}
+                  </Button>
+                )}
+                {resendVerification.isError && <ErrorView error={resendVerification.error} />}
+              </div>
+            ) : (
+              <ErrorView error={signIn.error} />
+            ))}
 
-        <Button
-          type="submit"
-          variant="primary"
-          className="w-full"
-          disabled={signIn.isPending || formState.isSubmitting}
-        >
-          {signIn.isPending ? 'Signing in…' : 'Sign in'}
-        </Button>
-      </form>
-
-      <div className="space-y-2 border-t border-line pt-4">
-        {passkeySupported ? (
           <Button
-            variant="secondary"
+            type="submit"
+            variant="primary"
             className="w-full"
-            disabled={signInWithPasskeyMutation.isPending}
-            onClick={() => {
-              signInWithPasskeyMutation.mutate();
-            }}
+            disabled={signIn.isPending || formState.isSubmitting}
           >
-            {signInWithPasskeyMutation.isPending
-              ? 'Waiting for your passkey…'
-              : 'Sign in with a passkey'}
+            {signIn.isPending ? 'Signing in…' : 'Sign in'}
           </Button>
-        ) : (
-          <p className="text-xs text-ink-faint">
-            This browser does not support passkeys. Use your email and password instead.
-          </p>
-        )}
+        </form>
 
-        {/* A cancelled or timed-out ceremony (§8.1: both report as the same
+        <div className="space-y-2 border-t border-line pt-4">
+          {passkeySupported ? (
+            <Button
+              variant="secondary"
+              className="w-full"
+              disabled={signInWithPasskeyMutation.isPending}
+              onClick={() => {
+                signInWithPasskeyMutation.mutate();
+              }}
+            >
+              {signInWithPasskeyMutation.isPending
+                ? 'Waiting for your passkey…'
+                : 'Sign in with a passkey'}
+            </Button>
+          ) : (
+            <p className="text-xs text-ink-faint">
+              This browser does not support passkeys. Use your email and password instead.
+            </p>
+          )}
+
+          {/* A cancelled or timed-out ceremony (§8.1: both report as the same
             `NotAllowedError`) shows nothing — it is not a failure, it is the
             user closing a prompt. Everything else gets a message: a genuine
             ceremony problem from `passkeyCeremonyMessage`, or the server's own
             answer via `ErrorView` for a completed-but-rejected assertion. */}
-        {signInWithPasskeyMutation.isError &&
-          (signInWithPasskeyMutation.error instanceof PasskeyCeremonyError ? (
-            passkeyCeremonyMessage(signInWithPasskeyMutation.error.reason, productName) !==
-              null && (
-              <p role="alert" className="text-xs text-danger">
-                {passkeyCeremonyMessage(signInWithPasskeyMutation.error.reason, productName)}
-              </p>
-            )
-          ) : (
-            <ErrorView error={signInWithPasskeyMutation.error} />
-          ))}
+          {signInWithPasskeyMutation.isError &&
+            (signInWithPasskeyMutation.error instanceof PasskeyCeremonyError ? (
+              passkeyCeremonyMessage(signInWithPasskeyMutation.error.reason, productName) !==
+                null && (
+                <p role="alert" className="text-xs text-danger">
+                  {passkeyCeremonyMessage(signInWithPasskeyMutation.error.reason, productName)}
+                </p>
+              )
+            ) : (
+              <ErrorView error={signInWithPasskeyMutation.error} />
+            ))}
 
-        {/* An unconfigured provider renders no button at all (§3.3) rather
+          {/* An unconfigured provider renders no button at all (§3.3) rather
             than one that always fails — `oauthProviders.data` is undefined
             while loading, so nothing here flashes on then off. */}
-        {(['google', 'github'] as const).map(
-          (provider) =>
-            oauthProviders.data?.[provider] === true && (
-              <Button
-                key={provider}
-                variant="secondary"
-                className="w-full"
-                disabled={startOAuth.isPending}
-                onClick={() => {
-                  startOAuth.mutate(provider);
-                }}
-              >
-                {startOAuth.isPending && startOAuth.variables === provider
-                  ? 'Redirecting…'
-                  : `Sign in with ${OAUTH_PROVIDER_LABEL[provider]}`}
-              </Button>
-            ),
-        )}
-        {startOAuth.isError && <ErrorView error={startOAuth.error} />}
-      </div>
+          {(['google', 'github'] as const).map(
+            (provider) =>
+              oauthProviders.data?.[provider] === true && (
+                <Button
+                  key={provider}
+                  variant="secondary"
+                  className="w-full"
+                  disabled={startOAuth.isPending}
+                  onClick={() => {
+                    startOAuth.mutate(provider);
+                  }}
+                >
+                  {startOAuth.isPending && startOAuth.variables === provider
+                    ? 'Redirecting…'
+                    : `Sign in with ${OAUTH_PROVIDER_LABEL[provider]}`}
+                </Button>
+              ),
+          )}
+          {startOAuth.isError && <ErrorView error={startOAuth.error} />}
+        </div>
 
-      <div className="flex justify-between text-sm text-ink-muted">
-        <span>
-          No account?{' '}
-          <Link to="/register" className="text-accent underline">
-            Create one
+        <div className="flex justify-between text-sm text-ink-muted">
+          <span>
+            No account?{' '}
+            <Link to="/register" className="text-accent underline">
+              Create one
+            </Link>
+          </span>
+          <Link to="/forgot-password" className="text-accent underline">
+            Forgot password?
           </Link>
-        </span>
-        <Link to="/forgot-password" className="text-accent underline">
-          Forgot password?
-        </Link>
-      </div>
+        </div>
       </div>
     </div>
   );

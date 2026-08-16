@@ -193,7 +193,9 @@ export async function listChannels(actor: ChatActor): Promise<ChannelList> {
         archivedAt: row.archivedAt,
         createdAt: row.createdAt,
         joined: joinedIds.has(row.id),
-        participantIds: [...(membersByChannel.get(row.id) ?? [])].filter((userId) => userId !== self),
+        participantIds: [...(membersByChannel.get(row.id) ?? [])].filter(
+          (userId) => userId !== self,
+        ),
       })),
     };
   });

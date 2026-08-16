@@ -35,7 +35,9 @@ export function ResetPasswordPage() {
   if (token === undefined) {
     return (
       <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-4 p-6">
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Reset your password</h1>
+        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
+          Reset your password
+        </h1>
         <p className="text-sm text-ink-muted">
           This link is missing its token. Copy the whole URL from the email, including everything
           after the question mark.
@@ -50,7 +52,9 @@ export function ResetPasswordPage() {
   if (reset.isSuccess) {
     return (
       <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-4 p-6">
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Password changed</h1>
+        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
+          Password changed
+        </h1>
         <p className="text-sm text-ink-muted">
           Every other session was signed out. Sign in with your new password.
         </p>
@@ -63,7 +67,9 @@ export function ResetPasswordPage() {
 
   return (
     <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-6 p-6">
-      <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Choose a new password</h1>
+      <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
+        Choose a new password
+      </h1>
 
       <form
         className="space-y-4"

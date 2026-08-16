@@ -154,7 +154,10 @@ export async function listMessages(
           notHiddenBy(actor, tx),
           olderThan === null
             ? eq(schema.messages.channelId, input.channelId)
-            : and(eq(schema.messages.channelId, input.channelId), lt(schema.messages.id, olderThan)),
+            : and(
+                eq(schema.messages.channelId, input.channelId),
+                lt(schema.messages.id, olderThan),
+              ),
         ),
       )
       .orderBy(desc(schema.messages.id))

@@ -520,7 +520,9 @@ export function Section({
         <h2 className="text-[13px] font-semibold text-ink">{title}</h2>
         {count !== undefined && <Badge>{count}</Badge>}
       </div>
-      {description !== undefined && <p className="text-[13px] leading-relaxed text-ink-muted">{description}</p>}
+      {description !== undefined && (
+        <p className="text-[13px] leading-relaxed text-ink-muted">{description}</p>
+      )}
       {children}
     </section>
   );
