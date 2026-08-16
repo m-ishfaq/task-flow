@@ -168,7 +168,7 @@ export function BoardPage() {
           than the viewport — it must sit above the cards and below any dialog,
           and anchoring it to the viewport would put it over the sidebar. */}
       <div className="relative flex min-w-0 flex-1 flex-col">
-        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-4 py-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line bg-surface-raised px-4 py-2.5">
           <ViewToggle
             value={view}
             onChange={(next) => {

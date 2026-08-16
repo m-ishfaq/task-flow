@@ -178,10 +178,18 @@ export function createAppRouter(deps: AppRouterDeps) {
      * unlike `subaccounts` below: `PAYMENTS_PROVIDER` defaults to `fake`, so
      * every instance has a provider and the Plans tab works end to end with no
      * Stripe account.
+     *
+     * Migration 0073 adds `storage`/`scanner` for the branding logo/favicon
+     * upload — the SAME provider and scanner Work and Chat already share
+     * (`deps.work.attachments`), not a second pair. This is a different
+     * `storage` than the one `subaccounts` narrows away below: that comment
+     * is about telephony's own recording storage, unrelated to Work's.
      */
     platformAdmin: createPlatformAdminRouter({
       events: deps.identity.events,
       payments: deps.billing.payments,
+      storage: deps.work.attachments.storage,
+      scanner: deps.work.attachments.scanner,
       /* Reuses billing's own mail deps — see PlatformAdminRouterDeps's own
          comment on why a second queue is not worth opening for this. */
       ...(deps.billing.mail === undefined ? {} : { mail: deps.billing.mail }),

@@ -59,9 +59,7 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
     <div className="mx-auto max-w-3xl space-y-6">
       <section className="space-y-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
-            This organization's spend
-          </h2>
+          <h2 className="text-[13px] font-semibold text-ink">This organization's spend</h2>
         </div>
 
         {current.isPending ? (
@@ -160,7 +158,7 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
 
       <section className="space-y-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
+          <h2 className="text-[13px] font-semibold text-ink">
             Cost attribution — last {String(SINCE_DAYS)} days
           </h2>
         </div>

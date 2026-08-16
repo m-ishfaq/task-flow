@@ -106,7 +106,14 @@ export interface ChannelSummary {
  * agrees with the first almost always — and the case where it disagrees is a
  * channel visible in the sidebar that 404s when clicked.
  */
-export async function listChannels(actor: ChatActor): Promise<readonly ChannelSummary[]> {
+export interface ChannelList {
+  /** Whether the caller may create a channel — the sidebar gates its "new
+      channel" control on this rather than re-deriving it from a role. */
+  readonly canCreateChannel: boolean;
+  readonly channels: readonly ChannelSummary[];
+}
+
+export async function listChannels(actor: ChatActor): Promise<ChannelList> {
   const memberChannelIds = actor.subject.tuples
     .filter((tuple) => tuple.object.type === 'channel')
     .map((tuple) => tuple.object.id);
@@ -167,16 +174,30 @@ export async function listChannels(actor: ChatActor): Promise<readonly ChannelSu
 
     const self = userOf(actor);
 
-    return visible.map((row) => ({
-      channelId: row.id,
-      type: row.type,
-      name: row.name,
-      topic: row.topic,
-      archivedAt: row.archivedAt,
-      createdAt: row.createdAt,
-      joined: joinedIds.has(row.id),
-      participantIds: [...(membersByChannel.get(row.id) ?? [])].filter((userId) => userId !== self),
-    }));
+    /* Whether the caller may CREATE a channel — the same org-level `can()`
+       `createChannel` enforces, answered here so the sidebar's "new channel"
+       control can be shown or hidden on the server's own verdict instead of
+       the client re-deriving it from a role (CLAUDE.md §8.2 — two permission
+       models drift, and the one that shows buttons is the one nobody tests).
+       A member who cannot create is not offered a CTA whose only outcome is
+       FORBIDDEN. */
+    const canCreateChannel = can(actor.subject, 'channel:create').allowed;
+
+    return {
+      canCreateChannel,
+      channels: visible.map((row) => ({
+        channelId: row.id,
+        type: row.type,
+        name: row.name,
+        topic: row.topic,
+        archivedAt: row.archivedAt,
+        createdAt: row.createdAt,
+        joined: joinedIds.has(row.id),
+        participantIds: [...(membersByChannel.get(row.id) ?? [])].filter(
+          (userId) => userId !== self,
+        ),
+      })),
+    };
   });
 }
 

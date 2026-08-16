@@ -9,6 +9,7 @@ import {
   PopoverTrigger,
 } from '@taskflow/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Calendar, MessageSquare, MoreHorizontal, SquareCheck, User } from 'lucide-react';
 import type { BoardId, CardId, UserId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
@@ -18,6 +19,7 @@ import { formatDueDate } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
 import { useMembers } from '../org/use-members.js';
 import { useUpdateCard } from './use-update-card.js';
+import { PRIORITY_SWATCH } from './priority-colors.js';
 import { invalidateCard, patchBoardCards, type CardSummary } from './api.js';
 
 /**
@@ -80,10 +82,25 @@ export function CardTile({
 
   const body = (
     <>
+      {/* The priority signature (`styles.css`'s `--color-priority-urgent`
+          comment, `priority-colors.ts`) — absent entirely for an
+          unprioritized card, since there is no color for "none" to show.
+          Clipped to the tile's rounded corners by `tileClassName`'s
+          `overflow-hidden`, not by rounding the bar itself. */}
+      {card.priority !== null && (
+        <span
+          aria-hidden="true"
+          className={cn('absolute inset-y-0 left-0 w-[3px]', PRIORITY_SWATCH[card.priority])}
+        />
+      )}
+
       <span className="block text-sm leading-snug text-ink">{card.title}</span>
 
       <div className="mt-2 flex items-center gap-1.5">
-        <span className="font-mono text-[11px] text-ink-faint">{card.reference}</span>
+        {/* 12px, not the 11px this used to be — the reference is one of the
+            most-scanned pieces of a tile, and 11px sat below the pass's
+            readability floor for anything read repeatedly. */}
+        <span className="font-mono text-xs text-ink-faint">{card.reference}</span>
 
         {due !== null && (
           <Badge className={cn(due.overdue && 'bg-danger/20 text-danger')}>{due.label}</Badge>
@@ -94,11 +111,17 @@ export function CardTile({
             title="Checklist progress"
             className={cn(card.checklistDone === card.checklistTotal && 'text-success')}
           >
-            ☑ {card.checklistDone}/{card.checklistTotal}
+            <SquareCheck aria-hidden="true" className="size-3" strokeWidth={2} />
+            {card.checklistDone}/{card.checklistTotal}
           </Badge>
         )}
 
-        {card.commentCount > 0 && <Badge title="Comments">💬 {card.commentCount}</Badge>}
+        {card.commentCount > 0 && (
+          <Badge title="Comments">
+            <MessageSquare aria-hidden="true" className="size-3" strokeWidth={2} />
+            {card.commentCount}
+          </Badge>
+        )}
 
         {/* Pushed right and kept on the metadata row rather than wrapping with
             it. Faces are what the eye scans a column for, so they need a fixed
@@ -112,8 +135,26 @@ export function CardTile({
   );
 
   const tileClassName = cn(
-    'w-full rounded-card border border-line bg-surface-raised px-2.5 py-2 text-left transition-colors',
-    dragging ? 'shadow-lg ring-1 ring-accent' : 'hover:border-line-strong hover:bg-surface-hover',
+    /* `shadow-sm` separates the tile from its sunken column by DEPTH rather
+       than by border alone — the border stays (it survives on any surface)
+       but the resting shadow is what makes the stack of cards read as
+       elevated objects on the board. */
+    'relative w-full overflow-hidden rounded-card border border-line bg-surface-raised px-3 py-2.5 text-left shadow-sm',
+    'transition-[color,background-color,border-color,box-shadow,transform] duration-[var(--motion-fast)] ease-[var(--motion-ease)]',
+    dragging
+      ? /* The dragged tile's OWN transform stays inert — see SortableCard's
+           inline `style` comment on why the ancestor wrapper, not this
+           element, is what dnd-kit moves. A hover lift here would be
+           imperceptible anyway: the DragOverlay ghost is what the pointer
+           is actually over during a drag. */
+        'shadow-lg ring-1 ring-accent'
+      : /* The lift is on THIS element (the tile's own div/button), never the
+           `SortableCard` wrapper dnd-kit applies its transform to — two
+           separate nodes, so the two transforms compose rather than
+           collide. `-translate-y-px` is subtle on purpose: this fires on
+           every card under the pointer while scanning a column, and
+           anything larger reads as jitter rather than depth. */
+        'hover:-translate-y-px hover:border-line-strong hover:bg-surface-hover hover:shadow-sm',
   );
 
   /* The drag overlay is not interactive — it is a picture following the pointer
@@ -193,7 +234,7 @@ export function CardTile({
 }
 
 const ICON_BUTTON =
-  'flex h-6 w-6 items-center justify-center rounded bg-surface-raised text-xs text-ink-muted ' +
+  'flex h-6 w-6 items-center justify-center rounded bg-surface-raised text-ink-muted ' +
   'ring-1 ring-line hover:text-ink hover:ring-line-strong focus:outline-none focus-visible:ring-accent';
 
 /**
@@ -239,7 +280,7 @@ function QuickAssignee({ orgId, card }: { readonly orgId: string; readonly card:
     <PopoverRoot>
       <PopoverTrigger asChild>
         <button type="button" aria-label="Quick-assign" className={ICON_BUTTON}>
-          👤
+          <User aria-hidden="true" className="size-3.5" strokeWidth={2} />
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-56 p-2">
@@ -304,7 +345,7 @@ function QuickDueDate({
     <PopoverRoot open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button type="button" aria-label="Quick due date" className={ICON_BUTTON}>
-          📅
+          <Calendar aria-hidden="true" className="size-3.5" strokeWidth={2} />
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="p-2">
@@ -364,7 +405,7 @@ function QuickOverflow({
     >
       <DropdownMenuTrigger asChild>
         <button type="button" aria-label="More actions" className={ICON_BUTTON}>
-          ⋯
+          <MoreHorizontal aria-hidden="true" className="size-3.5" strokeWidth={2} />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-36">

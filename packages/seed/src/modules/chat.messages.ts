@@ -200,15 +200,17 @@ export const messagesModule = defineSeedModule({
             rng.int(mix.reactions[0], mix.reactions[1]),
             EMOJI_PALETTE.length,
           );
-          /* Distinct emoji, and distinct reactors within each — the primary key
-             is (message_id, user_id, emoji), so independent draws would
-             eventually collide and fail the whole insert rather than one row. */
+          /* One reaction PER PERSON per message — 0076's primary key is
+             (message_id, user_id), so a reactor who already reacted to this
+             message is excluded from later emoji draws; a second draw would
+             collide and fail the whole insert rather than one row. */
+          const reactedBy = new Set<string>();
           for (const emoji of rng.sample(EMOJI_PALETTE, emojiCount)) {
-            const reactors = rng.sample(
-              channel.members,
-              rng.int(1, Math.min(4, channel.members.length)),
-            );
+            const available = channel.members.filter((member) => !reactedBy.has(member.user.id));
+            if (available.length === 0) break;
+            const reactors = rng.sample(available, rng.int(1, Math.min(4, available.length)));
             for (const reactor of reactors) {
+              reactedBy.add(reactor.user.id);
               const reactedAt = minutesAfter(draft.createdAt, rng.int(1, 240));
               reactionRows.push([
                 orgId,

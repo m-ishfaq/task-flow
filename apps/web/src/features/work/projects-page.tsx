@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { FolderKanban } from 'lucide-react';
 import type { BoardId, ProjectId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
@@ -13,6 +14,7 @@ import {
   Field,
   FocusOnMountInput,
   Input,
+  PageHeader,
   SkeletonRows,
 } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
@@ -71,33 +73,27 @@ export function ProjectsPage() {
   const shown = showArchived ? projects.data : live;
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-5 p-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-lg font-semibold text-ink">
-            Projects
-            {live.length > 0 && <Badge>{live.length}</Badge>}
-          </h1>
-          <p className="text-xs text-ink-muted">
-            A project owns its boards, labels, statuses and card numbering.
-          </p>
-        </div>
-
-        {/* Hidden rather than disabled: a create form nobody without
-            project:create could submit is clutter, and the list below stays
-            fully visible either way. */}
-        {canCreateProject && (
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              setCreating((open) => !open);
-            }}
-          >
-            {creating ? 'Cancel' : 'New project'}
-          </Button>
-        )}
-      </div>
+    <div className="mx-auto flex max-w-3xl flex-col gap-6 p-8">
+      {/* Hidden rather than disabled: a create form nobody without
+          project:create could submit is clutter, and the list below stays
+          fully visible either way. */}
+      <PageHeader
+        title="Projects"
+        description="A project owns its boards, labels, statuses and card numbering."
+        actions={
+          canCreateProject ? (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                setCreating((open) => !open);
+              }}
+            >
+              {creating ? 'Cancel' : 'New project'}
+            </Button>
+          ) : undefined
+        }
+      />
 
       {creating && canCreateProject && (
         <CreateProjectForm
@@ -110,6 +106,7 @@ export function ProjectsPage() {
 
       {live.length === 0 && !showArchived ? (
         <Empty
+          icon={<FolderKanban aria-hidden="true" className="size-5" strokeWidth={1.75} />}
           title="No projects yet"
           description="A project holds boards, labels and fields. Create one to get started."
         />
@@ -171,7 +168,7 @@ function ProjectCard({ orgId, project, showArchived, canDuplicate }: ProjectCard
       // to decide whether to restore them.
     >
       <div className="flex items-center gap-2">
-        <span className="rounded bg-surface-hover px-1.5 py-0.5 font-mono text-[11px] font-medium text-ink-muted">
+        <span className="rounded bg-surface-hover px-1.5 py-0.5 font-mono text-xs font-medium text-ink-muted">
           {project.key}
         </span>
         <h2 className="truncate text-sm font-medium text-ink">{project.name}</h2>
@@ -351,7 +348,7 @@ function DuplicateProjectForm({
 function cardClass(isArchived: boolean): string {
   return isArchived
     ? 'rounded-lg border border-dashed border-line bg-surface-sunken/50 p-3'
-    : 'rounded-lg border border-line bg-surface-raised p-3';
+    : 'rounded-lg border border-line bg-surface-raised p-3 shadow-sm';
 }
 
 function BoardList({

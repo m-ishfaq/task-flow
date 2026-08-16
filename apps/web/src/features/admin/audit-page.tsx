@@ -7,7 +7,7 @@ import { useSession } from '../../lib/session.js';
 import { wire } from '../../lib/wire.js';
 import { formatDateTime } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
-import { Avatar, Button, Empty, Spinner } from '../../components/primitives.js';
+import { Avatar, Button, Empty, PageHeader, Spinner } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 
 /**
@@ -45,29 +45,27 @@ export function AuditPage() {
   });
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold text-ink">Audit log</h1>
-          <p className="mt-1 text-sm text-ink-muted">
-            Append-only and hash-chained. Every state-changing action lands here.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link to="/settings" className="text-sm text-accent underline">
-            Settings
-          </Link>
-          <Button
-            variant="secondary"
-            disabled={verify.isPending}
-            onClick={() => {
-              verify.mutate();
-            }}
-          >
-            {verify.isPending ? 'Verifying…' : 'Verify chain'}
-          </Button>
-        </div>
-      </div>
+    <div className="mx-auto flex max-w-7xl flex-col gap-7 p-8">
+      <PageHeader
+        title="Audit log"
+        description="Append-only and hash-chained. Every state-changing action lands here."
+        actions={
+          <>
+            <Link to="/settings" className="text-sm text-accent underline">
+              Settings
+            </Link>
+            <Button
+              variant="secondary"
+              disabled={verify.isPending}
+              onClick={() => {
+                verify.mutate();
+              }}
+            >
+              {verify.isPending ? 'Verifying…' : 'Verify chain'}
+            </Button>
+          </>
+        }
+      />
 
       {verify.isError && (
         <ErrorView error={verify.error} title="Could not verify the chain" className="shrink-0" />
@@ -115,33 +113,33 @@ export function AuditPage() {
         ) : (
           <>
             <div className="overflow-x-auto rounded border border-line">
-              <table className="w-full text-left text-xs">
-                <thead className="border-b border-line text-ink-faint">
+              <table className="data-table">
+                <thead>
                   <tr>
-                    <th className="px-3 py-2 font-medium">Seq</th>
-                    <th className="px-3 py-2 font-medium">When</th>
-                    <th className="px-3 py-2 font-medium">Action</th>
-                    <th className="px-3 py-2 font-medium">Resource</th>
-                    <th className="px-3 py-2 font-medium">Actor</th>
+                    <th>Seq</th>
+                    <th>When</th>
+                    <th>Action</th>
+                    <th>Resource</th>
+                    <th>Actor</th>
                   </tr>
                 </thead>
                 <tbody>
                   {entries.data.map((entry) => (
-                    <tr key={entry.id} className="border-b border-line/50 last:border-0">
-                      <td className="px-3 py-1.5 font-mono text-ink-faint">{entry.seq}</td>
-                      <td className="px-3 py-1.5 whitespace-nowrap text-ink-muted">
+                    <tr key={entry.id}>
+                      <td className="font-mono text-ink-faint">{entry.seq}</td>
+                      <td className="whitespace-nowrap text-ink-muted">
                         {formatDateTime(entry.occurredAt)}
                       </td>
-                      <td className="px-3 py-1.5 font-medium text-ink">{entry.action}</td>
-                      <td className="px-3 py-1.5 text-ink-muted">
+                      <td className="font-medium text-ink">{entry.action}</td>
+                      <td className="text-ink-muted">
                         {entry.resourceType ?? '—'}
                         {entry.resourceId !== null && (
-                          <span className="ml-1 font-mono text-[10px] text-ink-faint">
+                          <span className="ml-1 font-mono text-[11px] text-ink-faint">
                             {entry.resourceId.slice(0, 8)}
                           </span>
                         )}
                       </td>
-                      <td className="px-3 py-1.5">
+                      <td>
                         <ActorCell actorId={entry.actorId} actorEmail={entry.actorEmail} />
                       </td>
                     </tr>

@@ -199,7 +199,10 @@ describe('a guest with no grant', () => {
     await channels.createChannel(owner, { type: 'private', name: 'leadership' });
 
     const guest = await actorFor(orgId, GUEST, 'guest');
-    expect(await channels.listChannels(guest)).toEqual([]);
+    /* `listChannels` now answers `{ canCreateChannel, channels }` — the
+       sidebar gates its "new channel" control on the server's verdict, so
+       the shape changed even though the empty channel list did not. */
+    expect((await channels.listChannels(guest)).channels).toEqual([]);
   });
 });
 
@@ -246,7 +249,9 @@ describe('a guest granted one channel', () => {
 
     const guest = await actorFor(orgId, GUEST, 'guest');
 
-    expect((await channels.listChannels(guest)).map((row) => row.name)).toEqual(['project-x']);
+    expect((await channels.listChannels(guest)).channels.map((row) => row.name)).toEqual([
+      'project-x',
+    ]);
     expect(
       await rejectionCode(() => channels.getChannel(guest, { channelId: other.channelId })),
     ).toBe('NOT_FOUND');

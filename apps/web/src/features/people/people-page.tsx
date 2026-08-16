@@ -5,7 +5,15 @@ import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '../../lib/wire.js';
 import { displayName, oooStatus } from '../../lib/format.js';
-import { Avatar, Badge, Button, Empty, SkeletonRows } from '../../components/primitives.js';
+import { Users } from 'lucide-react';
+import {
+  Avatar,
+  Badge,
+  Button,
+  Empty,
+  PageHeader,
+  SkeletonRows,
+} from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import type { DirectoryMember } from './api.js';
 
@@ -36,13 +44,11 @@ export function PeoplePage() {
   });
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
-      <div>
-        <h1 className="text-lg font-semibold text-ink">People</h1>
-        <p className="text-xs text-ink-muted">
-          Everyone in this organization, with their profile, role, and who they report to.
-        </p>
-      </div>
+    <div className="mx-auto flex max-w-3xl flex-col gap-7 p-8">
+      <PageHeader
+        title="People"
+        description="Everyone in this organization, with their profile, role, and who they report to."
+      />
 
       {directory.isPending && <SkeletonRows rows={6} />}
       {directory.isError && (
@@ -53,6 +59,7 @@ export function PeoplePage() {
         <>
           {directory.data.pages[0]?.members.length === 0 ? (
             <Empty
+              icon={<Users aria-hidden="true" className="size-5" strokeWidth={1.75} />}
               title="No one here yet"
               description="Members appear here as soon as they join the organization."
             />

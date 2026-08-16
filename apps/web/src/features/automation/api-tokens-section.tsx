@@ -227,9 +227,7 @@ function TokenCreateForm({
               </label>
               {groups.map(([resource, scopes]) => (
                 <div key={resource}>
-                  <p className="px-1 text-[10px] font-semibold tracking-wide text-ink-faint uppercase">
-                    {resource}
-                  </p>
+                  <p className="px-1 text-[11px] font-semibold text-ink-muted">{resource}</p>
                   <ul className="space-y-0.5">
                     {scopes.map((scope) => (
                       <li key={scope}>

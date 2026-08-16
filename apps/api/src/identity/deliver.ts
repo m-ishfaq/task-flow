@@ -13,6 +13,7 @@ import {
   type RenderedMail,
 } from '@taskflow/mail';
 import type { Env } from '../config/env.js';
+import { getResolvedBranding } from '../platform-admin/branding-cache.js';
 import type { DeliverableLink } from './identity.service.js';
 
 /**
@@ -73,26 +74,35 @@ export function createMailDelivery(options: MailDeliveryOptions): MailDelivery {
 
   return {
     queue,
-    deliver: (message) => {
-      const rendered = render(message, options.env.WEB_ORIGIN);
+    deliver: async (message) => {
+      /* Awaited, unlike the actual SEND below — the branding cache lookup
+         does not depend on `message` at all, so it takes the same time
+         whether the account exists or not and introduces no NEW
+         account-existence oracle on top of the one `requestPasswordReset`
+         already accepts (it returns before calling `deliver` at all for an
+         address with no active account — see that function's own comment).
+         It resolves from `branding-cache.ts`'s 30s TTL cache, so this is
+         almost always a cache hit costing microseconds, not a database
+         round trip. */
+      const { productName } = await getResolvedBranding();
+      const rendered = render(message, options.env.WEB_ORIGIN, productName);
       queue.enqueue({ to: message.email, ...rendered });
 
-      /* Resolved, not awaited on delivery. A handler that waited here would make
-         the response time depend on whether mail was sent — and
-         requestPasswordReset only sends for an address that exists, so the wait
-         would be a free account-existence oracle. See queue.ts. */
-      return Promise.resolve();
+      /* The actual SEND is not awaited here — a handler that waited on it
+         would make the response time depend on whether mail was sent, which
+         is the real oracle this comment is about. See queue.ts. */
     },
   };
 }
 
-function render(message: DeliverableLink, webOrigin: string): RenderedMail {
+function render(message: DeliverableLink, webOrigin: string, productName: string): RenderedMail {
   switch (message.kind) {
     case 'verify_email':
       return renderVerifyEmail({
         webOrigin,
         token: message.token ?? '',
         expiresInHours: VERIFICATION_EXPIRY_HOURS,
+        productName,
       });
 
     case 'password_reset':
@@ -100,25 +110,27 @@ function render(message: DeliverableLink, webOrigin: string): RenderedMail {
         webOrigin,
         token: message.token ?? '',
         expiresInMinutes: PASSWORD_RESET_EXPIRY_MINUTES,
+        productName,
       });
 
     case 'duplicate_registration':
       // Carries no token by design — see the template.
-      return renderDuplicateRegistration();
+      return renderDuplicateRegistration({ productName });
 
     case 'impossible_travel':
       return renderImpossibleTravel({
         previousCountry: message.previousCountry ?? '',
         newCountry: message.newCountry ?? '',
+        productName,
       });
 
     case 'password_changed':
-      return renderPasswordChanged();
+      return renderPasswordChanged({ productName });
 
     case 'totp_enabled':
-      return renderTotpEnabled();
+      return renderTotpEnabled({ productName });
 
     case 'passkey_registered':
-      return renderPasskeyRegistered();
+      return renderPasskeyRegistered({ productName });
   }
 }

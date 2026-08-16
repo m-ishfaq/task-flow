@@ -176,6 +176,7 @@ export {
   and,
   or,
   not,
+  exists,
   isNull,
   isNotNull,
   inArray,

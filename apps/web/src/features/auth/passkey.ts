@@ -51,14 +51,17 @@ export type PasskeyCeremonyReason = 'cancelled' | 'already_registered' | 'unsupp
  * set into a sentence a person can act on, never `error.message` — see
  * `PasskeyCeremonyReason`'s own comment for why.
  */
-export function passkeyCeremonyMessage(reason: PasskeyCeremonyReason): string | null {
+export function passkeyCeremonyMessage(
+  reason: PasskeyCeremonyReason,
+  productName = 'TaskFlow',
+): string | null {
   switch (reason) {
     case 'cancelled':
       return null;
     case 'already_registered':
       return 'This device already has a passkey for this account.';
     case 'unsupported':
-      return 'This device or browser does not support the passkey features TaskFlow requires.';
+      return `This device or browser does not support the passkey features ${productName} requires.`;
     case 'unknown':
       return 'That passkey could not be used. Try again.';
   }

@@ -85,7 +85,12 @@ async function outboxFor(
      rows belong to — the same discipline `removeOrg` already follows. */
   await admin.setOrg(orgId);
   const rows = await admin.query(
-    `SELECT name, payload FROM platform.outbox WHERE org_id = $1 ORDER BY created_at`,
+    /* `ORDER BY id`, not `created_at`: rows written in ONE transaction share
+       the transaction's `created_at`, so a multi-event mutation ties and
+       Postgres may return the events in either order. The id is the project's
+       monotonic UUIDv7 — insertion order — and the same tiebreaker
+       `claimPending`'s `ORDER BY occurred_at, id` falls back on. */
+    `SELECT name, payload FROM platform.outbox WHERE org_id = $1 ORDER BY id`,
     [orgId],
   );
   await admin.setOrg(null);

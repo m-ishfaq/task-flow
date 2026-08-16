@@ -1,6 +1,15 @@
 import { useCallback, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  Folder,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+} from 'lucide-react';
 import type { OrgId, PageId, PageTemplateId, SpaceId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
 import { useUi } from '../../lib/ui-store.js';
@@ -175,7 +184,14 @@ function SpaceTreePanel({
                 setCreatingSpace((open) => !open);
               }}
             >
-              {creatingSpace ? 'Cancel' : '+ Space'}
+              {creatingSpace ? (
+                'Cancel'
+              ) : (
+                <>
+                  <Plus aria-hidden="true" className="size-3.5" strokeWidth={2} />
+                  Space
+                </>
+              )}
             </Button>
           )}
           {/* Desktop-rail-only, like the main sidebar's own toggle — see
@@ -186,9 +202,13 @@ function SpaceTreePanel({
               onClick={toggleSpaces}
               aria-label={spacesOpen ? 'Collapse spaces panel' : 'Expand spaces panel'}
               aria-expanded={spacesOpen}
-              className="rounded px-1.5 py-1 text-xs text-ink-faint hover:bg-surface-hover hover:text-ink"
+              className="rounded p-1.5 text-ink-faint hover:bg-surface-hover hover:text-ink"
             >
-              {spacesOpen ? '«' : '»'}
+              {spacesOpen ? (
+                <PanelLeftClose aria-hidden="true" className="size-4" strokeWidth={2} />
+              ) : (
+                <PanelLeftOpen aria-hidden="true" className="size-4" strokeWidth={2} />
+              )}
             </button>
           )}
         </div>
@@ -338,9 +358,13 @@ function SpaceNode({
           }}
           aria-expanded={!collapsed}
           aria-label={collapsed ? `Expand ${space.name}` : `Collapse ${space.name}`}
-          className="w-5 shrink-0 py-1 text-[10px] text-ink-faint hover:text-ink"
+          className="flex w-5 shrink-0 items-center justify-center py-1 text-ink-faint hover:text-ink"
         >
-          {collapsed ? '▸' : '▾'}
+          {collapsed ? (
+            <ChevronRight aria-hidden="true" className="size-3.5" strokeWidth={2.25} />
+          ) : (
+            <ChevronDown aria-hidden="true" className="size-3.5" strokeWidth={2.25} />
+          )}
         </button>
 
         <button
@@ -349,12 +373,13 @@ function SpaceNode({
             setCollapsed((value) => !value);
           }}
           className={cn(
-            'min-w-0 flex-1 truncate py-1 text-left text-xs font-medium',
+            'flex min-w-0 flex-1 items-center gap-1.5 truncate py-1 text-left text-xs font-medium',
             isArchived ? 'text-ink-faint' : 'text-ink-muted hover:text-ink',
           )}
           title={space.name}
         >
-          {space.name}
+          <Folder aria-hidden="true" className="size-3 shrink-0" strokeWidth={2.25} />
+          <span className="truncate">{space.name}</span>
         </button>
 
         {isArchived && <Badge className="mr-1 text-warning">archived</Badge>}
@@ -492,9 +517,13 @@ function PageNode({
             }}
             aria-expanded={!collapsed}
             aria-label={collapsed ? `Expand ${page.title}` : `Collapse ${page.title}`}
-            className="w-4 shrink-0 py-1 text-[10px] text-ink-faint hover:text-ink"
+            className="flex w-4 shrink-0 items-center justify-center py-1 text-ink-faint hover:text-ink"
           >
-            {collapsed ? '▸' : '▾'}
+            {collapsed ? (
+              <ChevronRight aria-hidden="true" className="size-3" strokeWidth={2.25} />
+            ) : (
+              <ChevronDown aria-hidden="true" className="size-3" strokeWidth={2.25} />
+            )}
           </button>
         ) : (
           <span className="w-4 shrink-0" />
@@ -506,12 +535,13 @@ function PageNode({
             onSelect(pageId);
           }}
           className={cn(
-            'min-w-0 flex-1 truncate py-1 text-left text-xs',
+            'flex min-w-0 flex-1 items-center gap-1.5 truncate py-1 text-left text-xs',
             selected ? 'font-medium text-ink' : 'text-ink-muted hover:text-ink',
           )}
           title={page.title}
         >
-          {page.title}
+          <FileText aria-hidden="true" className="size-3 shrink-0 text-ink-faint" strokeWidth={2} />
+          <span className="truncate">{page.title}</span>
         </button>
 
         <button
@@ -520,9 +550,9 @@ function PageNode({
             setAddingChild((value) => !value);
           }}
           aria-label={`New page under ${page.title}`}
-          className="shrink-0 px-1.5 py-1 text-[10px] text-ink-faint opacity-0 group-hover:opacity-100 hover:text-ink"
+          className="shrink-0 p-1 text-ink-faint opacity-0 group-hover:opacity-100 hover:text-ink"
         >
-          +
+          <Plus aria-hidden="true" className="size-3" strokeWidth={2.25} />
         </button>
       </div>
 
@@ -761,7 +791,7 @@ function PagePanel({
   const isArchived = page.archivedAt !== null;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4 p-6">
+    <div className="mx-auto max-w-5xl space-y-4 p-6">
       {/* The only way back to the space tree below `md` — see `DocsPage`'s
           comment on the list/detail split this belongs to. */}
       <button
@@ -809,7 +839,7 @@ function PagePanel({
           </form>
         ) : (
           <>
-            <h1 className="flex items-center gap-2 text-xl font-semibold text-ink">
+            <h1 className="flex items-center gap-2 font-display text-xl font-semibold tracking-tight text-ink">
               {page.title}
               {isArchived && <Badge className="text-warning">archived</Badge>}
             </h1>

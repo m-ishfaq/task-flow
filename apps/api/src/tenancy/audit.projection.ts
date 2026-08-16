@@ -162,6 +162,12 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'message.sent': { type: 'message', key: 'messageId' },
   'message.edited': { type: 'message', key: 'messageId' },
   'message.deleted': { type: 'message', key: 'messageId' },
+  /* "Remove for me" — a viewer hid a message from their own list. The
+     message is the subject (the fact recorded is "this message was hidden by
+     whom"), matching its sibling events; `userId` in the payload names the
+     hider but is not the resource, the same split `message.deleted`'s author
+     has. */
+  'message.hidden': { type: 'message', key: 'messageId' },
 
   /* Wave 3 — file sharing and link previews.
 
@@ -388,6 +394,12 @@ export const NEVER_AUDITED: ReadonlySet<string> = new Set([
   'platform.flag_override_cleared',
   'platform.user_suspended',
   'platform.user_reactivated',
+  /* Branding (migration 0073). Same structural reason as flag_override_set
+     immediately above: emitted by taskflow_platform_admin, which holds no
+     outbox grant, over a table with no org_id at all — there is no org
+     whose chain this could belong to instead. The durable record is
+     platform.operator_audit_log via recordOperatorAction. */
+  'platform.branding_updated',
   /* The plan catalog (Phase 12 Wave 4). Same structural reason as every
      platform event above: they are emitted by `taskflow_platform_admin`,
      which holds no grant on `platform.outbox`, and they run with no org scope

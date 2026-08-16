@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Tag } from 'lucide-react';
 import type { BoardId, CardId, LabelId, ProjectId } from '@taskflow/contracts';
 import { api } from '../../../lib/trpc.js';
 import { keys } from '../../../lib/query.js';
@@ -100,7 +101,10 @@ export function LabelSection({ orgId, boardId, cardId, projectId }: LabelSection
 
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Labels</h3>
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+        <Tag aria-hidden="true" className="size-3" strokeWidth={2.25} />
+        Labels
+      </h3>
 
       {all.data === undefined ? null : all.data.length === 0 ? (
         <p className="text-xs text-ink-faint">This project has no labels yet.</p>

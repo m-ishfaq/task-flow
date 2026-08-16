@@ -1,9 +1,12 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { CircleDot, Flag } from 'lucide-react';
 import type { BoardId, CardId, ProjectId, StatusId } from '@taskflow/contracts';
 import { api } from '../../../lib/trpc.js';
 import { keys } from '../../../lib/query.js';
 import { useOptimistic } from '../../../lib/optimistic.js';
 import { patchBoardCards, patchCardDetail, statusesQuery, type Priority } from '../api.js';
+import { PRIORITIES, PRIORITY_LABEL, PRIORITY_SWATCH } from '../priority-colors.js';
+import { cn } from '../../../lib/cn.js';
 import { useUpdateCard } from '../use-update-card.js';
 
 /**
@@ -49,7 +52,10 @@ export function StatusSection({ orgId, boardId, cardId, projectId, statusId }: S
 
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Status</h3>
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+        <CircleDot aria-hidden="true" className="size-3" strokeWidth={2.25} />
+        Status
+      </h3>
       <select
         aria-label="Status"
         value={statusId ?? ''}
@@ -69,14 +75,6 @@ export function StatusSection({ orgId, boardId, cardId, projectId, statusId }: S
     </section>
   );
 }
-
-const PRIORITIES: readonly Priority[] = ['urgent', 'high', 'normal', 'low'];
-const PRIORITY_LABEL: Readonly<Record<Priority, string>> = {
-  urgent: 'Urgent',
-  high: 'High',
-  normal: 'Normal',
-  low: 'Low',
-};
 
 export interface PrioritySectionProps {
   readonly orgId: string;
@@ -98,26 +96,47 @@ export function PrioritySection({ orgId, boardId, cardId, priority }: PrioritySe
 
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Priority</h3>
-      <select
-        aria-label="Priority"
-        value={priority ?? ''}
-        onChange={(event) => {
-          const value = event.target.value;
-          update.mutate({
-            cardId,
-            patch: { priority: value === '' ? null : (value as Priority) },
-          });
-        }}
-        className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
-      >
-        <option value="">No priority</option>
-        {PRIORITIES.map((entry) => (
-          <option key={entry} value={entry}>
-            {PRIORITY_LABEL[entry]}
-          </option>
-        ))}
-      </select>
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+        <Flag aria-hidden="true" className="size-3" strokeWidth={2.25} />
+        Priority
+      </h3>
+      {/* The swatch previews the SELECTED value — a native `<option>` cannot
+          carry its own background color, so this is the one place the
+          priority-colors.ts palette becomes visible in this control. Absent
+          for "No priority": there is no color for "none" to show. */}
+      <div className="relative">
+        {priority !== null && (
+          <span
+            aria-hidden="true"
+            className={cn(
+              'pointer-events-none absolute top-1/2 left-2 size-2 -translate-y-1/2 rounded-full',
+              PRIORITY_SWATCH[priority],
+            )}
+          />
+        )}
+        <select
+          aria-label="Priority"
+          value={priority ?? ''}
+          onChange={(event) => {
+            const value = event.target.value;
+            update.mutate({
+              cardId,
+              patch: { priority: value === '' ? null : (value as Priority) },
+            });
+          }}
+          className={cn(
+            'h-8 w-full rounded border border-line bg-surface-sunken pr-2 text-xs text-ink',
+            priority !== null ? 'pl-6' : 'pl-2',
+          )}
+        >
+          <option value="">No priority</option>
+          {PRIORITIES.map((entry) => (
+            <option key={entry} value={entry}>
+              {PRIORITY_LABEL[entry]}
+            </option>
+          ))}
+        </select>
+      </div>
     </section>
   );
 }

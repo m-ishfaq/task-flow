@@ -23,7 +23,11 @@ interface Outputs {
   unreadCounts: Awaited<ReturnType<typeof api.chat.channels.unreadCounts.query>>;
 }
 
-export type ChannelSummary = Wire<Outputs['channels']>[number];
+/* `channels.list` now answers `{ canCreateChannel, channels }` — the create
+   gate rides on the same query the sidebar already fetches, so the client
+   never re-derives `channel:create` from a role. */
+export type ChannelList = Wire<Outputs['channels']>;
+export type ChannelSummary = ChannelList['channels'][number];
 export type ChannelDetail = Wire<Outputs['channel']>;
 export type Message = Wire<Outputs['messages']>[number];
 export type ReactionRow = Wire<Outputs['reactions']>[number];
@@ -92,14 +96,38 @@ export function threadQuery(orgId: string, channelId: ChannelId, messageId: Mess
  */
 export function reactionsQuery(orgId: string, channelId: ChannelId, messageIds: readonly string[]) {
   return queryOptions({
-    queryKey: [...keys.reactions(orgId, channelId), messageIds] as const,
-    queryFn: async () =>
-      wire(
-        await api.chat.messages.reactions.query({
+    /* The key is deliberately STABLE — just `keys.reactions(orgId, channelId)`.
+       The old key embedded `messageIds`, which is a fresh array reference on
+       every render, so every render produced a NEW query that restarted its
+       fetch and orphaned the previous one: the reactions for the loaded page
+       churned without ever being read, and the bars under messages never
+       rendered. Invalidation (`invalidateReactions` on toggle, `messages.list`
+       refetches on new messages) is what refetches this — the key does not
+       need to carry the bound ids for that. */
+    queryKey: keys.reactions(orgId, channelId),
+    queryFn: async () => {
+      /* The whole 100-message id list cannot go out as ONE dispatch:
+         `httpBatchLink` splits batches by `maxURLLength` (2000 — see
+         `trpc-client.ts`), and a single dispatch carrying ~100 UUIDs is
+         ~4300 encoded characters, which is more than the limit itself — the
+         splitter cannot divide one dispatch, so it throws "Input is too big
+         for a single dispatch" and the WHOLE page's reactions come back
+         nothing. Chunking keeps each dispatch under the ceiling (25 UUIDs
+         ≈ 1100 characters) and fires the chunks in parallel; the API's own
+         `messageIds` cap is 200, so 4 chunks stay inside it. */
+      const CHUNK = 25;
+      const rows: ReactionRow[] = [];
+      for (let i = 0; i < messageIds.length; i += CHUNK) {
+        const part = messageIds.slice(i, i + CHUNK);
+        if (part.length === 0) continue;
+        const chunk = await api.chat.messages.reactions.query({
           channelId,
-          messageIds,
-        }),
-      ),
+          messageIds: part,
+        });
+        rows.push(...chunk);
+      }
+      return wire(rows);
+    },
     enabled: messageIds.length > 0,
   });
 }
@@ -229,6 +257,11 @@ export function deleteMessage(messageId: MessageId) {
   return api.chat.messages.delete.mutate({ messageId });
 }
 
+/** "Remove for me" — hides a message from this viewer's own list only. */
+export function hideMessage(messageId: MessageId) {
+  return api.chat.messages.hide.mutate({ messageId });
+}
+
 export function toggleReaction(input: {
   channelId: ChannelId;
   messageId: MessageId;
@@ -313,6 +346,36 @@ export type MessagePreview = Wire<Awaited<ReturnType<typeof api.chat.unfurls.lis
  * have scrolled out of the loaded page are not fetched. Disabled when the page
  * is empty so a channel with no messages does not round-trip for nothing.
  */
+/* How many message ids fit in ONE tRPC dispatch under the client's own
+   `maxURLLength: 2000` (trpc-client.ts). ~25 UUIDs ≈ 1100 encoded characters
+   — the same chunk the reactions query uses, for the same reason. */
+const MAX_IDS_PER_DISPATCH = 25;
+
+/**
+ * Fetches rows for a page of message ids in CHUNKS.
+ *
+ * `httpBatchLink` caps the URL at 2000 characters (see `trpc-client.ts`); one
+ * dispatch carrying ~50-100 UUIDs is ~2300-4600 encoded characters, and the
+ * splitter cannot divide a SINGLE operation — it rejects the whole dispatch
+ * with "Input is too big for a single dispatch", and the chip/preview below a
+ * message silently never appears. This is the exact failure `reactionsQuery`
+ * documents and was fixed for; attachments and unfurls never got the same
+ * treatment. Chunking keeps every dispatch under the ceiling.
+ */
+async function listInChunks<Row>(
+  messageIds: readonly string[],
+  fetchChunk: (ids: readonly string[]) => Promise<readonly Row[]>,
+): Promise<readonly Row[]> {
+  const rows: Row[] = [];
+  for (let i = 0; i < messageIds.length; i += MAX_IDS_PER_DISPATCH) {
+    const part = messageIds.slice(i, i + MAX_IDS_PER_DISPATCH);
+    if (part.length === 0) continue;
+    const chunk = await fetchChunk(part);
+    rows.push(...chunk);
+  }
+  return rows;
+}
+
 export function messageAttachmentsQuery(
   orgId: string,
   channelId: ChannelId,
@@ -322,10 +385,9 @@ export function messageAttachmentsQuery(
     queryKey: [...keys.messages(orgId, channelId), 'attachments', messageIds] as const,
     queryFn: async () =>
       wire(
-        await api.chat.attachments.list.query({
-          channelId,
-          messageIds,
-        }),
+        await listInChunks(messageIds, (ids) =>
+          api.chat.attachments.list.query({ channelId, messageIds: ids }),
+        ),
       ),
     enabled: messageIds.length > 0,
   });
@@ -340,10 +402,9 @@ export function messagePreviewsQuery(
     queryKey: [...keys.messages(orgId, channelId), 'unfurls', messageIds] as const,
     queryFn: async () =>
       wire(
-        await api.chat.unfurls.list.query({
-          channelId,
-          messageIds,
-        }),
+        await listInChunks(messageIds, (ids) =>
+          api.chat.unfurls.list.query({ channelId, messageIds: ids }),
+        ),
       ),
     enabled: messageIds.length > 0,
   });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { inflateSync } from 'node:zlib';
 import { layoutDocument, renderPdf, type LayoutLine } from './pdf.js';
 import { PDFDocument } from 'pdf-lib';
 import type { RenderedNode } from './render.js';
@@ -18,6 +19,29 @@ function text(value: string): RenderedNode {
 
 function textOf(line: LayoutLine): string {
   return line.runs.map((run) => run.text).join('');
+}
+
+/** Inflates every FlateDecode content stream and concatenates the raw operator text — `pdf-lib`
+ * gives no API to ask a finished document what it drew (see this file's own header), so a test
+ * that wants to see literal drawn text has to decode the PDF's own content streams by hand. */
+function decodedStreamText(bytes: Uint8Array): string {
+  const raw = Buffer.from(bytes).toString('latin1');
+  const chunks: string[] = [];
+  for (const match of raw.matchAll(/stream\r?\n([\s\S]*?)endstream/g)) {
+    const body = Buffer.from(match[1] ?? '', 'latin1');
+    try {
+      chunks.push(inflateSync(body).toString('latin1'));
+    } catch {
+      chunks.push(body.toString('latin1'));
+    }
+  }
+  return chunks.join('\n');
+}
+
+/** `drawText` emits a `<HEX> Tj` operator (WinAnsi hex string), never a literal `(text) Tj`
+ * — so a stream-text assertion has to look for the hex encoding of what was drawn. */
+function hexOf(text: string): string {
+  return Buffer.from(text, 'latin1').toString('hex');
 }
 
 describe('layoutDocument', () => {
@@ -184,5 +208,22 @@ describe('renderPdf', () => {
     const bytes = await renderPdf('Empty', doc);
     const loaded = await PDFDocument.load(bytes);
     expect(loaded.getPageCount()).toBe(1);
+  });
+
+  it('stamps every page with a footer naming the resolved product, defaulting to TaskFlow', async () => {
+    const doc: RenderedNode = {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [text('x')] }],
+    };
+
+    const defaulted = await renderPdf('Doc', doc);
+    expect(decodedStreamText(defaulted).toLowerCase()).toContain(
+      hexOf('Exported from TaskFlow').toLowerCase(),
+    );
+
+    const branded = await renderPdf('Doc', doc, 'Acme Flow');
+    expect(decodedStreamText(branded).toLowerCase()).toContain(
+      hexOf('Exported from Acme Flow').toLowerCase(),
+    );
   });
 });

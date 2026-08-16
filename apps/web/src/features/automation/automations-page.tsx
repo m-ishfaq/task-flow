@@ -187,8 +187,8 @@ export function AutomationsPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="shrink-0 border-b border-line px-4 pt-4 pb-2 md:px-6">
-        <h1 className="text-base font-semibold text-ink">Automations</h1>
-        <p className="mt-0.5 text-xs text-ink-muted">
+        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Automations</h1>
+        <p className="mt-1 text-sm text-ink-muted">
           When something happens, check a condition, then act. Rules run with the permissions of
           whoever created them.
         </p>

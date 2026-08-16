@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
-import type { OrgId } from '@taskflow/contracts';
+import { PALETTE_IDS, type OrgId, type PaletteId } from '@taskflow/contracts';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '../../lib/wire.js';
 import { formatDate, formatDateTime } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
+import { paletteColorsOf } from '../../lib/branding-palettes.js';
 import {
   Badge,
   Button,
@@ -14,6 +15,7 @@ import {
   Empty,
   Field,
   Input,
+  PageHeader,
   SkeletonRows,
   Spinner,
 } from '../../components/primitives.js';
@@ -52,12 +54,66 @@ import { StepUpDialog } from '../auth/step-up.js';
  * renders `ErrorView`. The UI never re-derives authorization (§8.2) — the
  * server's answer is the access-denied screen.
  */
+/**
+ * A `role="tablist"` bar — the shell this console needed twice (the
+ * top-level section switcher below, and `OperationsTab`'s kind filter
+ * further down) and had, until now, copied verbatim both times, right down
+ * to the `bg-surface-raised text-ink shadow-sm` active-state classes.
+ * Generic over the value type so a nullable "All" filter and a plain
+ * non-null string union share one implementation instead of one being a
+ * near-copy of the other with a `?? 'all'` key fallback bolted on.
+ */
+function TabBar<T extends string | null>({
+  items,
+  value,
+  onChange,
+  ariaLabel,
+  size = 'sm',
+  className,
+}: {
+  readonly items: readonly (readonly [T, string])[];
+  readonly value: T;
+  readonly onChange: (value: T) => void;
+  readonly ariaLabel: string;
+  readonly size?: 'sm' | 'xs';
+  readonly className?: string;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      className={cn('flex gap-1 rounded-lg border border-line bg-surface-sunken p-1', className)}
+    >
+      {items.map(([itemValue, label]) => (
+        <button
+          key={itemValue ?? 'null'}
+          type="button"
+          role="tab"
+          aria-selected={value === itemValue}
+          onClick={() => {
+            onChange(itemValue);
+          }}
+          className={cn(
+            'flex-1 rounded-md px-3 py-1.5 font-medium transition-colors',
+            size === 'sm' ? 'text-sm' : 'text-xs',
+            value === itemValue
+              ? 'bg-surface-raised text-ink shadow-sm'
+              : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+          )}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function PlatformAdminPage() {
   const queryClient = useQueryClient();
   const { guard, dialog } = useStepUp();
   const [gateOpen, setGateOpen] = useState(false);
   const [tab, setTab] = useState<
-    'orgs' | 'users' | 'plans' | 'billing' | 'flags' | 'audit' | 'operations'
+    'orgs' | 'users' | 'plans' | 'billing' | 'flags' | 'branding' | 'audit' | 'operations'
   >('orgs');
 
   /* The query-side step-up gate (see the header comment). Confirming runs the
@@ -69,52 +125,33 @@ export function PlatformAdminPage() {
   };
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-lg font-semibold text-ink">Platform administration</h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          Every organization, user, and release flag. There is no organization selected here on
-          purpose — this console spans them all.
-        </p>
-      </header>
+    <div className="mx-auto flex max-w-7xl flex-col gap-7 p-8">
+      <PageHeader
+        title="Platform administration"
+        description="Every organization, user, and release flag. There is no organization selected here on purpose — this console spans them all."
+      />
 
       {/* Tabs, not routes: the console is one surface with four views, and a
           child route per tab would mount a fresh component tree on every
           switch for no benefit — the queries are already keyed per page. */}
-      <div
-        role="tablist"
-        aria-label="Platform administration sections"
-        className="flex gap-1 rounded-lg border border-line bg-surface-sunken p-1 whitespace-nowrap overflow-x-auto"
-      >
-        {(
+      <TabBar
+        ariaLabel="Platform administration sections"
+        className="overflow-x-auto whitespace-nowrap"
+        value={tab}
+        onChange={setTab}
+        items={
           [
             ['orgs', 'Organizations'],
             ['users', 'Users'],
             ['plans', 'Plans'],
             ['billing', 'Billing'],
             ['flags', 'Feature flags'],
+            ['branding', 'Branding'],
             ['audit', 'Operator audit'],
             ['operations', 'Operations'],
           ] as const
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            role="tab"
-            aria-selected={tab === value}
-            onClick={() => {
-              setTab(value);
-            }}
-            className={cn(
-              'flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-              tab === value
-                ? 'bg-surface-raised text-ink shadow-sm'
-                : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+        }
+      />
 
       {tab === 'orgs' && (
         <OrgsTab
@@ -149,6 +186,14 @@ export function PlatformAdminPage() {
       )}
       {tab === 'flags' && (
         <FlagsTab
+          guard={guard}
+          onStepUp={() => {
+            setGateOpen(true);
+          }}
+        />
+      )}
+      {tab === 'branding' && (
+        <BrandingTab
           guard={guard}
           onStepUp={() => {
             setGateOpen(true);
@@ -305,24 +350,24 @@ function OrgsTab({
 
       {orgs.data !== undefined && (
         <div className="overflow-x-auto rounded border border-line">
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-line text-ink-faint">
+          <table className="data-table">
+            <thead>
               <tr>
-                <th className="px-3 py-2 font-medium">Organization</th>
-                <th className="px-3 py-2 font-medium">Owner</th>
-                <th className="px-3 py-2 font-medium">Plan</th>
-                <th className="px-3 py-2 font-medium">Renews</th>
-                <th className="px-3 py-2 font-medium">Last invoice</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Members</th>
-                <th className="px-3 py-2 font-medium">Created</th>
-                <th className="px-3 py-2 font-medium" />
+                <th>Organization</th>
+                <th>Owner</th>
+                <th>Plan</th>
+                <th>Renews</th>
+                <th>Last invoice</th>
+                <th>Status</th>
+                <th>Members</th>
+                <th>Created</th>
+                <th />
               </tr>
             </thead>
             <tbody>
               {orgs.data.orgs.map((org) => (
                 <tr key={org.orgId} className="border-b border-line/50 last:border-0">
-                  <td className="px-3 py-2">
+                  <td>
                     {/* The clickable name. A button rather than a route: the
                         detail opens as a panel over this table, so the page's
                         cursor position survives opening and closing one. */}
@@ -335,9 +380,9 @@ function OrgsTab({
                     >
                       {org.name}
                     </button>
-                    <p className="font-mono text-[10px] text-ink-faint">{org.slug}</p>
+                    <p className="font-mono text-[11px] text-ink-faint">{org.slug}</p>
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     {org.ownerEmail === null ? (
                       <span className="text-ink-faint">—</span>
                     ) : (
@@ -347,11 +392,11 @@ function OrgsTab({
                             frequently absent, and an operator needs something
                             to put in a support ticket either way. */}
                         {org.ownerName !== null && <p className="text-ink">{org.ownerName}</p>}
-                        <p className="text-[10px] text-ink-muted">{org.ownerEmail}</p>
+                        <p className="text-[11px] text-ink-muted">{org.ownerEmail}</p>
                       </>
                     )}
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     <p className="text-ink">
                       {org.planId ?? <span className="text-ink-faint">no plan</span>}
                     </p>
@@ -359,7 +404,7 @@ function OrgsTab({
                         `status` is the operator kill switch, `billingStatus` is
                         what the processor says. Showing them in the same cell
                         would suggest one derives from the other. */}
-                    <p className="text-[10px] text-ink-faint">
+                    <p className="text-[11px] text-ink-faint">
                       {org.billingStatus}
                       {org.billingStatus === 'trialing' &&
                         org.trialEndsAt !== null &&
@@ -369,10 +414,10 @@ function OrgsTab({
                         ` — grace ends ${formatDate(org.billingGraceEndsAt)}`}
                     </p>
                   </td>
-                  <td className="px-3 py-2 text-ink-muted">
+                  <td className="text-ink-muted">
                     {org.currentPeriodEnd === null ? '—' : formatDate(org.currentPeriodEnd)}
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     {org.lastInvoice === null ? (
                       <span className="text-ink-faint">—</span>
                     ) : (
@@ -385,20 +430,18 @@ function OrgsTab({
                           {org.lastInvoice.status}{' '}
                           {money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)}
                         </p>
-                        <p className="text-[10px] text-ink-faint">
+                        <p className="text-[11px] text-ink-faint">
                           {formatDate(org.lastInvoice.issuedAt)}
                         </p>
                       </>
                     )}
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     <StatusBadge status={org.status} />
                   </td>
-                  <td className="px-3 py-2 text-ink-muted">{org.memberCount}</td>
-                  <td className="px-3 py-2 whitespace-nowrap text-ink-muted">
-                    {formatDate(org.createdAt)}
-                  </td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="text-ink-muted">{org.memberCount}</td>
+                  <td className="whitespace-nowrap text-ink-muted">{formatDate(org.createdAt)}</td>
+                  <td className="text-right">
                     <div className="flex justify-end gap-1.5">
                       <Button
                         size="sm"
@@ -616,19 +659,19 @@ function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
 
       {users.data !== undefined && (
         <div className="overflow-x-auto rounded border border-line">
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-line text-ink-faint">
+          <table className="data-table">
+            <thead>
               <tr>
-                <th className="px-3 py-2 font-medium">User</th>
-                <th className="px-3 py-2 font-medium">Email verified</th>
-                <th className="px-3 py-2 font-medium">Orgs</th>
-                <th className="px-3 py-2 font-medium">Created</th>
+                <th>User</th>
+                <th>Email verified</th>
+                <th>Orgs</th>
+                <th>Created</th>
               </tr>
             </thead>
             <tbody>
               {users.data.users.map((user) => (
                 <tr key={user.userId} className="border-b border-line/50 last:border-0">
-                  <td className="px-3 py-2">
+                  <td>
                     {/* Null for an account that never set a profile name, which
                         is why this renders conditionally rather than falling
                         back to the email — that is already the line below. */}
@@ -645,17 +688,15 @@ function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
                       {user.name ?? user.email}
                     </button>
                     {user.name !== null && <p className="truncate text-ink-muted">{user.email}</p>}
-                    <p className="font-mono text-[10px] text-ink-faint">
+                    <p className="font-mono text-[11px] text-ink-faint">
                       {user.userId.slice(0, 8)}
                     </p>
                   </td>
-                  <td className="px-3 py-2 text-ink-muted">
+                  <td className="text-ink-muted">
                     {user.emailVerifiedAt === null ? 'no' : formatDate(user.emailVerifiedAt)}
                   </td>
-                  <td className="px-3 py-2 text-ink-muted">{user.orgCount}</td>
-                  <td className="px-3 py-2 whitespace-nowrap text-ink-muted">
-                    {formatDate(user.createdAt)}
-                  </td>
+                  <td className="text-ink-muted">{user.orgCount}</td>
+                  <td className="whitespace-nowrap text-ink-muted">{formatDate(user.createdAt)}</td>
                 </tr>
               ))}
             </tbody>
@@ -752,13 +793,13 @@ function FlagsTab({
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink">
                     {flag.flagName}
-                    <span className="font-mono text-[10px] text-ink-faint">Phase {flag.phase}</span>
+                    <span className="font-mono text-[11px] text-ink-faint">Phase {flag.phase}</span>
                     {flag.perOrg && (
-                      <span className="text-[10px] text-ink-faint">org-toggleable</span>
+                      <span className="text-[11px] text-ink-faint">org-toggleable</span>
                     )}
                   </p>
                   <p className="truncate text-xs text-ink-muted">{flag.description}</p>
-                  <p className="text-[10px] text-ink-faint">
+                  <p className="text-[11px] text-ink-faint">
                     {flag.source === 'override' ? (
                       <>
                         overridden — default was {String(flag.defaultValue)}
@@ -815,6 +856,314 @@ function FlagsTab({
 
       {set.isError && <ErrorView error={set.error} title="Could not change the flag" />}
     </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * Branding
+ * -------------------------------------------------------------------------- */
+
+/**
+ * Platform-wide branding (migration 0073) — product name, an accent palette
+ * chosen from a curated set (never a free color picker; see
+ * `apps/api/src/platform-admin/branding.service.ts`'s own header on why),
+ * and a logo/favicon upload.
+ *
+ * The logo/favicon flow is the same three steps `AttachmentSection` uses —
+ * presign, PUT directly to storage, confirm — and the same rule applies:
+ * never treat a successful PUT as done. The verdict comes from `confirm`,
+ * which is also the only place the row actually changes; a rejected or
+ * infected upload leaves whatever was there before untouched.
+ */
+
+/**
+ * Only the fields this hook actually reads — `expiresAt` is deliberately
+ * absent rather than typed `Date`, which is what the tRPC client infers
+ * from the route's `z.date()` output but not what actually arrives (see
+ * `apps/web/src/lib/wire.ts`); this hook never calls `wire()` on the
+ * mutation result, so declaring a field it does not use avoids that trap
+ * entirely rather than getting it wrong.
+ */
+interface PresignedAsset {
+  readonly storageKey: string;
+  readonly url: string;
+  readonly headers: Record<string, string>;
+}
+
+interface ConfirmedAsset {
+  readonly status: 'clean' | 'infected' | 'rejected';
+  readonly reason?: string;
+}
+
+/**
+ * The presign → PUT → confirm flow, shared by the logo and favicon uploads
+ * below — they differ only in which two routes they call. One copy, not
+ * two, for the same reason `branding.service.ts`'s `presignAsset`/
+ * `confirmAsset` are shared server-side: a future fix (a retry, a progress
+ * percentage) applied to one copy and not the other is a silent drift.
+ */
+function useAssetUpload({
+  presign,
+  confirm,
+  guard,
+  setProgress,
+  inputRef,
+  onSettled,
+}: {
+  readonly presign: (input: { contentType: string; sizeBytes: number }) => Promise<PresignedAsset>;
+  readonly confirm: (input: { storageKey: string }) => Promise<ConfirmedAsset>;
+  readonly guard: (error: unknown, retry: () => void) => boolean;
+  readonly setProgress: (value: string | null) => void;
+  readonly inputRef: React.RefObject<HTMLInputElement | null>;
+  readonly onSettled: () => void | Promise<void>;
+}) {
+  const upload = useMutation({
+    mutationFn: async (file: File) => {
+      setProgress('Requesting an upload URL…');
+      const presigned = await presign({ contentType: file.type, sizeBytes: file.size });
+
+      setProgress('Uploading…');
+      const response = await fetch(presigned.url, {
+        method: 'PUT',
+        headers: presigned.headers,
+        body: file,
+      });
+      if (!response.ok) {
+        throw new Error(`Storage refused the upload (${String(response.status)}).`);
+      }
+
+      setProgress('Scanning…');
+      return confirm({ storageKey: presigned.storageKey });
+    },
+    onSettled: async () => {
+      setProgress(null);
+      if (inputRef.current !== null) inputRef.current.value = '';
+      await onSettled();
+    },
+    onError: (error, file) => {
+      guard(error, () => {
+        upload.mutate(file);
+      });
+    },
+  });
+
+  return upload;
+}
+
+function BrandingTab({
+  guard,
+  onStepUp,
+}: {
+  readonly guard: (error: unknown, retry: () => void) => boolean;
+  readonly onStepUp: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState('');
+  const [nameDirty, setNameDirty] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const faviconInputRef = useRef<HTMLInputElement>(null);
+  const [logoProgress, setLogoProgress] = useState<string | null>(null);
+  const [faviconProgress, setFaviconProgress] = useState<string | null>(null);
+
+  const brandingQuery = useQuery({
+    queryKey: keys.platformBranding(),
+    queryFn: async () => wire(await api.platformAdmin.branding.get.query(undefined)),
+  });
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: keys.platformBranding() });
+
+  const setBranding = useMutation({
+    mutationFn: (input: { productName?: string; paletteId?: PaletteId }) =>
+      api.platformAdmin.branding.set.mutate(input),
+    onSuccess: async () => {
+      setNameDirty(false);
+      await refresh();
+    },
+    onError: (error, input) => {
+      guard(error, () => {
+        setBranding.mutate(input);
+      });
+    },
+  });
+
+  const uploadLogo = useAssetUpload({
+    presign: (input) => api.platformAdmin.branding.presignLogo.mutate(input),
+    confirm: (input) => api.platformAdmin.branding.confirmLogo.mutate(input),
+    guard,
+    setProgress: setLogoProgress,
+    inputRef: logoInputRef,
+    onSettled: refresh,
+  });
+
+  const uploadFavicon = useAssetUpload({
+    presign: (input) => api.platformAdmin.branding.presignFavicon.mutate(input),
+    confirm: (input) => api.platformAdmin.branding.confirmFavicon.mutate(input),
+    guard,
+    setProgress: setFaviconProgress,
+    inputRef: faviconInputRef,
+    onSettled: refresh,
+  });
+
+  if (errorCodeOf(brandingQuery.error) === 'STEP_UP_REQUIRED') {
+    return <StepUpGate onStepUp={onStepUp} />;
+  }
+
+  const data = brandingQuery.data;
+  const displayName = nameDirty ? name : (data?.productName ?? '');
+
+  return (
+    <section aria-label="Branding" className="flex flex-col gap-4">
+      <p className="text-xs text-ink-muted">
+        One brand for this whole deployment — every organization sees the same name, logo, and
+        accent color. There is no per-org override.
+      </p>
+
+      {brandingQuery.isPending && <SkeletonRows rows={4} className="*:h-12" />}
+      {brandingQuery.isError && brandingQuery.error !== null && (
+        <ErrorView error={brandingQuery.error} title="Could not load branding" />
+      )}
+
+      {data !== undefined && (
+        <>
+          <div className="flex flex-col gap-3 rounded-lg border border-line p-4">
+            <Field label="Product name" htmlFor="branding-name">
+              <div className="flex gap-2">
+                <Input
+                  id="branding-name"
+                  value={displayName}
+                  maxLength={80}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                    setNameDirty(true);
+                  }}
+                />
+                <Button
+                  disabled={setBranding.isPending || !nameDirty || displayName.trim() === ''}
+                  onClick={() => {
+                    setBranding.mutate({ productName: displayName.trim() });
+                  }}
+                >
+                  Save
+                </Button>
+              </div>
+            </Field>
+
+            <div>
+              <p className="mb-1.5 text-xs font-medium text-ink">Accent palette</p>
+              <div className="flex flex-wrap gap-2">
+                {PALETTE_IDS.map((paletteId) => (
+                  <button
+                    key={paletteId}
+                    type="button"
+                    title={paletteId}
+                    aria-label={`Use the ${paletteId} palette`}
+                    aria-pressed={data.paletteId === paletteId}
+                    disabled={setBranding.isPending}
+                    onClick={() => {
+                      setBranding.mutate({ paletteId });
+                    }}
+                    className={cn(
+                      'size-8 rounded-full border-2 transition-transform',
+                      data.paletteId === paletteId
+                        ? 'scale-110 border-ink'
+                        : 'border-transparent hover:scale-105',
+                    )}
+                    style={{ backgroundColor: paletteColorsOf(paletteId).base }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {setBranding.isError && (
+              <ErrorView error={setBranding.error} title="Could not save branding" />
+            )}
+          </div>
+
+          <BrandingAssetUpload
+            label="Logo"
+            description="Shown in the sidebar. PNG only, 2 MB max."
+            currentUrl={data.logoUrl}
+            inputRef={logoInputRef}
+            progress={logoProgress}
+            error={uploadLogo.isError ? uploadLogo.error : null}
+            onSelect={(file) => {
+              uploadLogo.mutate(file);
+            }}
+          />
+
+          <BrandingAssetUpload
+            label="Favicon"
+            description="Shown in the browser tab. PNG only, 2 MB max."
+            currentUrl={data.faviconUrl}
+            inputRef={faviconInputRef}
+            progress={faviconProgress}
+            error={uploadFavicon.isError ? uploadFavicon.error : null}
+            onSelect={(file) => {
+              uploadFavicon.mutate(file);
+            }}
+          />
+        </>
+      )}
+    </section>
+  );
+}
+
+function BrandingAssetUpload({
+  label,
+  description,
+  currentUrl,
+  inputRef,
+  progress,
+  error,
+  onSelect,
+}: {
+  readonly label: string;
+  readonly description: string;
+  readonly currentUrl: string | null;
+  readonly inputRef: React.RefObject<HTMLInputElement | null>;
+  readonly progress: string | null;
+  readonly error: unknown;
+  readonly onSelect: (file: File) => void;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-line p-4">
+      <div className="flex size-12 shrink-0 items-center justify-center rounded border border-line bg-surface-sunken">
+        {currentUrl !== null ? (
+          <img src={currentUrl} alt="" className="max-h-full max-w-full object-contain" />
+        ) : (
+          <span className="text-[11px] text-ink-faint">None</span>
+        )}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-ink">{label}</p>
+        <p className="text-[11px] text-ink-faint">{description}</p>
+        {error !== null && (
+          <ErrorView error={error} title={`Could not save the ${label.toLowerCase()}`} />
+        )}
+      </div>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file !== undefined) onSelect(file);
+        }}
+      />
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={progress !== null}
+        onClick={() => {
+          inputRef.current?.click();
+        }}
+      >
+        {progress ?? 'Upload'}
+      </Button>
+    </div>
   );
 }
 
@@ -883,7 +1232,7 @@ function UserDetailDialog({
                         </span>
                         <Badge>{membership.role}</Badge>
                         {membership.status !== 'active' && (
-                          <span className="text-[10px] text-ink-faint">{membership.status}</span>
+                          <span className="text-[11px] text-ink-faint">{membership.status}</span>
                         )}
                       </div>
                       {/* The ORG's own state, not the membership's. A valid
@@ -891,7 +1240,7 @@ function UserDetailDialog({
                           request time by resolveOrgMembership, and from the
                           user's side that is indistinguishable from having
                           been removed. */}
-                      <p className="text-[10px] text-ink-faint">
+                      <p className="text-[11px] text-ink-faint">
                         {membership.orgSlug} · org {membership.orgStatus} ·{' '}
                         {membership.orgBillingStatus} · since {formatDate(membership.joinedAt)}
                       </p>
@@ -1002,7 +1351,7 @@ function OrgDetailDialog({
                   Operator override — outranks the plan
                 </h3>
                 <p className="mt-0.5 text-xs text-ink-muted">{data.override.reason}</p>
-                <p className="mt-0.5 text-[10px] text-ink-faint">
+                <p className="mt-0.5 text-[11px] text-ink-faint">
                   set {formatDate(data.override.setAt)}
                   {data.override.expiresAt === null
                     ? ' · no expiry'
@@ -1028,13 +1377,13 @@ function OrgDetailDialog({
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="text-ink">{featureLabel(feature.flagName)}</span>
-                      <span className="block text-[10px] text-ink-faint">
+                      <span className="block text-[11px] text-ink-faint">
                         {featureDescription(feature.flagName) ?? feature.description}
                       </span>
                     </span>
                     {/* WHERE the answer came from — see this component's own
                         header on why an override is only tolerable with it. */}
-                    <span className="shrink-0 text-[10px] text-ink-faint">
+                    <span className="shrink-0 text-[11px] text-ink-faint">
                       {feature.source === 'default' ? 'registry default' : `from ${feature.source}`}
                     </span>
                   </li>
@@ -1052,12 +1401,12 @@ function OrgDetailDialog({
                     <span className="min-w-0 flex-1 truncate text-ink">
                       {member.name ?? member.email}
                       {member.name !== null && (
-                        <span className="ml-1 text-[10px] text-ink-faint">{member.email}</span>
+                        <span className="ml-1 text-[11px] text-ink-faint">{member.email}</span>
                       )}
                     </span>
                     <Badge>{member.role}</Badge>
                     {member.status !== 'active' && (
-                      <span className="text-[10px] text-ink-faint">{member.status}</span>
+                      <span className="text-[11px] text-ink-faint">{member.status}</span>
                     )}
                   </li>
                 ))}
@@ -1113,7 +1462,7 @@ function OrgDetailDialog({
                     No operator has acted on this organization.
                   </p>
                 ) : (
-                  <ul className="mt-1 flex flex-col gap-0.5 text-[10px] text-ink-muted">
+                  <ul className="mt-1 flex flex-col gap-0.5 text-[11px] text-ink-muted">
                     {history.data.map((entry, index) => (
                       <li key={`${entry.action}-${String(index)}`}>
                         {formatDateTime(entry.at)} · {entry.action} · {entry.by}
@@ -1145,7 +1494,7 @@ function DetailRow({
   return (
     <>
       <dt className="text-ink-faint">{label}</dt>
-      <dd className={cn('truncate text-ink', mono === true && 'font-mono text-[10px]')}>{value}</dd>
+      <dd className={cn('truncate text-ink', mono === true && 'font-mono text-[11px]')}>{value}</dd>
     </>
   );
 }
@@ -1259,7 +1608,7 @@ function ChangeOrgPlanDialog({
                 setReason(event.target.value);
               }}
             />
-            <p className="mt-0.5 text-[10px] text-ink-faint">
+            <p className="mt-0.5 text-[11px] text-ink-faint">
               Recorded in the operator audit chain. Required.
             </p>
           </Field>
@@ -1403,7 +1752,7 @@ function PlansTab({
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink">
                       {plan.name}
-                      <span className="font-mono text-[10px] text-ink-faint">{plan.id}</span>
+                      <span className="font-mono text-[11px] text-ink-faint">{plan.id}</span>
                       {plan.isDefault && <Badge>default</Badge>}
                       {!plan.isActive && <Badge>retired</Badge>}
                       {plan.stripeProductId === null && <Badge>no processor product</Badge>}
@@ -1425,7 +1774,7 @@ function PlansTab({
                       )}
                     </p>
 
-                    <p className="mt-1 text-[10px] text-ink-faint">
+                    <p className="mt-1 text-[11px] text-ink-faint">
                       {plan.orgCount} org{plan.orgCount === 1 ? '' : 's'} · telephony{' '}
                       {ceiling(plan.telephonyCapCents, 'cents')} · automation{' '}
                       {ceiling(plan.automationRunsPerHour, 'runs/hr')} · TURN{' '}
@@ -1436,7 +1785,7 @@ function PlansTab({
                         ` · +${String(plan.telephonyMarkupPct)}% markup`}
                     </p>
 
-                    <p className="mt-1 text-[10px] text-ink-faint">
+                    <p className="mt-1 text-[11px] text-ink-faint">
                       {plan.features.length === 0
                         ? 'core only — no flagged modules'
                         : plan.features.join(', ')}
@@ -1448,7 +1797,7 @@ function PlansTab({
                         or that it belongs to the Stripe account this
                         deployment currently points at. Only looking settles
                         that, so the console makes looking one click. */}
-                    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[10px] text-ink-faint">
+                    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] text-ink-faint">
                       {plan.stripeProductId === null ? (
                         <span>not yet at the processor — created on first price</span>
                       ) : (
@@ -1718,7 +2067,7 @@ function EditLimitsDialog({
           onChange(event.target.value);
         }}
       />
-      <p className="mt-0.5 text-[10px] text-ink-faint">{LIMIT_COPY[field] ?? ''}</p>
+      <p className="mt-0.5 text-[11px] text-ink-faint">{LIMIT_COPY[field] ?? ''}</p>
     </Field>
   );
 
@@ -1939,7 +2288,7 @@ function EditFeaturesDialog({
                     >
                       <span className="block text-sm text-ink">
                         {featureLabel(flag.flagName)}
-                        <span className="ml-1.5 font-mono text-[10px] text-ink-faint">
+                        <span className="ml-1.5 font-mono text-[11px] text-ink-faint">
                           {flag.flagName}
                         </span>
                       </span>
@@ -2227,28 +2576,28 @@ function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
         ) : (
           <>
             <div className="overflow-x-auto rounded border border-line">
-              <table className="w-full text-left text-xs">
-                <thead className="border-b border-line text-ink-faint">
+              <table className="data-table">
+                <thead>
                   <tr>
-                    <th className="px-3 py-2 font-medium">Seq</th>
-                    <th className="px-3 py-2 font-medium">When</th>
-                    <th className="px-3 py-2 font-medium">Action</th>
-                    <th className="px-3 py-2 font-medium">Target</th>
-                    <th className="px-3 py-2 font-medium">Operator</th>
+                    <th>Seq</th>
+                    <th>When</th>
+                    <th>Action</th>
+                    <th>Target</th>
+                    <th>Operator</th>
                   </tr>
                 </thead>
                 <tbody>
                   {entries.data.entries.map((entry) => (
                     <tr key={entry.seq} className="border-b border-line/50 last:border-0">
-                      <td className="px-3 py-1.5 font-mono text-ink-faint">{entry.seq}</td>
-                      <td className="px-3 py-1.5 whitespace-nowrap text-ink-muted">
+                      <td className="font-mono text-ink-faint">{entry.seq}</td>
+                      <td className="whitespace-nowrap text-ink-muted">
                         {formatDateTime(entry.occurredAt)}
                       </td>
-                      <td className="px-3 py-1.5 font-medium text-ink">{entry.action}</td>
-                      <td className="px-3 py-1.5 font-mono text-[10px] text-ink-muted">
+                      <td className="font-medium text-ink">{entry.action}</td>
+                      <td className="font-mono text-[11px] text-ink-muted">
                         {entry.target === null ? '—' : JSON.stringify(entry.target)}
                       </td>
-                      <td className="px-3 py-1.5 text-ink-muted">
+                      <td className="text-ink-muted">
                         <span className="truncate" title={entry.operatorId}>
                           {entry.operatorEmail}
                         </span>
@@ -2333,31 +2682,17 @@ function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
         </p>
       </div>
 
-      <div
-        role="tablist"
-        aria-label="Filter by kind"
-        className="mb-3 flex gap-1 rounded-lg border border-line bg-surface-sunken p-1"
-      >
-        {OPERATIONAL_EVENT_KINDS.map(([value, label]) => (
-          <button
-            key={value ?? 'all'}
-            role="tab"
-            aria-selected={kind === value}
-            onClick={() => {
-              setKind(value);
-              setCursor(null);
-            }}
-            className={cn(
-              'flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-              kind === value
-                ? 'bg-surface-raised text-ink shadow-sm'
-                : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <TabBar
+        ariaLabel="Filter by kind"
+        className="mb-3"
+        size="xs"
+        value={kind}
+        onChange={(value) => {
+          setKind(value);
+          setCursor(null);
+        }}
+        items={OPERATIONAL_EVENT_KINDS}
+      />
 
       {events.isPending && <SkeletonRows rows={5} className="*:h-12" />}
       {events.isError && <ErrorView error={events.error} title="Could not load operations" />}
@@ -2368,30 +2703,30 @@ function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
         ) : (
           <>
             <div className="overflow-x-auto rounded border border-line">
-              <table className="w-full text-left text-xs">
-                <thead className="border-b border-line text-ink-faint">
+              <table className="data-table">
+                <thead>
                   <tr>
-                    <th className="px-3 py-2 font-medium">When</th>
-                    <th className="px-3 py-2 font-medium">Kind</th>
-                    <th className="px-3 py-2 font-medium">Outcome</th>
-                    <th className="px-3 py-2 font-medium">Target</th>
-                    <th className="px-3 py-2 font-medium">Detail</th>
+                    <th>When</th>
+                    <th>Kind</th>
+                    <th>Outcome</th>
+                    <th>Target</th>
+                    <th>Detail</th>
                   </tr>
                 </thead>
                 <tbody>
                   {events.data.events.map((event) => (
                     <tr key={event.id} className="border-b border-line/50 last:border-0">
-                      <td className="px-3 py-1.5 whitespace-nowrap text-ink-muted">
+                      <td className="whitespace-nowrap text-ink-muted">
                         {formatDateTime(event.occurredAt)}
                       </td>
-                      <td className="px-3 py-1.5 font-medium text-ink">{event.kind}</td>
+                      <td className="font-medium text-ink">{event.kind}</td>
                       <td className="px-3 py-1.5">
                         <OutcomeBadge outcome={event.outcome} />
                       </td>
-                      <td className="px-3 py-1.5 font-mono text-[10px] text-ink-muted">
+                      <td className="font-mono text-[11px] text-ink-muted">
                         {event.target ?? '—'}
                       </td>
-                      <td className="px-3 py-1.5 font-mono text-[10px] text-ink-muted">
+                      <td className="font-mono text-[11px] text-ink-muted">
                         {event.detail === null || event.detail === undefined
                           ? '—'
                           : JSON.stringify(event.detail)}
@@ -2483,23 +2818,23 @@ function BillingTab({
 
       {billing.data !== undefined && (
         <div className="overflow-x-auto rounded border border-line">
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-line text-ink-faint">
+          <table className="data-table">
+            <thead>
               <tr>
-                <th className="px-3 py-2 font-medium">Organization</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Plan</th>
-                <th className="px-3 py-2 font-medium">Renews</th>
-                <th className="px-3 py-2 font-medium">Last invoice</th>
-                <th className="px-3 py-2 font-medium">Trial / grace ends</th>
-                <th className="px-3 py-2 font-medium">Stripe customer</th>
-                <th className="px-3 py-2 font-medium" />
+                <th>Organization</th>
+                <th>Status</th>
+                <th>Plan</th>
+                <th>Renews</th>
+                <th>Last invoice</th>
+                <th>Trial / grace ends</th>
+                <th>Stripe customer</th>
+                <th />
               </tr>
             </thead>
             <tbody>
               {billing.data.orgs.map((org) => (
                 <tr key={org.orgId} className="border-b border-line/50 last:border-0">
-                  <td className="px-3 py-2">
+                  <td>
                     {/* Clickable here too — the drill-down is the same panel
                         the Orgs tab opens, and an operator triaging a payment
                         should not have to switch tabs to reach it. */}
@@ -2512,15 +2847,15 @@ function BillingTab({
                     >
                       {org.name}
                     </button>
-                    <p className="font-mono text-[10px] text-ink-faint">{org.slug}</p>
+                    <p className="font-mono text-[11px] text-ink-faint">{org.slug}</p>
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     <BillingStatusBadge billingStatus={org.billingStatus} />
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     <p className="text-ink">{org.planName ?? org.planId ?? '—'}</p>
                     {org.currentPriceCents !== null && (
-                      <p className="text-[10px] text-ink-faint">
+                      <p className="text-[11px] text-ink-faint">
                         {money(org.currentPriceCents, 'usd')}/{org.currentPriceInterval ?? 'month'}
                       </p>
                     )}
@@ -2528,15 +2863,15 @@ function BillingTab({
                         row — "renews on the 14th" is true and misleading when
                         what happens on the 14th is a plan change. */}
                     {org.pendingPlanId !== null && org.pendingPlanEffectiveAt !== null && (
-                      <p className="text-[10px] text-warning">
+                      <p className="text-[11px] text-warning">
                         → {org.pendingPlanId} {formatDate(org.pendingPlanEffectiveAt)}
                       </p>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-ink-muted">
+                  <td className="text-ink-muted">
                     {org.currentPeriodEnd === null ? '—' : formatDate(org.currentPeriodEnd)}
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     {org.lastInvoice === null ? (
                       <span className="text-ink-faint">—</span>
                     ) : (
@@ -2549,23 +2884,23 @@ function BillingTab({
                           {org.lastInvoice.status}{' '}
                           {money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)}
                         </p>
-                        <p className="text-[10px] text-ink-faint">
+                        <p className="text-[11px] text-ink-faint">
                           {formatDate(org.lastInvoice.issuedAt)}
                         </p>
                       </>
                     )}
                   </td>
-                  <td className="px-3 py-2 whitespace-nowrap text-ink-muted">
+                  <td className="whitespace-nowrap text-ink-muted">
                     {org.billingStatus === 'past_due' && org.billingGraceEndsAt !== null
                       ? formatDate(org.billingGraceEndsAt)
                       : org.trialEndsAt !== null
                         ? formatDate(org.trialEndsAt)
                         : '—'}
                   </td>
-                  <td className="px-3 py-2 font-mono text-[10px] text-ink-faint">
+                  <td className="font-mono text-[11px] text-ink-faint">
                     {org.stripeCustomerId ?? '—'}
                   </td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="text-right">
                     {org.billingStatus === 'past_due' && (
                       <Button
                         size="sm"

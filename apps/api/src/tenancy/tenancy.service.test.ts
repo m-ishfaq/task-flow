@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { unsafeAsId, type OrgId, type RequestId, type UserId } from '@taskflow/contracts';
 import type { Subject } from '@taskflow/policy';
 import {
+  asc,
   closeDatabase,
   initializeAuditDatabase,
   initializeDatabase,
@@ -143,8 +144,16 @@ describe('creating an organization', () => {
   it('emits org.created into the outbox in the same transaction', async () => {
     const orgId = await newOrg('acme-three');
 
+    /* `orderBy(asc(id))` is load-bearing, not tidiness. `outbox.id` is a
+       UUIDv7 (`appendToOutbox` writes `event.id` from `newId()`), and
+       `uuidv7()` keeps a module-level counter that makes ids strictly
+       increasing even within one millisecond (packages/security/src/uuid.ts)
+       — so generation order is genuinely encoded in the id and this ORDER BY
+       is exact, not a heuristic. Without it, Postgres is free to return the
+       two rows in either physical order, and CI proved it will: this test
+       failed intermittently on an unordered SELECT before this fix. */
     const rows = await withOrgScope(orgId, async (tx) =>
-      tx.select({ name: schema.outbox.name }).from(schema.outbox),
+      tx.select({ name: schema.outbox.name }).from(schema.outbox).orderBy(asc(schema.outbox.id)),
     );
     // billing.trial_started (Phase 12 Wave 3) writes to the SAME outbox
     // append call, alongside org.created — one org creation, two events.

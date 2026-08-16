@@ -1,6 +1,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { ChevronLeft, ChevronRight, MoreHorizontal, Plus } from 'lucide-react';
 import type { BoardId, ListId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
@@ -47,12 +48,13 @@ export function ListColumn({ orgId, boardId, list, count, siblings, children }: 
         isOver && 'ring-1 ring-accent',
       )}
     >
-      <header className="flex items-center justify-between gap-1 px-3 py-2">
-        <h2 className="min-w-0 flex-1 truncate text-xs font-semibold tracking-wide text-ink-muted uppercase">
-          {list.name}
-        </h2>
+      <header className="flex items-center justify-between gap-1 px-3 py-2.5">
+        <h2 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{list.name}</h2>
         <span
-          className={cn('text-[11px] text-ink-faint', overLimit && 'font-semibold text-warning')}
+          className={cn(
+            'font-mono text-xs text-ink-faint',
+            overLimit && 'font-semibold text-warning',
+          )}
           title={
             list.wipLimit === null
               ? undefined
@@ -227,7 +229,7 @@ function ListMenu({
               reorder.mutate(-1);
             }}
           >
-            ◀
+            <ChevronLeft aria-hidden="true" className="size-4" strokeWidth={2} />
           </Button>
           <Button
             size="sm"
@@ -238,7 +240,7 @@ function ListMenu({
               reorder.mutate(1);
             }}
           >
-            ▶
+            <ChevronRight aria-hidden="true" className="size-4" strokeWidth={2} />
           </Button>
         </div>
 
@@ -283,9 +285,9 @@ function ListMenu({
       onClick={() => {
         setEditing(true);
       }}
-      className="rounded px-1 text-xs text-ink-faint hover:bg-surface-hover hover:text-ink"
+      className="rounded p-1 text-ink-faint hover:bg-surface-hover hover:text-ink"
     >
-      ⋯
+      <MoreHorizontal aria-hidden="true" className="size-3.5" strokeWidth={2} />
     </button>
   );
 }
@@ -386,6 +388,7 @@ function AddCard({
       {/* Not disabled while pending — the whole point is that the next title can
           be typed and submitted before the previous one has landed. */}
       <Button type="submit" size="sm" disabled={title.trim() === ''}>
+        <Plus aria-hidden="true" className="size-3.5" strokeWidth={2} />
         Add
       </Button>
     </form>

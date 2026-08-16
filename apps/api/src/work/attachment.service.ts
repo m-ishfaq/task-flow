@@ -340,7 +340,11 @@ export async function presignDownload(
     return attachment;
   });
 
-  const url = await deps.storage.presignDownload(row.storageKey, expiresInSeconds);
+  /* The filename travels into the signed URL's `Content-Disposition` (the
+     storage layer sanitizes it), so the browser downloads the object under
+     the name the person shared it under rather than navigating to it and
+     rendering it inline. Same fix as chat's `presignDownload`. */
+  const url = await deps.storage.presignDownload(row.storageKey, expiresInSeconds, row.filename);
   return { url, filename: row.filename, expiresInSeconds };
 }
 

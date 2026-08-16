@@ -329,7 +329,11 @@ export async function presignDownload(
     return attachment;
   });
 
-  const url = await deps.storage.presignDownload(row.storageKey, expiresInSeconds);
+  /* The filename goes INTO the signed URL's `Content-Disposition` (the
+     storage layer's `presignDownload` sanitizes it) — without it the browser
+     navigates to the object and renders a PDF or image inline rather than
+     downloading, which is the exact "the Download button did nothing" bug. */
+  const url = await deps.storage.presignDownload(row.storageKey, expiresInSeconds, row.filename);
   return { url, filename: row.filename, expiresInSeconds };
 }
 

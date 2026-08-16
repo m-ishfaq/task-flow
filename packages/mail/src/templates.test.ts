@@ -300,3 +300,50 @@ describe('renderDuplicateRegistration', () => {
     expect(mail.text).toMatch(/No new account was created/);
   });
 });
+
+describe('the branded footer', () => {
+  /* Every render function threads `productName` through to the shared
+     `textDocument`/`htmlDocument` footer — this exercises the three
+     distinct signature shapes the render functions actually have
+     (a `LinkContext`-based context, an inline object context, and no
+     context at all) rather than re-testing the same two helper functions
+     eleven times over. Only the FOOTER is branded in v1 (templates.ts's
+     own header on `textDocument`); subject lines and body copy keep
+     "TaskFlow" regardless of what's asserted here. */
+
+  it('defaults the footer to TaskFlow when no productName is given', () => {
+    expect(renderVerifyEmail({ ...CONTEXT, expiresInHours: 24 }).text).toMatch(/\n—\nTaskFlow\n/);
+    expect(renderPasswordChanged().text).toMatch(/\n—\nTaskFlow\n/);
+    expect(renderOrgSuspended({ orgName: 'Acme' }).text).toMatch(/\n—\nTaskFlow\n/);
+  });
+
+  it('uses the given productName in the text footer, for all three context shapes', () => {
+    expect(
+      renderVerifyEmail({ ...CONTEXT, expiresInHours: 24, productName: 'Acme Flow' }).text,
+    ).toMatch(/\n—\nAcme Flow\n/);
+    expect(renderPasswordChanged({ productName: 'Acme Flow' }).text).toMatch(/\n—\nAcme Flow\n/);
+    expect(renderOrgSuspended({ orgName: 'Acme', productName: 'Acme Flow' }).text).toMatch(
+      /\n—\nAcme Flow\n/,
+    );
+  });
+
+  it('uses the given productName in the HTML footer too', () => {
+    const mail = renderVerifyEmail({ ...CONTEXT, expiresInHours: 24, productName: 'Acme Flow' });
+    expect(mail.html).toContain('Acme Flow — this is an automated message');
+  });
+
+  it('escapes productName in the HTML footer', () => {
+    const mail = renderVerifyEmail({
+      ...CONTEXT,
+      expiresInHours: 24,
+      productName: '<script>alert(1)</script>',
+    });
+    expect(mail.html).not.toContain('<script>alert');
+  });
+
+  it('never touches the subject line or body copy — v1 scope is the footer only', () => {
+    const mail = renderVerifyEmail({ ...CONTEXT, expiresInHours: 24, productName: 'Acme Flow' });
+    expect(mail.subject).toBe('Confirm your TaskFlow email address');
+    expect(mail.text).toMatch(/finish setting up your TaskFlow account/);
+  });
+});

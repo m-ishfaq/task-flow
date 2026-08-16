@@ -18,11 +18,13 @@ import {
   Empty,
   Field,
   Input,
+  PageHeader,
   Section,
   SkeletonRows,
 } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
+import { useBranding } from '../../lib/branding-context.js';
 import { useStepUp } from '../auth/use-step-up.js';
 import { membersQuery, orgDetailQuery, type SettingsCapabilities } from '../org/api.js';
 import { BillingSection } from './billing-section.js';
@@ -54,19 +56,19 @@ export function SettingsPage() {
   const orgId = useSession((state) => state.orgId) ?? '';
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-10 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-ink">Organization settings</h1>
-          <p className="text-xs text-ink-muted">Members, teams, and who can reach what.</p>
-        </div>
-        <Link
-          to="/settings/audit"
-          className="rounded border border-line px-2 py-1 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
-        >
-          Audit log
-        </Link>
-      </div>
+    <div className="mx-auto flex max-w-3xl flex-col gap-9 p-8">
+      <PageHeader
+        title="Organization settings"
+        description="Members, teams, and who can reach what."
+        actions={
+          <Link
+            to="/settings/audit"
+            className="rounded border border-line px-2.5 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
+          >
+            Audit log
+          </Link>
+        }
+      />
 
       <OrgSection orgId={orgId} />
       <BillingSection orgId={orgId} />
@@ -157,6 +159,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
   const org = useQuery(orgDetailQuery(orgId));
   const { guard, dialog } = useStepUp();
   const currentUserId = useSession((state) => state.userId);
+  const { productName } = useBranding();
 
   /* Same cache as OrgSection's own query (identical key), so this costs no
      extra request — React Query dedupes by key. Undefined only while the
@@ -270,7 +273,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
               <Field
                 label="Add a member"
                 htmlFor="member-email"
-                hint="The person must already have a TaskFlow account — email invitations arrive in a later phase."
+                hint={`The person must already have a ${productName} account — email invitations arrive in a later phase.`}
               >
                 <Input
                   id="member-email"
@@ -702,7 +705,7 @@ function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCa
   const candidates = orgMembers.filter((member) => !onTeam.has(member.userId));
 
   return (
-    <li className="rounded-lg border border-line bg-surface-raised p-3">
+    <li className="rounded-lg border border-line bg-surface-raised p-3 shadow-sm">
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-ink">{team.name}</span>
         <span className="font-mono text-[11px] text-ink-faint">{team.slug}</span>

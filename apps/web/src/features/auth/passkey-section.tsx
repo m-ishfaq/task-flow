@@ -14,6 +14,7 @@ import {
   SkeletonRows,
 } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
+import { useBranding } from '../../lib/branding-context.js';
 import { useStepUp } from './use-step-up.js';
 import {
   browserSupportsWebAuthn,
@@ -46,6 +47,7 @@ import {
 export function PasskeySection() {
   const queryClient = useQueryClient();
   const { guard, dialog } = useStepUp();
+  const { productName } = useBranding();
   /* Computed once — see login-page.tsx's identical pattern for why. */
   const [passkeySupported] = useState(() => browserSupportsWebAuthn());
 
@@ -111,9 +113,9 @@ export function PasskeySection() {
               `ErrorText` for the other. */}
           {enroll.isError &&
             (enroll.error instanceof PasskeyCeremonyError ? (
-              passkeyCeremonyMessage(enroll.error.reason) !== null && (
+              passkeyCeremonyMessage(enroll.error.reason, productName) !== null && (
                 <p className="mt-2 text-xs text-danger">
-                  {passkeyCeremonyMessage(enroll.error.reason)}
+                  {passkeyCeremonyMessage(enroll.error.reason, productName)}
                 </p>
               )
             ) : (

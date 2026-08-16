@@ -316,6 +316,11 @@ describe('the real application router', () => {
          than by anything this layer checks. See public.service.ts. */
       'docs.public.getPage',
       'health.live',
+      /* Platform-wide branding (migration 0073) — the login page and the
+         public Docs page both need the product name/logo/favicon/palette
+         before any session exists, the same reasoning docs.public.getPage
+         above already established for this list. */
+      'platformAdmin.branding.public',
     ]);
   });
 

@@ -519,7 +519,7 @@ function StaticColumn({
 
 function ColumnHeader({ group }: { readonly group: Group }) {
   return (
-    <header className="flex items-center gap-2 px-3 py-2">
+    <header className="flex items-center gap-2 px-3 py-2.5">
       {group.color !== null && (
         <span
           className="size-2.5 shrink-0 rounded-full"
@@ -527,10 +527,8 @@ function ColumnHeader({ group }: { readonly group: Group }) {
           aria-hidden="true"
         />
       )}
-      <h2 className="min-w-0 flex-1 truncate text-xs font-semibold tracking-wide text-ink-muted uppercase">
-        {group.label}
-      </h2>
-      <span className="text-[11px] text-ink-faint">{group.cards.length}</span>
+      <h2 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{group.label}</h2>
+      <span className="font-mono text-xs text-ink-faint">{group.cards.length}</span>
     </header>
   );
 }

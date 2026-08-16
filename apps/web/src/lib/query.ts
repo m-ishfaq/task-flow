@@ -179,6 +179,19 @@ export const keys = {
   /** The caller's own linked OAuth providers. */
   oauthConnected: () => ['auth', 'oauth', 'connected'] as const,
 
+  /**
+   * The deployment's branding, as anyone may see it — signed in or not.
+   *
+   * Its own root segment, not `keys.platformBranding()`'s: that key answers
+   * the console's operator-scoped `branding.get` (a `BrandingRow`, always
+   * fresh, includes `updatedBy`/`updatedAt`); this one answers the public
+   * `branding.public` snapshot (`productName`/`logoUrl`/`faviconUrl`/
+   * `paletteId` only). Sharing a key would make two different-shaped
+   * responses race for one cache entry, the same trap `keys.profile()`'s own
+   * comment documents against `keys.me()`.
+   */
+  brandingPublic: () => ['branding', 'public'] as const,
+
   /** The caller's own account (`/account`) — answers with no org selected. */
   me: () => ['auth', 'me'] as const,
 
@@ -405,6 +418,8 @@ export const keys = {
   platformUsers: (cursor: string | null) => ['platform', 'users', cursor ?? 'first'] as const,
   /** The flag registry with resolved values. */
   platformFlags: () => ['platform', 'flags'] as const,
+  /** The deployment's branding — the console tab's own read, always fresh. */
+  platformBranding: () => ['platform', 'branding'] as const,
   /** One page of the billing directory (Phase 12 Wave 3 §3.6). */
   platformBilling: (cursor: string | null) => ['platform', 'billing', cursor ?? 'first'] as const,
   /** One page of the operator chain. Keyset on seq — the page is `before`. */

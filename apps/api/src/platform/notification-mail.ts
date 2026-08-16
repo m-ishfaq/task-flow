@@ -7,6 +7,7 @@ import {
   type MailFailure,
 } from '@taskflow/mail';
 import type { Env } from '../config/env.js';
+import { getResolvedBranding } from '../platform-admin/branding-cache.js';
 import type { PendingEmailSend } from './notification.projection.js';
 import type { DigestBatch } from './digest.js';
 
@@ -64,24 +65,37 @@ export function createNotificationMailDelivery(
   return {
     queue,
     send: (send) => {
-      const rendered = renderNotificationEmail({
-        webOrigin: options.env.WEB_ORIGIN,
-        title: send.title,
-        excerpt: send.excerpt,
-        path: send.path,
-      });
-      queue.enqueue({ to: send.to, ...rendered });
+      /* Fire-and-forget, matching this function's own declared `void`
+         return and `relay.ts`'s uncalled-with-await call site — the async
+         body just moves the actual `queue.enqueue` from this tick to the
+         microtask after the (almost always cached) branding lookup
+         resolves, which nothing here depends on happening synchronously. */
+      void (async () => {
+        const { productName } = await getResolvedBranding();
+        const rendered = renderNotificationEmail({
+          webOrigin: options.env.WEB_ORIGIN,
+          title: send.title,
+          excerpt: send.excerpt,
+          path: send.path,
+          productName,
+        });
+        queue.enqueue({ to: send.to, ...rendered });
+      })();
     },
     sendDigest: (batch) => {
-      const rendered = renderNotificationDigest({
-        webOrigin: options.env.WEB_ORIGIN,
-        items: batch.items.map((item) => ({
-          title: item.title,
-          excerpt: item.excerpt,
-          path: item.path,
-        })),
-      });
-      queue.enqueue({ to: batch.to, ...rendered });
+      void (async () => {
+        const { productName } = await getResolvedBranding();
+        const rendered = renderNotificationDigest({
+          webOrigin: options.env.WEB_ORIGIN,
+          items: batch.items.map((item) => ({
+            title: item.title,
+            excerpt: item.excerpt,
+            path: item.path,
+          })),
+          productName,
+        });
+        queue.enqueue({ to: batch.to, ...rendered });
+      })();
     },
   };
 }

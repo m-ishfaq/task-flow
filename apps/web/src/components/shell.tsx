@@ -1,6 +1,14 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ComponentType } from 'react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  ChevronDown,
+  Keyboard,
+  Menu,
+  ShieldCheck,
+  SlidersHorizontal,
+  type LucideProps,
+} from 'lucide-react';
 import {
   DropdownMenuContent,
   DropdownMenuItem,
@@ -19,6 +27,7 @@ import { hangUp } from '../features/rtc/use-call.js';
 import { useUi } from '../lib/ui-store.js';
 import { useIsDesktop } from '../lib/use-media-query.js';
 import { orgsQuery } from '../features/org/api.js';
+import { useBranding } from '../lib/branding-context.js';
 import { cn } from '../lib/cn.js';
 import { Avatar, Button } from './primitives.js';
 import { Sidebar } from './sidebar.js';
@@ -321,7 +330,7 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
   const toggleMobileNav = useUi((state) => state.toggleMobileNav);
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-4">
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-4">
       {/* Below `md`, the sidebar is an off-canvas drawer (Shell) with no
           permanent trigger of its own — this is the only way to open it.
           `showMenuButton` is false in the org-picker's pre-org state, where
@@ -333,7 +342,7 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
           aria-label="Open navigation"
           className="-ml-1 shrink-0 rounded p-1.5 text-ink-muted hover:bg-surface-hover hover:text-ink md:hidden"
         >
-          <span aria-hidden="true">☰</span>
+          <Menu aria-hidden="true" className="size-5" strokeWidth={2} />
         </button>
       )}
 
@@ -367,12 +376,12 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
           }}
           aria-label="Keyboard shortcuts"
           title="Keyboard shortcuts (?)"
-          className="shrink-0 rounded px-2 py-1 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
+          className="shrink-0 rounded p-1.5 text-ink-muted hover:bg-surface-hover hover:text-ink"
         >
-          ?
+          <Keyboard aria-hidden="true" className="size-4" strokeWidth={2} />
         </button>
-        <NavLink to="/settings" label="Settings" />
-        <NavLink to="/admin/permissions" label="Permissions" />
+        <NavLink to="/settings" label="Settings" icon={SlidersHorizontal} />
+        <NavLink to="/admin/permissions" label="Permissions" icon={ShieldCheck} />
       </nav>
     </header>
   );
@@ -391,6 +400,7 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
  */
 function Breadcrumbs() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const { productName } = useBranding();
 
   const label = pathname.startsWith('/boards/')
     ? 'Board'
@@ -416,7 +426,7 @@ function Breadcrumbs() {
                         ? 'Platform admin'
                         : pathname.startsWith('/orgs')
                           ? 'Organizations'
-                          : 'TaskFlow';
+                          : productName;
 
   /* `min-w-0` is load-bearing, not decorative: a flex item's default
      min-width is `auto`, which means it will NOT shrink below its own content
@@ -430,20 +440,27 @@ function Breadcrumbs() {
   return <h1 className="min-w-0 truncate text-sm font-medium text-ink">{label}</h1>;
 }
 
+/** A `lucide-react` icon component — matches sidebar.tsx's own alias. */
+type NavIcon = ComponentType<LucideProps>;
+
 function NavLink({
   to,
   label,
+  icon: Icon,
 }: {
   readonly to: '/projects' | '/settings' | '/admin/permissions';
   readonly label: string;
+  readonly icon: NavIcon;
 }) {
   return (
     <Link
       to={to}
-      className="shrink-0 rounded px-2 py-1 text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
+      aria-label={label}
+      title={label}
+      className="shrink-0 rounded p-1.5 text-ink-muted hover:bg-surface-hover hover:text-ink"
       activeProps={{ className: 'bg-surface-hover text-ink' }}
     >
-      {label}
+      <Icon aria-hidden="true" className="size-4" strokeWidth={2} />
     </Link>
   );
 }
@@ -494,9 +511,11 @@ function OrgSwitcher() {
       <DropdownMenuTrigger asChild>
         <Button size="sm" variant="ghost" className="min-w-0 flex-1 justify-start">
           <span className="truncate">{current?.name ?? 'Select organization'}</span>
-          <span aria-hidden="true" className="ml-auto">
-            ▾
-          </span>
+          <ChevronDown
+            aria-hidden="true"
+            className="ml-auto size-3.5 shrink-0"
+            strokeWidth={2.25}
+          />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="min-w-48">

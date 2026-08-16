@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ModalClose, ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Archive, Calendar, X } from 'lucide-react';
 import type { BoardId, CardId, ProjectId } from '@taskflow/contracts';
 import { Button, Input, Skeleton } from '../../../components/primitives.js';
 import { ErrorView } from '../../../components/error-view.js';
@@ -82,8 +83,11 @@ export function CardDetailPanel({
       }}
     >
       <ModalContent size="xl" className="flex max-h-[90vh] flex-col">
-        <header className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2">
-          <ModalTitle className="font-mono text-xs font-normal text-ink-faint">
+        <header className="flex shrink-0 items-center gap-2 border-b border-line px-5 py-2.5">
+          {/* The card's identity line — the reference is what someone
+              pastes into a comment or a ticket, so it is medium-weight
+              rather than the faint it used to be. */}
+          <ModalTitle className="font-mono text-xs font-medium text-ink-muted">
             {card.data?.reference ?? 'Card'}
           </ModalTitle>
           {/* Not shown — the two-column body under it says everything a
@@ -100,8 +104,8 @@ export function CardDetailPanel({
               onArchived={onClose}
             />
             <ModalClose asChild>
-              <Button size="sm" variant="ghost">
-                Close
+              <Button size="sm" variant="ghost" aria-label="Close">
+                <X aria-hidden="true" className="size-4" strokeWidth={2} />
               </Button>
             </ModalClose>
           </div>
@@ -109,7 +113,7 @@ export function CardDetailPanel({
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {card.isPending && (
-            <div aria-busy="true" className="space-y-4 p-4">
+            <div aria-busy="true" className="space-y-4 p-5">
               <Skeleton className="h-6 w-3/4" />
               <Skeleton className="h-20 w-full" />
               <div className="grid grid-cols-2 gap-3">
@@ -127,7 +131,7 @@ export function CardDetailPanel({
           )}
 
           {card.isSuccess && (
-            <div className="grid gap-6 p-4 md:grid-cols-[1fr_18rem]">
+            <div className="grid gap-6 p-5 md:grid-cols-[1fr_17rem]">
               <div className="min-w-0 space-y-6">
                 {/* Keyed by card id so switching cards REMOUNTS the editor
                       rather than resetting its state in an effect. The effect
@@ -147,7 +151,12 @@ export function CardDetailPanel({
                 <RecordingSection orgId={orgId} cardId={cardId} />
               </div>
 
-              <div className="space-y-6">
+              {/* The properties rail. Bordered and sunken so the glanceable
+                  fields read as one unit rather than a stack of loose
+                  controls — the same presentation ClickUp's right column
+                  uses. `h-fit` stops the panel stretching to match the taller
+                  content column beside it. */}
+              <div className="h-fit space-y-4 rounded-card border border-line bg-surface-sunken/40 p-3">
                 {/* First in the properties column: where a card LIVES is the
                       thing a reader orients by, and it is the one property the
                       board behind this panel cannot show once the panel covers
@@ -218,7 +227,7 @@ export function CardDetailPanel({
               <div className="space-y-6 border-t border-line pt-4 md:col-span-2">
                 <CommentSection orgId={orgId} boardId={boardId} cardId={cardId} />
 
-                <p className="text-[11px] text-ink-faint">
+                <p className="text-xs text-ink-faint">
                   Created {formatDateTime(card.data.createdAt)} · updated{' '}
                   {formatDateTime(card.data.updatedAt)} · v{card.data.version}
                 </p>
@@ -273,6 +282,7 @@ function ArchiveCardButton({
           setConfirming(true);
         }}
       >
+        <Archive aria-hidden="true" className="size-3.5" strokeWidth={2} />
         Archive
       </Button>
     );
@@ -349,13 +359,17 @@ function TitleAndDescription({
 
   return (
     <section className="space-y-2">
+      {/* `text-base` — the card title is the largest single piece of text
+          in this panel, and it was rendering at the same size as a form
+          field. The input still behaves identically; only the scale
+          changed. */}
       <Input
         aria-label="Card title"
         value={title}
         onChange={(event) => {
           setTitle(event.target.value);
         }}
-        className="h-9 text-sm font-medium"
+        className="h-10 text-base font-semibold"
       />
 
       <RichTextEditor
@@ -405,7 +419,10 @@ function DatesSection({
   return (
     <section className="grid grid-cols-2 gap-3">
       <label className="space-y-1 text-xs text-ink-muted">
-        <span className="block">Start</span>
+        <span className="flex items-center gap-1">
+          <Calendar aria-hidden="true" className="size-3" strokeWidth={2.25} />
+          Start
+        </span>
         <input
           type="date"
           value={card.startDate?.slice(0, 10) ?? ''}
@@ -417,7 +434,10 @@ function DatesSection({
       </label>
 
       <label className="space-y-1 text-xs text-ink-muted">
-        <span className="block">Due</span>
+        <span className="flex items-center gap-1">
+          <Calendar aria-hidden="true" className="size-3" strokeWidth={2.25} />
+          Due
+        </span>
         <input
           type="date"
           value={card.dueDate?.slice(0, 10) ?? ''}

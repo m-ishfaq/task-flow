@@ -378,6 +378,27 @@ export const flagOverrides = platform.table('flag_overrides', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * Platform-wide branding (migration 0073) — one row for the whole
+ * deployment. `updatedBy` is nullable, unlike `flagOverrides.setBy`: the row
+ * is seeded by the migration itself, before any user exists to reference,
+ * and stays NULL until the first real `branding.set` call.
+ *
+ * `paletteId` names one of a small set of pre-audited accent-color triples
+ * defined in application code, never a raw color value — see the migration's
+ * own comment on why `apps/web/src/styles.css`'s accent trio is hand-tuned
+ * rather than formula-derived.
+ */
+export const branding = platform.table('branding', {
+  id: boolean('id').primaryKey().default(true),
+  productName: text('product_name').notNull().default('TaskFlow'),
+  logoKey: text('logo_key'),
+  faviconKey: text('favicon_key'),
+  paletteId: text('palette_id').notNull().default('default'),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** Postgres `bytea`, which Drizzle has no first-class column type for. */
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   dataType: () => 'bytea',

@@ -102,16 +102,22 @@ export function ChannelDetailsPanel({
     },
   });
 
+  /* Below `md` this panel is a full-width overlay on top of the conversation
+     (the channel pane in `ChannelPanel` is the `relative` parent) rather
+     than a fixed-width sibling squeezing it — a phone has ~360px, and a 288px
+     sidebar next to the message column leaves the conversation a sliver.
+     `md:static md:w-72` restores the side-by-side layout above the
+     breakpoint; the panel's own ✕ returns to the conversation either way. */
   if (data === undefined) {
     return (
-      <aside className="flex w-72 shrink-0 flex-col border-l border-line">
+      <aside className="absolute inset-y-0 right-0 z-30 flex w-full flex-col border-l border-line md:static md:w-72">
         <PanelHeader title="Details" onClose={onClose} />
       </aside>
     );
   }
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-line">
+    <aside className="absolute inset-y-0 right-0 z-30 flex w-full flex-col overflow-y-auto border-l border-line md:static md:w-72 bg-black">
       <PanelHeader title="Details" onClose={onClose} />
 
       <div className="flex flex-col gap-4 p-4">
@@ -295,7 +301,7 @@ function DirectMessageIdentity({
 
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-ink-faint">
+      <h3 className="text-xs font-semibold text-ink-muted">
         {others.length === 1 ? 'Direct message with' : 'Group conversation'}
       </h3>
       {others.map((userId) => (
@@ -351,9 +357,7 @@ function MemberRoster({
 }) {
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-ink-faint">
-        Members · {memberIds.length}
-      </h3>
+      <h3 className="text-xs font-semibold text-ink-muted">Members · {memberIds.length}</h3>
 
       {memberIds.length === 0 ? (
         <Empty title="Nobody yet" description="This channel has no members." />
@@ -438,7 +442,7 @@ function AddMemberControl({
 
   return (
     <section className="flex flex-col gap-2 border-t border-line pt-3">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-ink-faint">Add people</h3>
+      <h3 className="text-xs font-semibold text-ink-muted">Add people</h3>
 
       <Field label="Search by email" htmlFor={`add-member-${orgId}`}>
         <Input
@@ -561,7 +565,7 @@ function GuestAccessSection({
 
   return (
     <section className="flex flex-col gap-2 border-t border-line pt-3">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-ink-faint">Guest access</h3>
+      <h3 className="text-xs font-semibold text-ink-muted">Guest access</h3>
       <p className="text-xs text-ink-faint">
         A guest can read and post in this one channel — nothing else in the organization.
       </p>
@@ -851,9 +855,7 @@ function ComplianceSection({
 
   return (
     <section className="flex flex-col gap-3 border-t border-line pt-3">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-ink-faint">
-        Retention &amp; compliance
-      </h3>
+      <h3 className="text-xs font-semibold text-ink-muted">Retention &amp; compliance</h3>
 
       <Field label="Delete messages older than (days)" htmlFor="retention-days">
         <div className="flex gap-2">

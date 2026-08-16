@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { MessageSquare } from 'lucide-react';
 import type { BoardId, CardId, CommentId } from '@taskflow/contracts';
 import { api } from '../../../lib/trpc.js';
 import { keys } from '../../../lib/query.js';
@@ -265,7 +266,10 @@ export function CommentSection({ orgId, boardId, cardId }: CommentSectionProps) 
 
   return (
     <section className="space-y-3">
-      <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Comments</h3>
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+        <MessageSquare aria-hidden="true" className="size-3" strokeWidth={2.25} />
+        Comments
+      </h3>
 
       <ul className="space-y-3">
         {topLevel.map((comment) => (

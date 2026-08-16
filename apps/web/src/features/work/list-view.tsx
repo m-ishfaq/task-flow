@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { ChevronRight, MessageSquare, SquareCheck } from 'lucide-react';
 import { AvatarStack, Badge, Empty } from '../../components/primitives.js';
 import { formatDueDate } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
 import { useMembers } from '../org/use-members.js';
 import { groupCards, sortCards, type GroupBy, type SortBy } from './grouping.js';
+import { PRIORITY_LABEL, PRIORITY_SWATCH } from './priority-colors.js';
 import type { CardSummary, ListSummary, Status } from './api.js';
 import type { Person } from '../org/use-members.js';
 
@@ -68,8 +70,10 @@ export function ListView({
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-3">
-      <div className="mx-auto flex max-w-4xl flex-col gap-3">
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* `pb-10` so the last group has room below it before the window edge — a
+          list that ends flush with the bottom border reads as truncated. */}
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-6 pb-10">
         {groups.map((group) => {
           const isCollapsed = collapsed.has(group.key);
           /* List keeps rank order regardless of `sortBy` — the same rule
@@ -79,21 +83,26 @@ export function ListView({
           const ordered = groupBy === 'list' ? group.cards : sortCards(group.cards, sortBy);
 
           return (
-            <section key={group.key} className="rounded-card border border-line bg-surface-raised">
+            <section
+              key={group.key}
+              className="overflow-hidden rounded-xl border border-line bg-surface-raised shadow-sm"
+            >
               <button
                 type="button"
                 onClick={() => {
                   toggle(group.key);
                 }}
                 aria-expanded={!isCollapsed}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left"
+                className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-surface-hover/60"
               >
-                <span
+                <ChevronRight
                   aria-hidden="true"
-                  className={cn('text-ink-faint transition-transform', !isCollapsed && 'rotate-90')}
-                >
-                  ▸
-                </span>
+                  strokeWidth={2.25}
+                  className={cn(
+                    'size-4 shrink-0 text-ink-faint transition-transform',
+                    !isCollapsed && 'rotate-90',
+                  )}
+                />
                 {group.color !== null && (
                   <span
                     className="size-2.5 shrink-0 rounded-full"
@@ -101,10 +110,15 @@ export function ListView({
                     aria-hidden="true"
                   />
                 )}
-                <h2 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
+                {/* Sentence-case 13px, matching `Section` — the uppercase
+                    micro-label this used to be read as an admin panel's
+                    column heading, not as the title of a group of work. */}
+                <h2 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
                   {group.label}
                 </h2>
-                <span className="text-[11px] text-ink-faint">{group.cards.length}</span>
+                <span className="rounded-full bg-surface-hover px-2 py-0.5 text-xs font-medium text-ink-muted">
+                  {group.cards.length}
+                </span>
               </button>
 
               {!isCollapsed && (
@@ -120,17 +134,24 @@ export function ListView({
                           onClick={() => {
                             onOpenCard(card.cardId);
                           }}
-                          className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-surface-hover"
+                          className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-hover/60"
                         >
-                          <span className="font-mono text-[11px] text-ink-faint">
-                            {card.reference}
-                          </span>
+                          <span className="font-mono text-xs text-ink-faint">{card.reference}</span>
                           <span className="min-w-0 flex-1 truncate text-sm text-ink">
                             {card.title}
                           </span>
 
                           {card.priority !== null && (
-                            <Badge className="capitalize">{card.priority}</Badge>
+                            <Badge>
+                              <span
+                                aria-hidden="true"
+                                className={cn(
+                                  'size-1.5 rounded-full',
+                                  PRIORITY_SWATCH[card.priority],
+                                )}
+                              />
+                              {PRIORITY_LABEL[card.priority]}
+                            </Badge>
                           )}
 
                           {due !== null && (
@@ -145,11 +166,21 @@ export function ListView({
                                 card.checklistDone === card.checklistTotal && 'text-success',
                               )}
                             >
-                              ☑ {card.checklistDone}/{card.checklistTotal}
+                              <SquareCheck aria-hidden="true" className="size-3" strokeWidth={2} />
+                              {card.checklistDone}/{card.checklistTotal}
                             </Badge>
                           )}
 
-                          {card.commentCount > 0 && <Badge>💬 {card.commentCount}</Badge>}
+                          {card.commentCount > 0 && (
+                            <Badge>
+                              <MessageSquare
+                                aria-hidden="true"
+                                className="size-3"
+                                strokeWidth={2}
+                              />
+                              {card.commentCount}
+                            </Badge>
+                          )}
 
                           <AvatarStack people={assignees} />
                         </button>

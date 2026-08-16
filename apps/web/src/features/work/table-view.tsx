@@ -1,11 +1,13 @@
 import { useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { MessageSquare } from 'lucide-react';
 import type { BoardId, CardId } from '@taskflow/contracts';
 import { formatDueDate } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
 import { Badge, FocusOnMountInput } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { useUpdateCard } from './use-update-card.js';
+import { PRIORITY_LABEL, PRIORITY_SWATCH } from './priority-colors.js';
 import type { CardSummary, ListSummary } from './api.js';
 
 /**
@@ -66,9 +68,14 @@ export function TableView({ orgId, boardId, lists, cards, onOpenCard }: TableVie
       )}
 
       <div
-        className="grid shrink-0 items-center gap-2 border-b border-line px-4 py-1.5 text-[11px] font-medium tracking-wide text-ink-faint uppercase"
+        className="grid shrink-0 items-center gap-2 border-b border-line px-4 py-2 text-xs font-semibold text-ink-muted"
         style={{ gridTemplateColumns: TEMPLATE }}
       >
+        {/* No visible label — the column itself is a colored dot per row, and
+            a header word above a dot with nothing else in its column reads as
+            a mistake rather than restraint. Still named for anyone not
+            reading it visually. */}
+        <span className="sr-only">Priority</span>
         <span>Ref</span>
         <span>Title</span>
         <span>List</span>
@@ -95,12 +102,24 @@ export function TableView({ orgId, boardId, lists, cards, onOpenCard }: TableVie
                   gridTemplateColumns: TEMPLATE,
                 }}
               >
+                <span
+                  className="flex justify-center"
+                  title={card.priority === null ? undefined : PRIORITY_LABEL[card.priority]}
+                >
+                  {card.priority !== null && (
+                    <span
+                      aria-hidden="true"
+                      className={cn('size-1.5 rounded-full', PRIORITY_SWATCH[card.priority])}
+                    />
+                  )}
+                </span>
+
                 <button
                   type="button"
                   onClick={() => {
                     onOpenCard(card.cardId);
                   }}
-                  className="text-left font-mono text-[11px] text-ink-faint hover:text-accent"
+                  className="text-left font-mono text-xs text-ink-faint hover:text-accent"
                 >
                   {card.reference}
                 </button>
@@ -161,7 +180,12 @@ export function TableView({ orgId, boardId, lists, cards, onOpenCard }: TableVie
                       {card.checklistDone}/{card.checklistTotal}
                     </Badge>
                   )}
-                  {card.commentCount > 0 && <Badge>💬 {card.commentCount}</Badge>}
+                  {card.commentCount > 0 && (
+                    <Badge>
+                      <MessageSquare aria-hidden="true" className="size-3" strokeWidth={2} />
+                      {card.commentCount}
+                    </Badge>
+                  )}
                 </span>
               </div>
             );
@@ -172,4 +196,4 @@ export function TableView({ orgId, boardId, lists, cards, onOpenCard }: TableVie
   );
 }
 
-const TEMPLATE = '5rem minmax(0, 1fr) 8rem 6rem 7rem';
+const TEMPLATE = '1rem 5rem minmax(0, 1fr) 8rem 6rem 7rem';

@@ -12,4 +12,5 @@ export * from './errors.js';
 export * from './rank.js';
 export * from './work.js';
 export * from './telephony.js';
+export * from './branding.js';
 export * from './providers/index.js';
