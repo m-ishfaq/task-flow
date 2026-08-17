@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MailQueue } from './queue.js';
 import { MemoryMailer, type OutboundMessage } from './transport.js';
 
@@ -218,6 +218,73 @@ describe('retries', () => {
       queue.enqueue(MESSAGE);
     }).not.toThrow();
     await expect(queue.drain()).resolves.toBeUndefined();
+  });
+});
+
+describe('domain check', () => {
+  it('abandons a message without ever reaching the transport when the domain check refuses it', async () => {
+    const mailer = new MemoryMailer();
+    const failures: { to: string; subject: string; attempts: number; reason: string }[] = [];
+    const checkDomain = vi.fn().mockResolvedValue({ ok: false, reason: 'no MX, A, or AAAA records' });
+    const queue = new MailQueue({
+      mailer,
+      sleep: instant,
+      checkDomain,
+      onFailure: (failure) => failures.push(failure),
+    });
+
+    queue.enqueue({ ...MESSAGE, to: 'user@taskflow.seed.test' });
+    await queue.drain();
+
+    expect(mailer.sent).toHaveLength(0);
+    expect(queue.abandoned).toBe(1);
+    expect(failures).toHaveLength(1);
+    // Never attempted, unlike a real SMTP failure — the reported attempts say so.
+    expect(failures[0]?.attempts).toBe(0);
+    expect(failures[0]?.reason).toContain('no MX, A, or AAAA records');
+    expect(checkDomain).toHaveBeenCalledWith('taskflow.seed.test');
+  });
+
+  it('sends normally when the domain check accepts the recipient', async () => {
+    const mailer = new MemoryMailer();
+    const checkDomain = vi.fn().mockResolvedValue({ ok: true, reason: 'has MX records' });
+    const queue = new MailQueue({ mailer, sleep: instant, checkDomain });
+
+    queue.enqueue(MESSAGE);
+    await queue.drain();
+
+    expect(mailer.sent).toHaveLength(1);
+    expect(queue.abandoned).toBe(0);
+  });
+
+  it('is skipped entirely when no checkDomain is configured', async () => {
+    // The default: existing callers see no behaviour change.
+    const mailer = new MemoryMailer();
+    const queue = new MailQueue({ mailer, sleep: instant });
+
+    queue.enqueue({ ...MESSAGE, to: 'user@taskflow.seed.test' });
+    await queue.drain();
+
+    expect(mailer.sent).toHaveLength(1);
+  });
+
+  it('refuses a malformed recipient with no domain, without calling checkDomain', async () => {
+    const mailer = new MemoryMailer();
+    const checkDomain = vi.fn();
+    const failures: { to: string; subject: string; attempts: number; reason: string }[] = [];
+    const queue = new MailQueue({
+      mailer,
+      sleep: instant,
+      checkDomain,
+      onFailure: (failure) => failures.push(failure),
+    });
+
+    queue.enqueue({ ...MESSAGE, to: 'not-an-email' });
+    await queue.drain();
+
+    expect(mailer.sent).toHaveLength(0);
+    expect(checkDomain).not.toHaveBeenCalled();
+    expect(failures[0]?.reason).toContain('no domain to check');
   });
 });
 
