@@ -13,6 +13,14 @@ set -euo pipefail
 # missing, blank, a leftover ENTER_HERE/CHANGE_ME placeholder copied from
 # .env.prod.example, or fine.
 #
+# A defaulted (":-") variable that IS set to a real value is reported too —
+# under "Overriding the compose default" — rather than silently folded into
+# nothing. Without that, setting a new optional variable (say,
+# MAIL_VALIDATE_RECIPIENT_DOMAIN) and running this script gives no evidence
+# either way that it was picked up: it isn't a failure to report, but its
+# total silence reads identically to "this script doesn't know that
+# variable exists yet."
+#
 # Usage: scripts/check-env-prod.sh [compose-file] [env-file]
 # Defaults: compose.prod.yaml, .env.prod
 # Exit 0 only if every variable compose actually requires (":?") is set to a
@@ -77,6 +85,7 @@ empty=()
 placeholder=()
 ok=()
 unset_but_defaulted=()
+defaulted_overridden=()
 
 for var in "${REQUIRED_VARS[@]}"; do
   if ! val=$(get_value "$var"); then
@@ -101,6 +110,11 @@ for var in "${DEFAULTED_VARS[@]}"; do
   fi
   if ! get_value "$var" >/dev/null 2>&1; then
     unset_but_defaulted+=("$var")
+  else
+    # Name only, never the value — some of these are secrets (STRIPE_SECRET_KEY,
+    # TWILIO_*), and this section exists to answer "did my override get picked
+    # up", not to echo credentials into a terminal or a CI log.
+    defaulted_overridden+=("$var")
   fi
 done
 
@@ -122,6 +136,7 @@ echo "Checked ${#REQUIRED_VARS[@]} required + ${#DEFAULTED_VARS[@]} defaulted va
 echo ""
 
 print_section "OK" "${ok[@]}"
+print_section "Overriding the compose default (set in $ENV_FILE — value not shown)" "${defaulted_overridden[@]}"
 print_section "Using compose default (not set in $ENV_FILE — fine, not an error)" "${unset_but_defaulted[@]}"
 print_section "MISSING (not set in $ENV_FILE at all)" "${missing[@]}"
 print_section "EMPTY (set but blank)" "${empty[@]}"
