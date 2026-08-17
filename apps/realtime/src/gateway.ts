@@ -143,8 +143,23 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
      once two are already behind a load balancer means discovering the need
      through users who see half a board update. The pool comes from
      @taskflow/db — the gateway never constructs a database connection itself
-     (guardrail 2). */
-  io.adapter(createAdapter(createRealtimeAdapterPool(), { tableName: 'socket_io_attachments' }));
+     (guardrail 2).
+
+     `tableName` must be schema-qualified. Migration 0016 created the table as
+     `platform.socket_io_attachments` — the adapter does raw string
+     interpolation (`FROM ${tableName}`), so an unqualified name resolves
+     against `taskflow_realtime`'s search_path, which is the Postgres default
+     `"$user", public` (nothing sets it to include `platform`). An unqualified
+     name here compiles, connects, and then fails on every single query —
+     `relation "socket_io_attachments" does not exist` — including the
+     cleanup timer's DELETE, which fires every 30s forever whether or not the
+     table has ever held a row. The adapter's default errorHandler only logs
+     it (`debug(err)`), so this is silent to the process and visible only in
+     Postgres's own log — where the connecting role and the failing statement
+     are the only clue the schema, not the table, is the problem. */
+  io.adapter(
+    createAdapter(createRealtimeAdapterPool(), { tableName: 'platform.socket_io_attachments' }),
+  );
 
   /* -------------------------------------------------------------------- *
    * Rate limits (§6.5, §7.5)
