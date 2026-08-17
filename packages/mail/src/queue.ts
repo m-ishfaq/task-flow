@@ -56,6 +56,27 @@ function reasonOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Whether a transport failure is a permanent SMTP rejection — a 5xx response,
+ * which by protocol definition ("permanent negative completion") will not
+ * succeed on redelivery of the same message. A 4xx ("transient negative
+ * completion") or a connection-level failure carries no response code at all
+ * — the server was never reached — and is retried normally.
+ *
+ * Nodemailer sets `responseCode` from the server's own reply on a rejected
+ * RCPT/DATA/AUTH command. The motivating case is Gmail's
+ * `550 5.4.5 Daily user sending limit exceeded`: without this, the queue
+ * retried it exactly like a transient outage, spending all four attempts and
+ * ~21s of backoff on a message the server had already permanently refused —
+ * and, because every message hits the same limit for the rest of the day,
+ * delaying everything queued behind each one by that same ~21s.
+ */
+function isPermanentFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const responseCode = (error as { responseCode?: unknown }).responseCode;
+  return typeof responseCode === 'number' && responseCode >= 500 && responseCode < 600;
+}
+
 export interface MailQueueOptions {
   readonly mailer: Mailer;
   /** Attempts per message, including the first. */
@@ -217,6 +238,7 @@ export class MailQueue {
       const entry = this.#pending[0];
       if (entry === undefined) break;
 
+      let permanentFailure = false;
       try {
         await this.#mailer.send(entry.message);
         this.#pending.shift();
@@ -225,9 +247,10 @@ export class MailQueue {
       } catch (error) {
         entry.attempts += 1;
         entry.lastError = reasonOf(error);
+        permanentFailure = isPermanentFailure(error);
       }
 
-      if (entry.attempts >= this.#maxAttempts) {
+      if (entry.attempts >= this.#maxAttempts || permanentFailure) {
         this.#pending.shift();
         this.#abandoned += 1;
         /* The recipient, subject and TRANSPORT'S failure reason — never the

@@ -160,6 +160,53 @@ describe('retries', () => {
     expect(queue.abandoned).toBe(1);
   });
 
+  it('abandons a permanent SMTP rejection without retrying', async () => {
+    /* A 550 is the server saying "this will never work" — Gmail's own
+       "550 5.4.5 Daily user sending limit exceeded" is the motivating case.
+       Retrying it burns the full attempt budget (and its backoff delay) on a
+       message that was refused before the first byte of DATA was even sent,
+       and does so identically for every message queued behind it until the
+       limit resets. */
+    const mailer = new MemoryMailer();
+    mailer.failNext(100, () =>
+      Object.assign(new Error('Data command failed: 550 5.4.5 Daily user sending limit exceeded'), {
+        responseCode: 550,
+      }),
+    );
+
+    const failures: { to: string; subject: string; attempts: number; reason: string }[] = [];
+    const queue = new MailQueue({
+      mailer,
+      maxAttempts: 4,
+      sleep: instant,
+      onFailure: (failure) => failures.push(failure),
+    });
+
+    queue.enqueue(MESSAGE);
+    await queue.drain();
+
+    expect(mailer.sent).toHaveLength(0);
+    expect(queue.abandoned).toBe(1);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.attempts).toBe(1);
+  });
+
+  it('still retries a transient (4xx) SMTP failure up to the attempt budget', async () => {
+    const mailer = new MemoryMailer();
+    mailer.failNext(2, () =>
+      Object.assign(new Error('Data command failed: 450 mailbox temporarily unavailable'), {
+        responseCode: 450,
+      }),
+    );
+    const queue = new MailQueue({ mailer, maxAttempts: 4, sleep: instant });
+
+    queue.enqueue(MESSAGE);
+    await queue.drain();
+
+    expect(mailer.sent).toHaveLength(1);
+    expect(queue.abandoned).toBe(0);
+  });
+
   it('does not crash the process when the transport is down', async () => {
     // An unhandled rejection from a background task terminates the process in
     // Node 22, which would turn "the mail server is down" into "the API is down".
