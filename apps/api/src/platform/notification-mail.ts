@@ -1,4 +1,5 @@
 import {
+  createCachedDomainCheck,
   MailQueue,
   renderNotificationDigest,
   renderNotificationEmail,
@@ -58,6 +59,15 @@ export function createNotificationMailDelivery(
 
   const queue = new MailQueue({
     mailer,
+    /* Off unless MAIL_VALIDATE_RECIPIENT_DOMAIN is set — see that variable's
+       own comment in config/env.ts. This is the queue that carries chat DM
+       notifications, so it is what a seeded account (packages/seed's
+       `taskflow.seed.test` users) actually hits: without this, every DM to a
+       seeded recipient burns a full SMTP retry budget against a domain that
+       was never going to accept it. */
+    ...(options.env.MAIL_VALIDATE_RECIPIENT_DOMAIN
+      ? { checkDomain: createCachedDomainCheck() }
+      : {}),
     ...(options.onFailure === undefined ? {} : { onFailure: options.onFailure }),
     ...(options.onSuccess === undefined ? {} : { onSuccess: options.onSuccess }),
   });

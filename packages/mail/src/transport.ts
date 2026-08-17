@@ -79,16 +79,24 @@ export class SmtpMailer implements Mailer {
 export class MemoryMailer implements Mailer {
   readonly sent: OutboundMessage[] = [];
   #failNext = 0;
+  #makeError: () => Error = () => new Error('simulated transport failure');
 
-  /** Makes the next `n` sends throw, so retry behaviour can be exercised. */
-  failNext(count: number): void {
+  /**
+   * Makes the next `n` sends throw, so retry behaviour can be exercised.
+   *
+   * `makeError`, when given, replaces the default generic failure — e.g. an
+   * SMTP rejection carrying a `responseCode`, to exercise the permanent vs.
+   * transient distinction in `MailQueue`.
+   */
+  failNext(count: number, makeError?: () => Error): void {
     this.#failNext = count;
+    this.#makeError = makeError ?? (() => new Error('simulated transport failure'));
   }
 
   send(message: OutboundMessage): Promise<void> {
     if (this.#failNext > 0) {
       this.#failNext -= 1;
-      return Promise.reject(new Error('simulated transport failure'));
+      return Promise.reject(this.#makeError());
     }
     this.sent.push(message);
     return Promise.resolve();
