@@ -225,7 +225,9 @@ describe('domain check', () => {
   it('abandons a message without ever reaching the transport when the domain check refuses it', async () => {
     const mailer = new MemoryMailer();
     const failures: { to: string; subject: string; attempts: number; reason: string }[] = [];
-    const checkDomain = vi.fn().mockResolvedValue({ ok: false, reason: 'no MX, A, or AAAA records' });
+    const checkDomain = vi
+      .fn()
+      .mockResolvedValue({ ok: false, reason: 'no MX, A, or AAAA records' });
     const queue = new MailQueue({
       mailer,
       sleep: instant,

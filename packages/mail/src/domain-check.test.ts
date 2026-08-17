@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { checkMailDomain, createCachedDomainCheck, domainOf, type DnsResolvers } from './domain-check.js';
+import {
+  checkMailDomain,
+  createCachedDomainCheck,
+  domainOf,
+  type DnsResolvers,
+} from './domain-check.js';
 
 /** A resolver error shaped like Node's `dns` module — `code`, not `.message`, is what matters. */
 function dnsError(code: string): NodeJS.ErrnoException {
