@@ -2,7 +2,7 @@ import { eq, schema, withPlatformAdminScope } from '@taskflow/db';
 import { errors, type PaletteId, type StorageProvider } from '@taskflow/contracts';
 import { createEvent, type EventBus } from '@taskflow/events';
 import type { ScannerConfig } from '@taskflow/security';
-import { newStorageKey } from '@taskflow/storage';
+import { newStorageKey, orgOfKey } from '@taskflow/storage';
 import { verifyUpload } from '../attachments/verify.js';
 import { SYSTEM_ORG } from '../identity/identity.service.js';
 import { asPaletteId, getResolvedBranding, type BrandingSnapshot } from './branding-cache.js';
@@ -231,6 +231,22 @@ async function confirmAsset(
   action: 'branding.confirmLogo' | 'branding.confirmFavicon',
   eventField: 'logoKey' | 'faviconKey',
 ): Promise<{ readonly status: 'clean' | 'infected' | 'rejected'; readonly reason?: string }> {
+  /* The key is CLIENT-SUPPLIED here, and this is the only upload path in the
+     codebase where that is true — every other one reads it back off the row it
+     wrote at presign time (see this file's header on why there is no pending
+     row to read). `verifyUpload`'s own `isGeneratedKey` backstop checks the
+     key's SHAPE and nothing else, so without this an operator could name any
+     tenant's object: it would be scanned, published on the unauthenticated
+     `branding.public` route as a presigned URL, and — worse — DELETED from
+     storage the next time the logo was replaced, since `confirmAsset` removes
+     whatever key it displaces.
+
+     `orgOfKey` has existed and been tested since Phase 3 with a doc comment
+     describing exactly this assertion, and had no callers until now. */
+  if (orgOfKey(input.storageKey) !== SYSTEM_ORG) {
+    throw errors.validation({ storageKey: 'That is not a branding upload key.' });
+  }
+
   const verdict = await verifyUpload(
     { storage: deps.storage, scanner: deps.scanner, maxBytes: MAX_LOGO_BYTES },
     { storageKey: input.storageKey, contentType: 'image/png' },
