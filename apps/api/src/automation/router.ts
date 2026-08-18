@@ -5,7 +5,21 @@ import { route, router } from '../trpc/builder.js';
 import { subjectOf } from '../trpc/context.js';
 import * as automations from './automation.service.js';
 import * as webhooks from './webhook.service.js';
+import { PAGE_DEFAULT, PAGE_MAX } from './pagination.js';
 import { createIntegrationRouter } from './integration.router.js';
+
+/**
+ * Cursor pagination for the two org-level admin lists that grow without bound
+ * (§6.6). The cursor is opaque — a `(name, id)` boundary the client only ever
+ * echoes back, never constructs — and the limit is capped so no single request
+ * can pull an unbounded page. See `pagination.ts` for why keyset, not OFFSET.
+ */
+const PageInput = z
+  .object({
+    cursor: z.string().optional(),
+    limit: z.number().int().min(1).max(PAGE_MAX).default(PAGE_DEFAULT),
+  })
+  .strict();
 import type { IntegrationDeps } from './integration.service.js';
 import type { AutomationActor } from './automation.service.js';
 
@@ -250,9 +264,16 @@ export function createAutomationRouter(deps: {
       permission: 'automation:manage',
       feature: { flag: 'automation', display: 'Automation' },
     })
-      .input(z.object({}).strict())
-      .output(z.array(AutomationSummaryOutput).readonly())
-      .query(({ ctx }) => automations.listAutomations(actorOf(ctx))),
+      .input(PageInput)
+      .output(
+        z.object({
+          automations: z.array(AutomationSummaryOutput).readonly(),
+          nextCursor: z.string().nullable(),
+        }),
+      )
+      .query(({ input, ctx }) =>
+        automations.listAutomations(actorOf(ctx), input.cursor ?? null, input.limit),
+      ),
 
     create: route({
       permission: 'automation:manage',
@@ -354,9 +375,16 @@ export function createAutomationRouter(deps: {
         permission: 'webhook:manage',
         feature: { flag: 'automation', display: 'Automation' },
       })
-        .input(z.object({}).strict())
-        .output(z.array(WebhookSummaryOutput).readonly())
-        .query(({ ctx }) => webhooks.listWebhooks(actorOf(ctx))),
+        .input(PageInput)
+        .output(
+          z.object({
+            webhooks: z.array(WebhookSummaryOutput).readonly(),
+            nextCursor: z.string().nullable(),
+          }),
+        )
+        .query(({ input, ctx }) =>
+          webhooks.listWebhooks(actorOf(ctx), input.cursor ?? null, input.limit),
+        ),
 
       create: route({
         permission: 'webhook:manage',

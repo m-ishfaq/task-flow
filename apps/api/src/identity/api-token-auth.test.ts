@@ -448,7 +448,7 @@ describe('a token principal on the real automation router', () => {
     /* The real routes carry an explicit `z.object({}).strict()` input, so
        they take `{}` where the synthetic gateRouter's input-less routes take
        nothing. */
-    await expect(caller.webhooks.list({})).resolves.toEqual([]);
+    await expect(caller.webhooks.list({})).resolves.toEqual({ webhooks: [], nextCursor: null });
 
     const created = await caller.webhooks.create({
       name: 'CI',
@@ -459,7 +459,9 @@ describe('a token principal on the real automation router', () => {
     expect(created.signingSecret.length).toBeGreaterThan(0);
 
     const listed = await caller.webhooks.list({});
-    expect(listed.some((webhook) => webhook.webhookId === created.webhookId)).toBe(true);
+    expect(listed.webhooks.some((webhook) => webhook.webhookId === created.webhookId)).toBe(
+      true,
+    );
   });
 
   it('does not bleed into sibling surfaces — a webhook token cannot manage RULES', async () => {
@@ -489,12 +491,12 @@ describe('a token principal on the real automation router', () => {
       url: 'https://hooks.example.test/a',
     });
     const listA = await callerA.webhooks.list({});
-    expect(listA.some((webhook) => webhook.webhookId === created.webhookId)).toBe(true);
+    expect(listA.webhooks.some((webhook) => webhook.webhookId === created.webhookId)).toBe(true);
 
     /* RLS confines org B's token to org B's rows — the token's org came from
        the token itself, not from anything the client said. */
     const listB = await callerB.webhooks.list({});
-    expect(listB.some((webhook) => webhook.webhookId === created.webhookId)).toBe(false);
+    expect(listB.webhooks.some((webhook) => webhook.webhookId === created.webhookId)).toBe(false);
   });
 });
 

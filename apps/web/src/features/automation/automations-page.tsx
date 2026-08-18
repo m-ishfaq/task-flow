@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { resourceForTrigger, type FilterNode } from '@taskflow/filter';
 import type { ProjectId } from '@taskflow/contracts';
 import { useSession } from '../../lib/session.js';
@@ -21,7 +21,7 @@ import {
   automationsQuery,
   integrationsQuery,
   webhookDeliveriesQuery,
-  webhooksQuery,
+  webhooksPageQuery,
 } from './api.js';
 import { ApiTokensSection } from './api-tokens-section.js';
 import { IntegrationsSection } from './integrations-section.js';
@@ -37,6 +37,60 @@ import {
   offeredActions,
 } from './vocabulary.js';
 import { ArgumentPicker, ProjectScopePicker } from './action-pickers.js';
+
+/**
+ * A cursor stack for keyset next/prev paging.
+ *
+ * Keyset pagination is forward-only — the server hands back a `nextCursor` and
+ * nothing else — so "previous" is the client remembering where it has been.
+ * The stack starts at `[null]` (page 1's cursor is "no cursor"); Next pushes the
+ * server's `nextCursor`, Prev pops. The current cursor is always the top.
+ */
+function useCursorPager(): {
+  readonly cursor: string | null;
+  readonly canPrev: boolean;
+  goNext: (next: string) => void;
+  goPrev: () => void;
+} {
+  const [stack, setStack] = useState<readonly (string | null)[]>([null]);
+  return {
+    cursor: stack[stack.length - 1] ?? null,
+    canPrev: stack.length > 1,
+    goNext: (next) => {
+      setStack((prev) => [...prev, next]);
+    },
+    goPrev: () => {
+      setStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
+    },
+  };
+}
+
+/** Previous/Next controls for a keyset-paged list. Renders nothing on a single page. */
+function Pager({
+  canPrev,
+  hasNext,
+  busy,
+  onPrev,
+  onNext,
+}: {
+  readonly canPrev: boolean;
+  readonly hasNext: boolean;
+  readonly busy: boolean;
+  readonly onPrev: () => void;
+  readonly onNext: () => void;
+}) {
+  if (!canPrev && !hasNext) return null;
+  return (
+    <div className="flex items-center justify-end gap-2 pt-1">
+      <Button size="sm" disabled={!canPrev || busy} onClick={onPrev}>
+        Previous
+      </Button>
+      <Button size="sm" disabled={!hasNext || busy} onClick={onNext}>
+        Next
+      </Button>
+    </div>
+  );
+}
 
 /** The trigger's human label, falling back to its event name for one this build does not offer. */
 function triggerLabel(event: string): string {
@@ -170,14 +224,20 @@ export function AutomationsPage() {
   const navigate = useNavigate();
   const tab: TabId = useSearch({ from: '/automations', select: (value) => value.tab }) ?? 'rules';
 
-  const automations = useQuery({ ...automationsQuery(orgId), enabled: orgId !== '' });
-  const webhooks = useQuery({ ...webhooksQuery(orgId), enabled: orgId !== '' });
+  /* The badges read page 1 only — the same query the panels open with, so this
+     is not an extra fetch. A `+` marks "there is at least one more page", since
+     an exact total would cost a COUNT the list itself never needs. */
+  const rulesHead = useQuery({ ...automationsQuery(orgId, null), enabled: orgId !== '' });
+  const webhooksHead = useQuery({ ...webhooksPageQuery(orgId, null), enabled: orgId !== '' });
   const apiTokens = useQuery({ ...apiTokensQuery(orgId), enabled: orgId !== '' });
   const integrations = useQuery({ ...integrationsQuery(orgId), enabled: orgId !== '' });
 
-  const counts: Readonly<Record<TabId, number | undefined>> = {
-    rules: automations.data?.length,
-    webhooks: webhooks.data?.length,
+  const pageBadge = (count: number | undefined, more: boolean): string | undefined =>
+    count === undefined ? undefined : `${String(count)}${more ? '+' : ''}`;
+
+  const counts: Readonly<Record<TabId, string | number | undefined>> = {
+    rules: pageBadge(rulesHead.data?.automations.length, rulesHead.data?.nextCursor != null),
+    webhooks: pageBadge(webhooksHead.data?.webhooks.length, webhooksHead.data?.nextCursor != null),
     apiTokens: apiTokens.data?.length,
     /* Connected rows only — a disconnected row is a past authorization, not
        something the tab's badge should claim exists today. */
@@ -235,7 +295,7 @@ export function AutomationsPage() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-4xl p-4 md:p-6">
           {tab === 'rules' ? (
-            <RulesPanel orgId={orgId} automations={automations} />
+            <RulesPanel orgId={orgId} />
           ) : tab === 'webhooks' ? (
             <WebhooksSection orgId={orgId} />
           ) : tab === 'apiTokens' ? (
@@ -249,13 +309,7 @@ export function AutomationsPage() {
   );
 }
 
-function RulesPanel({
-  orgId,
-  automations,
-}: {
-  readonly orgId: string;
-  readonly automations: UseQueryResult<readonly RuleSummary[]>;
-}) {
+function RulesPanel({ orgId }: { readonly orgId: string }) {
   /* Three separate pieces of state, deliberately. The first version folded
      "which rule's runs are open" and "which rule is being edited" into one
      `editing` field, which meant opening a rule's history and editing it were
@@ -263,8 +317,16 @@ function RulesPanel({
   const [showingRuns, setShowingRuns] = useState<string | null>(null);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const pager = useCursorPager();
 
-  const editingRule = automations.data?.find((rule) => rule.automationId === editingRuleId);
+  const automations = useQuery({
+    ...automationsQuery(orgId, pager.cursor),
+    enabled: orgId !== '',
+  });
+
+  const editingRule = automations.data?.automations.find(
+    (rule) => rule.automationId === editingRuleId,
+  );
 
   return (
     <div className="space-y-4">
@@ -316,7 +378,7 @@ function RulesPanel({
         <SkeletonRows rows={3} />
       ) : automations.isError ? (
         <ErrorView error={automations.error} title="Could not load automations" />
-      ) : automations.data.length === 0 ? (
+      ) : automations.data.automations.length === 0 ? (
         <Empty
           title="No automations yet"
           description="A rule watches for an event — a card entering Done, a comment being added — and then does something."
@@ -335,7 +397,7 @@ function RulesPanel({
         />
       ) : (
         <ul className="space-y-2">
-          {automations.data.map((rule) => (
+          {automations.data.automations.map((rule) => (
             <li key={rule.automationId}>
               <RuleRow
                 orgId={orgId}
@@ -353,6 +415,18 @@ function RulesPanel({
           ))}
         </ul>
       )}
+
+      {automations.data !== undefined && (
+        <Pager
+          canPrev={pager.canPrev}
+          hasNext={automations.data.nextCursor !== null}
+          busy={automations.isFetching}
+          onPrev={pager.goPrev}
+          onNext={() => {
+            if (automations.data.nextCursor !== null) pager.goNext(automations.data.nextCursor);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -366,7 +440,9 @@ function RulesPanel({
  * which is precisely the drift `lib/wire.ts` exists to make visible rather
  * than let a component quietly disagree with the transport.
  */
-type RuleSummary = Wire<Awaited<ReturnType<typeof api.automation.list.query>>>[number];
+type RuleSummary = Wire<
+  Awaited<ReturnType<typeof api.automation.list.query>>
+>['automations'][number];
 
 function RuleRow({
   orgId,
@@ -994,7 +1070,9 @@ function ActionRow({
  * There is no read-back route and no rotation, so the UI does not pretend
  * there is one.
  */
-type WebhookSummary = Wire<Awaited<ReturnType<typeof api.automation.webhooks.list.query>>>[number];
+type WebhookSummary = Wire<
+  Awaited<ReturnType<typeof api.automation.webhooks.list.query>>
+>['webhooks'][number];
 
 function WebhooksSection({ orgId }: { readonly orgId: string }) {
   const [creating, setCreating] = useState(false);
@@ -1003,8 +1081,9 @@ function WebhooksSection({ orgId }: { readonly orgId: string }) {
     readonly secret: string;
   } | null>(null);
   const [showingDeliveries, setShowingDeliveries] = useState<string | null>(null);
+  const pager = useCursorPager();
 
-  const webhooks = useQuery({ ...webhooksQuery(orgId), enabled: orgId !== '' });
+  const webhooks = useQuery({ ...webhooksPageQuery(orgId, pager.cursor), enabled: orgId !== '' });
 
   return (
     <section className="space-y-4">
@@ -1055,7 +1134,7 @@ function WebhooksSection({ orgId }: { readonly orgId: string }) {
         <SkeletonRows rows={2} />
       ) : webhooks.isError ? (
         <ErrorText error={webhooks.error} />
-      ) : webhooks.data.length === 0 ? (
+      ) : webhooks.data.webhooks.length === 0 ? (
         <Empty
           title="No webhooks yet"
           description="A rule cannot call an endpoint that is not registered here. Register one, paste its signing secret into your receiver, then pick it from a rule's “Call a webhook” action."
@@ -1074,7 +1153,7 @@ function WebhooksSection({ orgId }: { readonly orgId: string }) {
         />
       ) : (
         <ul className="space-y-2">
-          {webhooks.data.map((webhook) => (
+          {webhooks.data.webhooks.map((webhook) => (
             <li key={webhook.webhookId}>
               <WebhookRow
                 orgId={orgId}
@@ -1089,6 +1168,18 @@ function WebhooksSection({ orgId }: { readonly orgId: string }) {
             </li>
           ))}
         </ul>
+      )}
+
+      {webhooks.data !== undefined && (
+        <Pager
+          canPrev={pager.canPrev}
+          hasNext={webhooks.data.nextCursor !== null}
+          busy={webhooks.isFetching}
+          onPrev={pager.goPrev}
+          onNext={() => {
+            if (webhooks.data.nextCursor !== null) pager.goNext(webhooks.data.nextCursor);
+          }}
+        />
       )}
     </section>
   );
