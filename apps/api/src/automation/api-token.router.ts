@@ -33,6 +33,13 @@ const ApiTokenName = z.string().trim().min(1).max(120);
    than the catalog would refuse a token that is honest about what it does. */
 const ApiTokenScopes = z.array(z.string()).min(1).max(PERMISSIONS.length);
 
+/* An optional lifetime in whole days. Omitted = never expires, an explicit
+   choice (§6.3). Bounded at two years: a longer-lived credential should be a
+   deliberate "no expiry" rather than a number that only looks finite. The
+   floor is one day, since sub-day precision on a long-lived token is noise and
+   a zero would mint an already-expired credential the DB CHECK refuses. */
+const ApiTokenExpiresInDays = z.number().int().min(1).max(730);
+
 const ApiTokenSummaryOutput = z.object({
   tokenId: z.string(),
   name: z.string(),
@@ -41,6 +48,7 @@ const ApiTokenSummaryOutput = z.object({
   lastUsedAt: z.date().nullable(),
   revokedAt: z.date().nullable(),
   createdAt: z.date(),
+  expiresAt: z.date().nullable(),
 });
 
 function actorOf(ctx: {
@@ -73,7 +81,15 @@ export function createApiTokenRouter() {
      * this one response and is never readable again.
      */
     create: route({ permission: 'apiToken:create', stepUp: true })
-      .input(z.object({ name: ApiTokenName, scopes: ApiTokenScopes }).strict())
+      .input(
+        z
+          .object({
+            name: ApiTokenName,
+            scopes: ApiTokenScopes,
+            expiresInDays: ApiTokenExpiresInDays.optional(),
+          })
+          .strict(),
+      )
       .output(z.object({ tokenId: z.string(), token: z.string() }))
       .mutation(({ input, ctx }) => mintApiToken(actorOf(ctx), input)),
 

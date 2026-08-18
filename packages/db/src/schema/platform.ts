@@ -708,6 +708,9 @@ export const apiTokens = platform.table(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    /* When the token stops authenticating; NULL = never (migration 0079).
+       Enforced at the auth lookup, alongside revocation. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
   },
   (table) => [uniqueIndex('api_tokens_hash_key').on(table.tokenHash)],
 );

@@ -4,7 +4,7 @@ import { useSession } from '../../lib/session.js';
 import { api } from '../../lib/trpc.js';
 import { cn } from '../../lib/cn.js';
 import { keys } from '../../lib/query.js';
-import { formatRelative } from '../../lib/format.js';
+import { formatRelative, hasPassed } from '../../lib/format.js';
 import { useToast } from '../../lib/toast-context.js';
 import type { Wire } from '../../lib/wire.js';
 import { Button, ConfirmButton, Empty, Field, SkeletonRows } from '../../components/primitives.js';
@@ -134,6 +134,11 @@ function TokenCreateForm({
   const toast = useToast();
   const [name, setName] = useState('');
   const [selected, setSelected] = useState<readonly string[]>([]);
+  /* Default to a finite lifetime, not forever: a credential should start
+     least-privileged in time as well as in scope, and "never expires" is a
+     deliberate pick from the list rather than what you get by not choosing.
+     0 is the sentinel for that pick — the mutation maps it to `undefined`. */
+  const [expiresInDays, setExpiresInDays] = useState(90);
 
   const held = useQuery({ ...heldApiTokenScopesQuery(orgId), enabled: orgId !== '' });
 
@@ -161,7 +166,13 @@ function TokenCreateForm({
   };
 
   const create = useMutation({
-    mutationFn: () => api.apiToken.create.mutate({ name: name.trim(), scopes: [...selected] }),
+    mutationFn: () =>
+      api.apiToken.create.mutate({
+        name: name.trim(),
+        scopes: [...selected],
+        // 0 is the "No expiry" option; the route omits the field for forever.
+        ...(expiresInDays === 0 ? {} : { expiresInDays }),
+      }),
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: keys.apiTokens(orgId) });
       onCreate({ name: name.trim(), token: result.token });
@@ -260,6 +271,29 @@ function TokenCreateForm({
         </div>
       </Field>
 
+      <Field label="Expiry" htmlFor="api-token-expiry">
+        <select
+          id="api-token-expiry"
+          value={expiresInDays}
+          onChange={(event) => {
+            setExpiresInDays(Number(event.target.value));
+          }}
+          className="w-full rounded border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+        >
+          <option value={30}>30 days</option>
+          <option value={60}>60 days</option>
+          <option value={90}>90 days</option>
+          <option value={180}>180 days</option>
+          <option value={365}>1 year</option>
+          <option value={0}>No expiry</option>
+        </select>
+        <p className="text-[11px] text-ink-faint">
+          {expiresInDays === 0
+            ? 'This token never expires — revoke it by hand when it is no longer needed.'
+            : 'After this, the token stops authenticating. You can always revoke it sooner.'}
+        </p>
+      </Field>
+
       {create.isError && <ErrorText error={create.error} />}
 
       <div className="flex items-center gap-2">
@@ -296,29 +330,35 @@ function TokenRow({ orgId, token }: { readonly orgId: string; readonly token: To
   });
 
   const revoked = token.revokedAt !== null;
+  /* Expiry is enforced server-side at the auth lookup; this is only the
+     display of it, so an expired-but-not-revoked token reads as dead rather
+     than as active. */
+  const expired = token.expiresAt !== null && hasPassed(token.expiresAt);
+  const active = !revoked && !expired;
+  const status = revoked ? 'Revoked' : expired ? 'Expired' : 'Active';
 
   return (
     <div className="overflow-hidden rounded-lg border border-line">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 bg-surface-raised px-3 py-2">
         <span
           aria-hidden="true"
-          className={cn('size-2 shrink-0 rounded-full', revoked ? 'bg-danger' : 'bg-success')}
+          className={cn('size-2 shrink-0 rounded-full', active ? 'bg-success' : 'bg-danger')}
         />
-        <span className="sr-only">{revoked ? 'Revoked' : 'Active'}</span>
+        <span className="sr-only">{status}</span>
 
         <div className="min-w-0 flex-1 basis-48">
           <p className="flex items-center gap-2">
             <span
               className={cn(
                 'truncate text-sm font-medium',
-                revoked ? 'text-ink-muted line-through' : 'text-ink',
+                active ? 'text-ink' : 'text-ink-muted line-through',
               )}
             >
               {token.name}
             </span>
-            {revoked && (
+            {!active && (
               <span className="shrink-0 rounded bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger">
-                Revoked
+                {status}
               </span>
             )}
           </p>
@@ -340,7 +380,15 @@ function TokenRow({ orgId, token }: { readonly orgId: string; readonly token: To
           {token.lastUsedAt === null ? 'never used' : `used ${formatRelative(token.lastUsedAt)}`}
         </p>
 
-        {!revoked && (
+        {token.expiresAt !== null && !revoked && (
+          <p className={cn('shrink-0 text-[11px]', expired ? 'text-danger' : 'text-ink-faint')}>
+            {expired
+              ? `expired ${formatRelative(token.expiresAt)}`
+              : `expires ${formatRelative(token.expiresAt)}`}
+          </p>
+        )}
+
+        {active && (
           <div className="flex shrink-0 items-center gap-0.5">
             {/* Revoking is a two-click action for the same reason deleting a
                 webhook is: every script holding this credential breaks the

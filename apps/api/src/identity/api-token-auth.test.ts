@@ -176,6 +176,41 @@ describe('authenticateWithApiToken — the resolution path', () => {
     await expect(authenticateWithApiToken(`Bearer ${issued.token}`, undefined)).resolves.toBeNull();
   });
 
+  it('accepts a token with a future lifetime, and refuses it once expired', async () => {
+    const { orgId, owner } = await scaffold('expiry');
+
+    const live = await mintApiToken(owner, {
+      name: 'Expiring',
+      scopes: ['card:read'],
+      expiresInDays: 30,
+    });
+    /* A future expiry authenticates like any other token. */
+    await expect(
+      authenticateWithApiToken(`Bearer ${live.token}`, undefined),
+    ).resolves.not.toBeNull();
+
+    /* Age the row into the past — a token minted two days ago with a one-day
+       life, now lapsed. Both `created_at` and `expires_at` move, because the
+       `api_tokens_expiry_after_creation` CHECK requires expiry to be AFTER
+       creation: setting expiry alone below a just-set `created_at` is exactly
+       the row that constraint refuses. The lookup compares expiry against the
+       DATABASE clock (`now()`), so this is what a genuinely expired token looks
+       like, and nothing cached outlives it. RLS-scoped write:
+       platform.api_tokens forces RLS on app.org_id, so the UPDATE runs under
+       the token's org. */
+    await admin.setOrg(orgId);
+    await admin.query(
+      `UPDATE platform.api_tokens
+         SET created_at = now() - interval '2 days',
+             expires_at = now() - interval '1 day'
+       WHERE id = $1`,
+      [live.tokenId],
+    );
+    await admin.setOrg(null);
+
+    await expect(authenticateWithApiToken(`Bearer ${live.token}`, undefined)).resolves.toBeNull();
+  });
+
   it('refuses a token whose holder no longer has a membership', async () => {
     const { orgId, token } = await scaffold('gone');
 
