@@ -582,6 +582,13 @@ function reportFailure(error: unknown): void {
 function describe(value: unknown): string {
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  /* The `??` is load-bearing and ESLint reports it as unnecessary, because
+     TypeScript's own lib declares `JSON.stringify` as returning `string`. It
+     returns `undefined` for `undefined`, for a function, and for a symbol —
+     all three of which reach this branch, since the parameter is `unknown`.
+     Same shape as the TanStack Query guard in `login-page.tsx`: the type is
+     wrong, not the code. */
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- see above: JSON.stringify is typed `string` but returns undefined for undefined/function/symbol
   return JSON.stringify(value) ?? 'unknown';
 }
 
