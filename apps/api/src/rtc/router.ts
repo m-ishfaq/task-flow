@@ -345,7 +345,7 @@ export function createRtcRouter(deps: RtcDeps) {
             .strict(),
         )
         .mutation(async ({ ctx, input }) => {
-          await recordings.confirmRecordingUpload(actorOf(ctx), {
+          await recordings.confirmRecordingUpload(actorOf(ctx), deps, {
             recordingId: input.recordingId,
             bytes: input.bytes,
             durationSeconds: input.durationSeconds,

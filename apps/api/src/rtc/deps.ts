@@ -2,6 +2,7 @@ import {
   mintTurnCredential,
   type MintTurnCredentialOptions,
   type TurnCredential,
+  type ScannerConfig,
 } from '@taskflow/security';
 import { S3StorageProvider } from '@taskflow/storage';
 import type { StorageProvider } from '@taskflow/contracts';
@@ -66,6 +67,17 @@ export interface RtcDeps {
    * that is not the case this bound exists for.
    */
   readonly maxRecordingBytes: number;
+  /**
+   * The virus scanner a confirmed recording is checked against (§3.9).
+   *
+   * Required, not optional, and that is the point: `confirmRecordingUpload`
+   * shipped with no scan at all while the other three upload paths in this
+   * codebase shared one. Making this a required field means a deployment
+   * cannot reach the recording routes without having answered the question,
+   * the same way `work/deps.ts` builds its own. `scanBuffer` fails CLOSED, so
+   * an unreachable clamd rejects the upload rather than storing it unchecked.
+   */
+  readonly scanner: ScannerConfig;
 }
 
 /** Splits a comma-separated URL list the way `allowedOrigins` splits origins. */
@@ -116,6 +128,7 @@ export function buildRtcDeps(
   return {
     storage,
     maxRecordingBytes: env.RTC_MAX_RECORDING_BYTES,
+    scanner: { host: env.CLAMAV_HOST, port: env.CLAMAV_PORT },
     mint: options.mint ?? mintTurnCredential,
     stunUrls: urlList(env.RTC_STUN_URLS),
     turnUrls: urlList(env.RTC_TURN_URLS),

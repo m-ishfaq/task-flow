@@ -2,6 +2,7 @@ import { and, desc, eq, outboxWriter, schema, withOrgScope } from '@taskflow/db'
 import { errors, type ChannelId } from '@taskflow/contracts';
 import { createEvent, type DomainEvent } from '@taskflow/events';
 import { newId } from '@taskflow/security';
+import { verifyUpload } from '../attachments/verify.js';
 import { enforceOnChannel, loadChannel } from '../chat/shared.js';
 import {
   rtcRecordingConsented,
@@ -387,9 +388,35 @@ export async function presignRecordingUpload(
   };
 }
 
-/** Confirms the upload landed. Idempotent — a retried confirm changes nothing new. */
+/**
+ * Confirms the upload landed. Idempotent — a retried confirm changes nothing new.
+ *
+ * ## The scan, and why it was missing
+ *
+ * ⚠ HUMAN REVIEW SURFACE (§2.2): a file upload path.
+ *
+ * There are four upload paths in this codebase. Work attachments, chat
+ * attachments and platform branding all call `verifyUpload` — one copy of the
+ * fail-closed magic-byte and virus-scan decision, factored out precisely so a
+ * second parent type could not end up with a second, divergent copy of it.
+ * This path called neither: it moved the row `pending -> stored` on the
+ * client's word and returned.
+ *
+ * The presign side is careful — only `createdBy` may upload, the real byte
+ * count is pinned into the signature — but a pinned `Content-Type` and
+ * `Content-Length` prove what the client DECLARED twice, never what the bytes
+ * are. That is the same argument `verify.ts` makes for why magic bytes are not
+ * redundant with a signed header, and it applies here exactly as it does
+ * there: `presignRecording` hands every other participant in the call a
+ * download URL for whatever landed.
+ *
+ * A non-clean verdict is terminal — `status = 'failed'`, object deleted, no
+ * `rtc_recording.stored` event — which is what makes `presignRecording`'s own
+ * "only `stored` has anything to download" invariant mean something.
+ */
 export async function confirmRecordingUpload(
   actor: RtcActor,
+  deps: RtcDeps,
   input: {
     readonly recordingId: string;
     readonly bytes: number;
@@ -397,6 +424,67 @@ export async function confirmRecordingUpload(
   },
 ): Promise<void> {
   const orgId = orgOf(actor);
+
+  if (deps.storage === undefined) {
+    throw errors.serviceUnavailable('Call recording storage is not configured on this instance.');
+  }
+  const storage = deps.storage;
+
+  /* The key comes from the ROW, never from the request — the same discipline
+     every other confirm path keeps, and the reason this one needs no
+     `orgOfKey` assertion the way branding's does. */
+  const pending = await withOrgScope(orgId, async (tx) => {
+    const rows = await tx
+      .select({
+        storageKey: schema.rtcRecordings.storageKey,
+        contentType: schema.rtcRecordings.contentType,
+        status: schema.rtcRecordings.status,
+        createdBy: schema.rtcRecordings.createdBy,
+      })
+      .from(schema.rtcRecordings)
+      .where(eq(schema.rtcRecordings.id, input.recordingId))
+      .limit(1);
+
+    return rows[0];
+  });
+
+  /* Not found, already resolved, or somebody else's capture. All three are the
+     same no-op the conditional UPDATE below would have produced anyway —
+     resolved here so a caller in one of those states never reaches the
+     scanner, which is the expensive half. */
+  if (
+    pending === undefined ||
+    pending.status !== 'pending' ||
+    pending.createdBy !== userOf(actor)
+  ) {
+    return;
+  }
+
+  const verdict = await verifyUpload(
+    { storage, scanner: deps.scanner, maxBytes: deps.maxRecordingBytes },
+    { storageKey: pending.storageKey, contentType: pending.contentType },
+  );
+
+  if (verdict.status !== 'clean') {
+    /* Terminal, and the object goes. `presignRecording` serves only `stored`
+       rows, so a `failed` one is unreachable by design rather than by a
+       filter somebody has to remember — the same argument
+       `attachment.service.ts` makes for its own state machine. */
+    await storage.delete(pending.storageKey).catch(() => undefined);
+
+    await withOrgScope(orgId, async (tx) => {
+      await tx
+        .update(schema.rtcRecordings)
+        .set({ status: 'failed' })
+        .where(
+          and(
+            eq(schema.rtcRecordings.id, input.recordingId),
+            eq(schema.rtcRecordings.status, 'pending'),
+          ),
+        );
+    });
+    return;
+  }
 
   await withOrgScope(orgId, async (tx) => {
     const now = new Date();
@@ -408,7 +496,9 @@ export async function confirmRecordingUpload(
       .update(schema.rtcRecordings)
       .set({
         status: 'stored',
-        bytes: input.bytes,
+        /* The size storage reports, not the one the request claimed. The two
+           agree for every honest client, and only one of them is a fact. */
+        bytes: verdict.sizeBytes ?? input.bytes,
         durationSeconds: input.durationSeconds,
         storedAt: now,
       })
@@ -430,7 +520,7 @@ export async function confirmRecordingUpload(
         {
           sessionId: row.sessionId,
           recordingId: input.recordingId,
-          bytes: input.bytes,
+          bytes: verdict.sizeBytes ?? input.bytes,
           durationSeconds: input.durationSeconds,
         },
         envelopeOf(actor),
