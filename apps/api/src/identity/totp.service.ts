@@ -288,7 +288,12 @@ export async function verifyLogin(
       now,
     );
 
-    await publishSecondFactorFailure(deps, now, { userId, method, reason: 'bad_code', ip: meta.ip });
+    await publishSecondFactorFailure(deps, now, {
+      userId,
+      method,
+      reason: 'bad_code',
+      ip: meta.ip,
+    });
 
     if (state?.lockedUntil && state.lockedUntil > now) {
       await deps.identity.events.publish([

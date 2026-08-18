@@ -179,9 +179,7 @@ function expandIpv6(address: string): readonly number[] | null {
         const octets = token.split('.');
         if (octets.length !== 4) return null;
 
-        const nums = octets.map((octet) =>
-          /^\d{1,3}$/.test(octet) ? Number(octet) : Number.NaN,
-        );
+        const nums = octets.map((octet) => (/^\d{1,3}$/.test(octet) ? Number(octet) : Number.NaN));
         if (nums.some((num) => Number.isNaN(num) || num > 255)) return null;
 
         const [a = 0, b = 0, c = 0, d = 0] = nums;
@@ -205,7 +203,7 @@ function expandIpv6(address: string): readonly number[] | null {
        gap is malformed rather than merely redundant. */
     const gap = 8 - head.length - tail.length;
     if (gap < 1) return null;
-    return [...head, ...(Array<number>(gap).fill(0)), ...tail];
+    return [...head, ...Array<number>(gap).fill(0), ...tail];
   }
 
   return head.length === 8 ? head : null;
