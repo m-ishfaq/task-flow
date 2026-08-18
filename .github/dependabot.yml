@@ -46,6 +46,24 @@ updates:
       - dependency-name: drizzle-orm
         update-types: ['version-update:semver-major']
 
+  ## The third-party images in compose.prod.yaml are pinned by digest, which is
+  ## what makes them reproducible — and also what makes them go stale silently,
+  ## since a digest never moves and a security fix published under the same tag
+  ## never reaches us. This entry is the other half: Dependabot watches the tag
+  ## each pin names and opens a PR when the publisher re-points it, so an
+  ## upstream update becomes a diff someone reviews rather than a pull nobody
+  ## noticed. Pinning without watching would trade one silent failure for
+  ## another.
+  ##
+  ## Ungrouped on purpose. Four images is not a review burden, and MinIO holds
+  ## every uploaded file while coturn relays media on this deployment's bill —
+  ## neither belongs in a bulk PR that gets skimmed.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

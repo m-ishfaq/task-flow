@@ -152,6 +152,66 @@ describe('isBlockedAddress — IPv6', () => {
     expect(isBlockedAddress('::ffff:10.0.0.1')).toBe(true);
   });
 
+  it('blocks the same addresses in the spelling a URL parser ACTUALLY produces', () => {
+    /* The test above passed for a year against an implementation that was
+       bypassed in production, because it hand-writes a string no caller ever
+       passes. Every caller reads `new URL(raw).hostname`, and the WHATWG URL
+       parser serializes an IPv6 host in HEX — `::ffff:127.0.0.1` comes back
+       out as `::ffff:7f00:1`, which matched no branch and was ALLOWED.
+
+       So this goes through the parser rather than around it. Asserting the
+       hostnames literally as well would be the same mistake one layer down:
+       the point is that the value under test is produced the way production
+       produces it, not that it equals a string written here. */
+    const hostOf = (url: string): string => new URL(url).hostname.replace(/^\[|\]$/g, '');
+
+    for (const url of [
+      'http://[::ffff:127.0.0.1]/',
+      'http://[::ffff:169.254.169.254]/',
+      'http://[::ffff:10.0.0.5]/',
+      'http://[::ffff:192.168.1.1]/',
+      /* IPv4-compatible (`::127.0.0.1`), deprecated and still resolvable. */
+      'http://[::127.0.0.1]/',
+      /* 6to4 and NAT64 carry a v4 address behind a routable-looking prefix. */
+      'http://[2002:7f00:1::]/',
+      'http://[64:ff9b::7f00:1]/',
+    ]) {
+      expect(isBlockedAddress(hostOf(url))).toBe(true);
+    }
+
+    // The parser round trip must not start blocking legitimate public v6.
+    expect(isBlockedAddress(hostOf('http://[2606:4700:4700::1111]/'))).toBe(false);
+    expect(isBlockedAddress(hostOf('http://[::ffff:93.184.216.34]/'))).toBe(false);
+  });
+
+  it('refuses anything it cannot parse, rather than allowing it', () => {
+    /* Fail-closed is the whole posture of this module: an address we cannot
+       classify is one we must not connect to. A zone index is included
+       because it names an interface on this host. */
+    for (const address of [
+      'not-an-address',
+      '::ffff:999.1.1.1',
+      'fe80::1%eth0',
+      '1:2:3:4:5:6:7:8:9',
+      ':::1',
+      'gggg::1',
+    ]) {
+      expect(isBlockedAddress(address)).toBe(true);
+    }
+  });
+
+  it('blocks site-local, discard and documentation ranges', () => {
+    /* fec0::/10 spans fec0-feff, so both boundary spellings are covered.
+       Site-local was the IPv6 analogue of RFC1918 — deprecated by RFC 3879
+       precisely because its ambiguity caused problems, and still configured
+       on some legacy networks, which is exactly what an SSRF guard is for.
+       It is not, and never was, publicly routable. */
+    expect(isBlockedAddress('fec0::1')).toBe(true);
+    expect(isBlockedAddress('feff::1')).toBe(true);
+    expect(isBlockedAddress('100::1')).toBe(true); // 100::/64 discard
+    expect(isBlockedAddress('2001:db8::1')).toBe(true); // documentation
+  });
+
   it('does not block an IPv4-mapped PUBLIC address', () => {
     // The mapped form is decided by the v4 rules, both ways.
     expect(isBlockedAddress('::ffff:93.184.216.34')).toBe(false);
@@ -167,14 +227,23 @@ describe('isBlockedAddress — IPv6', () => {
     }
   });
 
-  it('does NOT block the public v6 range adjacent to link-local', () => {
-    /* fe80::/10 is not the whole fe8x world — first hextet fe80-febf is
-       link-local, but fec0-feff (the rest of fe80::/9) is routable address
-       space. An over-broad blocklist is its own bug — see the IPv4 comment
-       about public addresses adjacent to private ranges. */
+  it('does NOT block public space merely for being near a blocked range', () => {
+    /* An over-broad blocklist is its own bug — see the IPv4 comment about
+       public addresses adjacent to private ranges. `fe70::1` sits just BELOW
+       fe80::/10 and must survive the boundary check.
+
+       This test used to also assert `fec0::1` and `feff::1` were allowed, on
+       the stated grounds that "fec0-feff (the rest of fe80::/9) is routable
+       address space". That premise was wrong: fec0::/10 is SITE-LOCAL, the
+       IPv6 analogue of RFC1918, deprecated by RFC 3879 in 2004 and never
+       globally routable. Both now live in the blocked test below. Global
+       unicast is 2000::/3, so the genuinely-public cases are asserted with
+       real addresses from it rather than with neighbours of a private range
+       that happened to be unallocated. */
     expect(isBlockedAddress('fe70::1')).toBe(false);
-    expect(isBlockedAddress('fec0::1')).toBe(false);
-    expect(isBlockedAddress('feff::1')).toBe(false);
+    expect(isBlockedAddress('2606:4700:4700::1111')).toBe(false);
+    expect(isBlockedAddress('2001:4860:4860::8888')).toBe(false);
+    expect(isBlockedAddress('2a00:1450:4009:81f::200e')).toBe(false);
   });
 
   it('blocks unique-local', () => {

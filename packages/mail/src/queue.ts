@@ -1,3 +1,4 @@
+import { domainOf, type DomainCheckResult } from './domain-check.js';
 import type { Mailer, OutboundMessage } from './transport.js';
 
 /**
@@ -56,6 +57,27 @@ function reasonOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Whether a transport failure is a permanent SMTP rejection — a 5xx response,
+ * which by protocol definition ("permanent negative completion") will not
+ * succeed on redelivery of the same message. A 4xx ("transient negative
+ * completion") or a connection-level failure carries no response code at all
+ * — the server was never reached — and is retried normally.
+ *
+ * Nodemailer sets `responseCode` from the server's own reply on a rejected
+ * RCPT/DATA/AUTH command. The motivating case is Gmail's
+ * `550 5.4.5 Daily user sending limit exceeded`: without this, the queue
+ * retried it exactly like a transient outage, spending all four attempts and
+ * ~21s of backoff on a message the server had already permanently refused —
+ * and, because every message hits the same limit for the rest of the day,
+ * delaying everything queued behind each one by that same ~21s.
+ */
+function isPermanentFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const responseCode = (error as { responseCode?: unknown }).responseCode;
+  return typeof responseCode === 'number' && responseCode >= 500 && responseCode < 600;
+}
+
 export interface MailQueueOptions {
   readonly mailer: Mailer;
   /** Attempts per message, including the first. */
@@ -82,6 +104,17 @@ export interface MailQueueOptions {
   readonly onSuccess?: (success: { to: string; subject: string }) => void;
   /** Injected for tests. Real code has no reason to pass this. */
   readonly sleep?: (ms: number) => Promise<void>;
+  /**
+   * Checked against the recipient's domain before every send attempt.
+   * Undefined (the default) skips the check entirely — existing callers and
+   * every test in this package see no behaviour change. When provided, a
+   * failing result is reported through `onFailure` exactly like a permanent
+   * transport failure, with `attempts: 0` since the transport is never
+   * reached. See `domain-check.ts` for why this is not the default: it needs
+   * real DNS, which a generic queue has no business doing on its own — the
+   * caller decides whether and how (`createCachedDomainCheck`).
+   */
+  readonly checkDomain?: (domain: string) => Promise<DomainCheckResult>;
 }
 
 const DEFAULT_MAX_ATTEMPTS = 4;
@@ -114,6 +147,7 @@ export class MailQueue {
   readonly #onFailure: (failure: MailFailure) => void;
   readonly #onSuccess: (success: { to: string; subject: string }) => void;
   readonly #sleep: (ms: number) => Promise<void>;
+  readonly #checkDomain: ((domain: string) => Promise<DomainCheckResult>) | undefined;
 
   readonly #pending: QueueEntry[] = [];
   #running: Promise<void> | null = null;
@@ -130,6 +164,7 @@ export class MailQueue {
     this.#onFailure = options.onFailure ?? (() => undefined);
     this.#onSuccess = options.onSuccess ?? (() => undefined);
     this.#sleep = options.sleep ?? defaultSleep;
+    this.#checkDomain = options.checkDomain;
   }
 
   get depth(): number {
@@ -217,6 +252,11 @@ export class MailQueue {
       const entry = this.#pending[0];
       if (entry === undefined) break;
 
+      if (this.#checkDomain !== undefined && (await this.#rejectUndeliverableDomain(entry))) {
+        continue;
+      }
+
+      let permanentFailure = false;
       try {
         await this.#mailer.send(entry.message);
         this.#pending.shift();
@@ -225,9 +265,10 @@ export class MailQueue {
       } catch (error) {
         entry.attempts += 1;
         entry.lastError = reasonOf(error);
+        permanentFailure = isPermanentFailure(error);
       }
 
-      if (entry.attempts >= this.#maxAttempts) {
+      if (entry.attempts >= this.#maxAttempts || permanentFailure) {
         this.#pending.shift();
         this.#abandoned += 1;
         /* The recipient, subject and TRANSPORT'S failure reason — never the
@@ -251,6 +292,34 @@ export class MailQueue {
          attempts against an outage it had nothing to do with. */
       await this.#sleep(this.#baseDelayMs * this.#backoffFactor ** (entry.attempts - 1));
     }
+  }
+
+  /**
+   * Abandons `entry` without touching the transport if its recipient's
+   * domain cannot receive mail. Returns whether it did — the caller's signal
+   * to skip straight to the next message.
+   *
+   * `attempts: 0` in the reported failure is accurate, not a placeholder:
+   * this runs before `#mailer.send` is ever called, so no attempt was made.
+   */
+  async #rejectUndeliverableDomain(entry: QueueEntry): Promise<boolean> {
+    const domain = domainOf(entry.message.to);
+    const result =
+      domain === null
+        ? { ok: false, reason: `"${entry.message.to}" has no domain to check` }
+        : await this.#checkDomain?.(domain);
+
+    if (result === undefined || result.ok) return false;
+
+    this.#pending.shift();
+    this.#abandoned += 1;
+    this.#onFailure({
+      to: entry.message.to,
+      subject: entry.message.subject,
+      attempts: 0,
+      reason: `recipient domain not deliverable: ${result.reason}`,
+    });
+    return true;
   }
 }
 

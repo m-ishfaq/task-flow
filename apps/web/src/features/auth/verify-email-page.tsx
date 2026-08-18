@@ -131,7 +131,9 @@ export function VerifyEmailPage() {
 function Frame({ children }: { readonly children: React.ReactNode }) {
   return (
     <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-4 p-6">
-      <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Email verification</h1>
+      <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
+        Email verification
+      </h1>
       {children}
     </div>
   );

@@ -88,9 +88,7 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
     <div className="mx-auto max-w-3xl space-y-6">
       <section className="space-y-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-[13px] font-semibold text-ink">
-            This org's numbers
-          </h2>
+          <h2 className="text-[13px] font-semibold text-ink">This org's numbers</h2>
           {numbers.data !== undefined && (
             <span className="rounded-full bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
               {numbers.data.length}
@@ -139,9 +137,7 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
 
       <section className="space-y-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-[13px] font-semibold text-ink">
-            Buy a number
-          </h2>
+          <h2 className="text-[13px] font-semibold text-ink">Buy a number</h2>
         </div>
         <form
           className="rounded-lg border border-line bg-surface-raised p-3"

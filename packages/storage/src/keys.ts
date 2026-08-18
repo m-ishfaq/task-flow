@@ -49,8 +49,27 @@ export function newStorageKey(orgId: string, at: Date = new Date()): string {
  * cross-tenant read.
  */
 export function isGeneratedKey(key: string): boolean {
-  return /^org\/[0-9a-f-]{36}\/\d{4}\/\d{2}\/[0-9a-f-]{36}$/i.test(key);
+  return GENERATED_KEY_SHAPES.some((shape) => shape.test(key));
 }
+
+/**
+ * The key shapes this system generates. Both are server-built, all-UUID, and
+ * carry no client-supplied segment.
+ *
+ * The second exists because `apps/api/src/rtc/recording.service.ts` mints
+ * `rtc/<orgId>/<sessionId>/<recordingId>.webm` rather than calling
+ * `newStorageKey` — a call recording is keyed by the session it belongs to, so
+ * every capture from one call sits under one prefix. That was invisible for as
+ * long as recordings skipped `verifyUpload` entirely; wiring them into the
+ * scanner made this the function that would have refused every one of them.
+ *
+ * Adding a shape here is a decision about what may be handed to the storage
+ * client, so the list is closed and explicit rather than a loosened pattern.
+ */
+const GENERATED_KEY_SHAPES: readonly RegExp[] = [
+  /^org\/[0-9a-f-]{36}\/\d{4}\/\d{2}\/[0-9a-f-]{36}$/i,
+  /^rtc\/[0-9a-f-]{36}\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.webm$/i,
+];
 
 /**
  * The org a key belongs to, or null.
@@ -60,7 +79,7 @@ export function isGeneratedKey(key: string): boolean {
  * copied between rows by a bug rather than by an attacker.
  */
 export function orgOfKey(key: string): string | null {
-  const match = /^org\/([0-9a-f-]{36})\//i.exec(key);
+  const match = /^(?:org|rtc)\/([0-9a-f-]{36})\//i.exec(key);
   return match?.[1] ?? null;
 }
 

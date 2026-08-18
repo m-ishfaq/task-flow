@@ -292,6 +292,36 @@ describe('the branding singleton', () => {
 });
 
 describe('logo upload', () => {
+  it('refuses a storage key belonging to a tenant, without reading or deleting it', async () => {
+    /* The key is the one client-supplied value on this path — every other
+       upload path in the codebase reads it back off the row it wrote at
+       presign time, and this one has no row (see the service header). Naming
+       a TENANT'S object here would publish it on the unauthenticated
+       `branding.public` route, and delete it the next time the logo was
+       replaced.
+
+       No scanner guard on this test, deliberately: the refusal must happen
+       BEFORE `verifyUpload`, so it holds whether or not clamd is running.
+       The storage assertions are what prove the ordering — a check placed
+       after the verify would have read the object first. */
+    const storage = new FakeStorage();
+    const deps: branding.BrandingDeps = {
+      events: new RecordingEventBus(),
+      storage,
+      scanner: { host: TEST_ENV.CLAMAV_HOST, port: TEST_ENV.CLAMAV_PORT, timeoutMs: 20_000 },
+    };
+
+    // Shaped exactly like a real key — `isGeneratedKey` accepts it — but the
+    // org segment is a tenant's, not SYSTEM_ORG's.
+    const tenantKey = `org/018f4d1e-7c3a-7b2e-8f1a-0000000000aa/2026/08/018f4d1e-7c3a-7b2e-8f1a-0000000000bb`;
+    storage.put(tenantKey, png(128), 'image/png');
+
+    await expect(branding.confirmLogo(deps, operator, { storageKey: tenantKey })).rejects.toThrow();
+
+    expect(storage.deleted).not.toContain(tenantKey);
+    expect((await branding.getBranding(operator)).logoKey).not.toBe(tenantKey);
+  });
+
   it('becomes the live logo on a clean verdict, and the cache sees it', async () => {
     if (!scannerReady) return;
 

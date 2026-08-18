@@ -198,6 +198,24 @@ export const EnvSchema = z
        by servers that do require it. */
     MAIL_USER: OptionalNonEmpty,
     MAIL_PASSWORD: OptionalNonEmpty,
+    /**
+     * Whether `MailQueue` checks a recipient's domain for MX/A/AAAA records
+     * before ever opening an SMTP connection to it (`@taskflow/mail`'s
+     * `domain-check.ts`).
+     *
+     * OFF BY DEFAULT, and the default is the safe one — parsed from the
+     * string 'true' rather than with `z.coerce.boolean()`, the
+     * RETENTION_SWEEP_ENABLED lesson. Mailpit does not care what the
+     * recipient domain is, so leaving this off locally costs nothing; a real
+     * relay does, and `packages/seed`'s users all share `taskflow.seed.test`
+     * — a domain on the reserved, never-resolving `.test` TLD — so turning
+     * this on against a real relay is what stops every seeded account's
+     * notification mail from burning a full SMTP retry budget for a
+     * recipient that was never going to accept it. */
+    MAIL_VALIDATE_RECIPIENT_DOMAIN: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
 
     /* Object storage (§5, §8.4). MinIO locally, Cloudflare R2 on the free tier,
        S3 past 10 GB — all three speak the same API, so only these values

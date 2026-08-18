@@ -35,6 +35,31 @@
 ##   docker/postgres/init's role/grant model — see
 ##   docker/postgres/init-prod/05-set-passwords.sh's own header. Everything
 ##   else about who can do what is the same file dev uses.
+##
+## ## Why the third-party images carry a digest
+##
+## The seven `task-flow-*` images are pinned by `${IMAGE_TAG}`, which is a
+## commit SHA the CD workflow prints — so what runs in production is always a
+## revision someone can look up. The images below are NOT ours, and `:latest`
+## is a LABEL the publisher re-points at will: the same compose file pulls
+## different bytes on Tuesday than it did on Monday, with nothing in this repo
+## recording that anything changed. That is the half of the supply chain the
+## IMAGE_TAG discipline does not cover.
+##
+## So each one is `name:tag@sha256:...`. The digest is what Docker actually
+## fetches and verifies; the tag is kept alongside it purely so the line stays
+## readable and so Dependabot's `docker-compose` ecosystem
+## (.github/dependabot.yml) knows which tag to watch — it opens a PR when the
+## publisher moves the tag, which turns "we silently got a new MinIO" into a
+## diff with a review on it.
+##
+## `postgres:17-alpine` and `clamav/clamav:stable` are deliberately left on
+## their tags: both are version- or channel-scoped rather than a rolling
+## `latest`, and pinning the database's digest would make a routine 17.x patch
+## a repo change.
+##
+## Updating one is a one-line edit — take the digest from the Dependabot PR, or
+##   docker buildx imagetools inspect minio/minio:latest
 
 name: taskflow-prod
 
@@ -93,7 +118,7 @@ services:
       start_period: 10s
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -118,7 +143,7 @@ services:
       retries: 5
 
   minio-init:
-    image: minio/mc:latest
+    image: minio/mc:latest@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     depends_on:
       minio:
         condition: service_healthy
@@ -166,7 +191,7 @@ services:
   # coturn from running — this default only has to be loud, not enforced.
   # Verify RTC_TURN_SECRET is real before ever passing `--profile turn`.
   coturn:
-    image: coturn/coturn:latest
+    image: coturn/coturn:latest@sha256:aa68aab64a3b929d57fc2924c98ea447bf996cf8dade2508e7b71eaf23f1f14e
     restart: unless-stopped
     network_mode: host
     profiles: ['turn']
@@ -369,6 +394,7 @@ services:
       MAIL_FROM: ${MAIL_FROM:?MAIL_FROM must be set}
       MAIL_USER: ${MAIL_USER:-}
       MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_VALIDATE_RECIPIENT_DOMAIN: ${MAIL_VALIDATE_RECIPIENT_DOMAIN:-false}
 
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
@@ -643,7 +669,7 @@ services:
   # forwarding, which would hand Dozzle a request it no longer recognizes
   # as under its own base.
   dozzle:
-    image: amir20/dozzle:latest
+    image: amir20/dozzle:latest@sha256:01f9018ffdaa0ec523f9a91dea3eff65b25cdb5f0566ac6d5a2cb4cf591e35e9
     restart: unless-stopped
     environment:
       DOZZLE_NO_ANALYTICS: 'true'

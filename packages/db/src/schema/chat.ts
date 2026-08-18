@@ -198,9 +198,7 @@ export const messageHidden = chat.table(
       .references(() => users.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [
-    index('message_hidden_user_idx').on(table.orgId, table.userId, table.messageId),
-  ],
+  (table) => [index('message_hidden_user_idx').on(table.orgId, table.userId, table.messageId)],
 );
 
 export const pinnedMessages = chat.table(

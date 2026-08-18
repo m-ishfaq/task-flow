@@ -13,6 +13,14 @@ set -euo pipefail
 # missing, blank, a leftover ENTER_HERE/CHANGE_ME placeholder copied from
 # .env.prod.example, or fine.
 #
+# A defaulted (":-") variable that IS set to a real value is reported too —
+# under "Overriding the compose default" — rather than silently folded into
+# nothing. Without that, setting a new optional variable (say,
+# MAIL_VALIDATE_RECIPIENT_DOMAIN) and running this script gives no evidence
+# either way that it was picked up: it isn't a failure to report, but its
+# total silence reads identically to "this script doesn't know that
+# variable exists yet."
+#
 # Usage: scripts/check-env-prod.sh [compose-file] [env-file]
 # Defaults: compose.prod.yaml, .env.prod
 # Exit 0 only if every variable compose actually requires (":?") is set to a
@@ -22,6 +30,10 @@ set -euo pipefail
 
 COMPOSE_FILE="${1:-compose.prod.yaml}"
 ENV_FILE="${2:-.env.prod}"
+# The shipped example, used to detect a value copied out of it unchanged.
+# .env.prod.example rather than .env.example: the two differ, and this script
+# only ever validates a production env file.
+EXAMPLE_FILE="${3:-.env.prod.example}"
 
 if [ ! -f "$COMPOSE_FILE" ]; then
   echo "$COMPOSE_FILE not found" >&2
@@ -77,6 +89,7 @@ empty=()
 placeholder=()
 ok=()
 unset_but_defaulted=()
+defaulted_overridden=()
 
 for var in "${REQUIRED_VARS[@]}"; do
   if ! val=$(get_value "$var"); then
@@ -91,6 +104,32 @@ for var in "${REQUIRED_VARS[@]}"; do
     placeholder+=("$var: $val")
     continue
   fi
+  # A value copied verbatim out of the example file. This catches what the
+  # placeholder pattern above cannot: the examples ship WORKING credentials
+  # that match neither ENTER_HERE nor CHANGE_ME — `app-dev-secret`,
+  # `migrator-dev-secret`, the MinIO root password, `coturn-dev-secret` —
+  # across fifteen database URLs, object storage and TURN. The realistic
+  # failure is copying an example file over and editing the fields you were
+  # thinking about; JWT_SECRET is caught because it is spelled CHANGE_ME_...,
+  # and every Postgres role password is not.
+  #
+  # Compared against the example file rather than pattern-matched, so a
+  # credential added there in future is covered without anyone having to
+  # remember to extend a regex here. The literal `dev-secret` pattern stays as
+  # a second net for a value derived from an example rather than copied from
+  # one — .env.example (development) shares those credentials with
+  # .env.prod.example but is not the file this script diffs against.
+  if [ -f "$EXAMPLE_FILE" ]; then
+    example_val=$(sed -n "s/^${var}=//p" "$EXAMPLE_FILE" | head -n 1)
+    if [ -n "$example_val" ] && [ "$val" = "$example_val" ]; then
+      placeholder+=("$var: unchanged from $EXAMPLE_FILE")
+      continue
+    fi
+  fi
+  if echo "$val" | grep -qiE 'dev-secret|devsecret'; then
+    placeholder+=("$var: looks like a development credential")
+    continue
+  fi
   ok+=("$var")
 done
 
@@ -101,6 +140,11 @@ for var in "${DEFAULTED_VARS[@]}"; do
   fi
   if ! get_value "$var" >/dev/null 2>&1; then
     unset_but_defaulted+=("$var")
+  else
+    # Name only, never the value — some of these are secrets (STRIPE_SECRET_KEY,
+    # TWILIO_*), and this section exists to answer "did my override get picked
+    # up", not to echo credentials into a terminal or a CI log.
+    defaulted_overridden+=("$var")
   fi
 done
 
@@ -122,6 +166,7 @@ echo "Checked ${#REQUIRED_VARS[@]} required + ${#DEFAULTED_VARS[@]} defaulted va
 echo ""
 
 print_section "OK" "${ok[@]}"
+print_section "Overriding the compose default (set in $ENV_FILE — value not shown)" "${defaulted_overridden[@]}"
 print_section "Using compose default (not set in $ENV_FILE — fine, not an error)" "${unset_but_defaulted[@]}"
 print_section "MISSING (not set in $ENV_FILE at all)" "${missing[@]}"
 print_section "EMPTY (set but blank)" "${empty[@]}"

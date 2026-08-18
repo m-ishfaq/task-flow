@@ -37,7 +37,9 @@ export function ForgotPasswordPage() {
   if (request.isSuccess) {
     return (
       <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-4 p-6">
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Check your email</h1>
+        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
+          Check your email
+        </h1>
         <p className="text-sm text-ink-muted">
           If that address has an account, a reset link is on its way. The link is single-use and
           expires.
@@ -52,7 +54,9 @@ export function ForgotPasswordPage() {
   return (
     <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-6 p-6">
       <div>
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Reset your password</h1>
+        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
+          Reset your password
+        </h1>
         <p className="mt-1 text-sm text-ink-muted">We will email you a link to choose a new one.</p>
       </div>
 

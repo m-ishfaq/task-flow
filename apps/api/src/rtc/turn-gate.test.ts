@@ -77,6 +77,9 @@ function depsWithTurn(overrides: Partial<RtcDeps> = {}): RtcDeps {
        recordings bucket is a valid deployment — see `buildRtcDeps`. */
     storage: undefined,
     maxRecordingBytes: 64 * 1024 * 1024,
+    /* Unreachable on purpose: this suite never confirms a recording, and a
+       scanner that cannot be dialled would fail CLOSED if it somehow did. */
+    scanner: { host: '127.0.0.1', port: 1 },
     stunUrls: ['stun:localhost:3478'],
     turnUrls: ['turn:localhost:3478?transport=udp'],
     turnSecret: 'coturn-test-secret',

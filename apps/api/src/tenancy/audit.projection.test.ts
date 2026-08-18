@@ -97,6 +97,14 @@ const UNMAPPED: ReadonlySet<string> = new Set([
   'user.passkey_registered',
   'user.passkey_removed',
   'user.passkey_login_failed',
+  /* A refused second factor, sitting with `user.login_failed` and
+     `user.passkey_login_failed` for the identical reason: it is a fact about
+     an authentication ATTEMPT, and the only subject it could name is the
+     account, which `actor_id` already carries. It exists because the second
+     factor previously recorded nothing at all on a wrong code — see
+     `identity/totp.service.ts` — so the gap it closes is the audit trail
+     itself, not this projection. */
+  'user.second_factor_failed',
   // Phase 12 Wave 2 §3.2 — same shape as the passkey pair above: a new/removed
   // way into the account, `resource_id` would repeat `actor_id`.
   'user.totp_enrolled',

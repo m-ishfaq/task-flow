@@ -154,7 +154,10 @@ export async function listMessages(
           notHiddenBy(actor, tx),
           olderThan === null
             ? eq(schema.messages.channelId, input.channelId)
-            : and(eq(schema.messages.channelId, input.channelId), lt(schema.messages.id, olderThan)),
+            : and(
+                eq(schema.messages.channelId, input.channelId),
+                lt(schema.messages.id, olderThan),
+              ),
         ),
       )
       .orderBy(desc(schema.messages.id))
@@ -447,8 +450,18 @@ export async function deleteMessage(
  *
  * Permission is `message:read`: hiding changes the VIEWER's own list, exactly
  * like marking a channel read, and is offered to anyone who can read the
- * channel at all. No domain event — nothing happened to the message, and the
- * outbox is for things other consumers need to know about.
+ * channel at all.
+ *
+ * A `message.hidden` event IS emitted, and this sentence used to say the
+ * opposite ("No domain event — nothing happened to the message") nineteen
+ * lines above the `outboxWriter.append` that emits one. Guardrail 11's rule is
+ * that a state-mutating service method emits, and this method writes a row.
+ *
+ * Nothing consumes it today and nothing broadcasts it: `message.hidden` is
+ * absent from every table in `apps/realtime/src/event-rooms.ts`, which is what
+ * keeps "this person hid a message" out of the channel everyone else is
+ * sitting in. That absence is load-bearing — adding it to a room table would
+ * publish one viewer's private list management to the whole room.
  */
 export async function hideMessage(
   actor: ChatActor,

@@ -111,27 +111,28 @@ export function createChatRouter(deps: ChatRouterDeps) {
        */
       list: route({ permission: 'channel:read', feature: { flag: 'chat', display: 'Chat' } })
         .output(
-          z.object({
-            /* Whether the caller may create a channel — gates the sidebar's
+          z
+            .object({
+              /* Whether the caller may create a channel — gates the sidebar's
                "new channel" control on the server's verdict (see
                `listChannels`). */
-            canCreateChannel: z.boolean(),
-            channels: z
-              .array(
-                z.object({
-                  channelId: z.string(),
-                  type: z.string(),
-                  name: z.string().nullable(),
-                  topic: z.string().nullable(),
-                  archivedAt: z.date().nullable(),
-                  createdAt: z.date(),
-                  joined: z.boolean(),
-                  participantIds: z.array(z.string()).readonly(),
-                }),
-              )
-              .readonly(),
-          })
-          .strict(),
+              canCreateChannel: z.boolean(),
+              channels: z
+                .array(
+                  z.object({
+                    channelId: z.string(),
+                    type: z.string(),
+                    name: z.string().nullable(),
+                    topic: z.string().nullable(),
+                    archivedAt: z.date().nullable(),
+                    createdAt: z.date(),
+                    joined: z.boolean(),
+                    participantIds: z.array(z.string()).readonly(),
+                  }),
+                )
+                .readonly(),
+            })
+            .strict(),
         )
         .query(({ ctx }) => channels.listChannels(actorOf(ctx))),
 

@@ -220,9 +220,7 @@ export function PermissionDebugPage() {
           </div>
 
           <div>
-            <h2 className="mb-2 text-[13px] font-semibold text-ink">
-              Decision trace
-            </h2>
+            <h2 className="mb-2 text-[13px] font-semibold text-ink">Decision trace</h2>
 
             {/* A stepper rather than a table. The layers run in a fixed order and
                 each one either decides or passes the question on, so the reason

@@ -68,6 +68,38 @@ const OPERATION_RULES: Readonly<Record<string, RateLimitRule>> = {
      out of their sessions — reuse detection is the real control here. */
   'auth.refresh': { limit: 240, windowMs: 60 * 60_000 },
 
+  /* The SECOND factor, which had no rule at all until an audit noticed that
+     the first factor's 5-per-15-minutes had no counterpart here. Six digits
+     with otplib's ±1 window is three valid codes in a million, so the only
+     thing bounding a guessing loop was the volumetric 300/minute — which is
+     in-process and forgives everyone on restart.
+
+     Ten rather than five: a person mistyping a code, or submitting one that
+     expired while they typed it, is ordinary in a way that a mistyped password
+     is not, and the durable control is the database-backed lockout that
+     `totp.service.ts`'s `verifyLogin` now writes on every wrong code. This is
+     the cheap volumetric half, the same relationship §8.9 describes between
+     the per-IP limiter and the account lockout.
+
+     Keyed per ADDRESS, not per account: the request body carries a challenge
+     token, not an email, and `accountOf` reads only `email`. Naming the
+     account would need the extractor to verify a JWT inside a rate-limit hook,
+     which is a worse trade than a per-address budget on top of a per-account
+     lockout that already exists. */
+  'auth.totp.verifyLogin': { limit: 10, windowMs: 15 * 60_000 },
+
+  /* Both are unauthenticated ceremony completions. Neither is cheap — one runs
+     signature verification, the other a token exchange with a third party —
+     and neither had anything but the volumetric tier. */
+  'auth.passkeys.finishAuthentication': { limit: 30, windowMs: 15 * 60_000 },
+  'auth.oauth.callback': { limit: 30, windowMs: 15 * 60_000 },
+
+  /* The only anonymous route in the product that does real work: a
+     transaction, a Yjs state decode and a render pass, for a caller with no
+     session. Generous enough for a linked page doing the rounds, bounded
+     enough that it cannot be used to spend the server's CPU for free. */
+  'docs.public.getPage': { limit: 120, windowMs: 60_000 },
+
   /* Chat (ai/phase-5-chat.md §6.5, which names this obligation explicitly:
      "message-send rate per user per channel (spam)").
 

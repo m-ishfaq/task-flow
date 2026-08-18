@@ -33,3 +33,11 @@ export {
 } from './transport.js';
 
 export { MailQueue, type MailFailure, type MailQueueOptions } from './queue.js';
+
+export {
+  checkMailDomain,
+  createCachedDomainCheck,
+  domainOf,
+  type DnsResolvers,
+  type DomainCheckResult,
+} from './domain-check.js';

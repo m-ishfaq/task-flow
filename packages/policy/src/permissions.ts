@@ -182,10 +182,31 @@ const PERMISSION_SET: ReadonlySet<string> = new Set<string>(PERMISSIONS);
  * ahead of the day one is added — deleting or billing the org, or minting
  * your own API credentials, will never be something a resource tuple grants.
  *
- * Telephony and platform permissions (`phoneNumber:*`, `automation:manage`,
- * ...) are deliberately NOT here: those phases have not shipped, and whether
- * a future phone number or automation becomes independently tuple-shareable
- * is a decision for whoever builds it, not one to guess at now.
+ * The telephony permissions were once excluded here with the note that "those
+ * phases have not shipped". Phase 7 shipped five waves and a UI, and the
+ * exclusion outlived the premise: `couldGrant` fell through to the tuple
+ * check, `member`'s grant set contains every `:read` permission in the catalog
+ * by suffix, and every user who joins a chat channel holds a `member` tuple on
+ * it. A guest — who by role holds NOTHING — could therefore pass the floor on
+ * `telephony.calls.list`, `telephony.messages.threads/.list`,
+ * `telephony.numbers.list` and both spend routes, none of which ask a second
+ * question, and read the org's whole call and SMS history with decrypted
+ * counterparties. Exactly the `audit:read` vulnerability above, rebuilt in a
+ * later phase because the list was not revisited when the phase landed.
+ *
+ * `phoneNumber`, `call`, `sms` and `recording` ARE in `RESOURCE_TYPES`, so a
+ * tuple could in principle name one — but nothing in the product creates such
+ * a tuple, and no telephony service calls `enforce`/`can` on a per-resource
+ * target. Until one does, a tuple must not satisfy these floors. The same
+ * "included ahead of the day a route arrives" reasoning as `org:delete` above
+ * covers the write halves.
+ *
+ * NOT here, deliberately: `space:read`. A Docs space is genuinely
+ * tuple-shareable — `spaceTarget()` exists, a guest holding `viewer` on one
+ * space is a supported state, and making it org-level would refuse that guest
+ * at layer 1. `docs.spaces.list` had the same unfiltered-listing bug this
+ * paragraph describes, and its fix is a per-space `can()` filter in the
+ * service, not an entry here. See `docs/space.service.ts`.
  */
 const ORG_LEVEL_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
   'org:read',
@@ -216,6 +237,20 @@ const ORG_LEVEL_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
   'automation:manage',
   'webhook:manage',
   'integration:manage',
+  /* Phase 7. A phone number, a call record, an SMS thread and a recording are
+     org furniture in exactly the sense the block comment describes: the
+     services behind every route that names one take an `orgId` and no subject,
+     so `route()`'s floor is the entire decision and a chat-channel tuple must
+     never reach it. */
+  'phoneNumber:read',
+  'phoneNumber:purchase',
+  'phoneNumber:release',
+  'call:read',
+  'call:place',
+  'sms:read',
+  'sms:send',
+  'recording:read',
+  'recording:export',
 ]);
 
 /** True when `permission` has no per-resource concept — see `ORG_LEVEL_PERMISSIONS`. */

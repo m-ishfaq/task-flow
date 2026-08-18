@@ -1,4 +1,5 @@
 import {
+  createCachedDomainCheck,
   MailQueue,
   renderDuplicateRegistration,
   renderImpossibleTravel,
@@ -68,6 +69,13 @@ export function createMailDelivery(options: MailDeliveryOptions): MailDelivery {
 
   const queue = new MailQueue({
     mailer,
+    /* Off unless MAIL_VALIDATE_RECIPIENT_DOMAIN is set — see that variable's
+       own comment in config/env.ts. `createCachedDomainCheck()` is built once
+       per queue, so its cache is shared across every message this queue ever
+       sends rather than re-created (and re-warmed) per message. */
+    ...(options.env.MAIL_VALIDATE_RECIPIENT_DOMAIN
+      ? { checkDomain: createCachedDomainCheck() }
+      : {}),
     ...(options.onFailure === undefined ? {} : { onFailure: options.onFailure }),
     ...(options.onSuccess === undefined ? {} : { onSuccess: options.onSuccess }),
   });

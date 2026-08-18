@@ -56,7 +56,15 @@ export function BrandMark({
         </linearGradient>
       </defs>
       <rect width="40" height="40" rx="10" fill={`url(#${gradientId})`} />
-      <rect x="10" y="17.5" width="20" height="5" rx="2.5" fill="oklch(98% 0.01 285)" opacity="0.92" />
+      <rect
+        x="10"
+        y="17.5"
+        width="20"
+        height="5"
+        rx="2.5"
+        fill="oklch(98% 0.01 285)"
+        opacity="0.92"
+      />
     </svg>
   );
 }

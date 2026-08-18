@@ -136,6 +136,54 @@ describe('couldGrant — the route-level pre-check', () => {
     // The same tuple still does its actual, resource-scoped job.
     expect(couldGrant(withOwnerTuple, 'card:update')).toBe(true);
   });
+
+  it('a channel tuple does not reach the telephony catalog', () => {
+    /* The same defect as the `audit:read` case above, found again in Phase 7:
+       `ORG_LEVEL_PERMISSIONS` excluded the telephony permissions on the note
+       that "those phases have not shipped", and the note outlived the phase.
+       Every route below hands its service an `orgId` and no subject
+       (`calls.listCalls(orgId, …)`, `messages.listThreads(orgId, …)`,
+       `spendReport(orgId, …)`), so there is no layer 2 anywhere and this
+       pre-check is the whole decision. A `guest` holds nothing by role, so
+       every `true` here could only have come from the channel tuple. */
+    const channel = { type: 'channel', id: 'chan_1' } as const;
+    const guestInChannel = subject('guest', [tuple('member', channel)]);
+
+    expect(couldGrant(guestInChannel, 'call:read')).toBe(false);
+    expect(couldGrant(guestInChannel, 'sms:read')).toBe(false);
+    expect(couldGrant(guestInChannel, 'phoneNumber:read')).toBe(false);
+    expect(couldGrant(guestInChannel, 'recording:read')).toBe(false);
+
+    // A `member` relation grants by action suffix, so the write halves were
+    // never reachable this way — asserted anyway, because the reason they are
+    // safe is the suffix table, which is free to change.
+    expect(couldGrant(guestInChannel, 'sms:send')).toBe(false);
+    expect(couldGrant(guestInChannel, 'call:place')).toBe(false);
+    expect(couldGrant(guestInChannel, 'recording:export')).toBe(false);
+    expect(couldGrant(guestInChannel, 'phoneNumber:purchase')).toBe(false);
+
+    // The roles that genuinely hold these still do. This is the assertion that
+    // fails if someone "fixes" the above by removing them from the catalog.
+    expect(couldGrant(subject('member'), 'call:read')).toBe(true);
+    expect(couldGrant(subject('admin'), 'recording:read')).toBe(true);
+  });
+
+  it('space:read is NOT org-level — a Docs guest reaches their space by tuple', () => {
+    /* The deliberate asymmetry with the telephony block above, and the reason
+       `docs.spaces.list`'s leak is fixed in its service rather than here. A
+       space is genuinely tuple-shareable: `spaceTarget()` exists and a guest
+       holding `viewer` on one space is a supported product state, so making
+       `space:read` org-level would refuse that guest at layer 1 and no layer 2
+       would ever run. The listing route filters per space instead. */
+    const space = { type: 'space', id: 'space_1' } as const;
+    const guestInSpace = subject('guest', [tuple('viewer', space)]);
+
+    expect(couldGrant(guestInSpace, 'space:read')).toBe(true);
+
+    // But a tuple on something else entirely still must not reach it — that
+    // is what the service-side filter is for, not this check.
+    expect(couldGrant(subject('guest'), 'space:read')).toBe(false);
+  });
 });
 
 describe('tenancy', () => {

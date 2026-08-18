@@ -331,7 +331,14 @@
        The first pass left body text on the system stack and the app read as
        an admin panel; the same self-hosted variable file already served for
        display/mono costs nothing extra to use for body copy. */
-    font-family: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    font-family:
+      'Geist',
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      Roboto,
+      sans-serif;
   }
 
   /**
