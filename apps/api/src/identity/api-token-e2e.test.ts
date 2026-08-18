@@ -172,7 +172,9 @@ describe('the API-token round trip over HTTP', () => {
     });
     expect(list.statusCode).toBe(200);
     const listBody: {
-      result: { data: { webhooks: { webhookId: string; name: string }[]; nextCursor: string | null } };
+      result: {
+        data: { webhooks: { webhookId: string; name: string }[]; nextCursor: string | null };
+      };
     } = list.json();
     const webhooks = listBody.result.data.webhooks;
     expect(webhooks.some((webhook) => webhook.name === 'Release')).toBe(true);

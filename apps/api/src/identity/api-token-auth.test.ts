@@ -459,9 +459,7 @@ describe('a token principal on the real automation router', () => {
     expect(created.signingSecret.length).toBeGreaterThan(0);
 
     const listed = await caller.webhooks.list({});
-    expect(listed.webhooks.some((webhook) => webhook.webhookId === created.webhookId)).toBe(
-      true,
-    );
+    expect(listed.webhooks.some((webhook) => webhook.webhookId === created.webhookId)).toBe(true);
   });
 
   it('does not bleed into sibling surfaces — a webhook token cannot manage RULES', async () => {
