@@ -60,9 +60,9 @@ interface TypeRule {
    * come apart. "Can this system verify these bytes against this declared
    * type" and "may a person upload one to a card" are different questions,
    * and they were the same field until call recordings needed the first
-   * without the second: `video/webm` is produced by the server's own
-   * recording flow, never chosen by an uploader, and adding it to the
-   * attachment allowlist as a side effect of teaching the scanner about it
+   * without the second: the WebM types are produced by the server's own
+   * recording flow, never chosen by an uploader, and adding them to the
+   * attachment allowlist as a side effect of teaching the scanner about them
    * would have widened a product surface from inside a security fix.
    */
   readonly attachable?: boolean;
@@ -89,6 +89,18 @@ const ZIP_SIGNATURES: readonly Signature[] = [
   { bytes: [0x50, 0x4b, 0x05, 0x06], offset: 0 },
   { bytes: [0x50, 0x4b, 0x07, 0x08], offset: 0 },
 ];
+
+/**
+ * WebM/EBML, shared by the `audio/webm` and `video/webm` entries below.
+ *
+ * `attachable: false` on both: these are produced by the server's own call
+ * recording flow, never chosen by an uploader. See `TypeRule.attachable`.
+ */
+const WEBM_RULE: TypeRule = {
+  signatures: [{ bytes: [0x1a, 0x45, 0xdf, 0xa3], offset: 0 }],
+  refine: (prefix) => containsMarker(prefix, ascii('webm')),
+  attachable: false,
+};
 
 /**
  * The accepted types.
@@ -127,21 +139,25 @@ const TYPE_RULES: Readonly<Record<string, TypeRule>> = {
    * WebM, the container a browser's `MediaRecorder` produces for an in-app
    * call recording (`apps/web/src/features/rtc/call-recorder.ts`).
    *
+   * BOTH spellings, sharing one rule. The mesh is audio-only today, so
+   * `MediaRecorder` emits `audio/webm` and that is what `rtc.recordings`
+   * stores; `video/webm` is the same EBML container and is what the same code
+   * will emit the day video ships (ai/phase-13-webrtc.md's own "still not
+   * done" list). Registering only the video spelling would have failed every
+   * real recording — the scanner would have found no rule for `audio/webm`,
+   * rejected it, and marked each capture `failed`.
+   *
    * The signature is the EBML header — `1A 45 DF A3` — which WebM shares with
    * Matroska, since WebM is a profile of it. Refined by looking for the
-   * `webm` DocType marker in the prefix rather than at a fixed offset: the
-   * EBML header's fields are variable-length, so the marker's position moves
-   * with the encoder that wrote it. That is weaker than a fixed-offset check
-   * and stronger than the four-byte header alone, which would accept any
-   * Matroska file — an honest middle, and the virus scan is the layer that
-   * does not care about container semantics either way.
+   * `webm` DocType marker anywhere in the prefix rather than at a fixed
+   * offset: the EBML header's fields are variable-length, so the marker's
+   * position moves with the encoder that wrote it. Weaker than a fixed-offset
+   * check, stronger than the four-byte header alone (which would accept any
+   * Matroska file), and the virus scan is the layer that does not care about
+   * container semantics either way.
    */
-  'video/webm': {
-    signatures: [{ bytes: [0x1a, 0x45, 0xdf, 0xa3], offset: 0 }],
-    refine: (prefix) => containsMarker(prefix, ascii('webm')),
-    /* Verifiable, deliberately not attachable — see `attachable`'s own note. */
-    attachable: false,
-  },
+  'audio/webm': WEBM_RULE,
+  'video/webm': WEBM_RULE,
   'application/zip': {
     signatures: ZIP_SIGNATURES,
   },
