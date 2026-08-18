@@ -201,7 +201,13 @@ describe('isBlockedAddress — IPv6', () => {
   });
 
   it('blocks site-local, discard and documentation ranges', () => {
-    expect(isBlockedAddress('fec0::1')).toBe(true); // fec0::/10, deprecated
+    /* fec0::/10 spans fec0-feff, so both boundary spellings are covered.
+       Site-local was the IPv6 analogue of RFC1918 — deprecated by RFC 3879
+       precisely because its ambiguity caused problems, and still configured
+       on some legacy networks, which is exactly what an SSRF guard is for.
+       It is not, and never was, publicly routable. */
+    expect(isBlockedAddress('fec0::1')).toBe(true);
+    expect(isBlockedAddress('feff::1')).toBe(true);
     expect(isBlockedAddress('100::1')).toBe(true); // 100::/64 discard
     expect(isBlockedAddress('2001:db8::1')).toBe(true); // documentation
   });
@@ -221,14 +227,23 @@ describe('isBlockedAddress — IPv6', () => {
     }
   });
 
-  it('does NOT block the public v6 range adjacent to link-local', () => {
-    /* fe80::/10 is not the whole fe8x world — first hextet fe80-febf is
-       link-local, but fec0-feff (the rest of fe80::/9) is routable address
-       space. An over-broad blocklist is its own bug — see the IPv4 comment
-       about public addresses adjacent to private ranges. */
+  it('does NOT block public space merely for being near a blocked range', () => {
+    /* An over-broad blocklist is its own bug — see the IPv4 comment about
+       public addresses adjacent to private ranges. `fe70::1` sits just BELOW
+       fe80::/10 and must survive the boundary check.
+
+       This test used to also assert `fec0::1` and `feff::1` were allowed, on
+       the stated grounds that "fec0-feff (the rest of fe80::/9) is routable
+       address space". That premise was wrong: fec0::/10 is SITE-LOCAL, the
+       IPv6 analogue of RFC1918, deprecated by RFC 3879 in 2004 and never
+       globally routable. Both now live in the blocked test below. Global
+       unicast is 2000::/3, so the genuinely-public cases are asserted with
+       real addresses from it rather than with neighbours of a private range
+       that happened to be unallocated. */
     expect(isBlockedAddress('fe70::1')).toBe(false);
-    expect(isBlockedAddress('fec0::1')).toBe(false);
-    expect(isBlockedAddress('feff::1')).toBe(false);
+    expect(isBlockedAddress('2606:4700:4700::1111')).toBe(false);
+    expect(isBlockedAddress('2001:4860:4860::8888')).toBe(false);
+    expect(isBlockedAddress('2a00:1450:4009:81f::200e')).toBe(false);
   });
 
   it('blocks unique-local', () => {
