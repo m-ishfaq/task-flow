@@ -34,6 +34,14 @@ beforeAll(async () => {
   initializeDatabase({ url: TEST_ENV.DATABASE_URL, applicationName: 'totp-test' });
   app = await buildServer({
     env: TEST_ENV,
+    /* The per-IP limiter is off for this suite, and that is about isolation
+       rather than convenience. `auth.totp.verifyLogin` carries a real budget
+       (10 per 15 minutes), every test here reaches it through the same
+       loopback address, and `app.inject` shares one limiter across the file —
+       so the lockout test below, which must submit five wrong codes, would
+       start failing whichever test happened to run last. Rate limiting has its
+       own suite; this one is about the second factor. */
+    rateLimitEnabled: false,
     deliver: (message) => {
       deliveries.push(message);
       return Promise.resolve();
@@ -246,6 +254,49 @@ describe('login with a confirmed second factor', () => {
     });
 
     expect(verified.status).toBe(400);
+  });
+
+  it('locks the account after repeated wrong codes, and the lock outlives the challenge', async () => {
+    /* The gap this closes: the password factor recorded every wrong guess
+       against the database-backed lockout, and the second factor recorded
+       nothing at all. An attacker holding a phished password therefore met a
+       5-per-15-minutes lock on the first door and an unlimited, silent
+       guessing loop on the second — against a six-digit code with a ±1 step
+       window, which is three valid codes in a million.
+
+       Asserted through the account's OWN state, not through the refusal: a
+       wrong code answered 400 before this fix too, so a test that only
+       checked the status code would have passed against the vulnerable
+       version. What distinguishes them is that the fifth wrong code makes the
+       PASSWORD path start refusing a correct password. */
+    const email = 'totp-lockout@example.test';
+    const token = await signedInUser(email);
+    const { secret } = await enrollTotp(token);
+
+    const login = await call('auth.login', { payload: { email, password: PASSWORD } });
+    const { challengeToken } = login.body.result?.data as { challengeToken: string };
+
+    // LOCK_THRESHOLD is 5 (identity/deps.ts).
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const refused = await call('auth.totp.verifyLogin', {
+        payload: { challengeToken, credential: { kind: 'totp', code: '000000' } },
+      });
+      expect(refused.status).toBe(400);
+    }
+
+    // The lock is on the ACCOUNT, so the first factor now refuses a password
+    // that is entirely correct. This is the assertion that fails without the
+    // `recordFailedLogin` call in `verifyLogin`.
+    const afterLock = await call('auth.login', { payload: { email, password: PASSWORD } });
+    expect(afterLock.status).toBe(401);
+
+    // And the still-valid challenge token is now worthless — a challenge
+    // minted before the lock landed must not outlive it, which is the
+    // second half of the fix and the one a lockout alone would miss.
+    const stale = await call('auth.totp.verifyLogin', {
+      payload: { challengeToken, credential: { kind: 'totp', code: generateTotpCode(secret) } },
+    });
+    expect(stale.status).toBe(400);
   });
 
   it('redeems the challenge with a recovery code, exactly once', async () => {

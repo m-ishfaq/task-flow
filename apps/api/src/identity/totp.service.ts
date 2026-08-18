@@ -57,6 +57,34 @@ export interface TotpDeps {
 
 const clock = (deps: TotpDeps): Date => (deps.identity.now ?? (() => new Date()))();
 
+/**
+ * Records a refused second factor.
+ *
+ * Its own helper rather than an inline `publish` at each site for the reason
+ * `identity.service.ts`'s `publishFailure` is: there are three refusal paths
+ * here (locked, wrong code, wrong recovery code) and every one of them must
+ * leave the same trace. A branch that forgets is invisible — the caller still
+ * gets its refusal, and only the audit chain is quietly thinner.
+ */
+async function publishSecondFactorFailure(
+  deps: TotpDeps,
+  now: Date,
+  payload: {
+    readonly userId: string;
+    readonly method: 'totp' | 'recovery';
+    readonly reason: 'bad_code' | 'locked';
+    readonly ip: string | null;
+  },
+): Promise<void> {
+  await deps.identity.events.publish([
+    createEvent(identityEvents.secondFactorFailed, payload, {
+      orgId: SYSTEM_ORG,
+      actorId: null,
+      occurredAt: now,
+    }),
+  ]);
+}
+
 function aadFor(userId: string): string {
   return identityFieldAad({
     table: 'totp_credentials',
@@ -197,6 +225,20 @@ export async function verifyLogin(
     });
   }
 
+  const method = input.credential.kind === 'totp' ? ('totp' as const) : ('recovery' as const);
+
+  /* A locked account stays locked at the second factor too — the same
+     reasoning `passkey.service.ts` gives for its own copy of this check. The
+     lockout exists because an account is under attack, and a challenge minted
+     before the lock landed must not outlive it. `login()` refuses to issue a
+     NEW challenge for a locked account, so without this the 5-minute window on
+     an already-issued one was the gap. */
+  const user = await repo.findUserById(userId);
+  if (user?.lockedUntil && user.lockedUntil > now) {
+    await publishSecondFactorFailure(deps, now, { userId, method, reason: 'locked', ip: meta.ip });
+    throw errors.validation({ code: 'That code is not valid.' });
+  }
+
   const ok =
     input.credential.kind === 'totp'
       ? verifyTotpCode(
@@ -206,6 +248,39 @@ export async function verifyLogin(
       : await verifyRecoveryCode(userId, input.credential.code, now);
 
   if (!ok) {
+    /* The counter, the lockout and the audit trail — none of which this branch
+       had. The password factor has all three (`identity.service.ts`'s own
+       `!correct` branch), so an attacker holding a phished password faced a
+       5-per-15-minutes lockout on the first factor and an unlimited, silent
+       guessing loop on the second. Six digits with otplib's ±1 window is three
+       valid codes in a million; at the volumetric limit alone that is a real
+       chance per account per day, and it left nothing in the audit chain.
+
+       `recordFailedLogin` is shared with the password and passkey paths on
+       purpose: a lock earned at any door closes all of them. */
+    const state = await repo.recordFailedLogin(
+      userId,
+      deps.identity.config.lockThreshold,
+      deps.identity.config.lockDurationMs,
+      now,
+    );
+
+    await publishSecondFactorFailure(deps, now, { userId, method, reason: 'bad_code', ip: meta.ip });
+
+    if (state?.lockedUntil && state.lockedUntil > now) {
+      await deps.identity.events.publish([
+        createEvent(
+          identityEvents.accountLocked,
+          {
+            userId,
+            until: state.lockedUntil.toISOString(),
+            failedAttempts: state.failedLoginCount,
+          },
+          { orgId: SYSTEM_ORG, actorId: null, occurredAt: now },
+        ),
+      ]);
+    }
+
     throw errors.validation({ code: 'That code is not valid.' });
   }
 
