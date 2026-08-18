@@ -136,30 +136,120 @@ function isBlockedIpv4(address: string): boolean {
   return false;
 }
 
+/**
+ * Expands an IPv6 address to its eight hextets, or null if it is not one.
+ *
+ * ## Why this exists rather than a set of string patterns
+ *
+ * The version this replaced matched IPv4-mapped addresses with the regex
+ * `/^::ffff:(\d+\.\d+\.\d+\.\d+)$/` and its comment correctly called missing
+ * that case "the classic bypass". The regex never fired, because no caller
+ * ever passes that spelling: every one of them reads `new URL(raw).hostname`,
+ * and the WHATWG URL parser serializes an IPv6 host in HEX. So
+ * `http://[::ffff:169.254.169.254]/` arrives here as `::ffff:a9fe:a9fe`,
+ * matches no branch, reaches the final "anything unrecognized is refused"
+ * line — which recognizes it as valid IPv6 characters and returns FALSE —
+ * and the server connects to the cloud metadata endpoint.
+ *
+ * The lesson generalizes past that one regex: an address has many textual
+ * spellings and exactly one numeric value, so classification belongs on the
+ * value. Everything below compares numbers.
+ *
+ * A zone index (`fe80::1%eth0`) returns null, and therefore blocks: it names
+ * an interface on this host, which is never something to fetch from.
+ */
+function expandIpv6(address: string): readonly number[] | null {
+  if (address.includes('%')) return null;
+
+  const halves = address.split('::');
+  if (halves.length > 2) return null;
+
+  const toHextets = (side: string): number[] | null => {
+    if (side === '') return [];
+
+    const out: number[] = [];
+    const tokens = side.split(':');
+
+    for (const [index, token] of tokens.entries()) {
+      /* A dotted-quad tail (`::ffff:127.0.0.1`) is legal only as the final
+         token, and occupies the last TWO hextets. */
+      if (token.includes('.')) {
+        if (index !== tokens.length - 1) return null;
+
+        const octets = token.split('.');
+        if (octets.length !== 4) return null;
+
+        const nums = octets.map((octet) =>
+          /^\d{1,3}$/.test(octet) ? Number(octet) : Number.NaN,
+        );
+        if (nums.some((num) => Number.isNaN(num) || num > 255)) return null;
+
+        const [a = 0, b = 0, c = 0, d = 0] = nums;
+        out.push((a << 8) | b, (c << 8) | d);
+        continue;
+      }
+
+      if (!/^[0-9a-f]{1,4}$/i.test(token)) return null;
+      out.push(Number.parseInt(token, 16));
+    }
+
+    return out;
+  };
+
+  const head = toHextets(halves[0] ?? '');
+  const tail = halves.length === 2 ? toHextets(halves[1] ?? '') : [];
+  if (head === null || tail === null) return null;
+
+  if (halves.length === 2) {
+    /* `::` stands for one or more all-zero groups, so a run that leaves no
+       gap is malformed rather than merely redundant. */
+    const gap = 8 - head.length - tail.length;
+    if (gap < 1) return null;
+    return [...head, ...(Array<number>(gap).fill(0)), ...tail];
+  }
+
+  return head.length === 8 ? head : null;
+}
+
+/** The dotted-quad an embedded-IPv4 hextet pair spells. */
+function embeddedIpv4(high: number, low: number): string {
+  return `${String(high >> 8)}.${String(high & 0xff)}.${String(low >> 8)}.${String(low & 0xff)}`;
+}
+
 function isBlockedIpv6(address: string): boolean {
   const plain = address.replace(/^\[|\]$/g, '');
+  const h = expandIpv6(plain);
 
-  if (plain === '::' || plain === '::1') return true; // unspecified, loopback
+  /* Unparseable is REFUSED, not allowed. IPv6 has more spellings than this
+     handles, and the safe default for an address we cannot classify is not to
+     connect to it. */
+  if (h === null) return true;
 
-  /* An IPv4-mapped address (`::ffff:127.0.0.1`) is a v6 spelling of a v4
-     address, and the v4 rules are what decide it. Missing this is the classic
-     bypass: the v6 branch sees a colon, the v4 branch never runs, and loopback
-     sails through. */
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(plain);
-  if (mapped?.[1] !== undefined) return isBlockedIpv4(mapped[1]);
+  const [h0 = 0, h1 = 0, h2 = 0, h3 = 0, h4 = 0, h5 = 0, h6 = 0, h7 = 0] = h;
+  const topSixZero = h0 === 0 && h1 === 0 && h2 === 0 && h3 === 0 && h4 === 0 && h5 === 0;
 
-  /* Link-local is fe80::/10 — the first hextet ranges fe80-febf, not just
-     fe80. A check that only matched the fe80 spelling let fe9f::1 or
-     febf::1 through, which are as link-local as fe80::1 and unreachable
-     from the public internet. */
-  if (/^fe[89ab]/i.test(plain)) return true; // link-local (fe80::/10)
-  if (/^f[cd]/i.test(plain)) return true; // unique local (fc00::/7)
-  if (plain.startsWith('ff')) return true; // multicast
+  if (topSixZero && h6 === 0 && h7 === 0) return true; // :: unspecified
+  if (topSixZero && h6 === 0 && h7 === 1) return true; // ::1 loopback
 
-  /* Anything this function does not recognize is REFUSED rather than allowed.
-     IPv6 has more spellings than this handles, and the safe default for an
-     address we cannot classify is not to connect to it. */
-  return !/^[0-9a-f:]+$/i.test(plain);
+  /* The three ways an IPv4 address rides inside a v6 one. All three resolve to
+     a v4 address on the wire, so all three are decided by the v4 rules — which
+     is the whole point of the rewrite above. */
+  const mappedV4 = h0 === 0 && h1 === 0 && h2 === 0 && h3 === 0 && h4 === 0 && h5 === 0xffff;
+  const nat64 = h0 === 0x0064 && h1 === 0xff9b && h2 === 0 && h3 === 0 && h4 === 0 && h5 === 0;
+  if (mappedV4 || nat64 || topSixZero) return isBlockedIpv4(embeddedIpv4(h6, h7));
+
+  /* 6to4 carries its v4 address in the two hextets after the prefix, so
+     2002:7f00:0001:: is loopback wearing a routable-looking prefix. */
+  if (h0 === 0x2002) return isBlockedIpv4(embeddedIpv4(h1, h2));
+
+  if ((h0 & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
+  if ((h0 & 0xffc0) === 0xfec0) return true; // fec0::/10 site-local (deprecated)
+  if ((h0 & 0xfe00) === 0xfc00) return true; // fc00::/7 unique local
+  if ((h0 & 0xff00) === 0xff00) return true; // ff00::/8 multicast
+  if (h0 === 0x0100 && h1 === 0 && h2 === 0 && h3 === 0) return true; // 100::/64 discard
+  if (h0 === 0x2001 && h1 === 0x0db8) return true; // 2001:db8::/32 documentation
+
+  return false;
 }
 
 /** True when a host is a literal address rather than a name needing resolution. */

@@ -49,7 +49,16 @@ export interface UnfurlPreview {
   readonly url: string;
   readonly title: string | null;
   readonly description: string | null;
-  /** An absolute image URL that passed the same address checks as the page. */
+  /**
+   * An absolute image URL that passed the same SHAPE check as the page —
+   * scheme, port, credentials and literal-IP hosts (`isAllowedUrl`).
+   *
+   * Deliberately not the resolved-address half: this URL is fetched by the
+   * VIEWER'S browser, never by this server, so the DNS check `fetchUnfurl`
+   * runs on its own behalf answers a different question here. This sentence
+   * used to claim "the same address checks as the page", overstating it by
+   * exactly that half.
+   */
   readonly imageUrl: string | null;
   readonly siteName: string | null;
 }
