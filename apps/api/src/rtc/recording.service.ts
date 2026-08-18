@@ -452,11 +452,7 @@ export async function confirmRecordingUpload(
      same no-op the conditional UPDATE below would have produced anyway —
      resolved here so a caller in one of those states never reaches the
      scanner, which is the expensive half. */
-  if (
-    pending === undefined ||
-    pending.status !== 'pending' ||
-    pending.createdBy !== userOf(actor)
-  ) {
+  if (pending?.status !== 'pending' || pending.createdBy !== userOf(actor)) {
     return;
   }
 
