@@ -80,7 +80,7 @@ export function verifyTotpCode(code: string, secret: string): TotpVerification {
        disagreeing is precisely how a replay check ends up guarding a step
        that was never the one accepted. */
     const delta = authenticator.checkDelta(code, secret);
-    if (delta === null || delta === undefined) return { valid: false, step: current };
+    if (delta === null) return { valid: false, step: current };
     return { valid: true, step: current + delta };
   } catch {
     // A malformed code (wrong length, non-digits) or secret throws inside
