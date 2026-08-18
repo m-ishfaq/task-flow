@@ -71,6 +71,7 @@ RUN pnpm --filter @taskflow/web build
 # silently regressing.
 FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
 COPY apps/web/nginx.conf /etc/nginx/nginx.conf
+COPY apps/web/security-headers.conf /etc/nginx/security-headers.conf
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
 
 USER nginx
