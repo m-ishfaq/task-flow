@@ -312,10 +312,17 @@ export const totpRecoveryCodes = identity.table(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     codeHash: text('code_hash').notNull(),
+    /* Keyed equality index (migration 0078). NULL for codes predating it —
+       Argon2 is one-way, so legacy rows cannot be backfilled and keep the
+       linear-scan path. */
+    codeIndex: bytea('code_index'),
     usedAt: timestamp('used_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index('totp_recovery_codes_user_idx').on(table.userId)],
+  (table) => [
+    index('totp_recovery_codes_user_idx').on(table.userId),
+    index('totp_recovery_codes_lookup_idx').on(table.userId, table.codeIndex),
+  ],
 );
 
 /**

@@ -237,6 +237,7 @@ export { signGitHubRequest, verifyGitHubSignature } from './github-signature.js'
  * reviewed once instead of re-litigated per column.
  */
 export { blindIndex, blindIndexEquals } from './blind-index.js';
+export { recoveryCodeIndex } from './recovery-index.js';
 
 /**
  * TURN credentials — coturn's `use-auth-secret` REST scheme (Phase 13 Wave 1,

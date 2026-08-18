@@ -362,6 +362,24 @@ describe('login with a confirmed second factor', () => {
     expect(second.status).toBe(400);
   });
 
+  it('refuses a recovery code that matches no stored code', async () => {
+    /* A junk recovery code produces a keyed index (migration 0078) that
+       matches no row, so the fast path finds nothing and the legacy scan is
+       empty — the attempt is refused without redeeming anyone's real code. */
+    const token = await signedInUser('totp-badrecovery@example.test');
+    await enrollTotp(token);
+
+    const login = await call('auth.login', {
+      payload: { email: 'totp-badrecovery@example.test', password: PASSWORD },
+    });
+    const { challengeToken } = login.body.result?.data as { challengeToken: string };
+
+    const attempt = await call('auth.totp.verifyLogin', {
+      payload: { challengeToken, credential: { kind: 'recovery', code: 'ZZZZ-ZZZZ-ZZZZ' } },
+    });
+    expect(attempt.status).toBe(400);
+  });
+
   it('refuses a challenge token presented to any other route', async () => {
     // The distinct JWT audience (`taskflow-totp-challenge` vs `taskflow-api`)
     // is the whole reason this cannot be replayed as a bearer token.

@@ -7,6 +7,7 @@ import {
   hashPassword,
   identityFieldAad,
   issueHumanCode,
+  recoveryCodeIndex,
   totpProvisioningUri,
   verifyPassword,
   verifyTotpChallenge,
@@ -150,8 +151,15 @@ export async function confirmEnrollment(
      the hash ever leaked, unlike the 256-bit bearer tokens SHA-256 is used
      for elsewhere in this module. */
   const codes = Array.from({ length: 10 }, () => issueHumanCode().token);
-  const hashes = await Promise.all(codes.map((code) => hashPassword(code)));
-  await repo.insertRecoveryCodes(input.userId, hashes);
+  const stored = await Promise.all(
+    codes.map(async (code) => ({
+      codeHash: await hashPassword(code),
+      /* The keyed lookup index (migration 0078) that lets a later login find
+         this code without an Argon2 scan of all ten. */
+      codeIndex: recoveryCodeIndex(deps.identityDataKey, input.userId, code),
+    })),
+  );
+  await repo.insertRecoveryCodes(input.userId, stored);
 
   await deps.identity.events.publish([
     createEvent(
@@ -267,7 +275,7 @@ export async function verifyLogin(
     );
     ok = verification.valid && (await repo.claimTotpStep(userId, verification.step));
   } else {
-    ok = await verifyRecoveryCode(userId, input.credential.code, now);
+    ok = await verifyRecoveryCode(deps, userId, input.credential.code, now);
   }
 
   if (!ok) {
@@ -332,13 +340,36 @@ export async function verifyLogin(
   return pair;
 }
 
-async function verifyRecoveryCode(userId: string, code: string, now: Date): Promise<boolean> {
-  const candidates = await repo.findUnusedRecoveryCodes(userId);
+async function verifyRecoveryCode(
+  deps: TotpDeps,
+  userId: string,
+  code: string,
+  now: Date,
+): Promise<boolean> {
+  /* Fast path (migration 0078). The keyed index finds the ONE unredeemed code
+     that could match, so Argon2 runs exactly once — or, when a submitted code
+     matches no index, not at all. That is what removes the amplification: a
+     junk code no longer forces a scan of ten Argon2 hashes. The index is not
+     the verifier — a 128-bit truncation could in principle collide — so the
+     Argon2 hash is still what actually decides. */
+  const index = recoveryCodeIndex(deps.identityDataKey, userId, code);
+  const match = await repo.findRecoveryCodeByIndex(userId, index);
+  if (match !== undefined) {
+    if (await verifyPassword(code, match.codeHash)) {
+      return repo.claimRecoveryCode(match.id, now);
+    }
+    return false;
+  }
 
-  /* Sequential, deliberately: Argon2id is slow by design, and running these
-     concurrently would multiply CPU cost per login attempt by up to ten for
-     no benefit — recovery-code lookups are rare and never on a hot path. */
-  for (const candidate of candidates) {
+  /* Legacy path: codes issued before 0078 have no index and cannot be given
+     one (Argon2 is one-way). They keep the linear scan — bounded by however
+     many un-indexed codes remain, a set that only shrinks. A user who has
+     regenerated their codes since the migration never reaches this.
+
+     Sequential, deliberately: running the Argon2 checks concurrently would
+     multiply CPU per attempt for no benefit. */
+  const legacy = await repo.findUnindexedRecoveryCodes(userId);
+  for (const candidate of legacy) {
     if (await verifyPassword(code, candidate.codeHash)) {
       return repo.claimRecoveryCode(candidate.id, now);
     }
