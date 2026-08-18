@@ -256,6 +256,40 @@ describe('login with a confirmed second factor', () => {
     expect(verified.status).toBe(400);
   });
 
+  it('refuses the SAME code twice, even though it is still cryptographically valid', async () => {
+    /* otplib accepts a ±1-step window, so a code stays valid for up to 90
+       seconds. Nothing recorded that one had been spent, so within that window
+       the same six digits verified every time they were submitted — a code
+       captured from a shoulder-surf, a phishing relay, or a request body that
+       reached a log was replayable. `packages/security`'s own comment called
+       this "single-use in practice", which was not true in any sense.
+
+       The second login below uses the SAME code within the same window, so
+       `verifyTotpCode` still says valid; only `last_used_step` (migration
+       0077) distinguishes the two attempts. That is what makes this a test of
+       the replay check rather than of the clock. */
+    const email = 'totp-replay@example.test';
+    const token = await signedInUser(email);
+    const { secret } = await enrollTotp(token);
+
+    const code = generateTotpCode(secret);
+
+    const first = await call('auth.login', { payload: { email, password: PASSWORD } });
+    const firstChallenge = (first.body.result?.data as { challengeToken: string }).challengeToken;
+    const redeemed = await call('auth.totp.verifyLogin', {
+      payload: { challengeToken: firstChallenge, credential: { kind: 'totp', code } },
+    });
+    expect(redeemed.status).toBe(200);
+
+    // A fresh challenge, the same code. Nothing about the code has expired.
+    const second = await call('auth.login', { payload: { email, password: PASSWORD } });
+    const secondChallenge = (second.body.result?.data as { challengeToken: string }).challengeToken;
+    const replayed = await call('auth.totp.verifyLogin', {
+      payload: { challengeToken: secondChallenge, credential: { kind: 'totp', code } },
+    });
+    expect(replayed.status).toBe(400);
+  });
+
   it('locks the account after repeated wrong codes, and the lock outlives the challenge', async () => {
     /* The gap this closes: the password factor recorded every wrong guess
        against the database-backed lockout, and the second factor recorded

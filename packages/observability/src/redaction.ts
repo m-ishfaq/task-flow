@@ -67,6 +67,24 @@ export const REDACTION_PATHS: readonly string[] = [
   // Phone numbers are field-encrypted at rest; logging them in plaintext would
   // defeat that entirely.
   '*.phoneNumber',
+  /* `*.to` and `*.from` OVER-MATCH, knowingly.
+   *
+   * pino matches on path shape, not intent, so these censor any one-level
+   * `to`/`from` — a date range, a pagination cursor, a migration transition,
+   * an event payload — not only the telephony fields they were added for.
+   * That degrades exactly the logs an operator reaches for during an incident,
+   * and the loss is invisible because `[redacted]` looks deliberate.
+   *
+   * Kept anyway. Narrowing to the specific paths telephony actually uses
+   * (`*.call.to`, `*.message.from`, …) trades a legibility problem for a
+   * secrecy one: the day a new payload nests a number one level deeper than
+   * the enumerated list, a real phone number reaches the log store, and
+   * nothing goes red. This file's own rule is that adding a path is always
+   * safe and removing one needs §2.2 scrutiny — that asymmetry is the whole
+   * reason the over-match is the right side to err on.
+   *
+   * If a specific field is being swallowed and it matters, name it in the
+   * log call rather than removing a path here. */
   '*.to',
   '*.from',
   '*.recordingUrl',

@@ -31,21 +31,61 @@ export function totpProvisioningUri(accountLabel: string, secret: string): strin
   return authenticator.keyuri(accountLabel, 'TaskFlow', secret);
 }
 
+/** The 30-second step TOTP counts in, per RFC 6238's default. */
+const STEP_SECONDS = 30;
+
+/** A verdict plus the time-step it applies to, so a caller can retire that step. */
+export interface TotpVerification {
+  readonly valid: boolean;
+  /**
+   * The step the code matched, or the current step when it did not.
+   *
+   * Only meaningful when `valid` — a caller stores it as `last_used_step` and
+   * refuses anything at or below it next time.
+   */
+  readonly step: number;
+}
+
 /**
- * Verifies a 6-digit code against a secret.
+ * Verifies a 6-digit code against a secret, and says WHICH time-step matched.
  *
- * `otplib`'s default window (±1 step, 30 seconds each side) absorbs ordinary
- * clock drift between the server and the phone without widening the replay
- * window enough to matter — a code is single-use in practice because the
- * next real code differs, not because this function tracks used codes.
+ * ## Why this returns a step rather than a boolean
+ *
+ * `otplib`'s default window is ±1 step, so a code is valid for up to 90
+ * seconds. This function used to return a boolean and its comment claimed "a
+ * code is single-use in practice because the next real code differs" — which
+ * is not what single-use means: within that window the SAME code verified
+ * every time it was submitted, so a code captured once was replayable.
+ *
+ * RFC 6238 §5.2 requires the verifier to refuse a second use of one time-step,
+ * and the only way a caller can enforce that is to know which step it just
+ * accepted. So the step comes back, the caller compares it against the last
+ * one it stored, and `identity.totp_credentials.last_used_step` (migration
+ * 0077) is where that comparison lives.
+ *
+ * The step is checked from the newest candidate downward, so a code valid at
+ * two steps (possible only if the secret produces a collision) resolves to the
+ * later one — the conservative direction, since storing the later step retires
+ * both.
  */
-export function verifyTotpCode(code: string, secret: string): boolean {
+export function verifyTotpCode(code: string, secret: string): TotpVerification {
+  const current = Math.floor(Date.now() / 1000 / STEP_SECONDS);
+
   try {
-    return authenticator.check(code, secret);
+    /* `checkDelta` returns how many steps off `now` the code matched, or null.
+       Used rather than a hand-rolled search over the ±1-step window because
+       it is otplib's own answer to the question, computed with the same
+       window the library applies inside `check()` — a second implementation
+       here could drift from the one actually accepting codes, and the two
+       disagreeing is precisely how a replay check ends up guarding a step
+       that was never the one accepted. */
+    const delta = authenticator.checkDelta(code, secret);
+    if (delta === null || delta === undefined) return { valid: false, step: current };
+    return { valid: true, step: current + delta };
   } catch {
-    // A malformed code (wrong length, non-digits) throws inside otplib rather
-    // than returning false — normalized here so callers have one shape to
-    // handle, not two.
-    return false;
+    // A malformed code (wrong length, non-digits) or secret throws inside
+    // otplib rather than returning null — normalized here so callers have one
+    // shape to handle, not two.
+    return { valid: false, step: current };
   }
 }

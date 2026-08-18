@@ -147,7 +147,12 @@ export {
 export { isAllowedUrl, isBlockedAddress, isIpAddress, type UrlVerdict } from './outbound-url.js';
 
 /** TOTP — a second factor (Phase 12 Wave 2 §3.2). */
-export { generateTotpSecret, totpProvisioningUri, verifyTotpCode } from './totp.js';
+export {
+  generateTotpSecret,
+  totpProvisioningUri,
+  verifyTotpCode,
+  type TotpVerification,
+} from './totp.js';
 
 /** OAuth sign-in (Phase 12 Wave 2 §3.3). */
 export {

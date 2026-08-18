@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   customType,
   index,
@@ -288,6 +289,17 @@ export const totpCredentials = identity.table('totp_credentials', {
     .references(() => users.id, { onDelete: 'cascade' }),
   secretEncrypted: bytea('secret_encrypted').notNull(),
   confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+  /**
+   * The last TOTP time-step a successful login spent (migration 0077).
+   *
+   * A code at or below this step is refused as a replay, per RFC 6238 §5.2.
+   * Null until the first successful verification — which is the correct
+   * reading for a credential enrolled before the column existed.
+   *
+   * `bigint` in Postgres, read as a string by the driver, so the service
+   * parses it rather than comparing it as text: '9' > '10' lexically.
+   */
+  lastUsedStep: bigint('last_used_step', { mode: 'number' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

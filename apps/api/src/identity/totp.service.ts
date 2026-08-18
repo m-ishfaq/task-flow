@@ -128,7 +128,13 @@ export async function confirmEnrollment(
     aadFor(input.userId),
   );
 
-  if (!verifyTotpCode(input.code, secret)) {
+  /* Enrollment deliberately does NOT retire the step. Confirming an
+     enrollment proves possession of the authenticator; it is not a login, and
+     spending the step here would refuse the very next real sign-in if it
+     happened within the same 30 seconds — which is exactly what a person
+     finishing setup does. Replay of a confirmation code buys nothing: the
+     credential is already confirmed after the first one. */
+  if (!verifyTotpCode(input.code, secret).valid) {
     throw errors.validation({
       code: 'That code is not valid. Check the time on your device and try again.',
     });
@@ -239,13 +245,30 @@ export async function verifyLogin(
     throw errors.validation({ code: 'That code is not valid.' });
   }
 
-  const ok =
-    input.credential.kind === 'totp'
-      ? verifyTotpCode(
-          input.credential.code,
-          decryptString(deps.identityDataKey, credential.secretEncrypted, aadFor(userId)),
-        )
-      : await verifyRecoveryCode(userId, input.credential.code, now);
+  /* One code, one use (migration 0077).
+
+     `verifyTotpCode` reports WHICH time-step matched, and `claimTotpStep`
+     retires it with a conditional UPDATE. Both halves are needed: otplib
+     accepts a ±1-step window, so a code stays cryptographically valid for up
+     to 90 seconds, and nothing here recorded that it had been spent. A code
+     captured from a shoulder-surf, a phishing relay, or a request body that
+     reached a log could be replayed for the rest of that window.
+
+     The claim is conditional rather than read-then-write because two requests
+     replaying one code arrive together by construction — that is what a replay
+     is — and a service-side comparison would let both pass before either
+     wrote. Recovery codes need none of this: `claimRecoveryCode` already
+     spends them exactly once. */
+  let ok: boolean;
+  if (input.credential.kind === 'totp') {
+    const verification = verifyTotpCode(
+      input.credential.code,
+      decryptString(deps.identityDataKey, credential.secretEncrypted, aadFor(userId)),
+    );
+    ok = verification.valid && (await repo.claimTotpStep(userId, verification.step));
+  } else {
+    ok = await verifyRecoveryCode(userId, input.credential.code, now);
+  }
 
   if (!ok) {
     /* The counter, the lockout and the audit trail — none of which this branch

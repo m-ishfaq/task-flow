@@ -6,6 +6,8 @@ import {
   gt,
   increment,
   isNull,
+  lt,
+  or,
   schema,
   withGlobalScope,
   type GlobalDb,
@@ -586,6 +588,8 @@ export interface TotpCredentialRow {
   userId: string;
   secretEncrypted: Buffer;
   confirmedAt: Date | null;
+  /** The last time-step spent by a successful login (migration 0077). */
+  lastUsedStep: number | null;
 }
 
 export async function getTotpCredential(userId: string): Promise<TotpCredentialRow | undefined> {
@@ -595,10 +599,44 @@ export async function getTotpCredential(userId: string): Promise<TotpCredentialR
         userId: schema.totpCredentials.userId,
         secretEncrypted: schema.totpCredentials.secretEncrypted,
         confirmedAt: schema.totpCredentials.confirmedAt,
+        lastUsedStep: schema.totpCredentials.lastUsedStep,
       })
       .from(schema.totpCredentials)
       .where(eq(schema.totpCredentials.userId, userId));
     return rows[0];
+  });
+}
+
+/**
+ * Retires a TOTP time-step, refusing if it was already spent (migration 0077).
+ *
+ * A CONDITIONAL update — `last_used_step IS NULL OR last_used_step < step` is
+ * in the WHERE, not checked in the service and written after. Two requests
+ * replaying the same code arrive together by construction (that is what a
+ * replay IS), so a read-then-write would let both pass the check before either
+ * wrote. The same `claimForScanning` shape the attachment pipeline uses, and
+ * for the same reason.
+ *
+ * Returns whether this caller won. `false` means the step was already spent —
+ * the code is genuine and its one use is gone.
+ */
+export async function claimTotpStep(userId: string, step: number): Promise<boolean> {
+  return withGlobalScope(async (tx) => {
+    const updated = await tx
+      .update(schema.totpCredentials)
+      .set({ lastUsedStep: step })
+      .where(
+        and(
+          eq(schema.totpCredentials.userId, userId),
+          or(
+            isNull(schema.totpCredentials.lastUsedStep),
+            lt(schema.totpCredentials.lastUsedStep, step),
+          ),
+        ),
+      )
+      .returning({ userId: schema.totpCredentials.userId });
+
+    return updated.length > 0;
   });
 }
 

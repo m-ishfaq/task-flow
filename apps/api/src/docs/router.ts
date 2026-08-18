@@ -41,7 +41,27 @@ import { listBacklinks } from './backlinks.js';
  */
 
 const SpaceName = z.string().trim().min(1).max(200);
-const PageTitle = z.string().trim().min(1).max(500);
+/**
+ * A single-line title.
+ *
+ * `.trim()` strips surrounding whitespace and permits everything in between,
+ * including CR and LF. That matters beyond tidiness: a card or page title
+ * reaches `notification-mail`'s `subject`, which is an SMTP header, and it is
+ * rendered into a mail body and a PDF. Nodemailer sanitizes newlines out of
+ * header values, so this was never exploitable — but that is an implicit
+ * dependency on a library's internal behaviour, in a codebase that otherwise
+ * refuses exactly that kind of reliance.
+ *
+ * `\p{Cc}` is the Unicode control category, so this rejects NUL and the C1
+ * range too rather than only the two characters that happen to matter for
+ * SMTP today.
+ */
+const PageTitle = z
+  .string()
+  .trim()
+  .min(1)
+  .max(500)
+  .regex(/^[^\p{Cc}]*$/u, 'A title cannot contain control characters or line breaks.');
 
 function actorOf(ctx: {
   principal: Parameters<typeof subjectOf>[0];
