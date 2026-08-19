@@ -5,7 +5,7 @@ import { unsafeAsId } from '@taskflow/contracts';
 import { boardsQuery, labelsQuery, listsQuery, projectsQuery, statusesQuery } from '../work/api.js';
 import { channelsQuery } from '../chat/api.js';
 import { membersQuery } from '../org/api.js';
-import { integrationsQuery, webhooksQuery } from './api.js';
+import { integrationsQuery, webhooksForPickerQuery } from './api.js';
 import { phoneContactsQuery, phoneNumbersQuery } from '../telephony/api.js';
 import { INTEGRATION_PROVIDER_OF, type ArgumentKind } from './vocabulary.js';
 
@@ -169,7 +169,7 @@ function ChannelPicker({ orgId, value, onChange, label }: PickerProps) {
  * thing worth seeing.
  */
 function WebhookPicker({ orgId, value, onChange, label }: PickerProps) {
-  const webhooks = useQuery({ ...webhooksQuery(orgId), enabled: orgId !== '' });
+  const webhooks = useQuery({ ...webhooksForPickerQuery(orgId), enabled: orgId !== '' });
 
   return (
     <Choose

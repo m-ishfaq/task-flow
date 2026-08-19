@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { withApiTokenAuthScope } from './client.js';
 import { apiTokens } from './schema/platform.js';
 
@@ -51,11 +51,14 @@ export interface ResolvedApiToken {
  *
  * `revoked_at IS NULL` is in the WHERE, not filtered afterward — a revoked
  * token is refused by the lookup itself, so revocation takes effect on the
- * next request with no cache to outlive it.
+ * next request with no cache to outlive it. Expiry (migration 0079) rides the
+ * same WHERE: `expires_at IS NULL OR expires_at > now()`, evaluated against
+ * the DATABASE clock so a token's lifetime cannot be extended from a client.
  *
- * Revoked and never-minted are deliberately INDISTINGUISHABLE — both return
- * undefined, and the authentication path must not be able to tell them apart
- * (distinguishing them would turn the lookup into a token-existence oracle).
+ * Revoked, expired and never-minted are deliberately INDISTINGUISHABLE — all
+ * three return undefined, and the authentication path must not be able to tell
+ * them apart (distinguishing them would turn the lookup into a token-existence
+ * oracle).
  */
 export async function resolveApiToken(tokenHash: string): Promise<ResolvedApiToken | undefined> {
   if (tokenHash.length === 0) return undefined;
@@ -70,7 +73,13 @@ export async function resolveApiToken(tokenHash: string): Promise<ResolvedApiTok
         createdAt: apiTokens.createdAt,
       })
       .from(apiTokens)
-      .where(and(eq(apiTokens.tokenHash, tokenHash), isNull(apiTokens.revokedAt)))
+      .where(
+        and(
+          eq(apiTokens.tokenHash, tokenHash),
+          isNull(apiTokens.revokedAt),
+          or(isNull(apiTokens.expiresAt), gt(apiTokens.expiresAt, sql`now()`)),
+        ),
+      )
       .limit(1);
 
     const row = rows[0];

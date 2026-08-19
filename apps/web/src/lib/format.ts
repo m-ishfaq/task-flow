@@ -28,6 +28,17 @@ export function formatRelative(value: string): string {
   return `${formatDistanceToNowStrict(parseInstant(value))} ago`;
 }
 
+/**
+ * Whether an instant is in the past.
+ *
+ * Lives here rather than as an inline `Date.now()` in a component: reading the
+ * clock is an impure call, which the render-purity rule forbids inside a
+ * component body. A plain helper keeps the comparison out of render.
+ */
+export function hasPassed(value: string): boolean {
+  return isPast(parseInstant(value));
+}
+
 export interface DueDateDisplay {
   readonly label: string;
   /** Whether the date has passed. Drives the colour, never the meaning. */

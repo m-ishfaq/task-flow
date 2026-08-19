@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, schema, withOrgScope, outboxWriter } from '@taskflow/db';
+import { and, asc, desc, eq, gt, or, schema, withOrgScope, outboxWriter } from '@taskflow/db';
+import { PAGE_DEFAULT, decodeNameKeyCursor, encodeNameKeyCursor } from './pagination.js';
 import { errors, type KeyProvider } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
 import { can } from '@taskflow/policy';
@@ -96,7 +97,13 @@ export function signingAad(orgId: string, webhookId: string): string {
   return `webhook-signing:${orgId}:${webhookId}`;
 }
 
-export async function listWebhooks(actor: WebhookActor): Promise<readonly WebhookSummary[]> {
+export async function listWebhooks(
+  actor: WebhookActor,
+  cursor: string | null = null,
+  limit: number = PAGE_DEFAULT,
+): Promise<{ readonly webhooks: readonly WebhookSummary[]; readonly nextCursor: string | null }> {
+  const decoded = cursor === null ? null : decodeNameKeyCursor(cursor);
+
   return withOrgScope(orgOf(actor), async (tx) => {
     const rows = await tx
       .select({
@@ -109,10 +116,36 @@ export async function listWebhooks(actor: WebhookActor): Promise<readonly Webhoo
         createdAt: schema.webhooks.createdAt,
       })
       .from(schema.webhooks)
-      .where(eq(schema.webhooks.orgId, orgOf(actor)))
-      .orderBy(asc(schema.webhooks.name), asc(schema.webhooks.id));
+      .where(
+        and(
+          eq(schema.webhooks.orgId, orgOf(actor)),
+          /* Resume after the cursor: `(name, id) > (cursor.name, cursor.id)`,
+             written as plain operators because raw `sql` is banned here. */
+          ...(decoded === null
+            ? []
+            : [
+                or(
+                  gt(schema.webhooks.name, decoded.name),
+                  and(eq(schema.webhooks.name, decoded.name), gt(schema.webhooks.id, decoded.id)),
+                ),
+              ]),
+        ),
+      )
+      .orderBy(asc(schema.webhooks.name), asc(schema.webhooks.id))
+      // One extra row answers "is there a next page" without a COUNT.
+      .limit(limit + 1);
 
-    return rows.map((row) => ({ ...row }));
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page[page.length - 1];
+
+    return {
+      webhooks: page.map((row) => ({ ...row })),
+      nextCursor:
+        hasMore && last !== undefined
+          ? encodeNameKeyCursor({ name: last.name, id: last.webhookId })
+          : null,
+    };
   });
 }
 

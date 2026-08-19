@@ -176,6 +176,41 @@ describe('authenticateWithApiToken — the resolution path', () => {
     await expect(authenticateWithApiToken(`Bearer ${issued.token}`, undefined)).resolves.toBeNull();
   });
 
+  it('accepts a token with a future lifetime, and refuses it once expired', async () => {
+    const { orgId, owner } = await scaffold('expiry');
+
+    const live = await mintApiToken(owner, {
+      name: 'Expiring',
+      scopes: ['card:read'],
+      expiresInDays: 30,
+    });
+    /* A future expiry authenticates like any other token. */
+    await expect(
+      authenticateWithApiToken(`Bearer ${live.token}`, undefined),
+    ).resolves.not.toBeNull();
+
+    /* Age the row into the past — a token minted two days ago with a one-day
+       life, now lapsed. Both `created_at` and `expires_at` move, because the
+       `api_tokens_expiry_after_creation` CHECK requires expiry to be AFTER
+       creation: setting expiry alone below a just-set `created_at` is exactly
+       the row that constraint refuses. The lookup compares expiry against the
+       DATABASE clock (`now()`), so this is what a genuinely expired token looks
+       like, and nothing cached outlives it. RLS-scoped write:
+       platform.api_tokens forces RLS on app.org_id, so the UPDATE runs under
+       the token's org. */
+    await admin.setOrg(orgId);
+    await admin.query(
+      `UPDATE platform.api_tokens
+         SET created_at = now() - interval '2 days',
+             expires_at = now() - interval '1 day'
+       WHERE id = $1`,
+      [live.tokenId],
+    );
+    await admin.setOrg(null);
+
+    await expect(authenticateWithApiToken(`Bearer ${live.token}`, undefined)).resolves.toBeNull();
+  });
+
   it('refuses a token whose holder no longer has a membership', async () => {
     const { orgId, token } = await scaffold('gone');
 
@@ -413,7 +448,7 @@ describe('a token principal on the real automation router', () => {
     /* The real routes carry an explicit `z.object({}).strict()` input, so
        they take `{}` where the synthetic gateRouter's input-less routes take
        nothing. */
-    await expect(caller.webhooks.list({})).resolves.toEqual([]);
+    await expect(caller.webhooks.list({})).resolves.toEqual({ webhooks: [], nextCursor: null });
 
     const created = await caller.webhooks.create({
       name: 'CI',
@@ -424,7 +459,7 @@ describe('a token principal on the real automation router', () => {
     expect(created.signingSecret.length).toBeGreaterThan(0);
 
     const listed = await caller.webhooks.list({});
-    expect(listed.some((webhook) => webhook.webhookId === created.webhookId)).toBe(true);
+    expect(listed.webhooks.some((webhook) => webhook.webhookId === created.webhookId)).toBe(true);
   });
 
   it('does not bleed into sibling surfaces — a webhook token cannot manage RULES', async () => {
@@ -454,12 +489,12 @@ describe('a token principal on the real automation router', () => {
       url: 'https://hooks.example.test/a',
     });
     const listA = await callerA.webhooks.list({});
-    expect(listA.some((webhook) => webhook.webhookId === created.webhookId)).toBe(true);
+    expect(listA.webhooks.some((webhook) => webhook.webhookId === created.webhookId)).toBe(true);
 
     /* RLS confines org B's token to org B's rows — the token's org came from
        the token itself, not from anything the client said. */
     const listB = await callerB.webhooks.list({});
-    expect(listB.some((webhook) => webhook.webhookId === created.webhookId)).toBe(false);
+    expect(listB.webhooks.some((webhook) => webhook.webhookId === created.webhookId)).toBe(false);
   });
 });
 
