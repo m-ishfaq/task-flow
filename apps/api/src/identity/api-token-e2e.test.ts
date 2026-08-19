@@ -171,8 +171,12 @@ describe('the API-token round trip over HTTP', () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(list.statusCode).toBe(200);
-    const listBody: { result: { data: { webhookId: string; name: string }[] } } = list.json();
-    const webhooks = listBody.result.data;
+    const listBody: {
+      result: {
+        data: { webhooks: { webhookId: string; name: string }[]; nextCursor: string | null };
+      };
+    } = list.json();
+    const webhooks = listBody.result.data.webhooks;
     expect(webhooks.some((webhook) => webhook.name === 'Release')).toBe(true);
 
     /* The durable quota counter moved — a Postgres row, not an in-process

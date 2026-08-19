@@ -12,10 +12,17 @@ import { keys } from '../../lib/query.js';
  * `lib/wire.ts` exists to prevent one level down.
  */
 
-export function automationsQuery(orgId: string) {
+/**
+ * The automation rules, cursor-paginated (§6.6). `cursor` is the opaque
+ * `(name, id)` boundary the server hands back as `nextCursor`; the caller only
+ * ever echoes it, never builds it. Page 1 (cursor null) shares its cache entry
+ * with the tab-badge query, so opening the tab is one fetch, not two.
+ */
+export function automationsQuery(orgId: string, cursor: string | null = null) {
   return queryOptions({
-    queryKey: keys.automations(orgId),
-    queryFn: async () => wire(await api.automation.list.query({})),
+    queryKey:
+      cursor === null ? keys.automations(orgId) : [...keys.automations(orgId), 'page', cursor],
+    queryFn: async () => wire(await api.automation.list.query(cursor === null ? {} : { cursor })),
   });
 }
 
@@ -41,14 +48,30 @@ export function automationRunsQuery(orgId: string, automationId?: string) {
 }
 
 /**
- * The webhook registry (Wave 2) — feeds both the management section and the
- * rule builder's webhook picker. `enabled` is the endpoint kill switch; the
- * picker filters on it, the management section renders it.
+ * The webhook registry (Wave 2), cursor-paginated for the management section —
+ * the same keyset scheme as `automationsQuery` above. The rule builder's picker
+ * uses `webhooksForPickerQuery` instead, which needs every enabled row at once
+ * rather than a page.
  */
-export function webhooksQuery(orgId: string) {
+export function webhooksPageQuery(orgId: string, cursor: string | null = null) {
   return queryOptions({
-    queryKey: keys.webhooks(orgId),
-    queryFn: async () => wire(await api.automation.webhooks.list.query({})),
+    queryKey: cursor === null ? keys.webhooks(orgId) : [...keys.webhooks(orgId), 'page', cursor],
+    queryFn: async () =>
+      wire(await api.automation.webhooks.list.query(cursor === null ? {} : { cursor })),
+  });
+}
+
+/**
+ * Every enabled webhook, for the rule builder's picker — which is a dropdown,
+ * not a paged list, and needs them all at once. Bounded at the endpoint's max
+ * so it can never be unbounded; an org with more than that many webhooks shows
+ * the first page in the dropdown, a limit no rule author realistically reaches.
+ * The paginated management list above is the surface built for many rows.
+ */
+export function webhooksForPickerQuery(orgId: string) {
+  return queryOptions({
+    queryKey: [...keys.webhooks(orgId), 'all'],
+    queryFn: async () => wire(await api.automation.webhooks.list.query({ limit: 100 })).webhooks,
   });
 }
 

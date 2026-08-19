@@ -223,7 +223,7 @@ describe('creating a rule — what is refused at save time', () => {
        re-validates every stored condition, and doing that against the card set
        would report a perfectly good connector rule as broken — which the UI
        shows as a warning and an author would "fix" by deleting it. */
-    const rule = (await listAutomations(owner)).find(
+    const rule = (await listAutomations(owner)).automations.find(
       (entry) => entry.triggerEvent === 'integration.github_event',
     );
     expect(rule?.conditionBroken).toBe(false);
@@ -291,7 +291,7 @@ describe('creating a rule — what is refused at save time', () => {
     const { owner } = await scaffold('roundtrip');
     await createAutomation(owner, ruleBody({ condition: compare('priority', 'eq', 'high') }));
 
-    const [rule] = await listAutomations(owner);
+    const [rule] = (await listAutomations(owner)).automations;
     expect(rule?.conditionBroken).toBe(false);
     expect(JSON.stringify(rule?.condition)).toContain('priority');
   });
@@ -320,7 +320,7 @@ describe('editing a rule — ownership is not editable', () => {
        "rename this rule" would quietly become "re-point this rule at my own,
        possibly higher, privileges" — a privilege escalation wearing the shape
        of a rename, performed by someone who may legitimately edit the rule. */
-    const [rule] = await listAutomations(owner);
+    const [rule] = (await listAutomations(owner)).automations;
     expect(rule?.name).toBe('Renamed by the admin');
     expect(rule?.createdBy).toBe(OWNER);
   });
@@ -357,7 +357,7 @@ describe('the kill switch', () => {
       enabled: false,
     });
 
-    const [rule] = await listAutomations(owner);
+    const [rule] = (await listAutomations(owner)).automations;
     expect(rule?.enabled).toBe(false);
   });
 
@@ -377,7 +377,43 @@ describe('deleting a rule', () => {
 
     await deleteAutomation(owner, { automationId: first.automationId });
 
-    const remaining = await listAutomations(owner);
+    const { automations: remaining } = await listAutomations(owner);
     expect(remaining.map((rule) => rule.name)).toEqual(['Second']);
+  });
+});
+
+describe('listing — cursor pagination', () => {
+  it('walks the whole set one page at a time, in order, with no gaps or repeats', async () => {
+    const { owner } = await scaffold('paginate');
+    /* Names chosen so alphabetical order is unambiguous and not creation
+       order — the list sorts by (name, id), so this also proves the sort. */
+    for (const name of ['Delta', 'Alpha', 'Charlie', 'Bravo', 'Echo']) {
+      await createAutomation(owner, ruleBody({ name }));
+    }
+
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    // limit 2 forces at least three pages, so the cursor boundary is exercised
+    // both mid-name-run and at the end.
+    for (let guard = 0; guard < 10; guard += 1) {
+      const page = await listAutomations(owner, cursor, 2);
+      seen.push(...page.automations.map((rule) => rule.name));
+      if (page.nextCursor === null) break;
+      cursor = page.nextCursor;
+    }
+
+    expect(seen).toEqual(['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo']);
+  });
+
+  it('stops paging when the last page is not full', async () => {
+    const { owner } = await scaffold('paginate-tail');
+    await createAutomation(owner, ruleBody({ name: 'Only' }));
+
+    // One row, page size two: nextCursor must be null, not a cursor onto an
+    // empty page — the `hasMore = rows.length > limit` check is what guarantees
+    // that, and a Next button keyed off it would otherwise never disable.
+    const page = await listAutomations(owner, null, 2);
+    expect(page.automations.map((rule) => rule.name)).toEqual(['Only']);
+    expect(page.nextCursor).toBeNull();
   });
 });

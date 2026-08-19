@@ -263,10 +263,26 @@ describe('listing', () => {
     expect(token.tokenPrefix.length).toBe(10);
     expect(token.revokedAt).toBeNull();
     expect(token.lastUsedAt).toBeNull();
+    // No lifetime was requested, so the token never expires.
+    expect(token.expiresAt).toBeNull();
 
     const keys = Object.keys(token);
     expect(keys).not.toContain('tokenHash');
     expect(keys).not.toContain('token');
+  });
+
+  it('records the chosen lifetime as a future expiry', async () => {
+    const { owner } = await scaffold('list-expiry');
+
+    const before = Date.now();
+    await mintApiToken(owner, { name: 'Expiring', scopes: ['card:read'], expiresInDays: 30 });
+
+    const token = (await listApiTokens(owner))[0]!;
+    expect(token.expiresAt).not.toBeNull();
+    // 30 days out, give or take the moment of minting.
+    const expected = before + 30 * 24 * 60 * 60 * 1000;
+    expect(token.expiresAt!.getTime()).toBeGreaterThan(expected - 5000);
+    expect(token.expiresAt!.getTime()).toBeLessThan(expected + 60_000);
   });
 });
 

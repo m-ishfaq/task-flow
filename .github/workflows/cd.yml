@@ -89,6 +89,36 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
+      # CI's Trivy job scans the repository FILESYSTEM — source and the
+      # lockfile. It never sees a built image, so nothing in the pipeline was
+      # looking at the base images these are built on, or at anything the
+      # Dockerfile installs. PLAN.md §8.8 asks for container scanning; this is
+      # the half that was missing.
+      #
+      # Runs after the push, against the tag just published, so it scans the
+      # exact bytes that will be deployed rather than a local rebuild that
+      # might differ. Fails the job on HIGH or CRITICAL, matching CI's own
+      # Trivy step and §8.8's "any high or critical finding fails the build".
+      # Via a pinned image rather than the marketplace action, and the same
+      # `aquasec/trivy:0.58.1` CI's filesystem scan uses — CI's own note
+      # records that `trivy-action@0.28.0` failed this workflow on first run
+      # with "unable to find version", and that a pinned image is testable with
+      # the identical command on a laptop.
+      - name: Trivy image scan
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.58.1 \
+            image "ghcr.io/${IMAGE_OWNER}/task-flow-${SERVICE}:${IMAGE_SHA}" \
+              --severity HIGH,CRITICAL \
+              --exit-code 1 \
+              --ignore-unfixed \
+              --no-progress
+        env:
+          IMAGE_OWNER: ${{ env.IMAGE_OWNER }}
+          SERVICE: ${{ matrix.service }}
+          IMAGE_SHA: ${{ steps.resolve-ref.outputs.sha }}
+
   deploy:
     name: Deploy
     needs: build-push

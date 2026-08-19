@@ -194,6 +194,33 @@ export const passkeyLoginFailed = defineEvent(
     .strict(),
 );
 
+/**
+ * A wrong code at the SECOND factor.
+ *
+ * Separate from `loginFailed` for the identical reason `passkeyLoginFailed` is:
+ * it carries no email. The TOTP challenge names a user id and nothing else, so
+ * there is no address to record without a second lookup that would exist only
+ * to fill this field.
+ *
+ * It exists at all because the password factor emitted `loginFailed` on every
+ * wrong guess while the second factor emitted NOTHING — so a brute-force
+ * against the one control standing between a phished password and an account
+ * left no trace in the audit chain at all. `locked` is the interesting value:
+ * it means someone held a valid challenge for an account that was already
+ * under attack through another door.
+ */
+export const secondFactorFailed = defineEvent(
+  'user.second_factor_failed',
+  z
+    .object({
+      userId: z.string(),
+      method: z.enum(['totp', 'recovery']),
+      reason: z.enum(['bad_code', 'locked']),
+      ip: z.string().nullable(),
+    })
+    .strict(),
+);
+
 /** TOTP enrolled or removed (Phase 12 Wave 2 §3.2) — a new way into an account either way. */
 export const totpEnrolled = defineEvent(
   'user.totp_enrolled',

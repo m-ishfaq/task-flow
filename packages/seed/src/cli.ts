@@ -172,6 +172,34 @@ function assertSafeToSeed(migrationUrl: string): void {
     process.exit(1);
   }
 
+  /* Of the three guards here, only NODE_ENV actually discriminates a
+     production database — and nothing in compose.prod.yaml's one-shot jobs
+     sets it. The role check only refuses `taskflow_app` (seeding legitimately
+     runs as the migrator), and the name check only refuses a `_test` suffix (a
+     production database is called `taskflow`). So a single unset environment
+     variable stood between `pnpm seed` and writing fixtures into a live
+     tenant.
+
+     The host is the honest signal: a development database is on this machine.
+     Anything else needs the operator to say so out loud, which is a thing you
+     cannot do by accident. */
+  let host: string;
+  try {
+    host = new URL(migrationUrl).hostname;
+  } catch {
+    host = '';
+  }
+
+  const isLocal = ['localhost', '127.0.0.1', '::1', '', 'host.docker.internal'].includes(host);
+  if (!isLocal && process.env['SEED_I_MEAN_IT'] !== '1') {
+    console.error(
+      `Refusing to seed a database on "${host}": that is not this machine.\n` +
+        'This script writes fixture organizations, users and messages. If you really\n' +
+        'mean to seed a remote database, re-run with SEED_I_MEAN_IT=1.',
+    );
+    process.exit(1);
+  }
+
   if (databaseName.endsWith('_test')) {
     console.error(
       `Refusing to seed "${databaseName}": that suffix is reserved for the test suites, which\n` +
@@ -554,6 +582,13 @@ function reportFailure(error: unknown): void {
 function describe(value: unknown): string {
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  /* The `??` is load-bearing and ESLint reports it as unnecessary, because
+     TypeScript's own lib declares `JSON.stringify` as returning `string`. It
+     returns `undefined` for `undefined`, for a function, and for a symbol —
+     all three of which reach this branch, since the parameter is `unknown`.
+     Same shape as the TanStack Query guard in `login-page.tsx`: the type is
+     wrong, not the code. */
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- see above: JSON.stringify is typed `string` but returns undefined for undefined/function/symbol
   return JSON.stringify(value) ?? 'unknown';
 }
 

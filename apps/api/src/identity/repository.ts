@@ -6,6 +6,8 @@ import {
   gt,
   increment,
   isNull,
+  lt,
+  or,
   schema,
   withGlobalScope,
   type GlobalDb,
@@ -586,6 +588,8 @@ export interface TotpCredentialRow {
   userId: string;
   secretEncrypted: Buffer;
   confirmedAt: Date | null;
+  /** The last time-step spent by a successful login (migration 0077). */
+  lastUsedStep: number | null;
 }
 
 export async function getTotpCredential(userId: string): Promise<TotpCredentialRow | undefined> {
@@ -595,10 +599,44 @@ export async function getTotpCredential(userId: string): Promise<TotpCredentialR
         userId: schema.totpCredentials.userId,
         secretEncrypted: schema.totpCredentials.secretEncrypted,
         confirmedAt: schema.totpCredentials.confirmedAt,
+        lastUsedStep: schema.totpCredentials.lastUsedStep,
       })
       .from(schema.totpCredentials)
       .where(eq(schema.totpCredentials.userId, userId));
     return rows[0];
+  });
+}
+
+/**
+ * Retires a TOTP time-step, refusing if it was already spent (migration 0077).
+ *
+ * A CONDITIONAL update — `last_used_step IS NULL OR last_used_step < step` is
+ * in the WHERE, not checked in the service and written after. Two requests
+ * replaying the same code arrive together by construction (that is what a
+ * replay IS), so a read-then-write would let both pass the check before either
+ * wrote. The same `claimForScanning` shape the attachment pipeline uses, and
+ * for the same reason.
+ *
+ * Returns whether this caller won. `false` means the step was already spent —
+ * the code is genuine and its one use is gone.
+ */
+export async function claimTotpStep(userId: string, step: number): Promise<boolean> {
+  return withGlobalScope(async (tx) => {
+    const updated = await tx
+      .update(schema.totpCredentials)
+      .set({ lastUsedStep: step })
+      .where(
+        and(
+          eq(schema.totpCredentials.userId, userId),
+          or(
+            isNull(schema.totpCredentials.lastUsedStep),
+            lt(schema.totpCredentials.lastUsedStep, step),
+          ),
+        ),
+      )
+      .returning({ userId: schema.totpCredentials.userId });
+
+    return updated.length > 0;
   });
 }
 
@@ -631,15 +669,26 @@ export async function deleteTotp(userId: string): Promise<void> {
   });
 }
 
+/** A recovery code as stored: its Argon2 hash, plus the keyed index (0078). */
+export interface NewRecoveryCode {
+  codeHash: string;
+  codeIndex: Buffer;
+}
+
 export async function insertRecoveryCodes(
   userId: string,
-  codeHashes: readonly string[],
+  codes: readonly NewRecoveryCode[],
 ): Promise<void> {
-  if (codeHashes.length === 0) return;
+  if (codes.length === 0) return;
   await withGlobalScope(async (tx) => {
-    await tx
-      .insert(schema.totpRecoveryCodes)
-      .values(codeHashes.map((codeHash) => ({ id: newId<'unused'>(), userId, codeHash })));
+    await tx.insert(schema.totpRecoveryCodes).values(
+      codes.map(({ codeHash, codeIndex }) => ({
+        id: newId<'unused'>(),
+        userId,
+        codeHash,
+        codeIndex,
+      })),
+    );
   });
 }
 
@@ -648,14 +697,51 @@ export interface RecoveryCodeRow {
   codeHash: string;
 }
 
-/** Every code this user has never redeemed — checked one by one against the plaintext attempt. */
-export async function findUnusedRecoveryCodes(userId: string): Promise<RecoveryCodeRow[]> {
+/**
+ * The one unredeemed code whose keyed index matches — the fast path (0078).
+ *
+ * At most one row can match a 128-bit keyed index, so this replaces the
+ * ten-Argon2 scan with a single indexed lookup; the caller runs Argon2 once,
+ * on this row, to confirm.
+ */
+export async function findRecoveryCodeByIndex(
+  userId: string,
+  codeIndex: Buffer,
+): Promise<RecoveryCodeRow | undefined> {
+  return withGlobalScope(async (tx) => {
+    const rows = await tx
+      .select({ id: schema.totpRecoveryCodes.id, codeHash: schema.totpRecoveryCodes.codeHash })
+      .from(schema.totpRecoveryCodes)
+      .where(
+        and(
+          eq(schema.totpRecoveryCodes.userId, userId),
+          eq(schema.totpRecoveryCodes.codeIndex, codeIndex),
+          isNull(schema.totpRecoveryCodes.usedAt),
+        ),
+      )
+      .limit(1);
+    return rows[0];
+  });
+}
+
+/**
+ * Unredeemed codes issued before 0078, which carry no index — the legacy scan.
+ *
+ * `code_index IS NULL` scopes this to exactly the rows the fast path cannot
+ * see, so a user who has regenerated their codes never reaches it. The set only
+ * shrinks over time.
+ */
+export async function findUnindexedRecoveryCodes(userId: string): Promise<RecoveryCodeRow[]> {
   return withGlobalScope(async (tx) =>
     tx
       .select({ id: schema.totpRecoveryCodes.id, codeHash: schema.totpRecoveryCodes.codeHash })
       .from(schema.totpRecoveryCodes)
       .where(
-        and(eq(schema.totpRecoveryCodes.userId, userId), isNull(schema.totpRecoveryCodes.usedAt)),
+        and(
+          eq(schema.totpRecoveryCodes.userId, userId),
+          isNull(schema.totpRecoveryCodes.codeIndex),
+          isNull(schema.totpRecoveryCodes.usedAt),
+        ),
       ),
   );
 }

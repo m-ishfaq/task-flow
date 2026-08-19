@@ -79,9 +79,16 @@ export function verifyWebhookSignature(options: {
 
   const match = /^t=(\d+),v1=([0-9a-f]+)$/i.exec(options.signature);
   /* Optional chaining collapses the null check into the member access — the
-     refusal is identical, and the two capture groups are guarded
-     independently so a truncated header cannot slip past one guard. */
-  if (match?.[1] === undefined || match?.[2] === undefined) return false;
+     refusal is identical to an explicit `match === null` test.
+
+     This comment used to claim the two capture groups were "guarded
+     independently so a truncated header cannot slip past one guard". They are
+     not: `||` short-circuits, so by the time the second operand runs `match`
+     is already narrowed non-null, and the second `?.` does nothing. The regex
+     is anchored and both groups are required, so a truncated header fails to
+     match at all and neither guard is what saves it. Behaviour is correct;
+     the explanation was describing a mechanism that is not here. */
+  if (match?.[1] === undefined || match[2] === undefined) return false;
 
   const timestamp = Number(match[1]);
   const now = options.now ?? Math.floor(Date.now() / 1000);

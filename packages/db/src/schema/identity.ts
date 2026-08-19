@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   customType,
   index,
@@ -288,6 +289,17 @@ export const totpCredentials = identity.table('totp_credentials', {
     .references(() => users.id, { onDelete: 'cascade' }),
   secretEncrypted: bytea('secret_encrypted').notNull(),
   confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+  /**
+   * The last TOTP time-step a successful login spent (migration 0077).
+   *
+   * A code at or below this step is refused as a replay, per RFC 6238 §5.2.
+   * Null until the first successful verification — which is the correct
+   * reading for a credential enrolled before the column existed.
+   *
+   * `bigint` in Postgres, read as a string by the driver, so the service
+   * parses it rather than comparing it as text: '9' > '10' lexically.
+   */
+  lastUsedStep: bigint('last_used_step', { mode: 'number' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -300,10 +312,17 @@ export const totpRecoveryCodes = identity.table(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     codeHash: text('code_hash').notNull(),
+    /* Keyed equality index (migration 0078). NULL for codes predating it —
+       Argon2 is one-way, so legacy rows cannot be backfilled and keep the
+       linear-scan path. */
+    codeIndex: bytea('code_index'),
     usedAt: timestamp('used_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index('totp_recovery_codes_user_idx').on(table.userId)],
+  (table) => [
+    index('totp_recovery_codes_user_idx').on(table.userId),
+    index('totp_recovery_codes_lookup_idx').on(table.userId, table.codeIndex),
+  ],
 );
 
 /**

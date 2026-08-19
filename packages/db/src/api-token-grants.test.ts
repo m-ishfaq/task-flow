@@ -164,7 +164,9 @@ afterAll(async () => {
 describe('taskflow_api_token_auth — the lookup role, by GRANT', () => {
   it('may read exactly the lookup columns, across every org', async () => {
     /* 0051 added `id` and `created_at` to the grant — the auth path needs
-       them as sessionId/authenticatedAt. Everything else 0050 granted stays. */
+       them as sessionId/authenticatedAt. 0079 added `expires_at`, which the
+       lookup filters on so an expired token resolves to nothing. Everything
+       else 0050 granted stays. */
     for (const column of [
       'token_hash',
       'org_id',
@@ -173,6 +175,7 @@ describe('taskflow_api_token_auth — the lookup role, by GRANT', () => {
       'revoked_at',
       'id',
       'created_at',
+      'expires_at',
     ]) {
       expect(
         await canColumn('taskflow_api_token_auth', 'platform.api_tokens', column, 'SELECT'),

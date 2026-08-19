@@ -7,6 +7,7 @@ import {
   hashPassword,
   identityFieldAad,
   issueHumanCode,
+  recoveryCodeIndex,
   totpProvisioningUri,
   verifyPassword,
   verifyTotpChallenge,
@@ -57,6 +58,34 @@ export interface TotpDeps {
 
 const clock = (deps: TotpDeps): Date => (deps.identity.now ?? (() => new Date()))();
 
+/**
+ * Records a refused second factor.
+ *
+ * Its own helper rather than an inline `publish` at each site for the reason
+ * `identity.service.ts`'s `publishFailure` is: there are three refusal paths
+ * here (locked, wrong code, wrong recovery code) and every one of them must
+ * leave the same trace. A branch that forgets is invisible — the caller still
+ * gets its refusal, and only the audit chain is quietly thinner.
+ */
+async function publishSecondFactorFailure(
+  deps: TotpDeps,
+  now: Date,
+  payload: {
+    readonly userId: string;
+    readonly method: 'totp' | 'recovery';
+    readonly reason: 'bad_code' | 'locked';
+    readonly ip: string | null;
+  },
+): Promise<void> {
+  await deps.identity.events.publish([
+    createEvent(identityEvents.secondFactorFailed, payload, {
+      orgId: SYSTEM_ORG,
+      actorId: null,
+      occurredAt: now,
+    }),
+  ]);
+}
+
 function aadFor(userId: string): string {
   return identityFieldAad({
     table: 'totp_credentials',
@@ -100,7 +129,13 @@ export async function confirmEnrollment(
     aadFor(input.userId),
   );
 
-  if (!verifyTotpCode(input.code, secret)) {
+  /* Enrollment deliberately does NOT retire the step. Confirming an
+     enrollment proves possession of the authenticator; it is not a login, and
+     spending the step here would refuse the very next real sign-in if it
+     happened within the same 30 seconds — which is exactly what a person
+     finishing setup does. Replay of a confirmation code buys nothing: the
+     credential is already confirmed after the first one. */
+  if (!verifyTotpCode(input.code, secret).valid) {
     throw errors.validation({
       code: 'That code is not valid. Check the time on your device and try again.',
     });
@@ -116,8 +151,15 @@ export async function confirmEnrollment(
      the hash ever leaked, unlike the 256-bit bearer tokens SHA-256 is used
      for elsewhere in this module. */
   const codes = Array.from({ length: 10 }, () => issueHumanCode().token);
-  const hashes = await Promise.all(codes.map((code) => hashPassword(code)));
-  await repo.insertRecoveryCodes(input.userId, hashes);
+  const stored = await Promise.all(
+    codes.map(async (code) => ({
+      codeHash: await hashPassword(code),
+      /* The keyed lookup index (migration 0078) that lets a later login find
+         this code without an Argon2 scan of all ten. */
+      codeIndex: recoveryCodeIndex(deps.identityDataKey, input.userId, code),
+    })),
+  );
+  await repo.insertRecoveryCodes(input.userId, stored);
 
   await deps.identity.events.publish([
     createEvent(
@@ -197,15 +239,84 @@ export async function verifyLogin(
     });
   }
 
-  const ok =
-    input.credential.kind === 'totp'
-      ? verifyTotpCode(
-          input.credential.code,
-          decryptString(deps.identityDataKey, credential.secretEncrypted, aadFor(userId)),
-        )
-      : await verifyRecoveryCode(userId, input.credential.code, now);
+  const method = input.credential.kind === 'totp' ? ('totp' as const) : ('recovery' as const);
+
+  /* A locked account stays locked at the second factor too — the same
+     reasoning `passkey.service.ts` gives for its own copy of this check. The
+     lockout exists because an account is under attack, and a challenge minted
+     before the lock landed must not outlive it. `login()` refuses to issue a
+     NEW challenge for a locked account, so without this the 5-minute window on
+     an already-issued one was the gap. */
+  const user = await repo.findUserById(userId);
+  if (user?.lockedUntil && user.lockedUntil > now) {
+    await publishSecondFactorFailure(deps, now, { userId, method, reason: 'locked', ip: meta.ip });
+    throw errors.validation({ code: 'That code is not valid.' });
+  }
+
+  /* One code, one use (migration 0077).
+
+     `verifyTotpCode` reports WHICH time-step matched, and `claimTotpStep`
+     retires it with a conditional UPDATE. Both halves are needed: otplib
+     accepts a ±1-step window, so a code stays cryptographically valid for up
+     to 90 seconds, and nothing here recorded that it had been spent. A code
+     captured from a shoulder-surf, a phishing relay, or a request body that
+     reached a log could be replayed for the rest of that window.
+
+     The claim is conditional rather than read-then-write because two requests
+     replaying one code arrive together by construction — that is what a replay
+     is — and a service-side comparison would let both pass before either
+     wrote. Recovery codes need none of this: `claimRecoveryCode` already
+     spends them exactly once. */
+  let ok: boolean;
+  if (input.credential.kind === 'totp') {
+    const verification = verifyTotpCode(
+      input.credential.code,
+      decryptString(deps.identityDataKey, credential.secretEncrypted, aadFor(userId)),
+    );
+    ok = verification.valid && (await repo.claimTotpStep(userId, verification.step));
+  } else {
+    ok = await verifyRecoveryCode(deps, userId, input.credential.code, now);
+  }
 
   if (!ok) {
+    /* The counter, the lockout and the audit trail — none of which this branch
+       had. The password factor has all three (`identity.service.ts`'s own
+       `!correct` branch), so an attacker holding a phished password faced a
+       5-per-15-minutes lockout on the first factor and an unlimited, silent
+       guessing loop on the second. Six digits with otplib's ±1 window is three
+       valid codes in a million; at the volumetric limit alone that is a real
+       chance per account per day, and it left nothing in the audit chain.
+
+       `recordFailedLogin` is shared with the password and passkey paths on
+       purpose: a lock earned at any door closes all of them. */
+    const state = await repo.recordFailedLogin(
+      userId,
+      deps.identity.config.lockThreshold,
+      deps.identity.config.lockDurationMs,
+      now,
+    );
+
+    await publishSecondFactorFailure(deps, now, {
+      userId,
+      method,
+      reason: 'bad_code',
+      ip: meta.ip,
+    });
+
+    if (state?.lockedUntil && state.lockedUntil > now) {
+      await deps.identity.events.publish([
+        createEvent(
+          identityEvents.accountLocked,
+          {
+            userId,
+            until: state.lockedUntil.toISOString(),
+            failedAttempts: state.failedLoginCount,
+          },
+          { orgId: SYSTEM_ORG, actorId: null, occurredAt: now },
+        ),
+      ]);
+    }
+
     throw errors.validation({ code: 'That code is not valid.' });
   }
 
@@ -229,13 +340,36 @@ export async function verifyLogin(
   return pair;
 }
 
-async function verifyRecoveryCode(userId: string, code: string, now: Date): Promise<boolean> {
-  const candidates = await repo.findUnusedRecoveryCodes(userId);
+async function verifyRecoveryCode(
+  deps: TotpDeps,
+  userId: string,
+  code: string,
+  now: Date,
+): Promise<boolean> {
+  /* Fast path (migration 0078). The keyed index finds the ONE unredeemed code
+     that could match, so Argon2 runs exactly once — or, when a submitted code
+     matches no index, not at all. That is what removes the amplification: a
+     junk code no longer forces a scan of ten Argon2 hashes. The index is not
+     the verifier — a 128-bit truncation could in principle collide — so the
+     Argon2 hash is still what actually decides. */
+  const index = recoveryCodeIndex(deps.identityDataKey, userId, code);
+  const match = await repo.findRecoveryCodeByIndex(userId, index);
+  if (match !== undefined) {
+    if (await verifyPassword(code, match.codeHash)) {
+      return repo.claimRecoveryCode(match.id, now);
+    }
+    return false;
+  }
 
-  /* Sequential, deliberately: Argon2id is slow by design, and running these
-     concurrently would multiply CPU cost per login attempt by up to ten for
-     no benefit — recovery-code lookups are rare and never on a hot path. */
-  for (const candidate of candidates) {
+  /* Legacy path: codes issued before 0078 have no index and cannot be given
+     one (Argon2 is one-way). They keep the linear scan — bounded by however
+     many un-indexed codes remain, a set that only shrinks. A user who has
+     regenerated their codes since the migration never reaches this.
+
+     Sequential, deliberately: running the Argon2 checks concurrently would
+     multiply CPU per attempt for no benefit. */
+  const legacy = await repo.findUnindexedRecoveryCodes(userId);
+  for (const candidate of legacy) {
     if (await verifyPassword(code, candidate.codeHash)) {
       return repo.claimRecoveryCode(candidate.id, now);
     }

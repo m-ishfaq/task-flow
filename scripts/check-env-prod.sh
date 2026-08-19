@@ -30,6 +30,10 @@ set -euo pipefail
 
 COMPOSE_FILE="${1:-compose.prod.yaml}"
 ENV_FILE="${2:-.env.prod}"
+# The shipped example, used to detect a value copied out of it unchanged.
+# .env.prod.example rather than .env.example: the two differ, and this script
+# only ever validates a production env file.
+EXAMPLE_FILE="${3:-.env.prod.example}"
 
 if [ ! -f "$COMPOSE_FILE" ]; then
   echo "$COMPOSE_FILE not found" >&2
@@ -98,6 +102,32 @@ for var in "${REQUIRED_VARS[@]}"; do
   fi
   if echo "$val" | grep -qiE 'ENTER_HERE|CHANGE_ME'; then
     placeholder+=("$var: $val")
+    continue
+  fi
+  # A value copied verbatim out of the example file. This catches what the
+  # placeholder pattern above cannot: the examples ship WORKING credentials
+  # that match neither ENTER_HERE nor CHANGE_ME — `app-dev-secret`,
+  # `migrator-dev-secret`, the MinIO root password, `coturn-dev-secret` —
+  # across fifteen database URLs, object storage and TURN. The realistic
+  # failure is copying an example file over and editing the fields you were
+  # thinking about; JWT_SECRET is caught because it is spelled CHANGE_ME_...,
+  # and every Postgres role password is not.
+  #
+  # Compared against the example file rather than pattern-matched, so a
+  # credential added there in future is covered without anyone having to
+  # remember to extend a regex here. The literal `dev-secret` pattern stays as
+  # a second net for a value derived from an example rather than copied from
+  # one — .env.example (development) shares those credentials with
+  # .env.prod.example but is not the file this script diffs against.
+  if [ -f "$EXAMPLE_FILE" ]; then
+    example_val=$(sed -n "s/^${var}=//p" "$EXAMPLE_FILE" | head -n 1)
+    if [ -n "$example_val" ] && [ "$val" = "$example_val" ]; then
+      placeholder+=("$var: unchanged from $EXAMPLE_FILE")
+      continue
+    fi
+  fi
+  if echo "$val" | grep -qiE 'dev-secret|devsecret'; then
+    placeholder+=("$var: looks like a development credential")
     continue
   fi
   ok+=("$var")

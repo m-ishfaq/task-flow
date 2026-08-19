@@ -92,5 +92,42 @@ if [ -n "$UNHEALTHY" ]; then
   exit 1
 fi
 
+# -----------------------------------------------------------------------------
+# The log viewer's gate is INFRASTRUCTURE, and infrastructure is not in this
+# repo — so this is the only place the repo can check it happened.
+#
+# compose.prod.yaml binds dozzle to 127.0.0.1 with no `:-0.0.0.0` fallback, and
+# documents that the reverse proxy must put basicauth in front of it. Nothing
+# enforced that. Meanwhile the platform-admin console actively links operators
+# to /logs, so the app assumes the path is reachable — and a docker socket
+# mount, read-only or not, is every container's logs.
+#
+# Every other control in this codebase is enforced by a mechanism rather than a
+# note (CLAUDE.md's own thesis). This turns the note into a mechanism as far as
+# a script on this box can: if /logs answers without asking for credentials,
+# the deploy says so loudly. A warning rather than an exit, because the proxy
+# may legitimately live on another host — but never silence.
+# -----------------------------------------------------------------------------
+LOGS_URL="${LOGS_PROBE_URL:-}"
+if [ -n "$LOGS_URL" ]; then
+  echo ""
+  echo "== checking the log viewer is behind auth =="
+  STATUS=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$LOGS_URL" || echo "000")
+  case "$STATUS" in
+    401 | 403)
+      echo "  $LOGS_URL -> $STATUS (authentication required, as intended)"
+      ;;
+    000)
+      echo "  $LOGS_URL unreachable from here — not a verdict either way." >&2
+      ;;
+    *)
+      echo "" >&2
+      echo "  WARNING: $LOGS_URL answered $STATUS without asking for credentials." >&2
+      echo "  Dozzle reads every container's logs. Put basicauth in front of it" >&2
+      echo "  on the proxy before treating this deploy as finished." >&2
+      ;;
+  esac
+fi
+
 echo ""
 echo "Deploy of $IMAGE_TAG complete. Every service is up and healthy."

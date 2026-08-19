@@ -195,7 +195,21 @@ export function LoginPage() {
                     className="mt-1.5"
                     disabled={resendVerification.isPending}
                     onClick={() => {
+                      /* Both the `?.` and the `!== undefined` are load-bearing,
+                         and ESLint reports both as unnecessary — because the
+                         TYPE is wrong, not the code. TanStack Query declares a
+                         mutation's `variables` as always present, and at
+                         runtime it is `undefined` until the first `mutate()`
+                         call. Deleting either guard to silence the warning
+                         calls `resendVerification.mutate(undefined)`.
+
+                         The same class of lie `lib/wire.ts` exists for: the
+                         compiler agreeing with something that is not true at
+                         the boundary. Disabled narrowly rather than fixed,
+                         since the fix belongs upstream. */
+                      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- see above: TanStack Query types `variables` as non-optional, but it is undefined before the first mutate()
                       const email = signIn.variables?.email;
+                      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- see above
                       if (email !== undefined) resendVerification.mutate(email);
                     }}
                   >

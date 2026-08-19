@@ -53,6 +53,19 @@ interface TypeRule {
    * each other or from a plain `.zip`.
    */
   readonly refine?: (prefix: Uint8Array) => boolean;
+  /**
+   * Whether a USER may attach a file of this type (`ACCEPTED_CONTENT_TYPES`).
+   *
+   * Defaults to true, and exists for the one type where the two questions
+   * come apart. "Can this system verify these bytes against this declared
+   * type" and "may a person upload one to a card" are different questions,
+   * and they were the same field until call recordings needed the first
+   * without the second: the WebM types are produced by the server's own
+   * recording flow, never chosen by an uploader, and adding them to the
+   * attachment allowlist as a side effect of teaching the scanner about them
+   * would have widened a product surface from inside a security fix.
+   */
+  readonly attachable?: boolean;
 }
 
 /**
@@ -76,6 +89,18 @@ const ZIP_SIGNATURES: readonly Signature[] = [
   { bytes: [0x50, 0x4b, 0x05, 0x06], offset: 0 },
   { bytes: [0x50, 0x4b, 0x07, 0x08], offset: 0 },
 ];
+
+/**
+ * WebM/EBML, shared by the `audio/webm` and `video/webm` entries below.
+ *
+ * `attachable: false` on both: these are produced by the server's own call
+ * recording flow, never chosen by an uploader. See `TypeRule.attachable`.
+ */
+const WEBM_RULE: TypeRule = {
+  signatures: [{ bytes: [0x1a, 0x45, 0xdf, 0xa3], offset: 0 }],
+  refine: (prefix) => containsMarker(prefix, ascii('webm')),
+  attachable: false,
+};
 
 /**
  * The accepted types.
@@ -110,6 +135,29 @@ const TYPE_RULES: Readonly<Record<string, TypeRule>> = {
   'application/pdf': {
     signatures: [{ bytes: ascii('%PDF-'), offset: 0 }],
   },
+  /**
+   * WebM, the container a browser's `MediaRecorder` produces for an in-app
+   * call recording (`apps/web/src/features/rtc/call-recorder.ts`).
+   *
+   * BOTH spellings, sharing one rule. The mesh is audio-only today, so
+   * `MediaRecorder` emits `audio/webm` and that is what `rtc.recordings`
+   * stores; `video/webm` is the same EBML container and is what the same code
+   * will emit the day video ships (ai/phase-13-webrtc.md's own "still not
+   * done" list). Registering only the video spelling would have failed every
+   * real recording — the scanner would have found no rule for `audio/webm`,
+   * rejected it, and marked each capture `failed`.
+   *
+   * The signature is the EBML header — `1A 45 DF A3` — which WebM shares with
+   * Matroska, since WebM is a profile of it. Refined by looking for the
+   * `webm` DocType marker anywhere in the prefix rather than at a fixed
+   * offset: the EBML header's fields are variable-length, so the marker's
+   * position moves with the encoder that wrote it. Weaker than a fixed-offset
+   * check, stronger than the four-byte header alone (which would accept any
+   * Matroska file), and the virus scan is the layer that does not care about
+   * container semantics either way.
+   */
+  'audio/webm': WEBM_RULE,
+  'video/webm': WEBM_RULE,
   'application/zip': {
     signatures: ZIP_SIGNATURES,
   },
@@ -151,10 +199,17 @@ const TYPE_RULES: Readonly<Record<string, TypeRule>> = {
 };
 
 /** Every content type an upload may declare. */
-export const ACCEPTED_CONTENT_TYPES: readonly string[] = Object.keys(TYPE_RULES);
+/**
+ * The types a USER may upload as an attachment.
+ *
+ * A subset of what `verifyMagicBytes` can check — see `TypeRule.attachable`.
+ */
+export const ACCEPTED_CONTENT_TYPES: readonly string[] = Object.entries(TYPE_RULES)
+  .filter(([, rule]) => rule.attachable !== false)
+  .map(([contentType]) => contentType);
 
 export function isAcceptedContentType(contentType: string): boolean {
-  return Object.hasOwn(TYPE_RULES, contentType);
+  return Object.hasOwn(TYPE_RULES, contentType) && TYPE_RULES[contentType]?.attachable !== false;
 }
 
 /**
@@ -185,6 +240,31 @@ function matches(prefix: Uint8Array, signature: Signature): boolean {
     if (prefix[signature.offset + index] !== byte) return false;
   }
   return true;
+}
+
+/**
+ * Whether a byte sequence appears anywhere in the prefix.
+ *
+ * For formats whose distinguishing marker sits at a position the container
+ * itself decides — EBML's DocType, whose offset moves with the variable-length
+ * fields ahead of it. Scanning is deliberately confined to the prefix
+ * (`MAGIC_BYTE_PREFIX_LENGTH`), so this stays a bounded read over bytes the
+ * caller has already fetched, not a search of the whole object.
+ */
+function containsMarker(prefix: Uint8Array, marker: readonly number[]): boolean {
+  if (marker.length === 0 || prefix.length < marker.length) return false;
+
+  for (let start = 0; start <= prefix.length - marker.length; start += 1) {
+    let hit = true;
+    for (const [index, byte] of marker.entries()) {
+      if (prefix[start + index] !== byte) {
+        hit = false;
+        break;
+      }
+    }
+    if (hit) return true;
+  }
+  return false;
 }
 
 export interface SniffResult {

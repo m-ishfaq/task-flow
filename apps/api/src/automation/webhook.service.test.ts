@@ -155,7 +155,7 @@ describe('the registry', () => {
     /* The one guarantee the whole signing design leans on. */
     expect(isTokenKind(result.signingSecret, 'webhookSigning')).toBe(true);
 
-    const [webhook] = await listWebhooks(owner);
+    const [webhook] = (await listWebhooks(owner)).webhooks;
     expect(webhook?.name).toBe('Releases');
     expect(webhook?.url).toBe(URL);
     expect(webhook?.enabled).toBe(true);
@@ -208,7 +208,7 @@ describe('the registry', () => {
       url: 'https://hooks.example.test/after',
     });
 
-    const [webhook] = await listWebhooks(owner);
+    const [webhook] = (await listWebhooks(owner)).webhooks;
     expect(webhook?.name).toBe('After');
     expect(webhook?.url).toBe('https://hooks.example.test/after');
   });
@@ -218,7 +218,7 @@ describe('the registry', () => {
     const { webhookId } = await createWebhook(owner, { name: 'Kill', url: URL }, keys);
 
     await setWebhookEnabled(owner, { webhookId, enabled: false });
-    const [off] = await listWebhooks(owner);
+    const [off] = (await listWebhooks(owner)).webhooks;
     expect(off?.enabled).toBe(false);
 
     /* Simulate the wound the loop records, then re-enable: a person deciding
@@ -231,7 +231,7 @@ describe('the registry', () => {
     await admin.setOrg(null);
 
     await setWebhookEnabled(owner, { webhookId, enabled: true });
-    const [on] = await listWebhooks(owner);
+    const [on] = (await listWebhooks(owner)).webhooks;
     expect(on?.enabled).toBe(true);
     expect(on?.failureCount).toBe(0);
     expect(on?.disabledAt).toBeNull();
@@ -247,7 +247,7 @@ describe('the registry', () => {
     });
     await deleteWebhook(owner, { webhookId });
 
-    const remaining = await listWebhooks(owner);
+    const { webhooks: remaining } = await listWebhooks(owner);
     expect(remaining).toHaveLength(0);
     const deliveries = await listWebhookDeliveries(owner, { webhookId, limit: 10 });
     expect(deliveries).toHaveLength(0);

@@ -45,6 +45,8 @@ export interface ApiTokenSummary {
   readonly lastUsedAt: Date | null;
   readonly revokedAt: Date | null;
   readonly createdAt: Date;
+  /** When the token stops authenticating; null = never expires (§6.3, 0079). */
+  readonly expiresAt: Date | null;
 }
 
 /**
@@ -70,6 +72,7 @@ export async function listApiTokens(actor: ApiTokenActor): Promise<readonly ApiT
         lastUsedAt: schema.apiTokens.lastUsedAt,
         revokedAt: schema.apiTokens.revokedAt,
         createdAt: schema.apiTokens.createdAt,
+        expiresAt: schema.apiTokens.expiresAt,
       })
       .from(schema.apiTokens)
       .where(eq(schema.apiTokens.orgId, orgOf(actor)))
@@ -101,12 +104,29 @@ export async function listApiTokens(actor: ApiTokenActor): Promise<readonly ApiT
  */
 export async function mintApiToken(
   actor: ApiTokenActor,
-  input: { readonly name: string; readonly scopes: readonly string[] },
+  input: {
+    readonly name: string;
+    readonly scopes: readonly string[];
+    /* An optional lifetime, in days. Omitted means a token that never expires
+       — an explicit choice, not a default (§6.3, migration 0079). The lifetime
+       is a DURATION rather than an absolute timestamp so the expiry is computed
+       from the server clock: a client cannot mint a token that outlives what it
+       asked for by lying about the time. */
+    readonly expiresInDays?: number | undefined;
+  },
 ): Promise<{ readonly tokenId: string; readonly token: string }> {
   /* Deduped so a token cannot claim the same capability twice — a duplicate
      is not a security hole, it is a row that lies about what the credential
      holds. */
   const scopes = [...new Set(input.scopes)];
+
+  /* Computed here, from the server's own clock, so the stored expiry is
+     authoritative. The route bounds the day count; this only turns it into the
+     instant the auth lookup compares against. */
+  const expiresAt =
+    input.expiresInDays === undefined
+      ? null
+      : new Date(Date.now() + input.expiresInDays * 24 * 60 * 60 * 1000);
 
   for (const scope of scopes) {
     if (!isPermission(scope)) {
@@ -143,6 +163,7 @@ export async function mintApiToken(
       tokenHash: issued.hash,
       tokenPrefix,
       scopes,
+      expiresAt,
     });
 
     await outboxWriter.append(tx, [
