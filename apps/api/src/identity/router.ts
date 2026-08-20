@@ -185,16 +185,11 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
      * ends up without rotation or reuse detection, which this deliberately
      * avoids.
      *
-     * NOT YET channel-bound: a refresh token is looked up by hash and its record
-     * does not yet record which channel minted it, so a browser-minted token
-     * presented HERE would be accepted and rotated into the body. That is not a
-     * new browser-token-exposure path — the browser keeps its refresh token in an
-     * httpOnly cookie that script cannot read, so an XSS cannot obtain the raw
-     * token to present here, and anyone already holding the raw token already
-     * holds the account. Binding the token to its channel (a DB column refusing
-     * the cross-channel case) is the next step; it is defence-in-depth and schema
-     * work on the sessions table, done with the database up so migrate:verify and
-     * the real integration suite can prove it.
+     * Channel-bound (migration 0080, ai/phase-14-mobile.md §4.3 part 2):
+     * `identity.sessions.channel` records which of these routes minted the
+     * session, and `identity.refresh` refuses a presented token whose stored
+     * channel does not match the route it was presented to — a browser-minted
+     * token can no longer be rotated into a native body, or vice versa.
      */
     native: router({
       login: publicRoute({
@@ -276,6 +271,70 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
               'native',
             );
             return nativeSession(pair);
+          }),
+      }),
+
+      /**
+       * The native counterpart of `auth.oauth.start`/`callback`
+       * (ai/phase-14-mobile.md §4.4) — sign-in only, no `startLink`: linking a
+       * new provider to an already-signed-in account is an account-settings
+       * action, and Wave 1's mobile scope is sign-in, not account management.
+       *
+       * `start` is unauthenticated for the same reason `auth.native.login` is:
+       * this is how a session is obtained. Its `channel: 'native'` is what
+       * `oauth.service.ts`'s `start` uses to sign a state token carrying
+       * `channel: 'native'` and to resolve the NATIVE redirect URI/credentials
+       * — a custom-scheme `taskflow://oauth-callback` deep link and, for
+       * Google, a distinct public client with no secret (§4.4's own
+       * reasoning). The mobile app opens `authorizationUrl` in a system
+       * browser session and parses `code`/`state` back out of the redirect.
+       */
+      oauth: router({
+        /**
+         * Which providers this server has NATIVE credentials for — a
+         * separate answer from `auth.oauth.providers` (browser), since
+         * `nativeProviders` is a separate map (§4.4): a deployment can have
+         * Google configured for the web and nothing for native, and the
+         * sign-in screen must show no button for a provider it cannot
+         * complete rather than one that always ends in `NOT_FOUND`.
+         */
+        providers: publicRoute({
+          publicReason: 'Read from the sign-in screen, before any session exists.',
+        })
+          .output(z.object({ google: z.boolean(), github: z.boolean() }))
+          .query(() => ({
+            google: 'google' in oauthDeps.nativeProviders,
+            github: 'github' in oauthDeps.nativeProviders,
+          })),
+
+        start: publicRoute({
+          publicReason: 'This is how a session is obtained — the same reason auth.login is public.',
+        })
+          .input(z.object({ provider: OAuthProviderSchema }).strict())
+          .output(z.object({ authorizationUrl: z.string() }))
+          .mutation(({ input }) =>
+            oauth.start(oauthDeps, { provider: input.provider, channel: 'native' }),
+          ),
+
+        callback: publicRoute({
+          publicReason:
+            'Reached after the system-browser redirect, with no session — the signed state token carries whatever context the flow needs.',
+        })
+          .input(
+            z
+              .object({ provider: OAuthProviderSchema, code: z.string(), state: z.string() })
+              .strict(),
+          )
+          .output(
+            z.discriminatedUnion('kind', [
+              NativeSessionResponse.extend({ kind: z.literal('session') }),
+              z.object({ kind: z.literal('linked'), provider: OAuthProviderSchema }).strict(),
+            ]),
+          )
+          .mutation(async ({ input, ctx }) => {
+            const result = await oauth.callback(oauthDeps, input, meta(ctx));
+            if (result.kind === 'linked') return result;
+            return { kind: 'session' as const, ...nativeSession(result.pair) };
           }),
       }),
     }),

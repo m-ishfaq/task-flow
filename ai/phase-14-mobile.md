@@ -191,9 +191,12 @@ it is the part of the phase the author reads every line of before merge.
 
 - **Password + TOTP:** the existing flow. Login can return the `totp_required` challenge (Phase 12
   Wave 2 shipped it) and the native UI collects the code — no server change.
-- **OAuth (Google/GitHub):** `expo-auth-session` with **PKCE** in the **system browser**, redirect
-  to a registered app scheme / universal link. Never an embedded WebView (§3). The provider
-  secrets stay server-side exactly as they are; the app holds only a public client id.
+- **OAuth (Google/GitHub):** `expo-web-browser`'s `openAuthSessionAsync` with **PKCE** in the
+  **system browser**, redirect to a registered app scheme (§12 decision 6 — built in Wave 1, not
+  1b; the PKCE verifier is minted and signed into `state` server-side, so the app never generates
+  or sees one). Never an embedded WebView (§3). The provider secrets stay server-side exactly as
+  they are, and the app holds no client id at all — `start` returns a fully-assembled authorization
+  URL.
 - **Passkeys (Wave 1b):** native platform authenticators — `ASAuthorization` passkeys on iOS,
   Credential Manager on Android — over the same server ceremony endpoints. This is genuinely
   _better_ than the web, where the browser ceremony is still deferred (`ai/passkey-browser-
@@ -363,15 +366,16 @@ content rides in a push body.
 ## 10. Build, release, and the "no secret in the bundle" rule
 
 - **EAS Build** for signed iOS/Android artifacts, with three channels (dev / preview / prod) whose
-  API base URL and public OAuth client ids differ per channel and are validated at boot.
+  API base URL differs per channel and is validated at boot.
 - **A mobile bundle is fully extractable — treat it like published output.** This is the exact
   analogue of the Artifact rule that a self-contained page holds no secret: anything shipped in the
-  app binary is readable by anyone who downloads it. So the app holds **only public** values —
-  public OAuth client ids, the API base URL, the TURN _server_ address. Twilio credentials, OAuth
-  client _secrets_, signing keys, the TURN shared secret — all stay server-side, and TURN
-  credentials stay server-minted and short-lived. A CI check that greps the bundle/config for
-  known-secret shapes is the mobile sibling of `pnpm check:encoding`: cheaper to prevent than to
-  rotate after a leak.
+  app binary is readable by anyone who downloads it. So the app holds **only public** values — the
+  API base URL, the TURN _server_ address. OAuth turned out to need none at all (§12 decision 6):
+  `start` returns a fully-assembled authorization URL with its client id embedded server-side, so
+  there is no public OAuth id in the bundle to name here. Twilio credentials, OAuth client
+  _secrets_, signing keys, the TURN shared secret — all stay server-side, and TURN credentials stay
+  server-minted and short-lived. A CI check that greps the bundle/config for known-secret shapes is
+  the mobile sibling of `pnpm check:encoding`: cheaper to prevent than to rotate after a leak.
 - **Signing keys live in EAS, not the repo.** A contributor can trigger a build without ever
   holding the distribution certificate — the managed-service reason from §3 made concrete.
 - **OTA JS updates (`expo-updates`)** are allowed for JS-only changes, but **never** carry a
@@ -411,11 +415,11 @@ Phases 5, 7, 8 and 12 — here it would just be easier to make and harder to not
 
 ## 12. Decisions to resolve at review
 
-Four of the five below are now resolved — two (1, 2) by what had already shipped before this
+Five of the six below are now resolved — two (1, 2) by what had already shipped before this
 section caught up, recorded here rather than left to read as still-open questions the code had
 already answered (the same "status marker is a claim, not a fact" habit CLAUDE.md documents for
-Phases 3.5, 5 and 8); two more (3, 4) resolved at review and then built. Only 5 remains genuinely
-open, deferred to Wave 5 on purpose.
+Phases 3.5, 5 and 8); three more (3, 4, 6) resolved at review and then built. Only 5 remains
+genuinely open, deferred to Wave 5 on purpose.
 
 1. **Native auth transport shape (§4.3) — RESOLVED: a separate `auth.native.*` procedure
    namespace.** Shipped in the increment that added `NativeSessionResponse` and the
@@ -465,6 +469,33 @@ open, deferred to Wave 5 on purpose.
 5. **Expo managed vs bare / prebuild.** Managed keeps the config surface small; some native modules
    (CallKit, certain WebRTC setups) push toward prebuild/config-plugins. The draft assumes managed
    with config plugins and revisits at Wave 5.
+6. **OAuth (§4.4) — RESOLVED: built now, not deferred to 1b.** This section originally read OAuth
+   as grouped with the other Wave-1b-tagged factors below it; re-checking §2 and the file map found
+   neither actually tags it that way — §2's own scope line lists "password + TOTP + OAuth" with only
+   passkeys called out "named for Wave 1b" — so shipping it closed an actual Wave 1 gap, not early
+   1b work. Two implementation details differ from this section's original text, both because the
+   server-side design turned out to make them unnecessary rather than because they were wrong to
+   plan: it names `expo-auth-session`; the shipped code uses `expo-web-browser`'s
+   `openAuthSessionAsync` directly, which is the lighter primitive `expo-auth-session` itself wraps
+   for a custom-scheme redirect, and needs no PKCE bookkeeping on the client at all, because
+   `auth.native.oauth.start` mints the verifier and signs it into `state` server-side (the same
+   `signOAuthState`/`verifyOAuthState` the browser path already uses) — the app never generates,
+   stores, or sees the verifier. And "the app holds only a public client id" turned out to overstate
+   what the app needs: `start` returns a fully-assembled `authorizationUrl` with the client id
+   already embedded server-side, so `config.ts` gained no OAuth field at all, and there is nothing
+   client-config-shaped for `check-mobile-bundle-secrets.mjs` to allowlist for this feature.
+   `apps/api/src/identity/oauth.service.ts`'s `OAuthDeps` gained a SEPARATE `nativeProviders` map
+   (not a reuse of the browser `providers` map): Google's native client is a distinct, secret-less
+   "installed application" registration — a "Web application" client cannot use a custom-scheme
+   redirect at all — while GitHub's is a second, dedicated OAuth App whose one callback URL is the
+   native deep link, kept apart from the browser app's HTTPS callback rather than assuming GitHub's
+   callback-URL matching would accept both on one registration, a claim this deployment has not
+   verified against a live app. Also RESOLVED, the same session: no `(auth)/oauth-callback` route
+   exists, and none is needed — `openAuthSessionAsync`'s native module intercepts the provider's
+   redirect directly (an `ASWebAuthenticationSession` on iOS, a Custom Tab + intent filter on
+   Android) and resolves its promise with the redirect URL before expo-router's own deep-link
+   handling would ever see it, so a route file at that path would simply never be visited. The file
+   map below is corrected to match.
 
 ---
 
@@ -477,13 +508,20 @@ here rather than silently folded into the original list.
 
 ```
 apps/mobile/
-  app/                      expo-router routes: splash, (auth)/sign-in, (auth)/oauth-callback,
-                            (app)/org-picker, (app)/home  ← placeholder home, proves the spine
+  app/                      expo-router routes: splash, (auth)/sign-in, (app)/org-picker,
+                            (app)/home  ← placeholder home, proves the spine. No
+                            (auth)/oauth-callback route (§12 decision 6) —
+                            `expo-web-browser`'s `openAuthSessionAsync` intercepts the
+                            provider's redirect before expo-router's deep-link handling
+                            would ever see it
   src/lib/
     trpc-client.ts          the batched tRPC client, header bearer (§5)
     session.ts              Zustand store + single-flight refresh, refresh token in SecureStore (§4)
     secure-store.ts         the ONE SecureStore wrapper; the only credential-writer (§6.2)
-    config.ts               per-channel API base URL + public OAuth ids, validated at boot
+    oauth.ts                OAuth constants + the redirect-URL parser (§4.4, §12 decision 6) —
+                            no OAuth field in config.ts: `start` returns a fully-assembled
+                            authorization URL, so the app never holds a client id at all
+    config.ts               per-channel API base URL, validated at boot
     socket.ts               the realtime handshake + reconnect-replay (ported, §8)
     org-gate.ts             validate remembered org vs tenancy.orgs.list before render (§7)
   app.config.ts             Expo config, schemes, associated domains (passkeys/OAuth deep links)

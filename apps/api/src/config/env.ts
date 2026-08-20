@@ -176,6 +176,16 @@ export const EnvSchema = z
     GITHUB_CLIENT_ID: OptionalNonEmpty,
     GITHUB_CLIENT_SECRET: OptionalNonEmpty,
 
+    /* The NATIVE (mobile) counterpart (ai/phase-14-mobile.md §4.4) — a
+       SEPARATE provider registration, not the pair above reused. Google's
+       native client is a public/installed-app type with no secret to
+       configure (`NativeOAuthProviderCredentials`'s own comment in
+       oauth.service.ts); GitHub's is a second, dedicated OAuth App whose one
+       callback URL is the native deep link, so it still carries a secret. */
+    GOOGLE_NATIVE_CLIENT_ID: OptionalNonEmpty,
+    GITHUB_NATIVE_CLIENT_ID: OptionalNonEmpty,
+    GITHUB_NATIVE_CLIENT_SECRET: OptionalNonEmpty,
+
     MASTER_KEY_ID: NonEmpty,
     MASTER_KEY_BASE64: Base64Key,
     JWT_SECRET: Base64Key,
@@ -639,6 +649,9 @@ const KNOWN_VARIABLES = new Set([
   'GOOGLE_CLIENT_SECRET',
   'GITHUB_CLIENT_ID',
   'GITHUB_CLIENT_SECRET',
+  'GOOGLE_NATIVE_CLIENT_ID',
+  'GITHUB_NATIVE_CLIENT_ID',
+  'GITHUB_NATIVE_CLIENT_SECRET',
   'MASTER_KEY_ID',
   'MASTER_KEY_BASE64',
   'JWT_SECRET',

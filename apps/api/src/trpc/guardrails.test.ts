@@ -287,6 +287,15 @@ describe('the real application router', () => {
          the `native` block in identity/router.ts. */
       'auth.native.login',
       'auth.native.logout',
+      /* The native counterpart of the OAuth block below (ai/phase-14-mobile.md
+         §4.4) — public for the identical reason, minted through a system
+         browser session rather than a page redirect. `providers` answers
+         which providers have NATIVE credentials configured, a separate
+         question from the browser `auth.oauth.providers` below it, since
+         `nativeProviders` is its own map on the server. */
+      'auth.native.oauth.callback',
+      'auth.native.oauth.providers',
+      'auth.native.oauth.start',
       'auth.native.refresh',
       'auth.native.totp.verifyLogin',
       /* OAuth sign-in (Phase 12 Wave 2 §3.3). Both public for the same reason

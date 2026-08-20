@@ -9,6 +9,7 @@ import {
   verifyOAuthState,
   type OAuthStateClaims,
 } from '@taskflow/security';
+import type { SessionChannel } from '@taskflow/db';
 import * as repo from './repository.js';
 import { countCredentials } from './passkey.repository.js';
 import * as identityEvents from './events.js';
@@ -50,11 +51,43 @@ export interface OAuthProviderCredentials {
   readonly clientSecret: string;
 }
 
+/**
+ * A native (phone) client's credentials for one provider — a DIFFERENT shape
+ * than the browser's, not a reuse of it (ai/phase-14-mobile.md §4.4).
+ *
+ * Google's redirect-URI policy is the reason: a "Web application" OAuth
+ * client cannot use a custom-scheme redirect (`taskflow://oauth-callback`)
+ * at all, so native needs its own client registered as a public, installed-app
+ * type — which Google issues with NO secret, because a secret embedded in a
+ * distributed binary secures nothing (§10's "no secret in the bundle", the
+ * same argument this codebase already makes about EAS build config). PKCE
+ * (already wired for every provider below) is what stands in for it, per
+ * RFC 7636.
+ *
+ * GitHub has no such public client type — its OAuth Apps always exchange a
+ * code for a confidential secret, PKCE or not — so its native credentials
+ * still carry one. That secret never reaches the phone: exactly as the
+ * browser flow already works, the code is exchanged HERE, on the server, and
+ * only the resulting session crosses to the client. A dedicated native
+ * GitHub OAuth App (its own client id/secret, `taskflow://oauth-callback` as
+ * its one registered callback) is used rather than reusing the browser app's
+ * credentials, because GitHub's callback-URL matching for a second, custom
+ * scheme alongside an existing HTTPS one is not something this deployment
+ * has verified against a live app — a second registration sidesteps the
+ * question entirely rather than assuming an answer.
+ */
+export interface NativeOAuthProviderCredentials {
+  readonly clientId: string;
+  readonly clientSecret?: string;
+}
+
 export interface OAuthDeps {
   readonly identity: IdentityDeps;
   /** Absent entry = that provider is not configured; its routes refuse rather than the app failing to boot. */
   readonly providers: Partial<Record<OAuthProvider, OAuthProviderCredentials>>;
-  readonly redirectUri: (provider: OAuthProvider) => string;
+  /** Absent entry = native sign-in with that provider is not configured, same fail-closed shape as `providers`. */
+  readonly nativeProviders: Partial<Record<OAuthProvider, NativeOAuthProviderCredentials>>;
+  readonly redirectUri: (provider: OAuthProvider, channel: SessionChannel) => string;
   /** Injectable so tests never make a real network call. Defaults to the global `fetch`. */
   readonly fetchImpl?: typeof fetch;
   /** Injectable so tests verify a real, locally-signed token instead of Google's real JWKS. */
@@ -63,8 +96,13 @@ export interface OAuthDeps {
 
 const clock = (deps: OAuthDeps): Date => (deps.identity.now ?? (() => new Date()))();
 
-function credentialsFor(deps: OAuthDeps, provider: OAuthProvider): OAuthProviderCredentials {
-  const credentials = deps.providers[provider];
+function credentialsFor(
+  deps: OAuthDeps,
+  provider: OAuthProvider,
+  channel: SessionChannel,
+): OAuthProviderCredentials | NativeOAuthProviderCredentials {
+  const credentials =
+    channel === 'native' ? deps.nativeProviders[provider] : deps.providers[provider];
   if (!credentials) {
     throw errors.notFound(`OAuth sign-in with ${provider} is not configured on this server.`);
   }
@@ -99,9 +137,10 @@ export interface StartResult {
 
 export async function start(
   deps: OAuthDeps,
-  input: { provider: OAuthProvider; linkUserId?: string },
+  input: { provider: OAuthProvider; linkUserId?: string; channel?: SessionChannel },
 ): Promise<StartResult> {
-  const credentials = credentialsFor(deps, input.provider);
+  const channel = input.channel ?? 'browser';
+  const credentials = credentialsFor(deps, input.provider, channel);
   const { verifier, challenge } = generatePkcePair();
 
   const state = await signOAuthState(
@@ -109,11 +148,12 @@ export async function start(
       provider: input.provider,
       codeVerifier: verifier,
       ...(input.linkUserId === undefined ? {} : { linkUserId: input.linkUserId }),
+      ...(channel === 'native' ? { channel } : {}),
     },
     { secret: deps.identity.config.jwtSecret },
   );
 
-  const redirectUri = deps.redirectUri(input.provider);
+  const redirectUri = deps.redirectUri(input.provider, channel);
   const url =
     input.provider === 'google'
       ? googleAuthorizationUrl(credentials.clientId, redirectUri, state, challenge)
@@ -164,8 +204,9 @@ export async function callback(
   input: { provider: OAuthProvider; code: string; state: string },
   meta: { ip: string | null; userAgent: string | null },
 ): Promise<OAuthCallbackResult> {
-  const credentials = credentialsFor(deps, input.provider);
   const state = await verifyState(input.state, deps.identity.config.jwtSecret);
+  const channel: SessionChannel = state.channel === 'native' ? 'native' : 'browser';
+  const credentials = credentialsFor(deps, input.provider, channel);
 
   if (state.provider !== input.provider) {
     // The `state` was minted for a different provider than the callback URL
@@ -173,7 +214,7 @@ export async function callback(
     throw errors.validation({ state: 'This sign-in attempt does not match its provider.' });
   }
 
-  const found = await resolveProviderIdentity(deps, input.provider, credentials, {
+  const found = await resolveProviderIdentity(deps, input.provider, credentials, channel, {
     code: input.code,
     codeVerifier: state.codeVerifier,
   });
@@ -182,7 +223,7 @@ export async function callback(
   if (state.linkUserId !== undefined) {
     return linkToExistingAccount(deps, state.linkUserId, input.provider, found, now);
   }
-  return signInOrCreateAccount(deps, input.provider, found, now, meta);
+  return signInOrCreateAccount(deps, input.provider, found, now, meta, channel);
 }
 
 interface ProviderIdentity {
@@ -193,17 +234,19 @@ interface ProviderIdentity {
 async function resolveProviderIdentity(
   deps: OAuthDeps,
   provider: OAuthProvider,
-  credentials: OAuthProviderCredentials,
+  credentials: OAuthProviderCredentials | NativeOAuthProviderCredentials,
+  channel: SessionChannel,
   code: { code: string; codeVerifier: string },
 ): Promise<ProviderIdentity> {
   return provider === 'google'
-    ? resolveGoogleIdentity(deps, credentials, code)
-    : resolveGithubIdentity(deps, credentials, code.code);
+    ? resolveGoogleIdentity(deps, credentials, channel, code)
+    : resolveGithubIdentity(deps, credentials, channel, code.code);
 }
 
 async function resolveGoogleIdentity(
   deps: OAuthDeps,
-  credentials: OAuthProviderCredentials,
+  credentials: OAuthProviderCredentials | NativeOAuthProviderCredentials,
+  channel: SessionChannel,
   code: { code: string; codeVerifier: string },
 ): Promise<ProviderIdentity> {
   const fetchFn = deps.fetchImpl ?? fetch;
@@ -213,8 +256,13 @@ async function resolveGoogleIdentity(
     body: new URLSearchParams({
       code: code.code,
       client_id: credentials.clientId,
-      client_secret: credentials.clientSecret,
-      redirect_uri: deps.redirectUri('google'),
+      // Google's native (public) client type has no secret — see
+      // `NativeOAuthProviderCredentials`'s own comment. PKCE's `code_verifier`
+      // below is what the token endpoint checks instead.
+      ...(credentials.clientSecret === undefined
+        ? {}
+        : { client_secret: credentials.clientSecret }),
+      redirect_uri: deps.redirectUri('google', channel),
       grant_type: 'authorization_code',
       code_verifier: code.codeVerifier,
     }).toString(),
@@ -238,10 +286,19 @@ const GITHUB_HEADERS = { accept: 'application/vnd.github+json', 'user-agent': 'T
 
 async function resolveGithubIdentity(
   deps: OAuthDeps,
-  credentials: OAuthProviderCredentials,
+  credentials: OAuthProviderCredentials | NativeOAuthProviderCredentials,
+  channel: SessionChannel,
   code: string,
 ): Promise<ProviderIdentity> {
   const fetchFn = deps.fetchImpl ?? fetch;
+
+  if (credentials.clientSecret === undefined) {
+    // GitHub's OAuth Apps have no public/secret-less client type (unlike
+    // Google's) — reaching here means `nativeProviders.github` was
+    // registered with an id but no secret, a misconfiguration rather than a
+    // real "not configured" (credentialsFor already refuses the latter).
+    throw errors.notFound(`OAuth sign-in with github is not configured on this server.`);
+  }
 
   const tokenResponse = await fetchFn('https://github.com/login/oauth/access_token', {
     method: 'POST',
@@ -250,7 +307,7 @@ async function resolveGithubIdentity(
       code,
       client_id: credentials.clientId,
       client_secret: credentials.clientSecret,
-      redirect_uri: deps.redirectUri('github'),
+      redirect_uri: deps.redirectUri('github', channel),
     }).toString(),
   });
   if (!tokenResponse.ok) {
@@ -348,10 +405,11 @@ async function signInOrCreateAccount(
   found: ProviderIdentity,
   now: Date,
   meta: { ip: string | null; userAgent: string | null },
+  channel: SessionChannel,
 ): Promise<OAuthCallbackResult> {
   const existingLink = await repo.findOAuthIdentity(provider, found.subject);
   if (existingLink) {
-    return sessionFor(deps, existingLink.userId, provider, now, meta);
+    return sessionFor(deps, existingLink.userId, provider, now, meta, channel);
   }
 
   const existingUser = await repo.findUserByEmail(found.email);
@@ -375,7 +433,7 @@ async function signInOrCreateAccount(
         ),
       ]);
     }
-    return sessionFor(deps, existingUser.id, provider, now, meta);
+    return sessionFor(deps, existingUser.id, provider, now, meta, channel);
   }
 
   const userId = newId<'UserId'>();
@@ -395,7 +453,7 @@ async function signInOrCreateAccount(
     // attempt over unlucky timing.
     const raceWinner = await repo.findUserByEmail(found.email);
     if (!raceWinner) throw errors.conflict('Could not complete sign-in. Try again.');
-    return sessionFor(deps, raceWinner.id, provider, now, meta);
+    return sessionFor(deps, raceWinner.id, provider, now, meta, channel);
   }
 
   await deps.identity.events.publish([
@@ -411,7 +469,7 @@ async function signInOrCreateAccount(
     ),
   ]);
 
-  return sessionFor(deps, userId, provider, now, meta);
+  return sessionFor(deps, userId, provider, now, meta, channel);
 }
 
 async function sessionFor(
@@ -420,6 +478,7 @@ async function sessionFor(
   provider: OAuthProvider,
   now: Date,
   meta: { ip: string | null; userAgent: string | null },
+  channel: SessionChannel,
 ): Promise<OAuthCallbackResult> {
   const user = await repo.findUserById(userId);
   if (user?.status !== 'active') {
@@ -428,10 +487,12 @@ async function sessionFor(
     throw errors.invalidCredentials();
   }
 
-  // OAuth is a browser redirect flow; a native OAuth path (PKCE + deep link) is
-  // a later increment (ai/phase-14-mobile.md §4.4), so this mints a browser
-  // session — the channel binding refuses its token on the native refresh route.
-  const pair = await issueSession(deps.identity, userId, now, now, meta, 'browser');
+  // Minted on the SAME channel `callback` resolved from the signed state
+  // (§4.4) — never a bare 'browser' default here, unlike `login`/`refresh`'s
+  // fail-safe: an unrecognized or absent state channel already fell back to
+  // 'browser' when `callback` computed it, so by the time this runs the value
+  // is already the deliberate answer, not a value worth re-defaulting.
+  const pair = await issueSession(deps.identity, userId, now, now, meta, channel);
 
   await deps.identity.events.publish([
     createEvent(
