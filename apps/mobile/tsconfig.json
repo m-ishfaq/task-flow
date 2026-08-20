@@ -1,0 +1,18 @@
+{
+  "extends": "@taskflow/config/tsconfig/node.json",
+  "compilerOptions": {
+    /* Wave 1 is the pure-TypeScript client spine (ai/phase-14-mobile.md §5): it
+       depends only on `@taskflow/*` types, `@trpc/client`, `zustand` and `zod`,
+       and touches no React Native or Expo runtime yet. So it type-checks against
+       Node's lib exactly like apps/worker — `fetch`, timers and `atob` are typed
+       from @types/node and exist in the Hermes runtime too. The Expo-shell
+       increment swaps this for the react-native / expo type surface when the
+       first native component lands; nothing in src/lib/ needs it before then.
+
+       noEmit, like apps/web: this is a leaf app, nothing imports from it, and
+       the tRPC client type refers to @taskflow/api internals that a declaration
+       emit could not name (react.json documents the same TS2742/TS4058 trap). */
+    "noEmit": true
+  },
+  "include": ["src/**/*"]
+}
