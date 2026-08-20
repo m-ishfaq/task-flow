@@ -2,7 +2,12 @@ import { z } from 'zod';
 import { errors } from '@taskflow/contracts';
 import { TRPCError } from '@trpc/server';
 import { publicRoute, router, selfRoute } from '../trpc/builder.js';
-import { SessionResponse, handOff } from './session-response.js';
+import {
+  NativeSessionResponse,
+  SessionResponse,
+  handOff,
+  nativeSession,
+} from './session-response.js';
 import { createPasskeyRouter } from './passkey.router.js';
 import type { PasskeyDeps } from './passkey.service.js';
 import type { IdentityDeps, RequestMeta } from './identity.service.js';
@@ -163,6 +168,114 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
         if (!ctx.refreshToken) return { status: 'ok' as const };
         return identity.logout(deps.identity, { refreshToken: ctx.refreshToken });
       }),
+
+    /**
+     * The NATIVE auth surface (ai/phase-14-mobile.md §4.3).
+     *
+     * A phone has no httpOnly cookie, so these routes deliver the refresh token
+     * in the response BODY (via `nativeSession`) and read it back from the
+     * request INPUT — never `ctx.refreshToken` (the cookie) and never
+     * `ctx.setRefreshCookie`. Kept a SEPARATE namespace from the browser routes
+     * above, with a SEPARATE output schema (`NativeSessionResponse`), so the two
+     * delivery mechanisms are structurally unable to cross: the browser body
+     * cannot gain a refresh token, and the native body cannot silently lose one.
+     * They reuse the SAME services (`identity.login/refresh/logout`,
+     * `totp.verifyLogin`) — two paths minting sessions differently is how one
+     * ends up without rotation or reuse detection, which this deliberately
+     * avoids.
+     *
+     * NOT YET channel-bound: a refresh token is looked up by hash and its record
+     * does not yet record which channel minted it, so a browser-minted token
+     * presented HERE would be accepted and rotated into the body. That is not a
+     * new browser-token-exposure path — the browser keeps its refresh token in an
+     * httpOnly cookie that script cannot read, so an XSS cannot obtain the raw
+     * token to present here, and anyone already holding the raw token already
+     * holds the account. Binding the token to its channel (a DB column refusing
+     * the cross-channel case) is the next step; it is defence-in-depth and schema
+     * work on the sessions table, done with the database up so migrate:verify and
+     * the real integration suite can prove it.
+     */
+    native: router({
+      login: publicRoute({
+        publicReason:
+          'The native counterpart of auth.login — how a phone obtains a session. No cookie, so the refresh token is returned in the body.',
+      })
+        .input(
+          z
+            .object({
+              email: Email,
+              password: Password,
+              name: z.string().trim().min(1).max(80).optional(),
+            })
+            .strict(),
+        )
+        .output(
+          z.discriminatedUnion('kind', [
+            NativeSessionResponse.extend({ kind: z.literal('session') }),
+            z.object({ kind: z.literal('totp_required'), challengeToken: z.string() }).strict(),
+          ]),
+        )
+        .mutation(async ({ input, ctx }) => {
+          const result = await identity.login(deps.identity, input, meta(ctx));
+          if (result.kind === 'totp_required') return result;
+          return { kind: 'session' as const, ...nativeSession(result.pair) };
+        }),
+
+      refresh: publicRoute({
+        publicReason:
+          'The native refresh: the phone presents its stored refresh token as input (it has no cookie) and receives a rotated pair in the body.',
+      })
+        .input(z.object({ refreshToken: z.string().min(1).max(1024) }).strict())
+        .output(NativeSessionResponse)
+        .mutation(async ({ input, ctx }) => {
+          const pair = await identity.refresh(
+            deps.identity,
+            { refreshToken: input.refreshToken },
+            meta(ctx),
+          );
+          return nativeSession(pair);
+        }),
+
+      logout: publicRoute({
+        publicReason:
+          'Ending a native session must work with an expired access token, the same as auth.logout — the phone presents its refresh token as input.',
+      })
+        .input(z.object({ refreshToken: z.string().min(1).max(1024) }).strict())
+        .output(z.object({ status: z.literal('ok') }))
+        .mutation(({ input }) =>
+          identity.logout(deps.identity, { refreshToken: input.refreshToken }),
+        ),
+
+      /** The native counterpart of auth.totp.verifyLogin — same challenge, body delivery. */
+      totp: router({
+        verifyLogin: publicRoute({
+          publicReason:
+            'The caller has no session yet — the signed challenge token is the proof the password step succeeded. Native delivery is body, not cookie.',
+        })
+          .input(
+            z
+              .object({
+                challengeToken: z.string(),
+                credential: z.discriminatedUnion('kind', [
+                  z.object({ kind: z.literal('totp'), code: z.string().min(6).max(10) }).strict(),
+                  z
+                    .object({ kind: z.literal('recovery'), code: z.string().min(6).max(20) })
+                    .strict(),
+                ]),
+              })
+              .strict(),
+          )
+          .output(NativeSessionResponse)
+          .mutation(async ({ input, ctx }) => {
+            const pair = await totp.verifyLogin(
+              totpDeps,
+              { challengeToken: input.challengeToken, credential: input.credential },
+              meta(ctx),
+            );
+            return nativeSession(pair);
+          }),
+      }),
+    }),
 
     requestPasswordReset: publicRoute({
       publicReason: 'Requested precisely because the caller cannot sign in.',
