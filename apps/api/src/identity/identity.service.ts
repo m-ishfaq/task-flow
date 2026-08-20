@@ -10,6 +10,7 @@ import {
   newId,
   signAccessToken,
   signTotpChallenge,
+  verifyDeviceSignature,
   verifyPassword,
   type BreachResult,
 } from '@taskflow/security';
@@ -422,7 +423,7 @@ export async function login(
  */
 export async function refresh(
   deps: IdentityDeps,
-  input: { refreshToken: string },
+  input: { refreshToken: string; deviceSignature?: string },
   meta: RequestMeta,
   /**
    * The channel of the route presenting the token; it must match the session's
@@ -446,6 +447,34 @@ export async function refresh(
      wrong-channel probe can never trigger a family-wide revocation of a real
      user's session. */
   if (found.channel !== expectedChannel) throw invalidSession();
+
+  /* Device binding (§4.5). A session with a bound key requires a signature
+     over the PRESENTED token from that key — proof this refresh is being
+     redeemed by the one device whose secure enclave / StrongBox minted the
+     key, not merely by whoever is holding the token. A session with no key
+     bound (predates this feature, or registration has not landed yet) is
+     unaffected: `devicePublicKey` is null and this branch does nothing,
+     exactly the behaviour before this feature existed.
+
+     Checked before reuse/rotation, same reasoning as the channel check
+     immediately above: a token holder who cannot produce a valid signature
+     must be refused before the token is treated as spent, or an attacker who
+     merely captured a token (never the private key) could burn it and force
+     the legitimate device into a reuse-triggered revocation of its own
+     session — turning the compensating control into a denial-of-service
+     against the user it protects. */
+  if (found.devicePublicKey !== null) {
+    if (
+      input.deviceSignature === undefined ||
+      !verifyDeviceSignature({
+        publicKey: found.devicePublicKey,
+        signature: input.deviceSignature,
+        data: input.refreshToken,
+      })
+    ) {
+      throw invalidSession();
+    }
+  }
 
   if (found.rotatedAt !== null) {
     await repo.revokeSession(found.sessionId, 'token_reuse', now);

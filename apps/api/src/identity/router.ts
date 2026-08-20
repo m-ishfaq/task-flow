@@ -221,12 +221,31 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
         publicReason:
           'The native refresh: the phone presents its stored refresh token as input (it has no cookie) and receives a rotated pair in the body.',
       })
-        .input(z.object({ refreshToken: z.string().min(1).max(1024) }).strict())
+        .input(
+          z
+            .object({
+              refreshToken: z.string().min(1).max(1024),
+              /**
+               * Base64 DER ECDSA-P256-SHA256 signature over `refreshToken`,
+               * from the session's bound device key (§4.5) — required only
+               * when `auth.native.deviceKey.register` has bound one; absent
+               * for every session that predates it. `identity.refresh()`
+               * decides which case applies, never this schema.
+               */
+              deviceSignature: z.string().min(1).max(1024).optional(),
+            })
+            .strict(),
+        )
         .output(NativeSessionResponse)
         .mutation(async ({ input, ctx }) => {
           const pair = await identity.refresh(
             deps.identity,
-            { refreshToken: input.refreshToken },
+            {
+              refreshToken: input.refreshToken,
+              ...(input.deviceSignature !== undefined
+                ? { deviceSignature: input.deviceSignature }
+                : {}),
+            },
             meta(ctx),
             'native',
           );
@@ -336,6 +355,39 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
             if (result.kind === 'linked') return result;
             return { kind: 'session' as const, ...nativeSession(result.pair) };
           }),
+      }),
+
+      /**
+       * Device binding (ai/phase-14-mobile.md §4.5) — a hardware-backed
+       * public key, bound to the CALLING session. `selfRoute`, not
+       * `publicRoute`: the whole point is that the caller has just proven
+       * they ARE this session (a fresh access token), and `sessions.
+       * registerDeviceKey` reads `sessionId` off that token rather than
+       * trusting anything the client names. Called once, right after any
+       * native login succeeds — see that function's own header for the
+       * conflict/idempotency shape.
+       */
+      deviceKey: router({
+        register: selfRoute({
+          selfReason:
+            'Binding a session to its own device key is an identity-slice operation with no org context — the same reason auth.native.sessions has none.',
+        })
+          .input(
+            z
+              .object({
+                publicKey: z.object({ x: z.string(), y: z.string() }).strict(),
+              })
+              .strict(),
+          )
+          .output(z.object({ status: z.literal('bound') }))
+          .mutation(({ input, ctx }) =>
+            sessions.registerDeviceKey(
+              deps.identity,
+              ctx.principal.userId,
+              ctx.principal.sessionId,
+              input.publicKey,
+            ),
+          ),
       }),
     }),
 

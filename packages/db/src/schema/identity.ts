@@ -128,6 +128,15 @@ export const sessions = identity.table(
      */
     channel: text('channel').notNull().default('browser').$type<SessionChannel>(),
 
+    /**
+     * The session's bound device key (migration 0081, §4.5) — the raw P-256
+     * point, base64url. NULL until `registerDeviceKey` binds one; `refresh()`
+     * requires a signature only when both are present.
+     */
+    devicePublicKeyX: text('device_public_key_x'),
+    devicePublicKeyY: text('device_public_key_y'),
+    deviceKeyRegisteredAt: timestamp('device_key_registered_at', { withTimezone: true }),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

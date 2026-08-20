@@ -1,5 +1,6 @@
-import { unsafeAsId } from '@taskflow/contracts';
+import { errors, unsafeAsId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
+import { isPlausibleDevicePublicKey, type DevicePublicKeyCoordinates } from '@taskflow/security';
 import * as repo from './repository.js';
 import * as identityEvents from './events.js';
 import { listSubscriptions, parseUserAgentLabel } from '../platform/push.js';
@@ -100,4 +101,79 @@ export async function revoke(
 
   void meta;
   return { status: 'revoked' };
+}
+
+/**
+ * Binds a device's hardware-backed public key to the CALLING session
+ * (ai/phase-14-mobile.md §4.5) — `sessionId`/`userId` come from the caller's
+ * own verified access token (`ctx.principal`), never from input, so there is
+ * no id to guess: a caller can only ever bind a key to the session they are
+ * currently running in.
+ *
+ * Called once, in practice, immediately after a native login succeeds.
+ * `identity.refresh()` then requires a signature from this key on every
+ * subsequent refresh of this session — see that function's own header for
+ * why a stolen token becomes useless without it.
+ *
+ * Native only: a browser session already has httpOnly working for it, so
+ * binding one would be inert (`refresh()`'s check only runs on the native
+ * route) and confusing to reason about — refused outright rather than
+ * silently accepted.
+ *
+ * Immutable once set: a second call with a DIFFERENT key is a conflict, not
+ * an update. There is no legitimate reason for a live session's binding to
+ * change, and allowing it would let a stolen access token re-point an
+ * existing, already-trusted session at an attacker's own key. A second call
+ * with the SAME key (a client retrying after a lost response) succeeds
+ * silently and does not re-emit the domain event — `deviceKeyRegisteredAt`
+ * being already-non-null on the read is what tells a retry apart from a
+ * first bind, without a second round trip through `repo.bindDeviceKey`.
+ */
+export async function registerDeviceKey(
+  deps: IdentityDeps,
+  userId: string,
+  sessionId: string,
+  publicKey: DevicePublicKeyCoordinates,
+): Promise<{ status: 'bound' }> {
+  if (!isPlausibleDevicePublicKey(publicKey)) {
+    throw errors.validation({ publicKey: 'Not a valid P-256 public key.' });
+  }
+
+  const session = await repo.findSessionForDeviceKey(userId, sessionId);
+  // The access token that reached this route already proved the caller IS
+  // this session; one that has vanished or been revoked since token issue is
+  // the same "nothing left to bind" case as it not existing at all.
+  if (session?.revokedAt !== null) {
+    throw errors.tokenExpired();
+  }
+
+  if (session.channel !== 'native') {
+    throw errors.validation({ channel: 'Device binding applies to native sessions only.' });
+  }
+
+  const alreadyBound = session.deviceKeyRegisteredAt !== null;
+  const now = clock(deps);
+  const bound = await repo.bindDeviceKey({
+    userId,
+    sessionId,
+    x: publicKey.x,
+    y: publicKey.y,
+    now,
+  });
+
+  if (!bound) {
+    throw errors.conflict('This session is already bound to a different device key.');
+  }
+
+  if (!alreadyBound) {
+    await deps.events.publish([
+      createEvent(
+        identityEvents.deviceKeyRegistered,
+        { userId, sessionId },
+        { orgId: SYSTEM_ORG, actorId: unsafeAsId<'UserId'>(userId), occurredAt: now },
+      ),
+    ]);
+  }
+
+  return { status: 'bound' };
 }
