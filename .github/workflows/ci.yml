@@ -190,6 +190,17 @@ jobs:
       - name: Mobile bundle config (no disallowed keys)
         run: node scripts/check-mobile-bundle-secrets.mjs
 
+      # tsc and eslint both understand this repo's NodeNext-style `.js`
+      # imports against `.ts` source files; Metro's own resolver does not
+      # unless metro.config.js says so. A route with a typo'd or
+      # unresolvable import passes lint and typecheck cleanly and only fails
+      # here — found the hard way when every screen in apps/mobile/app
+      # failed an actual `expo export` despite a fully green `pnpm verify`.
+      # `dist/` is gitignored; this proves the bundle builds, not a
+      # deployable artifact.
+      - name: Mobile bundles (expo export)
+        run: pnpm --filter @taskflow/mobile build
+
       - name: Format check
         run: pnpm format:check
 

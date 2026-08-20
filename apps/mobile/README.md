@@ -2,13 +2,17 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1: spine, guardrails, native auth, channel binding, the Expo shell, and the socket client
+## Status — Wave 1: spine, guardrails, native auth, channel binding, the Expo shell, the socket client, and a proven bundle
 
-Five increments in, Wave 1's acceptance bar (§7: the three gates and one
+Six increments in, Wave 1's acceptance bar (§7: the three gates and one
 authenticated tRPC read, on a real device, against the real API) has
-everything CI can prove behind it. **A green `pnpm verify` here is not the
-same claim as "this works when you click it" (§11) — nobody has run this on a
-simulator or a physical device yet.** Keychain, biometrics, push and WebRTC
+everything CI can prove behind it, **and now a real Metro bundle behind it
+too** — `pnpm --filter @taskflow/mobile build` (`expo export`) produces an
+actual Hermes bytecode bundle for both platforms, not just a green `tsc`. **A
+green `pnpm verify` here is STILL not the same claim as "this works when you
+click it" (§11) — nobody has run this on a simulator or a physical device
+yet** — but the gap between "typechecks" and "bundles" is now closed, and
+closing it found a real bug (below). Keychain, biometrics, push and WebRTC
 stay device-only no matter how green this gets.
 
 ### `src/lib/` — the pure client spine (Expo-free, unit-tested)
@@ -121,6 +125,38 @@ that repo-wide. What it catches instead is a key with no recognizable secret
 shape at all, refused purely because it is not on the list of things this app
 is allowed to embed.
 
+### Metro actually bundling the app (§5, §11)
+
+**Every screen in `app/` failed to bundle at all, despite a fully green
+`pnpm verify`, until this increment.** This codebase writes every relative
+import with a `.js` extension against a `.ts` source file —
+`import { session } from '../../src/lib/app-session.js'` — the same
+NodeNext-style convention `apps/api`, `apps/web` and every `packages/*` use.
+`tsc` and `eslint` both understand that convention; Metro's own resolver does
+not unless a `metro.config.js` says so, and this package had none. The
+failure mode is exactly the one CLAUDE.md's own history keeps naming across
+Phase 4, 6, 7 and 13: a control that reads correctly and passes every
+existing check, disproven only by actually running the real thing. Here that
+meant running `expo export` for the first time, which is also how the fix
+was verified rather than assumed — the bundle failed identically before
+`metro.config.js` existed and succeeded (1251 modules, both platforms) after.
+
+`metro.config.js`'s `resolveRequest` override is narrow on purpose: only a
+RELATIVE import ending in `.js` gets rewritten to try `.ts`/`.tsx` first,
+falling back to Metro's own resolution otherwise — a literal `.js` import (a
+third-party package, a real asset) is unaffected.
+
+Also found the same way: `app.config.ts` never set `platforms`, so Expo
+defaulted to `['ios', 'android', 'web']` — a `web` target this app has never
+had any code for, since `apps/web` already owns that surface. Now explicit:
+`platforms: ['ios', 'android']`.
+
+`pnpm --filter @taskflow/mobile build` runs `expo export` to `dist/`
+(gitignored — this proves the bundle, it is not a deployable artifact), wired
+into the fast CI tier and `pnpm preflight` as its own step, deliberately
+separate from `pnpm verify` — the same reasoning `check-encoding.mjs` and
+`check-mobile-bundle-secrets.mjs` are their own steps rather than folded in.
+
 ### Guardrails (§6)
 
 `packages/config/eslint/security.js` scopes the client import-bans to
@@ -149,12 +185,14 @@ trigger family-wide revocation — proved against real Postgres in
 
 ## Not here yet
 
-- **Running this anywhere.** No simulator or device run has happened. `pnpm
---filter @taskflow/mobile start` plus a real API reachable at
-  `MOBILE_API_BASE_URL` (see `.env.example`) is the next step, before any
-  further product screens. In particular, `isNativeClient`'s own header names
-  what a real-device run would need to confirm about `Origin` on RN's
-  WebSocket transport — see `apps/realtime/src/auth.ts`.
+- **Running this on a simulator or physical device.** The app now bundles
+  (`pnpm --filter @taskflow/mobile build`), which is real signal `expo-doctor`
+  and `tsc` alone could not give — but nothing has rendered a screen or made a
+  live request yet. `pnpm --filter @taskflow/mobile start` plus a real API
+  reachable at `MOBILE_API_BASE_URL` (see `.env.example`) is the next step,
+  before any further product screens. In particular, `isNativeClient`'s own
+  header names what a real-device run would need to confirm about `Origin` on
+  RN's WebSocket transport — see `apps/realtime/src/auth.ts`.
 - Passkeys, OAuth, biometric app-lock, device binding (Wave 1b, §4.4–§4.5).
 - The product waves themselves (Work, Chat, Docs, RTC) — the socket client
   exists but nothing calls `joinBoardRoom` yet.

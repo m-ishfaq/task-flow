@@ -50,6 +50,14 @@ const config: ExpoConfig = {
      it, and a scheme changed after release breaks every previously-installed
      app's return-from-browser flow. */
   scheme: 'taskflow',
+  /* Android and iOS only, explicit rather than left to Expo's own default
+     (`['ios', 'android', 'web']`). A `web` target left implicit is exactly
+     the kind of gap this codebase argues against elsewhere — nothing in
+     `app/` or `src/lib/` has ever been written with a browser target in
+     mind, `apps/web` already owns that surface, and `expo export`'s web
+     bundle pulls in a different code path than ios/android (found while
+     verifying this app actually bundles, ai/phase-14-mobile.md §11). */
+  platforms: ['ios', 'android'],
   ios: {
     /* A placeholder reverse-DNS id. MUST be replaced with the real one before
        any build leaves this machine — see §10's "no secret in the bundle"

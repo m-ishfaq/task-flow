@@ -248,6 +248,16 @@ console.log('\n── Correctness ' + '─'.repeat(40));
 check('prettier format', 'pnpm', ['format:check'], { shell: true });
 check('lint + typecheck + test', 'pnpm', ['verify'], { shell: true });
 
+// tsc and eslint both understand this repo's NodeNext-style `.js` imports
+// against `.ts` source files; Metro's own resolver does not unless
+// metro.config.js says so — a route with an unresolvable import passes both
+// of the checks above cleanly and fails only here. Found by actually
+// running `expo export`: every screen in apps/mobile/app failed identically
+// despite a fully green `pnpm verify`.
+check('mobile bundles (expo export)', 'pnpm', ['--filter', '@taskflow/mobile', 'build'], {
+  shell: true,
+});
+
 console.log('\n── Security gates ' + '─'.repeat(37));
 
 check('guardrail self-test (ESLint rules fire)', 'node', ['packages/guardrail-selftest/verify.js']);
