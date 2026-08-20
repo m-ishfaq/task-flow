@@ -157,6 +157,28 @@ into the fast CI tier and `pnpm preflight` as its own step, deliberately
 separate from `pnpm verify` — the same reasoning `check-encoding.mjs` and
 `check-mobile-bundle-secrets.mjs` are their own steps rather than folded in.
 
+### Shared packages: `@taskflow/client` and `@taskflow/tokens` (§12 decisions 3, 4)
+
+`@taskflow/client` — `Wire<T>`, the retry policy and `QueryClient` defaults
+(`app/_layout.tsx`'s `createQueryClient` call), and the optimistic-mutation
+contract — extracted from `apps/web`, taking error classifiers and a
+failure-surfacing callback as parameters instead of importing either app's
+own trpc-client/toast shape. `apps/web`'s original `query.ts` was NOT the
+"pure... reused as-is" file the spec's §5 table first claimed; its `keys`
+registry and `NOT_A_MEMBER` recovery flow stayed there, coupled to that
+app's session store.
+
+`@taskflow/tokens` — the Phase 6.5 color ramp (plus radius and motion), as
+values rather than as NativeWind's className syntax: NativeWind's only
+stable release targets Tailwind v3, `apps/web` runs v4, and the version that
+doesn't have that gap is still a pre-release. Every color is the `oklch(...)`
+triple `apps/web/src/styles.css` defines PLUS a derived sRGB `hex` (React
+Native's `StyleSheet` has no `oklch()` parser), verified via
+`@csstools/color-helpers` rather than hand-converted. Wired into every Wave 1
+screen for real, not left as an unused dependency — `home.tsx`, `sign-in.tsx`,
+`org-picker.tsx` and both `_layout.tsx` splash/loading states all use it, and
+`pnpm --filter @taskflow/mobile build` bundles clean with it in the graph.
+
 ### Guardrails (§6)
 
 `packages/config/eslint/security.js` scopes the client import-bans to

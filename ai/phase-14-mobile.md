@@ -427,8 +427,26 @@ open, deferred to Wave 5 on purpose.
    shipped in Wave 1 is written assuming it: `isNativeClient`'s own header in
    `apps/realtime/src/auth.ts` and this file's §4.5 both name the device-bound keypair as the
    control that will supersede the current interim state, not one already in place.
-3. **Styling — RESOLVED: NativeWind.** Reuses the Phase 6.5 design-system vocabulary directly rather
-   than re-deriving it by hand in a second styling language.
+3. **Styling — RESOLVED: a shared token-VALUES module (`packages/tokens`), not NativeWind.**
+   NativeWind was the first answer, and turned out to rest on a premise that didn't hold: its only
+   STABLE release (4.2.6) is built and tested against Tailwind v3, while `apps/web` runs Tailwind v4
+   (CSS-first `@theme`, OKLCH tokens) — the version that targets v4 is a pre-release
+   (`5.0.0-preview.4`). Neither stable-NativeWind-on-v3 (tokens re-derived by hand into a second
+   config, not actually shared) nor a pre-release dependency for the whole styling system matched
+   what "reuse the Phase 6.5 tokens" was supposed to mean. `packages/tokens` instead ports the
+   `@theme` block's actual VALUES — every `oklch(...)` triple `styles.css` defines, verified via
+   `@csstools/color-helpers` (the same reference conversion Tailwind v4's own tooling is built on;
+   `colors.test.ts` proves it against five textbook oklch↔sRGB reference points before trusting it on
+   the real tokens) — alongside a derived sRGB `hex` for each, since React Native's `StyleSheet` has
+   no `oklch()` parser. `apps/web`'s `styles.css` stays the edited source; this module is kept in
+   sync with it by hand, the same documented arrangement `branding-palettes.ts` already has with that
+   file's accent hue. Wired into all of Wave 1's screens (`home.tsx`, `sign-in.tsx`, `org-picker.tsx`,
+   both `_layout.tsx` splash/loading states) as real, bundle-verified proof, not an unused dependency.
+   Shadows and the Geist font family are named in `colors.ts`'s own header as NOT ported: React
+   Native's shadow model (`shadowColor`/`shadowOffset`/`shadowOpacity`/`shadowRadius` on iOS,
+   `elevation` on Android) needs a real platform-specific translation from CSS `box-shadow`, and no
+   font asset loading (`expo-font`) exists yet — both real Wave 2 work, not values this module could
+   honestly claim to share today.
 4. **`wire.ts` / shared-helper home (§5) — RESOLVED: extracted now, to `packages/client`.** Moved
    `Wire<T>`, `wire()`, `parseInstant`/`parseNullableInstant` verbatim; `apps/web`'s original
    `query.ts` turned out NOT to be the "pure... reused as-is" file §5's own table originally claimed
@@ -451,6 +469,11 @@ open, deferred to Wave 5 on purpose.
 ---
 
 ## What Wave 1 will create (file map, for the reviewer)
+
+Two packages joined the file map below after this section was first written, both from §12
+decisions 3 and 4 above: `packages/client` (the shared `Wire<T>`, retry policy, and
+optimistic-mutation logic) and `packages/tokens` (the shared color/radius/motion values). Recorded
+here rather than silently folded into the original list.
 
 ```
 apps/mobile/

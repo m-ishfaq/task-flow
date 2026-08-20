@@ -1,6 +1,7 @@
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import type { OrgId } from '@taskflow/contracts';
+import { colors } from '@taskflow/tokens';
 import { apiClient, session } from '../../src/lib/app-session.js';
 
 /**
@@ -19,7 +20,7 @@ export default function OrgPicker() {
   if (orgs.isPending) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator />
+        <ActivityIndicator color={colors.accent.hex} />
       </View>
     );
   }
@@ -58,34 +59,38 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 24,
     gap: 12,
+    backgroundColor: colors.surface.hex,
   },
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.surface.hex,
   },
   title: {
     fontSize: 20,
     fontWeight: '600',
     marginBottom: 8,
+    color: colors.ink.hex,
   },
   row: {
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc',
+    borderBottomColor: colors.line.hex,
   },
   rowTitle: {
     fontSize: 16,
     fontWeight: '500',
+    color: colors.ink.hex,
   },
   rowSubtitle: {
     fontSize: 13,
-    color: '#666',
+    color: colors.inkMuted.hex,
     marginTop: 2,
   },
   empty: {
     fontSize: 14,
-    color: '#666',
+    color: colors.inkMuted.hex,
     marginTop: 24,
     textAlign: 'center',
   },

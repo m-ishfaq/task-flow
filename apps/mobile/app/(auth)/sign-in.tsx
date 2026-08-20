@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useMutation } from '@tanstack/react-query';
+import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient, session } from '../../src/lib/app-session.js';
 import { apiErrorOf } from '../../src/lib/trpc-client.js';
 
@@ -54,6 +55,7 @@ export default function SignIn() {
           value={code}
           onChangeText={setCode}
           placeholder="6-digit code"
+          placeholderTextColor={colors.inkFaint.hex}
           keyboardType="number-pad"
           autoFocus
           style={styles.input}
@@ -67,7 +69,7 @@ export default function SignIn() {
           }}
         >
           {verifyTotp.isPending ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={colors.accentInk.hex} />
           ) : (
             <Text style={styles.buttonText}>Verify</Text>
           )}
@@ -83,6 +85,7 @@ export default function SignIn() {
         value={email}
         onChangeText={setEmail}
         placeholder="Email"
+        placeholderTextColor={colors.inkFaint.hex}
         autoCapitalize="none"
         autoComplete="email"
         keyboardType="email-address"
@@ -92,6 +95,7 @@ export default function SignIn() {
         value={password}
         onChangeText={setPassword}
         placeholder="Password"
+        placeholderTextColor={colors.inkFaint.hex}
         autoComplete="password"
         secureTextEntry
         style={styles.input}
@@ -105,7 +109,7 @@ export default function SignIn() {
         }}
       >
         {signIn.isPending ? (
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator color={colors.accentInk.hex} />
         ) : (
           <Text style={styles.buttonText}>Sign in</Text>
         )}
@@ -130,39 +134,43 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
     gap: 12,
+    backgroundColor: colors.surface.hex,
   },
   title: {
     fontSize: 24,
     fontWeight: '600',
     marginBottom: 4,
+    color: colors.ink.hex,
   },
   subtitle: {
     fontSize: 14,
-    color: '#666',
+    color: colors.inkMuted.hex,
     marginBottom: 8,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
+    borderColor: colors.line.hex,
+    borderRadius: radiusCard,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
+    color: colors.ink.hex,
+    backgroundColor: colors.surfaceSunken.hex,
   },
   button: {
-    backgroundColor: '#111',
-    borderRadius: 8,
+    backgroundColor: colors.accent.hex,
+    borderRadius: radiusCard,
     paddingVertical: 12,
     alignItems: 'center',
     marginTop: 8,
   },
   buttonText: {
-    color: '#fff',
+    color: colors.accentInk.hex,
     fontSize: 16,
     fontWeight: '600',
   },
   error: {
-    color: '#c00',
+    color: colors.danger.hex,
     fontSize: 14,
   },
 });

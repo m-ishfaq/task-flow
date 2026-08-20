@@ -3,6 +3,7 @@ import { Redirect, Slot } from 'expo-router';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import type { OrgId } from '@taskflow/contracts';
+import { colors } from '@taskflow/tokens';
 import { apiClient, prefs, session } from '../../src/lib/app-session.js';
 import { useSession } from '../../src/lib/use-session.js';
 import { readRememberedOrg } from '../../src/lib/session.js';
@@ -74,7 +75,7 @@ export default function AppLayout() {
   if (settling) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator />
+        <ActivityIndicator color={colors.accent.hex} />
       </View>
     );
   }
@@ -89,5 +90,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.surface.hex,
   },
 });
