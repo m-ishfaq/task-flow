@@ -237,6 +237,20 @@ whose one callback URL is the native deep link. See `.env.example`'s
   before any further product screens. In particular, `isNativeClient`'s own
   header names what a real-device run would need to confirm about `Origin` on
   RN's WebSocket transport — see `apps/realtime/src/auth.ts`.
+
+  **The public Expo Go app cannot open this project on SDK 57 today.** Expo
+  Go's per-SDK build has a review-queue lag behind each SDK release, and the
+  version on the app/Play Store trails this project's `~57.0.15` pin — it
+  reports "requires a newer version of Expo Go" with no fix on the Expo Go
+  side alone. Since the OAuth increment above needs a real `taskflow://`
+  deep-link handler anyway (Expo Go owns `exp://`, not the app's own scheme,
+  so it can never resolve an OAuth redirect even once SDK-current), a
+  development build is the one path that unblocks both:
+  `npx eas-cli build --profile development --platform android` (or `ios`;
+  `eas.json`'s `development` profile already sets `developmentClient: true`),
+  install the resulting build on-device, then
+  `pnpm --filter @taskflow/mobile start --dev-client` and open with that app
+  instead of Expo Go.
 - Passkeys, biometric app-lock, device binding (Wave 1b, §4.4–§4.5).
 - The product waves themselves (Work, Chat, Docs, RTC) — the socket client
   exists but nothing calls `joinBoardRoom` yet.
