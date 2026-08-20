@@ -2,9 +2,9 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1: spine, guardrails, native auth, channel binding, and the Expo shell
+## Status — Wave 1: spine, guardrails, native auth, channel binding, the Expo shell, and the socket client
 
-Four increments in, Wave 1's acceptance bar (§7: the three gates and one
+Five increments in, Wave 1's acceptance bar (§7: the three gates and one
 authenticated tRPC read, on a real device, against the real API) has
 everything CI can prove behind it. **A green `pnpm verify` here is not the
 same claim as "this works when you click it" (§11) — nobody has run this on a
@@ -71,8 +71,55 @@ Three gates, exactly as specified, collapsed into layout components since
 rule):** passkeys, OAuth (`expo-auth-session` + an `oauth-callback` route —
 the button and the callback screen have nothing to do without the PKCE flow
 that drives them, so neither is here yet), biometric app-lock, and device
-binding — all Wave 1b per §4.4–§4.5. `eas.json` build channels are also not
-here; nothing has been built for a device yet to need them.
+binding — all Wave 1b per §4.4–§4.5.
+
+### The realtime socket client (§5, §8)
+
+`socket.ts` ports `apps/web/src/lib/socket.ts` as a dependency-injected
+factory (`createMobileSocket`), matching the DI convention `session.ts` and
+`trpc-client.ts` already established, rather than web's module-level
+singleton — the handshake, reconnect-and-replay join logic, and reauth
+scheduling are unchanged in substance. Wired into `app-session.ts` alongside
+`session` and `apiClient`, though no Wave 1 screen calls `joinBoardRoom` yet —
+Work is Wave 2.
+
+Building it surfaced a real gap the phase spec never addressed:
+`apps/realtime/src/auth.ts` (a `⚠` human-review surface) refuses any
+handshake with no `Origin` header, and React Native's `socket.io-client` has
+no browser enforcing what it sends — so a byte-for-byte port would compile
+and typecheck but fail to connect against the real gateway. The fix is
+**not** a fixed "native origin" string in the allowlist — unlike a browser's
+Origin, nothing stops any caller from sending that same string, so it would
+be security theater rather than a real control. `auth.ts` instead gets one
+narrow, explicitly-labeled `isNativeClient` branch that relaxes the origin
+check ONLY when `Origin` is completely absent AND the caller presents the
+`x-taskflow-client: mobile` marker (relocated to `@taskflow/contracts` so
+`apps/mobile`'s HTTP client, its socket client, and `apps/realtime`'s
+handshake all read the same constant). The token verification that
+immediately follows is what still decides — see that function's own header
+for the full argument, and why this is a named INTERIM gap, superseded once
+Wave 1b's device-bound keypair (§4.5) gives native a real per-device proof.
+
+### Build channels and the bundle-secret guardrail (§10)
+
+`eas.json` defines the three build profiles (`development`, `preview`,
+`production`). `MOBILE_API_BASE_URL` for `preview`/`production` is left as an
+obviously-invalid placeholder rather than a plausible-looking guess — no real
+preview/production API exists yet, and a wrong-but-valid URL would fail
+silently (a network error, indistinguishable from "realtime is slow") where
+an invalid one fails loudly at `parseConfig`'s `z.string().url()`. Replace the
+placeholder with the real URL before running an actual preview/production
+build.
+
+`scripts/check-mobile-bundle-secrets.mjs` (wired into the fast CI tier and
+`pnpm preflight`, not the tiered `secrets` job gitleaks runs in) is an
+ALLOWLIST of every key `app.config.ts`'s `extra` object and any `eas.json`
+build profile's `env` block may hold — both are places a value becomes
+bundle-visible, "readable by anyone who downloads it" per §10. It is
+deliberately not a second shape-based secret scanner: gitleaks already does
+that repo-wide. What it catches instead is a key with no recognizable secret
+shape at all, refused purely because it is not on the list of things this app
+is allowed to embed.
 
 ### Guardrails (§6)
 
@@ -105,7 +152,9 @@ trigger family-wide revocation — proved against real Postgres in
 - **Running this anywhere.** No simulator or device run has happened. `pnpm
 --filter @taskflow/mobile start` plus a real API reachable at
   `MOBILE_API_BASE_URL` (see `.env.example`) is the next step, before any
-  further product screens.
+  further product screens. In particular, `isNativeClient`'s own header names
+  what a real-device run would need to confirm about `Origin` on RN's
+  WebSocket transport — see `apps/realtime/src/auth.ts`.
 - Passkeys, OAuth, biometric app-lock, device binding (Wave 1b, §4.4–§4.5).
-- The **realtime socket** client, and the product waves (Work, Chat, Docs,
-  RTC).
+- The product waves themselves (Work, Chat, Docs, RTC) — the socket client
+  exists but nothing calls `joinBoardRoom` yet.

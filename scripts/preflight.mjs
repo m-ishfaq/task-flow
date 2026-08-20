@@ -57,6 +57,10 @@ console.log('\n── Static file integrity ' + '─'.repeat(30));
 
 check('encoding (no BOM, no CRLF)', 'node', ['scripts/check-encoding.mjs']);
 
+check('mobile bundle config (no disallowed keys)', 'node', [
+  'scripts/check-mobile-bundle-secrets.mjs',
+]);
+
 // Every JSON file must parse. A BOM in package.json already broke CI once, and
 // the resulting error pointed at JSON syntax rather than at the byte prefix.
 //
