@@ -411,13 +411,21 @@ Phases 5, 7, 8 and 12 — here it would just be easier to make and harder to not
 
 ## 12. Decisions to resolve at review
 
-1. **Native auth transport shape (§4.3):** a separate `auth.native.*` procedure namespace, or the
-   existing procedures keyed on a trusted client-type context? Both can be made structurally safe;
-   the choice affects how much of `apps/api/src/identity` changes and how the two output schemas
-   are kept un-unifiable.
-2. **Device binding in Wave 1 or 1b (§4.5)?** Shipping it in Wave 1 hardens the token from day one
-   but couples the spine to secure-enclave key management before any product rides on it. The draft
-   proposes 1b; the author may want it in Wave 1.
+Two of the five below were resolved by what actually shipped, not by this section being edited at
+the time — recorded here now rather than left to read as still-open questions the code had already
+answered (the same "status marker is a claim, not a fact" habit CLAUDE.md documents for Phases 3.5,
+5 and 8).
+
+1. **Native auth transport shape (§4.3) — RESOLVED: a separate `auth.native.*` procedure
+   namespace.** Shipped in the increment that added `NativeSessionResponse` and the
+   `auth.native.{login,refresh,logout,totp.verifyLogin}` routes — a structurally separate schema
+   object rather than the existing procedures keyed on a trusted client-type context, so the web
+   path can never acquire the refresh-token field by construction rather than by a context check
+   nobody forgets.
+2. **Device binding in Wave 1 or 1b (§4.5) — RESOLVED: 1b, as the draft proposed.** Everything
+   shipped in Wave 1 is written assuming it: `isNativeClient`'s own header in
+   `apps/realtime/src/auth.ts` and this file's §4.5 both name the device-bound keypair as the
+   control that will supersede the current interim state, not one already in place.
 3. **Styling: NativeWind vs a hand-rolled token layer.** NativeWind reuses Tailwind-class semantics
    and the Phase 6.5 tokens' vocabulary; a hand-rolled layer avoids a build-time dependency. Design-
    system reuse argues for NativeWind; this is an owner call, like the payments-provider call in
