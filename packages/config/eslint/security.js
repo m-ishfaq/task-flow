@@ -175,7 +175,8 @@ const mobileClientImportBans = [
 ];
 
 /* The refresh token lives in the hardware keystore, reached only through the
-   SecureStore port (apps/mobile/src/lib/secure-store.ts). A credential in
+   SecureStore port (apps/mobile/src/lib/secure-store.ts, and its real device
+   implementation in device-secure-store.ts). A credential in
    AsyncStorage — an unencrypted on-disk file — or a plain filesystem write is
    the mobile equivalent of the localStorage the web session file refuses: one
    XSS, one device backup, or one rooted phone away from a token an attacker
@@ -268,11 +269,42 @@ export const security = [
      wins for these files. The guardrail-selftest asserts both halves stay. */
   {
     name: 'taskflow/guardrails/mobile-credential-seam',
-    files: ['apps/mobile/src/lib/session.ts', 'apps/mobile/src/lib/secure-store.ts'],
+    files: [
+      'apps/mobile/src/lib/session.ts',
+      'apps/mobile/src/lib/secure-store.ts',
+      'apps/mobile/src/lib/device-secure-store.ts',
+    ],
     rules: {
       'no-restricted-imports': [
         'error',
         { patterns: [...mobileClientImportBans, ...credentialStorageBans] },
+      ],
+    },
+  },
+
+  /* 2d. No embedded auth WebView (§6.2, ai/phase-14-mobile.md §4.4). OAuth goes
+     through the system browser via `expo-auth-session` with PKCE; a WebView the
+     app controls could inject script into the provider's own login page and
+     read the password typed into it — the mobile analogue of never trusting a
+     client-supplied redirect. Scoped to the auth feature only: a WebView
+     elsewhere (a doc preview, say) is a separate decision with its own review.
+     Re-emits the full mobile import list for the same replace-not-merge reason
+     block 2c does, placed AFTER 2b so it wins for these files. */
+  {
+    name: 'taskflow/guardrails/mobile-auth-webview',
+    files: ['apps/mobile/app/(auth)/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            ...mobileClientImportBans,
+            {
+              group: ['react-native-webview', 'react-native-webview/**'],
+              message: `OAuth goes through the system browser (expo-auth-session), never an embedded WebView — a WebView here could read a password typed into the provider's own page. ${ref('§8.4')}`,
+            },
+          ],
+        },
       ],
     },
   },

@@ -48,3 +48,15 @@ Thumbs.db
 *.log
 npm-debug.log*
 pnpm-debug.log*
+
+# Expo / React Native (apps/mobile) — generated native projects and CLI state.
+# Managed workflow (ai/phase-14-mobile.md §12 decision 5): these are build
+# output, not source, and regenerating them from app.config.ts is exactly
+# `expo prebuild`'s job. Keeping them out is what keeps this repo's checkout
+# light — see the mobile-app planning thread on repo weight.
+apps/mobile/.expo/
+apps/mobile/ios/
+apps/mobile/android/
+apps/mobile/dist/
+apps/mobile/web-build/
+apps/mobile/.kotlin/

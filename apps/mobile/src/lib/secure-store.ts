@@ -12,13 +12,16 @@
  * accident. This is guardrail 5's "one audited place per sensitive primitive",
  * applied to token storage.
  *
- * The concrete device implementation (`expo-secure-store`) lands with the Expo
- * shell. It MUST set the accessibility class explicitly:
- * `AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY` — readable after the first unlock so a
- * push-woken background refresh works, `THIS_DEVICE_ONLY` so a backup restored
- * onto another handset does not carry a live session. The default (available
- * before first unlock, included in device backups) is the wrong one, and the
- * only way it gets set correctly is deliberately.
+ * The concrete device implementation lives in `device-secure-store.ts`, a
+ * SEPARATE file, deliberately — it imports `expo-secure-store`, which
+ * transitively pulls in React Native's Flow-typed source. Vitest's transform
+ * cannot parse Flow (§11: the platform primitives this phase is about do not
+ * exist in a Node/Vitest process at all), and `session.test.ts` needs this
+ * file's `createInMemorySecureStore` with no Expo runtime anywhere in the
+ * module graph. Splitting the two is what makes that possible, not a
+ * workaround — it is the same "keep every port testable with no device"
+ * discipline the rest of `src/lib/` already follows, applied to secure-store's
+ * own real implementation.
  */
 export interface SecureStore {
   getItem(key: string): Promise<string | null>;

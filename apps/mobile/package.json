@@ -2,15 +2,29 @@
   "name": "@taskflow/mobile",
   "version": "0.0.0",
   "private": true,
-  "type": "module",
+  "main": "expo-router/entry",
   "scripts": {
-    "lint": "eslint src",
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "lint": "eslint app src",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
     "@taskflow/contracts": "workspace:*",
+    "@tanstack/react-query": "^5.90.5",
     "@trpc/client": "^11.18.0",
+    "expo": "~57.0.15",
+    "expo-constants": "~57.0.13",
+    "expo-linking": "~57.0.7",
+    "expo-router": "~57.0.15",
+    "expo-secure-store": "~57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.2",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.0",
     "zod": "^3.24.1",
     "zustand": "^5.0.14"
   },
@@ -18,8 +32,9 @@
     "@taskflow/api": "workspace:*",
     "@taskflow/config": "workspace:*",
     "@types/node": "^22.10.2",
+    "@types/react": "~19.2.2",
     "eslint": "^9.17.0",
-    "typescript": "^5.7.2",
+    "typescript": "~6.0.3",
     "vitest": "^3.2.7"
   }
 }

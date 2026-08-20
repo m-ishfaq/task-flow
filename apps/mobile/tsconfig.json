@@ -1,18 +1,40 @@
 {
-  "extends": "@taskflow/config/tsconfig/node.json",
+  "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    /* Wave 1 is the pure-TypeScript client spine (ai/phase-14-mobile.md §5): it
-       depends only on `@taskflow/*` types, `@trpc/client`, `zustand` and `zod`,
-       and touches no React Native or Expo runtime yet. So it type-checks against
-       Node's lib exactly like apps/worker — `fetch`, timers and `atob` are typed
-       from @types/node and exist in the Hermes runtime too. The Expo-shell
-       increment swaps this for the react-native / expo type surface when the
-       first native component lands; nothing in src/lib/ needs it before then.
+    /* The Expo-shell increment (ai/phase-14-mobile.md §5, §7) adds the first
+       native components, so this now type-checks against the real RN/Expo
+       surface (`expo/tsconfig.base`: `lib: ["DOM", "ESNext"]`,
+       `moduleResolution: "bundler"`, `jsx: "react-jsx"`) instead of Node's —
+       Metro, not tsc, resolves modules at bundle time, and `bundler` resolution
+       is what matches that.
 
-       noEmit, like apps/web: this is a leaf app, nothing imports from it, and
-       the tRPC client type refers to @taskflow/api internals that a declaration
-       emit could not name (react.json documents the same TS2742/TS4058 trap). */
+       `expo/tsconfig.base` does not turn on this repo's own strictness
+       guardrails (CLAUDE.md "Conventions": `noUncheckedIndexedAccess`,
+       `exactOptionalPropertyTypes`, ...) — @taskflow/config/tsconfig/base.json
+       cannot be layered underneath it because the two disagree on `module` /
+       `moduleResolution`, so the flags are restated here instead of shared.
+       Keep this list in sync with that file's guardrail set if it changes. */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "useUnknownInCatchVariables": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "forceConsistentCasingInFileNames": true,
+
+    /* @types/node is on the classpath for the test files only (`Buffer` in
+       session.test.ts); adding "node" here would leak Node globals into the
+       app/router code that must only ever run on Hermes. types is deliberately
+       narrow rather than "node" living in `lib`. */
+    "types": ["node"],
+
+    /* Leaf app; nothing imports from it, and Metro (not tsc) is what actually
+       bundles app/ and src/ for a device. Same reasoning as apps/web. */
     "noEmit": true
   },
-  "include": ["src/**/*"]
+  "include": ["app/**/*", "src/**/*", "app.config.ts", "expo-env.d.ts"]
 }

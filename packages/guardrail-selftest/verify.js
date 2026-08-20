@@ -337,8 +337,8 @@ if (platformAdminFailures.length > 0) {
  * apps/mobile — the phone client's guardrails, on the computed config the same
  * way apps/web's are (ai/phase-14-mobile.md §6.3).
  *
- * Two files, because the phone has two overlapping scopes and the flat-config
- * replace-trap lives exactly in the overlap:
+ * Three files, because the phone has three overlapping scopes and the
+ * flat-config replace-trap lives exactly in the overlap:
  *
  *   - org-gate.ts is an ordinary mobile file: it must keep the baseline syntax
  *     bans (they reach apps/mobile untouched) AND the client import bans (no
@@ -348,6 +348,10 @@ if (platformAdminFailures.length > 0) {
  *     the db / crypto bans while adding AsyncStorage, the files that hold the
  *     refresh token would silently regain database access — the precise drift
  *     this harness exists to catch. So session.ts must carry ALL THREE.
+ *   - app/(auth)/sign-in.tsx is ALSO the auth feature, whose own block
+ *     re-emits the import list a third time PLUS the no-embedded-WebView ban
+ *     (§6.2). Same failure mode as session.ts if that block ever narrowed
+ *     itself to just the WebView pattern.
  * -------------------------------------------------------------------------- */
 
 const MOBILE_FILE = resolve(repoRoot, 'apps', 'mobile', 'src', 'lib', 'org-gate.ts');
@@ -400,6 +404,32 @@ for (const [needle, label] of SEAM_IMPORT_BANS) {
     console.log(`  ok    apps/mobile credential seam keeps the ${label} ban`);
   } else {
     console.error(`  FAIL  apps/mobile credential seam LOST the ${label} ban`);
+    mobileFailures.push(label);
+  }
+}
+
+/* The auth-feature WebView ban (§6.2, block 2d) — a THIRD overlapping scope,
+   same replace-trap as the credential seam: the block re-emits the mobile
+   import list so it must be checked here too, or a future edit that narrowed
+   it to JUST the WebView pattern would silently reopen db/crypto access on
+   every screen under (auth) with nothing failing. */
+const AUTH_FILE = resolve(repoRoot, 'apps', 'mobile', 'app', '(auth)', 'sign-in.tsx');
+const authConfig = await eslint.calculateConfigForFile(AUTH_FILE);
+const authImportText = JSON.stringify(authConfig.rules?.['no-restricted-imports'] ?? []);
+
+const AUTH_IMPORT_BANS = [
+  ['OAuth goes through the system browser', 'react-native-webview import'],
+  ['The phone never talks to the database', '@taskflow/db import (kept on the auth feature)'],
+  [
+    'Cryptographic primitives belong in @taskflow/security',
+    'node:crypto import (kept on the auth feature)',
+  ],
+];
+for (const [needle, label] of AUTH_IMPORT_BANS) {
+  if (authImportText.includes(needle)) {
+    console.log(`  ok    apps/mobile auth feature keeps the ${label} ban`);
+  } else {
+    console.error(`  FAIL  apps/mobile auth feature LOST the ${label} ban`);
     mobileFailures.push(label);
   }
 }

@@ -1,5 +1,7 @@
-import { createTRPCClient, httpBatchLink } from '@trpc/client';
+import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client';
+import { z } from 'zod';
 import type { AppRouter } from '@taskflow/api/router';
+import { type ApiError, ERROR_CODES, type ErrorCode } from '@taskflow/contracts';
 
 /**
  * The mobile tRPC client (ai/phase-14-mobile.md §5).
@@ -54,4 +56,64 @@ export function createMobileClient(deps: MobileClientDeps): MobileTRPCClient {
       }),
     ],
   });
+}
+
+/**
+ * The domain fields the API's `errorFormatter` puts on a failure — ported
+ * verbatim from apps/web's `trpc-client.ts`. Not `.strict()`: `httpStatus` and
+ * tRPC's own `path` also travel in `data`, and rejecting the whole envelope
+ * over an unrecognized sibling field would turn a readable error into
+ * "something went wrong".
+ */
+const ErrorData = z
+  .object({
+    code: z.enum(ERROR_CODES),
+    requestId: z.string(),
+    details: z.record(z.string(), z.unknown()).optional(),
+    retryAfterSeconds: z.number().int().positive().optional(),
+  })
+  .passthrough();
+
+/**
+ * Recovers the server's explanation of a failure, or null if it did not give
+ * one — the same contract as apps/web's function of the same name, so the two
+ * clients' callers read errors identically.
+ */
+export function apiErrorOf(error: unknown): ApiError | null {
+  if (!(error instanceof TRPCClientError)) return null;
+
+  const parsed = ErrorData.safeParse(error.data);
+  if (!parsed.success) return null;
+
+  return {
+    error: {
+      code: parsed.data.code,
+      message: error.message,
+      requestId: parsed.data.requestId,
+      ...(parsed.data.details === undefined ? {} : { details: parsed.data.details }),
+      ...(parsed.data.retryAfterSeconds === undefined
+        ? {}
+        : { retryAfterSeconds: parsed.data.retryAfterSeconds }),
+    },
+  };
+}
+
+/** The error code, when the server supplied one. */
+export function errorCodeOf(error: unknown): ErrorCode | null {
+  return apiErrorOf(error)?.error.code ?? null;
+}
+
+/**
+ * Whether a failure means "this refresh token is no good" — the classification
+ * `session.ts`'s `SessionApi` adapter uses to decide `SessionExpiredError`
+ * (which clears the stored token) from every other failure (which must not:
+ * see session.ts's own note on why a network drop must leave the keystore
+ * alone). Ported from apps/web's `isUnauthenticated`, same narrowness: FORBIDDEN
+ * and NOT_A_MEMBER are authorization failures, not expiry, and an unparseable
+ * error (a dropped connection, a proxy page) is "we do not know", not "signed
+ * out".
+ */
+export function isUnauthenticated(error: unknown): boolean {
+  const code = errorCodeOf(error);
+  return code === 'UNAUTHENTICATED' || code === 'TOKEN_EXPIRED';
 }
