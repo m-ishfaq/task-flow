@@ -1,7 +1,13 @@
 import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client';
 import { z } from 'zod';
 import type { AppRouter } from '@taskflow/api/router';
-import { type ApiError, ERROR_CODES, type ErrorCode } from '@taskflow/contracts';
+import {
+  type ApiError,
+  CLIENT_HEADER,
+  ERROR_CODES,
+  type ErrorCode,
+  MOBILE_CLIENT,
+} from '@taskflow/contracts';
 
 /**
  * The mobile tRPC client (ai/phase-14-mobile.md §5).
@@ -24,9 +30,7 @@ import { type ApiError, ERROR_CODES, type ErrorCode } from '@taskflow/contracts'
  */
 export type MobileTRPCClient = ReturnType<typeof createTRPCClient<AppRouter>>;
 
-/** Header the API reads to distinguish the native client from the browser (§4.3). */
-export const CLIENT_HEADER = 'x-taskflow-client';
-export const MOBILE_CLIENT = 'mobile';
+export { CLIENT_HEADER, MOBILE_CLIENT };
 
 /**
  * The point past which a batched GET stops being safe to send. `httpBatchLink`

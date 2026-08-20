@@ -2,7 +2,7 @@ import proxyaddr from 'proxy-addr';
 import type { Socket } from 'socket.io';
 import type { IncomingMessage } from 'node:http';
 import { InvalidTokenError, verifyAccessToken } from '@taskflow/security';
-import { UserIdSchema, type UserId } from '@taskflow/contracts';
+import { CLIENT_HEADER, MOBILE_CLIENT, UserIdSchema, type UserId } from '@taskflow/contracts';
 import type { TrustProxyValue } from '@taskflow/api/config/trust-proxy';
 
 /**
@@ -121,6 +121,59 @@ export function originAllowed(origin: string | undefined, allowed: readonly stri
   return allowed.includes(origin);
 }
 
+/**
+ * True when the handshake carries the native client marker (ai/phase-14-mobile.md
+ * §8) — the ONLY case in which a connection with no `Origin` is let past
+ * `verifyHandshake` rather than refused.
+ *
+ * ## This is not "an origin check for native", and must never be sold as one
+ *
+ * A browser's `Origin` is unforgeable BY THE PAGE presenting it — the browser
+ * itself attaches it, and no script running in that page can override or
+ * suppress it. That is the entire reason `originAllowed` above is a meaningful
+ * control. `CLIENT_HEADER` has none of that property: React Native has no
+ * browser enforcing anything about what it sends, so this header is exactly as
+ * easy for ANY caller — a rogue script, curl, a scanner — to set as it is for
+ * our own app. Allow-listing a fixed "native origin" string here would be
+ * dressing that up as a control it is not; this function deliberately does not
+ * do that.
+ *
+ * What actually protects a native connection is unchanged and comes right
+ * after this check: `verifyAccessToken` cryptographically verifies the bearer
+ * token, which cannot be forged regardless of what any header claims. What the
+ * origin check additionally buys a BROWSER — refusing a legitimate token
+ * silently replayed from an unexpected web origin — has no equivalent native
+ * threat today, because nothing on a phone ambiently attaches a stored
+ * credential to an unrelated caller the way a cookie does; reaching a native
+ * refresh token at all requires extracting it off the device. That is a
+ * materially harder, different problem, and it is Wave 1b's device-bound
+ * keypair (ai/phase-14-mobile.md §4.5) — not this header — that will make a
+ * stolen native token provably inert elsewhere. Until that lands, this branch
+ * is a deliberate, named INTERIM gap: revisit it once device binding ships.
+ *
+ * ## Why this never weakens the browser path
+ *
+ * `verifyHandshake` only consults this function when `Origin` is ABSENT. A
+ * caller presenting a real (browser-attached) origin is checked by
+ * `originAllowed` exactly as before, with no branch for this header at all —
+ * a forbidden origin is refused regardless of what `CLIENT_HEADER` claims
+ * alongside it, since nothing about a fake marker changes what a browser
+ * actually sent.
+ *
+ * ## Unverified against a real device
+ *
+ * Confirmed against `engine.io-client`'s own source: it does not fabricate an
+ * `Origin` for React Native, and this app's socket client does not set one
+ * either. What is NOT yet confirmed is whether the OS-level native networking
+ * stack underneath RN's `WebSocket` ever attaches some other fixed value on
+ * its own. If a real-device run ever finds one, the fix is to add THAT value
+ * to the ordinary `allowedOrigins` list — the unchanged, already-tested path
+ * above — not to touch this function.
+ */
+export function isNativeClient(headers: Socket['handshake']['headers']): boolean {
+  return headers[CLIENT_HEADER] === MOBILE_CLIENT;
+}
+
 export interface HandshakeOptions {
   readonly jwtSecret: Uint8Array;
   readonly allowedOrigins: readonly string[];
@@ -139,9 +192,24 @@ export async function verifyHandshake(
   socket: Socket,
   options: HandshakeOptions,
 ): Promise<SocketIdentity> {
-  if (!originAllowed(socket.handshake.headers.origin, options.allowedOrigins)) {
+  const origin = socket.handshake.headers.origin;
+
+  if (origin !== undefined && origin !== '') {
+    /* A real origin was presented — checked exactly as always, with no branch
+       for CLIENT_HEADER at all. A disallowed origin is refused regardless of
+       what any other header claims alongside it (see isNativeClient's own
+       comment on why that marker must never override this). */
+    if (!originAllowed(origin, options.allowedOrigins)) {
+      throw new HandshakeError('forbidden_origin');
+    }
+  } else if (!isNativeClient(socket.handshake.headers)) {
+    // No origin and no native marker: the same refusal this file has always
+    // given a caller with nothing to identify it.
     throw new HandshakeError('forbidden_origin');
   }
+  // else: no origin, but the caller identifies as native — see
+  // isNativeClient's own comment for what this interim allowance is, and is
+  // not, a substitute for.
 
   /* Read from the `auth` payload, never the query string: query strings end up
      in proxy and server access logs, and an access token in a log file outlives

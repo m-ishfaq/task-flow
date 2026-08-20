@@ -3,16 +3,17 @@ import { parseConfig } from './config.js';
 import { createSecureStore } from './device-secure-store.js';
 import { createPreferences } from './preferences.js';
 import { createMobileSession, SessionExpiredError, type MobileSession } from './session.js';
+import { createMobileSocket, type MobileSocket } from './socket.js';
 import { createMobileClient, isUnauthenticated, type MobileTRPCClient } from './trpc-client.js';
 
 /**
- * The app's one composition root (ai/phase-14-mobile.md §5, §7) — where the
- * ports built and unit-tested in this directory get their real, device-backed
- * implementations wired together. Everything above this file in `src/lib/`
- * stays injectable and Expo-free on purpose (§11's CI/device split); this file
- * is the seam where that stops, so it is the one module in the spine that
- * cannot be unit-tested without a device or a mocked `expo-constants` — nothing
- * here has logic of its own to test.
+ * The app's one composition root (ai/phase-14-mobile.md §5, §7, §8) — where
+ * the ports built and unit-tested in this directory get their real,
+ * device-backed implementations wired together. Everything above this file
+ * in `src/lib/` stays injectable and Expo-free on purpose (§11's CI/device
+ * split); this file is the seam where that stops, so it is the one module in
+ * the spine that cannot be unit-tested without a device or a mocked
+ * `expo-constants` — nothing here has logic of its own to test.
  *
  * `Constants.expoConfig.extra` is `app.config.ts`'s `extra.apiBaseUrl`, injected
  * into the already-tested, already-pure `parseConfig`.
@@ -82,4 +83,22 @@ export const session: MobileSession = createMobileSession({
 export const apiClient: MobileTRPCClient = createMobileClient({
   trpcUrl: config.trpcUrl,
   authHeaders: () => session.authHeaders(),
+});
+
+/**
+ * The app's one realtime connection (§8). No Wave 1 screen opens a board yet
+ * — home is a placeholder (§7) — so nothing calls `gatewaySocket.joinBoardRoom`
+ * today; it is wired here anyway, alongside `session` and `apiClient`, so the
+ * spine is complete and testable at the composition level rather than
+ * something a later wave has to remember to assemble correctly under time
+ * pressure. `getExpiresAt` reads the store fresh on every call, never once at
+ * construction, so a renewed token reschedules `ready`'s reauth correctly.
+ */
+export const gatewaySocket: MobileSocket = createMobileSocket({
+  apiBaseUrl: config.apiBaseUrl,
+  accessToken: () => session.accessToken(),
+  getExpiresAt: () => session.store.getState().expiresAt,
+  onSessionEnded: () => {
+    void session.clear();
+  },
 });

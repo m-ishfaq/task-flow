@@ -2,8 +2,15 @@ import type { IncomingMessage } from 'node:http';
 import type { Socket } from 'socket.io';
 import { describe, expect, it } from 'vitest';
 import { signAccessToken } from '@taskflow/security';
+import { CLIENT_HEADER, MOBILE_CLIENT } from '@taskflow/contracts';
 import type { TrustProxyValue } from '@taskflow/api/config/trust-proxy';
-import { clientAddress, HandshakeError, originAllowed, verifyHandshake } from './auth.js';
+import {
+  clientAddress,
+  HandshakeError,
+  isNativeClient,
+  originAllowed,
+  verifyHandshake,
+} from './auth.js';
 
 /**
  * The handshake perimeter (ai/phase-4-realtime.md §3.2, §3.7, §3.8).
@@ -41,11 +48,15 @@ async function token(
   );
 }
 
-/** Just the two fields `verifyHandshake` reads, in the shape Socket.io puts them. */
-function fakeSocket(origin: string | undefined, auth: unknown): Socket {
+/** Just the fields `verifyHandshake` reads, in the shape Socket.io puts them. */
+function fakeSocket(
+  origin: string | undefined,
+  auth: unknown,
+  extraHeaders: Record<string, string> = {},
+): Socket {
   return {
     handshake: {
-      headers: origin === undefined ? {} : { origin },
+      headers: { ...(origin === undefined ? {} : { origin }), ...extraHeaders },
       auth,
     },
   } as unknown as Socket;
@@ -81,6 +92,21 @@ describe('originAllowed (§3.2)', () => {
     expect(originAllowed('http://localhost:5173.evil.test', ORIGINS)).toBe(false);
     expect(originAllowed('http://evil.test/http://localhost:5173', ORIGINS)).toBe(false);
     expect(originAllowed('https://localhost:5173', ORIGINS)).toBe(false);
+  });
+});
+
+describe('isNativeClient (§8, interim — see this function’s own comment)', () => {
+  it('reads the exact marker the mobile client sends', () => {
+    expect(isNativeClient({ [CLIENT_HEADER]: MOBILE_CLIENT })).toBe(true);
+  });
+
+  it('refuses anything else — absent, wrong value, or a repeated header', () => {
+    expect(isNativeClient({})).toBe(false);
+    expect(isNativeClient({ [CLIENT_HEADER]: 'browser' })).toBe(false);
+    // A repeated header arrives as an array in Node's http headers; treating
+    // that as a match would accept ['mobile', 'mobile'] too, which is not
+    // the single-string shape the real client ever sends.
+    expect(isNativeClient({ [CLIENT_HEADER]: [MOBILE_CLIENT, MOBILE_CLIENT] })).toBe(false);
   });
 });
 
@@ -125,6 +151,58 @@ describe('verifyHandshake (§3.2, §3.8)', () => {
     expect(await refusalOf(fakeSocket('http://evil.test', { token: await token() }))).toBe(
       'forbidden_origin',
     );
+  });
+
+  describe('the native client marker (§8, interim)', () => {
+    it('is let through with no Origin, if it presents the marker and a valid token', async () => {
+      const identity = await verifyHandshake(
+        fakeSocket(undefined, { token: await token() }, { [CLIENT_HEADER]: MOBILE_CLIENT }),
+        { jwtSecret: SECRET, allowedOrigins: ORIGINS },
+      );
+      expect(identity.userId).toBe(USER);
+    });
+
+    it('still refuses no-Origin with no marker — the interim allowance changes nothing else', async () => {
+      expect(await refusalOf(fakeSocket(undefined, { token: await token() }))).toBe(
+        'forbidden_origin',
+      );
+    });
+
+    it('never overrides a PRESENT, disallowed origin — a browser cannot claim to be native', async () => {
+      // The marker only matters when Origin is absent. A real browser always
+      // attaches its true origin, so a forbidden one is refused regardless of
+      // any other header sent alongside it — otherwise this "interim native
+      // allowance" would double as a bypass for the browser check it was
+      // never meant to touch.
+      expect(
+        await refusalOf(
+          fakeSocket(
+            'http://evil.test',
+            { token: await token() },
+            {
+              [CLIENT_HEADER]: MOBILE_CLIENT,
+            },
+          ),
+        ),
+      ).toBe('forbidden_origin');
+    });
+
+    it('still refuses an invalid token even with no Origin and the marker present', async () => {
+      // The marker relaxes the ORIGIN check only. Token verification —
+      // the control that actually protects a native connection — is
+      // untouched.
+      expect(
+        await refusalOf(
+          fakeSocket(
+            undefined,
+            { token: await token({}, WRONG_SECRET) },
+            {
+              [CLIENT_HEADER]: MOBILE_CLIENT,
+            },
+          ),
+        ),
+      ).toBe('invalid_token');
+    });
   });
 
   it('refuses a token whose subject is not a well-formed user id', async () => {
