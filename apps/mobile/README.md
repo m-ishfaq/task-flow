@@ -251,6 +251,7 @@ whose one callback URL is the native deep link. See `.env.example`'s
   install the resulting build on-device, then
   `pnpm --filter @taskflow/mobile start --dev-client` and open with that app
   instead of Expo Go.
+
 - Passkeys, biometric app-lock, device binding (Wave 1b, §4.4–§4.5).
 - The product waves themselves (Work, Chat, Docs, RTC) — the socket client
   exists but nothing calls `joinBoardRoom` yet.
