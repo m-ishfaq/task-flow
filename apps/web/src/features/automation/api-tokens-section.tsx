@@ -6,7 +6,7 @@ import { cn } from '../../lib/cn.js';
 import { keys } from '../../lib/query.js';
 import { formatRelative, hasPassed } from '../../lib/format.js';
 import { useToast } from '../../lib/toast-context.js';
-import type { Wire } from '../../lib/wire.js';
+import type { Wire } from '@taskflow/client';
 import { Button, ConfirmButton, Empty, Field, SkeletonRows } from '../../components/primitives.js';
 import { SecretReveal } from '../../components/secret-reveal.js';
 import { ErrorText } from '../../components/error-view.js';

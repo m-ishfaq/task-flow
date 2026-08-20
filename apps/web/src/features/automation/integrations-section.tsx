@@ -4,7 +4,7 @@ import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useToast } from '../../lib/toast-context.js';
 import { useStepUp } from '../auth/use-step-up.js';
-import type { Wire } from '../../lib/wire.js';
+import type { Wire } from '@taskflow/client';
 import { Button, ConfirmButton, Empty, SkeletonRows } from '../../components/primitives.js';
 import { ErrorText } from '../../components/error-view.js';
 import { integrationCapabilitiesQuery, integrationsQuery } from './api.js';

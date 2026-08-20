@@ -4,7 +4,7 @@ import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow
 import { PALETTE_IDS, type OrgId, type PaletteId } from '@taskflow/contracts';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
-import { wire } from '../../lib/wire.js';
+import { wire } from '@taskflow/client';
 import { formatDate, formatDateTime } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
 import { paletteColorsOf } from '../../lib/branding-palettes.js';

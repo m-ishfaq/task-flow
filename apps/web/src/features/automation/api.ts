@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/react-query';
 import { api } from '../../lib/trpc.js';
-import { wire } from '../../lib/wire.js';
+import { wire } from '@taskflow/client';
 import { keys } from '../../lib/query.js';
 
 /**

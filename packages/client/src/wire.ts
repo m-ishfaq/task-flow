@@ -1,6 +1,12 @@
 /**
  * What the server's types promise, and what the wire actually delivers.
  *
+ * Shared rather than kept in `apps/web` alone (ai/phase-14-mobile.md §5, §12
+ * decision 4): the lie this file corrects for — a tRPC client inferring
+ * `Date` from `z.date()` when the wire actually carries a JSON string — is
+ * identical on every client this monorepo ships, `apps/mobile` included.
+ * Copying it per app is exactly the drift guardrail 5 exists to rule out.
+ *
  * ## The problem
  *
  * The API's route outputs are declared with Zod, and several of them use

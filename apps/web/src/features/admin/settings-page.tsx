@@ -7,7 +7,7 @@ import { DIRECTLY_ASSIGNABLE_ROLES, type Role } from '@taskflow/policy';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useSession } from '../../lib/session.js';
-import { wire } from '../../lib/wire.js';
+import { wire } from '@taskflow/client';
 import { formatDate } from '../../lib/format.js';
 import {
   AddPanel,

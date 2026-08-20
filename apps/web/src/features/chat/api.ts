@@ -2,7 +2,7 @@ import { queryOptions, type QueryClient } from '@tanstack/react-query';
 import type { AttachmentId, ChannelId, MessageId, UserId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
-import { wire, type Wire } from '../../lib/wire.js';
+import { wire, type Wire } from '@taskflow/client';
 import type { DocumentNode } from '../work/detail/rich-text.js';
 
 /**

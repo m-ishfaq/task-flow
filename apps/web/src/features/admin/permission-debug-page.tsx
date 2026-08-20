@@ -4,7 +4,7 @@ import { PERMISSIONS, RESOURCE_TYPES, type Permission, type ResourceType } from 
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useSession } from '../../lib/session.js';
-import { wire } from '../../lib/wire.js';
+import { wire } from '@taskflow/client';
 import { cn } from '../../lib/cn.js';
 import { Button, Field, Input, Spinner } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';

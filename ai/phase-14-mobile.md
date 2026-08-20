@@ -411,10 +411,11 @@ Phases 5, 7, 8 and 12 — here it would just be easier to make and harder to not
 
 ## 12. Decisions to resolve at review
 
-Two of the five below were resolved by what actually shipped, not by this section being edited at
-the time — recorded here now rather than left to read as still-open questions the code had already
-answered (the same "status marker is a claim, not a fact" habit CLAUDE.md documents for Phases 3.5,
-5 and 8).
+Four of the five below are now resolved — two (1, 2) by what had already shipped before this
+section caught up, recorded here rather than left to read as still-open questions the code had
+already answered (the same "status marker is a claim, not a fact" habit CLAUDE.md documents for
+Phases 3.5, 5 and 8); two more (3, 4) resolved at review and then built. Only 5 remains genuinely
+open, deferred to Wave 5 on purpose.
 
 1. **Native auth transport shape (§4.3) — RESOLVED: a separate `auth.native.*` procedure
    namespace.** Shipped in the increment that added `NativeSessionResponse` and the
@@ -426,14 +427,23 @@ answered (the same "status marker is a claim, not a fact" habit CLAUDE.md docume
    shipped in Wave 1 is written assuming it: `isNativeClient`'s own header in
    `apps/realtime/src/auth.ts` and this file's §4.5 both name the device-bound keypair as the
    control that will supersede the current interim state, not one already in place.
-3. **Styling: NativeWind vs a hand-rolled token layer.** NativeWind reuses Tailwind-class semantics
-   and the Phase 6.5 tokens' vocabulary; a hand-rolled layer avoids a build-time dependency. Design-
-   system reuse argues for NativeWind; this is an owner call, like the payments-provider call in
-   Phase 12 Wave 3.
-4. **`wire.ts` / shared-helper home (§5):** extract the `Wire<T>` restatement and the pure Query
-   helpers into a new shared package now, or leave them in `apps/web` and import across the app
-   boundary until the third consumer justifies the move (Phase 6.5's rule)? Extracting now avoids a
-   copy that can drift; extracting prematurely adds a package before it is earned.
+3. **Styling — RESOLVED: NativeWind.** Reuses the Phase 6.5 design-system vocabulary directly rather
+   than re-deriving it by hand in a second styling language.
+4. **`wire.ts` / shared-helper home (§5) — RESOLVED: extracted now, to `packages/client`.** Moved
+   `Wire<T>`, `wire()`, `parseInstant`/`parseNullableInstant` verbatim; `apps/web`'s original
+   `query.ts` turned out NOT to be the "pure... reused as-is" file §5's own table originally claimed
+   — its `keys` registry and `NOT_A_MEMBER` recovery flow are real `apps/web` product surface,
+   coupled to that app's module-singleton session store, and stayed there. What moved is the
+   genuinely platform-agnostic remainder: the retry policy and `QueryClient` defaults
+   (`query-client.ts`, taking error classifiers as parameters instead of importing `apps/web`'s
+   `trpc.js`), and the optimistic-mutation contract (`optimistic.ts`, taking the failure-surfacing
+   callback as a parameter instead of importing `apps/web`'s `useToast()`). Writing the first real
+   test for `optimistic.ts` — it had none in `apps/web` — found a genuine, previously-shipped bug:
+   the "remove a key that did not exist before the patch" rollback path never actually fired, because
+   `getQueriesData` only returns entries for query objects that already exist, so a truly new key
+   never appeared in the snapshot for the `data === undefined` check to catch. Fixed by snapshotting
+   KEY EXISTENCE via `findAll`, not data value — `optimistic.test.tsx`'s own regression case is what
+   proved it.
 5. **Expo managed vs bare / prebuild.** Managed keeps the config surface small; some native modules
    (CallKit, certain WebRTC setups) push toward prebuild/config-plugins. The draft assumes managed
    with config plugins and revisits at Wave 5.

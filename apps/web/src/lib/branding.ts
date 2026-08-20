@@ -1,7 +1,7 @@
 import { queryOptions } from '@tanstack/react-query';
 import { api } from './trpc.js';
 import { keys } from './query.js';
-import { wire, type Wire } from './wire.js';
+import { wire, type Wire } from '@taskflow/client';
 
 /**
  * The deployment's branding (migration 0073) — product name, logo, favicon,

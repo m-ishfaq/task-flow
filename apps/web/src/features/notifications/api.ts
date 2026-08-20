@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/react-query';
 import { api } from '../../lib/trpc.js';
-import { wire } from '../../lib/wire.js';
+import { wire } from '@taskflow/client';
 
 /**
  * Notification preferences (Phase 9, ai/phase-9-notifications.md §3.3).

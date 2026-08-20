@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { useSession } from '../../lib/session.js';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
-import { wire } from '../../lib/wire.js';
+import { wire } from '@taskflow/client';
 import { displayName, oooStatus } from '../../lib/format.js';
 import { Users } from 'lucide-react';
 import {

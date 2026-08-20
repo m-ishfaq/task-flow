@@ -1,5 +1,5 @@
 import { format, formatDistanceToNowStrict, isToday, isTomorrow, isPast, isAfter } from 'date-fns';
-import { parseInstant, parseNullableInstant } from './wire.js';
+import { parseInstant, parseNullableInstant } from '@taskflow/client';
 
 /**
  * Presentation of times and dates.

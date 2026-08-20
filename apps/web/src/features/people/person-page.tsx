@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useSession } from '../../lib/session.js';
 import { keys } from '../../lib/query.js';
 import { displayName, formatDate } from '../../lib/format.js';
-import { parseNullableInstant } from '../../lib/wire.js';
+import { parseNullableInstant } from '@taskflow/client';
 import {
   Avatar,
   Badge,

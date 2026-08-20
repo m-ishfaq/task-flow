@@ -9,7 +9,7 @@ import { keys } from '../../lib/query.js';
 import { cn } from '../../lib/cn.js';
 import { formatRelative } from '../../lib/format.js';
 import { useToast } from '../../lib/toast-context.js';
-import type { Wire } from '../../lib/wire.js';
+import type { Wire } from '@taskflow/client';
 import { Button, ConfirmButton, Empty, Field, SkeletonRows } from '../../components/primitives.js';
 import { SecretReveal } from '../../components/secret-reveal.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';

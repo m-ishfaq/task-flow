@@ -4,7 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useSession } from '../../lib/session.js';
-import { wire } from '../../lib/wire.js';
+import { wire } from '@taskflow/client';
 import { formatDateTime } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
 import { Avatar, Button, Empty, PageHeader, Spinner } from '../../components/primitives.js';

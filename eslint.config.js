@@ -23,12 +23,16 @@ export default [
   /* React rules, scoped to the app that renders plus `packages/ui`
      (ai/phase-6.5-ui-polish.md Wave 3) — the design system extracted from it,
      which is JSX too and gets the same hooks/a11y rules for the same reason.
+     `packages/client` joins them for an identical reason (ai/phase-14-mobile.md
+     §12 decision 4): `useOptimistic` is a real React hook, extracted out of
+     apps/web, and the rules-of-hooks check that would have caught a misuse in
+     apps/web must not silently stop applying just because the hook moved.
      Safe to place after the guardrails because the block sets no
      `no-restricted-syntax` of its own — the option array security.js builds
      would otherwise be replaced wholesale for every file this matches. */
   ...react.map((config) => ({
     ...config,
-    files: ['apps/web/**/*.{ts,tsx}', 'packages/ui/**/*.{ts,tsx}'],
+    files: ['apps/web/**/*.{ts,tsx}', 'packages/ui/**/*.{ts,tsx}', 'packages/client/**/*.{ts,tsx}'],
   })),
 
   {

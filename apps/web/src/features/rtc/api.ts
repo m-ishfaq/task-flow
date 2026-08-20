@@ -1,7 +1,7 @@
 import { queryOptions, type QueryClient } from '@tanstack/react-query';
 import type { ChannelId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
-import { wire, type Wire } from '../../lib/wire.js';
+import { wire, type Wire } from '@taskflow/client';
 
 /**
  * Query definitions for in-app voice (ai/phase-13-webrtc.md).

@@ -7,7 +7,7 @@ import { ErrorView } from '../../components/error-view.js';
 import { Input } from '../../components/primitives.js';
 import { SecretReveal } from '../../components/secret-reveal.js';
 import { useStepUp } from '../auth/use-step-up.js';
-import type { Wire } from '../../lib/wire.js';
+import type { Wire } from '@taskflow/client';
 
 /**
  * Where every connector OAuth redirect lands (ai/phase-10-automation.md §7,
