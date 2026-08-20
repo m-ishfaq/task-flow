@@ -153,6 +153,44 @@ const cryptoImportBan = {
 };
 
 /* ------------------------------------------------------------------------- *
+ * The phone (apps/mobile) is a client — ai/phase-14-mobile.md §6.
+ *
+ * Like the browser it never talks to the database and never re-derives
+ * authorization (it consumes can() and the decision trace). UNLIKE the browser
+ * it also holds a credential — the rotating refresh token — because a phone has
+ * no httpOnly cookie. So it carries one extra ban the web does not need: on the
+ * session/keystore seam, unencrypted credential storage.
+ * ------------------------------------------------------------------------- */
+const mobileClientImportBans = [
+  ...dbImportBans,
+  cryptoImportBan,
+  {
+    group: ['@taskflow/db', '@taskflow/db/**'],
+    message: `The phone never talks to the database. Use the tRPC client. ${ref('§8.3')}`,
+  },
+  {
+    group: ['@taskflow/policy/internal', '@taskflow/policy/internal/**'],
+    message: `The UI consumes can() and the decision trace — never the rule internals. ${ref('§8.2')}`,
+  },
+];
+
+/* The refresh token lives in the hardware keystore, reached only through the
+   SecureStore port (apps/mobile/src/lib/secure-store.ts). A credential in
+   AsyncStorage — an unencrypted on-disk file — or a plain filesystem write is
+   the mobile equivalent of the localStorage the web session file refuses: one
+   XSS, one device backup, or one rooted phone away from a token an attacker
+   keeps. Banned on the seam so it cannot be EXPRESSED there, not merely
+   discouraged in review. The org id (not a credential) may use ordinary storage
+   elsewhere, which is why this ban is scoped to the seam and not all of
+   apps/mobile. ai/phase-14-mobile.md §4.1, §6.2. */
+const credentialStorageBans = [
+  {
+    group: ['@react-native-async-storage/async-storage', 'expo-file-system', 'expo-file-system/**'],
+    message: `Credentials never touch unencrypted storage. The session and keystore seam uses the SecureStore port (expo-secure-store) only. ${ref('§8.4')}`,
+  },
+];
+
+/* ------------------------------------------------------------------------- *
  * Guardrail 11 — mandatory domain events.
  *
  * Scoped to service files. Repositories, migrations, and seeds mutate without
@@ -205,6 +243,36 @@ export const security = [
             },
           ],
         },
+      ],
+    },
+  },
+
+  /* ---------------------------------------------------------------------- *
+   * 2b. The phone, like the browser, never reaches the database or the policy
+   *     internals. Sets `no-restricted-imports` only (no `no-restricted-syntax`),
+   *     so the baseline syntax bans above still apply to apps/mobile untouched.
+   * ---------------------------------------------------------------------- */
+  {
+    name: 'taskflow/guardrails/mobile',
+    files: ['apps/mobile/**'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: mobileClientImportBans }],
+    },
+  },
+
+  /* 2c. The credential seam — the session store and the SecureStore port. It
+     re-emits the full mobile import list PLUS the unencrypted-storage ban:
+     because a later block REPLACES `no-restricted-imports` rather than merging,
+     omitting the mobile bans here would silently restore @taskflow/db access to
+     exactly the files that hold the refresh token. Placed AFTER block 2b so it
+     wins for these files. The guardrail-selftest asserts both halves stay. */
+  {
+    name: 'taskflow/guardrails/mobile-credential-seam',
+    files: ['apps/mobile/src/lib/session.ts', 'apps/mobile/src/lib/secure-store.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [...mobileClientImportBans, ...credentialStorageBans] },
       ],
     },
   },
