@@ -363,6 +363,12 @@ describe('the real application router', () => {
          the entire reason `/account` exists as a route independent of
          `/settings`. Not step-up: reading is not credential-adjacent. */
       'auth.me',
+      /* Device binding (Phase 14 Wave 1b §4.5) — binding a session to its own
+         device key. `selfRoute`, not `publicRoute`: `sessions.
+         registerDeviceKey` reads `sessionId` off the caller's own verified
+         access token rather than trusting anything the client names, so the
+         caller must already be authenticated to reach it at all. */
+      'auth.native.deviceKey.register',
       /* Connected-accounts management (Phase 12 Wave 2 §3.3) — reading and
          changing your own account's sign-in methods. `startLink`/`unlink`
          are step-up: adding or removing a way in is credential-adjacent the

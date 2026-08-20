@@ -114,6 +114,10 @@ const UNMAPPED: ReadonlySet<string> = new Set([
   'user.oauth_unlinked',
   'session.revoked',
   'session.token_reuse_detected',
+  // Phase 14 Wave 1b §4.5 — same shape as its siblings above: the fact names
+  // the account that bound the key, already in `actor_id`, and a session has
+  // no resource type of its own for `resource_id` to name instead.
+  'session.device_key_registered',
   // Phase 12 Wave 2 §3.6 — the DSAR export event. Same shape as the login
   // events above: the fact names the account, already in `actor_id`, and the
   // payload carries nothing of the export's contents by design.
