@@ -277,6 +277,18 @@ describe('the real application router', () => {
     expect(paths).toEqual([
       'auth.login',
       'auth.logout',
+      /* The NATIVE auth surface (ai/phase-14-mobile.md §4.3). Public for the
+         same reason their browser counterparts are — this is how a phone
+         obtains, renews, and ends a session — and a deliberate expansion of the
+         unauthenticated surface, reviewed here. They differ from the browser
+         routes only in delivery: a phone has no httpOnly cookie, so the refresh
+         token travels in the body via a SEPARATE schema (`NativeSessionResponse`)
+         and is read back from the request input, never `ctx.refreshToken`. See
+         the `native` block in identity/router.ts. */
+      'auth.native.login',
+      'auth.native.logout',
+      'auth.native.refresh',
+      'auth.native.totp.verifyLogin',
       /* OAuth sign-in (Phase 12 Wave 2 §3.3). Both public for the same reason
          auth.login is — `callback` is reached via a browser redirect with no
          session either way, whether it turns out to sign someone in or to
