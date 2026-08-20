@@ -428,7 +428,10 @@ async function sessionFor(
     throw errors.invalidCredentials();
   }
 
-  const pair = await issueSession(deps.identity, userId, now, now, meta);
+  // OAuth is a browser redirect flow; a native OAuth path (PKCE + deep link) is
+  // a later increment (ai/phase-14-mobile.md §4.4), so this mints a browser
+  // session — the channel binding refuses its token on the native refresh route.
+  const pair = await issueSession(deps.identity, userId, now, now, meta, 'browser');
 
   await deps.identity.events.publish([
     createEvent(

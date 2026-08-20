@@ -11,6 +11,7 @@ import {
   schema,
   withGlobalScope,
   type GlobalDb,
+  type SessionChannel,
 } from '@taskflow/db';
 import { newId } from '@taskflow/security';
 
@@ -288,6 +289,8 @@ export interface CreateSessionInput {
   country: string | null;
   /** Set when this sign-in was flagged by impossible-travel detection (§3.4). */
   impossibleTravelAt: Date | null;
+  /** Which client minted the session — bounds which route may later refresh it. */
+  channel: SessionChannel;
   refreshToken: { id: string; tokenHash: string; expiresAt: Date };
 }
 
@@ -302,6 +305,7 @@ export async function createSession(input: CreateSessionInput): Promise<void> {
       userAgent: input.userAgent,
       country: input.country,
       impossibleTravelAt: input.impossibleTravelAt,
+      channel: input.channel,
     });
 
     await tx.insert(schema.refreshTokens).values({
@@ -323,6 +327,8 @@ export interface RefreshLookup {
   sessionRevokedAt: Date | null;
   sessionExpiresAt: Date;
   authenticatedAt: Date;
+  /** The channel the session was minted on — the refresh path enforces it (§4.3). */
+  channel: SessionChannel;
 }
 
 export async function findRefreshToken(tokenHash: string): Promise<RefreshLookup | undefined> {
@@ -337,6 +343,7 @@ export async function findRefreshToken(tokenHash: string): Promise<RefreshLookup
         sessionRevokedAt: schema.sessions.revokedAt,
         sessionExpiresAt: schema.sessions.expiresAt,
         authenticatedAt: schema.sessions.authenticatedAt,
+        channel: schema.sessions.channel,
       })
       .from(schema.refreshTokens)
       .innerJoin(schema.sessions, eq(schema.sessions.id, schema.refreshTokens.sessionId))

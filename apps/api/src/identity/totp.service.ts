@@ -1,4 +1,5 @@
 import { errors, unsafeAsId } from '@taskflow/contracts';
+import type { SessionChannel } from '@taskflow/db';
 import { createEvent } from '@taskflow/events';
 import {
   decryptString,
@@ -224,6 +225,8 @@ export async function verifyLogin(
     credential: { kind: 'totp'; code: string } | { kind: 'recovery'; code: string };
   },
   meta: { ip: string | null; userAgent: string | null },
+  /** The channel completing the second factor — the resulting session is bound to it (§4.3). Defaults to browser, fail-safe as in identity.service's login/refresh. */
+  channel: SessionChannel = 'browser',
 ): Promise<TokenPair> {
   const { userId } = await verifyTotpChallenge(input.challengeToken, {
     secret: deps.identity.config.jwtSecret,
@@ -320,7 +323,7 @@ export async function verifyLogin(
     throw errors.validation({ code: 'That code is not valid.' });
   }
 
-  const pair = await issueSession(deps.identity, userId, now, now, meta);
+  const pair = await issueSession(deps.identity, userId, now, now, meta, channel);
 
   await deps.identity.events.publish([
     createEvent(

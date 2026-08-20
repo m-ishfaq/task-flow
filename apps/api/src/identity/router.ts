@@ -136,7 +136,7 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
         ]),
       )
       .mutation(async ({ input, ctx }) => {
-        const result = await identity.login(deps.identity, input, meta(ctx));
+        const result = await identity.login(deps.identity, input, meta(ctx), 'browser');
         if (result.kind === 'totp_required') return result;
         return { kind: 'session' as const, ...handOff(ctx, result.pair) };
       }),
@@ -152,6 +152,7 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
           deps.identity,
           { refreshToken: ctx.refreshToken },
           meta(ctx),
+          'browser',
         );
         return handOff(ctx, pair);
       }),
@@ -216,7 +217,7 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
           ]),
         )
         .mutation(async ({ input, ctx }) => {
-          const result = await identity.login(deps.identity, input, meta(ctx));
+          const result = await identity.login(deps.identity, input, meta(ctx), 'native');
           if (result.kind === 'totp_required') return result;
           return { kind: 'session' as const, ...nativeSession(result.pair) };
         }),
@@ -232,6 +233,7 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
             deps.identity,
             { refreshToken: input.refreshToken },
             meta(ctx),
+            'native',
           );
           return nativeSession(pair);
         }),
@@ -271,6 +273,7 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
               totpDeps,
               { challengeToken: input.challengeToken, credential: input.credential },
               meta(ctx),
+              'native',
             );
             return nativeSession(pair);
           }),
@@ -480,6 +483,7 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
             totpDeps,
             { challengeToken: input.challengeToken, credential: input.credential },
             meta(ctx),
+            'browser',
           );
           return handOff(ctx, pair);
         }),

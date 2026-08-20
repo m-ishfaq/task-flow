@@ -274,7 +274,10 @@ export async function finishAuthentication(
    * authenticator plus a user-verification gesture, and it can only have been
    * enrolled by someone already signed in — so the mailbox check has nothing
    * left to add here. */
-  const pair = await issueSession(deps, user.id, now, now, meta);
+  // Passkey sign-in on native (platform authenticators) is Wave 1b
+  // (ai/phase-14-mobile.md §4.4); today this is the browser ceremony, so it
+  // mints a browser session and its token is refused on the native route.
+  const pair = await issueSession(deps, user.id, now, now, meta, 'browser');
 
   await deps.events.publish([
     createEvent(

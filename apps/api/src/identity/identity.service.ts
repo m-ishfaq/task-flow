@@ -1,5 +1,6 @@
 import { errors, unsafeAsId, type OrgId } from '@taskflow/contracts';
 import { createEvent, type DomainEvent, type EventBus } from '@taskflow/events';
+import type { SessionChannel } from '@taskflow/db';
 import {
   ACCESS_TOKEN_TTL_SECONDS,
   fakeVerifyPassword,
@@ -255,6 +256,15 @@ export async function login(
   deps: IdentityDeps,
   input: { email: string; password: string },
   meta: RequestMeta,
+  /**
+   * Which client is signing in — bound onto the session so only its own refresh
+   * route may renew it (§4.3). The router passes 'browser'/'native' explicitly;
+   * the default exists only so a caller that omits it fails SAFE. Omitting it
+   * mints a browser session, whose token the native route then REFUSES — visible
+   * breakage of a native client, never a token that crosses a channel it should
+   * not. There is no default that exposes; the risky direction is unreachable.
+   */
+  channel: SessionChannel = 'browser',
 ): Promise<LoginResult> {
   const now = clock(deps);
   const user = await repo.findUserByEmail(input.email);
@@ -372,7 +382,7 @@ export async function login(
     return { kind: 'totp_required', challengeToken };
   }
 
-  const pair = await issueSession(deps, user.id, now, now, meta);
+  const pair = await issueSession(deps, user.id, now, now, meta, channel);
 
   await deps.events.publish([
     createEvent(
@@ -414,11 +424,28 @@ export async function refresh(
   deps: IdentityDeps,
   input: { refreshToken: string },
   meta: RequestMeta,
+  /**
+   * The channel of the route presenting the token; it must match the session's
+   * own (§4.3). Defaults to 'browser' for the same fail-safe reason `login`'s
+   * does: a caller that omits it enforces the browser channel, which can only
+   * over-restrict (a native token refused), never admit a token across a channel.
+   */
+  expectedChannel: SessionChannel = 'browser',
 ): Promise<TokenPair> {
   const now = clock(deps);
   const found = await repo.findRefreshToken(hashToken(input.refreshToken));
 
   if (!found) throw invalidSession();
+
+  /* Channel binding (ai/phase-14-mobile.md §4.3). A token minted on one channel
+     may only be refreshed on that channel's route: a browser cookie token is
+     refused on the native body-delivery route, and a native token on the
+     browser cookie route. Refused generically as an invalid session — the token
+     is genuine, only presented on the wrong surface, and a distinct error would
+     confirm it exists. Checked BEFORE the reuse/rotation branch so a
+     wrong-channel probe can never trigger a family-wide revocation of a real
+     user's session. */
+  if (found.channel !== expectedChannel) throw invalidSession();
 
   if (found.rotatedAt !== null) {
     await repo.revokeSession(found.sessionId, 'token_reuse', now);
@@ -682,6 +709,8 @@ export async function issueSession(
   authenticatedAt: Date,
   now: Date,
   meta: RequestMeta,
+  /** The channel that minted this session — stored so only its route may refresh it (§4.3). */
+  channel: SessionChannel,
 ): Promise<TokenPair> {
   const sessionId = newId<'SessionId'>();
   const refreshToken = issueToken('refresh');
@@ -736,6 +765,7 @@ export async function issueSession(
     userAgent: meta.userAgent,
     country,
     impossibleTravelAt,
+    channel,
     refreshToken: {
       id: newId<'RefreshTokenId'>(),
       tokenHash: refreshToken.hash,

@@ -70,6 +70,15 @@ export const users = identity.table(
   (table) => [uniqueIndex('users_email_normalized_key').on(table.emailNormalized)],
 );
 
+/**
+ * The client channel that minted a session (migration 0080,
+ * ai/phase-14-mobile.md §4.3). The single source of truth for this union — the
+ * repository, service and router all resolve back to it, and the column below
+ * is `.$type<SessionChannel>()` so a select narrows to it rather than to a bare
+ * string. Mirrored by the `sessions_channel_valid` CHECK constraint.
+ */
+export type SessionChannel = 'browser' | 'native';
+
 export const sessions = identity.table(
   'sessions',
   {
@@ -109,6 +118,15 @@ export const sessions = identity.table(
      * a reader would compare against keep changing.
      */
     impossibleTravelAt: timestamp('impossible_travel_at', { withTimezone: true }),
+
+    /**
+     * The client channel that minted this session (migration 0080,
+     * ai/phase-14-mobile.md §4.3): 'browser' (httpOnly cookie delivery) or
+     * 'native' (response-body delivery). The refresh path refuses a token
+     * presented on a different channel than the one recorded here. A CHECK
+     * constraint in the migration is the closed set; this column mirrors it.
+     */
+    channel: text('channel').notNull().default('browser').$type<SessionChannel>(),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
