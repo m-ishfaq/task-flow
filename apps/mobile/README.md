@@ -72,10 +72,12 @@ Three gates, exactly as specified, collapsed into layout components since
   in Wave 2.
 
 **Not in this increment, named rather than half-built (CLAUDE.md's own
-rule):** passkeys, OAuth (`expo-auth-session` + an `oauth-callback` route —
-the button and the callback screen have nothing to do without the PKCE flow
-that drives them, so neither is here yet), biometric app-lock, and device
-binding — all Wave 1b per §4.4–§4.5.
+rule):** passkeys, biometric app-lock, and device binding — all Wave 1b per
+§4.4–§4.5. OAuth (Google/GitHub) shipped in a later increment — see its own
+section below; it was never actually Wave 1b (§4.4 only tags passkeys and
+biometric app-lock that way, and Wave 1's own file map always listed the
+oauth-callback route), so it landed as a Wave 1 gap being closed rather than
+early 1b work.
 
 ### The realtime socket client (§5, §8)
 
@@ -205,6 +207,26 @@ channel BEFORE the reuse/rotation check, so a wrong-channel probe cannot
 trigger family-wide revocation — proved against real Postgres in
 `channel-binding.test.ts`.
 
+### Native OAuth (§4.4, ai/phase-14-mobile.md §12 decision 6)
+
+`src/lib/oauth.ts` plus additions to `sign-in.tsx`. Uses `expo-web-browser`'s
+`openAuthSessionAsync`, not `expo-auth-session` — the lighter primitive it
+wraps, and enough on its own since PKCE is minted and signed into `state`
+server-side (`auth.native.oauth.start`), never on the device. There is no
+`(auth)/oauth-callback` route: `openAuthSessionAsync`'s native module
+intercepts the provider's redirect to `taskflow://oauth-callback` directly
+and resolves its promise before expo-router's own deep-link handling would
+ever see the URL.
+
+Server-side, `apps/api/src/identity/oauth.service.ts`'s `OAuthDeps` gained a
+SEPARATE `nativeProviders` credential map, never the browser `providers` map
+reused: Google's native client is a distinct, secret-less "installed
+application" registration (a "Web application" client cannot use a
+custom-scheme redirect at all), and GitHub's is a second, dedicated OAuth App
+whose one callback URL is the native deep link. See `.env.example`'s
+`GOOGLE_NATIVE_CLIENT_ID`/`GITHUB_NATIVE_CLIENT_ID`/
+`GITHUB_NATIVE_CLIENT_SECRET` for what to register and where.
+
 ## Not here yet
 
 - **Running this on a simulator or physical device.** The app now bundles
@@ -215,6 +237,6 @@ trigger family-wide revocation — proved against real Postgres in
   before any further product screens. In particular, `isNativeClient`'s own
   header names what a real-device run would need to confirm about `Origin` on
   RN's WebSocket transport — see `apps/realtime/src/auth.ts`.
-- Passkeys, OAuth, biometric app-lock, device binding (Wave 1b, §4.4–§4.5).
+- Passkeys, biometric app-lock, device binding (Wave 1b, §4.4–§4.5).
 - The product waves themselves (Work, Chat, Docs, RTC) — the socket client
   exists but nothing calls `joinBoardRoom` yet.
