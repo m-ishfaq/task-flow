@@ -8,6 +8,7 @@ import {
   View,
   type ListRenderItemInfo,
 } from 'react-native';
+import { router } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
@@ -158,7 +159,12 @@ function renderCard({ item: card }: ListRenderItemInfo<CardSummary>) {
   const checklistDone = card.checklistTotal > 0 && card.checklistDone === card.checklistTotal;
 
   return (
-    <View style={styles.card}>
+    <Pressable
+      style={styles.card}
+      onPress={() => {
+        router.push(`/card/${card.cardId}`);
+      }}
+    >
       <View style={styles.cardTopRow}>
         <Text style={styles.reference}>{card.reference}</Text>
         <Text style={styles.cardTitle} numberOfLines={2}>
@@ -192,7 +198,7 @@ function renderCard({ item: card }: ListRenderItemInfo<CardSummary>) {
           </View>
         )}
       </View>
-    </View>
+    </Pressable>
   );
 }
 

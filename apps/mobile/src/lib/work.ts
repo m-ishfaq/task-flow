@@ -69,3 +69,8 @@ export function formatDueDate(value: string | null): DueDateDisplay | null {
 export type CardSummary = Wire<
   Awaited<ReturnType<MobileTRPCClient['work']['cards']['mine']['query']>>
 >[number];
+
+/** The same derivation as `CardSummary`, off `work.cards.get` instead of `.mine` — see that type's own header. */
+export type CardDetail = Wire<
+  Awaited<ReturnType<MobileTRPCClient['work']['cards']['get']['query']>>
+>;

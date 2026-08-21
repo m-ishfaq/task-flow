@@ -448,13 +448,14 @@ signing certificate, none of which exist yet for this project. The code
 above is what to come back to once they do — nothing here needs
 rewriting, only deploying to.
 
-## Wave 2 (Work) — started: "My Tasks"
+## Wave 2 (Work) — started: "My Tasks", then card detail + the TipTap-JSON renderer
 
 Every Wave 1b item is done; Wave 2's roadmap row (`ai/phase-14-mobile.md`)
 names it plainly: "Work — boards, lists, cards, My Tasks, card detail; the
 TipTap-JSON native renderer (§6.4); optimistic mutations." `(app)/home.tsx`
 is the first slice — deliberately the SMALLEST useful cut, not an attempt
-at the whole row.
+at the whole row. `(app)/card/[cardId].tsx` plus `src/lib/rich-text.ts` /
+`rich-text-view.tsx` are the second: tapping a card now goes somewhere.
 
 **What shipped**: a flat, read-only list of the caller's own cards across
 every board they can reach (`work.cards.mine`), replacing Wave 1's
@@ -481,9 +482,6 @@ platform and "on time" on the other for the identical card.
   `list-view.tsx`'s own reasoning applies doubly here: no drag-and-drop and
   no inline create because both need a LIST to write into, and this is a
   reshaping of cards that live elsewhere, not a place new ones are made.
-- **Card detail / tapping a card.** Needs the TipTap-JSON native renderer
-  (§6.4) to show a card's description at all — real, separate work, not
-  something to fold into a list screen.
 - **Optimistic mutations.** This screen has no mutations — it is a pure
   `useQuery` read, same as web's own My Tasks.
 
@@ -493,6 +491,65 @@ platform and "on time" on the other for the identical card.
 query>>` convention `apps/web/src/features/work/api.ts` uses for its own
 `CardSummary`, never hand-declared, so a field the server adds, removes,
 or renames is a compile error here rather than a silent drift.
+
+### Card detail + the TipTap-JSON native renderer (§6.4)
+
+Tapping a card in "My Tasks" now navigates to `(app)/card/[cardId].tsx` —
+read-only, backed by `work.cards.get`. Title, reference, priority/due-date/
+checklist/comment-count badges (the same row "My Tasks" already renders),
+and the card's description, rendered by a genuinely new native TipTap-JSON
+renderer rather than anything borrowed from web (ProseMirror needs a DOM;
+web's own read-only rendering is the real editor mounted `editable={false}`,
+which has no native equivalent).
+
+**The renderer is a security control, not just a UI feature** — §6.4 says so
+directly: "rich text is rendered by a closed switch over the node/mark
+whitelist, never by feeding a string to any HTML/Markdown-to-native library
+that could execute an attribute." It is split into two files for exactly the
+reason `session.ts`'s DI-port files are split from their native
+implementations — one half worth testing in isolation, one half that is not:
+
+- **`src/lib/rich-text.ts`** — `sanitizeRichText(input: unknown)`, a pure
+  function with no React import, walking the untrusted `description` field
+  into a `SanitizedNode` tree. It imports `NODE_ATTRIBUTES`, `NODE_TYPES`,
+  `MarkSchema`, `MAX_DEPTH` and `MAX_NODES` from `@taskflow/api/richtext` —
+  now a real (not dev-only) dependency — rather than restating the
+  whitelist, the same reason `apps/collab/src/content-guard.ts` and
+  `apps/api/src/docs/render.ts` both import it instead of copying it. An
+  unrecognized node type, or a known type with attributes that fail its own
+  schema, is DROPPED (not attr-stripped) — `render.ts`'s own header makes
+  this exact call for the identical read-only case: there is no editor
+  around afterward to notice and fix a half-broken `mention`. A `link` mark
+  whose `href` fails `MarkSchema`'s scheme check is dropped from that text
+  run's marks — the text still renders, just not as a clickable link — which
+  is where "never touches an HTML parser" actually pays off: there is no
+  string concatenation of a URL into anything a WebView or a Markdown
+  renderer could later interpret. Depth and node-count are re-bounded during
+  the walk (mirroring `richtext.ts`'s own `measure()` doing the same thing
+  iteratively) because a phone's JS stack is much smaller than the server's,
+  and this is a second, independent walk of data the client does not itself
+  control. `rich-text.test.ts` (11 cases) asserts all of this directly,
+  including the two that matter most: a `javascript:` link is stripped while
+  its text survives, and a document nested far past `MAX_DEPTH` sanitizes
+  without a stack overflow.
+- **`src/lib/rich-text-view.tsx`** — `RichTextView`, the pure `switch` on
+  `SanitizedNode['type']` into RN elements §6.4 asks for. It does no
+  validation of its own — everything reaching it already passed
+  `sanitizeRichText` — which is what keeps it untested: there is nothing
+  left to assert once the security-relevant half already has full coverage,
+  the same "test the logic, not the JSX" split this codebase already
+  applies to `biometric-gate.ts` vs. its screens.
+
+`work.ts` gained `CardDetail`, derived from `work.cards.get`'s own inferred
+type exactly the way `CardSummary` is derived from `.mine` — never
+hand-declared.
+
+**What this slice still deliberately does NOT have:** editing (needs
+optimistic mutations and `use-update-card.ts`'s version-conflict story —
+its own increment), the comment list and composer (only the count renders;
+`work.comments.list` has no mobile caller yet), checklist items (only the
+done/total count; no per-item read or toggle), and boards/kanban (still
+Work's whole remaining row).
 
 ## Not here yet
 
@@ -539,7 +596,8 @@ or renames is a compile error here rather than a silent drift.
   production domain, hosted `apple-app-site-association`/`assetlinks.json`
   files, and a real Android signing certificate, none of which exist yet.
   See that section's own checklist for exactly what to stand up first.
-- The rest of Work (boards, the kanban view, card detail, the TipTap-JSON
-  native renderer, optimistic mutations) and the other product waves (Chat,
+- The rest of Work (boards, the kanban view, card editing, optimistic
+  mutations, comments, checklist items) and the other product waves (Chat,
   Docs, RTC) — the socket client exists but nothing calls `joinBoardRoom`
-  yet, and "My Tasks" (above) is Work's first slice, not its whole row.
+  yet, and "My Tasks" + read-only card detail (above) are Work's first two
+  slices, not its whole row.

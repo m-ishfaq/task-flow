@@ -222,6 +222,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.90.5
         version: 5.101.4(react@19.2.3)
+      '@taskflow/api':
+        specifier: workspace:*
+        version: link:../api
       '@taskflow/client':
         specifier: workspace:*
         version: link:../../packages/client
@@ -292,9 +295,6 @@ importers:
         specifier: ^5.0.14
         version: 5.0.14(@types/react@19.2.17)(react@19.2.3)(use-sync-external-store@1.6.0(react@19.2.3))
     devDependencies:
-      '@taskflow/api':
-        specifier: workspace:*
-        version: link:../api
       '@taskflow/config':
         specifier: workspace:*
         version: link:../../packages/config
