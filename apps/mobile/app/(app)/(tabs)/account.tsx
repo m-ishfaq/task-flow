@@ -1,32 +1,31 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient, session } from '../../../src/lib/app-session.js';
 import { useSession } from '../../../src/lib/use-session.js';
-import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
-import {
-  loadPasskeys,
-  toRegistrationResponse,
-  type PasskeyCreationResult,
-} from '../../../src/lib/passkeys.js';
+import { ProfileSection } from '../../../src/lib/profile-section.js';
+import { WorkingHoursSection } from '../../../src/lib/working-hours-section.js';
+import { PasskeySection } from '../../../src/lib/passkey-section.js';
+import { TotpSection } from '../../../src/lib/totp-section.js';
 import { ConnectedAccountsSection } from '../../../src/lib/connected-accounts-section.js';
+import { SessionsSection } from '../../../src/lib/sessions-section.js';
+import { ExportDataSection } from '../../../src/lib/export-data-section.js';
 
 /**
  * The Account tab — the one place `apps/web`'s sidebar footer (`OrgSwitcher`
  * + the account dropdown, `shell.tsx`) puts "which org am I in", "switch
- * it", and "sign out"; nothing here had a home before this navigation-shell
+ * it", and "sign out"; nothing here had a home before the navigation-shell
  * increment (see `_layout.tsx`'s own header for why a tab bar exists now at
- * all).
+ * all) that first added this screen.
  *
- * **What this deliberately does NOT have yet**, matching web's much larger
- * `account-page.tsx` (656 lines: profile editing, connected accounts, TOTP,
- * device/session inventory, DSAR export) — none of that is built here. This
- * screen is the smallest useful cut: see the current org, leave it, manage
- * a passkey, sign out. A fuller account screen is real, separate work, not
- * something to fold into the navigation-shell fix that motivated this one.
+ * **Growing toward parity with web's much larger `account-page.tsx`** (656
+ * lines: profile editing, connected accounts, TOTP, device/session
+ * inventory, DSAR export) — a real device video review asked for it by
+ * name, and each section below documents its own porting notes. Still
+ * ahead, in order: TOTP (needs a new QR-rendering dependency), profile
+ * editing plus working hours/out-of-office, and self-serve DSAR export.
  *
  * "Switch organization" pushes `/org-picker` — the SAME screen
  * `(app)/_layout.tsx`'s gate already redirects to when no valid org is
@@ -38,39 +37,12 @@ import { ConnectedAccountsSection } from '../../../src/lib/connected-accounts-se
  */
 export default function Account() {
   const orgId = useSession((state) => state.orgId);
-  const [passkeySupported, setPasskeySupported] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    loadPasskeys()
-      .then((mod) => {
-        if (!cancelled) setPasskeySupported(mod.isSupported());
-      })
-      .catch(() => {
-        if (!cancelled) setPasskeySupported(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const orgs = useQuery({
     queryKey: ['tenancy.orgs.list'],
     queryFn: () => apiClient.tenancy.orgs.list.query(),
   });
   const currentOrg = orgs.data?.find((org) => org.orgId === orgId);
-
-  const addPasskey = useMutation({
-    mutationFn: async () => {
-      const options = await apiClient.auth.passkeys.startRegistration.mutate();
-      const { create } = await loadPasskeys();
-      const result = await create(options as never);
-      if (result === null) return null;
-      // See sign-in.tsx's identical cast for why.
-      const response = toRegistrationResponse(result as unknown as PasskeyCreationResult);
-      return apiClient.auth.passkeys.finishRegistration.mutate({ response: response as never });
-    },
-  });
   const paddingTop = useTopInset();
 
   return (
@@ -91,34 +63,13 @@ export default function Account() {
         </Pressable>
       </View>
 
-      {passkeySupported && (
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Security</Text>
-          {addPasskey.isError && (
-            <Text style={styles.error} accessibilityRole="alert">
-              {apiErrorOf(addPasskey.error)?.error.message ?? 'Could not add a passkey.'}
-            </Text>
-          )}
-          {addPasskey.isSuccess && addPasskey.data !== null && (
-            <Text style={styles.hint}>Passkey added.</Text>
-          )}
-          <Pressable
-            style={styles.secondaryButton}
-            disabled={addPasskey.isPending}
-            onPress={() => {
-              addPasskey.mutate();
-            }}
-          >
-            {addPasskey.isPending ? (
-              <ActivityIndicator color={colors.ink.hex} />
-            ) : (
-              <Text style={styles.secondaryButtonText}>Add a passkey to this device</Text>
-            )}
-          </Pressable>
-        </View>
-      )}
-
+      <ProfileSection />
+      <WorkingHoursSection />
+      <PasskeySection />
+      <TotpSection />
       <ConnectedAccountsSection />
+      <SessionsSection />
+      <ExportDataSection />
 
       <Pressable
         style={styles.button}
@@ -165,10 +116,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.inkMuted.hex,
   },
-  hint: {
-    fontSize: 12,
-    color: colors.inkMuted.hex,
-  },
   button: {
     borderRadius: radiusCard,
     paddingVertical: 12,
@@ -194,9 +141,5 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
     fontSize: 15,
     fontWeight: '600',
-  },
-  error: {
-    color: colors.danger.hex,
-    fontSize: 14,
   },
 });

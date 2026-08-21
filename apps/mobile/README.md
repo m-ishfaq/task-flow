@@ -1300,7 +1300,7 @@ mistake this app's own history already warns against — a control that
 reads correctly and does nothing real. Real, separate work, named here
 rather than quietly missing.
 
-## Account screen parity with web — started: step-up, and connected accounts
+## Account screen parity with web — complete
 
 The next item after the video-review bug fixes and the board/chat work:
 bringing `(tabs)/account.tsx` up to web's much larger `account-page.tsx`
@@ -1352,14 +1352,97 @@ sign-in, which is the common case for anyone actually using the Account tab.
   the one difference is `onSuccess`: sign-in adopts a session, this never
   does, because a `{ kind: 'linked' }` result carries no tokens to adopt.
 - **`(tabs)/account.tsx`** gained a `ScrollView` (was a plain `View` — fine
-  for three items, not for a screen that is about to hold six sections) and
-  now renders `<ConnectedAccountsSection />` between passkeys and sign-out.
+  for three items, not for the eight sections it now holds).
 
-**Still to come, same slice**: TOTP (needs a new native dependency for
-rendering the enrollment QR code — nothing in this app renders one today),
-passkey list/rename/remove (enrollment already exists; the rest doesn't),
-session/device inventory with revoke and sign-out-everywhere, profile
-editing plus working hours/out-of-office, and self-serve DSAR export.
+**The remaining six sections, all built on the step-up infrastructure
+above** (each its own file in `src/lib/`, each ported from the matching
+web component, each wired into `account.tsx` in the same order web renders
+them: profile, working hours, passkeys, TOTP, connected accounts, sessions,
+export):
+
+- **`sessions-section.tsx`** — device/session inventory. `list` is a plain
+  `selfRoute` read; `revoke` (one device) and `auth.logoutEverywhere`
+  (every device, including this one) are both `stepUp: true`. Deliberately
+  does NOT call `session.signOut()` for the "everywhere" case — that method
+  also revokes THIS device's own refresh token server-side, which is
+  redundant (the server already revoked every session) and pointless to
+  await (the very token it would send is one of the ones just revoked).
+  `session.clear()` is the correct local half: drop the stored token, flip
+  `status` to `'anonymous'`, and let `(app)/_layout.tsx`'s existing gate —
+  the same one the ordinary "Sign out" button already relies on — do the
+  redirect, with no explicit navigation call needed here either.
+- **`passkey-section.tsx`** — replaces `account.tsx`'s original enroll-only
+  block with enroll, list, rename, and remove. `remove` is `stepUp: true`
+  (§8.1: removing an authenticator is exactly what a stolen session is used
+  for first); `list`/`rename` are not.
+- **`totp-section.tsx`** / **`qr-code.tsx`** — two-factor authentication,
+  the one section needing a genuinely new native dependency
+  (`react-native-qrcode-svg` + its `react-native-svg` peer — nothing in
+  this app rendered a QR code before). `qr-code.tsx` loads it with a
+  memoized dynamic `import()`, never a static top-level one — the exact
+  shape `device-key.ts`'s `getNative()`, `biometric-gate.native.ts`'s
+  dynamic `expo-local-authentication` import, and `passkeys.ts`'s
+  `loadPasskeys()` all already use, for the identical reason each of their
+  own headers documents: a native module's entry file commonly calls
+  `requireNativeModule`/`requireNativeComponent` at ITS top level, which
+  throws wherever the module is not yet linked, and a static import in a
+  file reachable from the tab bar poisons Metro's whole module graph before
+  a single screen renders — the exact failure this file's own history
+  names twice already for the two previous native modules this app added.
+  Failing to load renders `null` rather than throwing; the manual secret
+  (shown alongside the QR, not conditionally) stays a complete, usable
+  enrollment path on its own either way. `npx expo install` itself failed
+  in this sandbox — it fatally errored trying to reach
+  `reactnative.directory`'s compatibility-metadata service (blocked by
+  this environment's outbound proxy) rather than gracefully skipping that
+  check as its own log claimed it would — so the dependency was added with
+  a direct `pnpm add` instead, verified the only way that actually matters
+  here: a real `expo export` for both platforms with the new native code
+  in the graph.
+- **`profile-section.tsx`** — display name, read-only email, verified
+  badge, member-since. `auth.me` (read) and `people.profile.update`
+  (write) are both `selfRoute` with NO `stepUp` — a display name is not
+  credential-adjacent — so this is the one new section that needs none of
+  the `useStepUp` plumbing every other one does.
+- **`working-hours-section.tsx`** — timezone, work start/end, a
+  working-days toggle grid, out-of-office from/until/message, via
+  `people.profile.get`/`.update` (the merged view `auth.me` deliberately
+  does not carry). Time and date fields are plain text (`HH:MM`,
+  `YYYY-MM-DD`), not native pickers — the same call `card/[cardId].tsx`'s
+  own header already makes for due/start dates, still the right one here:
+  this session already added two new native dependencies (icons, the TOTP
+  QR renderer above), and a third for two rarely-touched fields is not a
+  call to make silently inside a port. The server re-validates either way.
+  One subtlety worth naming: `oooFrom`/`oooUntil` arrive over the wire as
+  full ISO instants (a `z.date()` output), sliced to their leading
+  `YYYY-MM-DD` before landing in the text field — the same treatment web's
+  `value.oooFrom?.slice(0, 10)` gives the identical field — so a reloaded
+  value re-populates the date that was actually typed, not a raw
+  timestamp.
+- **`export-data-section.tsx`** — self-serve DSAR export.
+  `people.profile.exportMine` is a tRPC QUERY but called on demand from a
+  button press, never auto-fetched — the same choice web's own header
+  notes explicitly for the identical route. `Share.share` (React Native
+  core, zero new dependencies) is the mobile equivalent of web's
+  `Blob`-and-anchor download, the same pattern
+  `channel-details/[channelId].tsx`'s own compliance export already
+  established for this app.
+
+**One finding worth recording for the next native dependency this app
+adds**: this session's own empirical check found that `z.date()` fields
+already arrive correctly typed as `string` on the mobile tRPC client with
+NO `wire()` applied — `@trpc/client@11.18`'s type inference now resolves
+this automatically for an HTTP link with no transformer, which is not the
+behavior this file's own CLAUDE.md-documented history describes. Confirmed
+directly: `const x: string = result.exportedAt` typechecks with no cast,
+and `const y: Date = result.exportedAt` fails with `Type 'string' is not
+assignable to type 'Date'`, on more than one route. `wire()` is still
+called at every query boundary in the files added this session regardless
+— consistency with this codebase's own established, explicitly documented
+convention matters more than exploiting a version-specific inference
+improvement that a future dependency bump could just as easily reverse,
+and `Wire<T>` is a no-op identity mapping wherever the field is already
+correctly typed, so there is no cost to keeping the pattern.
 
 ## Not here yet
 

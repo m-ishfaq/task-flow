@@ -1,6 +1,7 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from './app-session.js';
 import { apiErrorOf } from './trpc-client.js';
@@ -47,7 +48,7 @@ export function ConnectedAccountsSection() {
   });
   const connected = useQuery({
     queryKey: CONNECTED_QUERY_KEY,
-    queryFn: () => apiClient.auth.oauth.listConnected.query(),
+    queryFn: async () => wire(await apiClient.auth.oauth.listConnected.query()),
   });
 
   const refresh = async (): Promise<void> => {
