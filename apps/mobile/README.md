@@ -550,12 +550,11 @@ implementations — one half worth testing in isolation, one half that is not:
 type exactly the way `CardSummary` is derived from `.mine` — never
 hand-declared.
 
-**What this slice still deliberately does NOT have:** editing (needs
-optimistic mutations and `use-update-card.ts`'s version-conflict story —
-its own increment), the comment list and composer (only the count renders;
-`work.comments.list` has no mobile caller yet), checklist items (only the
-done/total count; no per-item read or toggle), and boards/kanban (still
-Work's whole remaining row).
+**What this slice still deliberately does NOT have:** editing — that landed
+next, see "Editing: title and priority" below — the comment list and
+composer (only the count renders; `work.comments.list` has no mobile caller
+yet), checklist items (only the done/total count; no per-item read or
+toggle), and boards/kanban (still Work's whole remaining row).
 
 ## The navigation shell, and the auth screens that were missing
 
@@ -620,6 +619,62 @@ the `EMAIL_NOT_VERIFIED` recovery web's `LoginPage` already has — a
 "Resend verification email" button — ported with one small difference:
 it reads the live `email` field rather than web's `signIn.variables?.email`,
 since this screen's `signIn` mutation takes no argument to capture one from.
+
+## Editing: title and priority, and Wave 2's "optimistic mutations" roadmap item
+
+Card detail stopped being read-only. `src/lib/card-patch.ts` and
+`src/lib/use-update-card.ts` port `apps/web/src/features/work/
+use-update-card.ts` — read that file's own header before touching either:
+`work.cards.update` is a FULL REPLACE, and the entire point of this pair of
+files is that a caller can only express "change these fields", never
+express "clear the ones it could not see" by accident.
+
+**Split into two files for one reason: Vitest cannot parse `react-native`'s
+Flow-typed source.** `mergePatch`/`asRichText` — the actual "loaded gun"
+logic (`'key' in patch`, touched-possibly-to-null, versus the key being
+absent, untouched — `??` alone gets this backwards) — live in
+`card-patch.ts`, which imports nothing but `type CardDetail`/`type
+Priority` from `work.ts`. `use-update-card.ts` is the thin hook wrapping it
+in `useMutation` + `@taskflow/client`'s shared `useOptimistic`, and it
+imports `apiClient` from `app-session.ts` — which pulls in `react-native`
+itself. The first attempt at a test file imported straight from
+`use-update-card.ts` and failed with `RolldownError: Parse failure: Flow is
+not supported` inside `react-native/index.js` — Vitest's plain transform
+has no Metro/Babel step to strip Flow syntax, so anything reachable from
+`apiClient` poisons a test file's whole module graph the moment it is
+imported, even for logic that itself touches no native API. This is the
+same "Expo-free and Vitest-safe" boundary `work.ts`'s own header already
+draws and the same shape as the `rich-text.ts` (pure) / `rich-text-view.tsx`
+(native-consuming) split — now a proven pattern, not a one-off.
+`card-patch.test.ts` (8 cases) is what that split buys: `mergePatch` tested
+directly, no `QueryClient`, no network, no native runtime.
+
+**`useOptimistic` came from `@taskflow/client`, already built for this.**
+Not ported, not reimplemented — `packages/client/src/optimistic.ts`'s own
+header already named `apps/mobile` as a consumer (`ai/phase-14-mobile.md
+§5, §12 decision 4`) before this increment existed to prove it. The one
+real adaptation: web also optimistically patches `cardsOfBoard`, because a
+board's tiles are visible WHILE its detail panel is open — two copies of
+one card on screen at once. Mobile has no board view yet, so there is only
+ever one visible copy of a card being edited — the detail screen itself —
+so `useUpdateCard` patches only `cardQueryKey(cardId)` and separately
+invalidates `MY_TASKS_QUERY_KEY` on settle (a plain `onSettled` override,
+same as web's own — an object spread does not compose two handlers of the
+same name, the later one wins), so a title/priority change is already
+there when the user navigates back to "My Tasks" rather than waiting on
+that list's own staleness window.
+
+**Title and priority only — not description, dates, or anything else.**
+Title gets local state, an explicit "Save" button, dirty-tracked
+(`card/[cardId].tsx`'s `TitleField`) — mirroring web's `TitleAndDescription`
+minus the description half, because there is no native rich text EDITOR
+yet, only `rich-text-view.tsx`'s read-only renderer; a description field
+here would have nowhere real to write back to. Priority fires immediately
+on tap, no separate save — mirroring web's `<select onChange>`, since a
+discrete choice already IS a complete edit, unlike continuous typing. Due
+date and start date are not editable either: no date-picker dependency has
+been added yet, the same kind of call `_layout.tsx`'s tab bar already made
+for icons — a dependency decision this increment did not need to force.
 
 ## Not here yet
 

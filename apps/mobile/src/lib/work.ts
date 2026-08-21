@@ -74,3 +74,17 @@ export type CardSummary = Wire<
 export type CardDetail = Wire<
   Awaited<ReturnType<MobileTRPCClient['work']['cards']['get']['query']>>
 >;
+
+/**
+ * The `work.cards.mine` query key, shared between `home.tsx` (which reads
+ * it) and `use-update-card.ts` (which invalidates it after an edit) — a
+ * literal repeated at both call sites is exactly the kind of drift that
+ * makes an invalidation silently stop matching the query it was meant to
+ * refresh the day one side's array literal changes and the other does not.
+ */
+export const MY_TASKS_QUERY_KEY = ['work.cards.mine'] as const;
+
+/** The `work.cards.get` query key for one card — see `MY_TASKS_QUERY_KEY`'s own comment for why this is a function, not a literal, at each call site. */
+export function cardQueryKey(cardId: string): readonly ['work.cards.get', string] {
+  return ['work.cards.get', cardId];
+}

@@ -13,6 +13,7 @@ import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
 import {
+  MY_TASKS_QUERY_KEY,
   PRIORITY_COLOR,
   PRIORITY_LABEL,
   formatDueDate,
@@ -46,7 +47,7 @@ import {
  */
 export default function Home() {
   const cards = useQuery({
-    queryKey: ['work.cards.mine'],
+    queryKey: MY_TASKS_QUERY_KEY,
     queryFn: async () => wire(await apiClient.work.cards.mine.query({ includeArchived: false })),
   });
 

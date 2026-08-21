@@ -1,21 +1,39 @@
+import { useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { CardIdSchema } from '@taskflow/contracts';
+import { CardIdSchema, type CardId } from '@taskflow/contracts';
 import { wire } from '@taskflow/client';
-import { colors } from '@taskflow/tokens';
+import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { RichTextView } from '../../../src/lib/rich-text-view.js';
-import { PRIORITY_COLOR, PRIORITY_LABEL, formatDueDate } from '../../../src/lib/work.js';
+import { useUpdateCard } from '../../../src/lib/use-update-card.js';
+import {
+  PRIORITY_COLOR,
+  PRIORITY_LABEL,
+  cardQueryKey,
+  formatDueDate,
+  type CardDetail,
+  type Priority,
+} from '../../../src/lib/work.js';
+
+const PRIORITIES: readonly Priority[] = ['urgent', 'high', 'normal', 'low'];
 
 /**
- * Card detail (Wave 2's second slice, following "My Tasks" —
- * `ai/phase-14-mobile.md` roadmap row: "...card detail; the TipTap-JSON
- * native renderer (§6.4)..."). Read-only, deliberately: editing needs
- * optimistic mutations and a version-conflict story `use-update-card.ts`
- * already has on web, and is its own increment rather than folded into the
- * screen that first makes a card reachable at all.
+ * Card detail (Wave 2's second slice, following "My Tasks", then made
+ * editable as Wave 2's "optimistic mutations" roadmap item —
+ * `ai/phase-14-mobile.md`). Title and priority are editable; everything
+ * else stays read-only for now — see the header on each section below for
+ * exactly why.
  *
  * Nested under `(app)/` — not the root, unlike `org-picker.tsx` — because a
  * card genuinely needs an org selected to mean anything; `(app)/_layout.tsx`'s
@@ -49,10 +67,15 @@ export default function CardDetail() {
   return <CardDetailContent cardId={parsedCardId.data} />;
 }
 
-function CardDetailContent({ cardId }: { cardId: ReturnType<typeof CardIdSchema.parse> }) {
+function CardDetailContent({ cardId }: { cardId: CardId }) {
   const card = useQuery({
-    queryKey: ['work.cards.get', cardId],
+    queryKey: cardQueryKey(cardId),
     queryFn: async () => wire(await apiClient.work.cards.get.query({ cardId })),
+  });
+
+  const [saveError, setSaveError] = useState<unknown>(null);
+  const update = useUpdateCard(cardId, (_title, error) => {
+    setSaveError(error);
   });
 
   if (card.isPending) {
@@ -82,15 +105,30 @@ function CardDetailContent({ cardId }: { cardId: ReturnType<typeof CardIdSchema.
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <BackButton />
       <Text style={styles.reference}>{data.reference}</Text>
-      <Text style={styles.title}>{data.title}</Text>
+
+      <TitleField
+        key={cardId}
+        card={data}
+        onSave={(title) => {
+          update.mutate({ title });
+        }}
+      />
+
+      <PrioritySelector
+        value={data.priority}
+        onChange={(priority) => {
+          setSaveError(null);
+          update.mutate({ priority });
+        }}
+      />
+
+      {saveError !== null && (
+        <Text style={styles.error} accessibilityRole="alert">
+          {apiErrorOf(saveError)?.error.message ?? 'The card was not saved.'}
+        </Text>
+      )}
 
       <View style={styles.badgeRow}>
-        {data.priority !== null && (
-          <View style={styles.badge}>
-            <View style={[styles.swatch, { backgroundColor: PRIORITY_COLOR[data.priority] }]} />
-            <Text style={styles.badgeText}>{PRIORITY_LABEL[data.priority]}</Text>
-          </View>
-        )}
         {due !== null && (
           <View style={[styles.badge, due.overdue && styles.badgeOverdue]}>
             <Text style={[styles.badgeText, due.overdue && styles.badgeOverdueText]}>
@@ -114,6 +152,84 @@ function CardDetailContent({ cardId }: { cardId: ReturnType<typeof CardIdSchema.
 
       <RichTextView document={data.description} />
     </ScrollView>
+  );
+}
+
+/**
+ * Mirrors web's `TitleAndDescription` (minus the description half — no
+ * native rich text EDITOR exists yet, only `rich-text-view.tsx`'s read-only
+ * renderer, so a description here would need somewhere to write back to
+ * that does not exist): local state seeded once from the card, an explicit
+ * "Save" rather than save-on-blur, disabled until the trimmed value
+ * actually differs and is non-empty. `key={cardId}` on the caller's side is
+ * what makes "seeded once" true if this screen is ever reached card-to-card
+ * without an unmount between — today every visit comes fresh from "My
+ * Tasks", so the key is a guard against a future navigation path, not a
+ * fix for an observed bug.
+ */
+function TitleField({
+  card,
+  onSave,
+}: {
+  readonly card: CardDetail;
+  readonly onSave: (title: string) => void;
+}) {
+  const [title, setTitle] = useState(card.title);
+  const dirty = title.trim() !== card.title && title.trim().length > 0;
+
+  return (
+    <View style={styles.titleRow}>
+      <TextInput value={title} onChangeText={setTitle} style={styles.titleInput} multiline />
+      {dirty && (
+        <Pressable
+          style={styles.saveButton}
+          onPress={() => {
+            onSave(title.trim());
+          }}
+        >
+          <Text style={styles.saveButtonText}>Save</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+/**
+ * Mirrors web's `PrioritySection`: a discrete choice fires immediately,
+ * with no separate "Save" — unlike the title, tapping a chip already IS a
+ * complete edit. Five options, not four: "None" clears the field, the same
+ * choice web's `<select>` offers as its first `<option>`.
+ */
+function PrioritySelector({
+  value,
+  onChange,
+}: {
+  readonly value: Priority | null;
+  readonly onChange: (priority: Priority | null) => void;
+}) {
+  return (
+    <View style={styles.priorityRow}>
+      <Pressable
+        style={[styles.priorityChip, value === null && styles.priorityChipActive]}
+        onPress={() => {
+          onChange(null);
+        }}
+      >
+        <Text style={styles.priorityChipText}>None</Text>
+      </Pressable>
+      {PRIORITIES.map((priority) => (
+        <Pressable
+          key={priority}
+          style={[styles.priorityChip, value === priority && styles.priorityChipActive]}
+          onPress={() => {
+            onChange(priority);
+          }}
+        >
+          <View style={[styles.swatch, { backgroundColor: PRIORITY_COLOR[priority] }]} />
+          <Text style={styles.priorityChipText}>{PRIORITY_LABEL[priority]}</Text>
+        </Pressable>
+      ))}
+    </View>
   );
 }
 
@@ -162,9 +278,48 @@ const styles = StyleSheet.create({
     color: colors.inkFaint.hex,
     fontVariant: ['tabular-nums'],
   },
-  title: {
+  titleRow: {
+    gap: 8,
+  },
+  titleInput: {
     fontSize: 20,
     fontWeight: '600',
+    color: colors.ink.hex,
+    padding: 0,
+  },
+  saveButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.accent.hex,
+    borderRadius: radiusCard,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  saveButtonText: {
+    color: colors.accentInk.hex,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  priorityRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  priorityChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+  },
+  priorityChipActive: {
+    borderColor: colors.accent.hex,
+    backgroundColor: colors.surfaceHover.hex,
+  },
+  priorityChipText: {
+    fontSize: 13,
     color: colors.ink.hex,
   },
   badgeRow: {
@@ -204,5 +359,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.inkMuted.hex,
     textAlign: 'center',
+  },
+  error: {
+    color: colors.danger.hex,
+    fontSize: 14,
   },
 });
