@@ -32,6 +32,16 @@ import { resolveRememberedOrg } from '../../src/lib/org-gate.js';
  * this layout is what hydrates it. `remembered` is disabled the instant
  * `orgId` stops being null (a selection made this run, or the effect below
  * resolving one), so it only ever does its one read.
+ *
+ * `org-picker.tsx` lives at the app ROOT (`app/org-picker.tsx`), not nested
+ * under `(app)/` alongside `home.tsx` — matching `apps/web/src/router.tsx`'s
+ * `/orgs` route, which takes `requireSession` rather than `requireOrg`. A
+ * real run found the bug the nested placement caused: this layout wraps
+ * every route inside `(app)/`, so a nested `org-picker.tsx` was STILL
+ * governed by the `orgId === null` redirect below even while already ON
+ * `/org-picker` — the gate kept re-firing the same redirect on every render,
+ * "Maximum update depth exceeded". The redirect below only works as an
+ * ESCAPE from this gate if its target lives outside it.
  */
 export default function AppLayout() {
   const status = useSession((state) => state.status);

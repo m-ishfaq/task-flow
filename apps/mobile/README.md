@@ -66,10 +66,19 @@ Three gates, exactly as specified, collapsed into layout components since
   `auth.native.login` / `auth.native.totp.verifyLogin`) and a layout that
   bounces an already-authenticated caller straight to `/home`.
 - **`(app)/`** — `_layout.tsx` is the org gate (validate the remembered org
-  against `tenancy.orgs.list` before anything renders), `org-picker.tsx`, and
-  `home.tsx` — Wave 1's entire signed-in surface: a placeholder that proves
-  the spine via `auth.me`, one authenticated read. Real product screens start
-  in Wave 2.
+  against `tenancy.orgs.list` before anything renders) and `home.tsx` — Wave
+  1's entire signed-in surface: a placeholder that proves the spine via
+  `auth.me`, one authenticated read. Real product screens start in Wave 2.
+- **`org-picker.tsx`** — deliberately at the app ROOT, a sibling of `(app)/`
+  and `(auth)/` rather than nested inside `(app)/`. It started out nested
+  there, and a real run found the bug that placement caused: `(app)/_layout.tsx`
+  wraps every route inside it, so landing on `/org-picker` while still
+  governed by that SAME layout's `orgId === null` redirect re-fired the
+  identical redirect on every render — "Maximum update depth exceeded",
+  forever. Matches `apps/web/src/router.tsx`'s `/orgs` route, which takes
+  `requireSession` (auth only) rather than `requireOrg` for the identical
+  reason: the picker is the escape hatch FROM the org gate, so it cannot
+  also be a route the gate still governs.
 
 **Every Wave 1b item named in §4.4–§4.5 has now shipped CODE — OAuth, device
 binding, biometric app-lock, and passkeys all landed in later increments,
