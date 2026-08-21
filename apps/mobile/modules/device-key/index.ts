@@ -60,6 +60,6 @@ export async function ensurePublicKey(): Promise<{ x: string; y: string }> {
   return getNative().generateKey();
 }
 
-export function sign(data: string): Promise<string> {
+export async function sign(data: string): Promise<string> {
   return getNative().sign(data);
 }

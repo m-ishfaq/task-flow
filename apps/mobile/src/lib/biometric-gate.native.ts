@@ -29,10 +29,22 @@ import type { BiometricGate } from './biometric-gate.js';
  * `isAvailable()` folds "can't even check" into "nothing enrolled", and
  * `authenticate()` folds it into the "resolve `false`, never throw"
  * contract `BiometricGate`'s own header already documents.
+ *
+ * `getModule` is `async` rather than a plain function returning
+ * `import(...)` directly — a real run on `loadPasskeys()` (`passkeys.ts`,
+ * the identical pattern) found that Metro's dynamic-`import()` transform
+ * for React Native can throw SYNCHRONOUSLY out of the `import()` call
+ * itself, not just return a rejected promise, whenever the target module's
+ * own top-level code throws. Both calls below already wrap `getModule()` in
+ * an explicit `try` block, which catches a synchronous throw regardless —
+ * so this isn't the same live bug — but `async` is what makes that
+ * guarantee true by construction instead of by "this particular call site
+ * happens to use `try` rather than `.then()/.catch()`", which is exactly
+ * the distinction that mattered for `loadPasskeys()`.
  */
 let modulePromise: Promise<typeof LocalAuthenticationModule> | undefined;
 
-function getModule(): Promise<typeof LocalAuthenticationModule> {
+async function getModule(): Promise<typeof LocalAuthenticationModule> {
   modulePromise ??= import('expo-local-authentication');
   return modulePromise;
 }

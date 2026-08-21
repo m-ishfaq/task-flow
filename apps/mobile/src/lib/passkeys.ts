@@ -41,8 +41,23 @@ import type * as PasskeysModule from 'react-native-passkeys';
 
 let modulePromise: Promise<typeof PasskeysModule> | undefined;
 
-/** Loads `react-native-passkeys` on first use — see this file's own header for why a static top-level import used to crash the whole app. */
-export function loadPasskeys(): Promise<typeof PasskeysModule> {
+/**
+ * Loads `react-native-passkeys` on first use — see this file's own header
+ * for why a static top-level import used to crash the whole app.
+ *
+ * Declared `async` deliberately, not a plain function returning
+ * `import(...)` directly: Metro's dynamic-`import()` transform for React
+ * Native does not do real code-splitting, and a module whose top-level code
+ * throws (this one always will, wherever it isn't linked — see the header)
+ * can throw SYNCHRONOUSLY out of the `import()` call rather than returning
+ * a rejected promise. A plain function let that throw escape straight past
+ * both callers' `.then()/.catch()` chains — neither is a `try` block —
+ * confirmed live: the exact "app boots, then errors" this fix was for.
+ * `async` guarantees the opposite by JS semantics: any synchronous throw
+ * inside an async function body becomes that function's rejected return
+ * value, regardless of how the caller invokes it.
+ */
+export async function loadPasskeys(): Promise<typeof PasskeysModule> {
   modulePromise ??= import('react-native-passkeys');
   return modulePromise;
 }
