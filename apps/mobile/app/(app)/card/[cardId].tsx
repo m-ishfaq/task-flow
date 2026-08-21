@@ -25,6 +25,7 @@ import { RichTextView } from '../../../src/lib/rich-text-view.js';
 import { useUpdateCard } from '../../../src/lib/use-update-card.js';
 import { useMembers } from '../../../src/lib/use-members.js';
 import {
+  MY_TASKS_QUERY_KEY,
   PRIORITY_COLOR,
   PRIORITY_LABEL,
   cardQueryKey,
@@ -34,6 +35,7 @@ import {
   type Comment,
   type Priority,
 } from '../../../src/lib/work.js';
+import { isOpenSprint, sprintsQueryKey } from '../../../src/lib/sprints.js';
 
 const PRIORITIES: readonly Priority[] = ['urgent', 'high', 'normal', 'low'];
 
@@ -142,6 +144,8 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
             update.mutate({ priority });
           }}
         />
+
+        <SprintSelector cardId={cardId} projectId={data.projectId} sprintId={data.sprintId} />
 
         {saveError !== null && (
           <Text style={styles.error} accessibilityRole="alert">
@@ -378,6 +382,103 @@ function PrioritySelector({
   );
 }
 
+/**
+ * Which sprint a card is in — `apps/web`'s `SprintSection`, as a chip row
+ * matching `PrioritySelector`'s own shape rather than web's `<select>`
+ * (this app has no native picker component). `assignSprint`/`releaseSprint`
+ * are dedicated `card:update` routes, not part of `cards.update`'s full
+ * replace (`use-update-card.ts`'s own header explains why sprint is not in
+ * `CardPatch`), so this calls them directly rather than going through
+ * `useUpdateCard`.
+ *
+ * A CLOSED sprint (`completed`/`cancelled`) still renders when the card is
+ * currently in one — a card shows where it shipped — but only as the
+ * current selection, never offered as a destination: `isOpenSprint` is the
+ * same closed-list check `sprints/[projectId].tsx`'s own Move sheet uses,
+ * kept here rather than trusting the server to refuse a bad tap silently.
+ */
+function SprintSelector({
+  cardId,
+  projectId,
+  sprintId,
+}: {
+  readonly cardId: CardId;
+  readonly projectId: string;
+  readonly sprintId: string | null;
+}) {
+  const queryClient = useQueryClient();
+
+  const sprints = useQuery({
+    queryKey: sprintsQueryKey(projectId),
+    queryFn: async () => wire(await apiClient.work.sprints.list.query({ projectId })),
+  });
+
+  const refresh = async (): Promise<void> => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: cardQueryKey(cardId) }),
+      queryClient.invalidateQueries({ queryKey: MY_TASKS_QUERY_KEY }),
+      queryClient.invalidateQueries({ queryKey: sprintsQueryKey(projectId) }),
+    ]);
+  };
+
+  const assign = useMutation({
+    mutationFn: (targetSprintId: string) =>
+      apiClient.work.cards.assignSprint.mutate({ cardId, sprintId: targetSprintId }),
+    onSuccess: refresh,
+  });
+  const release = useMutation({
+    mutationFn: () => apiClient.work.cards.releaseSprint.mutate({ cardId }),
+    onSuccess: refresh,
+  });
+
+  const openSprints = (sprints.data ?? []).filter(isOpenSprint);
+  const closedCurrent =
+    sprintId !== null && !openSprints.some((sprint) => sprint.sprintId === sprintId)
+      ? sprints.data?.find((sprint) => sprint.sprintId === sprintId)
+      : undefined;
+
+  return (
+    <View style={styles.sprintSection}>
+      <Text style={styles.sprintSectionLabel}>Sprint</Text>
+      <View style={styles.priorityRow}>
+        <Pressable
+          style={[styles.priorityChip, sprintId === null && styles.priorityChipActive]}
+          disabled={release.isPending}
+          onPress={() => {
+            if (sprintId !== null) release.mutate();
+          }}
+        >
+          <Text style={styles.priorityChipText}>Backlog</Text>
+        </Pressable>
+        {openSprints.map((sprint) => (
+          <Pressable
+            key={sprint.sprintId}
+            style={[styles.priorityChip, sprintId === sprint.sprintId && styles.priorityChipActive]}
+            disabled={assign.isPending}
+            onPress={() => {
+              if (sprintId !== sprint.sprintId) assign.mutate(sprint.sprintId);
+            }}
+          >
+            <Text style={styles.priorityChipText}>{sprint.name}</Text>
+          </Pressable>
+        ))}
+        {closedCurrent !== undefined && (
+          <View
+            style={[styles.priorityChip, styles.priorityChipActive, styles.priorityChipDisabled]}
+          >
+            <Text style={styles.priorityChipText}>{closedCurrent.name}</Text>
+          </View>
+        )}
+      </View>
+      {(assign.isError || release.isError) && (
+        <Text style={styles.error} accessibilityRole="alert">
+          {apiErrorOf(assign.error ?? release.error)?.error.message ?? 'The sprint was not saved.'}
+        </Text>
+      )}
+    </View>
+  );
+}
+
 function BackButton() {
   return (
     <Pressable
@@ -531,6 +632,17 @@ const styles = StyleSheet.create({
   priorityChipText: {
     fontSize: 13,
     color: colors.ink.hex,
+  },
+  priorityChipDisabled: {
+    opacity: 0.6,
+  },
+  sprintSection: {
+    gap: 6,
+  },
+  sprintSectionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.inkMuted.hex,
   },
   badgeRow: {
     flexDirection: 'row',

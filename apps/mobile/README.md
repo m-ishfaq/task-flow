@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat) started
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat) started, Account parity complete, Sprints complete
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -1443,6 +1443,78 @@ convention matters more than exploiting a version-specific inference
 improvement that a future dependency bump could just as easily reverse,
 and `Wire<T>` is a no-op identity mapping wherever the field is already
 correctly typed, so there is no cost to keeping the pattern.
+
+## Sprints — view, assign, project sprint management
+
+The last item from the original priority list after Account parity:
+`ai/phase-14-mobile.md`'s Sprints roadmap row, entirely absent from mobile
+before this increment. `src/lib/sprints.ts` (types, the query key, the
+`isOpenSprint` closed-sprint check) plus one new screen,
+`app/(app)/sprints/[projectId].tsx`, reached from a new "Sprints" button on
+`project/[projectId].tsx`'s header — always shown, unlike "+ New board",
+because viewing sprints is `project:read`, the same floor that screen is
+already gated on.
+
+**A sprint belongs to a PROJECT, not a board** (`packages/db/migrations/
+0054_sprints.up.sql`), and a card's `sprintId` is nullable — no sprint means
+the backlog, which is not a row anywhere, just the absence of one. The
+screen renders the identical tab-strip-over-a-list shape `board/
+[boardId].tsx`'s own redesign already established: "Backlog" plus one chip
+per sprint (status-color dot, name, live card count), switching which cards
+the `FlatList` below shows. Moving a card between the backlog and a sprint
+reuses that same screen's bottom-sheet Move pattern too — the "Move" button
+`CardRow` already renders opens a sheet naming the OTHER destinations
+(backlog + open sprints instead of lists), calling `work.cards.
+assignSprint`/`releaseSprint`.
+
+**A board picker appears only when the project has more than one board.**
+`work.cards.list` is board-scoped — there is no project-wide card read — so
+this screen has to pick one board's cards to show; `apps/web`'s own
+`SprintPlanning` names the identical constraint via its own board
+`<select>` ("shown when more than one option exists"). For the common
+one-board-per-project case this renders nothing extra.
+
+Sprint lifecycle (start/complete/cancel) and create/edit are all gated on
+`canManage` — `project.capabilities.update`, reusing the same
+`PROJECTS_QUERY_KEY` cache-sharing pattern `project/[projectId].tsx`
+already established for "+ New board", never a client-side role check.
+Completing a sprint opens a second modal asking where unfinished cards go
+(backlog or another open sprint) — cards already in a "done" category stay
+in the completed sprint as the shipped record, mirroring the service's own
+shipped/released split; cancelling releases everything, no modal needed.
+
+**No CSV import** — a file picker is a new native dependency this app does
+not have, plus a dry-run preview and a per-row error list are real,
+separate work at roughly the size of this increment's other pieces
+combined, not a corner to cut silently inside a sprints port. Export ships:
+`work.cards.export`'s output is a plain string, wrapped in the same
+`Share.share` pattern `export-data-section.tsx`'s DSAR export already
+established — the one wrinkle is that `export` is a tRPC QUERY, not a
+mutation, so `exportCsv` is a `useMutation` wrapping an on-demand `.query()`
+call, the same shape `export-data-section.tsx` and `people.profile.
+exportMine` already use for the identical reason (a query invoked as a user
+ACTION, not data the screen needs to render).
+
+`card/[cardId].tsx` also gained a `SprintSelector` — a chip row matching
+`PrioritySelector`'s own shape rather than web's `<select>` (this app has
+no native picker component). `assignSprint`/`releaseSprint` are dedicated
+`card:update` routes, not part of `cards.update`'s full replace, so this
+calls them directly rather than going through `useUpdateCard`/`CardPatch`.
+A CLOSED sprint (`completed`/`cancelled`) still renders when the card is
+currently in one — so the card shows where it shipped — but only as the
+current selection, never offered as a destination: `isOpenSprint` is the
+same check the sprints screen's own Move sheet uses.
+
+**Every branded-id cast this file initially had (`as CardId`, `as
+SprintId`, `projectId as never`) turned out to be unnecessary and was
+removed.** `idSchema()` (`packages/contracts/src/ids.ts`) validates with
+`.regex().transform()`, so a branded schema's Zod INPUT type — what a tRPC
+`.mutate()`/`.query()` call actually has to satisfy — is the pre-transform
+plain `string`, not the branded output type. `board/[boardId].tsx`'s
+existing `move.mutate({ targetListId: list.listId })` already relied on
+this without comment; ESLint's `no-unnecessary-type-assertion` is what
+caught it here, on every cast this file had, rather than it being
+noticed by inspection.
 
 ## Not here yet
 

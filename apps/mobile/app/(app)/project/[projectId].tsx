@@ -43,6 +43,12 @@ import { PROJECTS_QUERY_KEY, boardsQueryKey, type Board } from '../../../src/lib
  * `includeArchived: false` args, so it is a cache hit (not a second
  * request) whenever this screen is reached the normal way, by tapping a row
  * that query already rendered.
+ *
+ * **"Sprints" always shows, unlike "+ New board".** Viewing sprints is
+ * `project:read` — the same floor this whole screen is already gated on —
+ * so there is no capability to hide the entry point behind;
+ * `sprints/[projectId].tsx` itself hides its own create/manage actions the
+ * identical way this screen hides board creation.
  */
 export default function ProjectBoards() {
   const params = useLocalSearchParams<{ projectId: string }>();
@@ -111,19 +117,29 @@ function ProjectBoardsContent({
       <BackButton />
       <View style={styles.titleRow}>
         <Text style={styles.title}>Boards</Text>
-        {/* Hidden rather than disabled: a caller without `project:update`
-            could not submit this form regardless, so showing it as
-            unusable is clutter, not information. */}
-        {canCreateBoard && (
+        <View style={styles.titleActions}>
           <Pressable
-            style={styles.newButton}
+            style={styles.sprintsButton}
             onPress={() => {
-              setCreating((open) => !open);
+              router.push(`/sprints/${projectId}`);
             }}
           >
-            <Text style={styles.newButtonText}>{creating ? 'Cancel' : '+ New board'}</Text>
+            <Text style={styles.sprintsButtonText}>Sprints</Text>
           </Pressable>
-        )}
+          {/* Hidden rather than disabled: a caller without `project:update`
+              could not submit this form regardless, so showing it as
+              unusable is clutter, not information. */}
+          {canCreateBoard && (
+            <Pressable
+              style={styles.newButton}
+              onPress={() => {
+                setCreating((open) => !open);
+              }}
+            >
+              <Text style={styles.newButtonText}>{creating ? 'Cancel' : '+ New board'}</Text>
+            </Pressable>
+          )}
+        </View>
       </View>
 
       {creating && canCreateBoard && (
@@ -227,6 +243,23 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 22,
+    fontWeight: '600',
+    color: colors.ink.hex,
+  },
+  titleActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sprintsButton: {
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+    borderRadius: radiusCard,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  sprintsButtonText: {
+    fontSize: 13,
     fontWeight: '600',
     color: colors.ink.hex,
   },
