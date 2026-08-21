@@ -32,9 +32,11 @@ import {
 } from '../../../src/lib/message-compose.js';
 import {
   channelDisplayName,
+  channelQueryKey,
   groupMessages,
   groupReactions,
   messagesQueryKey,
+  pinsQueryKey,
   reactionsQueryKey,
   QUICK_REACTIONS,
   type Message,
@@ -89,11 +91,19 @@ import {
  * send time — the bounded substitute for not having a real rich text
  * editor to track a live cursor/selection with.
  *
+ * **The header opens Details, and long-pressing a message now offers
+ * "Pin"** alongside the quick-react row — the two gaps a second real device
+ * review named directly ("where to see details... members... where to add
+ * members"). `channel-details/[channelId].tsx` is the screen; PINNING lives
+ * here (on the message), UNPINNING lives there (in the list) — the same
+ * split `apps/web`'s message row and details panel draw.
+ *
  * **Still explicitly out of scope, all real and separate work**: thread
  * replies (`chat.messages.thread` has no caller here), edit/delete,
  * mentions AUTOCOMPLETE beyond the trailing-query case above (mid-string
  * insertion needs a real editor), typing indicators, read receipts, file
- * attachments, link unfurls, and push.
+ * ATTACHING from the composer (the details screen's Files section can list
+ * and download what is already there), link unfurls, and push.
  *
  * `chat.messages.list` returns newest-first (`ORDER BY id DESC`) —
  * reversed here for display, since a chat thread reads oldest-at-top.
@@ -130,7 +140,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   const [reactingTo, setReactingTo] = useState<Message | null>(null);
 
   const channel = useQuery({
-    queryKey: ['chat.channels.get', channelId],
+    queryKey: channelQueryKey(channelId),
     queryFn: () => apiClient.chat.channels.get.query({ channelId }),
   });
 
@@ -180,6 +190,18 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
     },
   });
 
+  // The other half of the details screen's "Pinned" section, which can only
+  // unpin — pinning happens here, from the message itself, the same split
+  // apps/web draws between a message's own controls and the panel that lists
+  // the results.
+  const pin = useMutation({
+    mutationFn: (messageId: string) => apiClient.chat.messages.pin.mutate({ channelId, messageId }),
+    onSuccess: async () => {
+      setReactingTo(null);
+      await queryClient.invalidateQueries({ queryKey: pinsQueryKey(channelId) });
+    },
+  });
+
   const paddingTop = useTopInset();
 
   if (messages.isError) {
@@ -225,7 +247,16 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
     >
       <View style={styles.header}>
         <BackButton />
-        <View style={styles.headerTitles}>
+        {/* The whole title block opens Details — mirroring apps/web's header,
+            where clicking the channel name is how the roster/settings panel
+            opens. Found missing entirely by a real device review ("where to
+            see details... members... where to add members"). */}
+        <Pressable
+          style={styles.headerTitles}
+          onPress={() => {
+            router.push(`/channel-details/${channelId}`);
+          }}
+        >
           <Text style={styles.headerTitle} numberOfLines={1}>
             {channel.data?.type === 'public' || channel.data?.type === 'private'
               ? `# ${title}`
@@ -237,8 +268,10 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
             <Text style={styles.headerSubtitle} numberOfLines={1}>
               {channel.data.topic}
             </Text>
-          ) : null}
-        </View>
+          ) : (
+            <Text style={styles.headerSubtitle}>Details</Text>
+          )}
+        </Pressable>
       </View>
 
       <FlatList<MessageGroup>
@@ -333,18 +366,29 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
             setReactingTo(null);
           }}
         >
-          <Pressable style={styles.reactionSheet} onPress={() => undefined}>
-            {QUICK_REACTIONS.map((emoji) => (
-              <Pressable
-                key={emoji}
-                style={styles.reactionOption}
-                onPress={() => {
-                  if (reactingTo) react.mutate({ messageId: reactingTo.messageId, emoji });
-                }}
-              >
-                <Text style={styles.reactionOptionText}>{emoji}</Text>
-              </Pressable>
-            ))}
+          <Pressable style={styles.reactionSheetCard} onPress={() => undefined}>
+            <View style={styles.reactionSheet}>
+              {QUICK_REACTIONS.map((emoji) => (
+                <Pressable
+                  key={emoji}
+                  style={styles.reactionOption}
+                  onPress={() => {
+                    if (reactingTo) react.mutate({ messageId: reactingTo.messageId, emoji });
+                  }}
+                >
+                  <Text style={styles.reactionOptionText}>{emoji}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable
+              style={styles.pinOption}
+              disabled={pin.isPending}
+              onPress={() => {
+                if (reactingTo) pin.mutate(reactingTo.messageId);
+              }}
+            >
+              <Text style={styles.pinOptionText}>📌 Pin this message</Text>
+            </Pressable>
           </Pressable>
         </Pressable>
       </Modal>
@@ -599,18 +643,33 @@ const styles = StyleSheet.create({
     backgroundColor: '#00000099',
     justifyContent: 'flex-end',
   },
-  reactionSheet: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+  reactionSheetCard: {
     backgroundColor: colors.surfaceRaised.hex,
     borderTopLeftRadius: radiusCard,
     borderTopRightRadius: radiusCard,
-    padding: 20,
+    paddingTop: 20,
+  },
+  reactionSheet: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: 20,
   },
   reactionOption: {
     padding: 8,
   },
   reactionOptionText: {
     fontSize: 28,
+  },
+  pinOption: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line.hex,
+    marginTop: 16,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  pinOptionText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.ink.hex,
   },
 });

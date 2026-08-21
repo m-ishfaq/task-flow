@@ -2,7 +2,9 @@ import { useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -160,54 +162,66 @@ function NewConversationModal({
 
   return (
     <Modal visible={mode !== 'closed'} transparent animationType="fade" onRequestClose={close}>
-      <Pressable style={styles.modalBackdrop} onPress={close}>
-        {/* Consumes the tap so it never bubbles to the backdrop's own onPress
-            above — the same convention board/[boardId].tsx's Move modal uses. */}
-        <Pressable style={styles.modalCard} onPress={() => undefined}>
-          {mode === 'menu' && (
-            <View style={styles.menu}>
-              <Text style={styles.modalTitle}>Start something new</Text>
-              {canCreateChannel && (
+      {/* The name/DM-search TextInput below autofocuses the moment either
+          form mounts, and this bottom sheet has no keyboard handling of its
+          own — found broken on a real device (the box the user is typing
+          into was rendered fully behind the open keyboard, the identical
+          bug channel/[channelId].tsx's own header already documents for the
+          message composer, here on a second screen that never got the same
+          fix). `behavior` matches every other composer in this app. */}
+      <KeyboardAvoidingView
+        style={styles.modalKeyboardAvoider}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={close}>
+          {/* Consumes the tap so it never bubbles to the backdrop's own onPress
+              above — the same convention board/[boardId].tsx's Move modal uses. */}
+          <Pressable style={styles.modalCard} onPress={() => undefined}>
+            {mode === 'menu' && (
+              <View style={styles.menu}>
+                <Text style={styles.modalTitle}>Start something new</Text>
+                {canCreateChannel && (
+                  <Pressable
+                    style={styles.menuRow}
+                    onPress={() => {
+                      onModeChange('channel');
+                    }}
+                  >
+                    <Text style={styles.menuRowText}>New channel</Text>
+                  </Pressable>
+                )}
                 <Pressable
                   style={styles.menuRow}
                   onPress={() => {
-                    onModeChange('channel');
+                    onModeChange('dm');
                   }}
                 >
-                  <Text style={styles.menuRowText}>New channel</Text>
+                  <Text style={styles.menuRowText}>New direct message</Text>
                 </Pressable>
-              )}
-              <Pressable
-                style={styles.menuRow}
-                onPress={() => {
-                  onModeChange('dm');
+                <Pressable style={styles.modalCancel} onPress={close}>
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </Pressable>
+              </View>
+            )}
+            {mode === 'channel' && (
+              <NewChannelForm
+                onDone={close}
+                onBack={() => {
+                  onModeChange('menu');
                 }}
-              >
-                <Text style={styles.menuRowText}>New direct message</Text>
-              </Pressable>
-              <Pressable style={styles.modalCancel} onPress={close}>
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </Pressable>
-            </View>
-          )}
-          {mode === 'channel' && (
-            <NewChannelForm
-              onDone={close}
-              onBack={() => {
-                onModeChange('menu');
-              }}
-            />
-          )}
-          {mode === 'dm' && (
-            <NewDirectMessageForm
-              onDone={close}
-              onBack={() => {
-                onModeChange('menu');
-              }}
-            />
-          )}
+              />
+            )}
+            {mode === 'dm' && (
+              <NewDirectMessageForm
+                onDone={close}
+                onBack={() => {
+                  onModeChange('menu');
+                }}
+              />
+            )}
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -444,6 +458,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.inkMuted.hex,
     textAlign: 'center',
+  },
+  modalKeyboardAvoider: {
+    flex: 1,
   },
   modalBackdrop: {
     flex: 1,

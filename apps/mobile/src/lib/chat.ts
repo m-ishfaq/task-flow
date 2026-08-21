@@ -8,10 +8,14 @@ import type { MobileTRPCClient } from './trpc-client.js';
  * specific gaps against web — reactions, mentions, real names instead of
  * "You"/"Member", DM naming, and no way to create a channel or DM at all —
  * closed in the increment that added this file's `groupMessages`/
- * `directLabel`/`QUICK_REACTIONS`/reactions exports. Thread replies UI,
- * edit/delete, typing indicators, read receipts, link unfurls and
- * attachments are still real, separate work — `channel/[channelId].tsx`'s
- * own header names what changed and what is still deferred.
+ * `directLabel`/`QUICK_REACTIONS`/reactions exports. A second review asked
+ * for the channel details panel by name ("where to see... members... where
+ * to add members") — closed by `channel-details/[channelId].tsx`, which is
+ * why this file also carries `PinnedMessage`/`SavedMessage`/`ChannelFile`/
+ * `ChannelGuest` now. Thread replies UI, edit/delete, typing indicators,
+ * read receipts, link unfurls and in-app calling are still real, separate
+ * work — `channel/[channelId].tsx`'s and `channel-details/[channelId].tsx`'s
+ * own headers name what changed and what is still deferred.
  *
  * A separate file from `work.ts` rather than appended to it: Chat is a
  * different domain with its own router (`apps/api/src/chat/router.ts`), and
@@ -23,6 +27,11 @@ export type ChannelList = Wire<
 >;
 export type Channel = ChannelList['channels'][number];
 
+/** One channel's full detail — `chat.channels.get`, the details screen's own read. */
+export type ChannelDetail = Wire<
+  Awaited<ReturnType<MobileTRPCClient['chat']['channels']['get']['query']>>
+>;
+
 export type Message = Wire<
   Awaited<ReturnType<MobileTRPCClient['chat']['messages']['list']['query']>>
 >[number];
@@ -31,10 +40,51 @@ export type Reaction = Wire<
   Awaited<ReturnType<MobileTRPCClient['chat']['messages']['reactions']['query']>>
 >[number];
 
+/** A pinned message row — `chat.messages.pins`. */
+export type PinnedMessage = Wire<
+  Awaited<ReturnType<MobileTRPCClient['chat']['messages']['pins']['query']>>
+>[number];
+
+/** A saved (starred) message row — `chat.saved.list`, org-wide, filtered per-screen to one channel. */
+export type SavedMessage = Wire<
+  Awaited<ReturnType<MobileTRPCClient['chat']['saved']['list']['query']>>
+>[number];
+
+/** A live attachment — `chat.attachments.listForChannel`, the details screen's Files section. */
+export type ChannelFile = Wire<
+  Awaited<ReturnType<MobileTRPCClient['chat']['attachments']['listForChannel']['query']>>
+>[number];
+
+/** A guest grant on one private channel — `chat.compliance.listGuests`. */
+export type ChannelGuest = Wire<
+  Awaited<ReturnType<MobileTRPCClient['chat']['compliance']['listGuests']['query']>>
+>[number];
+
 export const CHANNELS_QUERY_KEY = ['chat.channels.list'] as const;
+
+export function channelQueryKey(channelId: string): readonly ['chat.channels.get', string] {
+  return ['chat.channels.get', channelId];
+}
 
 export function messagesQueryKey(channelId: string): readonly ['chat.messages.list', string] {
   return ['chat.messages.list', channelId];
+}
+
+export function pinsQueryKey(channelId: string): readonly ['chat.messages.pins', string] {
+  return ['chat.messages.pins', channelId];
+}
+
+/** Org-wide, same shape as `chat.saved.list`'s own scope — filtered client-side per channel, matching `apps/web`'s `SavedSection`. */
+export const SAVED_QUERY_KEY = ['chat.saved.list'] as const;
+
+export function filesQueryKey(
+  channelId: string,
+): readonly ['chat.attachments.listForChannel', string] {
+  return ['chat.attachments.listForChannel', channelId];
+}
+
+export function guestsQueryKey(channelId: string): readonly ['chat.compliance.listGuests', string] {
+  return ['chat.compliance.listGuests', channelId];
 }
 
 /**

@@ -1192,11 +1192,113 @@ was literal, not an exaggeration.
 
 **Still explicitly out of scope, all real and separate work**: thread
 replies (`chat.messages.thread` has no caller anywhere on native), message
-edit/delete, typing indicators, read receipts, file attachments, link
-unfurls, and push. Mentions autocomplete is real but bounded to the
-trailing-query case above — mid-string mention insertion needs an actual
-rich text editor, the same boundary `card/[cardId].tsx`'s `TitleField`
-already draws for why the description field isn't editable either.
+edit/delete, typing indicators, read receipts, link unfurls, and push.
+Mentions autocomplete is real but bounded to the trailing-query case
+above — mid-string mention insertion needs an actual rich text editor, the
+same boundary `card/[cardId].tsx`'s `TitleField` already draws for why the
+description field isn't editable either. _(File attachments' "real,
+separate work" status narrowed one increment later — see "The channel
+details screen" below: reading and downloading what has already been
+shared is now built; attaching a NEW file from the composer is the part
+still deferred.)_
+
+## The keyboard bug in "New channel"/"New direct message", and the channel details screen
+
+A second real device review, of the increment above, found one more bug
+and one more named gap: **"when creating new channel the textbox is behind
+the keyboard"**, and **"where to see details like what we do by clicking
+the chat header to see members and all this info and where to add
+members."** Both closed together; asked "how much of web's details panel"
+this pass should build, and told, explicitly, "everything web has."
+
+**The keyboard bug** was the identical failure mode
+`channel/[channelId].tsx`'s own header already documents for the message
+composer — a `TextInput` that autofocuses the moment its screen mounts,
+inside a container with no `KeyboardAvoidingView` at all — on a SECOND
+screen that never got the same fix, because `(tabs)/chat.tsx`'s "New
+channel"/"New direct message" sheet was built after that fix and nobody
+carried the lesson forward by hand. Fixed the same way: the whole `Modal`
+now wraps its content in a `KeyboardAvoidingView` (`'padding'` on iOS,
+`'height'` on Android), matching every other composer in this app.
+
+**The channel details screen** (`app/(app)/channel-details/[channelId].tsx`,
+new) is a feature-for-feature port of
+`apps/web/src/features/chat/channel-details.tsx` — not the smaller
+"roster + settings" cut that was also on offer, because the user's own
+answer to that scope question was "everything web has." Reached by tapping
+the channel header in `channel/[channelId].tsx` (previously inert — a
+`View`, not a `Pressable`, so there was no way to reach this at all). One
+full-screen route (`router.push`, not a bottom-sheet `Modal` like this
+app's other secondary flows) — web's own panel already collapses to "a
+full-width overlay on top of the conversation" below its `md` breakpoint,
+i.e. at phone width, which is a router push in a navigator with no
+side-panel concept at all. Sections, in order:
+
+- **Identity** — a DM shows who you are talking to (participant names via
+  `personOf`, the same lookup the header title already used); a named
+  channel shows `#`/🔒 + name + topic, with an inline rename/re-topic form
+  gated on `channel.data.capabilities.manage`.
+- **Members**, with Leave/Remove — `chat.channels.removeMember` is ONE
+  route for both; the label follows whether the target is the viewer
+  (which the client knows for certain), never a permission the client only
+  half-knows, the exact reasoning `apps/web`'s own `MemberRoster` states.
+  A DM's roster renders informationally (no remove control) — the service
+  refuses both add and remove on one, so a control here could only ever
+  error.
+- **Add people**, non-DM only — search by email against
+  `tenancy.members.list` minus whoever is already in, matching web's own
+  choice of search field exactly (not a mobile improvisation).
+- **Pinned**, with Unpin. The other half of this loop —
+  **pinning** — was added to `channel/[channelId].tsx` itself: long-pressing
+  a message now offers "📌 Pin this message" alongside the existing
+  quick-react row, reusing the same bottom-sheet state that row already
+  had. Pin lives on the message (web's own split too); unpin lives in the
+  list that resulted from pinning.
+- **Starred by you** — `chat.saved.list` is ORG-WIDE (a save is personal;
+  the same route a future "Saved" sidebar surface would read unfiltered),
+  filtered client-side to this one channel rather than adding a second,
+  channel-scoped route for an already-cheap, already-cached query — the
+  identical choice web's own `SavedSection` makes, restated verbatim in
+  this screen's own comment.
+- **Files** — every live attachment this conversation has ever held, via
+  `chat.attachments.listForChannel`. Download only: tapping a clean file
+  calls `chat.attachments.download` for a freshly authorized, short-lived
+  URL and opens it with `Linking.openURL` — the same primitive
+  `rich-text-view.tsx` already uses for a link mark, not a new download
+  library. **Attaching a NEW file from the composer is still explicitly
+  out of scope** — a real, separate feature (an image/document picker, an
+  upload flow, virus-scan status polling on mobile), not something this
+  pass's "list what already exists" scope needed.
+- **Guest access**, private channels only, `capabilities.manage` only —
+  invite/revoke against the same member search as Add People, with an
+  optional expiry in days. Rendered only under `capabilities.manage`
+  (never shown-then-refused) for the identical reason web's own header
+  gives: hiding a section gated on the server's own capability IS
+  displaying that decision, not a second one layered on top of it.
+- **Retention & compliance**, non-DM, `capabilities.manage` only — a
+  retention-days input (blank means keep forever), a legal-hold toggle,
+  and Export. **Export has no browser download to fall back on** — the
+  mobile-native equivalent of web's Blob-and-anchor trick is React
+  Native's own `Share.share()` (core, zero new dependencies), handing the
+  exported JSON to the OS share sheet — Save to Files, AirDrop, email,
+  whatever the device offers — rather than a reduced substitute for a
+  download.
+- **Archive/Restore**, non-DM only, always shown (never gated on
+  `capabilities.manage` client-side) — the same "show it, let the server
+  refuse" rule this file's other sections apply.
+
+**One deliberate exclusion from "everything web has," stated rather than
+silently dropped:** web's panel also renders a call-history list and, for
+a two-person DM, a click-to-call button against the person's work phone.
+Neither made it here. Phase 7's telephony client and Phase 13's WebRTC
+signaling have never been ported to `apps/mobile` at all — building
+either into this pass would mean standing up an entire second feature
+area from nothing, inside what was asked for as a chat-details
+enhancement. A call button that cannot place a call is worse than no
+button; a "past calls" list with no query layer behind it is the same
+mistake this app's own history already warns against — a control that
+reads correctly and does nothing real. Real, separate work, named here
+rather than quietly missing.
 
 ## Not here yet
 
