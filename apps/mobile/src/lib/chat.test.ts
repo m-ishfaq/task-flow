@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   channelDisplayName,
   groupMessages,
+  groupPreviews,
   groupReactions,
   replyCountsOf,
   type Message,
+  type UnfurlPreview,
 } from './chat.js';
 
 /**
@@ -156,5 +158,38 @@ describe('groupReactions', () => {
     expect(grouped.get('m1')?.get('👍')).toEqual(['u1', 'u2']);
     expect(grouped.get('m1')?.get('🎉')).toEqual(['u1']);
     expect(grouped.get('m2')?.get('👀')).toEqual(['u3']);
+  });
+});
+
+function preview(overrides: Partial<UnfurlPreview>): UnfurlPreview {
+  return {
+    messageId: 'm-default',
+    url: 'https://example.com',
+    status: 'ready',
+    title: null,
+    description: null,
+    imageUrl: null,
+    siteName: null,
+    ...overrides,
+  };
+}
+
+describe('groupPreviews', () => {
+  it('groups previews by the message they were found in, preserving order', () => {
+    const grouped = groupPreviews([
+      preview({ messageId: 'm1', url: 'https://a.example' }),
+      preview({ messageId: 'm1', url: 'https://b.example' }),
+      preview({ messageId: 'm2', url: 'https://c.example' }),
+    ]);
+
+    expect(grouped.get('m1')?.map((row) => row.url)).toEqual([
+      'https://a.example',
+      'https://b.example',
+    ]);
+    expect(grouped.get('m2')?.map((row) => row.url)).toEqual(['https://c.example']);
+  });
+
+  it('returns an empty map for no rows', () => {
+    expect(groupPreviews([]).size).toBe(0);
   });
 });

@@ -26,8 +26,9 @@ import type { MobileTRPCClient } from './trpc-client.js';
  * `message-composer.tsx` closed most of the remaining gap this header used
  * to name — `thread/[messageId].tsx`'s own header has the design. Read
  * receipts (unread badges + auto-mark-read) closed next — see
- * `unreadCountsQueryKey`'s own comment. Typing indicators, link unfurls,
- * file attaching from the composer, and push are still real, separate work.
+ * `unreadCountsQueryKey`'s own comment. Link unfurls closed after that —
+ * see `unfurlsQueryKey`'s own comment. Typing indicators, file attaching
+ * from the composer, and push are still real, separate work.
  */
 export type ChannelList = Wire<
   Awaited<ReturnType<MobileTRPCClient['chat']['channels']['list']['query']>>
@@ -50,6 +51,18 @@ export type Reaction = Wire<
 /** One row of `chat.channels.unreadCounts` — the channel list's badge count. */
 export type UnreadCount = Wire<
   Awaited<ReturnType<MobileTRPCClient['chat']['channels']['unreadCounts']['query']>>
+>[number];
+
+/**
+ * One resolved link preview — `chat.unfurls.list`. The service already
+ * excludes `pending`/`failed`/`refused` rows (`unfurl.service.ts`'s own
+ * `previewsFor`: "not something to render, and sending it would tell every
+ * reader which links the SSRF control blocked"), so every row this type
+ * describes is ready to show, unconditionally — no `status` field to
+ * branch on client-side.
+ */
+export type UnfurlPreview = Wire<
+  Awaited<ReturnType<MobileTRPCClient['chat']['unfurls']['list']['query']>>
 >[number];
 
 /** A pinned message row — `chat.messages.pins`. */
@@ -131,6 +144,11 @@ export function guestsQueryKey(channelId: string): readonly ['chat.compliance.li
  */
 export function reactionsQueryKey(channelId: string): readonly ['chat.messages.reactions', string] {
   return ['chat.messages.reactions', channelId];
+}
+
+/** Deliberately STABLE, same reasoning as `reactionsQueryKey` above — link previews are fetched chunked over the loaded page's message ids, not keyed by them. */
+export function unfurlsQueryKey(channelId: string): readonly ['chat.unfurls.list', string] {
+  return ['chat.unfurls.list', channelId];
 }
 
 /**
@@ -232,6 +250,19 @@ export function groupReactions(rows: readonly Reaction[]): Map<string, Map<strin
     const byEmoji = byMessage.get(row.messageId) ?? new Map<string, string[]>();
     byEmoji.set(row.emoji, [...(byEmoji.get(row.emoji) ?? []), row.userId]);
     byMessage.set(row.messageId, byEmoji);
+  }
+  return byMessage;
+}
+
+/** Every resolved link preview, grouped by the message it was found in — the same "group by a key" shape `groupReactions` above already is. */
+export function groupPreviews(
+  rows: readonly UnfurlPreview[],
+): Map<string, readonly UnfurlPreview[]> {
+  const byMessage = new Map<string, UnfurlPreview[]>();
+  for (const row of rows) {
+    const existing = byMessage.get(row.messageId);
+    if (existing === undefined) byMessage.set(row.messageId, [row]);
+    else existing.push(row);
   }
   return byMessage;
 }

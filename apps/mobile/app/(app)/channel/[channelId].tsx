@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -31,14 +32,17 @@ import {
   channelDisplayName,
   channelQueryKey,
   groupMessages,
+  groupPreviews,
   groupReactions,
   messagesQueryKey,
   pinsQueryKey,
   reactionsQueryKey,
   replyCountsOf,
+  unfurlsQueryKey,
   QUICK_REACTIONS,
   type Message,
   type MessageGroup,
+  type UnfurlPreview,
 } from '../../../src/lib/chat.js';
 
 /**
@@ -236,6 +240,24 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   });
   const reactionsByMessage = useMemo(() => groupReactions(reactions.data ?? []), [reactions.data]);
 
+  const previews = useQuery({
+    queryKey: unfurlsQueryKey(channelId),
+    queryFn: async () => {
+      const CHUNK = 25;
+      const rows: UnfurlPreview[] = [];
+      for (let index = 0; index < messageIds.length; index += CHUNK) {
+        const part = messageIds.slice(index, index + CHUNK);
+        if (part.length === 0) continue;
+        rows.push(
+          ...wire(await apiClient.chat.unfurls.list.query({ channelId, messageIds: part })),
+        );
+      }
+      return rows;
+    },
+    enabled: messageIds.length > 0,
+  });
+  const previewsByMessage = useMemo(() => groupPreviews(previews.data ?? []), [previews.data]);
+
   const send = useMutation({
     mutationFn: (body: ReturnType<typeof buildMessageBody>) =>
       apiClient.chat.messages.send.mutate({ channelId, body }),
@@ -372,6 +394,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
             viewerId={userId}
             personOf={personOf}
             reactionsByMessage={reactionsByMessage}
+            previewsByMessage={previewsByMessage}
             replyCounts={replyCounts}
             editingId={editingId}
             editDraft={editDraft}
@@ -524,6 +547,7 @@ function MessageGroupRow({
   viewerId,
   personOf,
   reactionsByMessage,
+  previewsByMessage,
   replyCounts,
   editingId,
   editDraft,
@@ -539,6 +563,7 @@ function MessageGroupRow({
   readonly viewerId: string | null;
   readonly personOf: (userId: string) => { readonly label: string };
   readonly reactionsByMessage: Map<string, Map<string, string[]>>;
+  readonly previewsByMessage: Map<string, readonly UnfurlPreview[]>;
   readonly replyCounts: Map<string, number>;
   readonly editingId: string | null;
   readonly editDraft: string;
@@ -567,6 +592,7 @@ function MessageGroupRow({
         </View>
         {group.messages.map((message) => {
           const reactions = reactionsByMessage.get(message.messageId);
+          const previews = previewsByMessage.get(message.messageId) ?? [];
           const replyCount = replyCounts.get(message.messageId) ?? 0;
           const isEditing = editingId === message.messageId;
 
@@ -618,6 +644,7 @@ function MessageGroupRow({
                   {message.editedAt !== null && <Text style={styles.editedTag}>edited</Text>}
                 </>
               )}
+              {previews.length > 0 && <LinkPreviewList previews={previews} />}
               {reactions && reactions.size > 0 && (
                 <View style={styles.reactionBar}>
                   {[...reactions.entries()].map(([emoji, userIds]) => {
@@ -653,6 +680,49 @@ function MessageGroupRow({
           );
         })}
       </View>
+    </View>
+  );
+}
+
+/**
+ * A message's resolved link previews — `apps/web`'s `MessagePreviews`,
+ * ported. Every row is already ready to render (see `UnfurlPreview`'s own
+ * comment — `pending`/`failed`/`refused` never reach the client), so this
+ * does no status branching, just a card per preview: site name, title,
+ * description, tap to open. `Linking.openURL`, not a re-validated scheme
+ * check — the same trust boundary `rich-text-view.tsx`'s own `link` mark
+ * draws, except the URL here came from the SERVER's own unfurl record
+ * rather than a sanitized document, so there is no client-side whitelist
+ * to re-run in the first place.
+ */
+function LinkPreviewList({ previews }: { readonly previews: readonly UnfurlPreview[] }) {
+  return (
+    <View style={styles.previewList}>
+      {previews.map((preview) => (
+        <Pressable
+          key={preview.url}
+          style={styles.previewCard}
+          onPress={() => {
+            void Linking.openURL(preview.url);
+          }}
+        >
+          {preview.siteName !== null && (
+            <Text style={styles.previewSite} numberOfLines={1}>
+              {preview.siteName}
+            </Text>
+          )}
+          {preview.title !== null && (
+            <Text style={styles.previewTitle} numberOfLines={1}>
+              {preview.title}
+            </Text>
+          )}
+          {preview.description !== null && (
+            <Text style={styles.previewDescription} numberOfLines={2}>
+              {preview.description}
+            </Text>
+          )}
+        </Pressable>
+      ))}
     </View>
   );
 }
@@ -812,6 +882,32 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontStyle: 'italic',
     color: colors.inkFaint.hex,
+  },
+  previewList: {
+    gap: 4,
+  },
+  previewCard: {
+    borderLeftWidth: 2,
+    borderLeftColor: colors.accent.hex,
+    borderRadius: 4,
+    backgroundColor: colors.surfaceRaised.hex,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    gap: 1,
+    maxWidth: 320,
+  },
+  previewSite: {
+    fontSize: 11,
+    color: colors.inkFaint.hex,
+  },
+  previewTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.ink.hex,
+  },
+  previewDescription: {
+    fontSize: 11,
+    color: colors.inkMuted.hex,
   },
   label: {
     fontSize: 14,

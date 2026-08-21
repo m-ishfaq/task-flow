@@ -1516,16 +1516,16 @@ this without comment; ESLint's `no-unnecessary-type-assertion` is what
 caught it here, on every cast this file had, rather than it being
 noticed by inspection.
 
-## Chat, closer to complete: thread replies, edit/delete, "remove for me", read receipts
+## Chat, closer to complete: thread replies, edit/delete, "remove for me", read receipts, link unfurls
 
 The next item after Sprints, per the user's own choice between finishing Chat + push,
 starting Docs, or starting Voice/RTC: close the largest remaining gap this
 file's own Chat sections kept naming — `channel/[channelId].tsx`'s header
 listed "thread replies... edit/delete... typing indicators, read receipts...
-link unfurls, and push" as still out of scope. This increment closes thread
-replies, edit/delete, adds "remove for me", and closes read receipts;
-typing indicators, link unfurls, attachments from the composer, and push
-are still open (see below).
+link unfurls, and push" as still out of scope. This increment closes
+thread replies, edit/delete, adds "remove for me", and closes read
+receipts and link unfurls; typing indicators, attachments from the
+composer, and push are still open (see below).
 
 **Replies live in the same `chat.messages.list` page as their root, and
 that fact is the whole design.** Nothing new to fetch for the main channel
@@ -1611,14 +1611,33 @@ channel-id array to invalidate whatever it produced. **No "new messages"
 divider** — web's own `entryCursor`/`firstUnreadAfter` machinery, a real
 but separate refinement; this increment closes the badge, not the divider.
 
+**Link unfurls are read-only, chunked the same way reactions already
+are.** `chat.unfurls.list` takes `channelId` + `messageIds`, so
+`channel/[channelId].tsx` fetches it in 25-id batches over the loaded
+page — the same `maxURLLength` ceiling `reactionsQuery`'s own header
+names, hit against the identical `httpBatchLink` config. `groupPreviews`
+(`chat.ts`, with its own test) groups the flat rows by message id, the
+same "group by a key" shape `groupReactions` already is. The SERVICE
+already filters to resolved rows only (`unfurl.service.ts`'s
+`previewsFor`: a `pending`/`failed`/`refused` row "is not something to
+render, and sending it would tell every reader which links the SSRF
+control blocked"), so `UnfurlPreview`'s own header notes there is no
+`status` to branch on client-side — every row this type describes is
+ready to show. `LinkPreviewList` renders one card per preview (site name,
+title, description) between the message body and its reaction bar, the
+same order web's `MessageRow` draws attachments/previews/reactions in;
+tapping a card calls `Linking.openURL` directly — the URL came from the
+server's own unfurl record, not a client-sanitized document, so there is
+no whitelist to re-check the way `rich-text-view.tsx`'s `link` mark does.
+
 **Still explicitly out of scope, all real and separate work**: mentions
 autocomplete beyond the trailing-query case (mid-string insertion needs a
 real editor — unchanged from before this increment), typing indicators
 (web's own `useTypingUsers` is socket-driven — `onTyping`/`emitTyping`
 over the live gateway — and nothing on native joins a chat-equivalent
-socket room yet, unlike read receipts' tRPC-only design), file attaching
-from the composer (a new file-picker dependency, the same deferral
-`sprints.ts` already named for CSV import), link unfurls, and push
+socket room yet, unlike read receipts' and link unfurls' tRPC-only
+designs), file attaching from the composer (a new file-picker dependency,
+the same deferral `sprints.ts` already named for CSV import), and push
 (FCM/APNs — the largest remaining piece, and the most device-dependent).
 
 ## Not here yet
@@ -1672,8 +1691,8 @@ from the composer (a new file-picker dependency, the same deferral
   plain-text until one exists), due/start date editing (no date-picker
   dependency added yet), and card drag-and-drop (boards' own section above
   has the full reasoning). The rest of Chat (typing indicators, attachments
-  from the composer, link unfurls, push — reactions, mentions composing,
-  thread replies, edit/delete/"remove for me", and read receipts have all
+  from the composer, push — reactions, mentions composing, thread replies,
+  edit/delete/"remove for me", read receipts, and link unfurls have all
   shipped, see "Chat, reworked" and "Chat, closer to complete" above) and
   the other product waves (Docs, RTC) — the socket client exists but
   nothing calls `joinBoardRoom`/a chat-equivalent yet, so
