@@ -21,6 +21,12 @@ import type { MobileTRPCClient } from './trpc-client.js';
  * different domain with its own router (`apps/api/src/chat/router.ts`), and
  * `work.ts`'s own header is explicitly about Work's wire shapes — mixing
  * the two would make either file's header describe less than it contains.
+ *
+ * Thread replies, edit/delete/"remove for me", and the shared
+ * `message-composer.tsx` closed most of the remaining gap this header used
+ * to name — `thread/[messageId].tsx`'s own header has the design. Typing
+ * indicators, read receipts, link unfurls, file attaching from the
+ * composer, and push are still real, separate work.
  */
 export type ChannelList = Wire<
   Awaited<ReturnType<MobileTRPCClient['chat']['channels']['list']['query']>>
@@ -72,6 +78,11 @@ export function messagesQueryKey(channelId: string): readonly ['chat.messages.li
 
 export function pinsQueryKey(channelId: string): readonly ['chat.messages.pins', string] {
   return ['chat.messages.pins', channelId];
+}
+
+/** A message's thread — `chat.messages.thread`, the replies only (not the root; see `thread/[messageId].tsx`'s own header). */
+export function threadQueryKey(messageId: string): readonly ['chat.messages.thread', string] {
+  return ['chat.messages.thread', messageId];
 }
 
 /** Org-wide, same shape as `chat.saved.list`'s own scope — filtered client-side per channel, matching `apps/web`'s `SavedSection`. */
@@ -170,6 +181,25 @@ export function groupMessages(messages: readonly Message[]): readonly MessageGro
   }
 
   return groups;
+}
+
+/**
+ * How many replies each top-level message has, keyed by the PARENT's id —
+ * `chat-page.tsx`'s own inline computation, extracted here because it is
+ * exactly the same "count/group by a key" shape `groupReactions` below
+ * already is, and worth the same test coverage. Computed from the full
+ * `messages.list` page (roots and replies together) rather than a separate
+ * count query: a channel's loaded page already has every reply in it, so
+ * "how many replies does this message have" is a filter over data already
+ * in memory, the same call web's own header makes for the identical field.
+ */
+export function replyCountsOf(messages: readonly Message[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const message of messages) {
+    if (message.parentMessageId === null) continue;
+    counts.set(message.parentMessageId, (counts.get(message.parentMessageId) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /** Every reaction row, grouped by message then emoji — ported from `chat-page.tsx`'s own `groupReactions`. */

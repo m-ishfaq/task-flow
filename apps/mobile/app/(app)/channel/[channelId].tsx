@@ -7,7 +7,6 @@ import {
   Modal,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -17,6 +16,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { ChannelIdSchema, type ChannelId } from '@taskflow/contracts';
 import { wire } from '@taskflow/client';
+import { plainParagraph } from '@taskflow/api/richtext';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
@@ -24,12 +24,9 @@ import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { RichTextView } from '../../../src/lib/rich-text-view.js';
 import { Avatar } from '../../../src/lib/avatar.js';
-import { useMembers } from '../../../src/lib/use-members.js';
-import {
-  buildMessageBody,
-  activeMentionQuery,
-  insertMention,
-} from '../../../src/lib/message-compose.js';
+import { useMembers, type Member } from '../../../src/lib/use-members.js';
+import { buildMessageBody, insertMention } from '../../../src/lib/message-compose.js';
+import { MessageComposer } from '../../../src/lib/message-composer.js';
 import {
   channelDisplayName,
   channelQueryKey,
@@ -38,6 +35,7 @@ import {
   messagesQueryKey,
   pinsQueryKey,
   reactionsQueryKey,
+  replyCountsOf,
   QUICK_REACTIONS,
   type Message,
   type MessageGroup,
@@ -98,12 +96,41 @@ import {
  * here (on the message), UNPINNING lives there (in the list) — the same
  * split `apps/web`'s message row and details panel draw.
  *
- * **Still explicitly out of scope, all real and separate work**: thread
- * replies (`chat.messages.thread` has no caller here), edit/delete,
- * mentions AUTOCOMPLETE beyond the trailing-query case above (mid-string
- * insertion needs a real editor), typing indicators, read receipts, file
- * ATTACHING from the composer (the details screen's Files section can list
- * and download what is already there), link unfurls, and push.
+ * **Thread replies, edit, and delete/"remove for me" close most of the
+ * remaining Wave-3 message-action gap.** `chat.messages.list` returns EVERY
+ * message in the page — roots and replies together — so the list here is
+ * filtered to `parentMessageId === null` (`topLevel`) exactly the way
+ * `apps/web`'s own `chat-page.tsx` filters its `topLevel`; without it, a
+ * reply would render twice, once inline here and once in its thread.
+ * `replyCountsOf` (`chat.ts`) is the same "count by parent id" computation
+ * web makes inline, over the SAME already-loaded page — no second query.
+ * Tapping "N replies" pushes `thread/[messageId].tsx`, which owns the
+ * reply composer and the one-level-deep reply list; see that screen's own
+ * header for why it has no message actions of its own (mirroring web's
+ * `ThreadPanel`, which has none either).
+ *
+ * Edit is AUTHOR-ONLY with no server override — same reasoning as Work's
+ * comments (CLAUDE.md §8.2) and `apps/web`'s own message toolbar: nobody
+ * else's edit would ever succeed, so the option is hidden rather than
+ * shown-and-refused. It reuses `plainParagraph`, not `buildMessageBody` —
+ * an edit does not re-open mention composing, the same boundary
+ * `card/[cardId].tsx`'s comment composer draws. Delete is two actions,
+ * Slack-style: "Remove for me" (`chat.messages.hide`, `message:read`,
+ * offered to everyone) only changes the viewer's own list; "Delete for
+ * everyone" is author OR moderation, gated on `channel.data.capabilities.
+ * moderate` — the server's own verdict, never a role check — and hidden
+ * rather than shown-and-refused for the same reason edit is.
+ *
+ * **The composer is now the shared `<MessageComposer />`** (`message-
+ * composer.tsx`) — extracted once `thread/[messageId].tsx` needed the
+ * identical TextInput-plus-mention-dropdown block this screen already had;
+ * see that component's own header for the ownership split.
+ *
+ * **Still explicitly out of scope, all real and separate work**: mentions
+ * AUTOCOMPLETE beyond the trailing-query case above (mid-string insertion
+ * needs a real editor), typing indicators, read receipts, file ATTACHING
+ * from the composer (the details screen's Files section can list and
+ * download what is already there), link unfurls, and push.
  *
  * `chat.messages.list` returns newest-first (`ORDER BY id DESC`) —
  * reversed here for display, since a chat thread reads oldest-at-top.
@@ -137,7 +164,9 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   const [pendingMentions, setPendingMentions] = useState<
     readonly { readonly userId: string; readonly label: string }[]
   >([]);
-  const [reactingTo, setReactingTo] = useState<Message | null>(null);
+  const [actionsFor, setActionsFor] = useState<Message | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState('');
 
   const channel = useQuery({
     queryKey: channelQueryKey(channelId),
@@ -150,7 +179,16 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   });
 
   const oldestFirst = useMemo(() => [...(messages.data ?? [])].reverse(), [messages.data]);
-  const groups = useMemo(() => groupMessages(oldestFirst), [oldestFirst]);
+  // Replies live in the same page as their root (`chat.messages.list` does
+  // not separate them) but render inside `thread/[messageId].tsx`, not
+  // here — see this file's own header on why filtering to `topLevel`
+  // matters once replies exist at all.
+  const topLevel = useMemo(
+    () => oldestFirst.filter((message) => message.parentMessageId === null),
+    [oldestFirst],
+  );
+  const groups = useMemo(() => groupMessages(topLevel), [topLevel]);
+  const replyCounts = useMemo(() => replyCountsOf(oldestFirst), [oldestFirst]);
   const messageIds = useMemo(() => oldestFirst.map((message) => message.messageId), [oldestFirst]);
 
   const reactions = useQuery({
@@ -185,7 +223,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
     mutationFn: (input: { messageId: string; emoji: string }) =>
       apiClient.chat.messages.react.mutate({ channelId, ...input }),
     onSuccess: async () => {
-      setReactingTo(null);
+      setActionsFor(null);
       await queryClient.invalidateQueries({ queryKey: reactionsQueryKey(channelId) });
     },
   });
@@ -197,8 +235,42 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   const pin = useMutation({
     mutationFn: (messageId: string) => apiClient.chat.messages.pin.mutate({ channelId, messageId }),
     onSuccess: async () => {
-      setReactingTo(null);
+      setActionsFor(null);
       await queryClient.invalidateQueries({ queryKey: pinsQueryKey(channelId) });
+    },
+  });
+
+  const edit = useMutation({
+    mutationFn: (input: { messageId: string; text: string }) =>
+      apiClient.chat.messages.edit.mutate({
+        messageId: input.messageId,
+        body: plainParagraph(input.text),
+      }),
+    onSuccess: async () => {
+      setEditingId(null);
+      await queryClient.invalidateQueries({ queryKey: messagesQueryKey(channelId) });
+    },
+  });
+
+  // "Remove for me" — no tombstone, no event: the message stays live for
+  // everyone else and this viewer's next refetch simply stops returning it.
+  const hide = useMutation({
+    mutationFn: (messageId: string) => apiClient.chat.messages.hide.mutate({ messageId }),
+    onSuccess: async () => {
+      setActionsFor(null);
+      await queryClient.invalidateQueries({ queryKey: messagesQueryKey(channelId) });
+    },
+  });
+
+  // "Delete for everyone" — author OR moderation; the service decides which
+  // permission applies once it knows the author, so the client sends the
+  // same route either way and the "Delete" option is hidden (not shown and
+  // refused) for anyone who is neither.
+  const remove = useMutation({
+    mutationFn: (messageId: string) => apiClient.chat.messages.delete.mutate({ messageId }),
+    onSuccess: async () => {
+      setActionsFor(null);
+      await queryClient.invalidateQueries({ queryKey: messagesQueryKey(channelId) });
     },
   });
 
@@ -228,17 +300,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
           personOf,
         );
   const canPost = channel.data?.capabilities.post === true && channel.data.archivedAt === null;
-
-  const mentionQuery = activeMentionQuery(draft);
-  const mentionCandidates =
-    mentionQuery === null
-      ? []
-      : people
-          .filter((member) => member.userId !== userId)
-          .filter((member) =>
-            (member.displayName ?? member.email).toLowerCase().includes(mentionQuery.toLowerCase()),
-          )
-          .slice(0, 6);
+  const canModerate = channel.data?.capabilities.moderate === true;
 
   return (
     <KeyboardAvoidingView
@@ -283,10 +345,28 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
             viewerId={userId}
             personOf={personOf}
             reactionsByMessage={reactionsByMessage}
+            replyCounts={replyCounts}
+            editingId={editingId}
+            editDraft={editDraft}
+            onEditDraftChange={setEditDraft}
+            editPending={edit.isPending}
+            onSaveEdit={(messageId) => {
+              if (editDraft.trim().length === 0) return;
+              edit.mutate({ messageId, text: editDraft.trim() });
+            }}
+            onCancelEdit={() => {
+              setEditingId(null);
+            }}
             onTogglePill={(messageId, emoji) => {
               react.mutate({ messageId, emoji });
             }}
-            onLongPressMessage={setReactingTo}
+            onLongPressMessage={setActionsFor}
+            onOpenThread={(message) => {
+              router.push({
+                pathname: '/thread/[messageId]',
+                params: { messageId: message.messageId, channelId },
+              });
+            }}
           />
         )}
         contentContainerStyle={styles.list}
@@ -301,69 +381,39 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
       />
 
       {canPost && (
-        <>
-          {mentionQuery !== null && mentionCandidates.length > 0 && (
-            <ScrollView style={styles.mentionList} keyboardShouldPersistTaps="handled">
-              {mentionCandidates.map((member) => (
-                <Pressable
-                  key={member.userId}
-                  style={styles.mentionRow}
-                  onPress={() => {
-                    const label = member.displayName ?? member.email;
-                    const result = insertMention(draft, { userId: member.userId, label });
-                    setDraft(result.draft);
-                    setPendingMentions((current) => [...current, result.mention]);
-                  }}
-                >
-                  <Text style={styles.mentionRowText}>{member.displayName ?? member.email}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          )}
-
-          <View style={styles.composerRow}>
-            <TextInput
-              value={draft}
-              onChangeText={setDraft}
-              placeholder="Message…"
-              placeholderTextColor={colors.inkFaint.hex}
-              style={styles.composerInput}
-              multiline
-            />
-            <Pressable
-              style={styles.sendButton}
-              disabled={draft.trim().length === 0 || send.isPending}
-              onPress={() => {
-                send.mutate(buildMessageBody(draft.trim(), pendingMentions));
-              }}
-            >
-              {send.isPending ? (
-                <ActivityIndicator color={colors.accentInk.hex} />
-              ) : (
-                <Text style={styles.sendButtonText}>Send</Text>
-              )}
-            </Pressable>
-          </View>
-          {send.isError && (
-            <Text style={styles.error} accessibilityRole="alert">
-              {apiErrorOf(send.error)?.error.message ?? 'The message was not sent.'}
-            </Text>
-          )}
-        </>
+        <MessageComposer
+          draft={draft}
+          onDraftChange={setDraft}
+          people={people}
+          viewerId={userId}
+          onPickMention={(member: Member) => {
+            const label = member.displayName ?? member.email;
+            const result = insertMention(draft, { userId: member.userId, label });
+            setDraft(result.draft);
+            setPendingMentions((current) => [...current, result.mention]);
+          }}
+          onSubmit={() => {
+            send.mutate(buildMessageBody(draft.trim(), pendingMentions));
+          }}
+          sending={send.isPending}
+          error={send.isError ? send.error : null}
+          placeholder="Message…"
+          fallbackError="The message was not sent."
+        />
       )}
 
       <Modal
-        visible={reactingTo !== null}
+        visible={actionsFor !== null}
         transparent
         animationType="fade"
         onRequestClose={() => {
-          setReactingTo(null);
+          setActionsFor(null);
         }}
       >
         <Pressable
           style={styles.modalBackdrop}
           onPress={() => {
-            setReactingTo(null);
+            setActionsFor(null);
           }}
         >
           <Pressable style={styles.reactionSheetCard} onPress={() => undefined}>
@@ -373,22 +423,68 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                   key={emoji}
                   style={styles.reactionOption}
                   onPress={() => {
-                    if (reactingTo) react.mutate({ messageId: reactingTo.messageId, emoji });
+                    if (actionsFor) react.mutate({ messageId: actionsFor.messageId, emoji });
                   }}
                 >
                   <Text style={styles.reactionOptionText}>{emoji}</Text>
                 </Pressable>
               ))}
             </View>
+            {canPost && actionsFor?.parentMessageId === null && (
+              <Pressable
+                style={styles.actionOption}
+                onPress={() => {
+                  router.push({
+                    pathname: '/thread/[messageId]',
+                    params: { messageId: actionsFor.messageId, channelId },
+                  });
+                  setActionsFor(null);
+                }}
+              >
+                <Text style={styles.actionOptionText}>💬 Reply in thread</Text>
+              </Pressable>
+            )}
             <Pressable
-              style={styles.pinOption}
+              style={styles.actionOption}
               disabled={pin.isPending}
               onPress={() => {
-                if (reactingTo) pin.mutate(reactingTo.messageId);
+                if (actionsFor) pin.mutate(actionsFor.messageId);
               }}
             >
-              <Text style={styles.pinOptionText}>📌 Pin this message</Text>
+              <Text style={styles.actionOptionText}>📌 Pin this message</Text>
             </Pressable>
+            {actionsFor?.authorId === userId && (
+              <Pressable
+                style={styles.actionOption}
+                onPress={() => {
+                  setEditingId(actionsFor.messageId);
+                  setEditDraft(actionsFor.bodyText);
+                  setActionsFor(null);
+                }}
+              >
+                <Text style={styles.actionOptionText}>✏️ Edit</Text>
+              </Pressable>
+            )}
+            <Pressable
+              style={styles.actionOption}
+              disabled={hide.isPending}
+              onPress={() => {
+                if (actionsFor) hide.mutate(actionsFor.messageId);
+              }}
+            >
+              <Text style={styles.actionOptionText}>🙈 Remove for me</Text>
+            </Pressable>
+            {(actionsFor?.authorId === userId || canModerate) && (
+              <Pressable
+                style={styles.actionOption}
+                disabled={remove.isPending}
+                onPress={() => {
+                  if (actionsFor) remove.mutate(actionsFor.messageId);
+                }}
+              >
+                <Text style={styles.actionOptionTextDanger}>🗑️ Delete for everyone</Text>
+              </Pressable>
+            )}
           </Pressable>
         </Pressable>
       </Modal>
@@ -401,15 +497,31 @@ function MessageGroupRow({
   viewerId,
   personOf,
   reactionsByMessage,
+  replyCounts,
+  editingId,
+  editDraft,
+  onEditDraftChange,
+  editPending,
+  onSaveEdit,
+  onCancelEdit,
   onTogglePill,
   onLongPressMessage,
+  onOpenThread,
 }: {
   readonly group: MessageGroup;
   readonly viewerId: string | null;
   readonly personOf: (userId: string) => { readonly label: string };
   readonly reactionsByMessage: Map<string, Map<string, string[]>>;
+  readonly replyCounts: Map<string, number>;
+  readonly editingId: string | null;
+  readonly editDraft: string;
+  readonly onEditDraftChange: (text: string) => void;
+  readonly editPending: boolean;
+  readonly onSaveEdit: (messageId: string) => void;
+  readonly onCancelEdit: () => void;
   readonly onTogglePill: (messageId: string, emoji: string) => void;
   readonly onLongPressMessage: (message: Message) => void;
+  readonly onOpenThread: (message: Message) => void;
 }) {
   const first = group.messages[0];
   if (!first) return null;
@@ -428,6 +540,41 @@ function MessageGroupRow({
         </View>
         {group.messages.map((message) => {
           const reactions = reactionsByMessage.get(message.messageId);
+          const replyCount = replyCounts.get(message.messageId) ?? 0;
+          const isEditing = editingId === message.messageId;
+
+          if (isEditing) {
+            return (
+              <View key={message.messageId} style={styles.editRow}>
+                <TextInput
+                  value={editDraft}
+                  onChangeText={onEditDraftChange}
+                  style={styles.editInput}
+                  multiline
+                  autoFocus
+                />
+                <View style={styles.editActions}>
+                  <Pressable onPress={onCancelEdit}>
+                    <Text style={styles.editCancelText}>Cancel</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.editSaveButton}
+                    disabled={editPending || editDraft.trim().length === 0}
+                    onPress={() => {
+                      onSaveEdit(message.messageId);
+                    }}
+                  >
+                    {editPending ? (
+                      <ActivityIndicator color={colors.accentInk.hex} />
+                    ) : (
+                      <Text style={styles.editSaveText}>Save</Text>
+                    )}
+                  </Pressable>
+                </View>
+              </View>
+            );
+          }
+
           return (
             <Pressable
               key={message.messageId}
@@ -439,7 +586,10 @@ function MessageGroupRow({
               {message.deletedAt !== null ? (
                 <Text style={styles.messageDeleted}>Message deleted</Text>
               ) : (
-                <RichTextView document={message.body} />
+                <>
+                  <RichTextView document={message.body} />
+                  {message.editedAt !== null && <Text style={styles.editedTag}>edited</Text>}
+                </>
               )}
               {reactions && reactions.size > 0 && (
                 <View style={styles.reactionBar}>
@@ -460,6 +610,17 @@ function MessageGroupRow({
                     );
                   })}
                 </View>
+              )}
+              {replyCount > 0 && (
+                <Pressable
+                  onPress={() => {
+                    onOpenThread(message);
+                  }}
+                >
+                  <Text style={styles.replyCountText}>
+                    {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
+                  </Text>
+                </Pressable>
               )}
             </Pressable>
           );
@@ -581,62 +742,54 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.inkMuted.hex,
   },
-  mentionList: {
-    maxHeight: 180,
+  replyCountText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.accent.hex,
+  },
+  editRow: {
+    gap: 6,
+  },
+  editInput: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.accent.hex,
     borderRadius: radiusCard,
-    backgroundColor: colors.surfaceRaised.hex,
-    marginBottom: 6,
-  },
-  mentionRow: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.line.hex,
-  },
-  mentionRowText: {
-    fontSize: 14,
-    color: colors.ink.hex,
-  },
-  composerRow: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'flex-end',
-    paddingVertical: 12,
-  },
-  composerInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: colors.line.hex,
-    borderRadius: radiusCard,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     fontSize: 14,
     color: colors.ink.hex,
     backgroundColor: colors.surfaceSunken.hex,
-    maxHeight: 100,
   },
-  sendButton: {
+  editActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  editCancelText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.inkMuted.hex,
+  },
+  editSaveButton: {
     backgroundColor: colors.accent.hex,
     borderRadius: radiusCard,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
   },
-  sendButtonText: {
+  editSaveText: {
     color: colors.accentInk.hex,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
+  },
+  editedTag: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    color: colors.inkFaint.hex,
   },
   label: {
     fontSize: 14,
     color: colors.inkMuted.hex,
     textAlign: 'center',
-  },
-  error: {
-    color: colors.danger.hex,
-    fontSize: 13,
-    marginBottom: 8,
   },
   modalBackdrop: {
     flex: 1,
@@ -660,16 +813,20 @@ const styles = StyleSheet.create({
   reactionOptionText: {
     fontSize: 28,
   },
-  pinOption: {
+  actionOption: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.line.hex,
-    marginTop: 16,
-    paddingVertical: 16,
+    paddingVertical: 14,
     alignItems: 'center',
   },
-  pinOptionText: {
+  actionOptionText: {
     fontSize: 15,
     fontWeight: '600',
     color: colors.ink.hex,
+  },
+  actionOptionTextDanger: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.danger.hex,
   },
 });

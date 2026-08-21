@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { channelDisplayName, groupMessages, groupReactions, type Message } from './chat.js';
+import {
+  channelDisplayName,
+  groupMessages,
+  groupReactions,
+  replyCountsOf,
+  type Message,
+} from './chat.js';
 
 /**
  * `groupMessages`/`channelDisplayName`/`groupReactions` — ported logic from
@@ -115,6 +121,26 @@ describe('channelDisplayName', () => {
         personOf,
       ),
     ).toBe('Name(a), Name(b) and 2 others');
+  });
+});
+
+describe('replyCountsOf', () => {
+  it('counts replies by their parent, ignoring top-level messages', () => {
+    const counts = replyCountsOf([
+      message({ messageId: 'root-1', parentMessageId: null }),
+      message({ messageId: 'reply-1', parentMessageId: 'root-1' }),
+      message({ messageId: 'reply-2', parentMessageId: 'root-1' }),
+      message({ messageId: 'root-2', parentMessageId: null }),
+      message({ messageId: 'reply-3', parentMessageId: 'root-2' }),
+    ]);
+    expect(counts.get('root-1')).toBe(2);
+    expect(counts.get('root-2')).toBe(1);
+    expect(counts.has('reply-1')).toBe(false);
+  });
+
+  it('returns an empty map when nothing has a reply', () => {
+    const counts = replyCountsOf([message({ messageId: 'root-1', parentMessageId: null })]);
+    expect(counts.size).toBe(0);
   });
 });
 

@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat) started, Account parity complete, Sprints complete
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat) mostly complete (push still open), Account parity complete, Sprints complete
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -1516,6 +1516,88 @@ this without comment; ESLint's `no-unnecessary-type-assertion` is what
 caught it here, on every cast this file had, rather than it being
 noticed by inspection.
 
+## Chat, closer to complete: thread replies, edit/delete, "remove for me"
+
+The next item after Sprints, per the user's own choice between finishing Chat + push,
+starting Docs, or starting Voice/RTC: close the largest remaining gap this
+file's own Chat sections kept naming — `channel/[channelId].tsx`'s header
+listed "thread replies... edit/delete... typing indicators, read receipts...
+link unfurls, and push" as still out of scope. This increment closes the
+first two and adds "remove for me"; typing indicators, read receipts, link
+unfurls, attachments from the composer, and push are still open (see below).
+
+**Replies live in the same `chat.messages.list` page as their root, and
+that fact is the whole design.** Nothing new to fetch for the main channel
+view — a reply is just a row with `parentMessageId` set — so `channel/
+[channelId].tsx` now filters to `topLevel` (`parentMessageId === null`)
+before grouping, exactly the way `apps/web`'s own `chat-page.tsx` filters
+its identically-named `topLevel`; without it a reply would render twice,
+once inline and once inside its thread. `replyCountsOf` (`chat.ts`, with
+its own test) is the same "count by parent id" computation web makes
+inline, over the SAME already-loaded page — no second query for a number
+already sitting in memory.
+
+- **`app/(app)/thread/[messageId].tsx`** (new) — the thread screen, a
+  pushed route rather than web's right-hand panel (this app has no
+  side-by-side layout to spare). Takes `messageId` as the path param and
+  `channelId` as a second param via `router.push({ pathname, params })` —
+  a thread has no meaning without knowing which channel's cache to read.
+  **The root message comes from `channel/[channelId].tsx`'s already-loaded
+  `messages.list` query, not a second fetch** — reaching this screen is
+  always a push FROM the channel screen, which stays mounted underneath in
+  the real `<Stack>` (see "A real `<Stack>`" above), so
+  `messagesQueryKey(channelId)` is a cache hit, the identical reasoning
+  web's own header gives for reading `rootMessage` off the page already on
+  screen. Replies come from `chat.messages.thread`, one level deep only —
+  `message.service.ts`'s own limit (a reply cannot itself be replied to),
+  so the channel screen's long-press menu only offers "Reply in thread" on
+  a message whose OWN `parentMessageId` is null. **No reactions, edit,
+  delete, or "remove for me" on a reply — matching web's `ThreadPanel`
+  exactly**, which is web's actual scope (its `renderPlain` draws the same
+  bare author/timestamp/body/"edited" row with no per-message controls),
+  not a mobile-only cut.
+- **`src/lib/message-composer.tsx`** (new) — the plain-text
+  `TextInput` + trailing-`@`-mention dropdown, extracted out of
+  `channel/[channelId].tsx` once the thread screen needed the identical
+  block. Purely presentational: `draft`/`pendingMentions` stay owned by
+  each CALLER, so "clear the draft only once send succeeds, leave it on
+  failure" — the established behavior — is one `onSuccess` handler per
+  screen, not a callback the shared component would need to expose.
+- **Edit** (`chat.messages.edit`) is AUTHOR-ONLY with no server override —
+  the same reasoning as Work's comments (CLAUDE.md §8.2) and web's own
+  message toolbar: nobody else's edit would ever succeed, so the option is
+  hidden rather than shown-and-refused. It reuses `plainParagraph`
+  (`@taskflow/api/richtext`), not `buildMessageBody` — an edit does not
+  re-open mention composing, the same boundary `card/[cardId].tsx`'s
+  comment composer already draws for its own plain-text field. Renders as
+  an inline `TextInput` replacing the bubble's `RichTextView`, the same
+  "seed once, explicit Save" shape `card/[cardId].tsx`'s `TitleField` uses.
+- **Delete is two actions, Slack-style, exactly as web splits it.** "Remove
+  for me" (`chat.messages.hide`, `message:read`, offered to everyone) only
+  changes the viewer's own list — no tombstone, no event. "Delete for
+  everyone" (`chat.messages.delete`) is author OR moderation; the CLIENT
+  gates the button on `authorId === viewerId || channel.data.capabilities.
+moderate` (the server's own verdict, never a role check) and hides it
+  rather than showing-and-refusing for anyone who is neither, but the
+  SERVICE still decides which permission actually applies once it knows
+  the author — the client sends the identical route call either way.
+- The long-press action sheet (`channel/[channelId].tsx`, renamed from
+  `reactingTo`/quick-react-only to `actionsFor`) now offers, in order:
+  quick reactions, Reply in thread (only on a top-level message the
+  caller can post to), Pin, Edit (own messages only), Remove for me,
+  Delete for everyone (own or moderator) — each hidden rather than shown
+  disabled, per this file's own established rule for every other
+  capability-gated control.
+
+**Still explicitly out of scope, all real and separate work**: mentions
+autocomplete beyond the trailing-query case (mid-string insertion needs a
+real editor — unchanged from before this increment), typing indicators,
+read receipts (`chat.channels.markRead`/`unreadCounts` exist server-side
+and need no socket — a real but separate slice), file attaching from the
+composer (a new file-picker dependency, the same deferral `sprints.ts`
+already named for CSV import), link unfurls, and push (FCM/APNs — the
+largest remaining piece, and the most device-dependent).
+
 ## Not here yet
 
 - **Confirming this on a simulator or physical device beyond what has
@@ -1566,9 +1648,10 @@ noticed by inspection.
   rich text EDITOR (description/comment/message composers all stay
   plain-text until one exists), due/start date editing (no date-picker
   dependency added yet), and card drag-and-drop (boards' own section above
-  has the full reasoning). The rest of Chat (thread replies, edit/delete,
-  typing indicators, read receipts, attachments, link unfurls, push —
-  reactions and mentions composing shipped, see "Chat, reworked" above)
+  has the full reasoning). The rest of Chat (typing indicators, read
+  receipts, attachments from the composer, link unfurls, push — reactions,
+  mentions composing, thread replies, and edit/delete/"remove for me" have
+  all shipped, see "Chat, reworked" and "Chat, closer to complete" above)
   and the other product waves (Docs, RTC) — the socket client exists but
   nothing calls `joinBoardRoom`/a chat-equivalent yet, so
   every screen above is a plain `useQuery`: fresh on navigation and on
