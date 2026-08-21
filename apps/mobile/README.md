@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1: spine, guardrails, native auth, channel binding, the Expo shell, the socket client, and a proven bundle
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) started
 
 Six increments in, Wave 1's acceptance bar (§7: the three gates and one
 authenticated tRPC read, on a real device, against the real API) has
@@ -411,6 +411,52 @@ signing certificate, none of which exist yet for this project. The code
 above is what to come back to once they do — nothing here needs
 rewriting, only deploying to.
 
+## Wave 2 (Work) — started: "My Tasks"
+
+Every Wave 1b item is done; Wave 2's roadmap row (`ai/phase-14-mobile.md`)
+names it plainly: "Work — boards, lists, cards, My Tasks, card detail; the
+TipTap-JSON native renderer (§6.4); optimistic mutations." `(app)/home.tsx`
+is the first slice — deliberately the SMALLEST useful cut, not an attempt
+at the whole row.
+
+**What shipped**: a flat, read-only list of the caller's own cards across
+every board they can reach (`work.cards.mine`), replacing Wave 1's
+placeholder "you're signed in" card. Ported from
+`apps/web/src/features/work/home-page.tsx` + `list-view.tsx` — reference,
+title, priority badge, a due-date badge (overdue in red), a checklist
+badge (green once complete), and a comment count. `src/lib/work.ts` holds
+the portable logic (`formatDueDate`, the priority label/color maps) kept
+in step with web's own `format.ts`/`priority-colors.ts` rather than
+reimplemented independently, so a due date does not read "overdue" on one
+platform and "on time" on the other for the identical card.
+
+**What this slice deliberately does NOT have, and why:**
+
+- **Status.** Not an oversight — `home-page.tsx` doesn't show it either.
+  Status definitions are per-PROJECT (Phase 3.5); "My Tasks" spans many
+  projects at once, and nothing in this codebase has ever needed to
+  batch-resolve status names/colors across projects for one screen.
+  Priority has no such problem (a fixed four-value enum), so it renders
+  here for free.
+- **Avatars / assignee names.** Web's `AvatarStack` needs a members lookup
+  and image loading neither of which exist on mobile yet.
+- **Boards, the kanban view, drag-and-drop, card creation.** All of
+  `list-view.tsx`'s own reasoning applies doubly here: no drag-and-drop and
+  no inline create because both need a LIST to write into, and this is a
+  reshaping of cards that live elsewhere, not a place new ones are made.
+- **Card detail / tapping a card.** Needs the TipTap-JSON native renderer
+  (§6.4) to show a card's description at all — real, separate work, not
+  something to fold into a list screen.
+- **Optimistic mutations.** This screen has no mutations — it is a pure
+  `useQuery` read, same as web's own My Tasks.
+
+`CardSummary` is derived from the live client's own inferred type
+(`Wire<Awaited<ReturnType<MobileTRPCClient['work']['cards']['mine']
+['query']>>>[number]`) — the same `Awaited<ReturnType<typeof api.<route>.
+query>>` convention `apps/web/src/features/work/api.ts` uses for its own
+`CardSummary`, never hand-declared, so a field the server adds, removes,
+or renames is a compile error here rather than a silent drift.
+
 ## Not here yet
 
 - **Running this on a simulator or physical device.** The app now bundles
@@ -456,5 +502,7 @@ rewriting, only deploying to.
   production domain, hosted `apple-app-site-association`/`assetlinks.json`
   files, and a real Android signing certificate, none of which exist yet.
   See that section's own checklist for exactly what to stand up first.
-- The product waves themselves (Work, Chat, Docs, RTC) — the socket client
-  exists but nothing calls `joinBoardRoom` yet.
+- The rest of Work (boards, the kanban view, card detail, the TipTap-JSON
+  native renderer, optimistic mutations) and the other product waves (Chat,
+  Docs, RTC) — the socket client exists but nothing calls `joinBoardRoom`
+  yet, and "My Tasks" (above) is Work's first slice, not its whole row.

@@ -19,6 +19,7 @@
     "@taskflow/contracts": "workspace:*",
     "@taskflow/tokens": "workspace:*",
     "@trpc/client": "^11.18.0",
+    "date-fns": "^4.4.0",
     "expo": "~57.0.15",
     "expo-constants": "~57.0.13",
     "expo-dev-client": "~57.0.14",
