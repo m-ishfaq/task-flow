@@ -5,6 +5,7 @@ import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
+import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { CHANNELS_QUERY_KEY, channelDisplayName, type Channel } from '../../../src/lib/chat.js';
 
 /**
@@ -23,6 +24,7 @@ export default function Chat() {
     queryKey: CHANNELS_QUERY_KEY,
     queryFn: async () => wire(await apiClient.chat.channels.list.query()),
   });
+  const paddingTop = useTopInset();
 
   if (channels.isError) {
     return (
@@ -39,7 +41,7 @@ export default function Chat() {
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop }]}>
       <Text style={styles.title}>Chat</Text>
 
       <FlatList<Channel>
@@ -85,7 +87,6 @@ function ChannelRow({ channel }: { readonly channel: Channel }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 24,
     paddingHorizontal: 24,
     gap: 12,
     backgroundColor: colors.surface.hex,

@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import { colors } from '@taskflow/tokens';
 
@@ -20,17 +21,25 @@ import { colors } from '@taskflow/tokens';
  * the same way `apps/web`'s `Sidebar` grew its nav rail one item per phase
  * rather than all at once.
  *
- * Text-only tab labels, no icon set: nothing else in this app uses one yet
- * (`home.tsx`, `sign-in.tsx` are all plain `Pressable`/`Text`), and adding
- * an icon library is its own dependency decision this increment does not
- * need to make.
+ * **`@expo/vector-icons` (`Ionicons`), not "no icon set" as originally
+ * shipped.** That original call was "nothing else in this app uses one
+ * yet" — true, and beside the point once a real device run showed what
+ * omitting `tabBarIcon` actually renders: not blank space, but a visibly
+ * broken glyph box on every tab, on every screen, permanently on-screen
+ * chrome rather than a one-off cosmetic gap. `Ionicons` ships bundled with
+ * every Expo SDK template specifically for this — `checkmark-circle` (My
+ * Tasks), `grid` (Boards), `chatbubbles` (Chat), `person-circle` (Account),
+ * each with a matching `-outline` variant for the inactive state, which is
+ * what `focused` below switches between.
  *
  * `card/[cardId].tsx` stays a SIBLING of this `(tabs)` group, not nested
- * inside it — `(app)/_layout.tsx` renders a bare `<Slot />` with no
- * navigator of its own, so pushing to `/card/:id` replaces this whole tab
- * view rather than opening within it, which is the correct native pattern
- * for a detail screen (a phone does not want a tab bar competing with a
- * card's own "← Back" for screen space).
+ * inside it — `(app)/_layout.tsx` now composes both into one real
+ * `<Stack>` (see that layout's own header for why it has to, after a real
+ * device run found `router.back()` landing on My Tasks from every screen
+ * with no stack there at all), so pushing to `/card/:id` still replaces
+ * this whole tab view in the UI rather than opening within it — the
+ * correct native pattern for a detail screen — while now ALSO leaving a
+ * real history entry for `back()` to return to.
  */
 export default function TabsLayout() {
   return (
@@ -45,10 +54,54 @@ export default function TabsLayout() {
         },
       }}
     >
-      <Tabs.Screen name="home" options={{ title: 'My Tasks' }} />
-      <Tabs.Screen name="boards" options={{ title: 'Boards' }} />
-      <Tabs.Screen name="chat" options={{ title: 'Chat' }} />
-      <Tabs.Screen name="account" options={{ title: 'Account' }} />
+      <Tabs.Screen
+        name="home"
+        options={{
+          title: 'My Tasks',
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? 'checkmark-circle' : 'checkmark-circle-outline'}
+              color={color}
+              size={size}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="boards"
+        options={{
+          title: 'Boards',
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'grid' : 'grid-outline'} color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: 'Chat',
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? 'chatbubbles' : 'chatbubbles-outline'}
+              color={color}
+              size={size}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="account"
+        options={{
+          title: 'Account',
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? 'person-circle' : 'person-circle-outline'}
+              color={color}
+              size={size}
+            />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

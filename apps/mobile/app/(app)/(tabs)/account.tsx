@@ -6,6 +6,7 @@ import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient, session } from '../../../src/lib/app-session.js';
 import { useSession } from '../../../src/lib/use-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
+import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import {
   loadPasskeys,
   toRegistrationResponse,
@@ -69,9 +70,10 @@ export default function Account() {
       return apiClient.auth.passkeys.finishRegistration.mutate({ response: response as never });
     },
   });
+  const paddingTop = useTopInset();
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop }]}>
       <Text style={styles.title}>Account</Text>
 
       <View style={styles.section}>
@@ -130,7 +132,6 @@ export default function Account() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 24,
     paddingHorizontal: 24,
     gap: 20,
     backgroundColor: colors.surface.hex,

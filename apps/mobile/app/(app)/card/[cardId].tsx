@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,6 +20,7 @@ import { plainParagraph } from '@taskflow/api/richtext';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useSession } from '../../../src/lib/use-session.js';
+import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { RichTextView } from '../../../src/lib/rich-text-view.js';
 import { useUpdateCard } from '../../../src/lib/use-update-card.js';
 import {
@@ -40,6 +43,12 @@ const PRIORITIES: readonly Priority[] = ['urgent', 'high', 'normal', 'low'];
  * else stays read-only for now — see the header on each section below for
  * exactly why.
  *
+ * `KeyboardAvoidingView` wraps the whole `ScrollView` — added after a real
+ * device run showed `CommentsSection`'s composer with no keyboard handling
+ * at all rendering fully behind the keyboard, same failure `channel/
+ * [channelId].tsx`'s composer had (see that file's own header for why
+ * `'height'`, not `undefined`, is the Android behavior).
+ *
  * Nested under `(app)/` — not the root, unlike `org-picker.tsx` — because a
  * card genuinely needs an org selected to mean anything; `(app)/_layout.tsx`'s
  * gate is exactly the check this screen wants inherited, not re-implemented.
@@ -51,10 +60,11 @@ const PRIORITIES: readonly Priority[] = ['urgent', 'high', 'normal', 'low'];
  * link, a manually typed URL in a dev client — falls back to a safe "not
  * found" screen rather than reaching a query with an unbranded string.
  *
- * No custom header/back chrome exists anywhere in this app yet (`app/
- * _layout.tsx` renders a bare `<Slot />`, no `Stack`) — a manual back
- * button matches every other screen's own manual `Pressable` buttons rather
- * than introducing react-navigation's header for one screen.
+ * A manual back button, not the native header `(app)/_layout.tsx`'s
+ * `<Stack>` could show for free — `headerShown: false` there keeps that
+ * chrome off everywhere, matching every other screen's own manual
+ * `Pressable` back button for visual consistency, even though the STACK
+ * itself is now real (see that layout's own header for why it has to be).
  */
 export default function CardDetail() {
   const params = useLocalSearchParams<{ cardId: string }>();
@@ -82,6 +92,7 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
   const update = useUpdateCard(cardId, (_title, error) => {
     setSaveError(error);
   });
+  const paddingTop = useTopInset();
 
   if (card.isPending) {
     return (
@@ -107,58 +118,63 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
   const checklistDone = data.checklistTotal > 0 && data.checklistDone === data.checklistTotal;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <BackButton />
-      <Text style={styles.reference}>{data.reference}</Text>
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop }]}>
+        <BackButton />
+        <Text style={styles.reference}>{data.reference}</Text>
 
-      <TitleField
-        key={cardId}
-        card={data}
-        onSave={(title) => {
-          update.mutate({ title });
-        }}
-      />
+        <TitleField
+          key={cardId}
+          card={data}
+          onSave={(title) => {
+            update.mutate({ title });
+          }}
+        />
 
-      <PrioritySelector
-        value={data.priority}
-        onChange={(priority) => {
-          setSaveError(null);
-          update.mutate({ priority });
-        }}
-      />
+        <PrioritySelector
+          value={data.priority}
+          onChange={(priority) => {
+            setSaveError(null);
+            update.mutate({ priority });
+          }}
+        />
 
-      {saveError !== null && (
-        <Text style={styles.error} accessibilityRole="alert">
-          {apiErrorOf(saveError)?.error.message ?? 'The card was not saved.'}
-        </Text>
-      )}
-
-      <View style={styles.badgeRow}>
-        {due !== null && (
-          <View style={[styles.badge, due.overdue && styles.badgeOverdue]}>
-            <Text style={[styles.badgeText, due.overdue && styles.badgeOverdueText]}>
-              {due.label}
-            </Text>
-          </View>
+        {saveError !== null && (
+          <Text style={styles.error} accessibilityRole="alert">
+            {apiErrorOf(saveError)?.error.message ?? 'The card was not saved.'}
+          </Text>
         )}
-        {data.checklistTotal > 0 && (
-          <View style={styles.badge}>
-            <Text style={[styles.badgeText, checklistDone && styles.badgeDoneText]}>
-              {data.checklistDone}/{data.checklistTotal}
-            </Text>
-          </View>
-        )}
-        {data.commentCount > 0 && (
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>💬 {data.commentCount}</Text>
-          </View>
-        )}
-      </View>
 
-      <RichTextView document={data.description} />
+        <View style={styles.badgeRow}>
+          {due !== null && (
+            <View style={[styles.badge, due.overdue && styles.badgeOverdue]}>
+              <Text style={[styles.badgeText, due.overdue && styles.badgeOverdueText]}>
+                {due.label}
+              </Text>
+            </View>
+          )}
+          {data.checklistTotal > 0 && (
+            <View style={styles.badge}>
+              <Text style={[styles.badgeText, checklistDone && styles.badgeDoneText]}>
+                {data.checklistDone}/{data.checklistTotal}
+              </Text>
+            </View>
+          )}
+          {data.commentCount > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>💬 {data.commentCount}</Text>
+            </View>
+          )}
+        </View>
 
-      <CommentsSection cardId={cardId} />
-    </ScrollView>
+        <RichTextView document={data.description} />
+
+        <CommentsSection cardId={cardId} />
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -355,6 +371,9 @@ function BackButton() {
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.surface.hex,
@@ -423,7 +442,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   content: {
-    paddingTop: 24,
     paddingHorizontal: 24,
     paddingBottom: 40,
     gap: 12,

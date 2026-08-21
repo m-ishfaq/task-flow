@@ -5,6 +5,7 @@ import type { OrgId } from '@taskflow/contracts';
 import { colors } from '@taskflow/tokens';
 import { apiClient, session } from '../src/lib/app-session.js';
 import { useSession } from '../src/lib/use-session.js';
+import { useTopInset } from '../src/lib/use-top-inset.js';
 
 /**
  * Shown when `(app)/_layout.tsx`'s org gate found no valid remembered
@@ -38,6 +39,7 @@ function OrgPickerContent() {
     queryFn: () => apiClient.tenancy.orgs.list.query(),
     retry: false,
   });
+  const paddingTop = useTopInset();
 
   if (orgs.isPending) {
     return (
@@ -48,7 +50,7 @@ function OrgPickerContent() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop }]}>
       <Text style={styles.title}>Choose an organization</Text>
       <FlatList
         data={orgs.data ?? []}
@@ -91,6 +93,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 24,
+    paddingTop: 0,
     gap: 12,
     backgroundColor: colors.surface.hex,
   },

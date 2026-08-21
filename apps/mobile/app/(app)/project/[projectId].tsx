@@ -6,6 +6,7 @@ import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
+import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { boardsQueryKey, type Board } from '../../../src/lib/work.js';
 
 /**
@@ -45,6 +46,7 @@ function ProjectBoardsContent({
     queryFn: async () =>
       wire(await apiClient.work.boards.list.query({ projectId, includeArchived: false })),
   });
+  const paddingTop = useTopInset();
 
   if (boards.isError) {
     return (
@@ -58,7 +60,7 @@ function ProjectBoardsContent({
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop }]}>
       <BackButton />
       <Text style={styles.title}>Boards</Text>
 
@@ -105,7 +107,6 @@ function BackButton() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 24,
     paddingHorizontal: 24,
     gap: 12,
     backgroundColor: colors.surface.hex,

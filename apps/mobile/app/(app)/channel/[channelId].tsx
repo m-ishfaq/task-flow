@@ -20,6 +20,7 @@ import { plainParagraph } from '@taskflow/api/richtext';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useSession } from '../../../src/lib/use-session.js';
+import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { RichTextView } from '../../../src/lib/rich-text-view.js';
 import { messagesQueryKey, type Message } from '../../../src/lib/chat.js';
 
@@ -39,6 +40,17 @@ import { messagesQueryKey, type Message } from '../../../src/lib/chat.js';
  * pagination beyond the first page (`limit`'s default, 50): "load more" is
  * real, separate work, the same class of gap boards' own README section
  * names for drag-and-drop.
+ *
+ * `KeyboardAvoidingView`'s `behavior` is `'height'` on Android, not
+ * `undefined` as originally shipped. That original choice assumed
+ * Android's own `windowSoftInputMode` would resize the screen for the
+ * keyboard with no help needed — a real device run disproved it directly:
+ * the composer was rendering completely behind the keyboard, invisible,
+ * with no way to see what was being typed. `'height'` is the standard
+ * cross-platform-safe fallback for exactly this — it shrinks this view's
+ * own height when the keyboard opens rather than trusting the OS to do it,
+ * which does not depend on whichever `windowSoftInputMode` the current
+ * build happens to have.
  */
 export default function ChannelScreen() {
   const params = useLocalSearchParams<{ channelId: string }>();
@@ -76,6 +88,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
       await queryClient.invalidateQueries({ queryKey: messagesQueryKey(channelId) });
     },
   });
+  const paddingTop = useTopInset();
 
   if (messages.isError) {
     return (
@@ -90,8 +103,8 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={[styles.container, { paddingTop }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <BackButton />
 
@@ -178,7 +191,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.surface.hex,
     paddingHorizontal: 24,
-    paddingTop: 24,
   },
   center: {
     flex: 1,

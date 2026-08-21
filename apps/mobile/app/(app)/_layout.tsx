@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Redirect, Slot } from 'expo-router';
+import { Redirect, Stack } from 'expo-router';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import type { OrgId } from '@taskflow/contracts';
@@ -42,6 +42,26 @@ import { resolveRememberedOrg } from '../../src/lib/org-gate.js';
  * `/org-picker` — the gate kept re-firing the same redirect on every render,
  * "Maximum update depth exceeded". The redirect below only works as an
  * ESCAPE from this gate if its target lives outside it.
+ *
+ * ## A real `<Stack>`, not `<Slot />` — found live, from a real navigation bug
+ *
+ * This rendered a bare `<Slot />` originally, on the reasoning that
+ * `(tabs)/_layout.tsx`'s own `<Tabs>` was the only navigator this app
+ * needed. A real device run found what that actually does: with NO
+ * `<Stack>` anywhere composing `(tabs)`, `card/[cardId]`, `board/[boardId]`,
+ * `project/[projectId]` and `channel/[channelId]` into one navigator,
+ * `router.push` between them was not creating genuine pushed history at
+ * all — `router.back()` from ANY of those screens, regardless of how deep
+ * the actual navigation had gone (Boards tab → a project → a board → a
+ * card), landed on My Tasks every time, because that is `(tabs)`' own
+ * initial route and there was no real stack for `back()` to pop through
+ * instead. `<Stack screenOptions={{ headerShown: false }} />` with no
+ * explicit `<Stack.Screen>` children auto-registers every route under
+ * `(app)/` — `(tabs)` included, as one entry — giving `router.back()` an
+ * actual stack to pop: Card → Board → Project → Boards. `headerShown:
+ * false` keeps the native header off, since every screen already draws its
+ * own "← Back" `Pressable` for visual consistency with the rest of the app;
+ * the fix here is the STACK's existence, not its chrome.
  */
 export default function AppLayout() {
   const status = useSession((state) => state.status);
@@ -92,7 +112,7 @@ export default function AppLayout() {
 
   if (orgId === null) return <Redirect href="/org-picker" />;
 
-  return <Slot />;
+  return <Stack screenOptions={{ headerShown: false }} />;
 }
 
 const styles = StyleSheet.create({

@@ -623,10 +623,12 @@ this app uses one yet, and adding an icon library was not a call worth
 making inside this fix.
 
 **`card/[cardId].tsx` stays a sibling of `(tabs)/`, not nested inside it.**
-`(app)/_layout.tsx` renders a bare `<Slot />` with no navigator of its own,
-so pushing to a card replaces the whole tab view rather than opening inside
-it — the correct native pattern for a detail screen; a phone does not want
-a tab bar competing with a card's own "← Back" for space.
+`(app)/_layout.tsx` renders a `<Stack>` (see "A real `<Stack>`, not `<Slot
+/>`" below — this was originally a bare `<Slot />`, found broken by a real
+device run), so pushing to a card opens on top of the tab view as its own
+stack entry rather than replacing it — the correct native pattern for a
+detail screen; a phone does not want a tab bar competing with a card's own
+"← Back" for space.
 
 **`account.tsx` is where `apps/web`'s sidebar footer's two jobs went**:
 `OrgSwitcher` (which org, and a way to leave it) and the account dropdown
@@ -843,6 +845,117 @@ verified by reading the library's focus-manager source, not assumed, since
 this specific gap survives typecheck, lint, and a bundle build identically
 whether the listener exists or not; only a real device, backgrounded and
 resumed, would have shown it directly.
+
+## Five bugs found by a real device video review, all fixed together
+
+The user recorded a screen capture of a real development build driving every
+screen shipped so far and reviewed it frame by frame (`ffmpeg`/`ffprobe`
+weren't available in the review sandbox; `opencv-python-headless` extracted
+40 evenly-spaced frames instead, reviewed as images). Consistent with this
+file's own running lesson — a green `pnpm verify` is not the same claim as
+"this works when you click it" — none of these five were reachable by
+typecheck, lint, the unit suite, or a bundle build. All five were confirmed
+against the recording, not assumed from the complaint text, and fixed
+together as one batch per the user's own stated priority ("bugs first, then
+the board redesign").
+
+### A real `<Stack>`, not `<Slot />` — the back button that always landed on My Tasks
+
+**Every "← Back" press, from anywhere in the app, landed on My Tasks — not
+one screen back.** `(app)/_layout.tsx` rendered a bare `<Slot />`, which is
+not a navigator: it has no history stack of its own, so `router.back()` had
+nothing real to pop and fell through to `expo-router`'s own default, the
+tab group's initial route. This was invisible to every check so far because
+none of them press a back button and observe where it lands — a `<Slot />`
+bundles, typechecks, and renders the CURRENT screen correctly; only
+navigating two or more levels deep and pressing back exposes that there was
+never a real stack underneath.
+
+Fixed by rendering a genuine `<Stack screenOptions={{ headerShown: false }}
+/>` instead. This auto-registers every route under `(app)/` — the tab
+group, `card/[cardId]`, `board/[boardId]`, `project/[projectId]`,
+`channel/[channelId]` — as one real navigation stack, so `router.back()` now
+pops exactly one level, matching every screen's own hand-built "← Back"
+button (which calls `router.back()` and previously relied on it working).
+`headerShown: false` keeps Expo Router's own chrome off, since every screen
+already renders its own back button rather than expecting a native header
+bar.
+
+### Tab bar icons that were rendering, but as broken empty glyph boxes
+
+The tab bar's four tabs had never had icons at all — `(tabs)/_layout.tsx`
+shipped with text-only labels (this file's own "navigation shell" section
+above says so explicitly: "no icon set... adding an icon library was not a
+call worth making inside this fix"). What the recording showed was not
+missing icons but broken ones: an icon FONT reference with no font actually
+loaded renders as an empty glyph box, which reads as "no icon" only in a
+static screenshot — in motion, across four tabs, it reads as a bug. Fixed
+by adding `@expo/vector-icons` (Expo's own maintained icon package, already
+a transitive dependency of `expo-router` — this makes it a direct,
+explicit one) and wiring `Ionicons` into all four `Tabs.Screen` entries:
+checkmark-circle (My Tasks), grid (Boards), chatbubbles (Chat),
+person-circle (Account), each filled when focused and outlined otherwise.
+
+### Content scrolling under the status bar
+
+Every screen's content started at a fixed `paddingTop: 24` — enough to
+clear the status bar at the TOP of a scroll, but nothing stopped scrolled
+content from later passing back UNDER it, since Android's status bar was
+translucent by default (drawn over the app, not reserving real space). A
+static padding value only fixes where content STARTS, not everywhere it can
+scroll to. Two-part fix:
+
+- **`app.config.ts`** gained an explicit `androidStatusBar` block
+  (`backgroundColor`, `barStyle: 'light-content'`, `translucent: false`),
+  making the status bar opaque and reserving real layout space for it,
+  rather than leaving content free to render visibly underneath.
+- **`src/lib/use-top-inset.ts`** (new) — `useTopInset(extra = 24)`, a thin
+  wrapper over `react-native-safe-area-context`'s `useSafeAreaInsets().top`
+  (already available; `SafeAreaProvider` already wraps the whole app) —
+  replaces every screen's static `paddingTop: 24` with the device's ACTUAL
+  safe-area inset plus the same 24px breathing room, so the padding is
+  correct on a device with a notch or punch-hole camera and on one without,
+  rather than a guess that happened to work on the one test device.
+
+Applied to every screen carrying the old static value: `home.tsx`,
+`boards.tsx`, `chat.tsx`, `account.tsx`, `org-picker.tsx`,
+`card/[cardId].tsx`, `board/[boardId].tsx`, `project/[projectId].tsx`, and
+`channel/[channelId].tsx`. First attempt at `card/[cardId].tsx` placed the
+`useTopInset()` call after two early returns (`card.isPending`,
+`card.isError`) — a Rules of Hooks violation caught before verification
+completed and moved above both, matching the ordering every other hook on
+that screen already follows.
+
+One import gotcha worth recording for the next person who reaches for a
+shared token: `app.config.ts` tried importing `colors` from
+`@taskflow/tokens` to avoid hand-writing the status bar's hex value, and
+that broke `expo config`/`expo export`/`eas build` outright —
+`Error [ERR_MODULE_NOT_FOUND]`, tracing to `@taskflow/tokens`'s NodeNext-style
+`./colors.js` re-export. `app.config.ts` is loaded by Expo CLI's own
+Node-based config loader, which shares neither Metro's custom `.js`→`.ts`
+resolver (see "Metro actually bundling the app" above) nor `tsc`/Vitest's
+NodeNext `moduleResolution` — so a workspace package built around that
+convention is simply unreachable from this one file. Caught by running
+`npx expo config --json` before committing, not assumed safe because it
+typechecked. Fixed by hardcoding the hex value as a local constant with a
+comment explaining why, rather than trying to route around the loader.
+
+### The composer hidden behind the keyboard, in two places
+
+**Typing a comment or a chat message showed nothing — the text input was
+rendering fully behind the open keyboard**, invisible, with no way to see
+what was being typed. Both `card/[cardId].tsx`'s comment composer and
+`channel/[channelId].tsx`'s message composer wrapped their content in
+`KeyboardAvoidingView`, but `channel/[channelId].tsx`'s Android `behavior`
+was `undefined` — relying entirely on native `windowSoftInputMode` resizing
+the screen, which the test device did not do. `card/[cardId].tsx`'s
+composer had no `KeyboardAvoidingView` at all. Fixed by wrapping
+`card/[cardId].tsx`'s `<ScrollView>` in a `KeyboardAvoidingView` and
+changing `channel/[channelId].tsx`'s Android `behavior` from `undefined` to
+`'height'` — the standard cross-platform-safe fallback that shrinks the
+view's own height when the keyboard opens rather than trusting the OS to do
+it, which does not depend on whichever `windowSoftInputMode` the current
+build happens to have. `'padding'` on iOS is unchanged in both files.
 
 ## Not here yet
 

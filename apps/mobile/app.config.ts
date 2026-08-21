@@ -4,6 +4,22 @@ import { fileURLToPath } from 'node:url';
 import type { ExpoConfig } from 'expo/config';
 
 /**
+ * `colors.surface.hex` from `@taskflow/tokens`, copied rather than imported
+ * — tried the import first, and it breaks `expo config`/`expo export`/
+ * `eas build` outright: `Cannot find module '.../colors.js' imported from
+ * .../index.ts`. Expo's config loader runs `app.config.ts` through Node's
+ * OWN ESM resolution, a different execution context from Metro (which has
+ * this file's own custom `.js`→`.ts` rewrite next door in
+ * `metro.config.js`) and from `tsc`/Vitest (NodeNext `moduleResolution`) —
+ * neither of which extends to a workspace package's NodeNext-style
+ * `./colors.js` re-export the way this repo writes every internal import.
+ * A value this unlikely to change is a cheap enough copy; if it drifts,
+ * `packages/tokens/src/colors.test.ts` (or a visual check against a real
+ * build) is what would catch it, not a compiler.
+ */
+const STATUS_BAR_BACKGROUND = '#0d1117';
+
+/**
  * Expo config (ai/phase-14-mobile.md §5, §10).
  *
  * A `.ts` file rather than a static `app.json`, for the same reason apps/web's
@@ -84,6 +100,26 @@ const config: ExpoConfig = {
   },
   android: {
     package: 'com.taskflow.app',
+  },
+  /* Found live: on Android, this app's default TRANSLUCENT status bar let
+     scrolled content render visibly underneath the clock/battery icons —
+     confirmed on a real device (a heading scrolled half-behind the status
+     bar). `paddingTop` alone cannot fix this: it only sets where content
+     STARTS, and unbounded scrolling moves it past that point regardless of
+     how much padding there is. An OPAQUE status bar is what actually
+     prevents it, by construction, no matter how far anything scrolls —
+     `translucent: false` plus a background matching the app's own dark
+     surface (`@taskflow/tokens`, the same color every screen already uses)
+     rather than Android's own default. `useSafeAreaInsets()`-based padding
+     (the screens that had `paddingTop: 24` hardcoded) is the other half —
+     this makes the bar solid; that keeps content clear of it in the first
+     place. Requires a native rebuild to take effect, the same as any other
+     `app.config.ts` change — `expo start`'s JS-only reload cannot show
+     this working. */
+  androidStatusBar: {
+    backgroundColor: STATUS_BAR_BACKGROUND,
+    barStyle: 'light-content',
+    translucent: false,
   },
   /* EAS Update's own linkage, paired with extra.eas.projectId below — same
      "dynamic config can't be auto-written" reason as that field. `policy:

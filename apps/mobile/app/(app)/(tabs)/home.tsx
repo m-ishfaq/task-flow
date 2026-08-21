@@ -4,6 +4,7 @@ import { wire } from '@taskflow/client';
 import { colors } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { CardRow } from '../../../src/lib/card-row.js';
+import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { MY_TASKS_QUERY_KEY, type CardSummary } from '../../../src/lib/work.js';
 
 /**
@@ -40,9 +41,10 @@ export default function Home() {
     queryKey: MY_TASKS_QUERY_KEY,
     queryFn: async () => wire(await apiClient.work.cards.mine.query({ includeArchived: false })),
   });
+  const paddingTop = useTopInset();
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop }]}>
       <Text style={styles.title}>My Tasks</Text>
 
       <FlatList<CardSummary>
@@ -66,7 +68,6 @@ export default function Home() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 24,
     paddingHorizontal: 24,
     gap: 12,
     backgroundColor: colors.surface.hex,

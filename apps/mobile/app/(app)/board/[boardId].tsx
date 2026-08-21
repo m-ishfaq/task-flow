@@ -15,6 +15,7 @@ import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
+import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { CardRow } from '../../../src/lib/card-row.js';
 import {
   MY_TASKS_QUERY_KEY,
@@ -114,6 +115,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
       setMoveError(error);
     },
   });
+  const paddingTop = useTopInset();
 
   if (lists.isError || cards.isError) {
     return (
@@ -136,7 +138,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingTop }]}>
         <BackButton />
         {lists.data.map((list) => (
           <ListSection
@@ -259,7 +261,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface.hex,
   },
   content: {
-    paddingTop: 24,
     paddingHorizontal: 24,
     paddingBottom: 40,
     gap: 20,

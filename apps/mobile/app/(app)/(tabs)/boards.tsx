@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
+import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { PROJECTS_QUERY_KEY, type Project } from '../../../src/lib/work.js';
 
 /**
@@ -24,9 +25,10 @@ export default function Boards() {
     queryKey: PROJECTS_QUERY_KEY,
     queryFn: async () => wire(await apiClient.work.projects.list.query({ includeArchived: false })),
   });
+  const paddingTop = useTopInset();
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop }]}>
       <Text style={styles.title}>Boards</Text>
 
       <FlatList<Project>
@@ -69,7 +71,6 @@ function ProjectRow({ project }: { readonly project: Project }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 24,
     paddingHorizontal: 24,
     gap: 12,
     backgroundColor: colors.surface.hex,
