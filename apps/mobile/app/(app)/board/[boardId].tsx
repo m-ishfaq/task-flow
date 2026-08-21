@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useLocalSearchParams, router } from 'expo-router';
 import {
   ActivityIndicator,
+  FlatList,
   Modal,
   Pressable,
   ScrollView,
@@ -23,17 +24,26 @@ import {
   cardQueryKey,
   listsQueryKey,
   type CardSummary,
-  type ListSummary,
 } from '../../../src/lib/work.js';
 
 /**
  * One board — Wave 2's remaining roadmap item, following My Tasks and card
- * detail. Vertically stacked sections, one per list, rather than
- * `apps/web`'s horizontal kanban columns: a phone's width cannot fit two
- * columns side by side at a readable card size, and a horizontally
- * scrolling board on top of a vertically scrolling screen is exactly the
- * "two scroll directions fighting each other" pattern mobile UI guidance
- * warns against, so this reflows into one vertical scroll instead.
+ * detail. A fixed, always-visible tab strip (one chip per list, name +
+ * card count) over a single virtualized `FlatList` of the SELECTED list's
+ * cards — not `apps/web`'s horizontal kanban columns (a phone's width
+ * cannot fit two side by side at a readable card size, and a horizontally
+ * scrolling board on top of a vertically scrolling screen is the "two
+ * scroll directions fighting each other" pattern mobile UI guidance warns
+ * against), and not this screen's OWN original layout either: every list's
+ * cards stacked in one vertical `ScrollView`, found broken by a real device
+ * run against a board with 90+ cards in its first list. That layout forced
+ * scrolling through all 90 before a second list's name was even visible —
+ * "where a list is, what's next, what's finished" was answered only by a
+ * long scroll, not a glance. The tab strip answers it directly: every
+ * list's name and count is on screen at once, and switching to see that
+ * list's actual cards is one tap, not a scroll. `FlatList` also
+ * virtualizes — nothing this screen's old `ScrollView.map()` did — so a
+ * 90-card list no longer means 90 mounted rows at once.
  *
  * `work.lists.list` (names, `cardCount`, no cards) and `work.cards.list`
  * (every live card on the board, with `listId`) are two separate reads
@@ -68,6 +78,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
   const queryClient = useQueryClient();
   const [moving, setMoving] = useState<CardSummary | null>(null);
   const [moveError, setMoveError] = useState<unknown>(null);
+  const [selectedListId, setSelectedListId] = useState<string | null>(null);
 
   const lists = useQuery({
     queryKey: listsQueryKey(boardId),
@@ -93,6 +104,16 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
     }
     return grouped;
   }, [cards.data]);
+
+  // Falls back to the first list whenever nothing is selected yet, or the
+  // selection no longer names a real list (the board's lists reloaded and
+  // that one was archived/removed mid-session) — never a blank tab strip
+  // with no list's cards showing.
+  const activeListId =
+    selectedListId !== null && lists.data?.some((list) => list.listId === selectedListId)
+      ? selectedListId
+      : (lists.data?.[0]?.listId ?? null);
+  const activeCards = activeListId === null ? [] : (cardsByList.get(activeListId) ?? []);
 
   const move = useMutation({
     mutationFn: (input: { cardId: CardId; targetListId: string }) =>
@@ -137,22 +158,62 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
   }
 
   return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={[styles.content, { paddingTop }]}>
+    <View style={[styles.container, { paddingTop }]}>
+      <View style={styles.header}>
         <BackButton />
-        {lists.data.map((list) => (
-          <ListSection
-            key={list.listId}
-            list={list}
-            cards={cardsByList.get(list.listId) ?? []}
-            onMove={(card) => {
-              setMoveError(null);
-              setMoving(card);
-            }}
+      </View>
+
+      {lists.data.length === 0 ? (
+        <Text style={styles.label}>This board has no lists yet.</Text>
+      ) : (
+        <>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tabStrip}
+          >
+            {lists.data.map((list) => (
+              <Pressable
+                key={list.listId}
+                style={[styles.tab, list.listId === activeListId && styles.tabActive]}
+                onPress={() => {
+                  setSelectedListId(list.listId);
+                }}
+              >
+                <Text
+                  style={[styles.tabText, list.listId === activeListId && styles.tabTextActive]}
+                  numberOfLines={1}
+                >
+                  {list.name}
+                </Text>
+                <Text
+                  style={[styles.tabCount, list.listId === activeListId && styles.tabCountActive]}
+                >
+                  {list.cardCount}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+
+          <FlatList<CardSummary>
+            key={activeListId}
+            data={activeCards}
+            keyExtractor={(card) => card.cardId}
+            renderItem={({ item }) => (
+              <CardRow
+                card={item}
+                onMove={() => {
+                  setMoveError(null);
+                  setMoving(item);
+                }}
+              />
+            )}
+            contentContainerStyle={styles.cardList}
+            style={styles.cardListContainer}
+            ListEmptyComponent={<Text style={styles.emptyList}>No cards in this list.</Text>}
           />
-        ))}
-        {lists.data.length === 0 && <Text style={styles.label}>This board has no lists yet.</Text>}
-      </ScrollView>
+        </>
+      )}
 
       <Modal
         visible={moving !== null}
@@ -208,40 +269,6 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
   );
 }
 
-function ListSection({
-  list,
-  cards,
-  onMove,
-}: {
-  readonly list: ListSummary;
-  readonly cards: readonly CardSummary[];
-  readonly onMove: (card: CardSummary) => void;
-}) {
-  return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>{list.name}</Text>
-        <Text style={styles.sectionCount}>{list.cardCount}</Text>
-      </View>
-      {cards.length === 0 ? (
-        <Text style={styles.emptyList}>No cards.</Text>
-      ) : (
-        <View style={styles.cardStack}>
-          {cards.map((card) => (
-            <CardRow
-              key={card.cardId}
-              card={card}
-              onMove={() => {
-                onMove(card);
-              }}
-            />
-          ))}
-        </View>
-      )}
-    </View>
-  );
-}
-
 function BackButton() {
   return (
     <Pressable
@@ -260,11 +287,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.surface.hex,
   },
-  content: {
-    paddingHorizontal: 24,
-    paddingBottom: 40,
-    gap: 20,
-  },
   center: {
     flex: 1,
     alignItems: 'center',
@@ -272,6 +294,10 @@ const styles = StyleSheet.create({
     gap: 16,
     padding: 24,
     backgroundColor: colors.surface.hex,
+  },
+  header: {
+    paddingHorizontal: 24,
+    paddingBottom: 8,
   },
   backButton: {
     alignSelf: 'flex-start',
@@ -281,34 +307,61 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  section: {
+  tabStrip: {
+    paddingHorizontal: 24,
+    paddingBottom: 12,
     gap: 8,
   },
-  sectionHeader: {
+  tab: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: colors.surfaceRaised.hex,
+    maxWidth: 200,
   },
-  sectionTitle: {
-    fontSize: 16,
+  tabActive: {
+    backgroundColor: colors.accent.hex,
+    borderColor: colors.accent.hex,
+  },
+  tabText: {
+    fontSize: 14,
     fontWeight: '600',
     color: colors.ink.hex,
   },
-  sectionCount: {
-    fontSize: 13,
+  tabTextActive: {
+    color: colors.accentInk.hex,
+  },
+  tabCount: {
+    fontSize: 12,
     color: colors.inkMuted.hex,
   },
-  cardStack: {
+  tabCountActive: {
+    color: colors.accentInk.hex,
+  },
+  cardListContainer: {
+    flex: 1,
+  },
+  cardList: {
+    paddingHorizontal: 24,
+    paddingTop: 4,
+    paddingBottom: 40,
     gap: 8,
   },
   emptyList: {
     fontSize: 13,
     color: colors.inkFaint.hex,
+    paddingHorizontal: 24,
   },
   label: {
     fontSize: 14,
     color: colors.inkMuted.hex,
     textAlign: 'center',
+    paddingHorizontal: 24,
   },
   modalBackdrop: {
     flex: 1,

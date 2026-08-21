@@ -957,6 +957,94 @@ view's own height when the keyboard opens rather than trusting the OS to do
 it, which does not depend on whichever `windowSoftInputMode` the current
 build happens to have. `'padding'` on iOS is unchanged in both files.
 
+## The board redesign, and create-project / create-board actions
+
+Second half of the user's own stated priority order ("bugs first, then the
+board redesign + create actions, then the rest"). Both come from the same
+video review the bug-fix section above documents.
+
+### Board view: a tab strip over a virtualized list, replacing the vertical stack
+
+**The board screen's original layout — every list's cards stacked in one
+tall `ScrollView`, one section per list — was found broken against a real
+board with 90+ cards in its first list.** Seeing a second list's name at
+all meant scrolling past all 90 cards in the first one; the user's own
+words were "not very easy to see where a list is, finished, next,
+started." That is not a cosmetic complaint — it is the layout making the
+board's actual STATE (which list has what, and how much) invisible without
+a long scroll.
+
+`board/[boardId].tsx` now renders a fixed, always-visible horizontal tab
+strip — one chip per list, showing its name and live card count — above a
+single `FlatList` holding only the SELECTED list's cards. Every list's name
+and count is on screen at once (answering "where is a list" directly, no
+scrolling), and seeing that list's actual cards is one tap away, not a
+scroll past everything before it. `FlatList` also virtualizes, which the
+old `ScrollView.map()` never did — a 90-card list is no longer 90 mounted
+rows at once, closing a real performance gap the video surfaced alongside
+the visibility one.
+
+Selection state (`selectedListId`) falls back to the board's first list
+whenever nothing is selected yet, or the previously-selected list no longer
+exists (reloaded data, an archived/removed list) — never a blank strip with
+no list's cards showing. The `FlatList` is keyed on the active list id, so
+switching tabs resets scroll position to the top of the new list rather
+than preserving whatever offset the previous list was scrolled to. The
+"Move" button and its bottom-sheet `Modal` are unchanged — moving a card
+still opens a plain list of the board's other lists, append-to-end only,
+same as before this redesign.
+
+Still horizontal-scroll, not swipe-between-lists: a `ScrollView` of
+pressable chips, not a paged `FlatList` or a gesture-driven tab view. A
+swipeable board (drag left/right between lists, matching Trello's/Linear's
+mobile pattern more closely) is a reasonable next step but a materially
+bigger change — new gesture handling, a real "which page am I on"
+paging state, and animation — and was not what the reported bug needed
+fixed to be usable again.
+
+### "New project" and "New board" — the same server capability, never a role check
+
+**Both actions were entirely missing from mobile** — `work.projects.create`
+and `work.boards.create` had no caller anywhere under `apps/mobile`, so
+there was genuinely no way to create anything from the phone. Ported from
+`apps/web/src/features/work/projects-page.tsx`'s own pattern rather than
+invented fresh, because CLAUDE.md's rule for this app ("the UI never
+re-derives authorization... every control is shown and the server
+answers") applies exactly as much on native as on web, and that file's own
+header already states the precedent to follow: **never a client-side role
+comparison, always the server's own `capabilities` field.**
+
+- **`(tabs)/boards.tsx`**: "+ New project" is gated on
+  `tenancy.orgs.get`'s `capabilities.createProject` — an org-level,
+  role-only flag (`can(subject, 'project:create')` with no target, since
+  creating a project has no existing resource to hold a tuple yet), the
+  identical `orgDetailQuery` read web's `ProjectsPage` uses. Submitting
+  opens an inline form (name, key, optional description) calling
+  `work.projects.create`, then invalidates `PROJECTS_QUERY_KEY`. The key
+  field mirrors the server's own `ProjectKey` shape client-side as a
+  typing hint (2-10 letters/digits, starting with a letter, auto-uppercased)
+  — the server still re-validates; this only avoids a round-trip for the
+  obvious case.
+- **`project/[projectId].tsx`**: "+ New board" is gated on
+  `project.capabilities.update` — not a separate `capabilities.createBoard`,
+  because there isn't one: `board.service.ts`'s `createBoard` enforces
+  `project:update` on the PARENT project, so `update` is genuinely what
+  decides whether this control can do anything, the same non-obvious
+  mapping `projects-page.tsx`'s own `BoardList` comment names explicitly.
+  This screen has no dedicated "get one project" route to read that flag
+  from, so it re-runs `(tabs)/boards.tsx`'s own `work.projects.list` query —
+  same key, same `includeArchived: false` args — which is a cache hit, not
+  a second network request, whenever this screen is reached the normal way
+  (tapping a project row that query already rendered). Submitting opens an
+  inline name-only form (a board needs nothing else to exist), calls
+  `work.boards.create`, and invalidates that project's own
+  `boardsQueryKey`.
+
+Both buttons render as hidden, not disabled, when the capability is false —
+matching `projects-page.tsx`'s own stated reasoning: a create form nobody
+without the permission could submit is clutter, not information, and the
+list below stays fully visible either way.
+
 ## Not here yet
 
 - **Confirming this on a simulator or physical device beyond what has
