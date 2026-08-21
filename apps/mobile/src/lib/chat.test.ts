@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   channelDisplayName,
+  describeTyping,
   groupMessages,
   groupPreviews,
   groupReactions,
@@ -191,5 +192,25 @@ describe('groupPreviews', () => {
 
   it('returns an empty map for no rows', () => {
     expect(groupPreviews([]).size).toBe(0);
+  });
+});
+
+describe('describeTyping', () => {
+  const personOf = (userId: string): { readonly label: string } => ({ label: `Name(${userId})` });
+
+  it('returns null when nobody is typing', () => {
+    expect(describeTyping([], personOf)).toBeNull();
+  });
+
+  it('names the one person typing', () => {
+    expect(describeTyping(['a'], personOf)).toBe('Name(a) is typing…');
+  });
+
+  it('joins exactly two names with "and"', () => {
+    expect(describeTyping(['a', 'b'], personOf)).toBe('Name(a) and Name(b) are typing…');
+  });
+
+  it('summarizes three or more as a count', () => {
+    expect(describeTyping(['a', 'b', 'c'], personOf)).toBe('3 people are typing…');
   });
 });

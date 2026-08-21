@@ -19,7 +19,7 @@ import { ChannelIdSchema, type ChannelId } from '@taskflow/contracts';
 import { wire } from '@taskflow/client';
 import { plainParagraph } from '@taskflow/api/richtext';
 import { colors, radiusCard } from '@taskflow/tokens';
-import { apiClient } from '../../../src/lib/app-session.js';
+import { apiClient, chatSocket } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
@@ -28,9 +28,11 @@ import { Avatar } from '../../../src/lib/avatar.js';
 import { useMembers, type Member } from '../../../src/lib/use-members.js';
 import { buildMessageBody, insertMention } from '../../../src/lib/message-compose.js';
 import { MessageComposer } from '../../../src/lib/message-composer.js';
+import { useChatRoom } from '../../../src/lib/use-chat-room.js';
 import {
   channelDisplayName,
   channelQueryKey,
+  describeTyping,
   groupMessages,
   groupPreviews,
   groupReactions,
@@ -141,11 +143,22 @@ import {
  * `firstUnreadAfter` machinery) — a real but separate refinement; this
  * increment closes the badge, not the divider.
  *
+ * **Typing indicators and live broadcast-driven refresh** come from
+ * `use-chat-room.ts`, mounted here for the first time — see that hook's own
+ * header. It joins the `/chat` namespace's room for this channel (the same
+ * connection typing needs anyway to receive `typing` events at all), so a
+ * message someone else sends, an edit, a reaction, or a pin now appears
+ * without a manual pull-to-refresh, not just the typing label itself.
+ * `startTyping` fires on every composer keystroke, no debounce — matching
+ * `apps/web/src/features/chat/chat-page.tsx`'s own composer exactly —  and
+ * `stopTyping` fires right before the message actually sends. Scoped to the
+ * main composer only, mirroring web: `thread/[messageId].tsx`'s reply
+ * composer does not wire typing either there or here.
+ *
  * **Still explicitly out of scope, all real and separate work**: mentions
  * AUTOCOMPLETE beyond the trailing-query case above (mid-string insertion
- * needs a real editor), typing indicators, file ATTACHING from the
- * composer (the details screen's Files section can list and download what
- * is already there), link unfurls, and push.
+ * needs a real editor), and file ATTACHING from the composer (the details
+ * screen's Files section can list and download what is already there).
  *
  * `chat.messages.list` returns newest-first (`ORDER BY id DESC`) —
  * reversed here for display, since a chat thread reads oldest-at-top.
@@ -174,7 +187,10 @@ export default function ChannelScreen() {
 function ChannelContent({ channelId }: { channelId: ChannelId }) {
   const queryClient = useQueryClient();
   const userId = useSession((state) => state.userId);
+  const orgId = useSession((state) => state.orgId);
   const { personOf, people } = useMembers();
+  const { typingUserIds } = useChatRoom(orgId, channelId, userId);
+  const typingLabel = describeTyping(typingUserIds, personOf);
   const [draft, setDraft] = useState('');
   const [pendingMentions, setPendingMentions] = useState<
     readonly { readonly userId: string; readonly label: string }[]
@@ -430,10 +446,15 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
         }
       />
 
+      {typingLabel !== null && <Text style={styles.typingLabel}>{typingLabel}</Text>}
+
       {canPost && (
         <MessageComposer
           draft={draft}
-          onDraftChange={setDraft}
+          onDraftChange={(text) => {
+            setDraft(text);
+            chatSocket.startTyping(channelId);
+          }}
           people={people}
           viewerId={userId}
           onPickMention={(member: Member) => {
@@ -443,6 +464,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
             setPendingMentions((current) => [...current, result.mention]);
           }}
           onSubmit={() => {
+            chatSocket.stopTyping(channelId);
             send.mutate(buildMessageBody(draft.trim(), pendingMentions));
           }}
           sending={send.isPending}
@@ -913,6 +935,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.inkMuted.hex,
     textAlign: 'center',
+  },
+  typingLabel: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    color: colors.inkFaint.hex,
+    paddingBottom: 2,
   },
   modalBackdrop: {
     flex: 1,

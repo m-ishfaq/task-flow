@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) code-complete (push infra-blocked, matching passkeys), Account parity complete, Sprints complete
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete — Chat now live (typing indicators, broadcast-driven refresh); push code-complete (infra-blocked, matching passkeys) — Account parity complete, Sprints complete
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -1632,13 +1632,12 @@ no whitelist to re-check the way `rich-text-view.tsx`'s `link` mark does.
 
 **Still explicitly out of scope, all real and separate work**: mentions
 autocomplete beyond the trailing-query case (mid-string insertion needs a
-real editor — unchanged from before this increment), typing indicators
-(web's own `useTypingUsers` is socket-driven — `onTyping`/`emitTyping`
-over the live gateway — and nothing on native joins a chat-equivalent
-socket room yet, unlike read receipts' and link unfurls' tRPC-only
-designs), file attaching from the composer (a new file-picker dependency,
-the same deferral `sprints.ts` already named for CSV import), and push
-(FCM/APNs — the largest remaining piece, and the most device-dependent).
+real editor — unchanged from before this increment), file attaching from
+the composer (a new file-picker dependency, the same deferral `sprints.ts`
+already named for CSV import), and push (FCM/APNs — the largest remaining
+piece, and the most device-dependent, closed next — see "Push
+notifications" below). Typing indicators closed after push — see "Chat,
+live" further below.
 
 ## Push notifications (Wave 3 §9) — code complete, infrastructure not
 
@@ -1757,6 +1756,66 @@ be exercised end-to-end at all; see this file's own "Not here yet"
 section for the same standing caveat applied to every other real-device-
 only primitive.
 
+## Chat, live: typing indicators + broadcast-driven refresh
+
+The last named gap against web's Chat surface, closed after push. Unlike
+push and passkeys this needed no external infrastructure this repo cannot
+stand up — the `/chat` namespace's wire protocol (`channel:join`,
+`typing:start`/`typing:stop`, the `typing` broadcast) has existed in
+`apps/realtime` since Phase 5 with zero server-side changes required; the
+gap was entirely that nothing on native had ever joined a chat-equivalent
+socket room.
+
+**`src/lib/chat-socket.ts`** is a second Socket.io connection (`/chat`,
+not `/socket.io`'s default namespace), mirroring `socket.ts`'s own
+DI-factory `createMobileSocket` shape byte-for-byte — same lazy connect,
+same reconnect-replay (`joinedChannels`, recorded before the emit, not
+inside the ack), same native-client marker via `extraHeaders`. Structurally
+this also mirrors `apps/web/src/lib/chat-socket.ts`, which documents the
+same fact from the other side: calling `io()` again with a different
+namespace path but the same base URL/transport options reuses the existing
+Engine.IO Manager rather than opening a second transport, so this is one
+extra namespace, not one extra connection. Its `ChatSocketDeps` carries no
+`onSessionEnded`, unlike the board socket's `SocketDeps` — this namespace's
+own `session:ended` handler tears down only its own connection; clearing
+the session itself stays `gatewaySocket`'s job, exactly the split web's two
+socket files already draw. Wired into `app-session.ts` as a second
+module-level singleton (`chatSocket`), alongside `gatewaySocket`.
+
+**`src/lib/use-chat-room.ts`** is the mobile counterpart of
+`apps/web/src/features/chat/use-channel-room.ts`, mounted from
+`channel/[channelId].tsx` for the first time. It joins the channel's room,
+tracks typing users with the identical per-user `setTimeout` scheme web
+uses (reset on each `typing:start`, cleared on an explicit `typing:stop`
+or after `TYPING_TIMEOUT_MS = 4000` with no signal — "the absence of a
+signal must still resolve to a safe state," the same reasoning presence
+uses elsewhere), and dispatches every `broadcast` event to the same
+invalidate-not-patch handling web's `applyBroadcast` already does, for the
+identical reason: `message.sent`/`message.edited` carry only an excerpt,
+never the full TipTap body or an `authorId`, so patching would render a
+message with no author line.
+
+**This closes more than the typing label.** Until this increment,
+`channel/[channelId].tsx` only ever refetched from a LOCAL mutation's own
+`onSuccess` — nothing joined a room, so a message someone else sent, an
+edit, a reaction, a pin, or a membership change never appeared without a
+manual pull-to-refresh. Joining the room typing needs anyway makes all of
+that live as a direct consequence, not a separate feature bolted on.
+
+`describeTyping` (`chat.ts`, with its own test coverage now — web's
+version is inline and untested, since it has no reason to be its own
+module there) is a verbatim port of `chat-page.tsx`'s copy: one name, two
+names joined with "and", or a count, never a list that could run past a
+phone's width.
+
+**Scoped to the main composer only, matching web exactly**:
+`thread/[messageId].tsx`'s reply composer wires no typing signal either
+there or on web — `startTyping` fires on every keystroke, no debounce,
+and `stopTyping` fires right before the message actually sends (mirrors
+`chat-page.tsx`'s three call sites: the ordinary send path, slash
+commands, and file-share sends — attachments are still out of scope here,
+so only the ordinary send path applies on native today).
+
 ## Not here yet
 
 - **Confirming this on a simulator or physical device beyond what has
@@ -1813,13 +1872,15 @@ only primitive.
   rich text EDITOR (description/comment/message composers all stay
   plain-text until one exists), due/start date editing (no date-picker
   dependency added yet), and card drag-and-drop (boards' own section above
-  has the full reasoning). The rest of Chat (typing indicators and
-  attachments from the composer — reactions, mentions composing, thread
-  replies, edit/delete/"remove for me", read receipts, link unfurls, and
-  push have all shipped, see "Chat, reworked", "Chat, closer to complete",
-  and "Push notifications" above) and the other product waves (Docs, RTC)
-  — the socket client exists but
-  nothing calls `joinBoardRoom`/a chat-equivalent yet, so
-  every screen above is a plain `useQuery`: fresh on navigation and on
-  app-foreground (see `_layout.tsx`'s `AppState` wiring, below), not live
-  while the screen stays open and nobody moves.
+  has the full reasoning). The rest of Chat (attachments from the
+  composer — reactions, mentions composing, thread replies,
+  edit/delete/"remove for me", read receipts, link unfurls, push, typing
+  indicators and broadcast-driven live refresh have all shipped, see "Chat,
+  reworked", "Chat, closer to complete", "Push notifications", and "Chat,
+  live" above) and the other product waves (Docs, RTC). Chat now joins a
+  room (`chat-socket.ts`, `use-chat-room.ts`) and stays live while a
+  channel screen is open; Work's `gatewaySocket` still has no caller —
+  nothing calls `joinBoardRoom` yet — so every board/card screen remains a
+  plain `useQuery`: fresh on navigation and on app-foreground (see
+  `_layout.tsx`'s `AppState` wiring, below), not live while the screen
+  stays open and nobody moves.

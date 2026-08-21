@@ -6,6 +6,7 @@ import { createBiometricGate } from './biometric-gate.native.js';
 import { createPreferences } from './preferences.js';
 import { createMobileSession, SessionExpiredError, type MobileSession } from './session.js';
 import { createMobileSocket, type MobileSocket } from './socket.js';
+import { createMobileChatSocket, type MobileChatSocket } from './chat-socket.js';
 import { createMobileClient, isUnauthenticated, type MobileTRPCClient } from './trpc-client.js';
 import type { BiometricGate } from './biometric-gate.js';
 
@@ -129,4 +130,17 @@ export const gatewaySocket: MobileSocket = createMobileSocket({
   onSessionEnded: () => {
     void session.clear();
   },
+});
+
+/**
+ * The app's one `/chat` namespace connection (Chat, live: typing indicators
+ * + broadcast-driven refresh). A second socket instance, not a second
+ * transport — see `chat-socket.ts`'s own header, including why this one
+ * takes no `onSessionEnded`: `gatewaySocket`'s own listener above is what
+ * clears the session.
+ */
+export const chatSocket: MobileChatSocket = createMobileChatSocket({
+  apiBaseUrl: config.apiBaseUrl,
+  accessToken: () => session.accessToken(),
+  getExpiresAt: () => session.store.getState().expiresAt,
 });

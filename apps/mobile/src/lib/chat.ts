@@ -27,8 +27,10 @@ import type { MobileTRPCClient } from './trpc-client.js';
  * to name — `thread/[messageId].tsx`'s own header has the design. Read
  * receipts (unread badges + auto-mark-read) closed next — see
  * `unreadCountsQueryKey`'s own comment. Link unfurls closed after that —
- * see `unfurlsQueryKey`'s own comment. Typing indicators, file attaching
- * from the composer, and push are still real, separate work.
+ * see `unfurlsQueryKey`'s own comment. Native push closed next (see
+ * `push-notifications.ts`). Typing indicators closed last — `describeTyping`
+ * below and `use-chat-room.ts`'s own header have the design; file attaching
+ * from the composer is still real, separate work.
  */
 export type ChannelList = Wire<
   Awaited<ReturnType<MobileTRPCClient['chat']['channels']['list']['query']>>
@@ -265,4 +267,29 @@ export function groupPreviews(
     else existing.push(row);
   }
   return byMessage;
+}
+
+/** How long after the last `typing:start` signal a typing indicator
+ *  auto-clears on the receiving end, in case a `typing:stop` never arrives
+ *  (a closed app, a dropped connection) — the same value and reasoning as
+ *  `apps/web/src/features/chat/chat-page.tsx`'s own `TYPING_TIMEOUT_MS`. */
+export const TYPING_TIMEOUT_MS = 4000;
+
+/**
+ * Renders who is typing, ported verbatim (copy included) from
+ * `apps/web/src/features/chat/chat-page.tsx`'s own `describeTyping`: one
+ * name, two names, or a count — never a list that could run past the width
+ * of a phone screen.
+ */
+export function describeTyping(
+  userIds: readonly string[],
+  personOf: (userId: string) => { readonly label: string },
+): string | null {
+  if (userIds.length === 0) return null;
+  const names = userIds.map((userId) => personOf(userId).label);
+  const [first, second] = names;
+  if (first === undefined) return null;
+  if (second === undefined) return `${first} is typing…`;
+  if (names.length === 2) return `${first} and ${second} are typing…`;
+  return `${String(names.length)} people are typing…`;
 }
