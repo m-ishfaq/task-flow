@@ -47,7 +47,13 @@ const root = process.cwd();
  * adding one is a one-line, reviewed change here, never a silent pass because
  * a new value's shape happened to look innocent.
  */
-const ALLOWED_EXTRA_KEYS = new Set(['apiBaseUrl']);
+const ALLOWED_EXTRA_KEYS = new Set([
+  'apiBaseUrl',
+  // The EAS project linkage (app.config.ts's own comment) — a public project
+  // id, not a credential; `eas.projectId` is nested, so only the `eas` key
+  // itself is in scope here (extractTopLevelKeys never descends).
+  'eas',
+]);
 
 /** Every env key any `eas.json` build profile may set. Same discipline. */
 const ALLOWED_EAS_ENV_KEYS = new Set(['MOBILE_API_BASE_URL']);

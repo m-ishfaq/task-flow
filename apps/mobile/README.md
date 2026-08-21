@@ -72,12 +72,15 @@ Three gates, exactly as specified, collapsed into layout components since
   in Wave 2.
 
 **Not in this increment, named rather than half-built (CLAUDE.md's own
-rule):** passkeys, biometric app-lock, and device binding — all Wave 1b per
-§4.4–§4.5. OAuth (Google/GitHub) shipped in a later increment — see its own
-section below; it was never actually Wave 1b (§4.4 only tags passkeys and
-biometric app-lock that way, and Wave 1's own file map always listed the
-oauth-callback route), so it landed as a Wave 1 gap being closed rather than
-early 1b work.
+rule):** passkeys and biometric app-lock — both Wave 1b per §4.4. OAuth
+(Google/GitHub) and device binding both shipped in later increments — see
+their own sections below; OAuth was never actually Wave 1b (§4.4 only tags
+passkeys and biometric app-lock that way, and Wave 1's own file map always
+listed the oauth-callback route), so it landed as a Wave 1 gap being closed
+rather than early 1b work. Device binding IS genuinely Wave 1b (§4.5 tags it
+explicitly), but it was the one item the plan itself treats as load-bearing
+rather than additive — see its own section for why that moved it ahead of
+passkeys/biometric app-lock.
 
 ### The realtime socket client (§5, §8)
 
@@ -103,8 +106,12 @@ check ONLY when `Origin` is completely absent AND the caller presents the
 `apps/mobile`'s HTTP client, its socket client, and `apps/realtime`'s
 handshake all read the same constant). The token verification that
 immediately follows is what still decides — see that function's own header
-for the full argument, and why this is a named INTERIM gap, superseded once
-Wave 1b's device-bound keypair (§4.5) gives native a real per-device proof.
+for the full argument, and why this was a named INTERIM gap. Device binding
+(below) is the thing that was meant to supersede it, though `auth.ts` itself
+has not been updated to consult it yet — the socket handshake and the
+refresh path are two different surfaces, and closing the socket-handshake
+gap for real is left as its own follow-up rather than folded into this
+increment silently.
 
 ### Build channels and the bundle-secret guardrail (§10)
 
@@ -227,6 +234,48 @@ whose one callback URL is the native deep link. See `.env.example`'s
 `GOOGLE_NATIVE_CLIENT_ID`/`GITHUB_NATIVE_CLIENT_ID`/
 `GITHUB_NATIVE_CLIENT_SECRET` for what to register and where.
 
+### Device binding (§4.5) — ⚠ human-review surface, and ⚠ UNVERIFIED native code
+
+The compensating control for the one property native genuinely lost by not
+having httpOnly cookies (§4.2): each device generates its own P-256 keypair
+in the secure enclave (iOS) / StrongBox-or-TEE (Android) at first sign-in,
+whose private half never leaves that hardware — not even to this app's own
+JS. Once a session's key is bound, `identity.refresh()` (server-side)
+requires a signature over the presented refresh token from that key, so a
+copied token is inert off the device that minted it.
+
+`src/lib/device-key.ts` is the port (mirroring `secure-store.ts`'s split from
+`device-secure-store.ts`), `device-key.native.ts` its real implementation,
+backed by a new LOCAL Expo Module at `modules/device-key/` — Swift for
+`SecKeyCreateRandomKey`/`kSecAttrTokenIDSecureEnclave`, Kotlin for
+`KeyGenParameterSpec`/`setIsStrongBoxBacked`. `session.ts`'s `adopt()` is the
+one chokepoint all three native sign-in paths (password, TOTP, OAuth) funnel
+through, so it is the one place that registers a device's key against a
+freshly minted session (`auth.native.deviceKey.register`, a dedicated
+`selfRoute` that reads `sessionId` off the caller's own access token rather
+than a new field threaded through every login-completing route); `refresh()`
+signs the token being redeemed whenever a local key exists at all, whether
+or not that particular session ever completed registration — a signature
+the server did not ask for is simply ignored. Both are best-effort: neither
+a failed registration nor a failed signature blocks a login or a refresh a
+legacy/unbound session never needed.
+
+**Nothing in `modules/device-key/ios` or `modules/device-key/android` has
+ever been compiled in this environment.** There is no Swift or Kotlin
+toolchain here — `tsc`, ESLint, Vitest and Metro's own bundle check all stop
+at the TypeScript boundary (`modules/device-key/index.ts`), and the first
+real compile signal either native file gets is the next `expo prebuild` /
+EAS development build that includes this module. Each native file's own
+header names the specific things most worth checking first against a real
+build (the DER signature format, the raw P-256 point encoding, the
+StrongBox API-level guard) — read those before assuming a build failure
+there is unrelated to this increment. Everything ABOVE the native module —
+the server-side verification, the schema, the session orchestration — is
+proved by real tests against real Postgres and real P-256 signatures
+(`apps/api/src/identity/device-binding.test.ts`,
+`packages/security/src/device-binding.test.ts`, `session.test.ts`'s "device
+binding" suite); only the native signing itself is unverified.
+
 ## Not here yet
 
 - **Running this on a simulator or physical device.** The app now bundles
@@ -250,8 +299,18 @@ whose one callback URL is the native deep link. See `.env.example`'s
   `eas.json`'s `development` profile already sets `developmentClient: true`),
   install the resulting build on-device, then
   `pnpm --filter @taskflow/mobile start --dev-client` and open with that app
-  instead of Expo Go.
+  instead of Expo Go. `app.config.ts`'s `extra.eas.projectId`/`owner`/
+  `updates`/`runtimeVersion` are what a dynamic config needs set by hand for
+  `eas build` to run at all — `eas init`/`eas update:configure` cannot write
+  into a `.ts` config automatically the way they can a static `app.json`, and
+  each said so explicitly rather than silently doing nothing.
 
-- Passkeys, biometric app-lock, device binding (Wave 1b, §4.4–§4.5).
+  **Getting past that point is the first time device binding's native module
+  (above) can be exercised at all.** Confirming it actually works — a real
+  key generates, a real signature verifies server-side, a stolen token is
+  genuinely refused — is unverified until someone runs this on-device; see
+  that section's own header for what to check first if it does not.
+
+- Passkeys, biometric app-lock (Wave 1b, §4.4).
 - The product waves themselves (Work, Chat, Docs, RTC) — the socket client
   exists but nothing calls `joinBoardRoom` yet.

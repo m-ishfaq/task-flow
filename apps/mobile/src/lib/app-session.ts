@@ -1,6 +1,7 @@
 import Constants from 'expo-constants';
 import { parseConfig } from './config.js';
 import { createSecureStore } from './device-secure-store.js';
+import { createDeviceKey } from './device-key.native.js';
 import { createPreferences } from './preferences.js';
 import { createMobileSession, SessionExpiredError, type MobileSession } from './session.js';
 import { createMobileSocket, type MobileSocket } from './socket.js';
@@ -53,10 +54,14 @@ export const prefs = createPreferences();
 export const session: MobileSession = createMobileSession({
   secureStore: createSecureStore(),
   prefs,
+  deviceKey: createDeviceKey(),
   api: {
-    refresh: async (refreshToken) => {
+    refresh: async (refreshToken, deviceSignature) => {
       try {
-        return await anonymousClient.auth.native.refresh.mutate({ refreshToken });
+        return await anonymousClient.auth.native.refresh.mutate({
+          refreshToken,
+          ...(deviceSignature === undefined ? {} : { deviceSignature }),
+        });
       } catch (error) {
         // Classify tRPC's UNAUTHENTICATED / TOKEN_EXPIRED into the one error
         // session.ts's `refresh()` treats as "sign out"; everything else
@@ -68,6 +73,19 @@ export const session: MobileSession = createMobileSession({
     },
     logout: async (refreshToken) => {
       await anonymousClient.auth.native.logout.mutate({ refreshToken });
+    },
+    /**
+     * Device binding (§4.5). `apiClient` — not `anonymousClient` — because
+     * `auth.native.deviceKey.register` is a `selfRoute`: it needs the bearer
+     * this session JUST adopted, which `apiClient`'s `authHeaders` resolves
+     * by calling back into `session.authHeaders()`. Referencing `apiClient`
+     * here, before its own `const` below has run, is safe: this function
+     * only ever executes later, from `session.adopt()`, by which point the
+     * whole module has finished loading — the same lazy-reference pattern
+     * `gatewaySocket.onSessionEnded` uses in the other direction.
+     */
+    registerDeviceKey: async (publicKey) => {
+      await apiClient.auth.native.deviceKey.register.mutate({ publicKey });
     },
   },
 });

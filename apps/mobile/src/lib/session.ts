@@ -1,6 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { OrgId } from '@taskflow/contracts';
 import { REFRESH_TOKEN_KEY, type SecureStore } from './secure-store.js';
+import type { DeviceKeyPort, DevicePublicKeyCoordinates } from './device-key.js';
 
 /**
  * The handset's half of the session (ai/phase-14-mobile.md §4).
@@ -65,10 +66,27 @@ export class SessionExpiredError extends Error {
 }
 
 export interface SessionApi {
-  /** Exchange a refresh token for a fresh pair. Throws SessionExpiredError on auth failure. */
-  refresh(refreshToken: string): Promise<SessionTokens>;
+  /**
+   * Exchange a refresh token for a fresh pair. Throws SessionExpiredError on
+   * auth failure. `deviceSignature` is present whenever a local device key
+   * exists (§4.5) — sent unconditionally once a key exists, whether or not
+   * THIS session's binding actually landed, since the server only requires
+   * it for a session it was told about and otherwise ignores it.
+   */
+  refresh(refreshToken: string, deviceSignature?: string): Promise<SessionTokens>;
   /** Best-effort server-side revocation on explicit sign-out. */
   logout?(refreshToken: string): Promise<void>;
+  /**
+   * Binds this device's public key to the just-adopted session (§4.5). No
+   * session id to pass: the server's `auth.native.deviceKey.register` reads
+   * it off the caller's own verified access token, never off input — the
+   * whole reason the route needs no session id from the client at all.
+   * Best-effort — `adopt` never lets a failure here surface as a login
+   * failure, the same reasoning `issueSession`'s impossible-travel email
+   * uses server-side: a compensating control failing to attach must not
+   * block the thing it compensates for.
+   */
+  registerDeviceKey?(publicKey: DevicePublicKeyCoordinates): Promise<void>;
 }
 
 /** Non-secure key/value storage (the remembered org id — not a credential). */
@@ -153,6 +171,12 @@ export interface SessionDeps {
   readonly secureStore: SecureStore;
   readonly prefs: Preferences;
   readonly api: SessionApi;
+  /**
+   * Absent = device binding is off entirely (e.g. in a test that does not
+   * care about it) — `adopt`/`refresh` skip it cleanly rather than needing a
+   * null object. `app-session.ts` always provides the real one.
+   */
+  readonly deviceKey?: DeviceKeyPort;
 }
 
 /**
@@ -161,7 +185,7 @@ export interface SessionDeps {
  * constructible in a test with in-memory ports.
  */
 export function createMobileSession(deps: SessionDeps): MobileSession {
-  const { secureStore, prefs, api } = deps;
+  const { secureStore, prefs, api, deviceKey } = deps;
 
   const store = createStore<SessionState>(() => ({
     status: 'restoring',
@@ -193,6 +217,24 @@ export function createMobileSession(deps: SessionDeps): MobileSession {
       sessionId: tokens.sessionId,
       userId: decodeUserId(tokens.accessToken),
     });
+
+    /* Device binding (§4.5) — called once, in practice, right after ANY
+       native login succeeds (password, TOTP, or OAuth all funnel through
+       this one `adopt`, which is the point of making it the one chokepoint).
+       Best-effort: a login the user just completed must not be reported as
+       failed because a compensating control could not attach. A session
+       that never gets a key bound simply never gets a signature required of
+       it — the same legacy-compatible fallback the server already has. */
+    if (deviceKey !== undefined && api.registerDeviceKey !== undefined) {
+      try {
+        const publicKey = await deviceKey.ensurePublicKey();
+        await api.registerDeviceKey(publicKey);
+      } catch {
+        /* Named gap, not a silent one: see this function's own comment
+           above and ai/phase-14-mobile.md §4.5's own accepted-tradeoff
+           note. Nothing to do here but let the session stand unbound. */
+      }
+    }
   }
 
   /** Reset to anonymous WITHOUT touching the keystore (see restore's offline case). */
@@ -227,7 +269,26 @@ export function createMobileSession(deps: SessionDeps): MobileSession {
           settleAnonymous();
           return null;
         }
-        const tokens = await api.refresh(refreshToken);
+
+        /* Sign the token being redeemed whenever a local device key exists
+           (§4.5) — unconditionally, not gated on whether THIS session ever
+           registered one: a signature the server did not ask for is simply
+           ignored (`identity.refresh()` only checks it when the session's
+           own binding is non-null), so there is no wrong session to send it
+           to. Signing failure (a native module hiccup, a locked keystore)
+           must not block a refresh a legacy/unbound session never needed
+           anyway. */
+        let deviceSignature: string | undefined;
+        if (deviceKey !== undefined) {
+          try {
+            await deviceKey.ensurePublicKey();
+            deviceSignature = await deviceKey.sign(refreshToken);
+          } catch {
+            deviceSignature = undefined;
+          }
+        }
+
+        const tokens = await api.refresh(refreshToken, deviceSignature);
         await adopt(tokens);
         return tokens.accessToken;
       } catch (error) {

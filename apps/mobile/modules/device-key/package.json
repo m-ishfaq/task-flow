@@ -1,0 +1,10 @@
+{
+  "name": "device-key",
+  "version": "0.0.0",
+  "description": "Local Expo Module: a hardware-backed P-256 keypair for native device binding (ai/phase-14-mobile.md §4.5).",
+  "main": "index.ts",
+  "private": true,
+  "peerDependencies": {
+    "expo-modules-core": "*"
+  }
+}

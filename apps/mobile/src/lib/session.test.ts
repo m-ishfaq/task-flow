@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { OrgId } from '@taskflow/contracts';
 import { createInMemorySecureStore, REFRESH_TOKEN_KEY, type SecureStore } from './secure-store.js';
+import { createInMemoryDeviceKey } from './device-key.js';
 import {
   createMobileSession,
   ORG_HEADER,
@@ -41,9 +42,18 @@ function memoryPrefs(): Preferences {
   };
 }
 
-function setup(api: SessionApi, secureStore: SecureStore = createInMemorySecureStore()) {
+function setup(
+  api: SessionApi,
+  secureStore: SecureStore = createInMemorySecureStore(),
+  deviceKey?: ReturnType<typeof createInMemoryDeviceKey>,
+) {
   const prefs = memoryPrefs();
-  const session = createMobileSession({ secureStore, prefs, api });
+  const session = createMobileSession({
+    secureStore,
+    prefs,
+    api,
+    ...(deviceKey === undefined ? {} : { deviceKey }),
+  });
   return { session, prefs, secureStore };
 }
 
@@ -81,7 +91,7 @@ describe('createMobileSession', () => {
 
     await session.restore();
 
-    expect(refresh).toHaveBeenCalledWith('stored_refresh');
+    expect(refresh).toHaveBeenCalledWith('stored_refresh', undefined);
     expect(session.store.getState().status).toBe('authenticated');
     // Rotation persisted the new token.
     expect(await secureStore.getItem(REFRESH_TOKEN_KEY)).toBe('stored_refresh_rotated');
@@ -177,5 +187,79 @@ describe('createMobileSession', () => {
     expect(session.store.getState().orgId).toBeNull();
     expect(await secureStore.getItem(REFRESH_TOKEN_KEY)).toBeNull();
     expect(await prefs.getItem('taskflow.org')).toBeNull();
+  });
+
+  describe('device binding (§4.5)', () => {
+    it('adopt registers the device public key against the new session', async () => {
+      const registerDeviceKey = vi.fn(() => Promise.resolve());
+      const { session } = setup(
+        { refresh: vi.fn(), registerDeviceKey },
+        createInMemorySecureStore(),
+        createInMemoryDeviceKey(),
+      );
+
+      await session.adopt(tokens({ sessionId: 'sess_new' }));
+
+      expect(registerDeviceKey).toHaveBeenCalledWith({ x: 'test-x', y: 'test-y' });
+    });
+
+    it('a failed registration does not fail adopt — the session still authenticates', async () => {
+      const registerDeviceKey = vi.fn(() => Promise.reject(new Error('native module unavailable')));
+      const { session } = setup(
+        { refresh: vi.fn(), registerDeviceKey },
+        createInMemorySecureStore(),
+        createInMemoryDeviceKey(),
+      );
+
+      await expect(session.adopt(tokens())).resolves.toBeUndefined();
+      expect(session.store.getState().status).toBe('authenticated');
+    });
+
+    it('with no deviceKey port, adopt never calls registerDeviceKey', async () => {
+      const registerDeviceKey = vi.fn(() => Promise.resolve());
+      const { session } = setup({ refresh: vi.fn(), registerDeviceKey });
+
+      await session.adopt(tokens());
+
+      expect(registerDeviceKey).not.toHaveBeenCalled();
+    });
+
+    it('refresh signs the presented token when a device key exists', async () => {
+      const secureStore = createInMemorySecureStore();
+      await secureStore.setItem(REFRESH_TOKEN_KEY, 'stored_refresh');
+      const refresh = vi.fn(() => Promise.resolve(tokens()));
+      const { session } = setup({ refresh }, secureStore, createInMemoryDeviceKey());
+
+      await session.refresh();
+
+      expect(refresh).toHaveBeenCalledWith('stored_refresh', 'test-signature:stored_refresh');
+    });
+
+    it('a signing failure still lets refresh proceed, with no signature', async () => {
+      const secureStore = createInMemorySecureStore();
+      await secureStore.setItem(REFRESH_TOKEN_KEY, 'stored_refresh');
+      const refresh = vi.fn(() => Promise.resolve(tokens()));
+      const brokenDeviceKey = {
+        ensurePublicKey: () => Promise.reject(new Error('keystore locked')),
+        sign: () => Promise.reject(new Error('keystore locked')),
+      };
+      const { session } = setup({ refresh }, secureStore, brokenDeviceKey);
+
+      const token = await session.refresh();
+
+      expect(token).not.toBeNull();
+      expect(refresh).toHaveBeenCalledWith('stored_refresh', undefined);
+    });
+
+    it('with no deviceKey port, refresh sends no signature', async () => {
+      const secureStore = createInMemorySecureStore();
+      await secureStore.setItem(REFRESH_TOKEN_KEY, 'stored_refresh');
+      const refresh = vi.fn(() => Promise.resolve(tokens()));
+      const { session } = setup({ refresh }, secureStore);
+
+      await session.refresh();
+
+      expect(refresh).toHaveBeenCalledWith('stored_refresh', undefined);
+    });
   });
 });

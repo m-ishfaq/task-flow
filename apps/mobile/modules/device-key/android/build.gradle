@@ -1,0 +1,28 @@
+// ⚠ UNVERIFIED — see modules/device-key/index.ts's own header. Written to
+// match Expo's standard local-module Gradle template as closely as this
+// session could manage; there is no Android Gradle toolchain in this
+// environment to actually run it against.
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+group = 'expo.modules.devicekey'
+version = '0.0.0'
+
+def expoModulesCorePlugin = new File(project(':expo-modules-core').projectDir.absolutePath, 'ExpoModulesCorePlugin.gradle')
+apply from: expoModulesCorePlugin
+applyKotlinExpoModulesCorePlugin()
+useCoreDependencies()
+useExpoPublishing()
+
+android {
+  namespace 'expo.modules.devicekey'
+
+  defaultConfig {
+    versionCode 1
+    versionName '0.0.0'
+  }
+
+  lintOptions {
+    abortOnError false
+  }
+}

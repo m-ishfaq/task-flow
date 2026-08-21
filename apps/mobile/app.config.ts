@@ -41,14 +41,19 @@ const API_BASE_URL = process.env['MOBILE_API_BASE_URL'] ?? 'http://localhost:300
 const config: ExpoConfig = {
   name: 'TaskFlow',
   slug: 'taskflow',
+  /* The EAS account this project's builds belong to — paired with
+     `extra.eas.projectId` below. Not a secret, same reasoning: it is a
+     public identifier (the project's own dashboard URL already carries it),
+     not a credential. */
+  owner: 'm.1shfaq',
   version: '0.0.0',
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
-  /* The custom scheme for the OAuth system-browser redirect (§4.4, deferred
-     past Wave 1) and any future universal-link fallback. Registered here even
-     though nothing consumes it yet — `expo-router`'s deep-link handling reads
-     it, and a scheme changed after release breaks every previously-installed
-     app's return-from-browser flow. */
+  /* The custom scheme the OAuth system-browser redirect returns to (§4.4;
+     `src/lib/oauth.ts`'s `OAUTH_REDIRECT_URL`) and any future universal-link
+     fallback. `expo-router`'s deep-link handling reads it, and a scheme
+     changed after release breaks every previously-installed app's
+     return-from-browser flow. */
   scheme: 'taskflow',
   /* Android and iOS only, explicit rather than left to Expo's own default
      (`['ios', 'android', 'web']`). A `web` target left implicit is exactly
@@ -70,9 +75,33 @@ const config: ExpoConfig = {
   android: {
     package: 'com.taskflow.app',
   },
+  /* EAS Update's own linkage, paired with extra.eas.projectId below — same
+     "dynamic config can't be auto-written" reason as that field. `policy:
+     "appVersion"` ties a published update's runtime compatibility to this
+     file's own `version`, rather than a separately-tracked fingerprint, so a
+     build stays the honest source of truth for what it can receive. Nothing
+     is actually published yet (no product surface exists to update, per the
+     app's own README) — this is the linkage EAS's build step itself
+     requires to exist before it will produce a build at all. */
+  updates: {
+    url: 'https://u.expo.dev/b3129211-ec7b-4cca-ab67-6c39a32095cf',
+  },
+  runtimeVersion: {
+    policy: 'appVersion',
+  },
   plugins: ['expo-router'],
   extra: {
     apiBaseUrl: API_BASE_URL,
+    /* EAS project linkage — not a secret per §10's own public/private test.
+       A project id identifies which EAS project a build belongs to, nothing
+       more, and is already visible in the Expo dashboard's URL for anyone
+       with project access. `eas build` needs this to know which cloud
+       project a build targets; a DYNAMIC config (this file) is the one case
+       EAS's own `eas init` cannot write it into automatically, unlike a
+       static app.json, so it is set here by hand instead. */
+    eas: {
+      projectId: 'b3129211-ec7b-4cca-ab67-6c39a32095cf',
+    },
   },
 };
 
