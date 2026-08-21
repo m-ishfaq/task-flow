@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { router } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import * as WebBrowser from 'expo-web-browser';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient, session } from '../../src/lib/app-session.js';
-import { apiErrorOf } from '../../src/lib/trpc-client.js';
+import { apiErrorOf, errorCodeOf } from '../../src/lib/trpc-client.js';
 import { loadPasskeys } from '../../src/lib/passkeys.js';
 import {
   OAUTH_PROVIDER_LABEL,
@@ -69,6 +70,22 @@ export default function SignIn() {
       }
       await session.adopt(result);
     },
+  });
+
+  /* The way out of EMAIL_NOT_VERIFIED, ported from apps/web's `LoginPage`
+     (see that file's own comment): the account exists and the password was
+     correct — `login` only reaches this error after confirming both — so
+     there is a real inbox to send another link to. `resendVerification`
+     answers `{ status: 'sent' }` unconditionally either way, so this never
+     itself reveals anything `signIn`'s own error did not already.
+     Reads the live `email` field state rather than web's `signIn.variables
+     ?.email` — `signIn`'s own `mutationFn` here takes no argument (it
+     closes over the same state), so there is no captured-at-submit-time
+     value to read instead; the field cannot have changed between a failed
+     attempt and pressing this button without the user clearing the error
+     some other way first, so the two reads coincide in practice. */
+  const resendVerification = useMutation({
+    mutationFn: () => apiClient.auth.resendVerification.mutate({ email }),
   });
 
   const verifyTotp = useMutation({
@@ -193,7 +210,37 @@ export default function SignIn() {
         secureTextEntry
         style={styles.input}
       />
-      {signIn.isError && <FormError error={signIn.error} />}
+      {signIn.isError &&
+        (errorCodeOf(signIn.error) === 'EMAIL_NOT_VERIFIED' ? (
+          <View style={styles.notice}>
+            <Text style={styles.noticeText}>
+              {apiErrorOf(signIn.error)?.error.message ??
+                'Please verify your email address before signing in.'}
+            </Text>
+            {resendVerification.isSuccess ? (
+              <Text style={styles.hint}>
+                If that address has an account, a new link is on its way.
+              </Text>
+            ) : (
+              <Pressable
+                style={styles.secondaryButton}
+                disabled={resendVerification.isPending}
+                onPress={() => {
+                  resendVerification.mutate();
+                }}
+              >
+                {resendVerification.isPending ? (
+                  <ActivityIndicator color={colors.ink.hex} />
+                ) : (
+                  <Text style={styles.secondaryButtonText}>Resend verification email</Text>
+                )}
+              </Pressable>
+            )}
+            {resendVerification.isError && <FormError error={resendVerification.error} />}
+          </View>
+        ) : (
+          <FormError error={signIn.error} />
+        ))}
       <Pressable
         style={styles.button}
         disabled={signIn.isPending || email.length === 0 || password.length === 0}
@@ -207,6 +254,22 @@ export default function SignIn() {
           <Text style={styles.buttonText}>Sign in</Text>
         )}
       </Pressable>
+      <View style={styles.linkRow}>
+        <Pressable
+          onPress={() => {
+            router.push('/register');
+          }}
+        >
+          <Text style={styles.link}>Create an account</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => {
+            router.push('/forgot-password');
+          }}
+        >
+          <Text style={styles.link}>Forgot password?</Text>
+        </Pressable>
+      </View>
       {oauth.isError && <FormError error={oauth.error} />}
       {(['google', 'github'] as const)
         .filter((provider) => oauthProviders.data?.[provider] === true)
@@ -314,6 +377,43 @@ const styles = StyleSheet.create({
   },
   error: {
     color: colors.danger.hex,
+    fontSize: 14,
+  },
+  notice: {
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+    borderRadius: radiusCard,
+    backgroundColor: colors.surfaceSunken.hex,
+    padding: 12,
+    gap: 6,
+  },
+  noticeText: {
+    color: colors.ink.hex,
+    fontSize: 14,
+  },
+  hint: {
+    color: colors.inkMuted.hex,
+    fontSize: 12,
+  },
+  secondaryButton: {
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+    borderRadius: radiusCard,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  secondaryButtonText: {
+    color: colors.ink.hex,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  linkRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  link: {
+    color: colors.accent.hex,
     fontSize: 14,
   },
 });

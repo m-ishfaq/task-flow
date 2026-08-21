@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -9,22 +8,16 @@ import {
   type ListRenderItemInfo,
 } from 'react-native';
 import { router } from 'expo-router';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
-import { apiClient, session } from '../../src/lib/app-session.js';
-import { apiErrorOf } from '../../src/lib/trpc-client.js';
-import {
-  loadPasskeys,
-  toRegistrationResponse,
-  type PasskeyCreationResult,
-} from '../../src/lib/passkeys.js';
+import { apiClient } from '../../../src/lib/app-session.js';
 import {
   PRIORITY_COLOR,
   PRIORITY_LABEL,
   formatDueDate,
   type CardSummary,
-} from '../../src/lib/work.js';
+} from '../../../src/lib/work.js';
 
 /**
  * "My Tasks" (ai/phase-14-mobile.md Wave 2 roadmap row: "Work — boards,
@@ -35,13 +28,7 @@ import {
  * `apps/web/src/features/work/home-page.tsx` + `list-view.tsx`, not the
  * board/kanban view: a flat, read-only list of the caller's own cards
  * across every board they can reach (`work.cards.mine`), no drag-and-drop,
- * no TipTap rendering (§6.4 is real work, and this screen never shows a
- * card's description), no optimistic mutations, and no card-detail
- * navigation — tapping a card is a Wave 2 follow-up, not this slice.
- * `list-view.tsx`'s own header comment already makes the same "no
- * drag-and-drop, no inline create" call for the identical reason on web:
- * this is a reshaping of cards that live elsewhere, not a place new ones
- * are written.
+ * no optimistic mutations. Tapping a card opens `(app)/card/[cardId].tsx`.
  *
  * Status is deliberately NOT shown, matching `home-page.tsx` exactly — see
  * that investigation's own finding: status definitions are per-PROJECT
@@ -50,49 +37,17 @@ import {
  * projects for one screen. Priority has no such problem — it is a fixed
  * four-value enum, not project-scoped data — so it renders here for free.
  *
- * The "Add a passkey" action and sign-out both move to a slim footer below
- * the list, which is now the primary content — they were the whole screen
- * in Wave 1's placeholder and are secondary now.
+ * Lives under `(app)/(tabs)/` now, not directly under `(app)/` — the
+ * navigation-shell increment that added the tab bar (see `_layout.tsx` in
+ * this folder). Passkey enrollment and sign-out, which used to sit in a
+ * footer here because this was the whole signed-in app, moved to the
+ * Account tab: mirroring apps/web, where neither lives on the "My tasks"
+ * page either (`AccountPage`/the sidebar's account menu own them).
  */
 export default function Home() {
-  const [passkeySupported, setPasskeySupported] = useState(false);
-
-  /* See sign-in.tsx's identical effect for why this is state resolved after
-     mount rather than a synchronous `isSupported()` call: the module is now
-     loaded lazily (passkeys.ts's header), so a static top-level import can
-     no longer answer this question before render. */
-  useEffect(() => {
-    let cancelled = false;
-    loadPasskeys()
-      .then((mod) => {
-        if (!cancelled) setPasskeySupported(mod.isSupported());
-      })
-      .catch(() => {
-        if (!cancelled) setPasskeySupported(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const cards = useQuery({
     queryKey: ['work.cards.mine'],
     queryFn: async () => wire(await apiClient.work.cards.mine.query({ includeArchived: false })),
-  });
-
-  const addPasskey = useMutation({
-    mutationFn: async () => {
-      const options = await apiClient.auth.passkeys.startRegistration.mutate();
-      const { create } = await loadPasskeys();
-      const result = await create(options as never);
-      if (result === null) return null;
-      // See sign-in.tsx's identical cast for why: the library's own
-      // CreationResponse type and this function's precise, hand-written
-      // PasskeyCreationResult describe the same wire shape under two
-      // different TypeScript declarations.
-      const response = toRegistrationResponse(result as unknown as PasskeyCreationResult);
-      return apiClient.auth.passkeys.finishRegistration.mutate({ response: response as never });
-    },
   });
 
   return (
@@ -113,43 +68,6 @@ export default function Home() {
           )
         }
       />
-
-      <View style={styles.footer}>
-        {passkeySupported && (
-          <>
-            {addPasskey.isError && (
-              <Text style={styles.error} accessibilityRole="alert">
-                {apiErrorOf(addPasskey.error)?.error.message ?? 'Could not add a passkey.'}
-              </Text>
-            )}
-            {addPasskey.isSuccess && addPasskey.data !== null && (
-              <Text style={styles.label}>Passkey added.</Text>
-            )}
-            <Pressable
-              style={styles.secondaryButton}
-              disabled={addPasskey.isPending}
-              onPress={() => {
-                addPasskey.mutate();
-              }}
-            >
-              {addPasskey.isPending ? (
-                <ActivityIndicator color={colors.ink.hex} />
-              ) : (
-                <Text style={styles.secondaryButtonText}>Add a passkey to this device</Text>
-              )}
-            </Pressable>
-          </>
-        )}
-
-        <Pressable
-          style={styles.button}
-          onPress={() => {
-            void session.signOut();
-          }}
-        >
-          <Text style={styles.buttonText}>Sign out</Text>
-        </Pressable>
-      </View>
     </View>
   );
 }
@@ -281,37 +199,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.inkMuted.hex,
     marginTop: 8,
-  },
-  footer: {
-    gap: 8,
-    paddingBottom: 8,
-  },
-  button: {
-    borderRadius: radiusCard,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.danger.hex,
-  },
-  buttonText: {
-    color: colors.danger.hex,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  secondaryButton: {
-    borderRadius: radiusCard,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.line.hex,
-  },
-  secondaryButtonText: {
-    color: colors.ink.hex,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  error: {
-    color: colors.danger.hex,
-    fontSize: 14,
   },
 });

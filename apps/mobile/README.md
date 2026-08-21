@@ -2,18 +2,22 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) started
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) in progress
 
-Six increments in, Wave 1's acceptance bar (§7: the three gates and one
-authenticated tRPC read, on a real device, against the real API) has
-everything CI can prove behind it, **and now a real Metro bundle behind it
-too** — `pnpm --filter @taskflow/mobile build` (`expo export`) produces an
-actual Hermes bytecode bundle for both platforms, not just a green `tsc`. **A
-green `pnpm verify` here is STILL not the same claim as "this works when you
-click it" (§11) — nobody has run this on a simulator or a physical device
-yet** — but the gap between "typechecks" and "bundles" is now closed, and
-closing it found a real bug (below). Keychain, biometrics, push and WebRTC
-stay device-only no matter how green this gets.
+Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
+read, on a real device, against the real API) has everything CI can prove
+behind it, plus a real Metro bundle (`pnpm --filter @taskflow/mobile build`)
+for both platforms. **This has now actually run on a real development
+build, not just typechecked and bundled** — and that live run is what found
+the biggest gap so far: two flat screens (`home.tsx`, `card/[cardId].tsx`)
+with no surrounding navigation shell, and a sign-in screen with no way to
+create an account or recover a password. Both are fixed — see "The
+navigation shell, and the auth screens that were missing" below — which is
+exactly the standing lesson this file keeps re-learning: a green
+`pnpm verify` is not the same claim as "this works when you click it"
+(§11), and the gaps that survive it are never the ones a diff review would
+catch. Keychain, biometrics, push and WebRTC stay device-only no matter how
+green this gets.
 
 ### `src/lib/` — the pure client spine (Expo-free, unit-tested)
 
@@ -63,12 +67,14 @@ Three gates, exactly as specified, collapsed into layout components since
 - **`index.tsx`** — the auth gate's second half: redirect to `/sign-in` or
   `/home`.
 - **`(auth)/`** — `sign-in.tsx` (password + inline TOTP challenge, via
-  `auth.native.login` / `auth.native.totp.verifyLogin`) and a layout that
-  bounces an already-authenticated caller straight to `/home`.
+  `auth.native.login` / `auth.native.totp.verifyLogin`, plus OAuth and
+  passkeys), `register.tsx` and `forgot-password.tsx` (§"The navigation
+  shell" below), and a layout that bounces an already-authenticated caller
+  straight to `/home`.
 - **`(app)/`** — `_layout.tsx` is the org gate (validate the remembered org
-  against `tenancy.orgs.list` before anything renders) and `home.tsx` — Wave
-  1's entire signed-in surface: a placeholder that proves the spine via
-  `auth.me`, one authenticated read. Real product screens start in Wave 2.
+  against `tenancy.orgs.list` before anything renders); `(tabs)/` is the tab
+  bar (`home.tsx` — "My Tasks" — and `account.tsx`); `card/[cardId].tsx` is
+  a sibling of `(tabs)/`, pushed over it rather than rendered inside it.
 - **`org-picker.tsx`** — deliberately at the app ROOT, a sibling of `(app)/`
   and `(auth)/` rather than nested inside `(app)/`. It started out nested
   there, and a real run found the bug that placement caused: `(app)/_layout.tsx`
@@ -551,16 +557,81 @@ its own increment), the comment list and composer (only the count renders;
 done/total count; no per-item read or toggle), and boards/kanban (still
 Work's whole remaining row).
 
+## The navigation shell, and the auth screens that were missing
+
+Found by the first real device run against this build, not by spec review:
+Wave 1 and Wave 2 had each shipped one flat screen (`home.tsx`, then
+`card/[cardId].tsx`) with no surrounding frame — no way to reach the org
+picker except the forced redirect on first sign-in, nothing but an inline
+"Sign out" button, and a sign-in screen with no path to creating an account
+or recovering a password. `apps/web` has had all of this since Phase 1/3;
+nothing on native ever built the equivalent. This closes both gaps.
+
+**A bottom tab bar, not a sidebar drawer.** `apps/web`'s `Sidebar` is a
+desktop-shaped pattern — a persistent rail beside the content, which has no
+native equivalent on a phone-width screen. `(app)/(tabs)/_layout.tsx` uses
+`expo-router`'s `Tabs`, which renders the platform's own primary-nav idiom
+(iOS's tab bar, Android's bottom navigation) rather than a hand-built
+approximation. Two tabs today, matching what actually exists: **My Tasks**
+(`home.tsx`, moved from directly under `(app)/`) and **Account**
+(`account.tsx`, new). Chat/Docs/People join this bar as their own waves
+ship real screens — the same way web's sidebar grew its nav rail one item
+per phase, not all at once. Text-only labels, no icon set: nothing else in
+this app uses one yet, and adding an icon library was not a call worth
+making inside this fix.
+
+**`card/[cardId].tsx` stays a sibling of `(tabs)/`, not nested inside it.**
+`(app)/_layout.tsx` renders a bare `<Slot />` with no navigator of its own,
+so pushing to a card replaces the whole tab view rather than opening inside
+it — the correct native pattern for a detail screen; a phone does not want
+a tab bar competing with a card's own "← Back" for space.
+
+**`account.tsx` is where `apps/web`'s sidebar footer's two jobs went**:
+`OrgSwitcher` (which org, and a way to leave it) and the account dropdown
+(sign out). "Switch organization" pushes `/org-picker` — the SAME screen
+`(app)/_layout.tsx`'s gate already redirects to when no valid org is
+remembered, now also reachable on demand; nothing about that screen needed
+to change to be reachable voluntarily as well as by force, since it already
+handles "no memberships" and already calls `session.selectOrg` +
+`router.replace('/home')` on pick. Passkey enrollment also moved here from
+`home.tsx`'s old footer, matching where it lives on web (`AccountPage`, not
+the My Tasks-equivalent page). **What this screen deliberately does NOT
+have**, matching web's much larger `account-page.tsx` (656 lines: profile
+editing, connected accounts, TOTP, device/session inventory, DSAR export):
+none of that. This is the smallest useful cut — see the current org, leave
+it, manage a passkey, sign out. A fuller account screen is real, separate
+work.
+
+**`register.tsx` and `forgot-password.tsx`** are the native counterparts of
+web's `RegisterPage`/`ForgotPasswordPage`, reachable from new links on
+`sign-in.tsx`. `auth.register` and `auth.requestPasswordReset` are
+unchanged from browser to native — neither takes or returns a session, so
+neither needed a `native.` sibling the way `auth.login` did. Both render a
+"check your email" state on success, with the same confirmation wording
+regardless of whether the address exists — an account-existence oracle
+needs no password guesses at all. **There is deliberately no
+`reset-password.tsx`** to receive the emailed link: `packages/mail`'s
+templates build that link against the WEB app's own base URL, not a
+`taskflow://` deep link, so it always opens in a browser regardless of
+which surface the request came from — the same universal-link
+infrastructure gap passkeys' own section documents, sidestepped here
+because nothing on this path actually needs it. `sign-in.tsx` also gained
+the `EMAIL_NOT_VERIFIED` recovery web's `LoginPage` already has — a
+"Resend verification email" button — ported with one small difference:
+it reads the live `email` field rather than web's `signIn.variables?.email`,
+since this screen's `signIn` mutation takes no argument to capture one from.
+
 ## Not here yet
 
-- **Running this on a simulator or physical device.** The app now bundles
-  (`pnpm --filter @taskflow/mobile build`), which is real signal `expo-doctor`
-  and `tsc` alone could not give — but nothing has rendered a screen or made a
-  live request yet. `pnpm --filter @taskflow/mobile start` plus a real API
-  reachable at `MOBILE_API_BASE_URL` (see `.env.example`) is the next step,
-  before any further product screens. In particular, `isNativeClient`'s own
-  header names what a real-device run would need to confirm about `Origin` on
-  RN's WebSocket transport — see `apps/realtime/src/auth.ts`.
+- **Confirming this on a simulator or physical device beyond what has
+  already run.** The app has now actually been installed and driven on a
+  real development build — sign-in, the org picker, "My Tasks", and card
+  detail have all been exercised live, and that live run is exactly what
+  found the navigation-shell gap this file's newest section fixes. What is
+  still unconfirmed: `isNativeClient`'s own header names what a real-device
+  run would need to confirm about `Origin` on RN's WebSocket transport (see
+  `apps/realtime/src/auth.ts`) — nothing has joined a socket room yet, since
+  nothing on native calls `joinBoardRoom`.
 
   **The public Expo Go app cannot open this project on SDK 57 today.** Expo
   Go's per-SDK build has a review-queue lag behind each SDK release, and the
