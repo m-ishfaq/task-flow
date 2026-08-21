@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { colors, radiusCard } from '@taskflow/tokens';
@@ -12,6 +12,7 @@ import {
   toRegistrationResponse,
   type PasskeyCreationResult,
 } from '../../../src/lib/passkeys.js';
+import { ConnectedAccountsSection } from '../../../src/lib/connected-accounts-section.js';
 
 /**
  * The Account tab — the one place `apps/web`'s sidebar footer (`OrgSwitcher`
@@ -73,7 +74,7 @@ export default function Account() {
   const paddingTop = useTopInset();
 
   return (
-    <View style={[styles.container, { paddingTop }]}>
+    <ScrollView style={[styles.container, { paddingTop }]} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Account</Text>
 
       <View style={styles.section}>
@@ -117,6 +118,8 @@ export default function Account() {
         </View>
       )}
 
+      <ConnectedAccountsSection />
+
       <Pressable
         style={styles.button}
         onPress={() => {
@@ -125,16 +128,19 @@ export default function Account() {
       >
         <Text style={styles.buttonText}>Sign out</Text>
       </Pressable>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: 24,
-    gap: 20,
     backgroundColor: colors.surface.hex,
+  },
+  content: {
+    paddingHorizontal: 24,
+    paddingBottom: 40,
+    gap: 20,
   },
   title: {
     fontSize: 22,
@@ -169,8 +175,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.danger.hex,
-    marginTop: 'auto',
-    marginBottom: 24,
+    marginTop: 8,
   },
   buttonText: {
     color: colors.danger.hex,

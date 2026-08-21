@@ -1300,6 +1300,67 @@ mistake this app's own history already warns against — a control that
 reads correctly and does nothing real. Real, separate work, named here
 rather than quietly missing.
 
+## Account screen parity with web — started: step-up, and connected accounts
+
+The next item after the video-review bug fixes and the board/chat work:
+bringing `(tabs)/account.tsx` up to web's much larger `account-page.tsx`
+(profile, working hours, TOTP, connected accounts, passkey management,
+sessions, DSAR export). Started with the piece everything else depends on,
+plus the first section built on it.
+
+**Nearly every mutation this parity work needs — link/unlink an OAuth
+provider, enroll/disable TOTP, remove a passkey, revoke a session, sign out
+everywhere — is `stepUp: true` server-side, and mobile had NO step-up
+handling at all before this increment.** `apps/api/src/trpc/builder.ts`'s
+own comment is exact about why this can never be satisfied by a token
+refresh: `authenticatedAt` is set at LOGIN, and a refresh deliberately never
+advances it — so a stolen refresh token alone can never pass this gate, only
+a fresh password/passkey/TOTP proof can. Skipping this would have meant
+every section below silently 401ing the moment five minutes passed since
+sign-in, which is the common case for anyone actually using the Account tab.
+
+- **`src/lib/use-step-up.ts`** — `useStepUp()`, ported from
+  `apps/web/src/features/auth/use-step-up.tsx`: a `guard(error, retry)` that
+  recognizes `STEP_UP_REQUIRED` and queues the retry as a thunk (never
+  captured arguments — a caller may need to re-run something composite),
+  plus `pending`/`confirm`/`cancel` state a sheet component reads. Split
+  from the sheet itself for the identical reason web's two files are split:
+  a module exporting both a hook and a component risks losing Fast Refresh
+  on the component, in Metro exactly as in Vite.
+- **`src/lib/step-up-sheet.tsx`** — `<StepUpSheet />`, the mobile
+  `StepUpDialog`. Re-authenticating IS signing in again, so this reruns the
+  identical `auth.native.login`/`auth.native.totp.verifyLogin` pair
+  `(auth)/sign-in.tsx` already uses (password, then an inline TOTP challenge
+  if the account has one enrolled), `session.adopt`s the fresh pair — a
+  genuinely new `authenticatedAt`, the one thing this control exists to
+  bump — then calls the caller's queued retry rather than navigating
+  anywhere. A bottom-sheet `Modal` wrapped in `KeyboardAvoidingView` from
+  the start, matching the lesson `(tabs)/chat.tsx`'s "New channel" fix above
+  already paid for: a password TextInput in an unguarded sheet is the exact
+  shape that broke there.
+- **`src/lib/connected-accounts-section.tsx`** — the first section built on
+  it, and the one piece of this whole slice that needed new SERVER code:
+  `apps/api/src/identity/router.ts`'s `auth.native.oauth.startLink` (own
+  commit, own header — a ⚠ human-review-surface change, flagged for review
+  before merge rather than folded silently into this one). Listing and
+  unlinking use the CHANNEL-AGNOSTIC `auth.oauth.listConnected`/`unlink` —
+  the same routes the browser calls, since neither reads or writes anything
+  channel-specific. Linking is the one channel-specific operation (the
+  redirect must land back in THIS app, not a browser tab), so it goes
+  through the new native route, mirroring `(auth)/sign-in.tsx`'s own OAuth
+  mutation (`openAuthSessionAsync` + `parseOAuthRedirect`) almost exactly —
+  the one difference is `onSuccess`: sign-in adopts a session, this never
+  does, because a `{ kind: 'linked' }` result carries no tokens to adopt.
+- **`(tabs)/account.tsx`** gained a `ScrollView` (was a plain `View` — fine
+  for three items, not for a screen that is about to hold six sections) and
+  now renders `<ConnectedAccountsSection />` between passkeys and sign-out.
+
+**Still to come, same slice**: TOTP (needs a new native dependency for
+rendering the enrollment QR code — nothing in this app renders one today),
+passkey list/rename/remove (enrollment already exists; the rest doesn't),
+session/device inventory with revoke and sign-out-everywhere, profile
+editing plus working hours/out-of-office, and self-serve DSAR export.
+
 ## Not here yet
 
 - **Confirming this on a simulator or physical device beyond what has
