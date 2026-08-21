@@ -24,9 +24,10 @@ import type { MobileTRPCClient } from './trpc-client.js';
  *
  * Thread replies, edit/delete/"remove for me", and the shared
  * `message-composer.tsx` closed most of the remaining gap this header used
- * to name — `thread/[messageId].tsx`'s own header has the design. Typing
- * indicators, read receipts, link unfurls, file attaching from the
- * composer, and push are still real, separate work.
+ * to name — `thread/[messageId].tsx`'s own header has the design. Read
+ * receipts (unread badges + auto-mark-read) closed next — see
+ * `unreadCountsQueryKey`'s own comment. Typing indicators, link unfurls,
+ * file attaching from the composer, and push are still real, separate work.
  */
 export type ChannelList = Wire<
   Awaited<ReturnType<MobileTRPCClient['chat']['channels']['list']['query']>>
@@ -44,6 +45,11 @@ export type Message = Wire<
 
 export type Reaction = Wire<
   Awaited<ReturnType<MobileTRPCClient['chat']['messages']['reactions']['query']>>
+>[number];
+
+/** One row of `chat.channels.unreadCounts` — the channel list's badge count. */
+export type UnreadCount = Wire<
+  Awaited<ReturnType<MobileTRPCClient['chat']['channels']['unreadCounts']['query']>>
 >[number];
 
 /** A pinned message row — `chat.messages.pins`. */
@@ -83,6 +89,23 @@ export function pinsQueryKey(channelId: string): readonly ['chat.messages.pins',
 /** A message's thread — `chat.messages.thread`, the replies only (not the root; see `thread/[messageId].tsx`'s own header). */
 export function threadQueryKey(messageId: string): readonly ['chat.messages.thread', string] {
   return ['chat.messages.thread', messageId];
+}
+
+/**
+ * The channel list's unread badges — `chat.channels.unreadCounts`, mirroring
+ * `apps/web/src/features/chat/api.ts`'s own `unreadCountsQuery`: the channel
+ * ids sit INSIDE the key (so each distinct roster gets its own cache entry,
+ * the same reason `messageIds` is part of `reactionsQuery`'s call, not its
+ * key), but `markRead`'s own `onSuccess` invalidates the bare
+ * `['chat.channels.unreadCounts']` PREFIX rather than this exact key —
+ * TanStack Query matches a shorter key against every longer one that starts
+ * with it, so a caller does not need to know the live channel-id array to
+ * invalidate every unread count that array produced.
+ */
+export function unreadCountsQueryKey(
+  channelIds: readonly string[],
+): readonly ['chat.channels.unreadCounts', readonly string[]] {
+  return ['chat.channels.unreadCounts', channelIds];
 }
 
 /** Org-wide, same shape as `chat.saved.list`'s own scope — filtered client-side per channel, matching `apps/web`'s `SavedSection`. */

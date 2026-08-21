@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
   ActivityIndicator,
@@ -126,11 +126,22 @@ import {
  * identical TextInput-plus-mention-dropdown block this screen already had;
  * see that component's own header for the ownership split.
  *
+ * **Read receipts: this screen ADVANCES the cursor; `(tabs)/chat.tsx`
+ * DISPLAYS the badge.** Mirrors `apps/web`'s own split exactly — a
+ * `useEffect` here calls `chat.channels.markRead` whenever the newest
+ * TOP-LEVEL message id changes (opening the channel, sending, or a refetch
+ * picking up someone else's new message), no socket required. `markRead`
+ * itself refuses to move the cursor backward, so re-firing on every render
+ * of the same last id is safe — the effect's dependency is the id, not a
+ * one-shot mount flag. No "new messages" divider (web's own `entryCursor`/
+ * `firstUnreadAfter` machinery) — a real but separate refinement; this
+ * increment closes the badge, not the divider.
+ *
  * **Still explicitly out of scope, all real and separate work**: mentions
  * AUTOCOMPLETE beyond the trailing-query case above (mid-string insertion
- * needs a real editor), typing indicators, read receipts, file ATTACHING
- * from the composer (the details screen's Files section can list and
- * download what is already there), link unfurls, and push.
+ * needs a real editor), typing indicators, file ATTACHING from the
+ * composer (the details screen's Files section can list and download what
+ * is already there), link unfurls, and push.
  *
  * `chat.messages.list` returns newest-first (`ORDER BY id DESC`) —
  * reversed here for display, since a chat thread reads oldest-at-top.
@@ -190,6 +201,22 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   const groups = useMemo(() => groupMessages(topLevel), [topLevel]);
   const replyCounts = useMemo(() => replyCountsOf(oldestFirst), [oldestFirst]);
   const messageIds = useMemo(() => oldestFirst.map((message) => message.messageId), [oldestFirst]);
+
+  const markRead = useMutation({
+    mutationFn: (messageId: string) =>
+      apiClient.chat.channels.markRead.mutate({ channelId, messageId }),
+    onSuccess: async () => {
+      // The bare prefix, not `unreadCountsQueryKey(someArray)` — see that
+      // function's own header on why a shorter key invalidates every
+      // longer one TanStack Query has cached under it.
+      await queryClient.invalidateQueries({ queryKey: ['chat.channels.unreadCounts'] });
+    },
+  });
+  const lastTopLevelId = topLevel.at(-1)?.messageId;
+  useEffect(() => {
+    if (lastTopLevelId === undefined) return;
+    markRead.mutate(lastTopLevelId);
+  }, [lastTopLevelId]);
 
   const reactions = useQuery({
     queryKey: reactionsQueryKey(channelId),

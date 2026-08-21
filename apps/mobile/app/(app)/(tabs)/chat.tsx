@@ -21,7 +21,12 @@ import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { useMembers, type Member } from '../../../src/lib/use-members.js';
-import { CHANNELS_QUERY_KEY, channelDisplayName, type Channel } from '../../../src/lib/chat.js';
+import {
+  CHANNELS_QUERY_KEY,
+  channelDisplayName,
+  unreadCountsQueryKey,
+  type Channel,
+} from '../../../src/lib/chat.js';
 
 /**
  * Chat's entry point — the fourth tab (see `_layout.tsx`). Wave 3's
@@ -44,6 +49,14 @@ import { CHANNELS_QUERY_KEY, channelDisplayName, type Channel } from '../../../s
  * check) and "New direct message" (needs no such gate — `openDirect`'s own
  * router comment: starting a DM is `channel:read`, the same permission
  * that already got the caller onto this screen).
+ *
+ * **Unread badges — `chat.channels.unreadCounts`, polled every 15s.**
+ * Mirrors `apps/web`'s own `unreadCountsQuery` exactly: no socket needed,
+ * because `channel/[channelId].tsx`'s own `markRead` effect (see that
+ * file's header) is what actually advances a read cursor — this screen
+ * just polls the server's count of what has not caught up to it yet. A
+ * badge running a few seconds stale after reading a channel elsewhere is
+ * the accepted tradeoff, the same one web's own header names.
  */
 export default function Chat() {
   const [composerMode, setComposerMode] = useState<ComposerMode>('closed');
@@ -55,6 +68,17 @@ export default function Chat() {
     queryFn: async () => wire(await apiClient.chat.channels.list.query()),
   });
   const paddingTop = useTopInset();
+
+  const channelIds = channels.data?.channels.map((channel) => channel.channelId) ?? [];
+  const unread = useQuery({
+    queryKey: unreadCountsQueryKey(channelIds),
+    queryFn: async () => wire(await apiClient.chat.channels.unreadCounts.query({ channelIds })),
+    enabled: channelIds.length > 0,
+    refetchInterval: 15_000,
+  });
+  const unreadByChannel = new Map(
+    (unread.data ?? []).map((row) => [row.channelId, row.unreadCount]),
+  );
 
   if (channels.isError) {
     return (
@@ -89,7 +113,12 @@ export default function Chat() {
         data={sorted}
         keyExtractor={(channel) => channel.channelId}
         renderItem={({ item }) => (
-          <ChannelRow channel={item} viewerId={viewerId} personOf={personOf} />
+          <ChannelRow
+            channel={item}
+            viewerId={viewerId}
+            personOf={personOf}
+            unreadCount={unreadByChannel.get(item.channelId) ?? 0}
+          />
         )}
         contentContainerStyle={styles.list}
         style={styles.listContainer}
@@ -115,10 +144,12 @@ function ChannelRow({
   channel,
   viewerId,
   personOf,
+  unreadCount,
 }: {
   readonly channel: Channel;
   readonly viewerId: string | null;
   readonly personOf: (userId: string) => { readonly label: string };
+  readonly unreadCount: number;
 }) {
   const name = channelDisplayName(channel, viewerId, personOf);
   return (
@@ -128,9 +159,19 @@ function ChannelRow({
         router.push(`/channel/${channel.channelId}`);
       }}
     >
-      <Text style={[styles.rowTitle, !channel.joined && styles.rowTitleUnjoined]}>
-        {channel.type === 'public' || channel.type === 'private' ? `# ${name}` : name}
-      </Text>
+      <View style={styles.rowMain}>
+        <Text
+          style={[styles.rowTitle, !channel.joined && styles.rowTitleUnjoined]}
+          numberOfLines={1}
+        >
+          {channel.type === 'public' || channel.type === 'private' ? `# ${name}` : name}
+        </Text>
+        {unreadCount > 0 && (
+          <View style={styles.unreadBadge}>
+            <Text style={styles.unreadBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+          </View>
+        )}
+      </View>
       {channel.topic !== null && (
         <Text style={styles.rowTopic} numberOfLines={1}>
           {channel.topic}
@@ -443,12 +484,32 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 2,
   },
+  rowMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   rowTitle: {
+    flex: 1,
     fontSize: 15,
     color: colors.ink.hex,
   },
   rowTitleUnjoined: {
     color: colors.inkMuted.hex,
+  },
+  unreadBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent.hex,
+  },
+  unreadBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.accentInk.hex,
   },
   rowTopic: {
     fontSize: 12,

@@ -1516,15 +1516,16 @@ this without comment; ESLint's `no-unnecessary-type-assertion` is what
 caught it here, on every cast this file had, rather than it being
 noticed by inspection.
 
-## Chat, closer to complete: thread replies, edit/delete, "remove for me"
+## Chat, closer to complete: thread replies, edit/delete, "remove for me", read receipts
 
 The next item after Sprints, per the user's own choice between finishing Chat + push,
 starting Docs, or starting Voice/RTC: close the largest remaining gap this
 file's own Chat sections kept naming — `channel/[channelId].tsx`'s header
 listed "thread replies... edit/delete... typing indicators, read receipts...
-link unfurls, and push" as still out of scope. This increment closes the
-first two and adds "remove for me"; typing indicators, read receipts, link
-unfurls, attachments from the composer, and push are still open (see below).
+link unfurls, and push" as still out of scope. This increment closes thread
+replies, edit/delete, adds "remove for me", and closes read receipts;
+typing indicators, link unfurls, attachments from the composer, and push
+are still open (see below).
 
 **Replies live in the same `chat.messages.list` page as their root, and
 that fact is the whole design.** Nothing new to fetch for the main channel
@@ -1589,14 +1590,36 @@ moderate` (the server's own verdict, never a role check) and hides it
   disabled, per this file's own established rule for every other
   capability-gated control.
 
+**Read receipts split the same way `apps/web` splits them: one screen
+ADVANCES the cursor, a different one DISPLAYS the badge — no socket
+needed for either half.** `channel/[channelId].tsx` gained a `useEffect`
+that calls `chat.channels.markRead` whenever the newest TOP-LEVEL message
+id changes (opening the channel, sending, or a refetch picking up someone
+else's message) — `markRead` itself refuses to move the cursor backward,
+so re-firing on an unchanged id is harmless, which is what makes the
+effect's dependency safely just the id rather than a one-shot mount flag.
+`(tabs)/chat.tsx` gained an unread-badge query, `chat.channels.
+unreadCounts` polled every 15s, mirroring web's own `unreadCountsQuery`
+exactly — a badge running a few seconds stale after reading a channel
+elsewhere is the accepted tradeoff web's own header already names.
+`unreadCountsQueryKey` (`chat.ts`) puts the channel-id array INSIDE the
+key (so each distinct roster gets its own cache entry) while `markRead`'s
+own `onSuccess` invalidates the bare `['chat.channels.unreadCounts']`
+PREFIX — TanStack Query matches a shorter key against every longer one
+that starts with it, so the mutation does not need to know the live
+channel-id array to invalidate whatever it produced. **No "new messages"
+divider** — web's own `entryCursor`/`firstUnreadAfter` machinery, a real
+but separate refinement; this increment closes the badge, not the divider.
+
 **Still explicitly out of scope, all real and separate work**: mentions
 autocomplete beyond the trailing-query case (mid-string insertion needs a
-real editor — unchanged from before this increment), typing indicators,
-read receipts (`chat.channels.markRead`/`unreadCounts` exist server-side
-and need no socket — a real but separate slice), file attaching from the
-composer (a new file-picker dependency, the same deferral `sprints.ts`
-already named for CSV import), link unfurls, and push (FCM/APNs — the
-largest remaining piece, and the most device-dependent).
+real editor — unchanged from before this increment), typing indicators
+(web's own `useTypingUsers` is socket-driven — `onTyping`/`emitTyping`
+over the live gateway — and nothing on native joins a chat-equivalent
+socket room yet, unlike read receipts' tRPC-only design), file attaching
+from the composer (a new file-picker dependency, the same deferral
+`sprints.ts` already named for CSV import), link unfurls, and push
+(FCM/APNs — the largest remaining piece, and the most device-dependent).
 
 ## Not here yet
 
@@ -1648,11 +1671,11 @@ largest remaining piece, and the most device-dependent).
   rich text EDITOR (description/comment/message composers all stay
   plain-text until one exists), due/start date editing (no date-picker
   dependency added yet), and card drag-and-drop (boards' own section above
-  has the full reasoning). The rest of Chat (typing indicators, read
-  receipts, attachments from the composer, link unfurls, push — reactions,
-  mentions composing, thread replies, and edit/delete/"remove for me" have
-  all shipped, see "Chat, reworked" and "Chat, closer to complete" above)
-  and the other product waves (Docs, RTC) — the socket client exists but
+  has the full reasoning). The rest of Chat (typing indicators, attachments
+  from the composer, link unfurls, push — reactions, mentions composing,
+  thread replies, edit/delete/"remove for me", and read receipts have all
+  shipped, see "Chat, reworked" and "Chat, closer to complete" above) and
+  the other product waves (Docs, RTC) — the socket client exists but
   nothing calls `joinBoardRoom`/a chat-equivalent yet, so
   every screen above is a plain `useQuery`: fresh on navigation and on
   app-foreground (see `_layout.tsx`'s `AppState` wiring, below), not live
