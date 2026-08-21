@@ -167,6 +167,15 @@ export const EnvSchema = z
     VAPID_PUBLIC_KEY: OptionalNonEmpty,
     VAPID_PRIVATE_KEY: OptionalNonEmpty,
 
+    /* Native mobile push (Phase 14 §9, ai/phase-14-mobile.md). Unlike VAPID
+       above, `ExpoPushProvider` needs no secret to construct at all — see
+       that class's own header in `push-provider.ts` — so this is NOT a
+       "push is on" gate the way the VAPID trio is; the provider is always
+       constructed in `main.ts`. This token only raises Expo's per-project
+       rate limits and scopes sends to this Expo project specifically, so
+       it stays optional even once set for one deployment. */
+    EXPO_ACCESS_TOKEN: OptionalNonEmpty,
+
     /* OAuth sign-in (Phase 12 Wave 2 §3.3). Optional per provider, the same
        "an unconfigured integration is a valid deployment" convention as VAPID
        above: a provider whose client id/secret are unset simply does not

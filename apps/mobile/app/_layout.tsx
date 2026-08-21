@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Slot } from 'expo-router';
+import { router, Slot } from 'expo-router';
 import {
   AppState,
   type AppStateStatus,
@@ -16,6 +16,7 @@ import { colors, radiusCard } from '@taskflow/tokens';
 import { errorCodeOf, isUnauthenticated } from '../src/lib/trpc-client.js';
 import { biometricGate, session } from '../src/lib/app-session.js';
 import { useSession } from '../src/lib/use-session.js';
+import { attachNotificationResponseListener } from '../src/lib/push-notifications.js';
 
 /**
  * The root layout — the outermost thing on screen, ever (ai/phase-14-mobile.md
@@ -54,6 +55,10 @@ import { useSession } from '../src/lib/use-session.js';
  * REACTIVE response to a failed query; `org-gate.ts`'s `resolveRememberedOrg`
  * already validates the remembered org BEFORE anything org-scoped renders,
  * so there is no Wave 1 screen this app needs the reactive path for yet.
+ *
+ * Also mounts the tapped-notification listener (Phase 14 §9,
+ * `push-notifications.ts`'s own header) — unconditionally, like `AppState`
+ * below, since listening for a tap costs nothing and prompts no permission.
  */
 const queryClient = createQueryClient({ isUnauthenticated, errorCodeOf });
 
@@ -101,6 +106,17 @@ export default function RootLayout() {
     return () => {
       subscription.remove();
     };
+  }, []);
+
+  // The tapped-notification listener (push-notifications.ts's own header) —
+  // same unconditional, whole-lifetime placement as the `AppState` listener
+  // above, and for the identical reason: listening costs nothing and
+  // prompts no permission, unlike ACTUALLY registering for push (which only
+  // ever runs from a button on the account screen).
+  useEffect(() => {
+    return attachNotificationResponseListener((path) => {
+      router.push(path);
+    });
   }, []);
 
   const attemptUnlock = useCallback(() => {

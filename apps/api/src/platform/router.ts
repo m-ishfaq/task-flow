@@ -4,6 +4,7 @@ import { subjectOf } from '../trpc/context.js';
 import type { ChatActor } from '../chat/shared.js';
 import * as notifications from './notifications.js';
 import * as push from './push.js';
+import * as expoPush from './expo-push.js';
 import { NOTIFICATION_CATEGORIES, NOTIFICATION_CHANNELS } from './notification-prefs.js';
 
 /**
@@ -187,6 +188,55 @@ export function createPlatformRouter(deps: PlatformRouterDeps) {
         .output(z.object({ removed: z.number().int().nonnegative() }))
         .mutation(({ input, ctx }) =>
           push.unregisterSubscription(ctx.principal.userId, input.subscriptionId),
+        ),
+    }),
+
+    /**
+     * Native mobile push tokens (Phase 14 §9, ai/phase-14-mobile.md) —
+     * `push` above's counterpart for `apps/mobile`. Same `selfRoute` shape
+     * and the same reasoning: a token belongs to a PERSON, not an org, and
+     * a guest must be able to register their own device.
+     *
+     * No `expoPush.publicKey`-shaped route: unlike VAPID, there is no
+     * server-held key material for a client to need — see
+     * `ExpoPushProvider`'s own header in `push-provider.ts`.
+     */
+    expoPush: router({
+      register: selfRoute({
+        selfReason: 'Registering your own device for push notifications.',
+      })
+        .input(
+          z
+            .object({
+              expoPushToken: z.string().min(1),
+              deviceLabel: z.string().min(1).nullable().default(null),
+            })
+            .strict(),
+        )
+        .output(z.object({ registered: z.literal(true) }))
+        .mutation(({ input, ctx }) => expoPush.registerExpoPushToken(ctx.principal.userId, input)),
+
+      list: selfRoute({ selfReason: 'Listing your own push devices.' })
+        .output(
+          z
+            .array(
+              z.object({
+                tokenId: z.string(),
+                expoPushToken: z.string(),
+                deviceLabel: z.string().nullable(),
+                createdAt: z.date(),
+                lastSeenAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ ctx }) => expoPush.listExpoPushTokens(ctx.principal.userId)),
+
+      unregister: selfRoute({ selfReason: 'Removing your own push device.' })
+        .input(z.object({ tokenId: z.string() }).strict())
+        .output(z.object({ removed: z.number().int().nonnegative() }))
+        .mutation(({ input, ctx }) =>
+          expoPush.unregisterExpoPushToken(ctx.principal.userId, input.tokenId),
         ),
     }),
   });

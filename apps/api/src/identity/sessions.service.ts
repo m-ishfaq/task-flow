@@ -3,6 +3,7 @@ import { createEvent } from '@taskflow/events';
 import { isPlausibleDevicePublicKey, type DevicePublicKeyCoordinates } from '@taskflow/security';
 import * as repo from './repository.js';
 import * as identityEvents from './events.js';
+import { listExpoPushTokens } from '../platform/expo-push.js';
 import { listSubscriptions, parseUserAgentLabel } from '../platform/push.js';
 import { SYSTEM_ORG, type IdentityDeps, type RequestMeta } from './identity.service.js';
 
@@ -12,9 +13,12 @@ import { SYSTEM_ORG, type IdentityDeps, type RequestMeta } from './identity.serv
  * "A device" in this UI is an ACTIVE SESSION — the honest unit the system
  * already tracks (`identity.sessions`), rather than a fingerprinting
  * exercise over data that does not exist. Push capability joins in from
- * `platform.push_subscriptions`, which is user-scoped rather than
- * session-scoped (Phase 9 §3.7), so the honest fact it can contribute is
- * "push is registered on N devices", not "this exact session has push".
+ * `platform.push_subscriptions` AND `platform.expo_push_tokens` (native
+ * push, Phase 14 §9) — both user-scoped rather than session-scoped, so the
+ * honest fact either can contribute is "push is registered on N devices",
+ * not "this exact session has push". Summed across both tables: a
+ * mobile-only user who never opens a browser still has a real,
+ * non-zero count.
  *
  * Both routes are `selfRoute`: there is no org permission that describes
  * listing your own sign-ins, and the page must answer with no org selected
@@ -42,7 +46,7 @@ export interface SessionView {
 
 export interface SessionsList {
   readonly sessions: readonly SessionView[];
-  /** How many devices have web-push registered — the honest per-USER fact available. */
+  /** How many devices have push registered, web and native combined — the honest per-USER fact available. */
   readonly pushDeviceCount: number;
 }
 
@@ -51,9 +55,10 @@ export async function list(
   userId: string,
   currentSessionId: string,
 ): Promise<SessionsList> {
-  const [rows, push] = await Promise.all([
+  const [rows, push, expoPush] = await Promise.all([
     repo.listSessions(userId),
     listSubscriptions(unsafeAsId<'UserId'>(userId)),
+    listExpoPushTokens(unsafeAsId<'UserId'>(userId)),
   ]);
 
   return {
@@ -67,7 +72,7 @@ export async function list(
       country: row.country,
       flagged: row.impossibleTravelAt !== null,
     })),
-    pushDeviceCount: push.length,
+    pushDeviceCount: push.length + expoPush.length,
   };
 }
 

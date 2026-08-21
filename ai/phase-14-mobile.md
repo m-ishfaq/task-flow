@@ -361,6 +361,32 @@ id), and tapping it deep-links through the §7 parsers and _then_ fetches over a
 the search index uses ("the index answers which org, never the content", Phase 8). No tenant
 content rides in a push body.
 
+**Built — and diverged from this section's own two assumptions, both deliberately.** First: device
+tokens live in a NEW `platform.expo_push_tokens` table (migration 0082), not inside
+`platform.push_subscriptions`. A web-push subscription is `(endpoint, p256dh, auth)` plus RFC 8291
+encryption the server holds no equivalent key material for on the native side — an Expo push token
+is one opaque string, and making `push_subscriptions` polymorphic to hold both shapes would have
+touched a table `notification-push.ts` already depended on, for no benefit over a second table with
+the identical RLS pattern (self-scoped CRUD, `taskflow_audit` gets SELECT/UPDATE/DELETE and no
+INSERT — see that migration's own header). Second: the delivery adapter is `ExpoPushProvider`
+(`apps/api/src/platform/push-provider.ts`), calling Expo's OWN push relay
+(`https://exp.host/--/api/v2/push/send`), not FCM/APNs directly — Expo's relay is what already sits
+in front of both for an Expo-built app, and it needs no server-held credential to construct at all
+(the FCM/APNs credentials that make a send actually land on a device live in the EAS project
+configuration, not this server's environment). `notification-push.ts`'s drain loop now fans one
+pending delivery out to BOTH `PushProvider` (web) and `ExpoPushProvider` (native) destinations a
+person has, independently — a deployment can run either, both, or neither. Client-side:
+`apps/mobile/src/lib/push-notifications.ts` (the registration ceremony, explicit and
+button-triggered — never automatic on launch, the identical consent-first call §9's own "the
+notification payload is never trusted... only as a pointer" line makes for content) and
+`notification-path.ts` (the WEB-shaped `data.path` a delivery carries has no relationship to this
+app's own segment-based routes, so tapping a notification needs its own translation table, kept in
+a native-runtime-free file specifically so it stays unit-testable). **Code-complete, infrastructure
+NOT** — the identical wall passkeys and biometric app-lock already hit in this same phase: a real
+send needs EAS push credentials (an Apple Push key, an FCM service account) that only the account
+owner can configure, so this cannot be verified end-to-end without a real device and a real EAS
+project. See `apps/mobile/README.md`'s own Push section for the full account.
+
 ---
 
 ## 10. Build, release, and the "no secret in the bundle" rule

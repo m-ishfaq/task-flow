@@ -21,7 +21,7 @@ import { startBacklinksRelay } from './docs/backlinks.relay.js';
 import { createNotificationMailDelivery } from './platform/notification-mail.js';
 import { startDigestSweep } from './platform/digest.js';
 import { startDueReminderSweep } from './platform/due-reminders.js';
-import { WebPushProvider } from './platform/push-provider.js';
+import { ExpoPushProvider, WebPushProvider } from './platform/push-provider.js';
 import { buildTelephonyDeps } from './telephony/deps.js';
 import { createCarrierFetch, startRecordingIngest } from './telephony/ingest.scheduler.js';
 import { startSearchIndexRelay } from './search/indexer.relay.js';
@@ -224,6 +224,14 @@ const pushProvider =
       })
     : undefined;
 
+/* The native mobile push provider (Phase 14 §9). Always constructed, unlike
+   `pushProvider` above — see `ExpoPushProvider`'s own header on why it
+   needs no server-held secret to send at all; `EXPO_ACCESS_TOKEN` only
+   raises rate limits and stays optional. */
+const expoPushProvider = new ExpoPushProvider(
+  env.EXPO_ACCESS_TOKEN === undefined ? {} : { accessToken: env.EXPO_ACCESS_TOKEN },
+);
+
 /* Moves domain events from the outbox into the hash-chained audit log. Belongs
    in apps/worker on a pg-boss schedule once that exists (Phase 4) — see the
    note in tenancy/relay.ts. */
@@ -233,6 +241,7 @@ const relay = startAuditRelay({
   /* `exactOptionalPropertyTypes` refuses an explicit undefined here — the
      option must be absent when push is off, not present-and-undefined. */
   ...(pushProvider === undefined ? {} : { pushProvider }),
+  expoPushProvider,
 });
 
 /* The daily digest sweep (§3.4) and the hourly due-reminder sweep (§3.8),

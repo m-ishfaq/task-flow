@@ -529,7 +529,7 @@ describe('the §3.9 org-status filter (ai/phase-12-admin.md)', () => {
     );
     await admin.setOrg(null);
 
-    await deliverPendingPushes(provider, silentLogger);
+    await deliverPendingPushes({ web: provider }, silentLogger);
     expect(calls).toBe(0);
   });
 

@@ -7,7 +7,7 @@ import {
   type PendingEmailSend,
 } from '../platform/notification.projection.js';
 import { deliverPendingPushes } from '../platform/notification-push.js';
-import type { PushProvider } from '../platform/push-provider.js';
+import type { ExpoPushProvider, PushProvider } from '../platform/push-provider.js';
 
 /**
  * Drives the outbox relay on a timer (PLAN.md §10.6).
@@ -62,7 +62,7 @@ export interface StartRelayOptions {
    */
   readonly sendNotificationEmail?: (send: PendingEmailSend) => void;
   /**
-   * The push provider (Phase 9 Wave 2, §3.7), when VAPID keys are
+   * The web push provider (Phase 9 Wave 2, §3.7), when VAPID keys are
    * configured. When present, every tick drains the pending push delivery
    * rows — written by both the projection and the due-reminder sweep — via
    * `deliverPendingPushes`. Omitted (and rows stay `pending`) when the
@@ -70,6 +70,16 @@ export interface StartRelayOptions {
    * so.
    */
   readonly pushProvider?: PushProvider;
+  /**
+   * The native mobile push provider (Phase 14 §9), independent of
+   * `pushProvider` — a deployment can run with either, both, or neither
+   * configured. When present, the same tick also drains devices registered
+   * through `expoPush.register`. Unlike web push, `ExpoPushProvider` needs
+   * no server-held key material to construct (see that class's own header),
+   * so this is not gated on an env var the way `pushProvider` is on VAPID
+   * keys.
+   */
+  readonly expoPushProvider?: ExpoPushProvider;
 }
 
 /**
@@ -136,11 +146,24 @@ export function startAuditRelay(options: StartRelayOptions): RelayHandle {
       }
 
       /* Push rows written `pending` by either producer — the projection or
-         the due-reminder sweep — are sent here, on the same tick, whenever a
-         provider exists. At-least-once by design; see `notification-push.ts`
-         on the crash window and why the mark is conditional. */
-      if (options.pushProvider) {
-        const pushed = await deliverPendingPushes(options.pushProvider, options.logger);
+         the due-reminder sweep — are sent here, on the same tick, whenever
+         AT LEAST ONE provider exists (web, native, or both — see
+         `deliverPendingPushes`'s own header on why a single row can fan out
+         to both channels). At-least-once by design; see
+         `notification-push.ts` on the crash window and why the mark is
+         conditional. */
+      if (options.pushProvider || options.expoPushProvider) {
+        /* `exactOptionalPropertyTypes` refuses an explicit `undefined` for
+           an optional property (the same rule `main.ts`'s own comment
+           names for `pushProvider` there) — each key is included only when
+           its provider actually exists, never present-and-undefined. */
+        const pushed = await deliverPendingPushes(
+          {
+            ...(options.pushProvider === undefined ? {} : { web: options.pushProvider }),
+            ...(options.expoPushProvider === undefined ? {} : { expo: options.expoPushProvider }),
+          },
+          options.logger,
+        );
         if (pushed.attempted > 0) {
           options.logger.debug(
             {

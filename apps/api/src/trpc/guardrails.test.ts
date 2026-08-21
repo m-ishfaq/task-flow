@@ -429,6 +429,14 @@ describe('the real application router', () => {
          the values are non-sensitive (feature visibility, never a security
          control). */
       'flags.snapshot',
+      /* Native mobile push tokens (Phase 14 §9) — `notifications.push`'s
+         counterpart for `apps/mobile`, a device belongs to a PERSON not an
+         org for the identical reason. No `publicKey`-shaped route here:
+         unlike VAPID, there is no server-held key material a client would
+         ever need (`ExpoPushProvider`'s own header in `push-provider.ts`). */
+      'notifications.expoPush.list',
+      'notifications.expoPush.register',
+      'notifications.expoPush.unregister',
       /* Notification preferences (Phase 9) — global per user, not per org
          (`identity.notification_prefs`; see that table's own comment in
          `packages/db/src/schema/identity.ts`), so `selfRoute` for the same

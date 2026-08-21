@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat) mostly complete (push still open), Account parity complete, Sprints complete
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) code-complete (push infra-blocked, matching passkeys), Account parity complete, Sprints complete
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -1640,6 +1640,123 @@ designs), file attaching from the composer (a new file-picker dependency,
 the same deferral `sprints.ts` already named for CSV import), and push
 (FCM/APNs — the largest remaining piece, and the most device-dependent).
 
+## Push notifications (Wave 3 §9) — code complete, infrastructure not
+
+The last named item in "finish Chat + push" — chosen explicitly over
+building typing indicators (a live-socket project) after Chat's other
+gaps closed. Touches `packages/db` (a ⚠ human-review surface per
+CLAUDE.md), so the design decisions below are worth reading in full before
+merge, not just the diff.
+
+**A new `platform.expo_push_tokens` table (migration 0082), not a widened
+`platform.push_subscriptions`.** `ai/phase-14-mobile.md` §9 originally
+assumed the existing web-push table would just gain native rows; building
+it showed why that was wrong. A web-push subscription is `(endpoint,
+p256dh, auth)` plus RFC 8291 encryption; an Expo push token is one opaque
+string the server holds no key material for at all — Expo's own relay
+encrypts to the device on our behalf. Making `push_subscriptions`
+polymorphic would have touched a table `notification-push.ts` already
+depends on, for no benefit over a second table with the IDENTICAL RLS
+shape (self-scoped CRUD; `taskflow_audit` gets SELECT/UPDATE/DELETE and
+no INSERT — registration is always the person's own act through the
+application role). §9's own text has been corrected in place to say so,
+per this codebase's own "leave the stale claim, note the correction"
+habit rather than silently rewriting it.
+
+**`ExpoPushProvider` (`apps/api/src/platform/push-provider.ts`) calls
+Expo's own relay, not FCM/APNs directly** — the implementation
+`push-provider.ts`'s own header predicted before a mobile app existed
+("the day a mobile app exists, FcmPushProvider/ApnsPushProvider implement
+the same shape"). Needs no server-held secret to construct at all: unlike
+VAPID (a key pair THIS server signs with), the credentials that make a
+send actually reach a device — an Apple Push key, an FCM service account
+— live in the EAS project's own configuration, not in this repo or its
+env. `EXPO_ACCESS_TOKEN` is optional and only raises rate limits.
+`notification-push.ts`'s drain loop now fans ONE pending delivery out to
+BOTH `PushProvider` (web) and `ExpoPushProvider` (native) destinations a
+person has, independently — a deployment can run either, both, or
+neither, and someone signed in on a browser and a phone gets the message
+on both rather than one arbitrarily chosen channel. Getting the
+"sent"/"pending"/"failed" bookkeeping right across two independent
+channels (one row, two fan-outs, a transient error on one channel must
+never mark the row failed if the OTHER channel already delivered it) took
+a real rewrite of that loop's outcome tracking — see its own header.
+
+- **`src/lib/push-notifications.ts`** — the registration ceremony:
+  permission, an Android notification channel, an Expo push token
+  (`getExpoPushTokenAsync({ projectId })`, reading `app.config.ts`'s own
+  `extra.eas.projectId`), and registering it with the server.
+  `expo-notifications` is loaded lazily, never as a static top-level
+  import — the FIFTH time this exact "a native module's entry file calls
+  `requireNativeModule` at its own top level, and a static import poisons
+  Metro's whole module graph before a single screen renders" bug shape has
+  been named in this codebase (after `device-key.ts`, `biometric-
+gate.native.ts`, `passkeys.ts`, `qr-code.tsx`). **Registration is
+  explicit, never automatic on launch** — the identical consent-first call
+  web's own push checkbox already makes, and also just the platform-review
+  norm: prompting for notification permission before someone has done
+  anything is the pattern every mobile guideline warns against.
+  `registerForPushNotifications` never throws — every failure (permission
+  denied, no EAS project configured, no token returned, a refused
+  registration call) folds into one `PushRegistrationResult`, so the
+  section component needs one branch, not a try/catch around a promise
+  that sometimes rejects.
+- **`src/lib/notification-path.ts`** — mobile's OWN translation of the
+  WEB-shaped path a delivered notification's `data.path` carries
+  (`/chat?channel=X`, `/boards/X?card=Y` — `apps/api/src/platform/
+notification-paths.ts`'s own routing shadow, sent verbatim to both
+  channels). Web's route shape has no relationship to this app's
+  segment-based routes (`/channel/[channelId]`, `/card/[cardId]`), so a
+  raw `router.push(webPath)` would 404 on every tap. Returns `null` for a
+  shape this app has no screen for yet (`/docs?...` — no Docs feature on
+  native at all; `/settings` — a membership-change link with no mobile
+  equivalent) rather than guessing. **A separate file from
+  `push-notifications.ts` specifically so it stays unit-testable** —
+  `push-notifications.ts` imports `react-native` and `expo-constants`,
+  and `react-native`'s own source fails to even PARSE under Vitest (Flow
+  syntax), the identical "split for testability" call `config.ts`'s own
+  header already makes for `app-session.ts`'s `Constants` read. Found by
+  writing the test, not by inspection: the first version of this function
+  lived inline and its test suite failed with a Rolldown parse error
+  before a single assertion ran.
+- **`_layout.tsx`** gained the tapped-notification listener
+  (`attachNotificationResponseListener`), mounted unconditionally — the
+  identical "runs for the app's whole lifetime, not tied to auth state"
+  placement its own `AppState` listener already uses, and for the same
+  reason: listening for a tap costs nothing and prompts no permission,
+  unlike registering (which only ever runs from the account screen's
+  button). Also configures FOREGROUND display via
+  `setNotificationHandler` — without it, a push arriving while the app is
+  already open is silently swallowed rather than shown, which is
+  `expo-notifications`' own default.
+- **`src/lib/push-notifications-section.tsx`** — the account-screen UI:
+  "Enable on this device" plus a registered-device list with Remove,
+  mirroring web's `NotificationPreferencesSection` push half. **The
+  category/channel preference MATRIX that section also renders is
+  deliberately NOT ported** — no screen on native reads
+  `notifications.prefs.*` at all yet, and `direct.push` already defaults
+  to enabled server-side, so registering a device here starts real
+  delivery for mentions/DMs/assignments with no preference edit needed.
+  Editing preferences is real, separate work.
+- **`apps/api/src/identity/sessions.service.ts`'s `pushDeviceCount`** —
+  found stale while wiring this in, fixed the same day: it counted only
+  `platform.push_subscriptions` (web), so a mobile-only user who never
+  opens a browser would have shown 0 registered devices on `/account`'s
+  existing "Push notifications are active on N devices" line despite push
+  genuinely being on. Now sums both tables.
+
+**Still structurally blocked, the identical wall passkeys and biometric
+app-lock already hit in this codebase**: a real send needs EAS push
+credentials (an Apple Push key, an FCM service account) that only the
+account owner can configure in EAS's own dashboard — nothing in this repo
+can stand those up. Until then, `registerForPushNotifications` fails
+cleanly with an honest reason rather than a silent no-op, exactly like
+passkeys' own ceremony does against a domain with no hosted association
+files. Getting past that point is also the first time this whole path can
+be exercised end-to-end at all; see this file's own "Not here yet"
+section for the same standing caveat applied to every other real-device-
+only primitive.
+
 ## Not here yet
 
 - **Confirming this on a simulator or physical device beyond what has
@@ -1681,6 +1798,12 @@ the same deferral `sprints.ts` already named for CSV import), and push
   simulator can fake success but proves nothing about a genuine Face ID or
   fingerprint prompt, and `NSFaceIDUsageDescription` only gets exercised by
   Apple's own review once a real build ships.
+- **Push notifications actually being delivered.** The same structural
+  gap as passkeys, not a verification one: `registerForPushNotifications`
+  is code-complete, but a real send needs EAS push credentials (an Apple
+  Push key, an FCM service account) configured in EAS's own dashboard,
+  which nothing in this repo can stand up. See "Push notifications" above
+  for the full account.
 - **Passkeys actually working at all.** Not a verification gap like the two
   above — a structural one. The ceremony cannot complete without a real
   production domain, hosted `apple-app-site-association`/`assetlinks.json`
@@ -1690,11 +1813,12 @@ the same deferral `sprints.ts` already named for CSV import), and push
   rich text EDITOR (description/comment/message composers all stay
   plain-text until one exists), due/start date editing (no date-picker
   dependency added yet), and card drag-and-drop (boards' own section above
-  has the full reasoning). The rest of Chat (typing indicators, attachments
-  from the composer, push — reactions, mentions composing, thread replies,
-  edit/delete/"remove for me", read receipts, and link unfurls have all
-  shipped, see "Chat, reworked" and "Chat, closer to complete" above) and
-  the other product waves (Docs, RTC) — the socket client exists but
+  has the full reasoning). The rest of Chat (typing indicators and
+  attachments from the composer — reactions, mentions composing, thread
+  replies, edit/delete/"remove for me", read receipts, link unfurls, and
+  push have all shipped, see "Chat, reworked", "Chat, closer to complete",
+  and "Push notifications" above) and the other product waves (Docs, RTC)
+  — the socket client exists but
   nothing calls `joinBoardRoom`/a chat-equivalent yet, so
   every screen above is a plain `useQuery`: fresh on navigation and on
   app-foreground (see `_layout.tsx`'s `AppState` wiring, below), not live
