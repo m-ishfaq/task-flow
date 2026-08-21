@@ -296,6 +296,14 @@ describe('the real application router', () => {
       'auth.native.oauth.callback',
       'auth.native.oauth.providers',
       'auth.native.oauth.start',
+      /* The native counterpart of `auth.passkeys.finishAuthentication`
+         (ai/phase-14-mobile.md §4.4) — public for the identical reason: the
+         assertion IS the credential, there is no session yet on either
+         channel. `startAuthentication` needs no counterpart at all (no
+         session minted, nothing channel-specific in ceremony options), and
+         enrollment is `selfRoute` already — only session issuance differs
+         by channel. */
+      'auth.native.passkeys.finishAuthentication',
       'auth.native.refresh',
       'auth.native.totp.verifyLogin',
       /* OAuth sign-in (Phase 12 Wave 2 §3.3). Both public for the same reason

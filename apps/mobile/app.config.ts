@@ -71,6 +71,16 @@ const config: ExpoConfig = {
        security one, but it is exactly as easy to ship by accident. */
     bundleIdentifier: 'com.taskflow.app',
     supportsTablet: true,
+    /* Passkeys (§4.4) need this ENTITLEMENT present before the ceremony can
+       even start, but the entitlement alone does nothing without a real
+       domain hosting `.well-known/apple-app-site-association` naming this
+       app's team + bundle id — see the README's "Passkeys" section for the
+       full checklist. Obviously-invalid placeholder rather than a
+       plausible-looking one, matching eas.json's own MOBILE_API_BASE_URL
+       precedent: a wrong-but-real-looking domain fails silently (the
+       ceremony just never completes, indistinguishable from "not
+       configured yet"); this fails loudly the moment anyone tries it. */
+    associatedDomains: ['webcredentials:SET-REAL-DOMAIN-BEFORE-PASSKEYS-WORK.invalid'],
   },
   android: {
     package: 'com.taskflow.app',

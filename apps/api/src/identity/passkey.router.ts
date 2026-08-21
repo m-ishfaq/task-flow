@@ -60,7 +60,7 @@ const RegistrationResponse = z
   })
   .strict();
 
-const AuthenticationResponse = z
+export const AuthenticationResponse = z
   .object({
     id: Base64Url,
     rawId: Base64Url,
@@ -140,6 +140,7 @@ export function createPasskeyRouter(deps: PasskeyRouterDeps) {
           deps.passkeys,
           { response: input.response as never },
           meta(ctx),
+          'browser',
         );
         return handOff(ctx, pair);
       }),

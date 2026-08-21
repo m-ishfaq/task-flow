@@ -8,7 +8,8 @@ import {
   handOff,
   nativeSession,
 } from './session-response.js';
-import { createPasskeyRouter } from './passkey.router.js';
+import { createPasskeyRouter, AuthenticationResponse } from './passkey.router.js';
+import * as passkeys from './passkey.service.js';
 import type { PasskeyDeps } from './passkey.service.js';
 import type { IdentityDeps, RequestMeta } from './identity.service.js';
 import * as identity from './identity.service.js';
@@ -388,6 +389,35 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
               input.publicKey,
             ),
           ),
+      }),
+
+      /**
+       * The native counterpart of `auth.passkeys.finishAuthentication`
+       * (ai/phase-14-mobile.md §4.4). `startAuthentication` and enrollment
+       * (`startRegistration`/`finishRegistration`) need no native
+       * counterpart at all: the first returns ceremony options with no
+       * session and no channel to get wrong, and enrollment is already
+       * `selfRoute` — bearer-token authenticated identically on both
+       * channels, the same reasoning `auth.native.deviceKey.register` is
+       * the only new route device binding needed. Only session ISSUANCE
+       * differs by channel, so only `finishAuthentication` does.
+       */
+      passkeys: router({
+        finishAuthentication: publicRoute({
+          publicReason:
+            'The assertion IS the credential — there is no session yet, the same reason the browser route is public.',
+        })
+          .input(z.object({ response: AuthenticationResponse }).strict())
+          .output(NativeSessionResponse)
+          .mutation(async ({ ctx, input }) => {
+            const pair = await passkeys.finishAuthentication(
+              deps.passkeys,
+              { response: input.response as never },
+              meta(ctx),
+              'native',
+            );
+            return nativeSession(pair);
+          }),
       }),
     }),
 

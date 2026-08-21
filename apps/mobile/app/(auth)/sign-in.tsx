@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import * as WebBrowser from 'expo-web-browser';
+import { get, isSupported as isPasskeySupported } from 'react-native-passkeys';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient, session } from '../../src/lib/app-session.js';
 import { apiErrorOf } from '../../src/lib/trpc-client.js';
@@ -13,20 +14,23 @@ import {
 } from '../../src/lib/oauth.js';
 
 /**
- * Password sign-in, with the TOTP second-factor challenge inline, and OAuth
- * (ai/phase-14-mobile.md §4.4).
+ * Password sign-in, with the TOTP second-factor challenge inline, OAuth, and
+ * passkeys (ai/phase-14-mobile.md §4.4).
  *
  * Talks to `auth.native.login` / `auth.native.totp.verifyLogin` /
- * `auth.native.oauth.*` — the body-delivery routes (§4.3), never
- * `auth.login`/`auth.oauth.*`, which are browser-only by construction
- * (`SessionResponse` has no `refreshToken` field to adopt).
+ * `auth.native.oauth.*` / `auth.native.passkeys.finishAuthentication` — the
+ * body-delivery routes (§4.3), never their browser counterparts, which are
+ * browser-only by construction (`SessionResponse` has no `refreshToken`
+ * field to adopt). `auth.passkeys.startAuthentication` is the one exception,
+ * shared with the browser route unchanged: it mints ceremony options with no
+ * session and nothing channel-specific — see `router.ts`'s own comment on
+ * why only `finishAuthentication` needed a native counterpart at all.
  *
  * What this deliberately does not have, mirroring apps/web's `LoginPage`: no
  * "no account found" message (`INVALID_CREDENTIALS` is identical for an
  * unknown address and a wrong password — Phase 1's enumeration defence), and
  * no client-side password strength check (that belongs to registration, not a
- * login attempt). Passkeys are named in the spec too and land in a later
- * increment — this screen now covers every factor except that one.
+ * login attempt).
  */
 export default function SignIn() {
   const [email, setEmail] = useState('');
@@ -81,6 +85,34 @@ export default function SignIn() {
     },
     onSuccess: async (result) => {
       if (result?.kind === 'session') await session.adopt(result);
+    },
+  });
+
+  /**
+   * `startAuthentication` asks for no identifier at all — a discoverable
+   * credential means the ceremony already knows who it is once the OS
+   * finds a matching passkey, so there is nothing here to enumerate
+   * accounts with. `result === null` is the user cancelling the platform
+   * sheet, the same routine-cancel-not-a-failure shape as the OAuth
+   * mutation above.
+   */
+  const passkey = useMutation({
+    mutationFn: async () => {
+      const options = await apiClient.auth.passkeys.startAuthentication.mutate();
+      const result = await get(options as never);
+      if (result === null) return null;
+      // The library's own AuthenticationResponseJSON type and the server's
+      // generated input type describe the identical WebAuthn wire shape
+      // under two different, non-identical TypeScript declarations (one
+      // from react-native-passkeys, one from the Zod schema) — the same
+      // boundary the server itself crosses with `input.response as never`
+      // in passkey.router.ts.
+      return apiClient.auth.native.passkeys.finishAuthentication.mutate({
+        response: result as never,
+      });
+    },
+    onSuccess: async (result) => {
+      if (result !== null) await session.adopt(result);
     },
   });
 
@@ -173,6 +205,22 @@ export default function SignIn() {
             )}
           </Pressable>
         ))}
+      {passkey.isError && <FormError error={passkey.error} />}
+      {isPasskeySupported() && (
+        <Pressable
+          style={styles.oauthButton}
+          disabled={passkey.isPending}
+          onPress={() => {
+            passkey.mutate();
+          }}
+        >
+          {passkey.isPending ? (
+            <ActivityIndicator color={colors.ink.hex} />
+          ) : (
+            <Text style={styles.oauthButtonText}>Sign in with a passkey</Text>
+          )}
+        </Pressable>
+      )}
     </View>
   );
 }

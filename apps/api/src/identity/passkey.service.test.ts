@@ -314,6 +314,48 @@ describe('sign-in', () => {
 });
 
 /* -------------------------------------------------------------------------- *
+ * Native sign-in (ai/phase-14-mobile.md §4.4)
+ * -------------------------------------------------------------------------- */
+
+describe('native sign-in', () => {
+  it('mints a session bound to the native channel, not the browser one', async () => {
+    const token = await signedInUser('passkey-native-signin@example.test');
+    const device = newDevice();
+    await enroll(token, device);
+
+    // startAuthentication needs no native counterpart — same route, same
+    // options, no channel to get wrong (this file's own header explains why).
+    const started = await call('auth.passkeys.startAuthentication');
+    const challenge = (started.body.result?.data as { challenge: string }).challenge;
+
+    const response = await call('auth.native.passkeys.finishAuthentication', {
+      payload: { response: device.get(challenge) },
+    });
+
+    expect(response.status).toBe(200);
+    const data = response.body.result?.data as {
+      accessToken?: string;
+      refreshToken?: string;
+    };
+    // Body delivery, not a cookie — the native counterpart's whole point.
+    expect(data.accessToken).toBeTruthy();
+    expect(data.refreshToken).toBeTruthy();
+
+    // Channel-bound (migration 0080): refused on the browser refresh route,
+    // and still good on its own.
+    const onBrowserRoute = await call('auth.refresh', {
+      payload: { refreshToken: data.refreshToken },
+    });
+    expect(onBrowserRoute.status).toBe(401);
+
+    const onNativeRoute = await call('auth.native.refresh', {
+      payload: { refreshToken: data.refreshToken },
+    });
+    expect(onNativeRoute.status).toBe(200);
+  });
+});
+
+/* -------------------------------------------------------------------------- *
  * Challenges
  * -------------------------------------------------------------------------- */
 

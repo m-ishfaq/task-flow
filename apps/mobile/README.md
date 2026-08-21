@@ -71,17 +71,21 @@ Three gates, exactly as specified, collapsed into layout components since
   the spine via `auth.me`, one authenticated read. Real product screens start
   in Wave 2.
 
-**Not in this increment, named rather than half-built (CLAUDE.md's own
-rule):** passkeys — the one remaining Wave 1b item, per §4.4. OAuth
-(Google/GitHub), device binding, and biometric app-lock all shipped in later
-increments — see their own sections below. OAuth was never actually Wave 1b
-(§4.4 only tags passkeys and biometric app-lock that way, and Wave 1's own
-file map always listed the oauth-callback route), so it landed as a Wave 1
-gap being closed rather than early 1b work. Device binding and biometric
-app-lock ARE genuinely Wave 1b, but both close a live gap in what Wave 1
-already shipped (a portable stolen token; a found-and-unlocked phone with no
-local gate) rather than adding new capability, which is why they moved ahead
-of passkeys — see their own sections for the full reasoning.
+**Every Wave 1b item named in §4.4–§4.5 has now shipped CODE — OAuth, device
+binding, biometric app-lock, and passkeys all landed in later increments,
+see their own sections below. Passkeys is the one exception with an
+external blocker**: its ceremony cannot actually complete until real domain
+infrastructure exists (a production `WEB_ORIGIN`, a hosted
+`apple-app-site-association`/`assetlinks.json`, a real signing certificate)
+— see its own section for the full checklist; this was a deliberate,
+confirmed scope decision, not a gap. OAuth was never actually Wave 1b (§4.4
+only tags passkeys and biometric app-lock that way, and Wave 1's own file
+map always listed the oauth-callback route), so it landed as a Wave 1 gap
+being closed rather than early 1b work. Device binding and biometric
+app-lock both closed a live gap in what Wave 1 already shipped (a portable
+stolen token; a found-and-unlocked phone with no local gate) rather than
+adding new capability, which is why they were built before passkeys — see
+their own sections for the full reasoning.
 
 ### The realtime socket client (§5, §8)
 
@@ -307,6 +311,82 @@ suggest the credential was lost. `app.config.ts`'s `expo-local-authentication`
 plugin entry sets `NSFaceIDUsageDescription`, which iOS requires present
 before the Face ID ceremony will even start.
 
+### Passkeys (§4.4) — code complete, infrastructure NOT
+
+The last Wave 1b item, and a different kind of "not here yet" from
+everything above it: the code is real and tested, but the ceremony
+structurally cannot complete until real domain infrastructure exists —
+this was a deliberate scope decision (asked and confirmed), not an
+oversight.
+
+**Server**: `passkey.service.ts`'s `finishAuthentication` gained the same
+`channel` parameter every other session-minting function already has,
+threaded to `issueSession`. `auth.native.passkeys.finishAuthentication` is
+the one new route — `startAuthentication` and enrollment
+(`startRegistration`/`finishRegistration`) needed no native counterpart at
+all: the first mints ceremony options with no session and nothing
+channel-specific, and enrollment is already `selfRoute`, bearer-token
+authenticated identically on both channels. Proven against real Postgres
+and a real ES256-signing virtual authenticator in
+`passkey.service.test.ts`'s "native sign-in" suite — the ceremony
+verification itself was already covered; what this increment added is only
+the channel binding on top of it.
+
+**Client**: `react-native-passkeys` — a thin wrapper over
+`ASAuthorizationController` (iOS) / `CredentialManager` (Android) that
+implements no WebAuthn cryptography of its own, unlike device binding's
+custom native module. Chosen over writing one: passkeys' ceremony format
+(CBOR attestation objects, COSE keys, client data JSON) is real complexity
+this library has four years of history getting right, where device
+binding's task was simple enough (generate a key, sign a message) to keep
+in-house instead. `src/lib/passkeys.ts` holds the one piece of real logic —
+`toRegistrationResponse` strips the library's `getPublicKey()` convenience
+method before the result reaches the server's `.strict()` Zod schema — and
+is tested with no native module in its graph, mirroring `oauth.ts`'s own
+"thin native calls belong in the screen" precedent rather than the
+device-key/biometric-gate DI-port split: there is no orchestration state
+here worth hiding behind a seam.
+
+Sign-in lives in `(auth)/sign-in.tsx` (a "Sign in with a passkey" button,
+shown only when `isSupported()`); enrollment lives on `(app)/home.tsx` (an
+"Add a passkey to this device" action) rather than a proper settings
+screen, because **neither web nor mobile had ever shipped passkey
+enrollment before this increment** — only the server ceremony existed
+(CLAUDE.md's own Phase 3 note: the web browser ceremony is still deferred).
+Without enrollment somewhere reachable, the sign-in button would have
+nothing any real user could ever use it with.
+
+**What is actually missing, and why nothing here can close it:**
+
+- **iOS**: an `apple-app-site-association` file hosted at
+  `https://<production-domain>/.well-known/apple-app-site-association`,
+  naming this app's Apple team id and bundle id, PLUS an Apple Developer
+  Program associated-domains entitlement. `app.config.ts`'s
+  `ios.associatedDomains` carries an obviously-invalid placeholder
+  (`webcredentials:SET-REAL-DOMAIN-BEFORE-PASSKEYS-WORK.invalid`) for the
+  same reason `eas.json`'s `MOBILE_API_BASE_URL` does: a plausible-looking
+  wrong domain would fail silently (the ceremony just never completes,
+  indistinguishable from "not configured"); this fails loudly instead.
+- **Android**: an `assetlinks.json` at
+  `https://<production-domain>/.well-known/assetlinks.json`, containing the
+  SHA-256 fingerprint of the app's REAL signing certificate (not the
+  ad-hoc key EAS development builds use) and, for credentials to work
+  seamlessly between the web app and this one, a
+  `delegate_permission/common.get_login_creds` relation. No in-app config
+  field carries this — Android's OS fetches it from the domain directly at
+  ceremony time.
+- **The relying party ID itself**: both files above must name the EXACT
+  same domain `WEB_ORIGIN` resolves to server-side
+  (`relyingPartyFrom(WEB_ORIGIN, ...)` in `server.ts`) — there is no
+  production `WEB_ORIGIN` decided yet either, so this is blocked one level
+  up from passkeys specifically.
+
+None of this can be created from a development sandbox: it needs a real
+owned domain, an Apple Developer Program account, and a real Android
+signing certificate, none of which exist yet for this project. The code
+above is what to come back to once they do — nothing here needs
+rewriting, only deploying to.
+
 ## Not here yet
 
 - **Running this on a simulator or physical device.** The app now bundles
@@ -347,6 +427,10 @@ before the Face ID ceremony will even start.
   simulator can fake success but proves nothing about a genuine Face ID or
   fingerprint prompt, and `NSFaceIDUsageDescription` only gets exercised by
   Apple's own review once a real build ships.
-- Passkeys (Wave 1b, §4.4) — the one sign-in method not yet built.
+- **Passkeys actually working at all.** Not a verification gap like the two
+  above — a structural one. The ceremony cannot complete without a real
+  production domain, hosted `apple-app-site-association`/`assetlinks.json`
+  files, and a real Android signing certificate, none of which exist yet.
+  See that section's own checklist for exactly what to stand up first.
 - The product waves themselves (Work, Chat, Docs, RTC) — the socket client
   exists but nothing calls `joinBoardRoom` yet.
