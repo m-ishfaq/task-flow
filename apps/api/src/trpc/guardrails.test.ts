@@ -377,6 +377,20 @@ describe('the real application router', () => {
          access token rather than trusting anything the client names, so the
          caller must already be authenticated to reach it at all. */
       'auth.native.deviceKey.register',
+      /* Native connected-accounts linking (Phase 14 §4.4) — the mobile
+         counterpart of `auth.oauth.startLink` just below, added once the
+         mobile account screen needed it (this route did not exist when
+         Wave 1b's own comment on the native oauth router named linking
+         out of scope on purpose). `stepUp: true` for the identical reason
+         the browser route carries it: adding a new way into the account
+         is as credential-adjacent from a phone as it is from a browser.
+         `auth.native.oauth.start`/`callback` are NOT here: `start` is
+         public (there is no session yet to require), and `callback`'s
+         SESSION branch is public for the same reason while its LINKED
+         branch is reached mid-flow with the state token already proving
+         who is linking, not a fresh authenticated request this manifest
+         would see as self-scoped. */
+      'auth.native.oauth.startLink',
       /* Connected-accounts management (Phase 12 Wave 2 §3.3) — reading and
          changing your own account's sign-in methods. `startLink`/`unlink`
          are step-up: adding or removing a way in is credential-adjacent the
@@ -481,6 +495,24 @@ describe('the real application router', () => {
     // until they next try to sign in (§8.1).
     const entries = routeManifest(appRouter);
     expect(entries.find((entry) => entry.path === 'auth.passkeys.remove')?.stepUp).toBe(true);
+  });
+
+  it('requires step-up to link a new native OAuth provider', () => {
+    // The native counterpart of the browser assertion below — a stolen
+    // session linking a second, attacker-controlled sign-in method is the
+    // same class of attack `auth.passkeys.remove` and `auth.oauth.startLink`
+    // both guard against, and the app credentials/redirect being NATIVE
+    // rather than browser is not a reason this control could be weaker.
+    const entries = routeManifest(appRouter);
+    expect(entries.find((entry) => entry.path === 'auth.native.oauth.startLink')?.stepUp).toBe(
+      true,
+    );
+  });
+
+  it('requires step-up to link or unlink a browser OAuth provider', () => {
+    const entries = routeManifest(appRouter);
+    expect(entries.find((entry) => entry.path === 'auth.oauth.startLink')?.stepUp).toBe(true);
+    expect(entries.find((entry) => entry.path === 'auth.oauth.unlink')?.stepUp).toBe(true);
   });
 
   it('gives every public route a written justification', () => {
