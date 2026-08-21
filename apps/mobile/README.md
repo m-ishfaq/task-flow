@@ -319,11 +319,39 @@ not on every use.
 DI split as `secure-store.ts`/`device-secure-store.ts` and
 `device-key.ts`/`device-key.native.ts`, wrapping `expo-local-authentication`
 — Expo's own OFFICIAL SDK package, unlike device binding's custom native
-module, so this one carries none of that section's compile-risk caveat.
-`session.ts` gained exactly one new read-only method,
+module, so this one carries none of that section's NATIVE-COMPILE-risk
+caveat. _(It turned out to carry the sibling LINK-time risk in full — see
+the correction directly below; "official package" only ruled out one of the
+two failure modes.)_ `session.ts` gained exactly one new read-only method,
 `hasStoredCredential()`, so the gate can tell "nothing to protect" apart
 from "something to protect" before ever prompting — a first-time,
 never-signed-in launch never sees Face ID.
+
+**A second real run found the same bug class as device binding, in an
+"official package" this section had assumed was exempt.**
+`expo-local-authentication`'s own `ExpoLocalAuthentication.js` resolves its
+native module at ITS OWN top level — a plain
+`requireNativeModule('ExpoLocalAuthentication')` outside any function,
+inside code this repo doesn't own or control. `biometric-gate.native.ts`
+used to `import * as LocalAuthentication from 'expo-local-authentication'`
+at ITS top level too, and `app-session.ts` builds `createBiometricGate()`
+into a module-level singleton that `app/_layout.tsx` imports statically,
+above `session.restore()` (by design, per this section's own text above) —
+so the moment `device-key`'s eager-import bug was fixed, the very next
+`npx expo start` against the same not-yet-relinked development build hit
+`[Error: Cannot find native module 'ExpoLocalAuthentication']`, with the
+identical every-route "missing the required default export" cascade.
+Fixed the same way — the package is now loaded with a dynamic `import()`
+inside `isAvailable()`/`authenticate()` rather than a static top-level one
+— and both call sites now catch a failed load explicitly, which
+`isAvailable()` didn't do before either: it folds straight into "nothing
+enrolled" and `authenticate()` into the "resolve `false`, never throw"
+contract this section already documents below. The general lesson,
+worth carrying into any FUTURE native module this app adds: "official Expo
+package" answers whether the NATIVE CODE is trustworthy, not whether
+importing it is safe to do eagerly from a module every route depends on —
+that second question is about where in the import graph the module sits,
+and is the same question for a first-party module as a custom one.
 
 The gate itself lives in `app/_layout.tsx`, ABOVE `session.restore()`: on
 boot, if a credential is stored AND the device has biometrics (or a
