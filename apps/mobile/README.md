@@ -186,6 +186,49 @@ into the fast CI tier and `pnpm preflight` as its own step, deliberately
 separate from `pnpm verify` — the same reasoning `check-encoding.mjs` and
 `check-mobile-bundle-secrets.mjs` are their own steps rather than folded in.
 
+**A duplicate `@tanstack/react-query` instance — a bundle-succeeds,
+runtime-only bug `expo export` cannot catch, only a real device run can.**
+Opening a card threw `[Error: No QueryClient set, use QueryClientProvider
+to set one]` from inside `@taskflow/client`'s `useOptimistic`
+(`packages/client/src/optimistic.ts`), despite `app/_layout.tsx` genuinely
+wrapping the whole tree in `QueryClientProvider`. Root cause, confirmed by
+`readlink -f` on each package's own `node_modules/@tanstack/react-query`
+rather than assumed: this app pins `react` to an EXACT version (`19.2.3`,
+Expo SDK 57's own requirement), `packages/client`'s `package.json`
+separately devDependency-pins a newer `react` range for ITS OWN test suite,
+and because `@tanstack/react-query` has a peer dependency on `react`, pnpm
+resolved that difference into two PHYSICALLY SEPARATE copies of
+`@tanstack/react-query` in the store. Metro resolves a bare specifier
+starting from the nearest `node_modules` above the IMPORTING FILE, not from
+the app root — so `optimistic.ts`, physically inside `packages/client/`,
+got the copy resolved against that package's own `react`, while
+`app/_layout.tsx` got the copy resolved against THIS app's `react`. Two
+module instances means two distinct `React.createContext()` objects for
+`QueryClientContext`; the Provider from one is invisible to
+`useQueryClient()` from the other — which is what the error message means
+even though a provider is genuinely mounted.
+
+`resolver.extraNodeModules` was the first fix tried and does NOT work here:
+Expo's default config sets `unstable_enablePackageExports: true`, and both
+packages ship a `package.json` `exports` map, so Metro resolves them
+through that mechanism, which never consults `extraNodeModules` at all —
+confirmed, not assumed, by rebuilding with `expo export --source-maps` and
+grepping the emitted map's `sources` for both pnpm variant directories;
+both were still present after the extraNodeModules attempt. The fix that
+actually works, in `metro.config.js`: intercept the two specifiers before
+Metro's own resolution strategy runs at all, and call Metro's real resolver
+(`context.resolveRequest`) with `originModulePath` rewritten to a fixed
+file inside this app — which forces whichever strategy Metro picks
+(package-exports or the legacy walk) to start from this app's own
+`node_modules` regardless of which package's file contained the `import`.
+Re-verified the same way: the rebuilt sourcemap contains exactly one
+`@tanstack+react-query@…` directory, on both platforms. Scoped to just
+`react` and `@tanstack/react-query` — the two actually observed to split —
+rather than forcing every shared dependency through this app's copy, which
+would be a broader, unverified change for a problem that has not actually
+appeared elsewhere. `apps/web`'s separate Vite build is untouched by this
+file entirely.
+
 ### Shared packages: `@taskflow/client` and `@taskflow/tokens` (§12 decisions 3, 4)
 
 `@taskflow/client` — `Wire<T>`, the retry policy and `QueryClient` defaults
