@@ -1,4 +1,4 @@
-import { Redirect } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import type { OrgId } from '@taskflow/contracts';
@@ -57,11 +57,22 @@ function OrgPickerContent() {
           <Pressable
             style={styles.row}
             onPress={() => {
-              // The (app) layout re-renders on the store update and drops
-              // straight into <Slot /> — no imperative navigation needed.
+              // `selectOrg` only updates the store; nothing here is wrapped
+              // by a gate that reacts to that change by itself, since this
+              // screen now lives OUTSIDE (app)/ (see this file's own header)
+              // — and even nested, a re-render swapping `<Redirect>` for
+              // `<Slot />` would still show whatever route is ALREADY
+              // active, not navigate anywhere. A real run found exactly
+              // that: picking an org visibly did nothing. `router.replace`
+              // is the actual navigation, mirroring how `(auth)/_layout.tsx`'s
+              // own `<Redirect>` is what moves a signed-in caller off
+              // `/sign-in` rather than assuming it happens implicitly.
               // The cast matches apps/web's org-picker-page.tsx at the same
               // boundary — see (app)/_layout.tsx's own note on why.
-              void session.selectOrg(item.orgId as OrgId);
+              void (async () => {
+                await session.selectOrg(item.orgId as OrgId);
+                router.replace('/home');
+              })();
             }}
           >
             <Text style={styles.rowTitle}>{item.name}</Text>
