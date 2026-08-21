@@ -16,13 +16,26 @@ import { requireNativeModule } from 'expo-modules-core';
  * first (StrongBox availability, the DER signature format, the raw P-256
  * point encoding).
  *
- * `requireNativeModule('DeviceKey')` throws at import time if the native
- * module is not linked — which on Expo Go specifically it never will be
- * (§4.4/README: a plain Expo Go install cannot run this app's custom native
- * code at all, only a development build can). `device-key.native.ts` is the
- * one file that imports this index, kept split from the pure `device-key.ts`
- * port for the same reason `device-secure-store.ts` is split from
- * `secure-store.ts`.
+ * `requireNativeModule('DeviceKey')` throws if the native module is not
+ * linked — which on Expo Go specifically it always will (§4.4/README: a
+ * plain Expo Go install cannot run this app's custom native code at all,
+ * only a development build can), and on any development build that predates
+ * this module too. That throw is deliberately deferred to first USE
+ * (`getNative()`, memoized below) rather than raised at import time: this
+ * file sits behind `device-key.native.ts`, which `app-session.ts` — the
+ * composition root every route transitively imports — constructs into a
+ * module-level singleton at import time. A throw during that construction
+ * poisons the whole Metro module graph before `expo-router` ever renders a
+ * screen, which surfaces as EVERY route failing with "missing the required
+ * default export" and not as the one feature it actually belongs to.
+ * `session.ts`'s `adopt()`/`refresh()` already wrap every call into this
+ * port in `try`/`catch` precisely so a missing or misbehaving key is
+ * best-effort, per §4.5's own "neither a failed registration nor a failed
+ * signature blocks a login or a refresh" — but that handling only ever runs
+ * if importing this module cannot itself throw. `device-key.native.ts` is
+ * the one file that imports this index, kept split from the pure
+ * `device-key.ts` port for the same reason `device-secure-store.ts` is
+ * split from `secure-store.ts`.
  */
 interface DeviceKeyNativeModule {
   /** Returns `null` if `generateKey` has never been called on this device. */
@@ -33,14 +46,20 @@ interface DeviceKeyNativeModule {
   sign(data: string): Promise<string>;
 }
 
-const native = requireNativeModule<DeviceKeyNativeModule>('DeviceKey');
+let native: DeviceKeyNativeModule | undefined;
+
+/** Resolves the native module on first USE, not on import — see header. */
+function getNative(): DeviceKeyNativeModule {
+  native ??= requireNativeModule<DeviceKeyNativeModule>('DeviceKey');
+  return native;
+}
 
 export async function ensurePublicKey(): Promise<{ x: string; y: string }> {
-  const existing = await native.getPublicKey();
+  const existing = await getNative().getPublicKey();
   if (existing !== null) return existing;
-  return native.generateKey();
+  return getNative().generateKey();
 }
 
 export function sign(data: string): Promise<string> {
-  return native.sign(data);
+  return getNative().sign(data);
 }

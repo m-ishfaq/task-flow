@@ -281,6 +281,30 @@ proved by real tests against real Postgres and real P-256 signatures
 `packages/security/src/device-binding.test.ts`, `session.test.ts`'s "device
 binding" suite); only the native signing itself is unverified.
 
+**A real run found a bug the tests above could not: importing this module
+used to be able to brick the entire app, not just device binding.**
+`modules/device-key/index.ts` called `requireNativeModule('DeviceKey')` at
+module TOP LEVEL — which throws whenever the native module isn't linked
+(any Expo Go install, per §4.4/above, and any development build built
+before this increment). `app-session.ts` — the composition root every route
+transitively imports — constructs `device-key.native.ts`'s port into a
+module-level singleton at import time, so that throw happened before
+`session.ts`'s already-correct `try`/`catch` around every
+`deviceKey.ensurePublicKey()`/`.sign()` call ever got a chance to run: it
+poisoned Metro's whole module graph before `expo-router` rendered a single
+screen, surfacing as `[Error: Cannot find native module 'DeviceKey']`
+immediately followed by EVERY route warning "missing the required default
+export" — the failure attributed itself to the whole app, not to the one
+feature it belonged to. Fixed by resolving the native module lazily, on
+first actual use (`getNative()`, memoized) rather than on import, so a
+missing module is only ever observed at the two call sites that already
+handle it as best-effort. Confirmed against a real `expo export`
+(1291/1421 modules, both platforms) and the full Vitest suite; the fix
+itself could not get a unit test — importing `expo-modules-core` pulls in
+React Native's Flow-typed source, which is exactly the same reason
+`device-key.native.ts`'s own header gives for keeping this module split
+from the pure `device-key.ts` port in the first place.
+
 ### Biometric app-lock (§4.4)
 
 "A LOCAL gate, not a second server factor — it never replaces `can()` or the
