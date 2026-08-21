@@ -89,7 +89,14 @@ const config: ExpoConfig = {
   runtimeVersion: {
     policy: 'appVersion',
   },
-  plugins: ['expo-router'],
+  plugins: [
+    'expo-router',
+    /* iOS refuses Face ID outright with no NSFaceIDUsageDescription in
+       Info.plist — not a soft failure, the ceremony never even starts
+       (§4.4's biometric app-lock). Android has no equivalent string to set;
+       the plugin is a no-op there. */
+    ['expo-local-authentication', { faceIDPermission: 'Unlock TaskFlow with Face ID.' }],
+  ],
   extra: {
     apiBaseUrl: API_BASE_URL,
     /* EAS project linkage — not a secret per §10's own public/private test.

@@ -2,10 +2,12 @@ import Constants from 'expo-constants';
 import { parseConfig } from './config.js';
 import { createSecureStore } from './device-secure-store.js';
 import { createDeviceKey } from './device-key.native.js';
+import { createBiometricGate } from './biometric-gate.native.js';
 import { createPreferences } from './preferences.js';
 import { createMobileSession, SessionExpiredError, type MobileSession } from './session.js';
 import { createMobileSocket, type MobileSocket } from './socket.js';
 import { createMobileClient, isUnauthenticated, type MobileTRPCClient } from './trpc-client.js';
+import type { BiometricGate } from './biometric-gate.js';
 
 /**
  * The app's one composition root (ai/phase-14-mobile.md §5, §7, §8) — where
@@ -50,6 +52,14 @@ const anonymousClient = createMobileClient({
  * two-step hydration on native and a one-step read on web).
  */
 export const prefs = createPreferences();
+
+/**
+ * The biometric app-lock's one gate (§4.4). Exported alongside `session` for
+ * the same reason `prefs` is: `_layout.tsx` needs it directly, ABOVE
+ * `session.restore()` — see `biometric-gate.ts`'s own header for why this
+ * lives outside `session.ts` entirely rather than as one of its deps.
+ */
+export const biometricGate: BiometricGate = createBiometricGate();
 
 export const session: MobileSession = createMobileSession({
   secureStore: createSecureStore(),
