@@ -9,20 +9,25 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { formatDistanceToNow } from 'date-fns';
 import { CardIdSchema, type CardId } from '@taskflow/contracts';
 import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
+import { plainParagraph } from '@taskflow/api/richtext';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
+import { useSession } from '../../../src/lib/use-session.js';
 import { RichTextView } from '../../../src/lib/rich-text-view.js';
 import { useUpdateCard } from '../../../src/lib/use-update-card.js';
 import {
   PRIORITY_COLOR,
   PRIORITY_LABEL,
   cardQueryKey,
+  commentsQueryKey,
   formatDueDate,
   type CardDetail,
+  type Comment,
   type Priority,
 } from '../../../src/lib/work.js';
 
@@ -151,7 +156,110 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
       </View>
 
       <RichTextView document={data.description} />
+
+      <CommentsSection cardId={cardId} />
     </ScrollView>
+  );
+}
+
+/**
+ * Comments — read + post only, no edit/delete/replies. `work.comments.list`
+ * shares TipTap-JSON's `RichTextDocument` shape with a card's own
+ * description, so existing comments reuse `RichTextView` unchanged. Posting
+ * one uses `plainParagraph` (`@taskflow/api/richtext`, already a real
+ * dependency for the renderer) rather than a native rich text EDITOR that
+ * does not exist yet — the exact same boundary `card/[cardId].tsx`'s own
+ * `TitleField` already draws for the description field, applied here to
+ * comments instead: a plain-text composer wraps its input in the one
+ * document shape a stored TEXT field may become, the same helper
+ * `automation`'s rule-body and the CSV importer both reuse rather than each
+ * inventing their own paragraph-wrapping.
+ *
+ * A deleted comment (`deletedAt !== null`) is tombstoned server-side —
+ * `body`/`bodyText` come back empty, not omitted, so the thread's shape
+ * survives — rendered here as a plain "Comment deleted" placeholder rather
+ * than an empty `RichTextView` (which would render nothing and look like a
+ * blank comment, not a deleted one).
+ */
+function CommentsSection({ cardId }: { readonly cardId: CardId }) {
+  const queryClient = useQueryClient();
+  const userId = useSession((state) => state.userId);
+  const [draft, setDraft] = useState('');
+
+  const comments = useQuery({
+    queryKey: commentsQueryKey(cardId),
+    queryFn: async () => wire(await apiClient.work.comments.list.query({ cardId })),
+  });
+
+  const post = useMutation({
+    mutationFn: (body: string) =>
+      apiClient.work.comments.create.mutate({ cardId, body: plainParagraph(body) }),
+    onSuccess: async () => {
+      setDraft('');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: commentsQueryKey(cardId) }),
+        queryClient.invalidateQueries({ queryKey: cardQueryKey(cardId) }),
+      ]);
+    },
+  });
+
+  return (
+    <View style={styles.commentsSection}>
+      <Text style={styles.sectionHeading}>Comments</Text>
+
+      {comments.isPending && <ActivityIndicator color={colors.accent.hex} />}
+      {comments.data?.map((comment) => (
+        <CommentRow key={comment.commentId} comment={comment} isOwn={comment.authorId === userId} />
+      ))}
+      {comments.data?.length === 0 && <Text style={styles.label}>No comments yet.</Text>}
+
+      <View style={styles.composerRow}>
+        <TextInput
+          value={draft}
+          onChangeText={setDraft}
+          placeholder="Add a comment…"
+          placeholderTextColor={colors.inkFaint.hex}
+          style={styles.composerInput}
+          multiline
+        />
+        <Pressable
+          style={styles.sendButton}
+          disabled={draft.trim().length === 0 || post.isPending}
+          onPress={() => {
+            post.mutate(draft.trim());
+          }}
+        >
+          {post.isPending ? (
+            <ActivityIndicator color={colors.accentInk.hex} />
+          ) : (
+            <Text style={styles.sendButtonText}>Send</Text>
+          )}
+        </Pressable>
+      </View>
+      {post.isError && (
+        <Text style={styles.error} accessibilityRole="alert">
+          {apiErrorOf(post.error)?.error.message ?? 'The comment was not posted.'}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function CommentRow({ comment, isOwn }: { readonly comment: Comment; readonly isOwn: boolean }) {
+  return (
+    <View style={styles.commentRow}>
+      <View style={styles.commentMeta}>
+        <Text style={styles.commentAuthor}>{isOwn ? 'You' : 'Member'}</Text>
+        <Text style={styles.commentTime}>
+          {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
+        </Text>
+      </View>
+      {comment.deletedAt !== null ? (
+        <Text style={styles.commentDeleted}>Comment deleted</Text>
+      ) : (
+        <RichTextView document={comment.body} />
+      )}
+    </View>
   );
 }
 
@@ -250,6 +358,69 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.surface.hex,
+  },
+  commentsSection: {
+    marginTop: 16,
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.line.hex,
+    paddingTop: 16,
+  },
+  sectionHeading: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.ink.hex,
+  },
+  commentRow: {
+    gap: 4,
+  },
+  commentMeta: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'baseline',
+  },
+  commentAuthor: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.ink.hex,
+  },
+  commentTime: {
+    fontSize: 12,
+    color: colors.inkFaint.hex,
+  },
+  commentDeleted: {
+    fontSize: 13,
+    fontStyle: 'italic',
+    color: colors.inkFaint.hex,
+  },
+  composerRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'flex-end',
+    marginTop: 4,
+  },
+  composerInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+    borderRadius: radiusCard,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: colors.ink.hex,
+    backgroundColor: colors.surfaceSunken.hex,
+    maxHeight: 100,
+  },
+  sendButton: {
+    backgroundColor: colors.accent.hex,
+    borderRadius: radiusCard,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  sendButtonText: {
+    color: colors.accentInk.hex,
+    fontSize: 14,
+    fontWeight: '600',
   },
   content: {
     paddingTop: 24,

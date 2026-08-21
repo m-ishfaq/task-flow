@@ -12,11 +12,13 @@ import { colors } from '@taskflow/tokens';
  * equivalent for a phone-width screen is the platform's own primary-nav
  * idiom (iOS's tab bar, Android's bottom navigation), which `expo-router`'s
  * `Tabs` renders as the native component on each platform rather than a
- * hand-built approximation. Two tabs today — "My Tasks" (Work's first
- * slice) and "Account" (org switching, passkeys, sign-out) — because those
- * are the only two destinations that exist; Chat/Docs/People join this bar
- * as their own waves ship real screens, the same way `apps/web`'s `Sidebar`
- * grew its nav rail one item per phase rather than all at once.
+ * hand-built approximation. Four tabs today — "My Tasks", "Boards" (Wave
+ * 2's remaining item — projects/boards/lists, `boards.tsx`), "Chat" (Wave
+ * 3, read + send only — see `chat.ts`'s own header) and "Account" (org
+ * switching, passkeys, sign-out) — because those are the destinations that
+ * exist; Docs/People join this bar as their own waves ship real screens,
+ * the same way `apps/web`'s `Sidebar` grew its nav rail one item per phase
+ * rather than all at once.
  *
  * Text-only tab labels, no icon set: nothing else in this app uses one yet
  * (`home.tsx`, `sign-in.tsx` are all plain `Pressable`/`Text`), and adding
@@ -44,6 +46,8 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen name="home" options={{ title: 'My Tasks' }} />
+      <Tabs.Screen name="boards" options={{ title: 'Boards' }} />
+      <Tabs.Screen name="chat" options={{ title: 'Chat' }} />
       <Tabs.Screen name="account" options={{ title: 'Account' }} />
     </Tabs>
   );

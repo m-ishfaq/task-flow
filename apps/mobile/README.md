@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) in progress
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat) started
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -719,6 +719,131 @@ date and start date are not editable either: no date-picker dependency has
 been added yet, the same kind of call `_layout.tsx`'s tab bar already made
 for icons — a dependency decision this increment did not need to force.
 
+## Wave 2 complete: boards, and comments — plus Wave 3 started: Chat
+
+Shipped together, deliberately batched rather than pushed one screen at a
+time: the backend for all three has been done since earlier phases, and
+splitting a batch this size into single-screen pushes would have meant
+more round trips of "push, wait for a device test, push again" without
+changing what actually needed verifying at each step — the same
+typecheck/lint/test/bundle-build/guardrail pass either way. Small,
+single-purpose increments are still the right default (see this file's own
+running history above); this batch is the exception, made deliberately,
+not the new normal.
+
+### Boards — Wave 2's remaining item
+
+Three screens complete Work's navigation: `(tabs)/boards.tsx` (every
+project, mirroring `apps/web/src/features/work/projects-page.tsx`'s own top
+level) → `project/[projectId].tsx` (that project's boards — not skipped
+even for a single board; this app does not special-case the count) →
+`board/[boardId].tsx` (one board). A new fourth tab, alongside My Tasks,
+Chat and Account.
+
+**Vertically stacked list sections, not `apps/web`'s horizontal kanban
+columns.** A phone's width cannot fit two columns side by side at a
+readable card size, and a horizontally scrolling board on top of a
+vertically scrolling screen is the "two scroll directions fighting each
+other" pattern mobile UI guidance warns against — so the board reflows
+into one vertical scroll, list name + card count as a section header,
+cards stacked underneath.
+
+**`work.lists.list` (names, `cardCount`, no cards) and `work.cards.list`
+(every live card on the board, with `listId`) are two separate reads,
+grouped client-side by `listId` and sorted by `rank`** (plain string
+comparison — CLAUDE.md's rank scheme is built to be lexicographically
+comparable) — there is no single "board render" route on the server.
+
+**No drag-and-drop.** The same call `home.tsx`'s own header already made
+for "My Tasks" (`card-row.tsx`'s new header repeats it): a full drag
+implementation is real, separate work — rebalancing, WIP-limit feedback
+mid-drag, a gesture handler that has to agree with the server's
+neighbour-based ranking. Moving a card here is a discrete "Move" button on
+each row (new: `card-row.tsx`'s `onMove` prop) opening a plain bottom-sheet
+list of the board's OTHER lists, built on RN's own `Modal` — no new
+dependency — and always append-to-end (`beforeCardId`/`afterCardId` both
+null), never a reorder within a list.
+
+**`card-row.tsx` (new)** extracts the reference/title/badge rendering
+`home.tsx`'s original `renderCard` had, once the board view needed the
+identical rendering for a second screen — three near-identical copies is
+this codebase's own bar for "extract it" (CLAUDE.md: "three similar lines
+is better than a premature abstraction" — two screens sharing one
+component is the inverse call, made once a second real caller existed, not
+before).
+
+### Comments — read + post on a card
+
+`card/[cardId].tsx` gained a `CommentsSection`: existing comments render
+through `RichTextView` unchanged (`work.comments.list`'s `body` is the same
+TipTap-JSON `RichTextDocument` shape a description already is), and posting
+one uses `plainParagraph` from `@taskflow/api/richtext` — the exact helper
+`richtext.ts` itself documents as "the one document shape a stored TEXT
+field may become," now reused a third time (after the rule-body and CSV
+importer) rather than reimplemented as a fourth copy. No native rich text
+EDITOR exists, so the composer is plain text wrapped in a single paragraph
+— the identical boundary `TitleField`'s own header already draws for why
+the description field isn't editable yet either.
+
+A deleted comment is tombstoned server-side (`deletedAt` set, `body`/
+`bodyText` cleared, the ROW kept so a reply still has a parent) — rendered
+here as "Comment deleted" rather than an empty `RichTextView`, which would
+look like a blank comment rather than a removed one. No edit, no delete, no
+replies: read + post is the whole slice.
+
+`authorId` shows as "You" (compared against `session.ts`'s own `userId`,
+already tracked for the access token) or a generic "Member" — resolving a
+real display name needs a member-profile lookup this slice does not build,
+the same simplification Chat's channel list makes for a DM's name below.
+
+### Chat — Wave 3 started: channels, read + send
+
+A new tab: `(tabs)/chat.tsx` lists every channel the caller can see
+(`chat.channels.list`), joined ones first. Tapping one opens
+`channel/[channelId].tsx`: `chat.messages.list`'s most recent page (default
+`limit`, no "load more" yet — real, separate work, the same class of gap
+boards' own "no drag-and-drop" note names), reversed client-side for
+display since the route itself returns newest-first (`ORDER BY id DESC`,
+the same direction its `before` pagination cursor walks). Sending reuses
+the identical `plainParagraph` + `RichTextView` pair Comments established
+one section up — the two domains share the exact same TipTap-JSON wire
+shape, so the pattern transfers unchanged.
+
+**A DM shows a plain "Direct message" placeholder, never a wrong or missing
+name.** `apps/web` resolves the other participant's real name via a
+member-profile lookup; this slice does not build that join (real, separate
+work, the same call Comments' author display already made) — a named
+public/private channel still shows its actual name, since that field comes
+back directly with no resolution needed.
+
+**Explicitly out of scope, all real and separate work**: reactions, thread
+replies (`chat.messages.thread` has no caller here), mentions autocomplete,
+edit/delete, typing indicators, read receipts, file attachments, link
+unfurls, and push (§9's own FCM/APNs wiring — Wave 3's roadmap row names it
+explicitly, and nothing here touches it). This is "channels exist and you
+can talk in them," not the whole of Wave 3.
+
+**Writing this section is what found a real, silent gap: `app/_layout.tsx`
+was never refetching anything on app-foreground, on ANY screen, since the
+very first increment.** `createQueryClient`'s shared defaults
+(`packages/client/src/query-client.ts`) set `refetchOnWindowFocus: true` —
+correct for `apps/web`, where the browser's `visibilitychange` event
+already exists — but TanStack Query's `focusManager` has no such event to
+listen for on React Native unless something calls
+`focusManager.setEventListener` itself, which nothing here ever did. So
+every screen has been "fresh on navigation, frozen otherwise" since Wave 1,
+invisible because a fast round trip through a screen (navigate away,
+navigate back) refetches anyway and looks identical to a real focus
+refetch. Chat is what made it matter: leaving the app backgrounded for a
+minute and returning to a channel should not show a thread frozen at
+whatever it looked like a minute ago. Fixed in `app/_layout.tsx` — an
+`AppState` listener mapping `'active'` to `focusManager.setFocused(true)`,
+the exact shape TanStack Query's own React Native guide documents —
+verified by reading the library's focus-manager source, not assumed, since
+this specific gap survives typecheck, lint, and a bundle build identically
+whether the listener exists or not; only a real device, backgrounded and
+resumed, would have shown it directly.
+
 ## Not here yet
 
 - **Confirming this on a simulator or physical device beyond what has
@@ -765,8 +890,14 @@ for icons — a dependency decision this increment did not need to force.
   production domain, hosted `apple-app-site-association`/`assetlinks.json`
   files, and a real Android signing certificate, none of which exist yet.
   See that section's own checklist for exactly what to stand up first.
-- The rest of Work (boards, the kanban view, card editing, optimistic
-  mutations, comments, checklist items) and the other product waves (Chat,
-  Docs, RTC) — the socket client exists but nothing calls `joinBoardRoom`
-  yet, and "My Tasks" + read-only card detail (above) are Work's first two
-  slices, not its whole row.
+- Checklist items (still count-only, no per-item read or toggle), a native
+  rich text EDITOR (description/comment/message composers all stay
+  plain-text until one exists), due/start date editing (no date-picker
+  dependency added yet), and card drag-and-drop (boards' own section above
+  has the full reasoning). The rest of Chat (reactions, thread replies,
+  mentions, edit/delete, typing indicators, read receipts, attachments,
+  link unfurls, push) and the other product waves (Docs, RTC) — the socket
+  client exists but nothing calls `joinBoardRoom`/a chat-equivalent yet, so
+  every screen above is a plain `useQuery`: fresh on navigation and on
+  app-foreground (see `_layout.tsx`'s `AppState` wiring, below), not live
+  while the screen stays open and nobody moves.

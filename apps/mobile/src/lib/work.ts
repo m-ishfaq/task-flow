@@ -88,3 +88,50 @@ export const MY_TASKS_QUERY_KEY = ['work.cards.mine'] as const;
 export function cardQueryKey(cardId: string): readonly ['work.cards.get', string] {
   return ['work.cards.get', cardId];
 }
+
+/**
+ * Boards (Wave 2's remaining roadmap item, after "My Tasks" and card
+ * detail): projects, boards and lists, derived off the live client the same
+ * way `CardSummary`/`CardDetail` are — never hand-declared.
+ */
+export type Project = Wire<
+  Awaited<ReturnType<MobileTRPCClient['work']['projects']['list']['query']>>
+>[number];
+
+export type Board = Wire<
+  Awaited<ReturnType<MobileTRPCClient['work']['boards']['list']['query']>>
+>[number];
+
+export type ListSummary = Wire<
+  Awaited<ReturnType<MobileTRPCClient['work']['lists']['list']['query']>>
+>[number];
+
+export const PROJECTS_QUERY_KEY = ['work.projects.list'] as const;
+
+export function boardsQueryKey(projectId: string): readonly ['work.boards.list', string] {
+  return ['work.boards.list', projectId];
+}
+
+export function listsQueryKey(boardId: string): readonly ['work.lists.list', string] {
+  return ['work.lists.list', boardId];
+}
+
+/**
+ * The board's own card read — `work.cards.list({ boardId })` — shares
+ * `CardSummaryOutput` with `work.cards.mine` server-side (identical fields,
+ * including `listId`, which is what lets a board group these by column), so
+ * this reuses `CardSummary` rather than declaring a second, structurally
+ * identical type.
+ */
+export function boardCardsQueryKey(boardId: string): readonly ['work.cards.list', string] {
+  return ['work.cards.list', boardId];
+}
+
+/** A card's comments — read + post only on native for now; see card/[cardId].tsx's own header. */
+export type Comment = Wire<
+  Awaited<ReturnType<MobileTRPCClient['work']['comments']['list']['query']>>
+>[number];
+
+export function commentsQueryKey(cardId: string): readonly ['work.comments.list', string] {
+  return ['work.comments.list', cardId];
+}

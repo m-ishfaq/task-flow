@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Slot } from 'expo-router';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  AppState,
+  type AppStateStatus,
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { QueryClientProvider } from '@tanstack/react-query';
+import { focusManager, QueryClientProvider } from '@tanstack/react-query';
 import { createQueryClient } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { errorCodeOf, isUnauthenticated } from '../src/lib/trpc-client.js';
@@ -49,6 +57,24 @@ import { useSession } from '../src/lib/use-session.js';
  */
 const queryClient = createQueryClient({ isUnauthenticated, errorCodeOf });
 
+/**
+ * Wires `refetchOnWindowFocus`/`refetchOnReconnect` (`@taskflow/client`'s
+ * shared defaults, set for both platforms) to something that actually
+ * fires on React Native. TanStack Query's `focusManager` listens for the
+ * DOM's `visibilitychange` by default, which does not exist here — found
+ * by checking, not assumed, while documenting the boards/comments/chat
+ * batch below: every screen in this app was refetching on navigation and
+ * NEVER on foregrounding the app, silently, because this call was missing.
+ * Exactly the shape TanStack Query's own React Native guide describes:
+ * `AppState`'s `'active'` maps to focused, anything else (`'background'`,
+ * `'inactive'`) does not. Mobile-only wiring, so it lives here rather than
+ * in `@taskflow/client`'s `createQueryClient` — apps/web's browser already
+ * has a working `visibilitychange` listener and needs none of this.
+ */
+function onAppStateChange(status: AppStateStatus): void {
+  focusManager.setFocused(status === 'active');
+}
+
 type UnlockState = 'checking' | 'locked' | 'unlocked';
 
 export default function RootLayout() {
@@ -65,6 +91,16 @@ export default function RootLayout() {
       }
       setUnlockState('locked');
     })();
+  }, []);
+
+  // Runs for the app's whole lifetime, not tied to `unlockState` — a query
+  // firing while locked is already refused elsewhere (there is no session
+  // to attach it to), so this only ever needs to exist once.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', onAppStateChange);
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   const attemptUnlock = useCallback(() => {

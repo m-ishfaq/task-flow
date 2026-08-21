@@ -1,24 +1,10 @@
-import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  type ListRenderItemInfo,
-} from 'react-native';
-import { router } from 'expo-router';
+import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
-import { colors, radiusCard } from '@taskflow/tokens';
+import { colors } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
-import {
-  MY_TASKS_QUERY_KEY,
-  PRIORITY_COLOR,
-  PRIORITY_LABEL,
-  formatDueDate,
-  type CardSummary,
-} from '../../../src/lib/work.js';
+import { CardRow } from '../../../src/lib/card-row.js';
+import { MY_TASKS_QUERY_KEY, type CardSummary } from '../../../src/lib/work.js';
 
 /**
  * "My Tasks" (ai/phase-14-mobile.md Wave 2 roadmap row: "Work — boards,
@@ -44,6 +30,10 @@ import {
  * footer here because this was the whole signed-in app, moved to the
  * Account tab: mirroring apps/web, where neither lives on the "My tasks"
  * page either (`AccountPage`/the sidebar's account menu own them).
+ *
+ * `CardRow` — the reference/title/badge rendering — moved to
+ * `src/lib/card-row.tsx` once `board/[boardId].tsx` needed the identical
+ * rendering for a second screen; see that file's own header.
  */
 export default function Home() {
   const cards = useQuery({
@@ -58,7 +48,7 @@ export default function Home() {
       <FlatList<CardSummary>
         data={cards.data}
         keyExtractor={(card) => card.cardId}
-        renderItem={renderCard}
+        renderItem={({ item }) => <CardRow card={item} />}
         contentContainerStyle={styles.list}
         style={styles.listContainer}
         ListEmptyComponent={
@@ -70,54 +60,6 @@ export default function Home() {
         }
       />
     </View>
-  );
-}
-
-function renderCard({ item: card }: ListRenderItemInfo<CardSummary>) {
-  const due = formatDueDate(card.dueDate);
-  const checklistDone = card.checklistTotal > 0 && card.checklistDone === card.checklistTotal;
-
-  return (
-    <Pressable
-      style={styles.card}
-      onPress={() => {
-        router.push(`/card/${card.cardId}`);
-      }}
-    >
-      <View style={styles.cardTopRow}>
-        <Text style={styles.reference}>{card.reference}</Text>
-        <Text style={styles.cardTitle} numberOfLines={2}>
-          {card.title}
-        </Text>
-      </View>
-      <View style={styles.badgeRow}>
-        {card.priority !== null && (
-          <View style={styles.badge}>
-            <View style={[styles.swatch, { backgroundColor: PRIORITY_COLOR[card.priority] }]} />
-            <Text style={styles.badgeText}>{PRIORITY_LABEL[card.priority]}</Text>
-          </View>
-        )}
-        {due !== null && (
-          <View style={[styles.badge, due.overdue && styles.badgeOverdue]}>
-            <Text style={[styles.badgeText, due.overdue && styles.badgeOverdueText]}>
-              {due.label}
-            </Text>
-          </View>
-        )}
-        {card.checklistTotal > 0 && (
-          <View style={styles.badge}>
-            <Text style={[styles.badgeText, checklistDone && styles.badgeDoneText]}>
-              {card.checklistDone}/{card.checklistTotal}
-            </Text>
-          </View>
-        )}
-        {card.commentCount > 0 && (
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>💬 {card.commentCount}</Text>
-          </View>
-        )}
-      </View>
-    </Pressable>
   );
 }
 
@@ -140,61 +82,6 @@ const styles = StyleSheet.create({
   list: {
     gap: 8,
     paddingBottom: 8,
-  },
-  card: {
-    borderWidth: 1,
-    borderColor: colors.line.hex,
-    borderRadius: radiusCard,
-    backgroundColor: colors.surfaceRaised.hex,
-    padding: 12,
-    gap: 8,
-  },
-  cardTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  reference: {
-    fontSize: 12,
-    color: colors.inkFaint.hex,
-    fontVariant: ['tabular-nums'],
-  },
-  cardTitle: {
-    flex: 1,
-    fontSize: 15,
-    color: colors.ink.hex,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    backgroundColor: colors.surfaceHover.hex,
-  },
-  badgeOverdue: {
-    backgroundColor: colors.danger.hex + '33',
-  },
-  swatch: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  badgeText: {
-    fontSize: 12,
-    color: colors.inkMuted.hex,
-  },
-  badgeOverdueText: {
-    color: colors.danger.hex,
-  },
-  badgeDoneText: {
-    color: colors.success.hex,
   },
   label: {
     fontSize: 12,
