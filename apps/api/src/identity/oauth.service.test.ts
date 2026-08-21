@@ -541,6 +541,40 @@ describe('linking to an existing session', () => {
     expect(events.names()).toEqual(['user.oauth_linked']);
   });
 
+  /**
+   * `auth.native.oauth.startLink` (added alongside this test) wires no new
+   * SERVICE logic — `start` already accepted `{ linkUserId, channel }`
+   * together, and `callback`'s `kind: 'linked'` branch is shared by both
+   * channels regardless. What was never exercised end-to-end is a `start`
+   * that carries BOTH at once, the exact combination the new route calls.
+   */
+  it('links over the native channel, using native credentials and redirect', async () => {
+    const userId = await registeredUser('oauth-linker-native@example.test');
+    events.events.length = 0;
+
+    const deps = googleDeps(
+      { subject: 'google-sub-native-link', email: 'someone-else-native@example.test' },
+      { google: { clientId: 'google-native-client' } },
+    );
+
+    const { authorizationUrl } = await oauth.start(deps, {
+      provider: 'google',
+      linkUserId: userId,
+      channel: 'native',
+    });
+    const url = new URL(authorizationUrl);
+    expect(url.searchParams.get('client_id')).toBe('google-native-client');
+    expect(url.searchParams.get('redirect_uri')).toBe('taskflow://oauth-callback');
+    const state = url.searchParams.get('state');
+    if (state === null) throw new Error('expected a state param');
+
+    const result = await oauth.callback(deps, { provider: 'google', code: 'c', state }, meta);
+
+    expect(result).toEqual({ kind: 'linked', provider: 'google' });
+    expect(await repo.listOAuthIdentities(userId)).toHaveLength(1);
+    expect(events.names()).toEqual(['user.oauth_linked']);
+  });
+
   it('refuses linking a provider identity already linked elsewhere', async () => {
     const victim = await registeredUser('oauth-victim@example.test');
     const attacker = await registeredUser('oauth-attacker@example.test');

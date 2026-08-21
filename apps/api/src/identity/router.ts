@@ -295,10 +295,8 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
       }),
 
       /**
-       * The native counterpart of `auth.oauth.start`/`callback`
-       * (ai/phase-14-mobile.md §4.4) — sign-in only, no `startLink`: linking a
-       * new provider to an already-signed-in account is an account-settings
-       * action, and Wave 1's mobile scope is sign-in, not account management.
+       * The native counterpart of `auth.oauth.start`/`startLink`/`callback`
+       * (ai/phase-14-mobile.md §4.4).
        *
        * `start` is unauthenticated for the same reason `auth.native.login` is:
        * this is how a session is obtained. Its `channel: 'native'` is what
@@ -308,6 +306,22 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
        * Google, a distinct public client with no secret (§4.4's own
        * reasoning). The mobile app opens `authorizationUrl` in a system
        * browser session and parses `code`/`state` back out of the redirect.
+       *
+       * `startLink` did NOT exist here until the mobile account screen needed
+       * it — Wave 1's own comment (superseded by this one) named it
+       * out-of-scope on purpose, since sign-in and account management are
+       * different pieces of work. It required no new SERVICE code: `oauth.
+       * start` already accepted `{ provider, linkUserId, channel }` together
+       * (the browser route already assembles exactly that shape), and
+       * `callback`'s output union and handler already branch on `kind ===
+       * 'linked'` — necessarily, since `oauth.callback` is the one function
+       * BOTH channels call, and its return type includes `linked` regardless
+       * of whether anything on this channel could produce it yet. So this is
+       * the entire gap: one route, wiring `ctx.principal.userId` into the
+       * link the exact way `auth.oauth.startLink` already does for the
+       * browser. `stepUp: true` for the identical reason browser's carries
+       * it — adding a new way into the account is as sensitive as removing
+       * one (`unlink`, also `stepUp: true`).
        */
       oauth: router({
         /**
@@ -334,6 +348,20 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
           .output(z.object({ authorizationUrl: z.string() }))
           .mutation(({ input }) =>
             oauth.start(oauthDeps, { provider: input.provider, channel: 'native' }),
+          ),
+
+        startLink: selfRoute({
+          selfReason: 'Linking a new provider to your own account.',
+          stepUp: true,
+        })
+          .input(z.object({ provider: OAuthProviderSchema }).strict())
+          .output(z.object({ authorizationUrl: z.string() }))
+          .mutation(({ input, ctx }) =>
+            oauth.start(oauthDeps, {
+              provider: input.provider,
+              linkUserId: ctx.principal.userId,
+              channel: 'native',
+            }),
           ),
 
         callback: publicRoute({
