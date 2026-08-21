@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -8,12 +9,15 @@ import {
   type ListRenderItemInfo,
 } from 'react-native';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { create, isSupported as isPasskeySupported } from 'react-native-passkeys';
 import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient, session } from '../../src/lib/app-session.js';
 import { apiErrorOf } from '../../src/lib/trpc-client.js';
-import { toRegistrationResponse, type PasskeyCreationResult } from '../../src/lib/passkeys.js';
+import {
+  loadPasskeys,
+  toRegistrationResponse,
+  type PasskeyCreationResult,
+} from '../../src/lib/passkeys.js';
 import {
   PRIORITY_COLOR,
   PRIORITY_LABEL,
@@ -50,6 +54,26 @@ import {
  * in Wave 1's placeholder and are secondary now.
  */
 export default function Home() {
+  const [passkeySupported, setPasskeySupported] = useState(false);
+
+  /* See sign-in.tsx's identical effect for why this is state resolved after
+     mount rather than a synchronous `isSupported()` call: the module is now
+     loaded lazily (passkeys.ts's header), so a static top-level import can
+     no longer answer this question before render. */
+  useEffect(() => {
+    let cancelled = false;
+    loadPasskeys()
+      .then((mod) => {
+        if (!cancelled) setPasskeySupported(mod.isSupported());
+      })
+      .catch(() => {
+        if (!cancelled) setPasskeySupported(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const cards = useQuery({
     queryKey: ['work.cards.mine'],
     queryFn: async () => wire(await apiClient.work.cards.mine.query({ includeArchived: false })),
@@ -58,6 +82,7 @@ export default function Home() {
   const addPasskey = useMutation({
     mutationFn: async () => {
       const options = await apiClient.auth.passkeys.startRegistration.mutate();
+      const { create } = await loadPasskeys();
       const result = await create(options as never);
       if (result === null) return null;
       // See sign-in.tsx's identical cast for why: the library's own
@@ -89,7 +114,7 @@ export default function Home() {
       />
 
       <View style={styles.footer}>
-        {isPasskeySupported() && (
+        {passkeySupported && (
           <>
             {addPasskey.isError && (
               <Text style={styles.error} accessibilityRole="alert">

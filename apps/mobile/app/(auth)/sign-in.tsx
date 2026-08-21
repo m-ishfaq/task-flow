@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import * as WebBrowser from 'expo-web-browser';
-import { get, isSupported as isPasskeySupported } from 'react-native-passkeys';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient, session } from '../../src/lib/app-session.js';
 import { apiErrorOf } from '../../src/lib/trpc-client.js';
+import { loadPasskeys } from '../../src/lib/passkeys.js';
 import {
   OAUTH_PROVIDER_LABEL,
   OAUTH_REDIRECT_URL,
@@ -37,6 +37,28 @@ export default function SignIn() {
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [passkeySupported, setPasskeySupported] = useState(false);
+
+  /* `isSupported()` used to be called synchronously inline in JSX, which
+     only worked because the module was imported statically — exactly the
+     import this file no longer does (see passkeys.ts's header). Loading it
+     lazily means "is a passkey usable here" can only be answered once that
+     load settles, so it becomes state resolved after mount instead of a
+     synchronous call; a failed load (module not linked) leaves it `false`,
+     the same as "no passkey support" reads today. */
+  useEffect(() => {
+    let cancelled = false;
+    loadPasskeys()
+      .then((mod) => {
+        if (!cancelled) setPasskeySupported(mod.isSupported());
+      })
+      .catch(() => {
+        if (!cancelled) setPasskeySupported(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const signIn = useMutation({
     mutationFn: () => apiClient.auth.native.login.mutate({ email, password }),
@@ -99,6 +121,7 @@ export default function SignIn() {
   const passkey = useMutation({
     mutationFn: async () => {
       const options = await apiClient.auth.passkeys.startAuthentication.mutate();
+      const { get } = await loadPasskeys();
       const result = await get(options as never);
       if (result === null) return null;
       // The library's own AuthenticationResponseJSON type and the server's
@@ -206,7 +229,7 @@ export default function SignIn() {
           </Pressable>
         ))}
       {passkey.isError && <FormError error={passkey.error} />}
-      {isPasskeySupported() && (
+      {passkeySupported && (
         <Pressable
           style={styles.oauthButton}
           disabled={passkey.isPending}

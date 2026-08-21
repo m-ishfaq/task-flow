@@ -8,11 +8,25 @@
  *
  * `react-native-passkeys` (a thin wrapper over `ASAuthorizationController`
  * on iOS and Android's `CredentialManager` — it implements no WebAuthn
- * cryptography of its own, the OS does) is imported directly from the
- * screens that need it (`sign-in.tsx`, `home.tsx`), mirroring `oauth.ts`'s
- * own precedent: there is no orchestration state worth hiding behind a DI
- * seam the way `device-key.ts`/`biometric-gate.ts` needed one, so this file
- * stays a plain, Vitest-safe helper rather than a fourth `.native.ts` split.
+ * cryptography of its own, the OS does) was originally imported STATICALLY
+ * and directly from the screens that need it (`sign-in.tsx`, `home.tsx`),
+ * on the reasoning that there is no orchestration state worth hiding behind
+ * a DI seam the way `device-key.ts`/`biometric-gate.ts` needed one. That
+ * reasoning covered where the CALLS live, not the IMPORT — a real run found
+ * the same bug device binding and the biometric gate already had:
+ * `react-native-passkeys`'s own `ReactNativePasskeysModule.js` calls
+ * `requireNativeModule('ReactNativePasskeys')` at ITS top level, so a
+ * static top-level `import` of the package in either screen threw the
+ * moment Metro evaluated that route module, wherever the module isn't
+ * linked (Expo Go always — a third-party native module Expo Go can never
+ * bundle, unlike an official Expo SDK package; any development build built
+ * before this landed). `loadPasskeys` below is the fix: a memoized dynamic
+ * `import()`, called from both screens instead of a static one, the same
+ * shape `biometric-gate.native.ts`'s `getNative()` already uses for the
+ * identical reason. This file stays a plain, Vitest-safe helper regardless
+ * — `import type` is erased before anything touches the real package, so
+ * nothing here forces `react-native-passkeys`'s Flow-typed dependency
+ * chain into a test's module graph the way a value import would.
  *
  * The one piece of real logic — and the one place a client/server shape
  * mismatch could hide, the same bug class CLAUDE.md's own Phase 3 section
@@ -23,6 +37,15 @@
  * implicitly is exactly the kind of trust this codebase's guardrails argue
  * against — so it is dropped explicitly, once, here.
  */
+import type * as PasskeysModule from 'react-native-passkeys';
+
+let modulePromise: Promise<typeof PasskeysModule> | undefined;
+
+/** Loads `react-native-passkeys` on first use — see this file's own header for why a static top-level import used to crash the whole app. */
+export function loadPasskeys(): Promise<typeof PasskeysModule> {
+  modulePromise ??= import('react-native-passkeys');
+  return modulePromise;
+}
 
 /** The shape `react-native-passkeys`' `create()` resolves to — structural, not imported, so this file needs no native module in its graph. */
 export interface PasskeyCreationResult {
