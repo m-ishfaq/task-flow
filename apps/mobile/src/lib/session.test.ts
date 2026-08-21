@@ -189,6 +189,31 @@ describe('createMobileSession', () => {
     expect(await prefs.getItem('taskflow.org')).toBeNull();
   });
 
+  describe('hasStoredCredential (§4.4 biometric app-lock check)', () => {
+    it('is false with no stored token', async () => {
+      const { session } = setup({ refresh: vi.fn() });
+      expect(await session.hasStoredCredential()).toBe(false);
+    });
+
+    it('is true once a token is stored, without exchanging it', async () => {
+      const refresh = vi.fn();
+      const { session } = setup({ refresh });
+      await session.adopt(tokens());
+
+      expect(await session.hasStoredCredential()).toBe(true);
+      expect(refresh).not.toHaveBeenCalled();
+    });
+
+    it('is false again after clear()', async () => {
+      const { session } = setup({ refresh: vi.fn(), logout: vi.fn(() => Promise.resolve()) });
+      await session.adopt(tokens());
+
+      await session.signOut();
+
+      expect(await session.hasStoredCredential()).toBe(false);
+    });
+  });
+
   describe('device binding (§4.5)', () => {
     it('adopt registers the device public key against the new session', async () => {
       const registerDeviceKey = vi.fn(() => Promise.resolve());

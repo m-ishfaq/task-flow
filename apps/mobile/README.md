@@ -72,15 +72,16 @@ Three gates, exactly as specified, collapsed into layout components since
   in Wave 2.
 
 **Not in this increment, named rather than half-built (CLAUDE.md's own
-rule):** passkeys and biometric app-lock — both Wave 1b per §4.4. OAuth
-(Google/GitHub) and device binding both shipped in later increments — see
-their own sections below; OAuth was never actually Wave 1b (§4.4 only tags
-passkeys and biometric app-lock that way, and Wave 1's own file map always
-listed the oauth-callback route), so it landed as a Wave 1 gap being closed
-rather than early 1b work. Device binding IS genuinely Wave 1b (§4.5 tags it
-explicitly), but it was the one item the plan itself treats as load-bearing
-rather than additive — see its own section for why that moved it ahead of
-passkeys/biometric app-lock.
+rule):** passkeys — the one remaining Wave 1b item, per §4.4. OAuth
+(Google/GitHub), device binding, and biometric app-lock all shipped in later
+increments — see their own sections below. OAuth was never actually Wave 1b
+(§4.4 only tags passkeys and biometric app-lock that way, and Wave 1's own
+file map always listed the oauth-callback route), so it landed as a Wave 1
+gap being closed rather than early 1b work. Device binding and biometric
+app-lock ARE genuinely Wave 1b, but both close a live gap in what Wave 1
+already shipped (a portable stolen token; a found-and-unlocked phone with no
+local gate) rather than adding new capability, which is why they moved ahead
+of passkeys — see their own sections for the full reasoning.
 
 ### The realtime socket client (§5, §8)
 
@@ -276,6 +277,36 @@ proved by real tests against real Postgres and real P-256 signatures
 `packages/security/src/device-binding.test.ts`, `session.test.ts`'s "device
 binding" suite); only the native signing itself is unverified.
 
+### Biometric app-lock (§4.4)
+
+"A LOCAL gate, not a second server factor — it never replaces `can()` or the
+token," per the spec's own words, and that is the whole design: nothing here
+talks to the server, and nothing lives inside `session.ts`'s token-exchange
+logic. Gating the refresh EXCHANGE itself would prompt Face ID on every
+ordinary mid-session access-token renewal (every ~15 minutes); "gates
+reading the stored refresh token after a cold start" means once, at launch,
+not on every use.
+
+`src/lib/biometric-gate.ts` / `.native.ts` are a third instance of the same
+DI split as `secure-store.ts`/`device-secure-store.ts` and
+`device-key.ts`/`device-key.native.ts`, wrapping `expo-local-authentication`
+— Expo's own OFFICIAL SDK package, unlike device binding's custom native
+module, so this one carries none of that section's compile-risk caveat.
+`session.ts` gained exactly one new read-only method,
+`hasStoredCredential()`, so the gate can tell "nothing to protect" apart
+from "something to protect" before ever prompting — a first-time,
+never-signed-in launch never sees Face ID.
+
+The gate itself lives in `app/_layout.tsx`, ABOVE `session.restore()`: on
+boot, if a credential is stored AND the device has biometrics (or a
+passcode) enrolled, the root layout renders a lock screen and auto-attempts
+the platform ceremony once before `restore()` is ever called. Cancelling or
+failing it leaves the stored token untouched and the app locked, with a
+retry button — never a fallback to the sign-in form, which would wrongly
+suggest the credential was lost. `app.config.ts`'s `expo-local-authentication`
+plugin entry sets `NSFaceIDUsageDescription`, which iOS requires present
+before the Face ID ceremony will even start.
+
 ## Not here yet
 
 - **Running this on a simulator or physical device.** The app now bundles
@@ -311,6 +342,11 @@ binding" suite); only the native signing itself is unverified.
   genuinely refused — is unverified until someone runs this on-device; see
   that section's own header for what to check first if it does not.
 
-- Passkeys, biometric app-lock (Wave 1b, §4.4).
+- **Confirming the biometric gate actually works on-device.** Like device
+  binding, `expo-local-authentication`'s ceremony is real-device-only — a
+  simulator can fake success but proves nothing about a genuine Face ID or
+  fingerprint prompt, and `NSFaceIDUsageDescription` only gets exercised by
+  Apple's own review once a real build ships.
+- Passkeys (Wave 1b, §4.4) — the one sign-in method not yet built.
 - The product waves themselves (Work, Chat, Docs, RTC) — the socket client
   exists but nothing calls `joinBoardRoom` yet.

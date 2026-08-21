@@ -121,6 +121,13 @@ export interface MobileSession {
   refresh(): Promise<string | null>;
   /** Boot-time restore from the keystore. */
   restore(): Promise<void>;
+  /**
+   * Whether a refresh token is currently stored, with no exchange attempted.
+   * The biometric app-lock's own check (§4.4, `app/_layout.tsx`) — there is
+   * nothing to gate for a caller who has never signed in, and prompting one
+   * anyway would put Face ID between a first launch and the sign-in screen.
+   */
+  hasStoredCredential(): Promise<boolean>;
   /** Adopt a freshly minted token pair (from sign-in or a refresh). */
   adopt(tokens: SessionTokens): Promise<void>;
   /** Persist the selected org (non-secure storage). */
@@ -324,6 +331,10 @@ export function createMobileSession(deps: SessionDeps): MobileSession {
     if (token === null && store.getState().status === 'restoring') settleAnonymous();
   }
 
+  async function hasStoredCredential(): Promise<boolean> {
+    return (await secureStore.getItem(REFRESH_TOKEN_KEY)) !== null;
+  }
+
   async function selectOrg(orgId: OrgId | null): Promise<void> {
     if (orgId === null) await prefs.removeItem(ORG_PREF_KEY);
     else await prefs.setItem(ORG_PREF_KEY, orgId);
@@ -356,6 +367,7 @@ export function createMobileSession(deps: SessionDeps): MobileSession {
     accessToken,
     refresh,
     restore,
+    hasStoredCredential,
     adopt,
     selectOrg,
     clear,
