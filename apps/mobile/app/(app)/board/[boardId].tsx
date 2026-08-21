@@ -170,6 +170,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
+            style={styles.tabStripFrame}
             contentContainerStyle={styles.tabStrip}
           >
             {lists.data.map((list) => (
@@ -310,11 +311,28 @@ const styles = StyleSheet.create({
   tabStrip: {
     paddingHorizontal: 24,
     paddingBottom: 12,
+    // `alignItems: 'flex-start'` on a ROW content container is the actual
+    // fix — the default cross-axis alignment is 'stretch', which (combined
+    // with `flexGrow: 0` below not being enough on its own on Android) is
+    // what stretched every chip to the ScrollView's own frame height,
+    // rendering each as a near-fullscreen pill instead of a small chip.
+    alignItems: 'flex-start',
     gap: 8,
+  },
+  tabStripFrame: {
+    // A horizontal ScrollView with no explicit style otherwise sizes its
+    // FRAME (not just its content) to fill remaining flex space from its
+    // column parent — found live, rendering four chips as near-fullscreen
+    // vertical pills instead of a compact row. `flexGrow: 0` pins the
+    // frame to its content height; the `alignItems: 'flex-start'` above
+    // is what actually stops each CHIP inside it from stretching to match.
+    flexGrow: 0,
+    flexShrink: 0,
   },
   tab: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'flex-start',
     gap: 6,
     borderWidth: 1,
     borderColor: colors.line.hex,

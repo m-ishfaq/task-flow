@@ -816,14 +816,22 @@ name.** `apps/web` resolves the other participant's real name via a
 member-profile lookup; this slice does not build that join (real, separate
 work, the same call Comments' author display already made) — a named
 public/private channel still shows its actual name, since that field comes
-back directly with no resolution needed.
+back directly with no resolution needed. _(Superseded the same day a real
+device video review named this exact gap explicitly — `use-members.ts` now
+builds that lookup, and DMs are named for real. See "Chat, reworked" below
+rather than an edit in place, per this file's own habit of correcting a
+stale claim rather than silently rewriting it.)_
 
 **Explicitly out of scope, all real and separate work**: reactions, thread
 replies (`chat.messages.thread` has no caller here), mentions autocomplete,
 edit/delete, typing indicators, read receipts, file attachments, link
 unfurls, and push (§9's own FCM/APNs wiring — Wave 3's roadmap row names it
 explicitly, and nothing here touches it). This is "channels exist and you
-can talk in them," not the whole of Wave 3.
+can talk in them," not the whole of Wave 3. _(Reactions and mentions
+composing shipped in the same increment that closed the DM-naming gap
+above — see "Chat, reworked" below. Thread replies, edit/delete, typing
+indicators, read receipts, attachments, link unfurls and push are still
+exactly this: real, separate work.)_
 
 **Writing this section is what found a real, silent gap: `app/_layout.tsx`
 was never refetching anything on app-foreground, on ANY screen, since the
@@ -1045,6 +1053,151 @@ matching `projects-page.tsx`'s own stated reasoning: a create form nobody
 without the permission could submit is clutter, not information, and the
 list below stays fully visible either way.
 
+### A tab-strip rendering bug, found on the very next real-device run
+
+**The board tab strip above rendered as four near-fullscreen vertical
+pills instead of a compact row of chips**, the first time it ran on a real
+device — a genuine regression in the redesign itself, not a pre-existing
+gap. Root cause: a horizontal `ScrollView` given no explicit `style` sizes
+its own FRAME to fill remaining flex space from its column parent (not
+just its content), and the default cross-axis `alignItems: 'stretch'` on
+its row-direction content container then stretched every chip to match
+that frame's height. Fixed with three layers, each closing one part of the
+mechanism: `tabStripFrame` (`flexGrow: 0, flexShrink: 0`) pins the
+`ScrollView`'s own frame to its content height; `alignItems: 'flex-start'`
+on the content container stops it stretching children by default; `tab`
+itself also carries `alignSelf: 'flex-start'` as a third, defensive layer.
+Caught immediately from a screenshot of the running app, not assumed fixed
+from reading the diff.
+
+## Chat, reworked: real names, message grouping, reactions, mentions, and a way to actually start something
+
+A second real device video review — this time of the app with boards and
+comments already shipped — named Chat specifically as "very messy... we
+need like how web has," itemizing gaps against the placeholder version
+above: no real names anywhere (chat AND comments both said "You"/
+"Member"), no way to tell who a DM was with, no reactions, no way to
+create a channel or DM at all, and mentions that rendered as plain text
+with no way to compose one. Closed together, because most of it traces to
+one missing piece.
+
+**`src/lib/use-members.ts` (new) is the root fix everything else builds
+on** — a direct port of `apps/web/src/features/org/use-members.ts`'s
+`personOf`/`peopleOf` lookup over `tenancy.members.list`, that file's own
+header explaining the design in full (a `Map` derived per render from the
+query cache rather than copied into a store, so a renamed or removed
+member is never stale independently of the cache; a missing id falls back
+to the raw uuid rather than hiding the author, since hiding would silently
+misreport a message as authorless). Nothing native had this lookup before
+— chat and card comments were each independently rendering a hardcoded
+"You"/"Member" pair. Both now call the same hook: `channel/[channelId].tsx`
+and `(tabs)/chat.tsx` for chat, `card/[cardId].tsx`'s `CommentRow` for
+Work. One fix, two screens' worth of the same complaint closed at once.
+
+**`src/lib/avatar.tsx` (new)** — an initials circle on a deterministic
+color (hashed from the label, so the same person gets the same color
+everywhere), not a photo. Closes half of Wave 2's own "no avatars" gap
+("`AvatarStack` needs a members lookup and image loading, neither of which
+exist on mobile yet") — the lookup half, now that `use-members.ts` exists.
+Image loading is still real, separate work; this is the same fallback
+Slack/Linear's own avatar renders when there is no uploaded picture, not a
+reduced stand-in for one.
+
+**Message grouping** — `chat.ts` gained `groupMessages`/`MessageGroup`/
+`GROUP_WINDOW_MS`, logic ported unchanged from
+`apps/web/src/features/chat/grouping.ts` (that file's own header has the
+full reasoning: grouped by author ID never the resolved label, since two
+different people can share `personOf`'s raw-id fallback; the five-minute
+window resets from each message to the PREVIOUS one, so a burst of
+messages five minutes apart end-to-end still reads as one exchange).
+`channel/[channelId].tsx` now renders one avatar + name + timestamp header
+per GROUP, not per message — the single change that most makes the thread
+read as a conversation instead of a log of identical repeating boxes,
+exactly the complaint "very messy" was naming. `chat.test.ts` (11 cases)
+asserts the grouping boundary conditions natively, because a native-only
+bug here (grouping by the wrong field, an off-by-one in the window
+comparison) would be invisible to web's own suite.
+
+**A channel finally has a header.** `channel/[channelId].tsx` had NO
+title at all before this — just a back button over a bare message list,
+with nothing naming which channel you were even in. It now fetches
+`chat.channels.get` and shows the channel's real name (or, for a DM, the
+SAME `personOf`-based naming `(tabs)/chat.tsx`'s list uses — `chat.ts`'s
+`channelDisplayName` takes a `personOf` argument now instead of resolving
+to a bare placeholder), plus the topic or an "Archived" notice as a
+subtitle.
+
+**The composer is now gated on `capabilities.post`, never a role check** —
+`channels.get`'s own `capabilities` field is the server's real `can()`
+verdict, the same pattern `(tabs)/boards.tsx`'s create buttons already
+established. An archived channel, or a read-only (`commenter`-shaped)
+membership, now shows no composer at all instead of one that would 403 on
+send — one of the very FIRST complaints this app's review ever named
+("not all things what web has as per roles... this is throughout the
+app"), closed here for chat specifically.
+
+**Reactions** — `chat.messages.react`/`.reactions` wired for the first
+time. `QUICK_REACTIONS` (👍❤️😂🎉👀✅) is the exact same six web offers
+(`chat-page.tsx`'s own constant) — chat's reaction picker is not a full
+emoji keyboard on EITHER platform, so this is genuine parity, not a
+reduced mobile cut. Long-pressing a message opens a bottom-sheet picker
+(the same `Modal` shape `board/[boardId].tsx`'s "Move" sheet already
+established); tapping an existing reaction pill directly toggles the
+viewer's own reaction, no picker needed for the common un-react case.
+`chat.ts`'s `groupReactions` (ported from `chat-page.tsx`'s function of
+the same name) groups the flat reaction-row list by message then emoji.
+The `chat.messages.reactions` query is fetched CHUNKED, 25 message ids per
+dispatch, and keyed STABLY (no `messageIds` in the query key) — both
+ported directly from `apps/web/src/features/chat/api.ts`'s own
+`reactionsQuery`, whose header records exactly why: an unchunked dispatch
+carrying this screen's ~50 loaded message ids is close enough to
+`trpc-client.ts`'s `maxURLLength` ceiling (shared by this app's identical
+`httpBatchLink` config) that web hit the real "Input is too big for a
+single dispatch" failure, and a key embedding a fresh array reference every
+render restarts the query every render, so the reactions bar never
+settles.
+
+**Mentions — rendering already existed; composing did not.**
+`rich-text-view.tsx`'s `case 'mention'` predates this increment entirely
+(§6.4's renderer has always handled it) — what was missing was any way to
+PRODUCE one from native input; typing "@Jane" just sent literal text.
+`src/lib/message-compose.ts` (new) is the bounded substitute for not
+having a real rich text editor to track a live cursor/selection with (that
+file's own header has the full design): the composer offers a dropdown
+only while the user is typing the END of the draft — `activeMentionQuery`
+returns the trailing `@query`, or `null` once whitespace ends it or there
+is no trailing `@` at all — never a mid-string trigger, since a plain
+`TextInput` cannot express "insert at the cursor" the way a real editor
+can. Picking a candidate (`insertMention`) replaces that trailing query
+with literal `@Label ` text and records `{userId, label}`; at SEND time,
+`buildMessageBody` walks the final draft left-to-right, swapping each
+recorded marker's literal text for a real `mention` node, and degrades
+silently to plain text for any pick whose marker text got edited away in
+the meantime — never a broken half-reference. `message-compose.test.ts`
+(14 cases) covers this directly, including the "picked then edited away"
+degradation and resolving markers in TEXT order regardless of which order
+they were picked in.
+
+**A way to actually create something.** `(tabs)/chat.tsx` gained a "+ New"
+button opening a plain sheet — "New channel" (hidden unless
+`chat.channels.list`'s own `canCreateChannel` says so, the identical
+server-capability pattern Work's own create buttons use) and "New direct
+message" (no such gate: `channels.openDirect`'s own router comment says
+starting a DM only needs `channel:read`, the same permission that already
+got the caller onto this screen at all). Both reuse the bottom-sheet
+`Modal` shape already established twice elsewhere in this app now (Move,
+React) rather than a fourth new pattern. Before this, there was genuinely
+no way to start a channel or a DM from the phone at all — the complaint
+was literal, not an exaggeration.
+
+**Still explicitly out of scope, all real and separate work**: thread
+replies (`chat.messages.thread` has no caller anywhere on native), message
+edit/delete, typing indicators, read receipts, file attachments, link
+unfurls, and push. Mentions autocomplete is real but bounded to the
+trailing-query case above — mid-string mention insertion needs an actual
+rich text editor, the same boundary `card/[cardId].tsx`'s `TitleField`
+already draws for why the description field isn't editable either.
+
 ## Not here yet
 
 - **Confirming this on a simulator or physical device beyond what has
@@ -1095,10 +1248,11 @@ list below stays fully visible either way.
   rich text EDITOR (description/comment/message composers all stay
   plain-text until one exists), due/start date editing (no date-picker
   dependency added yet), and card drag-and-drop (boards' own section above
-  has the full reasoning). The rest of Chat (reactions, thread replies,
-  mentions, edit/delete, typing indicators, read receipts, attachments,
-  link unfurls, push) and the other product waves (Docs, RTC) — the socket
-  client exists but nothing calls `joinBoardRoom`/a chat-equivalent yet, so
+  has the full reasoning). The rest of Chat (thread replies, edit/delete,
+  typing indicators, read receipts, attachments, link unfurls, push —
+  reactions and mentions composing shipped, see "Chat, reworked" above)
+  and the other product waves (Docs, RTC) — the socket client exists but
+  nothing calls `joinBoardRoom`/a chat-equivalent yet, so
   every screen above is a plain `useQuery`: fresh on navigation and on
   app-foreground (see `_layout.tsx`'s `AppState` wiring, below), not live
   while the screen stays open and nobody moves.

@@ -23,6 +23,7 @@ import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { RichTextView } from '../../../src/lib/rich-text-view.js';
 import { useUpdateCard } from '../../../src/lib/use-update-card.js';
+import { useMembers } from '../../../src/lib/use-members.js';
 import {
   PRIORITY_COLOR,
   PRIORITY_LABEL,
@@ -200,6 +201,7 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
 function CommentsSection({ cardId }: { readonly cardId: CardId }) {
   const queryClient = useQueryClient();
   const userId = useSession((state) => state.userId);
+  const { personOf } = useMembers();
   const [draft, setDraft] = useState('');
 
   const comments = useQuery({
@@ -225,7 +227,12 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
 
       {comments.isPending && <ActivityIndicator color={colors.accent.hex} />}
       {comments.data?.map((comment) => (
-        <CommentRow key={comment.commentId} comment={comment} isOwn={comment.authorId === userId} />
+        <CommentRow
+          key={comment.commentId}
+          comment={comment}
+          isOwn={comment.authorId === userId}
+          personOf={personOf}
+        />
       ))}
       {comments.data?.length === 0 && <Text style={styles.label}>No comments yet.</Text>}
 
@@ -261,11 +268,25 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
   );
 }
 
-function CommentRow({ comment, isOwn }: { readonly comment: Comment; readonly isOwn: boolean }) {
+function CommentRow({
+  comment,
+  isOwn,
+  personOf,
+}: {
+  readonly comment: Comment;
+  readonly isOwn: boolean;
+  readonly personOf: (userId: string) => { readonly label: string };
+}) {
+  const author = isOwn
+    ? 'You'
+    : comment.authorId === null
+      ? 'Unknown'
+      : personOf(comment.authorId).label;
+
   return (
     <View style={styles.commentRow}>
       <View style={styles.commentMeta}>
-        <Text style={styles.commentAuthor}>{isOwn ? 'You' : 'Member'}</Text>
+        <Text style={styles.commentAuthor}>{author}</Text>
         <Text style={styles.commentTime}>
           {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
         </Text>
