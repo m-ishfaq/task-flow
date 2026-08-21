@@ -16,7 +16,18 @@ describe('parseConfig', () => {
     expect(() => parseConfig({ apiBaseUrl: 'not-a-url' })).toThrow();
   });
 
-  it('rejects unknown keys (schema is strict)', () => {
-    expect(() => parseConfig({ apiBaseUrl: 'https://a.co', unexpected: true })).toThrow();
+  it('ignores unknown keys instead of rejecting them — the real Constants.expoConfig.extra always carries some', () => {
+    // Reproduces the actual object Expo hands this function at boot: `eas`
+    // (app.config.ts's own EAS project linkage) and `router` (expo-router's
+    // own auto-injected config) sit right alongside `apiBaseUrl` on every
+    // real launch. A `.strict()` schema rejected this outright — see
+    // config.ts's own header for why that was fatal on every boot, not a
+    // theoretical case.
+    const c = parseConfig({
+      apiBaseUrl: 'https://a.co',
+      eas: { projectId: 'b3129211-ec7b-4cca-ab67-6c39a32095cf' },
+      router: { origin: false },
+    });
+    expect(c.apiBaseUrl).toBe('https://a.co');
   });
 });
