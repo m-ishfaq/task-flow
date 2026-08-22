@@ -2749,13 +2749,17 @@ at the end, not flattening the table. `ringtone.test.ts` keeps both the original
 "no beep exceeds its tone's own period" check, which IS real) and a new test that specifically
 proves the sum, not the overwrite.
 
-### No `<RemoteAudio>` component, and that is not a gap
+### No `<RemoteAudio>` component, and that is not a gap — PLAYBACK, not ROUTING
 
 Web attaches each peer's `MediaStream` to a hidden `<audio autoPlay>` element, because a browser
 tab has no other way to route a stream to speakers. `react-native-webrtc` needs no such step for
 AUDIO — once a track is added to a live `RTCPeerConnection`, the native module plays it through the
 device's own audio session automatically; the explicit-attachment step (`RTCView`) exists only for
 VIDEO, which this phase does not add. `useCallStore`'s `peers` list exists purely to drive the UI.
+
+_This claim was true and incomplete — see "A call that connects and is still silent" below, found
+by a real web-to-mobile call, for the OUTPUT half this paragraph never addressed: automatic
+playback says nothing about which speaker it plays through._
 
 ### No recording CAPTURE on mobile — the consent gate is real, the button to start one is not
 
@@ -3002,6 +3006,40 @@ something to send) instead of leaving that to `disabled`'s default opacity dimmi
 
 Verified: typecheck, lint, and all 218 tests pass; guardrail self-test, encoding check, and mobile
 bundle secret check all clean; a fresh `expo export` for Android bundles cleanly.
+
+### A call that connects and is still silent — `react-native-webrtc` plays audio, it does not route it
+
+Found by an actual web-to-mobile call: both sides showed connected, `peer-mesh.ts` had negotiated
+successfully (`ontrack` fired, `connectedAt` was set), and there was no audio. Nothing was wrong —
+`react-native-webrtc` has no audio-routing API at all (checked its own `src/` directly: no
+`speaker`/`audioOutput` export exists), and the native `AudioDeviceModule` it hands the OS defaults
+Android's call-mode audio to the EARPIECE, at a volume meant for a phone held to your face. Nobody
+testing this app holds their phone to their ear — the UI is a mute/hang-up bar meant to be looked
+at — so the call was never actually broken, it just had nowhere audible to go.
+
+`react-native-incall-manager` is the fix, and it is not a random pick: it is maintained by the same
+`react-native-webrtc` GitHub org, the identical "lower-risk than hand-rolling native audio-manager
+code" reasoning `@config-plugins/react-native-webrtc` was chosen for earlier in this phase. It needs
+no config plugin of its own — its `AndroidManifest.xml` declares no extra permissions and its
+`ios`/`android` folders are a plain autolinked native module, unlike `react-native-webrtc`, which
+genuinely needed one. `use-call.ts`'s `joinCall` calls `InCallManager.start({ media: 'audio' })`
+right after the microphone opens (putting Android into `MODE_IN_COMMUNICATION` for the call's whole
+duration, ring included) and `setForceSpeakerphoneOn` to the loudspeaker by default; `hangUp` calls
+`stop()` unconditionally, even on a `silent` teardown, because a failed join still engaged
+communication mode the moment the microphone opened. Both are best-effort, wrapped so a build
+without the native module linked yet still lets the call itself proceed — the same
+degrade-don't-block precedent every other native import in this phase already follows.
+
+A speaker/earpiece toggle (🔊/🔈) sits beside the existing mute button in `ActiveCallBar` — not
+scope creep, the minimum control a real default needs a way to undo (a call taken in public still
+wants the earpiece), mirroring the mute button's own existing pattern exactly (`CallState.speakerOn`,
+`setSpeakerphone`, no new shape introduced).
+
+Verified: typecheck, lint (0 errors — one pre-existing unrelated warning in `push-notifications.ts`
+untouched), all 218 tests still pass, guardrail self-test clean, and a real `expo export` for
+Android bundles the new dependency through Metro cleanly. `use-call.ts` has no dedicated test file
+(it is this phase's own documented "untested native composition point"), so this is verified by
+code path only until the next real-device round confirms it audibly.
 
 ## Not here yet
 

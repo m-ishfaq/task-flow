@@ -1,6 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { useStore } from 'zustand';
 import type { MediaStream } from 'react-native-webrtc';
+import type InCallManagerInstance from 'react-native-incall-manager';
 import { apiClient, rtcSocket } from './app-session.js';
 import { PeerMesh, type RtcConfiguration } from './peer-mesh.js';
 
@@ -69,6 +70,30 @@ import { PeerMesh, type RtcConfiguration } from './peer-mesh.js';
  * shown-and-refused" principle CLAUDE.md's own §8.2 argument already
  * applies everywhere else in this codebase to a control whose only
  * possible outcome is a dead end.
+ *
+ * ## `react-native-incall-manager` is what makes the audio audible at all
+ *
+ * Found live: a real web-to-mobile call negotiated successfully — peers
+ * connected, `onRemoteStream` fired, `connectedAt` was set — and was still
+ * silent. `react-native-webrtc` has no audio-ROUTING API of its own (its
+ * own `src/` has no `speaker`/`audioOutput` export at all); the native
+ * `AudioDeviceModule` it hands the OS decides where a call-mode audio
+ * stream goes, and on Android that default is the EARPIECE, at a volume
+ * meant for a phone held to your face — inaudible to someone looking at
+ * this app's own on-screen mute/hang-up controls instead. Silent, not
+ * broken: nothing here was wrong, there was just no audio ROUTE, the exact
+ * gap `react-native-incall-manager` exists to close (same maintainer org as
+ * `react-native-webrtc` — the identical "lower-risk than hand-rolling
+ * native audio-manager code" reasoning `@config-plugins/react-native-webrtc`
+ * was chosen for earlier in this phase). `start()` puts Android into
+ * `MODE_IN_COMMUNICATION` for the call's duration; `setForceSpeakerphoneOn`
+ * is the actual fix — loudspeaker by default, since this app is used
+ * looking at a screen, not held to an ear like a phone call. `stop()` on
+ * `hangUp()` hands audio routing back to whatever else wants it (the
+ * ringtone/ringback tones already use `expo-audio`, and never overlap this:
+ * ringing stops before a call is joined, `InCallManager` starts only once
+ * it is). Best-effort — a build without the native module linked yet must
+ * still let the call itself proceed, only without the routing fix.
  */
 
 export interface CallPeer {
@@ -82,6 +107,12 @@ export interface CallState {
   readonly orgId: string | null;
   readonly status: 'idle' | 'connecting' | 'in_call';
   readonly muted: boolean;
+  /**
+   * Loudspeaker vs earpiece — see the module header on why this defaults to
+   * `true` and why it exists at all. Mirrors `muted`: real state a control
+   * reads and writes, not a derived value.
+   */
+  readonly speakerOn: boolean;
   /** Remote audio, keyed by peer. */
   readonly peers: readonly CallPeer[];
   /** Set when the gateway evicted this app mid-call (a grant changed). */
@@ -101,6 +132,7 @@ const IDLE: CallState = {
   orgId: null,
   status: 'idle',
   muted: false,
+  speakerOn: true,
   peers: [],
   evicted: false,
   connectedAt: null,
@@ -119,6 +151,11 @@ export function useCallStore<T>(selector: (state: CallState) => T): T {
 let mesh: PeerMesh | null = null;
 let localStream: MediaStream | null = null;
 let unsubscribers: (() => void)[] = [];
+/** Set only once `react-native-incall-manager` actually started this call's
+ *  audio routing — see the module header. `null` both before a call starts
+ *  and whenever the native module failed to load, so `hangUp` knows whether
+ *  there is anything to stop. */
+let inCallManager: typeof InCallManagerInstance | null = null;
 
 function setPeer(userId: string, stream: MediaStream): void {
   callStore.setState((state) => ({
@@ -232,6 +269,18 @@ export async function joinCall(input: {
     }
     localStream = ownedStream;
 
+    /* Best-effort — see the module header. A build without this native
+       module linked yet must still let the call proceed, silently, rather
+       than fail the whole join over an audio-routing improvement. */
+    try {
+      const InCallManager = (await import('react-native-incall-manager')).default;
+      InCallManager.start({ media: 'audio' });
+      InCallManager.setForceSpeakerphoneOn(callStore.getState().speakerOn);
+      inCallManager = InCallManager;
+    } catch {
+      inCallManager = null;
+    }
+
     const configuration: RtcConfiguration = {
       iceServers: ice.iceServers.map((server) => ({
         urls: [...server.urls],
@@ -315,6 +364,12 @@ export async function hangUp(options: { readonly silent?: boolean } = {}): Promi
   for (const track of localStream?.getTracks() ?? []) track.stop();
   localStream = null;
 
+  /* Hands audio routing back — see the module header on why this is never
+     skipped even on a `silent` teardown (a failed join still engaged
+     `MODE_IN_COMMUNICATION` the moment the microphone opened). */
+  inCallManager?.stop();
+  inCallManager = null;
+
   if (sessionId !== null) {
     rtcSocket.leaveCallRoom(sessionId);
     if (options.silent !== true) {
@@ -341,4 +396,15 @@ export function clearEviction(): void {
 export function setMuted(muted: boolean): void {
   for (const track of localStream?.getAudioTracks() ?? []) track.enabled = !muted;
   callStore.setState({ muted });
+}
+
+/**
+ * Toggles loudspeaker vs earpiece — see the module header on why this
+ * exists and defaults on. A no-op on a build without the native module
+ * linked (`inCallManager` stays `null`); the stored `speakerOn` still
+ * updates so the button reflects what was asked for.
+ */
+export function setSpeakerphone(speakerOn: boolean): void {
+  inCallManager?.setForceSpeakerphoneOn(speakerOn);
+  callStore.setState({ speakerOn });
 }

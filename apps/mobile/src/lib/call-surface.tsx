@@ -17,7 +17,15 @@ import {
   type IncomingCall,
   type RecordingStatus,
 } from './rtc.js';
-import { callStore, clearEviction, hangUp, joinCall, setMuted, useCallStore } from './use-call.js';
+import {
+  callStore,
+  clearEviction,
+  hangUp,
+  joinCall,
+  setMuted,
+  setSpeakerphone,
+  useCallStore,
+} from './use-call.js';
 
 /**
  * Everything about a call that must outlive the screen it started on
@@ -257,6 +265,7 @@ function ActiveCallBar(): React.JSX.Element | null {
 
   const status = useCallStore((state) => state.status);
   const muted = useCallStore((state) => state.muted);
+  const speakerOn = useCallStore((state) => state.speakerOn);
   const peers = useCallStore((state) => state.peers);
   const sessionId = useCallStore((state) => state.sessionId);
   const channelId = useCallStore((state) => state.channelId);
@@ -369,6 +378,14 @@ function ActiveCallBar(): React.JSX.Element | null {
             <Text style={styles.recordingIndicator}>● Recording</Text>
           )}
         </View>
+        <Pressable
+          style={styles.muteButton}
+          onPress={() => {
+            setSpeakerphone(!speakerOn);
+          }}
+        >
+          <Text style={styles.muteButtonText}>{speakerOn ? '🔊' : '🔈'}</Text>
+        </Pressable>
         <Pressable
           style={styles.muteButton}
           onPress={() => {
