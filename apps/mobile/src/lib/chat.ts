@@ -185,6 +185,28 @@ export function channelDisplayName(
   return first ?? 'Direct message';
 }
 
+/**
+ * The public "# " / private "🔒 " prefix shown before a channel's name,
+ * wherever one appears (the channel list row, the channel screen's own
+ * header) — ported from `apps/web/src/features/chat/chat-page.tsx`'s
+ * `ChannelTypePrefix`, whose own header gives the reason to keep this in
+ * one place: "wherever one appears... one place rather than three copies
+ * of the same ternary drifting apart." A DM/`group_dm` has no glyph — an
+ * empty string, matching `ChannelTypePrefix`'s own fallthrough — since
+ * neither is a named, joinable room the way public/private are. `🔒` stays
+ * an emoji rather than web's monochrome `Lock` icon component: this app
+ * has no icon set beyond `Ionicons` on the tab bar, and `channel-details/
+ * [channelId].tsx`'s own identity row already established the emoji as
+ * this app's version of the same glyph — restated here rather than a new
+ * one invented for the two call sites that had none at all
+ * (2026-08-22 chat-parity pass).
+ */
+export function channelTypeGlyph(type: string): string {
+  if (type === 'public') return '# ';
+  if (type === 'private') return '🔒 ';
+  return '';
+}
+
 /** Two messages fall in one group only if they are close enough that repeating the header would be noise. */
 export const GROUP_WINDOW_MS = 5 * 60 * 1000;
 

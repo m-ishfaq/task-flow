@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet")
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, and slash commands, and found two more real gaps — an org-wide notification center and an org-wide Saved Messages view — sized as their own next increments (see "Chat, a real audit against web finds three more gaps")
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -2223,6 +2223,86 @@ one step DARKER — reading as "tucked inside" the parent rather than
 merely float-indented under a thin gray line, and the border itself moved
 from `line` at 1px to `accent` at 2px, since a hairline in low-contrast
 gray was nearly invisible next to several reply threads stacked in a row.
+
+## Chat, a real audit against web finds three more gaps: glyphs, a read-only notice, slash commands
+
+Asked directly to check web's chat feature file-by-file and close what mobile
+is still missing — not trusting this file's own prior "Chat is now at full
+parity with web" claim (the same "a status marker is a claim, not a fact"
+lesson CLAUDE.md's Phase 5/8 sections already name), which turned out to be
+true for everything that increment's own author had been asked to name, and
+untrue for three things nobody had gone looking for because nothing broke.
+
+**Public (`#`) vs. private (`🔒`) had no visual distinction in two of the
+three places a channel name renders.** `channel-details/[channelId].tsx`'s
+identity row already got this right; `(tabs)/chat.tsx`'s list row and
+`channel/[channelId].tsx`'s own header both used a literal `# ` for public
+AND private alike — so a private channel, whose whole point is a restricted
+roster, looked exactly like a public one everywhere except the one screen
+you had to already be inside it to see. `channelTypeGlyph` (`chat.ts`, new)
+is the one function both call sites now share, ported from
+`apps/web/src/features/chat/chat-page.tsx`'s own `ChannelTypePrefix` — whose
+own header gives the reason to keep it in one place ("wherever one
+appears... one place rather than three copies of the same ternary drifting
+apart") rather than three near-identical inline ternaries.
+
+**The composer showed nothing at all when hidden — not a disabled state,
+an absence.** `capabilities.post` already correctly gated whether the
+composer rendered (`channel/[channelId].tsx`'s own header has always said
+so), but unlike web, nothing explained WHY it was gone: an archived channel
+and a read-only (`commenter`-shaped) membership both just left blank space
+where a composer should be. Web's identical guard shows "This channel is
+archived. No new messages can be posted." or "You have read-only access to
+this conversation." — the same two strings, now rendered here too. This is
+the one item in this section that is directly about the standing request
+running through this file's history since Phase 1 ("not all things what web
+has as per roles... this is throughout the app," first named against
+Chat's own composer gating): showing the SERVER'S reason a control is
+absent, not just making the control disappear.
+
+**Slash commands (`/topic`, `/leave`, `/shrug`, `/me`) had never been
+ported at all — not mentioned as a gap anywhere in this file, because
+nothing about their absence errors.** Typing `/leave` in the composer sent
+the literal text "/leave" as an ordinary message. `slash-commands.ts` (new)
+is a byte-for-byte copy of `apps/web/src/features/chat/slash-commands.ts`
+— the module has no DOM/React import to begin with, so there is nothing to
+port beyond the file itself, the same "logic unchanged" relationship
+`chat.ts`'s own `groupMessages` already has to web's `grouping.ts`.
+`slash-commands.test.ts` is an equally verbatim copy of web's own suite,
+run here to prove the port did not drift. `channel/[channelId].tsx` gained
+`submitDraft` (replacing the composer's old direct `send.mutate(...)` call)
+and `runCommand`, mirroring `chat-page.tsx`'s own `submit`/`runCommand`
+split exactly: `/topic` and `/leave` resolve to the identical
+already-authorized routes their equivalent UI controls elsewhere already
+call (`chat.channels.update`, `chat.channels.removeMember` — the same route
+`channel-details/[channelId].tsx`'s own rename form and Leave button use),
+`/shrug`/`/me` post a transformed message, and an unrecognized name (`/topc
+oops`) reports itself rather than being posted as a literal string — see
+`slash-commands.ts`'s own header for why none of this needed a new server
+route. A small autocomplete list shows above the composer while the draft
+is still a bare command word, matching web's own `SlashCommandMenu` scoping
+exactly (gone the moment a space is typed, so it never covers the box being
+typed into). **Scoped to the main composer only** — `thread/[messageId]
+.tsx`'s reply composer does not parse commands either on web or here, the
+identical restriction already drawn for typing indicators and file
+attaching.
+
+**Two more gaps found and deliberately NOT closed, named here rather than
+silently skipped:** web's `notification-bell.tsx` mounts an org-wide,
+cross-product notification list (mentions, DMs, thread replies, card
+assignments, missed calls, page mentions — the general `notifications.*`
+router, not a chat-specific one) in the persistent app shell
+(`components/shell.tsx`); mobile has no shell to mount an equivalent in
+(`(tabs)/_layout.tsx` is `headerShown: false`, and every tab draws its own
+header) and no such list at all — the closest thing today is device push,
+which this deployment cannot exercise end-to-end (see "Push notifications"
+above). And `chat.saved.list` is already wired for a per-channel filtered
+view in `channel-details/[channelId].tsx`, but web also surfaces it
+ORG-WIDE from a `SavedMessagesButton` living above the channel list itself
+— nothing on native reads that same route unfiltered. Both are real,
+separate features rather than small fixes, sized closer to "Chat, live"
+than to anything else in this section, and are the next two items rather
+than something to fold in here.
 
 ## Not here yet
 

@@ -17,7 +17,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { ChannelIdSchema, type ChannelId } from '@taskflow/contracts';
 import { wire } from '@taskflow/client';
-import { plainParagraph } from '@taskflow/api/richtext';
+import { plainParagraph, type RichTextNode } from '@taskflow/api/richtext';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient, chatSocket } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
@@ -31,9 +31,11 @@ import { MessageComposer } from '../../../src/lib/message-composer.js';
 import { useChatRoom } from '../../../src/lib/use-chat-room.js';
 import { pickAttachment } from '../../../src/lib/pick-attachment.js';
 import { uploadMessageFile, type PickedFile } from '../../../src/lib/upload-message-file.js';
+import { matchingCommands, messageTextFor, parseCommand } from '../../../src/lib/slash-commands.js';
 import {
   channelDisplayName,
   channelQueryKey,
+  channelTypeGlyph,
   describeTyping,
   groupMessages,
   groupPreviews,
@@ -43,6 +45,7 @@ import {
   reactionsQueryKey,
   replyCountsOf,
   unfurlsQueryKey,
+  CHANNELS_QUERY_KEY,
   QUICK_REACTIONS,
   type Message,
   type MessageGroup,
@@ -212,6 +215,9 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   const [actionsFor, setActionsFor] = useState<Message | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
+  /** "There is no /xxx command" — a parse-time notice, not a mutation error,
+      so it has nowhere else to live; see `runCommand` below. */
+  const [commandNotice, setCommandNotice] = useState<string | null>(null);
 
   const channel = useQuery({
     queryKey: channelQueryKey(channelId),
@@ -289,14 +295,92 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   const previewsByMessage = useMemo(() => groupPreviews(previews.data ?? []), [previews.data]);
 
   const send = useMutation({
-    mutationFn: (body: ReturnType<typeof buildMessageBody>) =>
-      apiClient.chat.messages.send.mutate({ channelId, body }),
+    // `RichTextNode`, not `ReturnType<typeof buildMessageBody>` — the
+    // ordinary send path always builds one via `buildMessageBody`, but a
+    // `/shrug`/`/me` slash command's replacement text goes through
+    // `plainParagraph` instead (`submitDraft` below), and `RichTextDoc` is
+    // structurally a `RichTextNode` (a stricter `type: 'doc'` shape), so
+    // this widens to the common supertype rather than adding a second
+    // near-identical mutation just for the two commands that speak.
+    mutationFn: (body: RichTextNode) => apiClient.chat.messages.send.mutate({ channelId, body }),
     onSuccess: async () => {
       setDraft('');
       setPendingMentions([]);
       await queryClient.invalidateQueries({ queryKey: messagesQueryKey(channelId) });
     },
   });
+
+  /**
+   * The two slash commands that ACT rather than say something —
+   * `/topic`/`/leave` — ported from `apps/web/src/features/chat/
+   * chat-page.tsx`'s own `runCommand`. Each resolves to the identical
+   * already-authorized route the equivalent UI control uses elsewhere on
+   * this screen or `channel-details/[channelId].tsx` (`chat.channels.
+   * update`, `chat.channels.removeMember`) — see `slash-commands.ts`'s own
+   * header on why there is no dedicated `commands.run` endpoint for the
+   * client to call instead.
+   */
+  const runCommand = useMutation({
+    mutationFn: async (parsed: ReturnType<typeof parseCommand>) => {
+      if (parsed.kind !== 'command') return;
+
+      if (parsed.command.name === 'topic') {
+        await apiClient.chat.channels.update.mutate({
+          channelId,
+          name: channel.data?.name ?? '',
+          topic: parsed.argument === '' ? null : parsed.argument,
+        });
+        return;
+      }
+
+      if (parsed.command.name === 'leave' && userId !== null) {
+        await apiClient.chat.channels.removeMember.mutate({ channelId, userId });
+      }
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: channelQueryKey(channelId) }),
+        queryClient.invalidateQueries({ queryKey: CHANNELS_QUERY_KEY }),
+      ]);
+    },
+    onError: () => {
+      setCommandNotice('That command did not run.');
+    },
+  });
+
+  /**
+   * Interprets the draft before sending, mirroring `chat-page.tsx`'s own
+   * `submit` exactly: a message that merely STARTS with a slash
+   * (`/etc/passwd is broken`) is not a command and goes out unchanged, an
+   * unrecognized name is reported rather than posted
+   * (`/topc oops` almost certainly meant `/topic`), and a command that acts
+   * rather than speaks (`/topic`, `/leave`) never reaches `send` at all.
+   */
+  const submitDraft = (): void => {
+    const parsed = parseCommand(draft);
+
+    if (parsed.kind === 'unknown') {
+      setCommandNotice(`There is no /${parsed.name} command`);
+      return;
+    }
+
+    setCommandNotice(null);
+    chatSocket.stopTyping(channelId);
+
+    if (parsed.kind === 'command') {
+      const replacement = messageTextFor(parsed);
+      setDraft('');
+      setPendingMentions([]);
+      if (replacement !== null) {
+        send.mutate(plainParagraph(replacement));
+      } else {
+        runCommand.mutate(parsed);
+      }
+      return;
+    }
+
+    send.mutate(buildMessageBody(draft.trim(), pendingMentions));
+  };
 
   const [uploadStage, setUploadStage] = useState<string | null>(null);
   const [uploadNotice, setUploadNotice] = useState<{
@@ -459,9 +543,8 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
           }}
         >
           <Text style={styles.headerTitle} numberOfLines={1}>
-            {channel.data?.type === 'public' || channel.data?.type === 'private'
-              ? `# ${title}`
-              : title}
+            {channelTypeGlyph(channel.data?.type ?? '')}
+            {title}
           </Text>
           {channel.data?.archivedAt !== null && channel.data?.archivedAt !== undefined ? (
             <Text style={styles.headerSubtitle}>Archived — no new messages can be posted.</Text>
@@ -551,10 +634,29 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
             )}
           </Pressable>
 
+          {/* Shown only while the draft is a bare command word — one word in,
+              the list would just cover the composer — mirroring `chat-page
+              .tsx`'s own `SlashCommandMenu`. Purely an affordance: typing
+              the command by hand works identically, since `submitDraft`
+              parses the text rather than reading a selection made here. */}
+          {draft.startsWith('/') && !draft.includes(' ') && matchingCommands(draft).length > 0 && (
+            <View style={styles.slashMenu}>
+              {matchingCommands(draft).map((command) => (
+                <View key={command.name} style={styles.slashMenuRow}>
+                  <Text style={styles.slashMenuHint}>{command.hint}</Text>
+                  <Text style={styles.slashMenuDescription}>{command.description}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {commandNotice !== null && <Text style={styles.error}>{commandNotice}</Text>}
+
           <MessageComposer
             draft={draft}
             onDraftChange={(text) => {
               setDraft(text);
+              setCommandNotice(null);
               chatSocket.startTyping(channelId);
             }}
             people={people}
@@ -565,16 +667,29 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
               setDraft(result.draft);
               setPendingMentions((current) => [...current, result.mention]);
             }}
-            onSubmit={() => {
-              chatSocket.stopTyping(channelId);
-              send.mutate(buildMessageBody(draft.trim(), pendingMentions));
-            }}
-            sending={send.isPending}
+            onSubmit={submitDraft}
+            sending={send.isPending || runCommand.isPending}
             error={send.isError ? send.error : null}
-            placeholder="Message…"
+            placeholder="Message… (or /topic, /leave, /shrug, /me)"
             fallbackError="The message was not sent."
           />
         </>
+      )}
+
+      {/* The composer is hidden, not merely disabled, when the server says
+          this person cannot post — a `viewer` tuple on this channel, or an
+          archived one (`capabilities.post`, never a role re-derived here).
+          Web's identical guard (`chat-page.tsx`) explains WHY nothing is
+          there instead of leaving blank space; this had none at all until
+          the 2026-08-22 chat-parity pass, which read as the composer
+          having silently vanished rather than a permission the viewer
+          could understand. */}
+      {!canPost && channel.data !== undefined && (
+        <Text style={styles.readOnlyNotice}>
+          {channel.data.archivedAt !== null
+            ? 'This channel is archived. No new messages can be posted.'
+            : 'You have read-only access to this conversation.'}
+        </Text>
       )}
 
       <Modal
@@ -1052,6 +1167,40 @@ const styles = StyleSheet.create({
   },
   uploadStatusError: {
     color: colors.danger.hex,
+  },
+  readOnlyNotice: {
+    fontSize: 12,
+    color: colors.inkFaint.hex,
+    paddingVertical: 12,
+  },
+  error: {
+    fontSize: 12,
+    color: colors.danger.hex,
+    paddingBottom: 2,
+  },
+  slashMenu: {
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+    borderRadius: radiusCard,
+    backgroundColor: colors.surfaceRaised.hex,
+    overflow: 'hidden',
+  },
+  slashMenuRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  slashMenuHint: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.ink.hex,
+  },
+  slashMenuDescription: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.inkFaint.hex,
   },
   attachRow: {
     alignSelf: 'flex-start',

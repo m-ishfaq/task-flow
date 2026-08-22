@@ -24,6 +24,7 @@ import { useMembers, type Member } from '../../../src/lib/use-members.js';
 import {
   CHANNELS_QUERY_KEY,
   channelDisplayName,
+  channelTypeGlyph,
   unreadCountsQueryKey,
   type Channel,
 } from '../../../src/lib/chat.js';
@@ -164,7 +165,8 @@ function ChannelRow({
           style={[styles.rowTitle, !channel.joined && styles.rowTitleUnjoined]}
           numberOfLines={1}
         >
-          {channel.type === 'public' || channel.type === 'private' ? `# ${name}` : name}
+          {channelTypeGlyph(channel.type)}
+          {name}
         </Text>
         {unreadCount > 0 && (
           <View style={styles.unreadBadge}>
