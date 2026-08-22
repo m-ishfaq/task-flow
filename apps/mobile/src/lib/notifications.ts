@@ -19,15 +19,17 @@ import type { MobileTRPCClient } from './trpc-client.js';
  * the identical "different domain, different router, different file" line
  * against `work.ts`; this is the same call for a third domain.
  *
- * **Reached from the Chat tab, not a persistent app-wide shell — the one
- * real, stated divergence from web.** Web mounts `NotificationBell` once in
- * `components/shell.tsx`, visible on every route; this app's tab bar is
- * `headerShown: false` with each screen drawing its own header
- * (`(tabs)/_layout.tsx`'s own header), so there is no single shared chrome
- * to mount an equivalent in without touching all four tab screens. Placed
- * on Chat's own header instead — where `chat.ts`'s "🔖 Saved" button
- * already lives, for the same reason — rather than widened into a change
- * to every tab screen for one increment.
+ * **This claim used to say the bell was reached from the Chat tab only —
+ * corrected in place, per this repo's own habit, rather than silently
+ * rewritten.** True when written: this app's tab bar is `headerShown:
+ * false` with each screen drawing its own header, and there was no single
+ * shared chrome to mount an equivalent in without touching all four tab
+ * screens, so it was placed on Chat's own header instead. A real device
+ * report ("notification is on chat layout, can't get to it") found that
+ * gap directly. `apps/mobile/src/lib/notification-bell.tsx` is the fix —
+ * mounted once in `(app)/_layout.tsx`, the same absolutely-positioned
+ * overlay pattern `call-surface.tsx` already established for the identical
+ * reason (a ringing call, like a notification, is not one tab's concern).
  */
 export type NotificationSummary = Wire<
   Awaited<ReturnType<MobileTRPCClient['notifications']['listMine']['query']>>

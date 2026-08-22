@@ -2,7 +2,7 @@ import { Redirect, router } from 'expo-router';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import type { OrgId } from '@taskflow/contracts';
-import { colors } from '@taskflow/tokens';
+import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient, session } from '../src/lib/app-session.js';
 import { useSession } from '../src/lib/use-session.js';
 import { useTopInset } from '../src/lib/use-top-inset.js';
@@ -55,6 +55,23 @@ function OrgPickerContent() {
       <FlatList
         data={orgs.data ?? []}
         keyExtractor={(org) => org.orgId}
+        ListFooterComponent={
+          /* This screen has no tab bar (it lives outside `(app)/` — see this
+             file's own header on why) and, until now, no way off it either:
+             someone belonging to zero organizations landed on an empty list
+             with nothing to press. `signOut` is what `(auth)/_layout.tsx`'s
+             own gate reacts to — the same navigation-by-state-change this
+             file's own `selectOrg` comment below already argues is not
+             automatic, so this is a real escape, not a hope that one exists. */
+          <Pressable
+            style={styles.signOutButton}
+            onPress={() => {
+              void session.signOut();
+            }}
+          >
+            <Text style={styles.signOutButtonText}>Sign out</Text>
+          </Pressable>
+        }
         renderItem={({ item }) => (
           <Pressable
             style={styles.row}
@@ -129,5 +146,18 @@ const styles = StyleSheet.create({
     color: colors.inkMuted.hex,
     marginTop: 24,
     textAlign: 'center',
+  },
+  signOutButton: {
+    borderRadius: radiusCard,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.danger.hex,
+    marginTop: 16,
+  },
+  signOutButtonText: {
+    color: colors.danger.hex,
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

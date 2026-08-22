@@ -3185,6 +3185,41 @@ address is exactly the SSRF risk the control exists for. Verified the same way a
 change above (`docker compose config` resolves the new flags correctly, valid YAML, prettier and
 encoding checks pass) — no Docker daemon here to boot the container itself.
 
+### The notification bell was only reachable from the Chat tab, and a stuck org picker had no way out
+
+Two real gaps from live testing, both about getting somewhere this app already has, not missing
+features.
+
+**The bell.** `notifications.ts`'s own header used to state the tradeoff plainly: web mounts its
+`NotificationBell` once in `shell.tsx`, visible on every route, and this app had "no single shared
+chrome to mount an equivalent in without touching all four tab screens" — so it lived on Chat's own
+header instead. True when written, and stale by the time `call-surface.tsx` shipped: that file
+proved the shared chrome DOES exist, as an absolutely-positioned overlay mounted once in
+`(app)/_layout.tsx`, specifically so a ringing call is answerable from any tab. `notification-
+bell.tsx` is the identical pattern applied to the identical class of gap — mentions, DMs, thread
+replies, missed calls are not a Chat-tab concern any more than an incoming call is. The trigger
+button sits inside the safe-area inset band every screen already reserves as blank space above its
+own title (`use-top-inset.ts`'s `+ 24`) — a small icon anchored at the raw inset edge, not the
+padded one, occupies room nothing else draws in, on any of the four tabs, with no per-screen change
+needed. `chat.tsx` lost its own copy entirely (the bell button, `NotificationsModal`,
+`NotificationRow`, and the two queries backing them) rather than ending up with two competing
+copies of the same UI.
+
+**The org picker.** Landing on `/org-picker` with zero memberships showed "You are not a member of
+any organization yet." and, genuinely, nothing else — no tab bar (correct: this screen lives
+outside `(app)/` specifically so it can be the ESCAPE from the org gate, not a route the gate still
+governs), and no sign-out either (not correct — an oversight, not a design choice). Someone in that
+state was stuck. A "Sign out" button now sits below the (possibly empty) list, calling the same
+`session.signOut()` `(tabs)/account.tsx` already uses — `(auth)/_layout.tsx`'s own gate is what
+reacts to the resulting status change and actually navigates away, the same mechanism this file's
+own `selectOrg` comment already documents for the opposite direction.
+
+Verified: typecheck, lint (0 errors, the one pre-existing unrelated warning in
+`push-notifications.ts` untouched), all 218 tests pass, guardrail self-test clean, prettier, and a
+real `expo export` for Android bundles cleanly. Not verified: exact pixel placement of the bell
+against a real status bar/notch — reasoned from `use-top-inset.ts`'s own documented inset math, not
+confirmed on-device yet.
+
 ## Not here yet
 
 - **CallKit (iOS) / ConnectionService (Android) — a real lock-screen "incoming call" UI.** Named
@@ -3199,6 +3234,13 @@ encoding checks pass) — no Docker daemon here to boot the container itself.
 - **Video and screen share.** Wave 3 on web too — this phase never claimed either.
 - **Reconnect-and-resume of a live peer connection.** A dropped socket ends that leg; rejoining is
   the recovery, matching web's own stated limit exactly.
+- **Org settings, project settings, and permissions/roles management — no screens at all yet.**
+  Confirmed directly against `apps/mobile/app/`'s own route list, not assumed: `(tabs)/account.tsx`
+  covers the SIGNED-IN PERSON's own settings (profile, passkeys, sessions, push, export); nothing
+  covers the ORG's or a PROJECT's — member roster and role changes, invites, project-level
+  configuration. `project/[projectId].tsx` exists and is an overview, not a settings screen. This
+  app never re-derives authorization (CLAUDE.md §8.2's own argument, ported unchanged) so building
+  any of this is real, separate work, not a config flag — genuinely not started.
 - **Confirming this on a simulator or physical device beyond what has
   already run.** The app has now actually been installed and driven on a
   real development build — sign-in, the org picker, "My Tasks", and card

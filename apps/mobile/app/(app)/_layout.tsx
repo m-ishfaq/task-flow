@@ -9,6 +9,7 @@ import { useSession } from '../../src/lib/use-session.js';
 import { readRememberedOrg } from '../../src/lib/session.js';
 import { resolveRememberedOrg } from '../../src/lib/org-gate.js';
 import { CallSurface } from '../../src/lib/call-surface.js';
+import { NotificationBell } from '../../src/lib/notification-bell.js';
 
 /**
  * The org gate (ai/phase-14-mobile.md §7), ported from apps/web's `OrgGate` +
@@ -122,6 +123,11 @@ export default function AppLayout() {
           conversation that started it. `call-surface.tsx`'s own header has
           the full design (ai/phase-13-webrtc.md §7, Wave 5 here). */}
       <CallSurface />
+      {/* Same reasoning, same pattern — a mention or DM notification is not
+          a Chat-tab concern, and `notification-bell.tsx`'s own header has
+          the real-device report that found it was only reachable from
+          there. */}
+      <NotificationBell />
     </View>
   );
 }
