@@ -2489,6 +2489,60 @@ exercise: triggering and picking a mention with real text still ahead of
 the cursor, asserting the tail is preserved untouched and the reported
 cursor lands mid-string, not at the end.
 
+## `work.test.ts`'s due-date fixtures were time-zone-fragile — found by a contributor running outside UTC
+
+Reported directly: `dueBucketOf > buckets today as "today"` failed locally
+with `expected 'week' to be 'today'`, on a real run this file's own
+`pnpm test` command had never surfaced before, because every CI run and
+every session in this sandbox happens to execute in UTC. Investigating it
+surfaced a second, broader instance of the identical bug already latent in
+`formatDueDate`'s own suite, never reported because nobody had run it
+outside UTC either.
+
+**The root cause, in one sentence: a fixture built from an arbitrary UTC
+hour near a day boundary lands on a different LOCAL calendar day than
+intended the moment the process's time zone offset pushes it across
+midnight, and `startOfDay`/`isToday`/`isTomorrow` all bucket by the LOCAL
+day.** `vi.setSystemTime(NOW)` pins the fake CLOCK; nothing in this suite
+pinned the time zone the clock is read in. The reported failure
+(`dueBucketOf`'s "today" fixture, `...T23:00:00.000Z`) broke at any
+POSITIVE UTC offset — most of Europe, Africa, Asia, and Australia, not an
+edge case. A second one found by systematically checking every fixture
+against the full realistic time-zone range (`formatDueDate`'s "earlier
+today, not overdue" case, `...T01:00:00.000Z`) broke at any offset at or
+past UTC-2 — effectively all of the Americas.
+
+**The fix is not "pick a safer-looking hour" — that reasoning is what
+produced the broken fixtures the first time, with a different, still
+arbitrary margin.** `work.test.ts`'s own new header lays out the actual
+principle: make each fixture's relationship to `NOW` OFFSET-INVARIANT by
+construction rather than empirically safe-seeming. A "same day as `NOW`"
+fixture reuses `NOW`'s own instant (two identical timestamps are on the
+same local day in literally every time zone, not just most). An "N days
+from `NOW`" fixture keeps `NOW`'s exact clock time and varies only the
+calendar date, which preserves the day-count difference between them
+under any single fixed offset shift applied to both. "Earlier today"
+reuses `NOW` minus one minute rather than eleven hours — the delta's SIZE
+is what narrows the exposure, not its direction, since it only fails when
+`NOW` itself sits within that many minutes of ITS OWN local midnight.
+
+**Verified empirically across the realistic range, not just reasoned
+through by hand** — a hand-derived margin is exactly how the original
+bug shipped. A small script exercised every fixture across roughly two
+dozen real IANA zones spanning UTC-12 to UTC+14 (spawning a fresh Node
+process per zone; `process.env.TZ` set mid-process does not reliably
+retroactively affect an already-initialized `Date`/`Intl`, which produced
+misleading false failures on the first pass). One honest residual,
+named rather than chased: the exact label TEXT for a due date several
+days out (`'20 Jun'`) still depends on which calendar date `NOW` itself
+falls on locally, and at UTC+12 and beyond (`Pacific/Auckland` in June,
+`Pacific/Kiritimati`, `Pacific/Chatham`) `NOW` has already rolled onto the
+16th, shifting the label by a day. Closing that too would mean deriving
+the expected label from `NOW` with the SAME arithmetic the implementation
+uses — making the assertion restate the code under test rather than check
+it independently, a worse trade for two Pacific time zones than naming
+the gap here.
+
 ## Not here yet
 
 - **Confirming this on a simulator or physical device beyond what has
