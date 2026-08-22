@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — closing the Work gap against web feature by feature (My Tasks, Boards, and all six card-detail sections — status/assignees/labels/checklists/custom fields/attachments — now shipped; comment edit/delete/replies next)
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all six card-detail sections (status/assignees/labels/checklists/custom fields/attachments/comment edit-delete-replies)
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -2089,6 +2089,46 @@ verbatim — a `Map`, not a `Record`, because the status comes from the
 server as a plain string a `Record` would TYPE as known while being
 `undefined` at runtime for a status this build has never heard of.
 
+## Work, closing the gap against web: comment edit/delete/replies — Work parity complete
+
+The final slice of the Work-parity pass named at its start (My Tasks,
+Boards, card detail). Comments were read+post only since Wave 2; ported
+from `apps/web`'s own `CommentSection` in full: edit, delete, and one
+level of replies. Every card-detail section named against
+`apps/web/src/features/work/*` at the start of this pass is now shipped —
+**Work is at full parity with web.**
+
+**Edit is a client-side IDENTITY check (`comment.authorId === viewerId`),
+not a role decision** — the same distinction `LabelSelector`'s own header
+draws elsewhere on this screen. There is no server override, ever
+(`updateComment`), so showing Edit to anyone but the author could only
+ever end in a refusal; hiding it is not re-deriving authorization, it is
+recognizing there is no legitimate outcome to gate. **Delete stays
+visible to EVERYONE, unconditionally** — moderation is a real,
+server-adjudicated path (author-or-moderator), so unlike Edit this one
+genuinely needs the server's answer rather than a client guess.
+
+**Neither Edit nor Delete is optimistic, unlike web's own version** — a
+deliberate simplification, not an oversight. Web's optimism exists
+because POSTING itself is optimistic there (a fake `pending:` id scheme
+`CommentSection`'s own header documents in detail); posting stays
+round-trip on native, as it already was, so there is no existing
+optimistic-list machinery for Edit/Delete to plug into. This matches
+every other already-shipped card-detail section on this screen
+(status/assignees/labels are round-trip too) rather than introducing a
+one-off exception just for comments.
+
+**Replies are ONE level, matching the service exactly** —
+`comment.service.ts` refuses a reply to a reply, so `repliesOf` only
+ever needs two tiers, and the Reply control is passed to top-level
+`CommentRow`s only, never to a reply's own row.
+
+**`@mention` composing in the comment box is explicitly NOT ported** —
+that lives only in Chat's message composer (`message-compose.ts`), which
+has its own trailing-`@`-query dropdown machinery. Building a second,
+independent mention-composing surface for Work comments is real,
+separate work, not something to fold silently into "closing the gap."
+
 ## Not here yet
 
 - **Confirming this on a simulator or physical device beyond what has
@@ -2141,15 +2181,18 @@ server as a plain string a `Record` would TYPE as known while being
   production domain, hosted `apple-app-site-association`/`assetlinks.json`
   files, and a real Android signing certificate, none of which exist yet.
   See that section's own checklist for exactly what to stand up first.
-- Comment edit/delete/replies (still read+post only — card detail's other
-  six sections are all done now, see "Work, closing the gap" above), a
-  native rich text EDITOR (description/comment/message composers all stay
-  plain-text until one exists), due/start date editing on a CARD's own
-  dates specifically (no date-picker dependency added yet — a custom
-  field of type `date` can now hold a typed value, see "custom fields"
-  above for why that is a partial exception, not a reversal), and card
-  drag-and-drop (boards' own section above has the full reasoning). The
-  rest of Chat (attachments
+- Work is now at full parity with web (My Tasks, Boards, and all six
+  card-detail sections — see "Work, closing the gap" above for the full
+  account). Still genuinely open across the app: a native rich text
+  EDITOR (description/comment/message composers all stay plain-text until
+  one exists), `@mention` composing in Work comments specifically (Chat's
+  own composer has it; Work comments deliberately do not yet — see
+  "comment edit/delete/replies" above), due/start date editing on a
+  CARD's own dates specifically (no date-picker dependency added yet — a
+  custom field of type `date` can now hold a typed value, see "custom
+  fields" above for why that is a partial exception, not a reversal),
+  card drag-and-drop, and list reordering (both boards' own sections
+  above have the full reasoning). The rest of Chat (attachments
   from the
   composer — reactions, mentions composing, thread replies,
   edit/delete/"remove for me", read receipts, link unfurls, push, typing

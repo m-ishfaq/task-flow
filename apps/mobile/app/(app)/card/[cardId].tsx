@@ -482,61 +482,211 @@ function ChecklistSection({
 }
 
 /**
- * Comments — read + post only, no edit/delete/replies. `work.comments.list`
- * shares TipTap-JSON's `RichTextDocument` shape with a card's own
- * description, so existing comments reuse `RichTextView` unchanged. Posting
- * one uses `plainParagraph` (`@taskflow/api/richtext`, already a real
- * dependency for the renderer) rather than a native rich text EDITOR that
- * does not exist yet — the exact same boundary `card/[cardId].tsx`'s own
- * `TitleField` already draws for the description field, applied here to
- * comments instead: a plain-text composer wraps its input in the one
- * document shape a stored TEXT field may become, the same helper
- * `automation`'s rule-body and the CSV importer both reuse rather than each
- * inventing their own paragraph-wrapping.
+ * Comments — closing the last Work-parity gap: edit, delete, and one level
+ * of replies, ported from `apps/web`'s own `CommentSection`.
+ * `work.comments.list` shares TipTap-JSON's `RichTextDocument` shape with
+ * a card's own description, so existing comments reuse `RichTextView`
+ * unchanged. Posting AND editing use `plainParagraph`
+ * (`@taskflow/api/richtext`, already a real dependency for the renderer)
+ * rather than a native rich text EDITOR that does not exist yet — the
+ * exact same boundary `card/[cardId].tsx`'s own `TitleField` already
+ * draws for the description field. `@mention` composing in the comment
+ * box is explicitly NOT ported — that lives only in Chat's message
+ * composer (`message-compose.ts`), and adding a second, independent
+ * mention-composing surface is real, separate work, not something to fold
+ * silently into this increment.
+ *
+ * **Edit is author-only with NO override, mirrored as a client-side
+ * IDENTITY check rather than a role decision** — `comment.authorId ===
+ * viewerId`, the same check `updateComment` makes inline on the server,
+ * not `can()`. There is no legitimate way for anyone else's Edit to
+ * succeed, so the control is hidden rather than shown-and-refused.
+ * **Delete stays visible to EVERYONE, unconditionally** — unlike Edit,
+ * moderation is a real, legitimate path (author-or-moderator, and the
+ * event records which), so this never re-derives that decision
+ * client-side; the server is the only adjudicator (CLAUDE.md §8.2), the
+ * same as every other permission-gated control on this screen. Neither
+ * mutation is optimistic — matching this screen's own already-shipped
+ * status/assignee/label sections rather than web's optimistic-with-a-
+ * fake-pending-id complexity, which exists there only because posting
+ * itself is optimistic; posting stays round-trip here, as it already was.
+ *
+ * **Replies are ONE level, matching the service** — `comment.service.ts`
+ * refuses a reply to a reply, so `repliesOf` only ever needs two tiers.
+ * `onReply` is offered on a top-level comment only, the same restriction
+ * `apps/web`'s own `CommentRow` enforces by simply not passing the prop
+ * to a reply row.
  *
  * A deleted comment (`deletedAt !== null`) is tombstoned server-side —
  * `body`/`bodyText` come back empty, not omitted, so the thread's shape
- * survives — rendered here as a plain "Comment deleted" placeholder rather
- * than an empty `RichTextView` (which would render nothing and look like a
- * blank comment, not a deleted one).
+ * survives, including any replies underneath it (the service does not
+ * cascade a tombstone, so neither does this UI) — rendered here as a
+ * plain "Comment deleted" placeholder rather than an empty `RichTextView`
+ * (which would render nothing and look like a blank comment, not a
+ * deleted one).
  */
 function CommentsSection({ cardId }: { readonly cardId: CardId }) {
   const queryClient = useQueryClient();
   const userId = useSession((state) => state.userId);
   const { personOf } = useMembers();
   const [draft, setDraft] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState('');
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyDraft, setReplyDraft] = useState('');
 
   const comments = useQuery({
     queryKey: commentsQueryKey(cardId),
     queryFn: async () => wire(await apiClient.work.comments.list.query({ cardId })),
   });
 
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: commentsQueryKey(cardId) }),
+      queryClient.invalidateQueries({ queryKey: cardQueryKey(cardId) }),
+    ]);
+
   const post = useMutation({
-    mutationFn: (body: string) =>
-      apiClient.work.comments.create.mutate({ cardId, body: plainParagraph(body) }),
-    onSuccess: async () => {
-      setDraft('');
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: commentsQueryKey(cardId) }),
-        queryClient.invalidateQueries({ queryKey: cardQueryKey(cardId) }),
-      ]);
+    mutationFn: (input: { body: string; parentCommentId: string | null }) =>
+      apiClient.work.comments.create.mutate({
+        cardId,
+        body: plainParagraph(input.body),
+        parentCommentId: input.parentCommentId,
+      }),
+    onSuccess: (_result, input) => {
+      if (input.parentCommentId === null) setDraft('');
+      else {
+        setReplyDraft('');
+        setReplyingTo(null);
+      }
     },
+    onSettled: refresh,
   });
+
+  const edit = useMutation({
+    mutationFn: (input: { commentId: string; text: string }) =>
+      apiClient.work.comments.update.mutate({
+        commentId: input.commentId,
+        body: plainParagraph(input.text),
+      }),
+    onSuccess: () => {
+      setEditingId(null);
+    },
+    onSettled: refresh,
+  });
+
+  const remove = useMutation({
+    mutationFn: (commentId: string) => apiClient.work.comments.delete.mutate({ commentId }),
+    onSettled: refresh,
+  });
+
+  const all = comments.data ?? [];
+  const topLevel = all.filter((comment) => comment.parentCommentId === null);
+  const repliesOf = (parentId: string): readonly Comment[] =>
+    all.filter((comment) => comment.parentCommentId === parentId);
 
   return (
     <View style={styles.commentsSection}>
       <Text style={styles.sectionHeading}>Comments</Text>
 
       {comments.isPending && <ActivityIndicator color={colors.accent.hex} />}
-      {comments.data?.map((comment) => (
-        <CommentRow
-          key={comment.commentId}
-          comment={comment}
-          isOwn={comment.authorId === userId}
-          personOf={personOf}
-        />
+      {topLevel.map((comment) => (
+        <View key={comment.commentId} style={styles.commentThread}>
+          <CommentRow
+            comment={comment}
+            viewerId={userId}
+            personOf={personOf}
+            isEditing={editingId === comment.commentId}
+            editDraft={editDraft}
+            onEditDraftChange={setEditDraft}
+            editPending={edit.isPending}
+            onStartEdit={() => {
+              setEditingId(comment.commentId);
+              setEditDraft(comment.bodyText);
+            }}
+            onCancelEdit={() => {
+              setEditingId(null);
+            }}
+            onSaveEdit={() => {
+              if (editDraft.trim().length === 0) return;
+              edit.mutate({ commentId: comment.commentId, text: editDraft.trim() });
+            }}
+            onDelete={() => {
+              remove.mutate(comment.commentId);
+            }}
+            onReply={() => {
+              setReplyDraft('');
+              setReplyingTo((current) =>
+                current === comment.commentId ? null : comment.commentId,
+              );
+            }}
+          />
+
+          {repliesOf(comment.commentId).map((reply) => (
+            <View key={reply.commentId} style={styles.commentReply}>
+              <CommentRow
+                comment={reply}
+                viewerId={userId}
+                personOf={personOf}
+                isEditing={editingId === reply.commentId}
+                editDraft={editDraft}
+                onEditDraftChange={setEditDraft}
+                editPending={edit.isPending}
+                onStartEdit={() => {
+                  setEditingId(reply.commentId);
+                  setEditDraft(reply.bodyText);
+                }}
+                onCancelEdit={() => {
+                  setEditingId(null);
+                }}
+                onSaveEdit={() => {
+                  if (editDraft.trim().length === 0) return;
+                  edit.mutate({ commentId: reply.commentId, text: editDraft.trim() });
+                }}
+                onDelete={() => {
+                  remove.mutate(reply.commentId);
+                }}
+              />
+            </View>
+          ))}
+
+          {replyingTo === comment.commentId && (
+            <View style={styles.commentReply}>
+              <TextInput
+                value={replyDraft}
+                onChangeText={setReplyDraft}
+                placeholder="Write a reply…"
+                placeholderTextColor={colors.inkFaint.hex}
+                style={styles.composerInput}
+                multiline
+                autoFocus
+              />
+              <View style={styles.modalActions}>
+                <Pressable
+                  style={styles.modalPrimaryButton}
+                  disabled={replyDraft.trim().length === 0 || post.isPending}
+                  onPress={() => {
+                    post.mutate({ body: replyDraft.trim(), parentCommentId: comment.commentId });
+                  }}
+                >
+                  <Text style={styles.modalPrimaryButtonText}>Reply</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.modalSecondaryButton}
+                  onPress={() => {
+                    setReplyingTo(null);
+                  }}
+                >
+                  <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
+        </View>
       ))}
-      {comments.data?.length === 0 && <Text style={styles.label}>No comments yet.</Text>}
+      {topLevel.length === 0 && !comments.isPending && (
+        <Text style={styles.label}>No comments yet.</Text>
+      )}
 
       <View style={styles.composerRow}>
         <TextInput
@@ -551,7 +701,7 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
           style={styles.sendButton}
           disabled={draft.trim().length === 0 || post.isPending}
           onPress={() => {
-            post.mutate(draft.trim());
+            post.mutate({ body: draft.trim(), parentCommentId: null });
           }}
         >
           {post.isPending ? (
@@ -561,9 +711,10 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
           )}
         </Pressable>
       </View>
-      {post.isError && (
+      {(post.isError || edit.isError || remove.isError) && (
         <Text style={styles.error} accessibilityRole="alert">
-          {apiErrorOf(post.error)?.error.message ?? 'The comment was not posted.'}
+          {apiErrorOf(post.error ?? edit.error ?? remove.error)?.error.message ??
+            'That action could not be completed.'}
         </Text>
       )}
     </View>
@@ -572,18 +723,35 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
 
 function CommentRow({
   comment,
-  isOwn,
+  viewerId,
   personOf,
+  isEditing,
+  editDraft,
+  onEditDraftChange,
+  editPending,
+  onStartEdit,
+  onCancelEdit,
+  onSaveEdit,
+  onDelete,
+  onReply,
 }: {
   readonly comment: Comment;
-  readonly isOwn: boolean;
+  readonly viewerId: string | null;
   readonly personOf: (userId: string) => { readonly label: string };
+  readonly isEditing: boolean;
+  readonly editDraft: string;
+  readonly onEditDraftChange: (text: string) => void;
+  readonly editPending: boolean;
+  readonly onStartEdit: () => void;
+  readonly onCancelEdit: () => void;
+  readonly onSaveEdit: () => void;
+  readonly onDelete: () => void;
+  /** Omitted for a reply — one level of nesting only (this section's own header). */
+  readonly onReply?: (() => void) | undefined;
 }) {
-  const author = isOwn
-    ? 'You'
-    : comment.authorId === null
-      ? 'Unknown'
-      : personOf(comment.authorId).label;
+  const isOwn = comment.authorId === viewerId;
+  const author =
+    comment.authorId === null ? 'Unknown' : isOwn ? 'You' : personOf(comment.authorId).label;
 
   return (
     <View style={styles.commentRow}>
@@ -592,11 +760,56 @@ function CommentRow({
         <Text style={styles.commentTime}>
           {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
         </Text>
+        {comment.editedAt !== null && <Text style={styles.commentTime}>(edited)</Text>}
       </View>
+
       {comment.deletedAt !== null ? (
         <Text style={styles.commentDeleted}>Comment deleted</Text>
+      ) : isEditing ? (
+        <View style={styles.editRow}>
+          <TextInput
+            value={editDraft}
+            onChangeText={onEditDraftChange}
+            style={styles.editInput}
+            multiline
+            autoFocus
+          />
+          <View style={styles.editActions}>
+            <Pressable onPress={onCancelEdit}>
+              <Text style={styles.editCancelText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={styles.editSaveButton}
+              disabled={editPending || editDraft.trim().length === 0}
+              onPress={onSaveEdit}
+            >
+              {editPending ? (
+                <ActivityIndicator color={colors.accentInk.hex} />
+              ) : (
+                <Text style={styles.editSaveText}>Save</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
       ) : (
-        <RichTextView document={comment.body} />
+        <>
+          <RichTextView document={comment.body} />
+          <View style={styles.commentActions}>
+            {isOwn && (
+              <Pressable onPress={onStartEdit}>
+                <Text style={styles.commentActionText}>Edit</Text>
+              </Pressable>
+            )}
+            <Pressable onPress={onDelete}>
+              <Text style={styles.commentActionText}>Delete</Text>
+            </Pressable>
+            {onReply !== undefined && (
+              <Pressable onPress={onReply}>
+                <Text style={styles.commentActionText}>Reply</Text>
+              </Pressable>
+            )}
+          </View>
+        </>
       )}
     </View>
   );
@@ -1696,6 +1909,59 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontStyle: 'italic',
     color: colors.inkFaint.hex,
+  },
+  commentThread: {
+    gap: 8,
+  },
+  commentReply: {
+    gap: 4,
+    marginLeft: 16,
+    paddingLeft: 10,
+    borderLeftWidth: 1,
+    borderLeftColor: colors.line.hex,
+  },
+  commentActions: {
+    flexDirection: 'row',
+    gap: 14,
+  },
+  commentActionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.inkMuted.hex,
+  },
+  editRow: {
+    gap: 6,
+  },
+  editInput: {
+    borderWidth: 1,
+    borderColor: colors.accent.hex,
+    borderRadius: radiusCard,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: colors.ink.hex,
+    backgroundColor: colors.surfaceSunken.hex,
+  },
+  editActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  editCancelText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.inkMuted.hex,
+  },
+  editSaveButton: {
+    backgroundColor: colors.accent.hex,
+    borderRadius: radiusCard,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  editSaveText: {
+    color: colors.accentInk.hex,
+    fontSize: 13,
+    fontWeight: '600',
   },
   composerRow: {
     flexDirection: 'row',
