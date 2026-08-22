@@ -16,6 +16,11 @@ overrides:
   ip-address: '>=10.3.1'
   simply-deferred: npm:simply-deferred@3.0.0
 
+patchedDependencies:
+  html-entities@2.5.3:
+    hash: m525uwvmt6mdzdfaofbw3q4exu
+    path: patches/html-entities@2.5.3.patch
+
 importers:
 
   .:
@@ -303,7 +308,7 @@ importers:
         version: 57.0.2(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7)(@react-native/metro-config@0.87.0(@babel/core@7.29.7))(@types/react@19.2.17)(react@19.2.3))
       html-entities:
         specifier: 2.5.3
-        version: 2.5.3
+        version: 2.5.3(patch_hash=m525uwvmt6mdzdfaofbw3q4exu)
       react:
         specifier: 19.2.3
         version: 19.2.3
@@ -12348,7 +12353,7 @@ snapshots:
       awesome-phonenumber: 5.11.0
       classnames: 2.5.0
       clipboard: 2.0.11
-      html-entities: 2.5.3
+      html-entities: 2.5.3(patch_hash=m525uwvmt6mdzdfaofbw3q4exu)
       jquery: 3.6.0
       localforage: 1.10.0
       lodash: 4.18.1
@@ -12951,7 +12956,7 @@ snapshots:
     transitivePeerDependencies:
       - '@noble/hashes'
 
-  html-entities@2.5.3: {}
+  html-entities@2.5.3(patch_hash=m525uwvmt6mdzdfaofbw3q4exu): {}
 
   http-errors@2.0.1:
     dependencies:

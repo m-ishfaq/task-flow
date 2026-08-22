@@ -2639,6 +2639,29 @@ full suite, `tsc --noEmit`, `eslint`, the guardrail selftest, and a real
 first actual exercise of the new native dependency through Metro's real
 bundler, not just `pnpm install` resolving cleanly.
 
+**That verification was incomplete, and only a real device caught it — the exact "green `pnpm verify`
+is not the same claim as this works when you click it" lesson CLAUDE.md already states for other
+phases.** `parseExpensiMark.ts`'s own top-level `__DEV__` check requires `html-entities` — its
+`decode` export specifically — to be "workletized" (processed by the reanimated/worklets Babel
+plugin, which stamps a `__workletHash` onto functions carrying a `'worklet'` directive), because
+`ExpensiMark`'s parsing runs on the UI thread for live formatting. `html-entities` is a plain,
+worklet-unaware npm package; upstream's own fix is to patch `'worklet';` onto the first line of its
+built `lib/index.js`, which this repo never did — `expo export`'s bundling and every unit test
+exercise `decode` on the JS thread only, so nothing here could ever have caught a UI-thread-only
+check. The first real device to open ANY of the four wired-in composers threw
+`` `parseExpensiMark` requires `html-entities` package to be workletized `` and took the whole route
+down with it, in the identical "one throwing import poisons the whole Metro module graph" shape
+`use-call.ts`'s and `ringtone-player.ts`'s own headers document for the WebRTC work — a screen that
+merely IMPORTS `MarkdownTextInput` fails before render, not only one that calls it.
+
+Fixed with pnpm's own patch mechanism — `pnpm patch html-entities@2.5.3`, adding the directive, then
+`pnpm patch-commit`, which wrote `patches/html-entities@2.5.3.patch` and recorded it in the root
+`package.json`'s `pnpm.patchedDependencies` — not the separate `patch-package` tool this library's
+own error message names, since this is a pnpm-only monorepo and pnpm's native patching applies on
+every `pnpm install` with no extra dependency or postinstall script. The check itself only runs
+under `__DEV__`, so a release build was never actually at risk — but a broken DEV build is still a
+broken build, and this app has shipped no other way yet.
+
 ## In-app voice calling (Phase 13, Wave 5 here) — signaling, ringing, ringtones, call history, recording consent
 
 The mobile phase spec (§8) always named WebRTC "the highest-complexity wave and last for that
