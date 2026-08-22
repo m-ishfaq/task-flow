@@ -8,6 +8,26 @@ describe('parseConfig', () => {
     expect(c.trpcUrl).toBe('https://api.example.com/trpc');
   });
 
+  it('defaults realtimeBaseUrl to apiBaseUrl when unset — the real-deployment case', () => {
+    const c = parseConfig({ apiBaseUrl: 'https://api.example.com' });
+    expect(c.realtimeBaseUrl).toBe('https://api.example.com');
+  });
+
+  it('honors an explicit realtimeBaseUrl, independently of apiBaseUrl — the local-dev case', () => {
+    const c = parseConfig({
+      apiBaseUrl: 'http://192.168.1.10:3000',
+      realtimeBaseUrl: 'http://192.168.1.10:3001/',
+    });
+    expect(c.apiBaseUrl).toBe('http://192.168.1.10:3000');
+    expect(c.realtimeBaseUrl).toBe('http://192.168.1.10:3001');
+  });
+
+  it('rejects a malformed realtimeBaseUrl', () => {
+    expect(() =>
+      parseConfig({ apiBaseUrl: 'https://a.co', realtimeBaseUrl: 'not-a-url' }),
+    ).toThrow();
+  });
+
   it('rejects a missing url — a bad channel config fails at boot, not on first request', () => {
     expect(() => parseConfig({})).toThrow();
   });

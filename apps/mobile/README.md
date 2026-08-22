@@ -2891,6 +2891,31 @@ can never have React Native Directory metadata) and `react-native-passkeys` (pub
 indexed there) — narrowly, by name, rather than the broader `listUnknownPackages: false`, so a
 genuinely unknown THIRD-PARTY package added later still gets flagged.
 
+### The three sockets dialed `apiBaseUrl`, and local dev is exactly where that's wrong
+
+Found only once a real local-dev run tried to place a call: sign-in and ordinary tRPC calls
+worked, but `rtcSocket.joinCallRoom` timed out every time, and chat's live updates were
+similarly silent. `gatewaySocket`, `chatSocket`, and `rtcSocket` (`app-session.ts`) all dialed
+`config.apiBaseUrl` directly — correct for a real deployment, where one public origin plausibly
+fronts both `apps/api` and `apps/realtime`, and exactly wrong for local dev, where they are two
+separate processes on two separate ports (`:3000`/`:3001`) with nothing proxying between them.
+Pointing `MOBILE_API_BASE_URL` at the API made every tRPC call succeed while every socket
+connection attempt silently went nowhere — no error, just a call that never signals and a chat
+screen that never live-updates, because nothing is listening for Socket.IO traffic on the API's
+own port at all.
+
+`apps/web`'s `vite.config.ts` already carries the fix this needed: `WEB_API_ORIGIN` and
+`WEB_REALTIME_ORIGIN` are two independently-configurable origins for exactly this reason. Mobile
+had only one. Added `MOBILE_REALTIME_BASE_URL` as the mobile equivalent — optional, unlike
+`MOBILE_API_BASE_URL`, since "unset" is the CORRECT state for a real deployment:
+`config.ts`'s `parseConfig` falls back to `apiBaseUrl` when it is absent, so nothing changes for
+production, and local dev is the one case that needs it set explicitly (to the same
+LAN-IP/`10.0.2.2` rules `MOBILE_API_BASE_URL` already documents, just pointed at `:3001`
+instead of `:3000`). Deliberately NOT given a `:3001` loopback default the way `WEB_REALTIME_ORIGIN`
+has one: this value backs three real production sockets, so a plausible-but-wrong guess would
+fail exactly as silently as the bug it replaces — the same "fail loudly, not plausibly" argument
+this file already makes for `MOBILE_API_BASE_URL`'s preview/production placeholder.
+
 ## Not here yet
 
 - **CallKit (iOS) / ConnectionService (Android) — a real lock-screen "incoming call" UI.** Named

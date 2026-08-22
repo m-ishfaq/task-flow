@@ -54,6 +54,23 @@ if (existsSync(envFile)) {
 
 const API_BASE_URL = process.env['MOBILE_API_BASE_URL'] ?? 'http://localhost:3000';
 
+/* Optional, unlike API_BASE_URL above — no loopback default to fail loudly
+   against, because "unset" is a legitimate, common state: apps/web's own
+   `vite.config.ts` needs the identical split (`WEB_API_ORIGIN` /
+   `WEB_REALTIME_ORIGIN`, defaulting to :3000/:3001) because apps/api and
+   apps/realtime are two separate local-dev processes on two separate ports,
+   while a real deployment typically fronts both behind one public origin —
+   the same origin `apiBaseUrl` already names. `config.ts`'s `parseConfig`
+   is what encodes "falls back to apiBaseUrl when unset" as the actual
+   default; leaving it undefined here rather than guessing a `:3001` origin
+   the way `WEB_REALTIME_ORIGIN` does is deliberate — this value backs THREE
+   socket connections (`gatewaySocket`, `chatSocket`, `rtcSocket`), all real
+   servers in production, so a wrong-but-plausible default here would fail
+   silently (a socket that never connects reads identically to "realtime is
+   slow") exactly the failure mode this file's own comment on
+   `MOBILE_API_BASE_URL` for preview/production already argues against. */
+const REALTIME_BASE_URL = process.env['MOBILE_REALTIME_BASE_URL'];
+
 const config: ExpoConfig = {
   name: 'TaskFlow',
   slug: 'taskflow',
@@ -166,6 +183,7 @@ const config: ExpoConfig = {
   ],
   extra: {
     apiBaseUrl: API_BASE_URL,
+    ...(REALTIME_BASE_URL === undefined ? {} : { realtimeBaseUrl: REALTIME_BASE_URL }),
     /* EAS project linkage — not a secret per §10's own public/private test.
        A project id identifies which EAS project a build belongs to, nothing
        more, and is already visible in the Expo dashboard's URL for anyone

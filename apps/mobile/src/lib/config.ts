@@ -36,6 +36,16 @@ import { z } from 'zod';
  */
 export const MobileConfigSchema = z.object({
   apiBaseUrl: z.string().url(),
+  /**
+   * Optional, unlike `apiBaseUrl` — `parseConfig` below falls back to
+   * `apiBaseUrl` when this is absent, which is the correct default for a
+   * real deployment (one public origin fronting both apps/api and
+   * apps/realtime). Only local dev, where the two run as separate processes
+   * on separate ports, needs this set at all — see `app.config.ts`'s own
+   * header on `MOBILE_REALTIME_BASE_URL` for the full reasoning, including
+   * why it has no loopback default to guess from the way `apiBaseUrl` does.
+   */
+  realtimeBaseUrl: z.string().url().optional(),
 });
 
 export interface MobileConfig {
@@ -46,11 +56,20 @@ export interface MobileConfig {
    * separately — two independently-set URLs are two things that can disagree.
    */
   readonly trpcUrl: string;
+  /**
+   * Origin the app's three Socket.IO connections (`gatewaySocket`,
+   * `chatSocket`, `rtcSocket` in `app-session.ts`) actually dial. Defaults to
+   * `apiBaseUrl` when `realtimeBaseUrl` was not supplied — see that field's
+   * own comment on why that default, rather than a guessed `:3001`, is the
+   * correct fallback for a real deployment.
+   */
+  readonly realtimeBaseUrl: string;
 }
 
 /** Parse and normalize raw configuration. Throws on anything invalid. */
 export function parseConfig(raw: unknown): MobileConfig {
-  const { apiBaseUrl } = MobileConfigSchema.parse(raw);
-  const base = apiBaseUrl.replace(/\/+$/, '');
-  return { apiBaseUrl: base, trpcUrl: `${base}/trpc` };
+  const parsed = MobileConfigSchema.parse(raw);
+  const base = parsed.apiBaseUrl.replace(/\/+$/, '');
+  const realtimeBase = (parsed.realtimeBaseUrl ?? parsed.apiBaseUrl).replace(/\/+$/, '');
+  return { apiBaseUrl: base, trpcUrl: `${base}/trpc`, realtimeBaseUrl: realtimeBase };
 }

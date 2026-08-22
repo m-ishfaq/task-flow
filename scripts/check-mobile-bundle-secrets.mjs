@@ -49,6 +49,9 @@ const root = process.cwd();
  */
 const ALLOWED_EXTRA_KEYS = new Set([
   'apiBaseUrl',
+  // Origin the app's Socket.IO connections dial (config.ts's own header) —
+  // same public/private status as apiBaseUrl: an origin, never a credential.
+  'realtimeBaseUrl',
   // The EAS project linkage (app.config.ts's own comment) — a public project
   // id, not a credential; `eas.projectId` is nested, so only the `eas` key
   // itself is in scope here (extractTopLevelKeys never descends).
@@ -56,7 +59,7 @@ const ALLOWED_EXTRA_KEYS = new Set([
 ]);
 
 /** Every env key any `eas.json` build profile may set. Same discipline. */
-const ALLOWED_EAS_ENV_KEYS = new Set(['MOBILE_API_BASE_URL']);
+const ALLOWED_EAS_ENV_KEYS = new Set(['MOBILE_API_BASE_URL', 'MOBILE_REALTIME_BASE_URL']);
 
 /** @type {string[]} */
 const failures = [];

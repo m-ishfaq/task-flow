@@ -20,8 +20,10 @@ import type { BiometricGate } from './biometric-gate.js';
  * the spine that cannot be unit-tested without a device or a mocked
  * `expo-constants` — nothing here has logic of its own to test.
  *
- * `Constants.expoConfig.extra` is `app.config.ts`'s `extra.apiBaseUrl`, injected
- * into the already-tested, already-pure `parseConfig`.
+ * `Constants.expoConfig.extra` is `app.config.ts`'s `extra.apiBaseUrl`/
+ * `extra.realtimeBaseUrl`, injected into the already-tested, already-pure
+ * `parseConfig` — see `config.ts`'s own header on why the sockets below
+ * dial `config.realtimeBaseUrl` rather than `config.apiBaseUrl` directly.
  */
 const config = parseConfig(Constants.expoConfig?.extra);
 
@@ -125,7 +127,7 @@ export const apiClient: MobileTRPCClient = createMobileClient({
  * construction, so a renewed token reschedules `ready`'s reauth correctly.
  */
 export const gatewaySocket: MobileSocket = createMobileSocket({
-  apiBaseUrl: config.apiBaseUrl,
+  apiBaseUrl: config.realtimeBaseUrl,
   accessToken: () => session.accessToken(),
   getExpiresAt: () => session.store.getState().expiresAt,
   onSessionEnded: () => {
@@ -141,7 +143,7 @@ export const gatewaySocket: MobileSocket = createMobileSocket({
  * clears the session.
  */
 export const chatSocket: MobileChatSocket = createMobileChatSocket({
-  apiBaseUrl: config.apiBaseUrl,
+  apiBaseUrl: config.realtimeBaseUrl,
   accessToken: () => session.accessToken(),
   getExpiresAt: () => session.store.getState().expiresAt,
 });
@@ -154,7 +156,7 @@ export const chatSocket: MobileChatSocket = createMobileChatSocket({
  * listener above is what clears the session.
  */
 export const rtcSocket: MobileRtcSocket = createMobileRtcSocket({
-  apiBaseUrl: config.apiBaseUrl,
+  apiBaseUrl: config.realtimeBaseUrl,
   accessToken: () => session.accessToken(),
   getExpiresAt: () => session.store.getState().expiresAt,
 });
