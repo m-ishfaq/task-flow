@@ -2762,6 +2762,45 @@ not just `pnpm install` resolving cleanly. No `metro.config.js` change was neede
 `react-native-webrtc`'s own documented `event-target-shim` v5/v6 conflict — that fix is stated as
 needed "only for SDK 50," and this app is on SDK 57.
 
+### Two real-build bugs, found only once an actual Android Gradle toolchain ran this code
+
+Both landed the same day as the section above, from a real `eas build`/`gradlew assembleDebug`
+attempt against this exact code — the class of bug `pnpm verify` cannot see, this file's own
+established pattern for reporting.
+
+**`modules/device-key/android/build.gradle` never set `compileSdk`, and Gradle refused to
+configure the project at all: "project ':device-key' does not specify `compileSdk`".** That file's
+own header already said `⚠ UNVERIFIED — there is no Android Gradle toolchain in this environment to
+actually run it against`; this was the first one it ever got. Root cause: it used the OLDER
+`apply from: ExpoModulesCorePlugin.gradle` / `useCoreDependencies()` / `useExpoPublishing()`
+template, which needs an explicit `useDefaultAndroidSdkVersions()` call to set `compileSdk`/
+`minSdk`/`targetSdk` — never made. Every REAL Expo package on this SDK (checked directly against
+the installed `expo-secure-store/android/build.gradle`) has already moved to a `plugins { id
+'expo-module-gradle-plugin' }` block instead, which sets those centrally; `device-key`'s
+`build.gradle` is rewritten to match. This only fixes the project's Gradle CONFIGURATION — the
+Swift/Kotlin business logic in `DeviceKeyModule.{swift,kt}` remains unverified, per that module's
+own header.
+
+**`use-call.ts` imported `react-native-webrtc`'s values at module scope, and that package throws
+synchronously at import time whenever its native module is not linked** — `index.ts`: `if
+(WebRTCModule === null) throw new Error('WebRTC native module not found...')`. `call-surface.tsx`
+mounts once in `(app)/_layout.tsx`, so that import sits on the path of EVERY screen in the app, not
+just calling. On a dev client that predates this feature, or one whose rebuild had just failed (the
+exact situation the `compileSdk` bug above put this session's own real build into), the entire route
+tree failed to evaluate — surfacing in `expo-router` as `Cannot read property 'ErrorBoundary' of
+undefined`, since the poisoned module resolves to `undefined` rather than a component. This is the
+identical failure mode `modules/device-key/index.ts`'s own header already documented and defers
+against with `getNative()`'s first-use memoization — `use-call.ts` just hadn't been held to the same
+rule yet. Fixed the same way: `react-native-webrtc` is now `import type`-only at module scope, and
+`joinCall` does `const webrtc = await import('react-native-webrtc')` at the point it actually needs
+the native classes — deferring the possible throw to the moment a call is started or answered,
+inside `joinCall`'s own `try`/`catch`, which already surfaces any failure to `CallButton`/
+`IncomingCallBanner` exactly like any other join error. No test caught this because nothing in the
+suite imports `use-call.ts` (unlike `peer-mesh.ts`, which has its own dedicated test and was
+already `import type`-only for a related but different reason — Vitest's transform, not a runtime
+throw); confirmed the fix compiles, lints, and still bundles cleanly via a fresh `expo export` for
+both platforms after the change.
+
 ## Not here yet
 
 - **CallKit (iOS) / ConnectionService (Android) — a real lock-screen "incoming call" UI.** Named

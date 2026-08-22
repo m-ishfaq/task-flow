@@ -1,11 +1,5 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { useStore } from 'zustand';
-import {
-  mediaDevices,
-  RTCIceCandidate,
-  RTCPeerConnection,
-  RTCSessionDescription,
-} from 'react-native-webrtc';
 import type { MediaStream } from 'react-native-webrtc';
 import { apiClient, rtcSocket } from './app-session.js';
 import { PeerMesh, type RtcConfiguration } from './peer-mesh.js';
@@ -36,6 +30,24 @@ import { PeerMesh, type RtcConfiguration } from './peer-mesh.js';
  * stopped explicitly on `hangUp`, never merely dereferenced, for the
  * identical reason web's own comment gives — a stream that is only
  * garbage-collected keeps the OS's own "microphone in use" indicator lit.
+ *
+ * ## `react-native-webrtc` is imported dynamically, inside `joinCall`
+ *
+ * Its own `index.ts` throws SYNCHRONOUSLY at import time —
+ * `if (WebRTCModule === null) throw new Error('WebRTC native module not
+ * found...')` — whenever the native module is not linked: Expo Go always,
+ * and any dev-client build that predates this feature or a failed rebuild
+ * of it. `call-surface.tsx` renders on every screen via `_layout.tsx`, so a
+ * top-level value import here (the first version of this file had one)
+ * poisons the ENTIRE route tree on any such build, not just calling — the
+ * identical failure mode `modules/device-key/index.ts`'s own header already
+ * documents and defers against with `getNative()`'s first-use memoization.
+ * `await import('react-native-webrtc')` inside `joinCall` is this file's
+ * version of that same deferral: the throw now happens only when a call is
+ * actually started or answered, inside `joinCall`'s own `try`/`catch`, which
+ * already surfaces it to the caller exactly like any other join failure —
+ * `CallButton`'s and `IncomingCallBanner`'s existing error handling needs no
+ * change to cover it.
  *
  * ## No recording capture on this platform — and that is a scope
  * boundary, not an oversight
@@ -203,10 +215,14 @@ export async function joinCall(input: {
     );
     if (myGeneration !== generation) return;
 
+    /* Deferred to here — see the module header on why `react-native-webrtc`
+       is never imported at module scope. */
+    const webrtc = await import('react-native-webrtc');
+
     /* Only now — see the module header on why the microphone prompt comes
        third. */
     ownedStream = await withTimeout(
-      mediaDevices.getUserMedia({ audio: true, video: false }),
+      webrtc.mediaDevices.getUserMedia({ audio: true, video: false }),
       MIC_TIMEOUT_MS,
       'microphone access',
     );
@@ -239,9 +255,9 @@ export async function joinCall(input: {
       /* The real `react-native-webrtc` constructors — `peer-mesh.ts`'s own
          header on why it takes these injected rather than importing them
          itself. */
-      createConnection: (config) => new RTCPeerConnection(config),
-      createIceCandidate: (init) => new RTCIceCandidate(init),
-      createSessionDescription: (init) => new RTCSessionDescription(init),
+      createConnection: (config) => new webrtc.RTCPeerConnection(config),
+      createIceCandidate: (init) => new webrtc.RTCIceCandidate(init),
+      createSessionDescription: (init) => new webrtc.RTCSessionDescription(init),
     });
 
     unsubscribers = [

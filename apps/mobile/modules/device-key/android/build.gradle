@@ -1,18 +1,23 @@
-// ⚠ UNVERIFIED — see modules/device-key/index.ts's own header. Written to
-// match Expo's standard local-module Gradle template as closely as this
-// session could manage; there is no Android Gradle toolchain in this
-// environment to actually run it against.
-apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
+// First real Gradle signal this file ever got (index.ts's header predicted
+// exactly this): the old `apply from: ExpoModulesCorePlugin.gradle` template
+// never calls that script's own `useDefaultAndroidSdkVersions()`, so
+// `compileSdk` (and minSdk/targetSdk) were never set — "project ':device-key'
+// does not specify `compileSdk`" from a real `gradlew assembleDebug`, not a
+// config-plugin or autolinking problem. Rewritten to the `expo-module-
+// gradle-plugin` template every real Expo package on this SDK now ships
+// (verified against the installed `expo-secure-store/android/build.gradle`)
+// — that plugin sets compileSdk/minSdk/targetSdk centrally, the same values
+// `apps/mobile/android`'s own root project configures. The Swift/Kotlin
+// business logic in `DeviceKeyModule.{swift,kt}` is still unverified; this
+// only fixes the project CONFIGURATION that stopped Gradle before either
+// file was ever compiled.
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
 
 group = 'expo.modules.devicekey'
 version = '0.0.0'
-
-def expoModulesCorePlugin = new File(project(':expo-modules-core').projectDir.absolutePath, 'ExpoModulesCorePlugin.gradle')
-apply from: expoModulesCorePlugin
-applyKotlinExpoModulesCorePlugin()
-useCoreDependencies()
-useExpoPublishing()
 
 android {
   namespace 'expo.modules.devicekey'
@@ -20,9 +25,5 @@ android {
   defaultConfig {
     versionCode 1
     versionName '0.0.0'
-  }
-
-  lintOptions {
-    abortOnError false
   }
 }
