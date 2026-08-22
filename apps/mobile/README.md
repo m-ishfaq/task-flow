@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed; the "needs a rich text editor" call on `@mention` composing turned out to be wrong for the mid-string case specifically (a plain `TextInput`'s own `onSelectionChange`/`selection` was enough) and is fixed too — see "`@mention` now works mid-string"; a real native (no WebView) rich text editor — bold, links, and lists — now composes on all four surfaces named for it (chat message composer, thread replies, card description, card comments), via `@expensify/react-native-live-markdown`'s `MarkdownTextInput` and a live/send-time split for the one thing it cannot highlight live (lists) — see "A real rich text editor..."
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed; the "needs a rich text editor" call on `@mention` composing turned out to be wrong for the mid-string case specifically (a plain `TextInput`'s own `onSelectionChange`/`selection` was enough) and is fixed too — see "`@mention` now works mid-string"; a real native (no WebView) rich text editor — bold, links, and lists — now composes on all four surfaces named for it (chat message composer, thread replies, card description, card comments), via `@expensify/react-native-live-markdown`'s `MarkdownTextInput` and a live/send-time split for the one thing it cannot highlight live (lists) — see "A real rich text editor..."; **in-app voice calling (Phase 13, Wave 5 here) now ships on mobile** — signaling (`react-native-webrtc`), ringing, ringtones, call history, and recording-consent participation, by explicit project-owner direction scoped to in-app ringing only (CallKit/ConnectionService lock-screen UI named as a real, separate follow-up rather than included) — see "In-app voice calling..."
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -2639,8 +2639,143 @@ full suite, `tsc --noEmit`, `eslint`, the guardrail selftest, and a real
 first actual exercise of the new native dependency through Metro's real
 bundler, not just `pnpm install` resolving cleanly.
 
+## In-app voice calling (Phase 13, Wave 5 here) — signaling, ringing, ringtones, call history, recording consent
+
+The mobile phase spec (§8) always named WebRTC "the highest-complexity wave and last for that
+reason," and the managed-vs-prebuild build question was explicitly left open, to "revisit at Wave
+5." Both are resolved now: `react-native-webrtc` plus `@config-plugins/react-native-webrtc`, still
+inside the config-plugin/dev-client workflow this app has used from Wave 1 — no ejecting to bare.
+
+**Scoped deliberately smaller than the full spec, by explicit direction.** Two scoping questions
+went to the project owner before any code: whether this pass should include CallKit (iOS) /
+ConnectionService (Android) — real lock-screen "incoming call" UI — or ship in-app-only ringing
+first; and which of 1:1/group calls, ringtones + history, and recording-with-consent to include.
+Answered: in-app ringing first (CallKit/ConnectionService named as a real, separate follow-up —
+the highest-risk, highest-native-surface piece of an already-large increment), and all three
+feature groups. **No CallKit/ConnectionService in this pass** is therefore a scope boundary stated
+up front, not a gap discovered afterward.
+
+**The server side needed zero changes.** TURN credentials were already server-minted and
+short-lived (`packages/security/turn-credential.ts`); a call room already authorizes exactly like
+its channel (`ai/phase-13-webrtc.md` §1); ringing already fans out over the DEFAULT namespace to a
+`user:{userId}` room, which is the same room `apps/mobile/src/lib/socket.ts` already joined —
+`onIncomingCall`/`onCallEnded` were typed and wired there from an earlier increment with no caller
+yet. This wave is a client only: `rtc-socket.ts` (the `/rtc` namespace, ported from
+`apps/web/src/lib/rtc-socket.ts`), `peer-mesh.ts` (the mesh negotiation engine), `use-call.ts` (the
+call store and join/hang-up orchestration), `call-surface.tsx` (the incoming-call banner and
+active-call bar, mounted once in `(app)/_layout.tsx`), `call-button.tsx` (the channel header's
+Call/Join button), `ringtone.ts`/`ringtone-player.ts` (synthesized tones), `ringtone-section.tsx`
+(the account-screen preference), and a call-history list in `channel-details/[channelId].tsx`.
+
+### `react-native-webrtc`'s own shipped types are broken, and the fix is to inject every constructor
+
+`RTCPeerConnection.d.ts` (the package's compiled `lib/typescript` output) imports its event-map
+types from a `./vendor/event-target-shim` path that exists in the package's SOURCE tree but was
+never copied into that compiled output — confirmed by listing the installed package directly, not
+guessed from an error message. The practical consequence: `addEventListener` is typed as simply
+not existing on `RTCPeerConnection` (`tsc` says so), so `peer-mesh.ts` reads events off the
+`onicecandidate`/`ontrack`/`onconnectionstatechange` property SETTERS instead — declared directly
+on the class rather than inherited, so they survive the gap — each with an explicit LOCAL
+parameter type for exactly the field read, rather than trusting whatever the library's own
+(equally affected) type resolves to.
+
+The deeper consequence shapes the whole file: unlike web, where `RTCPeerConnection`/
+`RTCIceCandidate`/`RTCSessionDescription` are browser globals needing no import at all,
+`peer-mesh.ts` cannot import them as VALUES — `react-native-webrtc`'s entry point resolves (via
+this app's own `customConditions: ["react-native"]`, matching Metro's own resolution) to Flow-typed
+SOURCE that Vitest's esbuild transform cannot parse (`SyntaxError: Unexpected token 'typeof'`,
+confirmed directly) — the identical wall `secure-store.ts`'s own header already documents for
+`expo-secure-store`. So `peer-mesh.ts` imports only TYPES (erased before any of that runs), and
+`createConnection`/`createIceCandidate`/`createSessionDescription` are all REQUIRED constructor
+options — unlike web's optional `createConnection` with a real browser-global default. `use-call.ts`
+(the untested native composition point) supplies the real `react-native-webrtc` classes;
+`peer-mesh.test.ts` supplies fakes — mirroring `apps/web/src/features/rtc/peer-mesh.test.ts`'s own
+eight cases (the offerer tie-break, glare avoidance, the in-flight-offer-after-hangup race) with no
+`RTCPeerConnection` in the test process at all, on either platform, for entirely different reasons.
+
+### Ringtones are rendered to a WAV buffer, not scheduled live — and the split that makes them testable
+
+Web schedules each cadence from live `OscillatorNode`s on an `AudioContext`, which React Native has
+no equivalent of. `ringtone.ts`'s `synthesizeToneSamples` instead renders ONE FULL PERIOD (every
+beep plus the silence between them, with the identical 12ms linear-ramp envelope web's own
+`scheduleCadence` uses) into 16-bit PCM up front; `ringtone-player.ts` writes it to a WAV file via
+`expo-file-system` and loops it with `expo-audio`'s `AudioPlayer` — a looping player reproduces the
+exact repeating cadence a rescheduled oscillator would, with no per-cycle JS work once the file
+exists. Written to a real file rather than played from a `data:` URI: unverified in this sandbox
+with no device, so this takes the path both `AVPlayer` and `ExoPlayer`/`MediaPlayer` are
+DOCUMENTED to support rather than guessing a data URI works.
+
+**The two halves are deliberately separate files.** `ringtone.ts` has no Expo/native import at
+all — `ringtone-player.ts` does (`expo-audio`, `expo-file-system`), and importing `expo-audio`
+transitively pulls in Expo's own runtime setup, which references the React-Native-only `__DEV__`
+global and throws immediately under Vitest's plain Node environment. Found directly, not
+anticipated: a first attempt at one combined file failed every test in the suite with
+`ReferenceError: __DEV__ is not defined`, not a single real assertion. Splitting is what makes
+`synthesizeToneSamples`/`encodeWav` unit-testable at all — the same `secure-store.ts`/
+`device-secure-store.ts` boundary this app already draws for exactly this class of problem.
+
+**`marimba`'s table overlaps two beeps on purpose, and the renderer had to be fixed to match.**
+Ported verbatim from web, `marimba`'s second beep starts at 0.32s while the first is still
+ringing until 0.5s — a wide two-note interval, matching how two simultaneous `OscillatorNode`s
+mix at a Web Audio destination. The first version of `synthesizeToneSamples` wrote each beep
+directly into the output array, which made the SECOND beep silently replace the first for the
+overlap's duration instead of mixing with it — found by a test that (correctly) assumed the table
+never overlaps, failed, and turned out to be checking the wrong thing: the table's overlap is
+real and intentional, so the fix was summing into a float accumulator and quantizing to int16 once
+at the end, not flattening the table. `ringtone.test.ts` keeps both the original assumption (as a
+"no beep exceeds its tone's own period" check, which IS real) and a new test that specifically
+proves the sum, not the overwrite.
+
+### No `<RemoteAudio>` component, and that is not a gap
+
+Web attaches each peer's `MediaStream` to a hidden `<audio autoPlay>` element, because a browser
+tab has no other way to route a stream to speakers. `react-native-webrtc` needs no such step for
+AUDIO — once a track is added to a live `RTCPeerConnection`, the native module plays it through the
+device's own audio session automatically; the explicit-attachment step (`RTCView`) exists only for
+VIDEO, which this phase does not add. `useCallStore`'s `peers` list exists purely to drive the UI.
+
+### No recording CAPTURE on mobile — the consent gate is real, the button to start one is not
+
+The full three-layer consent gate (request/answer/start, `sessions_recording_needs_consent`'s
+CHECK constraint) is server-side and untouched, and mobile participates in it HONESTLY: a live
+"● Recording" indicator and a consent checklist (agree/refuse) both work, reading the same
+`rtc.recording.status` every web client reads. What mobile does NOT have is a "Record this call"
+button to START a request. `react-native-webrtc` has no `MediaRecorder`-over-`MediaStream` and no
+Web Audio `AudioContext.createMediaStreamDestination()` to mix a local and remote stream into one
+track — the two primitives web's own `call-recorder.ts` is built from — and there is no drop-in
+mobile equivalent without a dedicated native module this pass does not add. A request that could
+never resolve (nobody able to call `rtc.recording.start`) would show every participant a checklist
+that never completes; hiding the button is the same "hidden rather than shown-and-refused"
+principle CLAUDE.md's §8.2 already applies everywhere else in this codebase to a control whose
+only possible outcome is a dead end — not a silently smaller feature, a stated one.
+
+### Verification
+
+`peer-mesh.test.ts` (8 cases, ported from web's own suite) and `ringtone.test.ts` (10 cases: WAV
+header correctness, sample-count-per-period, silence between beeps, the overlap-summing case
+above, 16-bit clipping) — both fully unit-testable with no device and no native module loaded, by
+construction of the two file splits above. Plus the full existing suite, `tsc --noEmit`, `eslint`,
+the guardrail selftest, `check:encoding`, `check-mobile-bundle-secrets`, and a real `expo export`
+for both `--platform ios` and `--platform android` — the first actual exercise of
+`react-native-webrtc`, `expo-audio`, and `expo-file-system` through Metro's real bundler together,
+not just `pnpm install` resolving cleanly. No `metro.config.js` change was needed for
+`react-native-webrtc`'s own documented `event-target-shim` v5/v6 conflict — that fix is stated as
+needed "only for SDK 50," and this app is on SDK 57.
+
 ## Not here yet
 
+- **CallKit (iOS) / ConnectionService (Android) — a real lock-screen "incoming call" UI.** Named
+  explicitly in the phase-14 spec as the highest-native-risk piece of an already-large increment,
+  and scoped out of this pass by the project owner's own direction (see "In-app voice calling..."
+  above). Today a call rings via this app's own banner (`call-surface.tsx`), which only shows while
+  the app is foregrounded or backgrounded-but-alive — not from the OS lock screen or a fully
+  killed app. A real follow-up, not a silently dropped one.
+- **Recording CAPTURE on mobile.** The consent gate and status indicator are real (see that
+  section above); nothing on this platform can actually start capturing audio without a dedicated
+  native module this pass does not add.
+- **Video and screen share.** Wave 3 on web too — this phase never claimed either.
+- **Reconnect-and-resume of a live peer connection.** A dropped socket ends that leg; rejoining is
+  the recovery, matching web's own stated limit exactly.
 - **Confirming this on a simulator or physical device beyond what has
   already run.** The app has now actually been installed and driven on a
   real development build — sign-in, the org picker, "My Tasks", and card

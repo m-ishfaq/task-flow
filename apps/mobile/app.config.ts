@@ -142,6 +142,27 @@ const config: ExpoConfig = {
        (§4.4's biometric app-lock). Android has no equivalent string to set;
        the plugin is a no-op there. */
     ['expo-local-authentication', { faceIDPermission: 'Unlock TaskFlow with Face ID.' }],
+    /* In-app voice calling (Phase 13, Wave 5 here). `react-native-webrtc`
+       ships real native code — Expo Go can never run it — and this
+       community plugin is what wires it into a config-plugin/dev-client
+       build without ejecting to bare. The mic string is real: this app
+       calls `getUserMedia({ audio: true, video: false })` and nothing
+       else. The camera string is NOT — the plugin requests
+       `NSCameraUsageDescription`/`CAMERA` unconditionally, for every app
+       that uses it, whether or not video is ever captured; Wave 3 (video)
+       will make it true, and until then it is a declared-but-unused
+       permission rather than a runtime prompt nobody would see (iOS/Android
+       both only prompt when code actually opens the camera, which this app
+       never does). Named here rather than silently accepted, the same
+       "documented trade, not a hidden one" standard this file already sets
+       for the passkeys entitlement above. */
+    [
+      '@config-plugins/react-native-webrtc',
+      {
+        microphonePermission: 'TaskFlow uses your microphone for voice calls.',
+        cameraPermission: 'TaskFlow will use your camera for video calls in a future update.',
+      },
+    ],
   ],
   extra: {
     apiBaseUrl: API_BASE_URL,

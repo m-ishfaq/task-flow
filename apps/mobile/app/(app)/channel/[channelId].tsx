@@ -28,6 +28,7 @@ import { Avatar } from '../../../src/lib/avatar.js';
 import { useMembers } from '../../../src/lib/use-members.js';
 import { parseFormattedText } from '../../../src/lib/rich-text-compose.js';
 import { MessageComposer } from '../../../src/lib/message-composer.js';
+import { CallButton } from '../../../src/lib/call-button.js';
 import { useChatRoom } from '../../../src/lib/use-chat-room.js';
 import { pickAttachment } from '../../../src/lib/pick-attachment.js';
 import { uploadMessageFile, type PickedFile } from '../../../src/lib/upload-message-file.js';
@@ -613,30 +614,33 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
     >
       <View style={styles.header}>
         <BackButton />
-        {/* The whole title block opens Details — mirroring apps/web's header,
-            where clicking the channel name is how the roster/settings panel
-            opens. Found missing entirely by a real device review ("where to
-            see details... members... where to add members"). */}
-        <Pressable
-          style={styles.headerTitles}
-          onPress={() => {
-            router.push(`/channel-details/${channelId}`);
-          }}
-        >
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {channelTypeGlyph(channel.data?.type ?? '')}
-            {title}
-          </Text>
-          {channel.data?.archivedAt !== null && channel.data?.archivedAt !== undefined ? (
-            <Text style={styles.headerSubtitle}>Archived — no new messages can be posted.</Text>
-          ) : channel.data?.topic !== null && channel.data?.topic !== undefined ? (
-            <Text style={styles.headerSubtitle} numberOfLines={1}>
-              {channel.data.topic}
+        <View style={styles.headerTitleRow}>
+          {/* The whole title block opens Details — mirroring apps/web's header,
+              where clicking the channel name is how the roster/settings panel
+              opens. Found missing entirely by a real device review ("where to
+              see details... members... where to add members"). */}
+          <Pressable
+            style={styles.headerTitles}
+            onPress={() => {
+              router.push(`/channel-details/${channelId}`);
+            }}
+          >
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {channelTypeGlyph(channel.data?.type ?? '')}
+              {title}
             </Text>
-          ) : (
-            <Text style={styles.headerSubtitle}>Details</Text>
-          )}
-        </Pressable>
+            {channel.data?.archivedAt !== null && channel.data?.archivedAt !== undefined ? (
+              <Text style={styles.headerSubtitle}>Archived — no new messages can be posted.</Text>
+            ) : channel.data?.topic !== null && channel.data?.topic !== undefined ? (
+              <Text style={styles.headerSubtitle} numberOfLines={1}>
+                {channel.data.topic}
+              </Text>
+            ) : (
+              <Text style={styles.headerSubtitle}>Details</Text>
+            )}
+          </Pressable>
+          {orgId !== null && <CallButton orgId={orgId} channelId={channelId} />}
+        </View>
       </View>
 
       <FlatList<MessageGroup>
@@ -1188,7 +1192,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   headerTitles: {
+    flex: 1,
     gap: 1,
   },
   headerTitle: {

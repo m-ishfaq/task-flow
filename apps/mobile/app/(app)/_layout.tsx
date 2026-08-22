@@ -8,6 +8,7 @@ import { apiClient, prefs, session } from '../../src/lib/app-session.js';
 import { useSession } from '../../src/lib/use-session.js';
 import { readRememberedOrg } from '../../src/lib/session.js';
 import { resolveRememberedOrg } from '../../src/lib/org-gate.js';
+import { CallSurface } from '../../src/lib/call-surface.js';
 
 /**
  * The org gate (ai/phase-14-mobile.md §7), ported from apps/web's `OrgGate` +
@@ -112,7 +113,17 @@ export default function AppLayout() {
 
   if (orgId === null) return <Redirect href="/org-picker" />;
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <View style={styles.stackWrapper}>
+      <Stack screenOptions={{ headerShown: false }} />
+      {/* Mounted once, above every screen under `(app)/` — a ringing call
+          has to be answerable from wherever somebody happens to be, and a
+          call in progress has to survive navigating away from the
+          conversation that started it. `call-surface.tsx`'s own header has
+          the full design (ai/phase-13-webrtc.md §7, Wave 5 here). */}
+      <CallSurface />
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -121,5 +132,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surface.hex,
+  },
+  /* `CallSurface`'s own `position: 'absolute', inset: 0` needs a
+     same-sized, non-static ancestor to anchor to — a bare `<Stack />`
+     alongside it with no wrapping `View` would leave nothing for that to
+     be relative to. */
+  stackWrapper: {
+    flex: 1,
   },
 });

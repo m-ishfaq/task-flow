@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { wire } from '@taskflow/client';
 import { ChannelIdSchema, type ChannelId } from '@taskflow/contracts';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
@@ -19,6 +20,11 @@ import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { useMembers, type Person } from '../../../src/lib/use-members.js';
+import {
+  callHistoryQueryKey,
+  formatCallDuration,
+  type CallHistoryEntry,
+} from '../../../src/lib/rtc.js';
 import {
   CHANNELS_QUERY_KEY,
   channelQueryKey,
@@ -47,19 +53,25 @@ import {
  * breakpoint, i.e. at phone width, which is a router push in a navigator
  * that has no side-panel concept at all.
  *
- * **One deliberate exclusion, not a partial job: no calls section, no call
- * button.** Web's panel also renders `CallsSection` (a call-history list)
- * and, for a two-person DM, `DirectCallAction` (click-to-call the other
- * side's work phone). Both need infrastructure that has NEVER been ported to
- * `apps/mobile` at all — Phase 7's telephony client and Phase 13's WebRTC
- * signaling both live only in `apps/web`. Building either here would mean
- * standing up an entire second feature area from nothing inside what was
- * asked for as a chat-details enhancement — a call button that cannot
- * actually place a call is worse than no button, and a "past calls" list
- * with no query layer to back it is the same mistake this app's own history
- * warns against (a control that reads correctly and does nothing real).
- * Real, separate work, same as thread replies and typing indicators already
- * named in `channel/[channelId].tsx`'s own header.
+ * **In-app calling has a real call-history list here (`CallHistorySection`,
+ * below) — the "Call"/"Join call" button itself lives one screen up, in
+ * `channel/[channelId].tsx`'s own header, not here.** This paragraph
+ * originally excluded BOTH, on the reasoning that "Phase 13's WebRTC
+ * signaling lives only in `apps/web`" — true when this screen first
+ * shipped, no longer true once `apps/mobile` grew its own signaling stack
+ * (`rtc-socket.ts`, `peer-mesh.ts`, `use-call.ts`, `call-surface.tsx` —
+ * Phase 13, Wave 5 here). Left corrected in place rather than silently
+ * rewritten, the same "a status marker is a claim, not a fact" habit
+ * CLAUDE.md documents.
+ *
+ * **Still genuinely excluded: `DirectCallAction`**, web's click-to-call
+ * button for a two-person DM's counterparty WORK PHONE — a Phase 7
+ * (Twilio/PSTN) telephony affordance, not Phase 13's in-app WebRTC calling,
+ * and Phase 7's telephony client has never been ported to `apps/mobile` at
+ * all. The two are easy to conflate because both put a phone icon near a
+ * DM's header; they dial through entirely different systems (a real PSTN
+ * number vs. this app's own signaling gateway), and only the second one
+ * exists here.
  *
  * **Every control here is shown; the server decides** — the same rule
  * `channel-details.tsx`'s own header states for web, restated because this
@@ -167,6 +179,7 @@ function ChannelDetailsContent({ channelId }: { channelId: ChannelId }) {
           <PinnedSection channelId={channelId} personOf={personOf} />
           <SavedSection channelId={channelId} />
           <FilesSection channelId={channelId} />
+          <CallHistorySection channelId={channelId} personOf={personOf} />
 
           {!isDirect && data.type === 'private' && canManage && (
             <GuestAccessSection channelId={channelId} />
@@ -496,6 +509,76 @@ function ExcerptRow({
       </Pressable>
     </View>
   );
+}
+
+/**
+ * Every call this conversation has had, newest first — closes §6's "no
+ * listing UI" gap for mobile, the same read `apps/web`'s Calls tab uses
+ * (`rtc.history.list`, `channel:read`, not a narrower "was I on this
+ * call" check — see that route's own header). No recording listing/
+ * playback here: `use-call.ts`'s own header is why mobile never captures
+ * one, so there is nothing of this app's own making to browse; a
+ * recording captured by a web participant is a real, separate surface
+ * this increment does not add.
+ */
+function CallHistorySection({
+  channelId,
+  personOf,
+}: {
+  readonly channelId: ChannelId;
+  readonly personOf: (userId: string) => Person;
+}) {
+  const orgId = useSession((state) => state.orgId);
+  const history = useQuery({
+    queryKey: callHistoryQueryKey(orgId ?? '', channelId),
+    queryFn: async () => wire(await apiClient.rtc.history.list.query({ channelId })),
+    enabled: orgId !== null,
+  });
+
+  const rows: readonly CallHistoryEntry[] = history.data ?? [];
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Calls · {rows.length}</Text>
+      {rows.length === 0 ? (
+        <Text style={styles.sectionEmpty}>No calls in this conversation yet.</Text>
+      ) : (
+        rows.map((row) => (
+          <View key={row.sessionId} style={styles.excerptRow}>
+            <View style={styles.excerptBody}>
+              <Text style={styles.excerptText}>📞 {personOf(row.initiatedBy).label}</Text>
+              <Text style={styles.excerptMeta}>{callOutcomeLabel(row)}</Text>
+            </View>
+          </View>
+        ))
+      )}
+    </View>
+  );
+}
+
+/** What a call history row's own line reads — a duration when the call
+    actually connected, otherwise the reason it did not. */
+function callOutcomeLabel(row: CallHistoryEntry): string {
+  if (row.startedAt !== null && row.endedAt !== null) {
+    const seconds = Math.max(
+      0,
+      Math.round((new Date(row.endedAt).getTime() - new Date(row.startedAt).getTime()) / 1000),
+    );
+    return formatCallDuration(seconds);
+  }
+  if (row.status === 'ringing') return 'Ringing…';
+  switch (row.endReason) {
+    case 'declined':
+      return 'Declined';
+    case 'no_answer':
+      return 'No answer';
+    case 'cancelled':
+      return 'Cancelled';
+    case null:
+      return 'Ended';
+    default:
+      return row.endReason;
+  }
 }
 
 function PinnedSection({

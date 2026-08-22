@@ -7,6 +7,7 @@ import { createPreferences } from './preferences.js';
 import { createMobileSession, SessionExpiredError, type MobileSession } from './session.js';
 import { createMobileSocket, type MobileSocket } from './socket.js';
 import { createMobileChatSocket, type MobileChatSocket } from './chat-socket.js';
+import { createMobileRtcSocket, type MobileRtcSocket } from './rtc-socket.js';
 import { createMobileClient, isUnauthenticated, type MobileTRPCClient } from './trpc-client.js';
 import type { BiometricGate } from './biometric-gate.js';
 
@@ -140,6 +141,19 @@ export const gatewaySocket: MobileSocket = createMobileSocket({
  * clears the session.
  */
 export const chatSocket: MobileChatSocket = createMobileChatSocket({
+  apiBaseUrl: config.apiBaseUrl,
+  accessToken: () => session.accessToken(),
+  getExpiresAt: () => session.store.getState().expiresAt,
+});
+
+/**
+ * The app's one `/rtc` namespace connection — in-app voice signalling
+ * (Phase 13, Wave 5 here). A third socket instance, not a third transport
+ * — see `rtc-socket.ts`'s own header, and `chat-socket.ts`'s identical
+ * note on why this also takes no `onSessionEnded`: `gatewaySocket`'s own
+ * listener above is what clears the session.
+ */
+export const rtcSocket: MobileRtcSocket = createMobileRtcSocket({
   apiBaseUrl: config.apiBaseUrl,
   accessToken: () => session.accessToken(),
   getExpiresAt: () => session.store.getState().expiresAt,
