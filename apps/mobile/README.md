@@ -3131,6 +3131,36 @@ guardrail allows, `console.log` failed lint immediately and was corrected), all 
 (the fake `RTCPeerConnection` `peer-mesh.test.ts` constructs already satisfies the wider event
 surface structurally), guardrail self-test clean.
 
+### The real root cause: `compose.yaml`'s coturn was never reachable from a phone at all
+
+The new `peer-mesh.ts` logging settled it on the very next real device round: three `local
+candidate: typ=host` lines and nothing else — no `srflx`, no `relay`, ever. STUN itself was
+unreachable, not merely TURN, and confirming the `.env` fix (correct LAN IP, `apps/api` genuinely
+restarted) had actually taken made that conclusive rather than a guess. `docker compose logs
+coturn` named the exact reason: coturn's own "Listener address to use" list was `127.0.0.1`,
+`192.168.65.x`, `172.1x.0.1` — Docker Desktop's own VM/bridge addresses — never the machine's real
+LAN interface. `compose.yaml`'s `network_mode: host` for coturn is Linux-only in the form that
+comment already claimed; under Docker Desktop (Windows/Mac) it binds to the Desktop VM's own host,
+not the actual machine, so nothing outside the machine — a real phone included — could ever reach
+it, no matter how correct `RTC_STUN_URLS`/`RTC_TURN_URLS` were. This is a repo-root infrastructure
+fix, not `apps/mobile` code, but it belongs in this file because a phone is exactly what surfaced
+it and no browser-only workflow ever would.
+
+`compose.yaml`'s coturn service now uses an explicit `ports:` list (`3478/udp`, `3478/tcp`,
+`49160-49200/udp`) instead of host networking, plus a NEW `COTURN_EXTERNAL_IP` variable
+(`.env.example`) wired to `--external-ip`. The second half is not optional: switching to port
+mapping without it just trades one silent failure for another — the container would advertise its
+own bridge-network address in every candidate instead of the real one, exactly the "a relayed
+candidate naming a bridge-network IP is accepted by the client, tried, and silently times out"
+failure `compose.yaml`'s own comment already named for a different reason. `compose.prod.yaml`'s
+own coturn block is untouched and correctly keeps `network_mode: host` — confirmed by reading it
+directly — because production targets a real Linux host, where that reasoning holds; the two
+files are fully decoupled, so this change carries zero production risk. Verified: `docker compose
+-f compose.yaml config` resolves cleanly with and without `COTURN_EXTERNAL_IP` set (confirmed the
+interpolated `--external-ip` flag both ways), `python3 -c "yaml.safe_load(...)"` confirms valid
+YAML, prettier and the encoding check pass. Not verified: an actual container boot and a real
+device retest — no Docker daemon in this environment — which is exactly what happens next.
+
 ## Not here yet
 
 - **CallKit (iOS) / ConnectionService (Android) — a real lock-screen "incoming call" UI.** Named
