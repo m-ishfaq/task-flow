@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — closing the Work gap against web feature by feature (My Tasks, Boards, and card detail's status/assignees/labels shipped; checklist interactivity, custom fields, attachments and comment edit/delete next)
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — closing the Work gap against web feature by feature (My Tasks, Boards, card detail's status/assignees/labels, and interactive checklists shipped; custom fields, attachments, and comment edit/delete next)
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -1989,6 +1989,44 @@ server as the only adjudicator. `nextLabelColor` (`work.ts`) is
 `label-section.tsx`'s own `nextColor`, ported verbatim — a fixed palette
 cycled deterministically, never `Math.random()`.
 
+## Work, closing the gap against web: interactive checklists
+
+The fourth slice of the Work parity pass. Checklists had been COUNT-only
+since Wave 2 — `checklistDone/checklistTotal` read straight off
+`CardDetail`/`CardSummary` and rendered as a badge, with no way to see an
+item, tick it, or add one. Ported from `apps/web/src/features/work/
+detail/checklist-section.tsx` in full: multiple checklists per card,
+adding/deleting a checklist, adding/ticking/deleting an item.
+
+**Ticking and deleting an item are optimistic; creating a checklist or
+adding an item are not — the same split web's own comments draw, for the
+same reasons.** A checkbox that waits for a round trip before it fills in
+is the canonical "this app feels slow," so `toggleItem`/`deleteItem`
+patch the checklist query directly (via `onMutate`/rollback-on-`onError`,
+since this screen has no shared `useOptimistic` helper the way
+`use-update-card.ts` does — checklists are the first card-detail mutation
+on native to need a snapshot-and-rollback of its own). Creating a
+checklist or an item stays round-trip: the new id comes from the server,
+and a row that cannot be deleted until the refetch lands is worse than
+one that appears a moment late — the identical "no fake reference"
+reasoning `board/[boardId].tsx`'s own Add Card already lives by.
+
+**Every mutation invalidates the card AND the board's card list, not just
+the checklist query — a real gap the other five card-detail sections
+above still have.** Checklist counts render in two places at once now
+that `board/[boardId].tsx` exists (`CardRow`'s badge and this screen's
+own badge row), and the server recomputes those counters inside the
+writing transaction rather than incrementing them (`counters.ts`)
+precisely so the number is never a guess. `StatusSelector`/
+`PrioritySelector`/`AssigneeSelector`/`SprintSelector`/`LabelSelector`
+above predate `board/[boardId].tsx` rendering `CardRow` at all — from
+back when `use-update-card.ts`'s own header could honestly say "mobile
+has no board view yet" — and none of their invalidation sets were widened
+to match once that stopped being true. None of those five fields render
+on a `CardRow` badge today, so nothing is visibly wrong yet, but it is a
+real, separate follow-up rather than something this increment silently
+carries forward.
+
 ## Not here yet
 
 - **Confirming this on a simulator or physical device beyond what has
@@ -2041,11 +2079,15 @@ cycled deterministically, never `Math.random()`.
   production domain, hosted `apple-app-site-association`/`assetlinks.json`
   files, and a real Android signing certificate, none of which exist yet.
   See that section's own checklist for exactly what to stand up first.
-- Checklist items (still count-only, no per-item read or toggle), a native
+- Custom fields and attachments on a card (still entirely absent from
+  card detail — see "Work, closing the gap" above for what HAS shipped
+  there), comment edit/delete/replies (still read+post only), a native
   rich text EDITOR (description/comment/message composers all stay
   plain-text until one exists), due/start date editing (no date-picker
   dependency added yet), and card drag-and-drop (boards' own section above
-  has the full reasoning). The rest of Chat (attachments from the
+  has the full reasoning). Checklist items are no longer count-only — see
+  "Work, closing the gap against web: interactive checklists" above. The
+  rest of Chat (attachments from the
   composer — reactions, mentions composing, thread replies,
   edit/delete/"remove for me", read receipts, link unfurls, push, typing
   indicators and broadcast-driven live refresh have all shipped, see "Chat,

@@ -246,6 +246,22 @@ export function nextLabelColor(existing: number): string {
   return LABEL_PALETTE[existing % LABEL_PALETTE.length] ?? '#6366f1';
 }
 
+/**
+ * A card's checklists, with their items nested — `work.checklists.list`.
+ * Unlike status/labels this is CARD-scoped, not project-scoped: each card
+ * owns its own checklists outright, so there is no shared vocabulary query
+ * the way `statusesQueryKey`/`labelsQueryKey` read one.
+ */
+export type Checklist = Wire<
+  Awaited<ReturnType<MobileTRPCClient['work']['checklists']['list']['query']>>
+>[number];
+
+export type ChecklistItem = Checklist['items'][number];
+
+export function checklistsQueryKey(cardId: string): readonly ['work.checklists.list', string] {
+  return ['work.checklists.list', cardId];
+}
+
 /** A card's comments — read + post only on native for now; see card/[cardId].tsx's own header. */
 export type Comment = Wire<
   Awaited<ReturnType<MobileTRPCClient['work']['comments']['list']['query']>>
