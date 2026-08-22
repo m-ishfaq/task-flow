@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — closing the Work gap against web feature by feature (My Tasks and Boards shipped; card detail next)
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — closing the Work gap against web feature by feature (My Tasks, Boards, and card detail's status/assignees/labels shipped; checklist interactivity, custom fields, attachments and comment edit/delete next)
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -1949,6 +1949,45 @@ has no room for without crowding the name and count it already shows. An
 empty WIP-limit box means "no limit" (`null`), not zero — zero would
 render the column as permanently over its limit, the identical footgun
 web's own `ListMenu` comment names.
+
+## Work, closing the gap against web: card detail's status, assignees, and labels
+
+The third slice of the Work parity pass, following My Tasks and Boards.
+Audited against `apps/web/src/features/work/detail/status-priority-
+section.tsx`, `assignee-section.tsx` and `label-section.tsx`: card detail
+could edit title, priority and sprint, and nothing else — status,
+assignees and labels were entirely absent, not even shown read-only.
+Checklist interactivity, custom fields, attachments, and comment
+edit/delete are still open — see "Not here yet" below.
+
+**`StatusSelector` is a chip row, not web's `<select>`** — the same
+substitution `SprintSelector` already made for the identical reason (no
+native picker component on this app). `work.statuses.list` is
+PROJECT-scoped vocabulary, the same tier `sprints.ts` already places
+sprints at, and `cards.setStatus` is a dedicated mutation rather than
+riding `cards.update`'s full replace — mirroring the server's own split
+in `card.service.ts` (status changes emit `card.status_changed`;
+priority does not).
+
+**`AssigneeSelector` is a MODAL picker, not a wall of chips — the same
+call web's own header makes, for the same reason: an org's member list
+can run to dozens of people**, and scrolling past fifty names inline to
+find one checkbox is the bug both platforms avoid. Sends the WHOLE SET on
+every tap (never a delta, matching `cards.assign`), and every tap fires
+immediately rather than disabling the control while pending — assigning
+two or three people in a row is the normal gesture. Unlike status and
+labels, an assignee change also invalidates `MY_TASKS_QUERY_KEY`: it is
+the one field among the three that changes whether the card appears on
+that screen at all.
+
+**`LabelSelector` stays an inline chip row, unlike assignees** — a
+project's label set is typically five to eight entries, well under the
+threshold that pushed assignees into a modal. Reuses the same two-
+permission split web's own header documents (`card:update` to tag,
+`project:update` to manage the vocabulary), shown to everyone with the
+server as the only adjudicator. `nextLabelColor` (`work.ts`) is
+`label-section.tsx`'s own `nextColor`, ported verbatim — a fixed palette
+cycled deterministically, never `Math.random()`.
 
 ## Not here yet
 

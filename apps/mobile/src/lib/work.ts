@@ -205,6 +205,47 @@ export function groupCardsByDue(
   );
 }
 
+/**
+ * Card-detail vocabulary — status and labels, both PROJECT-scoped (a
+ * board's cards share one project's status/label set, the same tier
+ * `sprints.ts`'s own header already places sprints at). Derived off the
+ * live client, same convention as `CardSummary`/`CardDetail`.
+ */
+export type StatusSummary = Wire<
+  Awaited<ReturnType<MobileTRPCClient['work']['statuses']['list']['query']>>
+>[number];
+
+export function statusesQueryKey(projectId: string): readonly ['work.statuses.list', string] {
+  return ['work.statuses.list', projectId];
+}
+
+export type LabelSummary = Wire<
+  Awaited<ReturnType<MobileTRPCClient['work']['labels']['list']['query']>>
+>[number];
+
+export function labelsQueryKey(projectId: string): readonly ['work.labels.list', string] {
+  return ['work.labels.list', projectId];
+}
+
+/** A card's own labels — `work.labels.onCard`, separate from the project's full set above. */
+export function cardLabelsQueryKey(cardId: string): readonly ['work.labels.onCard', string] {
+  return ['work.labels.onCard', cardId];
+}
+
+/**
+ * A color for a newly-created label, cycled from a fixed palette — ported
+ * verbatim from `apps/web/src/features/work/detail/label-section.tsx`'s
+ * own `nextColor`. Deterministic rather than randomized (`Math.random()`
+ * is banned workspace-wide, and a crypto RNG for a swatch pick would be
+ * absurd) — two labels created in a row read as visibly different rather
+ * than occasionally identical.
+ */
+const LABEL_PALETTE = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#6366f1', '#d946ef'];
+
+export function nextLabelColor(existing: number): string {
+  return LABEL_PALETTE[existing % LABEL_PALETTE.length] ?? '#6366f1';
+}
+
 /** A card's comments — read + post only on native for now; see card/[cardId].tsx's own header. */
 export type Comment = Wire<
   Awaited<ReturnType<MobileTRPCClient['work']['comments']['list']['query']>>

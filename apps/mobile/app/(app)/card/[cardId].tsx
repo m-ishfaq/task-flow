@@ -3,6 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -22,15 +23,20 @@ import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { RichTextView } from '../../../src/lib/rich-text-view.js';
+import { Avatar } from '../../../src/lib/avatar.js';
 import { useUpdateCard } from '../../../src/lib/use-update-card.js';
-import { useMembers } from '../../../src/lib/use-members.js';
+import { useMembers, type Member } from '../../../src/lib/use-members.js';
 import {
   MY_TASKS_QUERY_KEY,
   PRIORITY_COLOR,
   PRIORITY_LABEL,
+  cardLabelsQueryKey,
   cardQueryKey,
   commentsQueryKey,
   formatDueDate,
+  labelsQueryKey,
+  nextLabelColor,
+  statusesQueryKey,
   type CardDetail,
   type Comment,
   type Priority,
@@ -42,9 +48,23 @@ const PRIORITIES: readonly Priority[] = ['urgent', 'high', 'normal', 'low'];
 /**
  * Card detail (Wave 2's second slice, following "My Tasks", then made
  * editable as Wave 2's "optimistic mutations" roadmap item —
- * `ai/phase-14-mobile.md`). Title and priority are editable; everything
- * else stays read-only for now — see the header on each section below for
- * exactly why.
+ * `ai/phase-14-mobile.md`). Title, priority, sprint, status, assignees and
+ * labels are all editable now — the Work-parity pass following My Tasks
+ * and Boards closed status/assignees/labels, the three "vocabulary"
+ * sections a systematic audit against `apps/web/src/features/work/
+ * detail/*.tsx` found completely absent. Checklist items, custom fields,
+ * attachments and comment edit/delete are still read/post-only or
+ * missing — see each section's own header below for exactly why.
+ *
+ * **`StatusSelector`/`AssigneeSelector`/`LabelSelector` each mirror their
+ * web counterpart's own authorization split rather than re-deriving it**:
+ * status and priority are two different mutations because the SERVICE
+ * treats them as two different things (`cards.setStatus` emits its own
+ * domain event; priority rides `cards.update`); tagging a card
+ * (`card:update`) and managing the project's label vocabulary
+ * (`project:update`) are two different permissions the UI shows to
+ * everyone and lets the server adjudicate (CLAUDE.md §8.2) — never a
+ * client-side role check.
  *
  * `KeyboardAvoidingView` wraps the whole `ScrollView` — added after a real
  * device run showed `CommentsSection`'s composer with no keyboard handling
@@ -137,6 +157,8 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
           }}
         />
 
+        <StatusSelector cardId={cardId} projectId={data.projectId} statusId={data.statusId} />
+
         <PrioritySelector
           value={data.priority}
           onChange={(priority) => {
@@ -145,7 +167,11 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
           }}
         />
 
+        <AssigneeSelector cardId={cardId} assigneeIds={data.assigneeIds} />
+
         <SprintSelector cardId={cardId} projectId={data.projectId} sprintId={data.sprintId} />
+
+        <LabelSelector cardId={cardId} projectId={data.projectId} />
 
         {saveError !== null && (
           <Text style={styles.error} accessibilityRole="alert">
@@ -344,6 +370,76 @@ function TitleField({
 }
 
 /**
+ * Which status a card carries — `apps/web`'s `StatusSection`, as a chip row
+ * matching `PrioritySelector`'s own shape rather than web's `<select>` (this
+ * app has no native picker component, the same call `SprintSelector` below
+ * already makes). `work.statuses.list` is PROJECT-scoped vocabulary, the
+ * same tier labels live at — a status set is shared by every board in the
+ * project, not owned by this one card. `cards.setStatus` is a DEDICATED
+ * route, not part of `cards.update`'s full replace, matching web's own
+ * split in `card.service.ts`: status changes emit `card.status_changed`,
+ * priority rides `cards.update` alongside title and dates.
+ */
+function StatusSelector({
+  cardId,
+  projectId,
+  statusId,
+}: {
+  readonly cardId: CardId;
+  readonly projectId: string;
+  readonly statusId: string | null;
+}) {
+  const queryClient = useQueryClient();
+  const statuses = useQuery({
+    queryKey: statusesQueryKey(projectId),
+    queryFn: async () => wire(await apiClient.work.statuses.list.query({ projectId })),
+  });
+
+  const setStatus = useMutation({
+    mutationFn: (next: string | null) =>
+      apiClient.work.cards.setStatus.mutate({ cardId, statusId: next }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: cardQueryKey(cardId) });
+    },
+  });
+
+  return (
+    <View style={styles.sprintSection}>
+      <Text style={styles.sprintSectionLabel}>Status</Text>
+      <View style={styles.priorityRow}>
+        <Pressable
+          style={[styles.priorityChip, statusId === null && styles.priorityChipActive]}
+          disabled={setStatus.isPending}
+          onPress={() => {
+            if (statusId !== null) setStatus.mutate(null);
+          }}
+        >
+          <Text style={styles.priorityChipText}>No status</Text>
+        </Pressable>
+        {(statuses.data ?? []).map((status) => (
+          <Pressable
+            key={status.statusId}
+            style={[styles.priorityChip, statusId === status.statusId && styles.priorityChipActive]}
+            disabled={setStatus.isPending}
+            onPress={() => {
+              if (statusId !== status.statusId) setStatus.mutate(status.statusId);
+            }}
+          >
+            <View style={[styles.swatch, { backgroundColor: status.color }]} />
+            <Text style={styles.priorityChipText}>{status.name}</Text>
+          </Pressable>
+        ))}
+      </View>
+      {setStatus.isError && (
+        <Text style={styles.error} accessibilityRole="alert">
+          {apiErrorOf(setStatus.error)?.error.message ?? 'The status was not saved.'}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+/**
  * Mirrors web's `PrioritySection`: a discrete choice fires immediately,
  * with no separate "Save" — unlike the title, tapping a chip already IS a
  * complete edit. Five options, not four: "None" clears the field, the same
@@ -473,6 +569,289 @@ function SprintSelector({
       {(assign.isError || release.isError) && (
         <Text style={styles.error} accessibilityRole="alert">
           {apiErrorOf(assign.error ?? release.error)?.error.message ?? 'The sprint was not saved.'}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+/**
+ * Who a card is assigned to — `apps/web`'s `AssigneeSection`. Sends the
+ * WHOLE SET rather than an add/remove delta, matching `cards.assign` on
+ * the server: two people editing assignees concurrently with deltas
+ * converge on a set neither of them chose, whereas the intended set means
+ * the last writer wins something a human actually asked for.
+ *
+ * **A modal picker, not a wall of chips** — the same call web's own header
+ * makes and for the identical reason: an org's member list can run to
+ * dozens of people, and scrolling past fifty names inline to find one
+ * checkbox is the bug this avoids. Every tap inside the picker sends the
+ * full set immediately (not disabled while pending) — assigning two or
+ * three people in a row is the normal gesture, and a control that goes
+ * dead between each tap turns one action into three waits.
+ */
+function AssigneeSelector({
+  cardId,
+  assigneeIds,
+}: {
+  readonly cardId: CardId;
+  readonly assigneeIds: readonly string[];
+}) {
+  const queryClient = useQueryClient();
+  const { people, peopleOf } = useMembers();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [query, setQuery] = useState('');
+
+  const assign = useMutation({
+    mutationFn: (ids: readonly string[]) =>
+      apiClient.work.cards.assign.mutate({ cardId, assigneeIds: [...ids] }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: cardQueryKey(cardId) }),
+        // Assigning/unassigning changes whether this card appears in "My
+        // Tasks" at all — unlike status/labels, which that screen does not
+        // show or filter by.
+        queryClient.invalidateQueries({ queryKey: MY_TASKS_QUERY_KEY }),
+      ]);
+    },
+  });
+
+  const selected = new Set(assigneeIds);
+  const assigned = peopleOf(assigneeIds);
+
+  const toggle = (userId: string) => {
+    const next = new Set(selected);
+    if (next.has(userId)) next.delete(userId);
+    else next.add(userId);
+    assign.mutate([...next]);
+  };
+
+  const needle = query.trim().toLowerCase();
+  const filtered =
+    needle === ''
+      ? people
+      : people.filter((member: Member) => member.email.toLowerCase().includes(needle));
+
+  return (
+    <View style={styles.sprintSection}>
+      <Text style={styles.sprintSectionLabel}>Assignees</Text>
+      <View style={styles.assigneeRow}>
+        {assigned.length === 0 && <Text style={styles.emptyHint}>Unassigned</Text>}
+        {assigned.map((person) => (
+          <Pressable
+            key={person.userId}
+            style={styles.assigneeChip}
+            onPress={() => {
+              toggle(person.userId);
+            }}
+          >
+            <Avatar label={person.label} size={20} />
+            <Text style={styles.assigneeChipText} numberOfLines={1}>
+              {person.label}
+            </Text>
+          </Pressable>
+        ))}
+        <Pressable
+          style={styles.addChipButton}
+          onPress={() => {
+            setQuery('');
+            setPickerOpen(true);
+          }}
+        >
+          <Text style={styles.addChipButtonText}>+</Text>
+        </Pressable>
+      </View>
+      {assign.isError && (
+        <Text style={styles.error} accessibilityRole="alert">
+          {apiErrorOf(assign.error)?.error.message ?? 'Assignees were not saved.'}
+        </Text>
+      )}
+
+      <Modal
+        visible={pickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setPickerOpen(false);
+        }}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => {
+            setPickerOpen(false);
+          }}
+        >
+          <Pressable style={styles.modalCard} onPress={() => undefined}>
+            <Text style={styles.modalTitle}>Assign to…</Text>
+            {people.length > 8 && (
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Search members…"
+                placeholderTextColor={colors.inkFaint.hex}
+                value={query}
+                onChangeText={setQuery}
+              />
+            )}
+            <ScrollView style={styles.pickerList}>
+              {filtered.length === 0 ? (
+                <Text style={styles.emptyHint}>No matches.</Text>
+              ) : (
+                filtered.map((member: Member) => {
+                  const on = selected.has(member.userId);
+                  return (
+                    <Pressable
+                      key={member.userId}
+                      style={styles.pickerRow}
+                      onPress={() => {
+                        toggle(member.userId);
+                      }}
+                    >
+                      <Avatar label={member.displayName ?? member.email} size={24} />
+                      <Text style={styles.pickerRowText} numberOfLines={1}>
+                        {member.displayName ?? member.email}
+                      </Text>
+                      {on && <Text style={styles.pickerCheck}>✓</Text>}
+                    </Pressable>
+                  );
+                })
+              )}
+            </ScrollView>
+            <Pressable
+              style={styles.modalCancel}
+              onPress={() => {
+                setPickerOpen(false);
+              }}
+            >
+              <Text style={styles.modalCancelText}>Done</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
+  );
+}
+
+/**
+ * Labels on a card, and the project's label set — `apps/web`'s
+ * `LabelSection`, as an inline chip row (not the assignee picker's modal):
+ * a project's label set is typically five to eight entries, the same
+ * distinction web's own header draws between "tolerable as a wall of
+ * chips" and "not" at member-list scale.
+ *
+ * Two authorization questions, deliberately not merged
+ * (`apps/api/src/work/label.service.ts`): TAGGING a card is `card:update`
+ * — it changes one card; MANAGING the label set is `project:update` — it
+ * changes every card in the project. The UI shows both controls to
+ * everyone and lets the server answer, never a client-side role check
+ * (CLAUDE.md §8.2).
+ */
+function LabelSelector({
+  cardId,
+  projectId,
+}: {
+  readonly cardId: CardId;
+  readonly projectId: string;
+}) {
+  const queryClient = useQueryClient();
+  const [creating, setCreating] = useState('');
+
+  const all = useQuery({
+    queryKey: labelsQueryKey(projectId),
+    queryFn: async () => wire(await apiClient.work.labels.list.query({ projectId })),
+  });
+  const onCard = useQuery({
+    queryKey: cardLabelsQueryKey(cardId),
+    queryFn: async () => wire(await apiClient.work.labels.onCard.query({ cardId })),
+  });
+
+  const selected = new Set((onCard.data ?? []).map((label) => label.labelId));
+
+  const setLabels = useMutation({
+    mutationFn: (labelIds: readonly string[]) =>
+      apiClient.work.labels.setOnCard.mutate({ cardId, labelIds: [...labelIds] }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: cardLabelsQueryKey(cardId) });
+    },
+  });
+
+  const create = useMutation({
+    mutationFn: (name: string) =>
+      apiClient.work.labels.create.mutate({
+        projectId,
+        name,
+        color: nextLabelColor(all.data?.length ?? 0),
+      }),
+    onSuccess: () => {
+      setCreating('');
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: labelsQueryKey(projectId) });
+    },
+  });
+
+  const toggle = (labelId: string) => {
+    const next = new Set(selected);
+    if (next.has(labelId)) next.delete(labelId);
+    else next.add(labelId);
+    setLabels.mutate([...next]);
+  };
+
+  return (
+    <View style={styles.sprintSection}>
+      <Text style={styles.sprintSectionLabel}>Labels</Text>
+
+      {all.data?.length === 0 ? (
+        <Text style={styles.emptyHint}>This project has no labels yet.</Text>
+      ) : (
+        <View style={styles.assigneeRow}>
+          {(all.data ?? []).map((label) => {
+            const on = selected.has(label.labelId);
+            return (
+              <Pressable
+                key={label.labelId}
+                style={[
+                  styles.labelChip,
+                  on ? { backgroundColor: label.color } : styles.labelChipOff,
+                ]}
+                onPress={() => {
+                  toggle(label.labelId);
+                }}
+              >
+                <Text style={[styles.labelChipText, on && styles.labelChipTextOn]}>
+                  {label.name}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+
+      <View style={styles.addCardRow}>
+        <TextInput
+          style={styles.addCardInput}
+          placeholder="New label"
+          placeholderTextColor={colors.inkFaint.hex}
+          value={creating}
+          onChangeText={setCreating}
+          onSubmitEditing={() => {
+            const value = creating.trim();
+            if (value !== '') create.mutate(value);
+          }}
+        />
+        <Pressable
+          style={styles.addCardButton}
+          disabled={create.isPending || creating.trim().length === 0}
+          onPress={() => {
+            const value = creating.trim();
+            if (value !== '') create.mutate(value);
+          }}
+        >
+          <Text style={styles.addCardButtonText}>Add</Text>
+        </Pressable>
+      </View>
+      {(setLabels.isError || create.isError) && (
+        <Text style={styles.error} accessibilityRole="alert">
+          {apiErrorOf(setLabels.error ?? create.error)?.error.message ?? 'Labels were not saved.'}
         </Text>
       )}
     </View>
@@ -685,5 +1064,145 @@ const styles = StyleSheet.create({
   error: {
     color: colors.danger.hex,
     fontSize: 14,
+  },
+  emptyHint: {
+    fontSize: 12,
+    color: colors.inkFaint.hex,
+  },
+  assigneeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+  },
+  assigneeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    backgroundColor: colors.surfaceHover.hex,
+  },
+  assigneeChipText: {
+    fontSize: 12,
+    color: colors.inkMuted.hex,
+    maxWidth: 120,
+  },
+  addChipButton: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+  },
+  addChipButtonText: {
+    fontSize: 14,
+    color: colors.inkMuted.hex,
+  },
+  labelChip: {
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  labelChipOff: {
+    backgroundColor: colors.surfaceHover.hex,
+  },
+  labelChipText: {
+    fontSize: 12,
+    color: colors.inkMuted.hex,
+  },
+  labelChipTextOn: {
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+  addCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  addCardInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+    borderRadius: radiusCard,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 13,
+    color: colors.ink.hex,
+    backgroundColor: colors.surfaceSunken.hex,
+  },
+  addCardButton: {
+    backgroundColor: colors.accent.hex,
+    borderRadius: radiusCard,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  addCardButtonText: {
+    color: colors.accentInk.hex,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: '#00000099',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: colors.surfaceRaised.hex,
+    borderTopLeftRadius: radiusCard,
+    borderTopRightRadius: radiusCard,
+    padding: 20,
+    gap: 4,
+    maxHeight: '80%',
+  },
+  modalTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.ink.hex,
+    marginBottom: 8,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+    borderRadius: radiusCard,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: colors.ink.hex,
+    backgroundColor: colors.surfaceSunken.hex,
+    marginBottom: 8,
+  },
+  pickerList: {
+    marginBottom: 8,
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line.hex,
+  },
+  pickerRowText: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.ink.hex,
+  },
+  pickerCheck: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.accent.hex,
+  },
+  modalCancel: {
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.accent.hex,
   },
 });
