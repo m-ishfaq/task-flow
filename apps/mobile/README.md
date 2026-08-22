@@ -2826,6 +2826,48 @@ which is exactly why those two packages' own "native module not found" errors ar
 run-time messages on a stale build rather than crashes — the two precedents this file's WebRTC
 code should have matched from the start and did not.
 
+### `expo doctor`, after `react-native-webrtc`/`expo-audio`/`expo-file-system` landed
+
+Run once the dependency set above was in place. Two of its five findings were real and fixed:
+`expo-font` (required by `@expo/vector-icons`) and `expo-asset` (required by `expo-audio`) were
+missing as DIRECT dependencies — both were already resolving transitively, so nothing was broken
+yet, but doctor's own reasoning holds: a native module's peer must be installed directly or a
+future dependency shuffle can silently drop it. Added at the exact versions already resolved
+(`expo-font@~57.0.1`, `expo-asset@~57.0.13`) rather than letting install pick anew. `react-native-
+worklets` was pinned `^0.10.0` where the installed Expo SDK expects `0.10.1` — a real patch
+mismatch, bumped.
+
+Three findings were investigated and deliberately left as-is, not silently ignored:
+
+- **`expo-modules-core` "should not be installed directly"** — doctor's generic advice does not
+  fit this repo: `modules/device-key/index.ts` calls `requireNativeModule` directly, a primitive
+  the top-level `expo` package does not re-export for app code. Removing the dependency and
+  re-running `pnpm typecheck` proved this decisively rather than by argument alone —
+  `apps/mobile/modules/device-key` is not a `pnpm-workspace.yaml` package (only `apps/*` and
+  `packages/*` are), so nothing else makes `expo-modules-core` resolvable from inside it; with
+  the dependency removed, `pnpm typecheck` failed immediately with `Cannot find module
+'expo-modules-core'`. Re-added.
+- **`react-native-svg` patch mismatch (expects `15.15.4`, found `15.15.5`)** — a NEWER patch than
+  Expo's SDK compatibility table lists, not an older one; low risk, left alone rather than pinned
+  down for a version bump with no known upside.
+- **Duplicate `react`/`react-dom` (`expensify-common@2.0.199` bundles its own `react@16.12.0`/
+  `react-dom@16.12.0`)** — from `expensify-common`'s own dependency tree (needed transitively for
+  `@expensify/react-native-live-markdown`, added before this session's WebRTC work), not something
+  an app-level config fixes. Metro only bundles what is reachable from the RN entry point, and
+  `expensify-common`'s web-only paths are not reached here — accepted as a third-party trade, the
+  same posture this file already takes on `simply-deferred`'s dependency chain.
+
+One finding is real and worth knowing but not a bug to fix: **`react-native-webrtc` is "untested
+on New Architecture."** Nothing to change about that today — it is a fact about the library, not
+a misconfiguration — but worth remembering if a future crash looks Fabric/TurboModule-shaped
+rather than "native module not linked"-shaped.
+
+`package.json`'s new `expo.doctor.reactNativeDirectoryCheck.exclude` silences the two REMAINING
+"no metadata available" warnings — `device-key` (this app's own local, unpublished module, which
+can never have React Native Directory metadata) and `react-native-passkeys` (published, just not
+indexed there) — narrowly, by name, rather than the broader `listUnknownPackages: false`, so a
+genuinely unknown THIRD-PARTY package added later still gets flagged.
+
 ## Not here yet
 
 - **CallKit (iOS) / ConnectionService (Android) — a real lock-screen "incoming call" UI.** Named
