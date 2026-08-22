@@ -68,6 +68,9 @@
         "GHSA-w3rx-r6r6-pgpr",
         "GHSA-5p2g-fcmc-qvqq"
       ]
+    },
+    "patchedDependencies": {
+      "html-entities@2.5.3": "patches/html-entities@2.5.3.patch"
     }
   }
 }
