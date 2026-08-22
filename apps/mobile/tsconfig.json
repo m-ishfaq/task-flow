@@ -1,19 +1,6 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    /* The Expo-shell increment (ai/phase-14-mobile.md §5, §7) adds the first
-       native components, so this now type-checks against the real RN/Expo
-       surface (`expo/tsconfig.base`: `lib: ["DOM", "ESNext"]`,
-       `moduleResolution: "bundler"`, `jsx: "react-jsx"`) instead of Node's —
-       Metro, not tsc, resolves modules at bundle time, and `bundler` resolution
-       is what matches that.
-
-       `expo/tsconfig.base` does not turn on this repo's own strictness
-       guardrails (CLAUDE.md "Conventions": `noUncheckedIndexedAccess`,
-       `exactOptionalPropertyTypes`, ...) — @taskflow/config/tsconfig/base.json
-       cannot be layered underneath it because the two disagree on `module` /
-       `moduleResolution`, so the flags are restated here instead of shared.
-       Keep this list in sync with that file's guardrail set if it changes. */
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
@@ -25,16 +12,14 @@
     "allowUnreachableCode": false,
     "allowUnusedLabels": false,
     "forceConsistentCasingInFileNames": true,
-
-    /* @types/node is on the classpath for the test files only (`Buffer` in
-       session.test.ts); adding "node" here would leak Node globals into the
-       app/router code that must only ever run on Hermes. types is deliberately
-       narrow rather than "node" living in `lib`. */
-    "types": ["node"],
-
-    /* Leaf app; nothing imports from it, and Metro (not tsc) is what actually
-       bundles app/ and src/ for a device. Same reasoning as apps/web. */
+    "types": [
+      "node"
+    ],
     "noEmit": true
   },
-  "include": ["app/**/*", "src/**/*", "app.config.ts", "expo-env.d.ts"]
+  "include": [
+    "app/**/*",
+    "src/**/*",
+    "app.config.ts"
+  ]
 }
