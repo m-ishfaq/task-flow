@@ -2762,9 +2762,9 @@ not just `pnpm install` resolving cleanly. No `metro.config.js` change was neede
 `react-native-webrtc`'s own documented `event-target-shim` v5/v6 conflict — that fix is stated as
 needed "only for SDK 50," and this app is on SDK 57.
 
-### Two real-build bugs, found only once an actual Android Gradle toolchain ran this code
+### Three real-build bugs, found only once an actual Android Gradle toolchain ran this code
 
-Both landed the same day as the section above, from a real `eas build`/`gradlew assembleDebug`
+All three landed the same day as the section above, from a real `eas build`/`gradlew assembleDebug`
 attempt against this exact code — the class of bug `pnpm verify` cannot see, this file's own
 established pattern for reporting.
 
@@ -2800,6 +2800,31 @@ suite imports `use-call.ts` (unlike `peer-mesh.ts`, which has its own dedicated 
 already `import type`-only for a related but different reason — Vitest's transform, not a runtime
 throw); confirmed the fix compiles, lints, and still bundles cleanly via a fresh `expo export` for
 both platforms after the change.
+
+**The SAME symptom then reappeared from a different cause, in a sibling file the first fix never
+touched.** The `use-call.ts` fix above was necessary, correctly diagnosed, and NOT sufficient —
+confirmed only when the identical `Cannot read property 'ErrorBoundary' of undefined` persisted on
+a real device afterward, this time paired with `Error: Cannot find native module 'ExpoAudio'`.
+`ringtone-player.ts` had the exact same class of bug, in TWO packages at once:
+`expo-audio`'s `AudioModule.ts` and `expo-file-system`'s `ExpoFileSystem.ts` both call
+`requireNativeModule(...)` at their own module top level — confirmed directly by reading both
+packages' installed source, not guessed from the error string — and this file imported both as
+VALUES at module scope, reached from `_layout.tsx` (via `call-surface.tsx`) and the account screen
+(via `ringtone-section.tsx`) exactly like the `react-native-webrtc` case. Unlike that fix, this one
+could not stay a one-line change: `play()` (and therefore `startRingtone`/`startRingback`/
+`previewRingtone`) had to become genuinely `async`, resolving both packages together through a
+memoized `getNative()` — `device-key/index.ts`'s own pattern name for exactly this — on first call
+rather than at import time. That ripples into `call-surface.tsx`'s two ringing `useEffect`s, which
+now guard an async start against the effect's OWN cleanup running first (the call was answered or
+the banner unmounted before the native module finished resolving) with a `cancelled` flag, stopping
+the tone immediately if it arrives after the reason to ring is already gone. The lesson generalizes
+past this one file: **any new Expo/native package earns the same check before it is imported at
+module scope anywhere reachable from `_layout.tsx`** — does requireNativeModule run at ITS import
+time, or only when a function is called? `push-notifications.ts` and `biometric-gate.native.ts`
+already had this right, for `expo-notifications` and `expo-local-authentication` respectively,
+which is exactly why those two packages' own "native module not found" errors are harmless
+run-time messages on a stale build rather than crashes — the two precedents this file's WebRTC
+code should have matched from the start and did not.
 
 ## Not here yet
 

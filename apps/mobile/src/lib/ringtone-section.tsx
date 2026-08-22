@@ -49,7 +49,7 @@ export function RingtoneSection() {
             key={name}
             style={[styles.chip, ringtone === name && styles.chipActive]}
             onPress={() => {
-              previewRingtone(name);
+              void previewRingtone(name);
               if (ringtone !== name) save.mutate({ ringtone: name, ringEnabled });
             }}
           >

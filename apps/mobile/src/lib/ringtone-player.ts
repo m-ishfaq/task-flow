@@ -1,5 +1,5 @@
-import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
-import { File, Paths } from 'expo-file-system';
+import type * as ExpoAudio from 'expo-audio';
+import type * as ExpoFileSystem from 'expo-file-system';
 import {
   encodeWav,
   RINGBACK,
@@ -18,6 +18,34 @@ import {
  * environment. This file is exactly the two-tier split ai/phase-14-
  * mobile.md §11 already draws everywhere else in this app — what CI can
  * prove stops at the WAV bytes; only a device can prove they play.
+ *
+ * ## `expo-audio` and `expo-file-system` are imported dynamically, inside `play`
+ *
+ * Both packages' own entry points call `requireNativeModule(...)` at MODULE
+ * TOP LEVEL — `ExpoAudio.ts`: `export default requireNativeModule('ExpoAudio')`,
+ * `ExpoFileSystem.ts`: the identical shape for `'FileSystem'` — which throws
+ * synchronously the moment either package is imported, on any build where
+ * its native module is not linked. `call-surface.tsx` and
+ * `ringtone-section.tsx` reach this file from `(app)/_layout.tsx` and the
+ * account screen respectively, both mounted for every route, so a top-level
+ * value import here (the first version of this file had one) poisoned the
+ * ENTIRE route tree on such a build, not just ringing — confirmed directly,
+ * not merely reasoned about: a real dev-client run produced exactly `Error:
+ * Cannot find native module 'ExpoAudio'` immediately followed by
+ * `(app)/_layout.tsx` and the account route both "missing the required
+ * default export". The identical failure mode `use-call.ts`'s own header
+ * documents for `react-native-webrtc`, and the one `modules/device-key/
+ * index.ts` was built to defer against from the start with `getNative()`'s
+ * first-use memoization — this file just hadn't been held to the same rule
+ * yet, twice over (both native packages it touches, not only one).
+ *
+ * `getNative()` below is this file's version of that deferral: both
+ * packages are resolved together, once, on the first call to `play()` —
+ * never at import time. That is also why `startRingtone`/`startRingback`/
+ * `previewRingtone` are `async` where the web equivalents are not: there is
+ * no way to defer a possible throw to first use while keeping the call
+ * synchronous. `call-surface.tsx`'s two ringing effects and
+ * `ringtone-section.tsx`'s preview button both await it.
  *
  * ## Written to a file, not played from a `data:` URI
  *
@@ -53,18 +81,45 @@ export interface Ringing {
 
 const SILENT: Ringing = { stop: () => undefined, audible: false };
 
-const fileCache = new Map<string, File>();
+interface NativeAudio {
+  readonly File: typeof ExpoFileSystem.File;
+  readonly Paths: typeof ExpoFileSystem.Paths;
+  readonly createAudioPlayer: typeof ExpoAudio.createAudioPlayer;
+  readonly setAudioModeAsync: typeof ExpoAudio.setAudioModeAsync;
+}
+
+let native: NativeAudio | null = null;
+
+/** Resolves both native packages on first USE, not on import — see the module header. */
+async function getNative(): Promise<NativeAudio> {
+  if (native !== null) return native;
+  const [fileSystem, audio] = await Promise.all([import('expo-file-system'), import('expo-audio')]);
+  native = {
+    File: fileSystem.File,
+    Paths: fileSystem.Paths,
+    createAudioPlayer: audio.createAudioPlayer,
+    setAudioModeAsync: audio.setAudioModeAsync,
+  };
+  return native;
+}
+
+const fileCache = new Map<string, ExpoFileSystem.File>();
 
 /**
  * The on-disk WAV for one tone, rendered and written on first use only.
  * `RINGTONE_NAMES` plus `'ringback'` is a closed, five-plus-one set, so
  * this never grows without bound.
  */
-function ringtoneFile(key: string, tone: Tone, volume: number): File {
+function ringtoneFile(
+  deps: NativeAudio,
+  key: string,
+  tone: Tone,
+  volume: number,
+): ExpoFileSystem.File {
   const cached = fileCache.get(key);
   if (cached !== undefined) return cached;
 
-  const file = new File(Paths.cache, `ringtone-${key}.wav`);
+  const file = new deps.File(deps.Paths.cache, `ringtone-${key}.wav`);
   if (!file.exists) {
     file.create({ intermediates: true });
     file.write(encodeWav(synthesizeToneSamples(tone, volume)));
@@ -73,16 +128,17 @@ function ringtoneFile(key: string, tone: Tone, volume: number): File {
   return file;
 }
 
-function play(key: string, tone: Tone, volume: number): Ringing {
+async function play(key: string, tone: Tone, volume: number): Promise<Ringing> {
   try {
-    const file = ringtoneFile(key, tone, volume);
+    const deps = await getNative();
+    const file = ringtoneFile(deps, key, tone, volume);
     /* Real calling-app behavior: a ring or ringback should sound even
        through the hardware silent switch, the same reason every phone
        dialer does. Called on every play rather than once at app start, so
        it never fights with some other screen's own audio-mode choice. */
-    void setAudioModeAsync({ playsInSilentMode: true }).catch(() => undefined);
+    void deps.setAudioModeAsync({ playsInSilentMode: true }).catch(() => undefined);
 
-    const player = createAudioPlayer({ uri: file.uri });
+    const player = deps.createAudioPlayer({ uri: file.uri });
     player.loop = true;
     player.play();
 
@@ -97,11 +153,11 @@ function play(key: string, tone: Tone, volume: number): Ringing {
       },
     };
   } catch {
-    /* A device with no audio output, a filesystem write failure, or a
-       player construction error. A silent ring is a degraded feature; a
-       thrown error here would take the incoming-call banner down with
-       it — the same trade web's own `play()` makes for a disabled Web
-       Audio context. */
+    /* A device with no audio output, a native module that isn't linked, a
+       filesystem write failure, or a player construction error. A silent
+       ring is a degraded feature; a thrown error here would take the
+       incoming-call banner down with it — the same trade web's own
+       `play()` makes for a disabled Web Audio context. */
     return SILENT;
   }
 }
@@ -113,7 +169,7 @@ const RINGTONE_VOLUME = 0.14;
 const RINGBACK_VOLUME = 0.05;
 
 /** Starts the incoming-call tone. Returns a handle to stop it. */
-export function startRingtone(name: RingtoneName): Ringing {
+export async function startRingtone(name: RingtoneName): Promise<Ringing> {
   return play(name, RINGTONES[name], RINGTONE_VOLUME);
 }
 
@@ -121,14 +177,14 @@ export function startRingtone(name: RingtoneName): Ringing {
  * Starts the ringback the CALLER hears. Not configurable — see web's
  * identical reasoning: a ringback only has to say "still trying".
  */
-export function startRingback(): Ringing {
+export async function startRingback(): Promise<Ringing> {
   return play('ringback', RINGBACK, RINGBACK_VOLUME);
 }
 
 /** Plays one cadence and stops — for previewing a tone in settings. */
-export function previewRingtone(name: RingtoneName): void {
+export async function previewRingtone(name: RingtoneName): Promise<void> {
   const tone = RINGTONES[name];
-  const ringing = play(name, tone, RINGTONE_VOLUME);
+  const ringing = await play(name, tone, RINGTONE_VOLUME);
   setTimeout(() => {
     ringing.stop();
   }, tone.period * 1000);

@@ -156,9 +156,23 @@ function IncomingCallBanner(): React.JSX.Element | null {
 
   useEffect(() => {
     if (ringingSessionId === null || !ringEnabled) return undefined;
-    const ringing: Ringing = startRingtone(ringtone);
+    /* `startRingtone` is async — see `ringtone-player.ts`'s own header on
+       why. `cancelled` guards the race where this effect's cleanup runs
+       (the call was answered/declined, or the banner unmounted) before the
+       native module finishes resolving: the tone must never start playing
+       after the reason to ring is already gone. */
+    let cancelled = false;
+    let ringing: Ringing | null = null;
+    void startRingtone(ringtone).then((result) => {
+      if (cancelled) {
+        result.stop();
+        return;
+      }
+      ringing = result;
+    });
     return () => {
-      ringing.stop();
+      cancelled = true;
+      ringing?.stop();
     };
   }, [ringingSessionId, ringEnabled, ringtone]);
 
@@ -270,9 +284,19 @@ function ActiveCallBar(): React.JSX.Element | null {
 
   useEffect(() => {
     if (!waitingForFirstAnswer) return undefined;
-    const ringing = startRingback();
+    /* Same async-race guard as the incoming-ringtone effect above. */
+    let cancelled = false;
+    let ringing: Ringing | null = null;
+    void startRingback().then((result) => {
+      if (cancelled) {
+        result.stop();
+        return;
+      }
+      ringing = result;
+    });
     return () => {
-      ringing.stop();
+      cancelled = true;
+      ringing?.stop();
     };
   }, [waitingForFirstAnswer]);
 
