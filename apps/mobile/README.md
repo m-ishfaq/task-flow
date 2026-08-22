@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — now closing the Work gap against web feature by feature (My Tasks grouping + sprint scope shipped; boards and card detail next)
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — closing the Work gap against web feature by feature (My Tasks and Boards shipped; card detail next)
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -1914,6 +1914,41 @@ a second membership check.
 Status stays deliberately absent, matching web exactly — Wave 2's own
 investigation into why is unchanged (status definitions are per-project;
 My Tasks spans many projects at once).
+
+## Work, closing the gap against web: Boards — create card, create list, WIP limits, list options
+
+The second slice of the Work parity pass, following My Tasks. Audited
+against `apps/web/src/features/work/list-column.tsx` and `add-list.tsx`:
+`board/[boardId].tsx` could previously only READ a board that already
+existed, with no way to grow one at all — no "+ Add card", no "+ Add
+list", no WIP limit shown, no way to rename or archive a column. All
+four close in this increment; **column REORDERING (web's own left/right
+buttons) does not** — see this screen's own header for why it is called
+out as a separate, explicit gap rather than silently skipped.
+
+**Add Card ported the two non-obvious behaviors web's own comments call
+out, not just the happy path.** The field clears on SUBMIT, not on
+success, and restores the typed title only if the box is still empty on
+failure — someone who already started the next card must not have it
+overwritten by the previous one's recovery. And there is still no
+optimistic insert: a card's reference (`WEB-142`) is server-assigned from
+a per-project counter, and a number that changes under the reader a
+moment later is worse than one that appears a moment late.
+
+**The WIP limit is displayed, never enforced — the same §10.1 rule
+`card-row.tsx`'s "no drag-and-drop" header already lives by.** A tab now
+reads `count` or `count/limit`, the limit half turning to a warning color
+once the column is over — `cards.move` reports the breach and completes
+the move regardless. Blocking someone from recording work already in
+progress stops them using the board, not the work.
+
+**List options (rename / WIP limit / archive) open on a LONG PRESS of a
+tab** — the same gesture `channel/[channelId].tsx` already uses for a
+message's action sheet, chosen over a per-tab "⋯" button a narrow chip
+has no room for without crowding the name and count it already shows. An
+empty WIP-limit box means "no limit" (`null`), not zero — zero would
+render the column as permanently over its limit, the identical footgun
+web's own `ListMenu` comment names.
 
 ## Not here yet
 

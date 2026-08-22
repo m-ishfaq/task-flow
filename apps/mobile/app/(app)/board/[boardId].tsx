@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -24,6 +25,7 @@ import {
   cardQueryKey,
   listsQueryKey,
   type CardSummary,
+  type ListSummary,
 } from '../../../src/lib/work.js';
 
 /**
@@ -57,6 +59,36 @@ import {
  * feedback mid-drag). Moving a card here is a discrete "Move" button on each
  * row opening a plain list of the board's OTHER lists — append-to-end only
  * (`beforeCardId`/`afterCardId` both null), no reordering WITHIN a list.
+ *
+ * **Creating cards and lists, WIP limits, and list rename/archive** close
+ * the gap a systematic audit against `apps/web/src/features/work/
+ * list-column.tsx` and `add-list.tsx` found: this screen could previously
+ * only READ a board that already existed, with no way to grow one. Ported
+ * with the same non-obvious behavior web's own comments call out:
+ *
+ *   - **Add Card clears its field on SUBMIT, not on success**, and restores
+ *     the title only if the box is still empty on failure — someone who
+ *     already started the next card must not have it overwritten by the
+ *     previous one's recovery. Deliberately still not OPTIMISTIC: a card's
+ *     reference (`WEB-142`) is server-assigned from a per-project counter,
+ *     and a number that changes under the reader a moment later is worse
+ *     than one that appears a moment late.
+ *   - **The WIP limit is displayed, never enforced** — `count`/`count/limit`
+ *     in the tab, the limit half in a warning color once over. `cards.move`
+ *     reports the breach and completes the move regardless (§10.1: blocking
+ *     someone from recording work already in progress stops them using the
+ *     board, not stops the work).
+ *   - **List options (rename / WIP limit / archive) open on a LONG PRESS of
+ *     a tab**, the same gesture `channel/[channelId].tsx` already uses for
+ *     a message's action sheet — chosen over a per-tab "⋯" button, which a
+ *     narrow chip has no room for without crowding the name and count it
+ *     already carries.
+ *
+ * **Still explicitly out of scope, real and separate work**: list
+ * REORDERING (web's own left/right buttons in `ListMenu` have no mobile
+ * equivalent yet — the tab strip's order is whatever `lists.list` returns),
+ * saved views, filters, and the group-by/sort-by controls `home.tsx`'s own
+ * due-date grouping is the one instance of on this app so far.
  */
 export default function BoardScreen() {
   const params = useLocalSearchParams<{ boardId: string }>();
@@ -79,6 +111,13 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
   const [moving, setMoving] = useState<CardSummary | null>(null);
   const [moveError, setMoveError] = useState<unknown>(null);
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
+  const [newCardTitle, setNewCardTitle] = useState('');
+  const [addingList, setAddingList] = useState(false);
+  const [newListName, setNewListName] = useState('');
+  const [listOptionsFor, setListOptionsFor] = useState<ListSummary | null>(null);
+  const [optionsName, setOptionsName] = useState('');
+  const [optionsWip, setOptionsWip] = useState('');
+  const [optionsError, setOptionsError] = useState<unknown>(null);
 
   const lists = useQuery({
     queryKey: listsQueryKey(boardId),
@@ -136,6 +175,61 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
       setMoveError(error);
     },
   });
+
+  const refreshBoard = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: boardCardsQueryKey(boardId) }),
+      queryClient.invalidateQueries({ queryKey: listsQueryKey(boardId) }),
+    ]);
+
+  // Field clears on SUBMIT, not on success, and only refills on failure if
+  // the box is still empty — see this file's own header on why, and why
+  // there is still no optimistic insert (the reference is server-assigned).
+  const createCard = useMutation({
+    mutationFn: (input: { listId: string; title: string }) =>
+      apiClient.work.cards.create.mutate({ listId: input.listId, title: input.title }),
+    onError: (_error, input) => {
+      setNewCardTitle((current) => (current === '' ? input.title : current));
+    },
+    onSettled: async () => {
+      await refreshBoard();
+    },
+  });
+
+  const createList = useMutation({
+    mutationFn: (name: string) => apiClient.work.lists.create.mutate({ boardId, name }),
+    onSuccess: async (result) => {
+      setAddingList(false);
+      setNewListName('');
+      setSelectedListId(result.listId);
+      await refreshBoard();
+    },
+  });
+
+  const updateList = useMutation({
+    mutationFn: (input: { listId: string; name: string; wipLimit: number | null }) =>
+      apiClient.work.lists.update.mutate(input),
+    onSuccess: async () => {
+      setListOptionsFor(null);
+      await refreshBoard();
+    },
+    onError: (error) => {
+      setOptionsError(error);
+    },
+  });
+
+  const archiveList = useMutation({
+    mutationFn: (listId: string) => apiClient.work.lists.archive.mutate({ listId, archived: true }),
+    onSuccess: async () => {
+      setListOptionsFor(null);
+      if (selectedListId === listOptionsFor?.listId) setSelectedListId(null);
+      await refreshBoard();
+    },
+    onError: (error) => {
+      setOptionsError(error);
+    },
+  });
+
   const paddingTop = useTopInset();
 
   if (lists.isError || cards.isError) {
@@ -163,57 +257,112 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
         <BackButton />
       </View>
 
-      {lists.data.length === 0 ? (
-        <Text style={styles.label}>This board has no lists yet.</Text>
-      ) : (
-        <>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.tabStripFrame}
-            contentContainerStyle={styles.tabStrip}
-          >
-            {lists.data.map((list) => (
-              <Pressable
-                key={list.listId}
-                style={[styles.tab, list.listId === activeListId && styles.tabActive]}
-                onPress={() => {
-                  setSelectedListId(list.listId);
-                }}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.tabStripFrame}
+        contentContainerStyle={styles.tabStrip}
+      >
+        {lists.data.map((list) => {
+          const overLimit = list.wipLimit !== null && list.cardCount > list.wipLimit;
+          return (
+            <Pressable
+              key={list.listId}
+              style={[styles.tab, list.listId === activeListId && styles.tabActive]}
+              onPress={() => {
+                setSelectedListId(list.listId);
+              }}
+              onLongPress={() => {
+                setListOptionsFor(list);
+                setOptionsName(list.name);
+                setOptionsWip(list.wipLimit === null ? '' : String(list.wipLimit));
+                setOptionsError(null);
+              }}
+            >
+              <Text
+                style={[styles.tabText, list.listId === activeListId && styles.tabTextActive]}
+                numberOfLines={1}
               >
-                <Text
-                  style={[styles.tabText, list.listId === activeListId && styles.tabTextActive]}
-                  numberOfLines={1}
-                >
-                  {list.name}
-                </Text>
-                <Text
-                  style={[styles.tabCount, list.listId === activeListId && styles.tabCountActive]}
-                >
-                  {list.cardCount}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
+                {list.name}
+              </Text>
+              <Text
+                style={[
+                  styles.tabCount,
+                  list.listId === activeListId && styles.tabCountActive,
+                  overLimit && styles.tabCountWarning,
+                ]}
+              >
+                {list.cardCount}
+                {list.wipLimit !== null && `/${String(list.wipLimit)}`}
+              </Text>
+            </Pressable>
+          );
+        })}
+        <Pressable
+          style={styles.addListTab}
+          onPress={() => {
+            setNewListName('');
+            setAddingList(true);
+          }}
+        >
+          <Text style={styles.addListTabText}>+ Add list</Text>
+        </Pressable>
+      </ScrollView>
 
-          <FlatList<CardSummary>
-            key={activeListId}
-            data={activeCards}
-            keyExtractor={(card) => card.cardId}
-            renderItem={({ item }) => (
-              <CardRow
-                card={item}
-                onMove={() => {
-                  setMoveError(null);
-                  setMoving(item);
-                }}
-              />
-            )}
-            contentContainerStyle={styles.cardList}
-            style={styles.cardListContainer}
-            ListEmptyComponent={<Text style={styles.emptyList}>No cards in this list.</Text>}
+      {lists.data.length === 0 ? (
+        <Text style={styles.label}>This board has no lists yet — add one to get started.</Text>
+      ) : (
+        <FlatList<CardSummary>
+          key={activeListId}
+          data={activeCards}
+          keyExtractor={(card) => card.cardId}
+          renderItem={({ item }) => (
+            <CardRow
+              card={item}
+              onMove={() => {
+                setMoveError(null);
+                setMoving(item);
+              }}
+            />
+          )}
+          contentContainerStyle={styles.cardList}
+          style={styles.cardListContainer}
+          ListEmptyComponent={<Text style={styles.emptyList}>No cards in this list.</Text>}
+        />
+      )}
+
+      {activeListId !== null && (
+        <View style={styles.addCardRow}>
+          <TextInput
+            style={styles.addCardInput}
+            placeholder="Add a card"
+            placeholderTextColor={colors.inkFaint.hex}
+            value={newCardTitle}
+            onChangeText={setNewCardTitle}
+            onSubmitEditing={() => {
+              const value = newCardTitle.trim();
+              if (value === '') return;
+              setNewCardTitle('');
+              createCard.mutate({ listId: activeListId, title: value });
+            }}
           />
-        </>
+          <Pressable
+            style={styles.addCardButton}
+            onPress={() => {
+              const value = newCardTitle.trim();
+              if (value === '') return;
+              setNewCardTitle('');
+              createCard.mutate({ listId: activeListId, title: value });
+            }}
+          >
+            <Text style={styles.addCardButtonText}>Add</Text>
+          </Pressable>
+        </View>
+      )}
+      {createCard.isError && (
+        <Text style={styles.error} accessibilityRole="alert">
+          {apiErrorOf(createCard.error)?.error.message ?? 'The card was not created.'}
+        </Text>
       )}
 
       <Modal
@@ -262,6 +411,134 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
               }}
             >
               <Text style={styles.modalCancelText}>Cancel</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={addingList}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setAddingList(false);
+        }}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => {
+            setAddingList(false);
+          }}
+        >
+          <Pressable style={styles.modalCard} onPress={() => undefined}>
+            <Text style={styles.modalTitle}>Add a list</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="e.g. In review"
+              placeholderTextColor={colors.inkFaint.hex}
+              value={newListName}
+              onChangeText={setNewListName}
+              autoFocus
+            />
+            {createList.isError && (
+              <Text style={styles.modalError} accessibilityRole="alert">
+                {apiErrorOf(createList.error)?.error.message ?? 'The list was not created.'}
+              </Text>
+            )}
+            <View style={styles.modalActions}>
+              <Pressable
+                style={styles.modalPrimaryButton}
+                disabled={createList.isPending || newListName.trim().length === 0}
+                onPress={() => {
+                  createList.mutate(newListName.trim());
+                }}
+              >
+                <Text style={styles.modalPrimaryButtonText}>Add list</Text>
+              </Pressable>
+              <Pressable
+                style={styles.modalSecondaryButton}
+                onPress={() => {
+                  setAddingList(false);
+                }}
+              >
+                <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={listOptionsFor !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setListOptionsFor(null);
+        }}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => {
+            setListOptionsFor(null);
+          }}
+        >
+          <Pressable style={styles.modalCard} onPress={() => undefined}>
+            <Text style={styles.modalTitle}>List options</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="List name"
+              placeholderTextColor={colors.inkFaint.hex}
+              value={optionsName}
+              onChangeText={setOptionsName}
+            />
+            <TextInput
+              style={styles.modalInput}
+              placeholder="WIP limit (optional, advisory only)"
+              placeholderTextColor={colors.inkFaint.hex}
+              value={optionsWip}
+              onChangeText={setOptionsWip}
+              keyboardType="number-pad"
+            />
+            {optionsError !== null && (
+              <Text style={styles.modalError} accessibilityRole="alert">
+                {apiErrorOf(optionsError)?.error.message ?? 'The list was not updated.'}
+              </Text>
+            )}
+            <View style={styles.modalActions}>
+              <Pressable
+                style={styles.modalPrimaryButton}
+                disabled={updateList.isPending || optionsName.trim().length === 0}
+                onPress={() => {
+                  if (listOptionsFor === null) return;
+                  const parsed = Number.parseInt(optionsWip, 10);
+                  updateList.mutate({
+                    listId: listOptionsFor.listId,
+                    name: optionsName.trim(),
+                    // An empty box means "no limit" (null), not zero — zero would
+                    // render the column as permanently over its limit.
+                    wipLimit: optionsWip.trim() === '' || Number.isNaN(parsed) ? null : parsed,
+                  });
+                }}
+              >
+                <Text style={styles.modalPrimaryButtonText}>Save</Text>
+              </Pressable>
+              <Pressable
+                style={styles.modalSecondaryButton}
+                onPress={() => {
+                  setListOptionsFor(null);
+                }}
+              >
+                <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
+              </Pressable>
+            </View>
+            <Pressable
+              style={styles.modalDangerRow}
+              disabled={archiveList.isPending}
+              onPress={() => {
+                if (listOptionsFor !== null) archiveList.mutate(listOptionsFor.listId);
+              }}
+            >
+              <Text style={styles.modalDangerText}>Archive this list</Text>
             </Pressable>
           </Pressable>
         </Pressable>
@@ -361,6 +638,24 @@ const styles = StyleSheet.create({
   tabCountActive: {
     color: colors.accentInk.hex,
   },
+  tabCountWarning: {
+    fontWeight: '700',
+    color: colors.warning.hex,
+  },
+  addListTab: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+    borderStyle: 'dashed',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  addListTabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.accent.hex,
+  },
   cardListContainer: {
     flex: 1,
   },
@@ -380,6 +675,42 @@ const styles = StyleSheet.create({
     color: colors.inkMuted.hex,
     textAlign: 'center',
     paddingHorizontal: 24,
+  },
+  addCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+  addCardInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+    borderRadius: radiusCard,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: colors.ink.hex,
+    backgroundColor: colors.surfaceSunken.hex,
+  },
+  addCardButton: {
+    backgroundColor: colors.accent.hex,
+    borderRadius: radiusCard,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  addCardButtonText: {
+    color: colors.accentInk.hex,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  error: {
+    fontSize: 12,
+    color: colors.danger.hex,
+    paddingHorizontal: 24,
+    paddingBottom: 8,
   },
   modalBackdrop: {
     flex: 1,
@@ -420,6 +751,51 @@ const styles = StyleSheet.create({
   },
   modalCancelText: {
     fontSize: 15,
+    fontWeight: '600',
+    color: colors.danger.hex,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+    borderRadius: radiusCard,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: colors.ink.hex,
+    backgroundColor: colors.surfaceSunken.hex,
+    marginBottom: 8,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  modalPrimaryButton: {
+    backgroundColor: colors.accent.hex,
+    borderRadius: radiusCard,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  modalPrimaryButtonText: {
+    color: colors.accentInk.hex,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalSecondaryButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  modalSecondaryButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.inkMuted.hex,
+  },
+  modalDangerRow: {
+    paddingTop: 16,
+    alignItems: 'center',
+  },
+  modalDangerText: {
+    fontSize: 13,
     fontWeight: '600',
     color: colors.danger.hex,
   },
