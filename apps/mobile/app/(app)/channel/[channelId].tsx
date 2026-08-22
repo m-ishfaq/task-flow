@@ -723,22 +723,6 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
 
       {canPost && (
         <>
-          <Pressable
-            style={styles.attachRow}
-            disabled={attach.isPending}
-            onPress={() => {
-              void pickAttachment().then((file) => {
-                if (file !== null) attach.mutate(file);
-              });
-            }}
-          >
-            {attach.isPending ? (
-              <ActivityIndicator color={colors.accent.hex} />
-            ) : (
-              <Text style={styles.attachRowText}>📎 Attach a file</Text>
-            )}
-          </Pressable>
-
           {/* Shown only while the draft is a bare command word — one word in,
               the list would just cover the composer — mirroring `chat-page
               .tsx`'s own `SlashCommandMenu`. Purely an affordance: typing
@@ -774,6 +758,14 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
             error={send.isError ? send.error : null}
             placeholder="Message… (or /topic, /leave, /shrug, /me)"
             fallbackError="The message was not sent."
+            attachAction={{
+              pending: attach.isPending,
+              onPress: () => {
+                void pickAttachment().then((file) => {
+                  if (file !== null) attach.mutate(file);
+                });
+              },
+            }}
           />
         </>
       )}
@@ -1421,15 +1413,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     color: colors.inkFaint.hex,
-  },
-  attachRow: {
-    alignSelf: 'flex-start',
-    paddingVertical: 4,
-  },
-  attachRowText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.accent.hex,
   },
   modalBackdrop: {
     flex: 1,

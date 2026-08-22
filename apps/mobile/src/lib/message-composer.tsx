@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiErrorOf } from './trpc-client.js';
 import { activeMentionQuery, insertMention, type PendingMention } from './message-compose.js';
@@ -68,6 +69,20 @@ import type { Member } from './use-members.js';
  * unconditionally), and `syntax` is de-emphasized rather than hidden — the
  * `**`/`[]()` characters stay ON SCREEN because this input has no separate
  * "display value" from the real one `onChangeText` reports.
+ *
+ * ## One row, WhatsApp-shaped
+ *
+ * Was a bordered rectangular input with a text "Send" button beside it, plus
+ * a SEPARATE "Attach a file" text row above the whole composer in
+ * `channel/[channelId].tsx` — three visually distinct affordances stacked
+ * vertically. `attachAction` folds the attach control INTO this row, as a
+ * round icon button the caller supplies (or omits — `thread/[messageId]
+ * .tsx` has no attach flow and passes nothing), so the shape reads
+ * `[attach] [pill input] [round send]` in one line, the same layout every
+ * reader already knows from a dozen other chat apps rather than a bespoke
+ * one. `sendButton`'s own color communicates state (muted when the draft is
+ * empty, filled once there is something to send) instead of the `disabled`
+ * boolean doing that job silently through opacity alone.
  */
 export function MessageComposer({
   draft,
@@ -80,6 +95,7 @@ export function MessageComposer({
   error,
   placeholder,
   fallbackError,
+  attachAction,
 }: {
   readonly draft: string;
   readonly onDraftChange: (text: string) => void;
@@ -91,6 +107,14 @@ export function MessageComposer({
   readonly error?: unknown;
   readonly placeholder: string;
   readonly fallbackError: string;
+  /**
+   * Rendered as a round icon button at the LEFT of the input row, WhatsApp-
+   * style, when present. `thread/[messageId].tsx` has no attach flow at all
+   * and omits it; `channel/[channelId].tsx` passes `pickAttachment`'s own
+   * mutation state — this component owns none of that logic, only where
+   * the button sits.
+   */
+  readonly attachAction?: { readonly onPress: () => void; readonly pending: boolean };
 }) {
   // `undefined` until the first `onSelectionChange` event arrives, which
   // leaves the TextInput's cursor fully native (uncontrolled) for the very
@@ -143,6 +167,20 @@ export function MessageComposer({
       )}
 
       <View style={styles.composerRow}>
+        {attachAction !== undefined && (
+          <Pressable
+            style={styles.attachButton}
+            disabled={attachAction.pending}
+            onPress={attachAction.onPress}
+            accessibilityLabel="Attach a file"
+          >
+            {attachAction.pending ? (
+              <ActivityIndicator color={colors.inkMuted.hex} />
+            ) : (
+              <Ionicons name="attach" size={22} color={colors.inkMuted.hex} />
+            )}
+          </Pressable>
+        )}
         <MarkdownTextInput
           value={draft}
           onChangeText={onDraftChange}
@@ -161,14 +199,22 @@ export function MessageComposer({
           }}
         />
         <Pressable
-          style={styles.sendButton}
+          style={[
+            styles.sendButton,
+            (draft.trim().length === 0 || sending) && styles.sendButtonDisabled,
+          ]}
           disabled={draft.trim().length === 0 || sending}
           onPress={onSubmit}
+          accessibilityLabel="Send"
         >
           {sending ? (
             <ActivityIndicator color={colors.accentInk.hex} />
           ) : (
-            <Text style={styles.sendButtonText}>Send</Text>
+            <Ionicons
+              name="send"
+              size={18}
+              color={draft.trim().length === 0 ? colors.inkFaint.hex : colors.accentInk.hex}
+            />
           )}
         </Pressable>
       </View>
@@ -202,32 +248,38 @@ const styles = StyleSheet.create({
   },
   composerRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
     alignItems: 'flex-end',
     paddingVertical: 12,
   },
+  attachButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   composerInput: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: colors.line.hex,
-    borderRadius: radiusCard,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: colors.ink.hex,
-    backgroundColor: colors.surfaceSunken.hex,
-    maxHeight: 100,
-  },
-  sendButton: {
-    backgroundColor: colors.accent.hex,
-    borderRadius: radiusCard,
+    borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
-  },
-  sendButtonText: {
-    color: colors.accentInk.hex,
     fontSize: 14,
-    fontWeight: '600',
+    lineHeight: 19,
+    color: colors.ink.hex,
+    backgroundColor: colors.surfaceSunken.hex,
+    minHeight: 40,
+    maxHeight: 120,
+  },
+  sendButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent.hex,
+  },
+  sendButtonDisabled: {
+    backgroundColor: colors.surfaceSunken.hex,
   },
   error: {
     color: colors.danger.hex,

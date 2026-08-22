@@ -2985,6 +2985,24 @@ of the site/title/description text rather than above it, to stay compact at this
 `maxWidth: 320`. `Image`'s own network loading fails independently of the text beside it, so a
 broken or expired thumbnail cannot take a preview's title or description down with it.
 
+### The message composer, redesigned into one WhatsApp-shaped row
+
+By explicit request, after real-device use called the composer "very basic". It was a bordered
+rectangular input with a text "Send" button beside it, plus a SEPARATE "Attach a file" text row
+stacked above the whole composer in `channel/[channelId].tsx` — three visually distinct
+affordances in two rows. `message-composer.tsx`'s `MessageComposer` gained an optional
+`attachAction` prop (`{ onPress, pending }`) so the caller's attach control renders INSIDE the
+same row as a round icon button, instead of owning its own row above; `thread/[messageId].tsx`
+has no attach flow and simply omits the prop, so nothing new is required there. The row now reads
+`[📎 attach] [pill input] [● send]`, matching the shape a dozen other chat apps already establish
+rather than a bespoke one — `Ionicons` (`@expo/vector-icons`, already a dependency for the tab bar)
+supplies `attach` and `send`, replacing the emoji glyph and text label. The send button's
+background communicates state directly (muted when the draft is empty, filled once there is
+something to send) instead of leaving that to `disabled`'s default opacity dimming alone.
+
+Verified: typecheck, lint, and all 218 tests pass; guardrail self-test, encoding check, and mobile
+bundle secret check all clean; a fresh `expo export` for Android bundles cleanly.
+
 ## Not here yet
 
 - **CallKit (iOS) / ConnectionService (Android) — a real lock-screen "incoming call" UI.** Named
