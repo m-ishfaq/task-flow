@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { formatDistanceToNow } from 'date-fns';
 import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
@@ -23,11 +24,20 @@ import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { useMembers, type Member } from '../../../src/lib/use-members.js';
 import {
   CHANNELS_QUERY_KEY,
+  SAVED_QUERY_KEY,
   channelDisplayName,
   channelTypeGlyph,
   unreadCountsQueryKey,
   type Channel,
+  type SavedMessage,
 } from '../../../src/lib/chat.js';
+import {
+  NOTIFICATIONS_QUERY_KEY,
+  NOTIFICATION_COUNT_QUERY_KEY,
+  mobileRouteFor,
+  notificationIcon,
+  type NotificationSummary,
+} from '../../../src/lib/notifications.js';
 
 /**
  * Chat's entry point — the fourth tab (see `_layout.tsx`). Wave 3's
@@ -61,6 +71,8 @@ import {
  */
 export default function Chat() {
   const [composerMode, setComposerMode] = useState<ComposerMode>('closed');
+  const [savedOpen, setSavedOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const viewerId = useSession((state) => state.userId);
   const { personOf, isPending: peoplePending } = useMembers();
 
@@ -69,6 +81,33 @@ export default function Chat() {
     queryFn: async () => wire(await apiClient.chat.channels.list.query()),
   });
   const paddingTop = useTopInset();
+
+  // Org-wide, not per-channel — `chat.saved.list` re-checks `channel:read`
+  // on every row and drops what the caller can no longer see, so this
+  // count is never stale in the direction that would leak. Enabled
+  // unconditionally (unlike `unread` below, which needs a channel list
+  // first): a save has no dependency on the channel list ever loading.
+  const saved = useQuery({
+    queryKey: SAVED_QUERY_KEY,
+    queryFn: async () => wire(await apiClient.chat.saved.list.query()),
+  });
+
+  // Polled, mirroring `notification-bell.tsx`'s own header: a notification
+  // can arrive from a channel, board, or Docs page this screen never
+  // joined, so there is no room broadcast to ride on the way an unread
+  // channel count does. `notifications.ts`'s own header has the rest of
+  // the reasoning for why this lives on Chat's header rather than a
+  // persistent shell this app does not have.
+  const notificationCount = useQuery({
+    queryKey: NOTIFICATION_COUNT_QUERY_KEY,
+    queryFn: () => apiClient.notifications.unreadCount.query(),
+    refetchInterval: 20_000,
+  });
+  const notifications = useQuery({
+    queryKey: NOTIFICATIONS_QUERY_KEY,
+    queryFn: async () => wire(await apiClient.notifications.listMine.query()),
+    refetchInterval: 20_000,
+  });
 
   const channelIds = channels.data?.channels.map((channel) => channel.channelId) ?? [];
   const unread = useQuery({
@@ -100,14 +139,44 @@ export default function Chat() {
     <View style={[styles.container, { paddingTop }]}>
       <View style={styles.titleRow}>
         <Text style={styles.title}>Chat</Text>
-        <Pressable
-          style={styles.newButton}
-          onPress={() => {
-            setComposerMode('menu');
-          }}
-        >
-          <Text style={styles.newButtonText}>+ New</Text>
-        </Pressable>
+        <View style={styles.titleActions}>
+          <Pressable
+            style={styles.newButton}
+            accessibilityLabel={
+              (notificationCount.data?.unread ?? 0) > 0
+                ? `Notifications, ${String(notificationCount.data?.unread)} unread`
+                : 'Notifications'
+            }
+            onPress={() => {
+              setNotificationsOpen(true);
+            }}
+          >
+            <Text style={styles.newButtonText}>
+              🔔
+              {(notificationCount.data?.unread ?? 0) > 0
+                ? ` ${String(notificationCount.data?.unread)}`
+                : ''}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={styles.newButton}
+            onPress={() => {
+              setSavedOpen(true);
+            }}
+          >
+            <Text style={styles.newButtonText}>
+              🔖 Saved{(saved.data?.length ?? 0) > 0 ? ` · ${String(saved.data?.length)}` : ''}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={styles.newButton}
+            onPress={() => {
+              setComposerMode('menu');
+            }}
+          >
+            <Text style={styles.newButtonText}>+ New</Text>
+          </Pressable>
+        </View>
       </View>
 
       <FlatList<Channel>
@@ -136,6 +205,23 @@ export default function Chat() {
         mode={composerMode}
         canCreateChannel={canCreateChannel}
         onModeChange={setComposerMode}
+      />
+
+      <SavedMessagesModal
+        open={savedOpen}
+        rows={saved.data ?? []}
+        onClose={() => {
+          setSavedOpen(false);
+        }}
+      />
+
+      <NotificationsModal
+        open={notificationsOpen}
+        rows={notifications.data ?? []}
+        personOf={personOf}
+        onClose={() => {
+          setNotificationsOpen(false);
+        }}
       />
     </View>
   );
@@ -266,6 +352,237 @@ function NewConversationModal({
         </Pressable>
       </KeyboardAvoidingView>
     </Modal>
+  );
+}
+
+/**
+ * The personal bookmark list, ORG-WIDE — ported from `apps/web/src/
+ * features/chat/chat-page.tsx`'s own `SavedMessagesButton`/
+ * `SavedMessageRow`. `channel-details/[channelId].tsx`'s own "Starred by
+ * you" section already reads `chat.saved.list`, but filtered client-side
+ * to one channel, matching web's identical per-channel `SavedSection` —
+ * this is the OTHER half web has and mobile did not: the unfiltered list,
+ * reachable from the channel list itself rather than nested inside one
+ * conversation's details, so a message saved in channel A can be found
+ * again without first navigating back into channel A. Both screens share
+ * the same `SAVED_QUERY_KEY` cache entry (`chat.ts`'s own comment on it) —
+ * unsaving from either one updates the other with no second fetch.
+ *
+ * No `KeyboardAvoidingView` wrapper, unlike `NewConversationModal` above:
+ * nothing in this sheet is a text input.
+ */
+function SavedMessagesModal({
+  open,
+  rows,
+  onClose,
+}: {
+  readonly open: boolean;
+  readonly rows: readonly SavedMessage[];
+  readonly onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+
+  const unsave = useMutation({
+    mutationFn: (messageId: string) => apiClient.chat.saved.unsave.mutate({ messageId }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: SAVED_QUERY_KEY });
+    },
+  });
+
+  return (
+    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={styles.modalCard} onPress={() => undefined}>
+          <Text style={styles.modalTitle}>Saved messages</Text>
+          <ScrollView>
+            {rows.length === 0 ? (
+              <Text style={styles.label}>Save a message from its menu to find it here later.</Text>
+            ) : (
+              rows.map((row) => (
+                <SavedMessageRow
+                  key={row.messageId}
+                  row={row}
+                  pending={unsave.isPending}
+                  onOpen={() => {
+                    onClose();
+                    router.push(`/channel/${row.channelId}`);
+                  }}
+                  onUnsave={() => {
+                    unsave.mutate(row.messageId);
+                  }}
+                />
+              ))
+            )}
+          </ScrollView>
+          <Pressable style={styles.modalCancel} onPress={onClose}>
+            <Text style={styles.modalCancelText}>Close</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function SavedMessageRow({
+  row,
+  pending,
+  onOpen,
+  onUnsave,
+}: {
+  readonly row: SavedMessage;
+  readonly pending: boolean;
+  readonly onOpen: () => void;
+  readonly onUnsave: () => void;
+}) {
+  return (
+    <View style={styles.savedRow}>
+      <Pressable style={styles.savedRowMain} onPress={onOpen}>
+        <Text style={styles.savedRowChannel} numberOfLines={1}>
+          {channelTypeGlyph(row.channelType)}
+          {row.channelName ?? 'Direct message'}
+        </Text>
+        <Text style={styles.savedRowExcerpt} numberOfLines={2}>
+          {row.excerpt ?? '(message deleted)'}
+        </Text>
+        <Text style={styles.savedRowTime}>
+          Saved {formatDistanceToNow(new Date(row.savedAt), { addSuffix: true })}
+        </Text>
+      </Pressable>
+      <Pressable disabled={pending} onPress={onUnsave} hitSlop={8}>
+        <Text style={styles.savedRowUnsave}>Unsave</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+/**
+ * The org-wide notification list — mentions, DMs, thread replies, card
+ * assignments, missed calls — ported from `apps/web/src/features/chat/
+ * notification-bell.tsx`. See `notifications.ts`'s own header for why this
+ * file (Chat's) is where it lives despite covering more than chat, and for
+ * why `mobileRouteFor` — not `notification-path.ts`'s `mobilePathFor` — is
+ * the routing table this reads.
+ *
+ * **Tapping a row marks only THAT row read and opens it; "Mark all read"
+ * is the separate bulk action** — the same split web draws and for the
+ * identical reason: reading one mention should not silently mark forty
+ * others read too, which is how a reply nobody actually saw goes
+ * unanswered.
+ */
+function NotificationsModal({
+  open,
+  rows,
+  personOf,
+  onClose,
+}: {
+  readonly open: boolean;
+  readonly rows: readonly NotificationSummary[];
+  readonly personOf: (userId: string) => { readonly label: string };
+  readonly onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY }),
+      queryClient.invalidateQueries({ queryKey: NOTIFICATION_COUNT_QUERY_KEY }),
+    ]);
+
+  const markAllRead = useMutation({
+    mutationFn: () => apiClient.notifications.markAllRead.mutate(),
+    onSuccess: refresh,
+  });
+
+  const markOneRead = useMutation({
+    mutationFn: (notificationId: string) =>
+      apiClient.notifications.markRead.mutate({ notificationId }),
+    onSuccess: refresh,
+  });
+
+  const unread = rows.filter((row) => row.readAt === null).length;
+
+  const openNotification = (notification: NotificationSummary): void => {
+    if (notification.readAt === null) markOneRead.mutate(notification.notificationId);
+    onClose();
+    const path = mobileRouteFor(notification);
+    if (path !== null) router.push(path);
+  };
+
+  return (
+    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={styles.modalCard} onPress={() => undefined}>
+          <View style={styles.notificationsHeader}>
+            <Text style={styles.modalTitle}>Notifications</Text>
+            {unread > 0 && (
+              <Pressable
+                disabled={markAllRead.isPending}
+                onPress={() => {
+                  markAllRead.mutate();
+                }}
+              >
+                <Text style={styles.savedRowUnsave}>Mark all read</Text>
+              </Pressable>
+            )}
+          </View>
+          <ScrollView>
+            {rows.length === 0 ? (
+              <Text style={styles.label}>Mentions and direct messages show up here.</Text>
+            ) : (
+              rows.map((notification) => (
+                <NotificationRow
+                  key={notification.notificationId}
+                  notification={notification}
+                  actorLabel={
+                    notification.actorId === null ? null : personOf(notification.actorId).label
+                  }
+                  onOpen={() => {
+                    openNotification(notification);
+                  }}
+                />
+              ))
+            )}
+          </ScrollView>
+          <Pressable style={styles.modalCancel} onPress={onClose}>
+            <Text style={styles.modalCancelText}>Close</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function NotificationRow({
+  notification,
+  actorLabel,
+  onOpen,
+}: {
+  readonly notification: NotificationSummary;
+  readonly actorLabel: string | null;
+  readonly onOpen: () => void;
+}) {
+  return (
+    <Pressable
+      style={[styles.savedRow, notification.readAt === null && styles.notificationRowUnread]}
+      onPress={onOpen}
+    >
+      <View style={styles.notificationRowTop}>
+        <Text style={styles.notificationRowIcon}>{notificationIcon(notification.kind)}</Text>
+        <Text style={styles.savedRowChannel} numberOfLines={1}>
+          {notification.title}
+        </Text>
+      </View>
+      {actorLabel !== null && (
+        <Text style={styles.savedRowTime} numberOfLines={1}>
+          {actorLabel}
+        </Text>
+      )}
+      {notification.excerpt !== null && (
+        <Text style={styles.savedRowExcerpt} numberOfLines={2}>
+          {notification.excerpt}
+        </Text>
+      )}
+    </Pressable>
   );
 }
 
@@ -459,6 +776,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.ink.hex,
   },
+  titleActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   newButton: {
     borderWidth: 1,
     borderColor: colors.accent.hex,
@@ -563,6 +884,48 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: colors.danger.hex,
+  },
+  savedRow: {
+    gap: 4,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line.hex,
+  },
+  savedRowMain: {
+    gap: 2,
+  },
+  savedRowChannel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.ink.hex,
+  },
+  savedRowExcerpt: {
+    fontSize: 13,
+    color: colors.inkMuted.hex,
+  },
+  savedRowTime: {
+    fontSize: 11,
+    color: colors.inkFaint.hex,
+  },
+  savedRowUnsave: {
+    fontSize: 11,
+    color: colors.inkFaint.hex,
+  },
+  notificationsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  notificationRowUnread: {
+    backgroundColor: colors.surfaceHover.hex,
+  },
+  notificationRowTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  notificationRowIcon: {
+    fontSize: 13,
   },
   form: {
     gap: 10,

@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, and slash commands, and found two more real gaps — an org-wide notification center and an org-wide Saved Messages view — sized as their own next increments (see "Chat, a real audit against web finds three more gaps")
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, and an org-wide notification center (see "Chat, a real audit against web finds three more gaps" and "Chat, closing the last two named gaps") — Chat is now genuinely, not just claimedly, at full parity with web
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -2302,7 +2302,71 @@ ORG-WIDE from a `SavedMessagesButton` living above the channel list itself
 — nothing on native reads that same route unfiltered. Both are real,
 separate features rather than small fixes, sized closer to "Chat, live"
 than to anything else in this section, and are the next two items rather
-than something to fold in here.
+than something to fold in here. _(Both shipped the same session, in the
+very next two increments — see "Chat, closing the last two named gaps"
+below. Left as written rather than edited, per this file's own habit of
+correcting a claim in place instead of silently rewriting it.)_
+
+## Chat, closing the last two named gaps: an org-wide Saved Messages view, and a notification center
+
+The two items the previous section named and deliberately did not close.
+
+**`(tabs)/chat.tsx` gained a "🔖 Saved" button, next to "+ New."** Opens a
+bottom-sheet listing `chat.saved.list` UNFILTERED — every message the
+viewer has ever saved, in any channel, not just the one currently open —
+ported from `apps/web/src/features/chat/chat-page.tsx`'s own
+`SavedMessagesButton`/`SavedMessageRow`. Shares the exact same
+`SAVED_QUERY_KEY` cache entry `channel-details/[channelId].tsx`'s own
+"Starred by you" section already reads (that section filters the SAME
+list client-side to one channel, matching web's identical per-channel
+`SavedSection`) — unsaving from either screen invalidates the one cache
+entry both read, so there is nothing to keep in sync by hand. Each row
+shows the channel glyph (`channelTypeGlyph`, from the previous section)
+and name, falling back to "Direct message" for a DM exactly as web's own
+row does — `chat.saved.list`'s own service comment explains why a DM
+never carries a name at all. Tapping a row closes the sheet and pushes to
+that channel; nothing here needed a new server route.
+
+**`notifications.ts` (new) is the mobile port of `notification-bell.tsx`
+— mentions, DMs, thread replies, card assignments, and missed calls,
+ORG-WIDE and across every product surface, not only chat.** Its own header
+has the full reasoning for two decisions worth reading before touching
+either file again:
+
+- It is a SEPARATE file from `chat.ts`, not an addition to it, because the
+  router it reads (`notifications`, `apps/api/src/router.ts`) is mounted
+  at the ROOT — `platform/notifications.ts`'s own header already explains
+  why it moved out of `chat/` in Phase 9 ("nothing here was ever
+  chat-specific... gating these reads behind a chat permission would
+  refuse a member their own card-assignment notification"). `chat.ts`'s
+  own "separate file from `work.ts`" reasoning is the identical call for
+  a third domain.
+- It is reached from Chat's own header, not a persistent app-wide shell,
+  because this app HAS no persistent shell to mount an equivalent bell
+  in — web's lives once in `components/shell.tsx`, visible on every
+  route; `(tabs)/_layout.tsx` is `headerShown: false` and every tab draws
+  its own header content, so there is no single shared chrome to add one
+  to without touching all four tab screens for one increment. A real,
+  stated divergence from web's placement, not a silent one.
+
+`mobileRouteFor` is this file's own routing table — NOT
+`notification-path.ts`'s `mobilePathFor`, despite the near-identical
+name and the same two "no screen for this" exclusions (`page`,
+`membership`). The two functions take different inputs for a real reason:
+`mobilePathFor` parses the WEB-shaped path STRING a push payload's
+`data.path` carries (`/chat?channel=X`), which a `notifications.listMine`
+row never has — this list is read from the SAME raw fields
+`notification-paths.ts` computes that string FROM, server-side, so
+routing here reads `subjectType`/`boardId`/`channelId` directly rather
+than serializing a row into a fake web path just to reuse the other
+function's parser. `notifications.test.ts` covers both this and
+`notificationIcon` (the per-kind glyph, also a verbatim port).
+
+**Tapping a row marks only that one notification read and opens it;
+"Mark all read" is the separate bulk action** — the same split web draws,
+for the identical reason: reading one mention should not silently mark
+forty others read too, which is exactly how a reply nobody actually saw
+goes unanswered.
 
 ## Not here yet
 
