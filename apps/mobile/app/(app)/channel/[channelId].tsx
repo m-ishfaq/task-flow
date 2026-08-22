@@ -35,6 +35,11 @@ import { pickAttachment } from '../../../src/lib/pick-attachment.js';
 import { uploadMessageFile, type PickedFile } from '../../../src/lib/upload-message-file.js';
 import { matchingCommands, messageTextFor, parseCommand } from '../../../src/lib/slash-commands.js';
 import {
+  callHistoryQueryKey,
+  formatCallDuration,
+  type CallHistoryEntry,
+} from '../../../src/lib/rtc.js';
+import {
   channelDisplayName,
   channelQueryKey,
   channelTypeGlyph,
@@ -193,6 +198,24 @@ import {
  * fully behind the open keyboard); see the mobile README's own bug-fix
  * section for the full account.
  */
+
+/** One row in the merged list — a group of messages or a call event, ordered
+ *  by `at` — mirrors `apps/web/src/features/chat/chat-page.tsx`'s identical
+ *  `TimelineItem`. */
+type TimelineItem =
+  | {
+      readonly kind: 'messages';
+      readonly key: string;
+      readonly at: string;
+      readonly group: MessageGroup;
+    }
+  | {
+      readonly kind: 'call';
+      readonly key: string;
+      readonly at: string;
+      readonly entry: CallHistoryEntry;
+    };
+
 export default function ChannelScreen() {
   const params = useLocalSearchParams<{ channelId: string }>();
   const parsedChannelId = ChannelIdSchema.safeParse(params.channelId);
@@ -258,6 +281,42 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   const groups = useMemo(() => groupMessages(topLevel), [topLevel]);
   const replyCounts = useMemo(() => replyCountsOf(oldestFirst), [oldestFirst]);
   const messageIds = useMemo(() => oldestFirst.map((message) => message.messageId), [oldestFirst]);
+
+  /* Every call this conversation has had, merged into the list below by
+     timestamp — `apps/web/src/features/chat/chat-page.tsx`'s own "WhatsApp
+     placement" for the identical gap: a call happened AT A POINT in the
+     conversation, between two messages, not off to one side in the details
+     panel's Calls tab only (which this app already has,
+     `channel-details/[channelId].tsx`'s `CallHistorySection` — this is the
+     other half of that same read, not a new query shape). */
+  const calls = useQuery({
+    queryKey: callHistoryQueryKey(orgId ?? '', channelId),
+    queryFn: async () => wire(await apiClient.rtc.history.list.query({ channelId })),
+    enabled: orgId !== null,
+  });
+
+  /* String comparison is safe here for the identical reason web's own
+     comment gives: both timestamps are this server's own
+     `Date.prototype.toISOString()` output — fixed-width, UTC, `Z`-suffixed —
+     so lexicographic order already agrees with chronological order. */
+  const timeline = useMemo(
+    (): readonly TimelineItem[] =>
+      [
+        ...groups.map((group, index): TimelineItem => ({
+          kind: 'messages',
+          key: `${group.authorId ?? 'unknown'}-${String(index)}`,
+          at: group.messages[0]?.createdAt ?? '',
+          group,
+        })),
+        ...(calls.data ?? []).map((entry): TimelineItem => ({
+          kind: 'call',
+          key: entry.sessionId,
+          at: entry.createdAt,
+          entry,
+        })),
+      ].sort((a, b) => a.at.localeCompare(b.at)),
+    [groups, calls.data],
+  );
 
   /**
    * The read cursor as it was the moment this screen opened — where the
@@ -644,59 +703,63 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
         </View>
       </View>
 
-      <FlatList<MessageGroup>
-        data={groups}
-        keyExtractor={(group, index) => `${group.authorId ?? 'unknown'}-${String(index)}`}
-        renderItem={({ item }) => (
-          <>
-            {/* The "new messages" line, placed by the read CURSOR rather
-                than by counting back from the end — see `firstUnreadAfter`'s
-                own header on why a count-based position is silently wrong
-                the moment a message is deleted or the page is partially
-                loaded. */}
-            {firstUnreadId !== null &&
-              firstUnreadAuthorId !== userId &&
-              item.messages.some((message) => message.messageId === firstUnreadId) && (
-                <View style={styles.unreadDivider} accessibilityRole="none">
-                  <View style={styles.unreadDividerLine} />
-                  <Text style={styles.unreadDividerText}>New messages</Text>
-                  <View style={styles.unreadDividerLine} />
-                </View>
-              )}
-            <MessageGroupRow
-              group={item}
-              viewerId={userId}
-              personOf={personOf}
-              reactionsByMessage={reactionsByMessage}
-              previewsByMessage={previewsByMessage}
-              replyCounts={replyCounts}
-              editingId={editingId}
-              editDraft={editDraft}
-              onEditDraftChange={setEditDraft}
-              editPending={edit.isPending}
-              onSaveEdit={(messageId) => {
-                if (editDraft.trim().length === 0) return;
-                edit.mutate({ messageId, text: editDraft.trim() });
-              }}
-              onCancelEdit={() => {
-                setEditingId(null);
-              }}
-              onTogglePill={(messageId, emoji) => {
-                react.mutate({ messageId, emoji });
-              }}
-              onLongPressMessage={setActionsFor}
-              onLongPressReaction={(messageId, emoji, userIds) => {
-                setReactionInfoFor({ messageId, emoji, userIds });
-              }}
-              onOpenThread={(message) => {
-                router.push({
-                  pathname: '/thread/[messageId]',
-                  params: { messageId: message.messageId, channelId },
-                });
-              }}
-            />
-          </>
-        )}
+      <FlatList<TimelineItem>
+        data={timeline}
+        keyExtractor={(item) => item.key}
+        renderItem={({ item }) =>
+          item.kind === 'call' ? (
+            <CallTimelineCard entry={item.entry} viewerId={userId} personOf={personOf} />
+          ) : (
+            <>
+              {/* The "new messages" line, placed by the read CURSOR rather
+                  than by counting back from the end — see `firstUnreadAfter`'s
+                  own header on why a count-based position is silently wrong
+                  the moment a message is deleted or the page is partially
+                  loaded. */}
+              {firstUnreadId !== null &&
+                firstUnreadAuthorId !== userId &&
+                item.group.messages.some((message) => message.messageId === firstUnreadId) && (
+                  <View style={styles.unreadDivider} accessibilityRole="none">
+                    <View style={styles.unreadDividerLine} />
+                    <Text style={styles.unreadDividerText}>New messages</Text>
+                    <View style={styles.unreadDividerLine} />
+                  </View>
+                )}
+              <MessageGroupRow
+                group={item.group}
+                viewerId={userId}
+                personOf={personOf}
+                reactionsByMessage={reactionsByMessage}
+                previewsByMessage={previewsByMessage}
+                replyCounts={replyCounts}
+                editingId={editingId}
+                editDraft={editDraft}
+                onEditDraftChange={setEditDraft}
+                editPending={edit.isPending}
+                onSaveEdit={(messageId) => {
+                  if (editDraft.trim().length === 0) return;
+                  edit.mutate({ messageId, text: editDraft.trim() });
+                }}
+                onCancelEdit={() => {
+                  setEditingId(null);
+                }}
+                onTogglePill={(messageId, emoji) => {
+                  react.mutate({ messageId, emoji });
+                }}
+                onLongPressMessage={setActionsFor}
+                onLongPressReaction={(messageId, emoji, userIds) => {
+                  setReactionInfoFor({ messageId, emoji, userIds });
+                }}
+                onOpenThread={(message) => {
+                  router.push({
+                    pathname: '/thread/[messageId]',
+                    params: { messageId: message.messageId, channelId },
+                  });
+                }}
+              />
+            </>
+          )
+        }
         contentContainerStyle={styles.list}
         style={styles.listContainer}
         ListEmptyComponent={
@@ -948,6 +1011,81 @@ function ReactionInfoModal({
         </Pressable>
       </Pressable>
     </Modal>
+  );
+}
+
+/**
+ * The same fact `channel-details/[channelId].tsx`'s `callOutcomeLabel`
+ * states, restated PER VIEWER — mirrors `apps/web/src/features/chat/
+ * channel-media.tsx`'s `callTimelineLabel` exactly. "Missed" is not a
+ * property of the call, it is a property of who is reading about it: the
+ * person who placed it sees "No answer", the person it rang for and who
+ * never picked up sees "Missed call".
+ */
+function callTimelineLabel(
+  entry: CallHistoryEntry,
+  viewerId: string | null,
+): { readonly text: string; readonly missed: boolean } {
+  if (entry.status === 'ringing') return { text: 'Ringing…', missed: false };
+  if (entry.status === 'active') return { text: 'In progress', missed: false };
+
+  const own = entry.participants.find((participant) => participant.userId === viewerId);
+  if (own?.state === 'missed') {
+    return { text: `Missed ${entry.kind === 'video' ? 'video' : 'voice'} call`, missed: true };
+  }
+  if (own?.state === 'declined') {
+    return { text: 'You declined this call', missed: false };
+  }
+
+  if (entry.startedAt !== null && entry.endedAt !== null) {
+    const seconds = Math.max(
+      0,
+      Math.round((new Date(entry.endedAt).getTime() - new Date(entry.startedAt).getTime()) / 1000),
+    );
+    return { text: formatCallDuration(seconds), missed: false };
+  }
+  switch (entry.endReason) {
+    case 'declined':
+      return { text: 'Declined', missed: false };
+    case 'no_answer':
+      return { text: 'No answer', missed: false };
+    case 'cancelled':
+      return { text: 'Cancelled', missed: false };
+    case null:
+      return { text: 'Ended', missed: false };
+    default:
+      return { text: entry.endReason, missed: false };
+  }
+}
+
+/**
+ * "📞 You called · 3m 12s" / "📞 Missed voice call" — a call event inline in
+ * the message list, the same place WhatsApp puts one and
+ * `apps/web/src/features/chat/channel-media.tsx`'s `CallTimelineCard`
+ * already does. A parallel resource merged into `timeline` by timestamp,
+ * never a `chat.messages` row — see `timeline`'s own comment above.
+ */
+function CallTimelineCard({
+  entry,
+  viewerId,
+  personOf,
+}: {
+  readonly entry: CallHistoryEntry;
+  readonly viewerId: string | null;
+  readonly personOf: (userId: string) => { readonly label: string };
+}) {
+  const { text, missed } = callTimelineLabel(entry, viewerId);
+  const byViewer = entry.initiatedBy === viewerId;
+
+  return (
+    <View style={styles.callCardRow}>
+      <View style={[styles.callCardPill, missed && styles.callCardPillMissed]}>
+        <Text style={styles.callCardGlyph}>{entry.kind === 'video' ? '🎥' : '📞'}</Text>
+        <Text style={[styles.callCardText, missed && styles.callCardTextMissed]}>
+          {byViewer ? 'You called' : `${personOf(entry.initiatedBy).label} called`} · {text}
+        </Text>
+      </View>
+    </View>
   );
 }
 
@@ -1466,6 +1604,32 @@ const styles = StyleSheet.create({
   unreadDividerText: {
     fontSize: 11,
     fontWeight: '600',
+    color: colors.danger.hex,
+  },
+  callCardRow: {
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  callCardPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    backgroundColor: colors.surfaceSunken.hex,
+  },
+  callCardPillMissed: {
+    backgroundColor: colors.danger.hex + '1a',
+  },
+  callCardGlyph: {
+    fontSize: 12,
+  },
+  callCardText: {
+    fontSize: 12,
+    color: colors.inkMuted.hex,
+  },
+  callCardTextMissed: {
     color: colors.danger.hex,
   },
   reactionInfoTitle: {

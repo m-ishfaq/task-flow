@@ -3041,6 +3041,68 @@ Android bundles the new dependency through Metro cleanly. `use-call.ts` has no d
 (it is this phase's own documented "untested native composition point"), so this is verified by
 code path only until the next real-device round confirms it audibly.
 
+### A call card in the message list — the details panel's Calls tab was not the whole gap
+
+Web has had this since Phase 13 Wave 5's own build: `apps/web/src/features/chat/channel-media.tsx`'s
+`CallTimelineCard`, merged into `chat-page.tsx`'s message list by timestamp, WhatsApp-style — "📞 You
+called · 3m 12s" sitting between two ordinary messages, not off in a side panel only. This app had
+only the side panel (`channel-details/[channelId].tsx`'s `CallHistorySection`, from an earlier
+session), which is a real, separate surface — a details panel is not where a conversation's own
+timeline lives, and a call that happened has nowhere else in the message list to show it happened.
+Found by a real test report: a call was placed, and nothing in the conversation itself said so.
+
+Ported faithfully rather than redesigned: `channel/[channelId].tsx` gained the identical
+`TimelineItem` union web's `chat-page.tsx` already has (`{ kind: 'messages'; ...group }` |
+`{ kind: 'call'; ...entry }`), merges `groups` with a new `rtc.history.list` query the same way, and
+sorts by `at` via plain string comparison — safe for the identical reason web's own comment gives:
+both timestamps are this server's own `Date.prototype.toISOString()` output, so lexicographic order
+already agrees with chronological order. `FlatList<MessageGroup>` widened to
+`FlatList<TimelineItem>`; the "new messages" divider logic, previously reading `item.messages`
+directly, now reads `item.group.messages` inside the `'messages'` branch only. `callTimelineLabel`
+and `CallTimelineCard` are new LOCAL functions in this file (mirroring how `MessageGroupRow` already
+lives here rather than in a shared module) — `callTimelineLabel` restates the SAME fact
+`channel-details/[channelId].tsx`'s existing `callOutcomeLabel` already computes, but PER VIEWER:
+"Missed voice call" for the person who never answered, "You declined this call" for the person who
+did, "No answer"/a duration for everyone else — "missed" is a property of who is reading about the
+call, not of the call itself, so it cannot be the same string in both places.
+
+Verified: typecheck, lint (0 errors after fixing one `switch` exhaustiveness gap on `endReason`'s
+`null` case — the file's own existing `callOutcomeLabel` already had `case null` explicitly for the
+same reason, copied here rather than a catch-all `default`), all 218 tests pass, guardrail self-test
+clean, and a real `expo export` for Android bundles cleanly.
+
+### The real bug behind "connects, then everyone has left" — `RTC_STUN_URLS`/`RTC_TURN_URLS` say `localhost`
+
+The audio-routing fix above was real and needed, but a further report showed it was not the whole
+story: a web-to-mobile call would negotiate (offer/answer completed, `ontrack` fired, `connectedAt`
+was set) and then BOTH sides would show nobody connected — never once with a browser on both ends,
+every time a phone was one of the two. That asymmetry is the tell. `apps/api/src/rtc/deps.ts` reads
+`RTC_STUN_URLS`/`RTC_TURN_URLS` from `.env` and `issueIceServers` hands them to every client
+VERBATIM, with no per-platform split — unlike `MOBILE_API_BASE_URL`/`MOBILE_REALTIME_BASE_URL`,
+which this session already learned needs one. `.env.example`'s own defaults are
+`stun:localhost:3478` / `turn:localhost:3478?transport=udp`: correct for a browser on the SAME
+machine as `apps/api`, and categorically wrong for a phone, whose own `localhost` names ITSELF — a
+device with no STUN or TURN server running on it. A web-only call never notices (both peers resolve
+`localhost` to the one machine running everything); a mobile-involved call gathers no
+server-reflexive candidate and has no relay to fall back to, so ICE finds no working pair for the
+mobile leg — which fails the WHOLE peer connection, symmetrically, matching "both sides show
+abandoned" exactly. This is a `.env` value, not application code — gitignored, so nothing to commit
+— documented in `.env.example` with the fix (set both to the same LAN IP `MOBILE_API_BASE_URL`
+already uses; `coturn`'s `network_mode: host` in `compose.yaml` already listens there, no compose
+change needed) and a restart of `apps/api`.
+
+**A second, separate finding, not yet acted on:** `compose.yaml`'s `coturn` service denies relaying
+to the ENTIRE `192.168.0.0/16` and `10.0.0.0/8` ranges (`--denied-peer-ip`), a deliberate
+SSRF-prevention control — "an open TURN server is an SSRF pivot into whatever network it sits on,"
+in that file's own words. A real phone tested over a home/office LAN sits at an address in exactly
+one of those ranges. If direct host-candidate connectivity between the phone and the dev machine
+works on its own (the common case on an unrestricted LAN), the `.env` fix above is enough and this
+never matters; if the network needs an actual TURN relay to bridge them (AP/client isolation, a
+stricter NAT), coturn will refuse to relay to the phone's own address even after the URL points at
+the right host. Narrowing that denial list for local development is a real security tradeoff this
+file's own comments show was made deliberately — left for the project owner to decide rather than
+changed here.
+
 ## Not here yet
 
 - **CallKit (iOS) / ConnectionService (Android) — a real lock-screen "incoming call" UI.** Named
