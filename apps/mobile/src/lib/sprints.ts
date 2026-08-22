@@ -38,6 +38,14 @@ export function sprintsQueryKey(projectId: string): readonly ['work.sprints.list
   return ['work.sprints.list', projectId];
 }
 
+/** Every ACTIVE sprint across the whole org — `work.sprints.active`, org-wide (no `projectId`), so `home.tsx`'s "This sprint" scope means something on a page that spans every board. */
+export const ACTIVE_SPRINTS_QUERY_KEY = ['work.sprints.active'] as const;
+
+/** `work.sprints.active`'s own row shape — narrower than `SprintSummary` (no `status`; membership in this list already means active). */
+export type ActiveSprint = Wire<
+  Awaited<ReturnType<MobileTRPCClient['work']['sprints']['active']['query']>>
+>[number];
+
 /** A sprint is `planned`/`active` — the only statuses a card may be assigned into (§ the service's own closed-sprint refusal). */
 export function isOpenSprint(sprint: SprintSummary): boolean {
   return sprint.status === 'planned' || sprint.status === 'active';

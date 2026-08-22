@@ -127,6 +127,84 @@ export function boardCardsQueryKey(boardId: string): readonly ['work.cards.list'
   return ['work.cards.list', boardId];
 }
 
+/**
+ * Due-date grouping for "My Tasks" — ported from
+ * `apps/web/src/features/work/grouping.ts`'s `dueBucketOf`/`groupCards`,
+ * narrowed to just the `'due'` case rather than the full five-way
+ * `GroupBy` union: My Tasks is the ONLY screen on either platform that
+ * groups by due date (a board's own group-by control is real, separate
+ * work — `board/[boardId].tsx`'s own header on why boards are a tab strip
+ * here, not columns), so the other four groupings would be dead code on
+ * native today. `home.tsx`'s own header already argues status has no
+ * cross-project vocabulary to group by; assignee and priority groupings
+ * are equally board-scoped concerns this file has no reason to carry yet.
+ */
+export type DueBucket = 'overdue' | 'today' | 'week' | 'later' | 'none';
+
+const DUE_BUCKET_ORDER: readonly DueBucket[] = ['overdue', 'today', 'week', 'later', 'none'];
+
+export const DUE_BUCKET_LABEL: Readonly<Record<DueBucket, string>> = {
+  overdue: 'Overdue',
+  today: 'Today',
+  week: 'This week',
+  later: 'Later',
+  none: 'No due date',
+};
+
+/** Midnight of the given instant, in the viewer's local time zone — matches web's own `startOfDay`. */
+function startOfDay(date: Date): Date {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+}
+
+/** `now` defaults to the real clock but is overridable — a pinned instant is what makes the bucketing test deterministic, same as `formatDueDate`'s own tests. */
+export function dueBucketOf(dueDate: string | null, now: Date = new Date()): DueBucket {
+  if (dueDate === null) return 'none';
+
+  const due = startOfDay(new Date(dueDate));
+  const today = startOfDay(now);
+  const days = Math.round((due.getTime() - today.getTime()) / 86_400_000);
+
+  if (days < 0) return 'overdue';
+  if (days === 0) return 'today';
+  if (days <= 7) return 'week';
+  return 'later';
+}
+
+export interface DueGroup {
+  readonly bucket: DueBucket;
+  readonly label: string;
+  readonly cards: readonly CardSummary[];
+}
+
+/**
+ * Buckets `cards` by due date, in display order. Unlike `groupCards`'s
+ * other groupings, an EMPTY bucket never appears — "Overdue" is not a
+ * standing column the way a board's list/status columns are, so there is
+ * no vocabulary entry to keep alive when nothing is in it.
+ */
+export function groupCardsByDue(
+  cards: readonly CardSummary[],
+  now: Date = new Date(),
+): readonly DueGroup[] {
+  const byBucket = new Map<DueBucket, CardSummary[]>();
+  for (const card of cards) {
+    const bucket = dueBucketOf(card.dueDate, now);
+    const existing = byBucket.get(bucket);
+    if (existing === undefined) byBucket.set(bucket, [card]);
+    else existing.push(card);
+  }
+
+  return DUE_BUCKET_ORDER.filter((bucket) => (byBucket.get(bucket) ?? []).length > 0).map(
+    (bucket) => ({
+      bucket,
+      label: DUE_BUCKET_LABEL[bucket],
+      cards: byBucket.get(bucket) ?? [],
+    }),
+  );
+}
+
 /** A card's comments — read + post only on native for now; see card/[cardId].tsx's own header. */
 export type Comment = Wire<
   Awaited<ReturnType<MobileTRPCClient['work']['comments']['list']['query']>>

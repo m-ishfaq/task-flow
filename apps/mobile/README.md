@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity — typing indicators, broadcast-driven refresh, and composer file attaching all shipped; push code-complete (infra-blocked, matching passkeys) — Account parity complete, Sprints complete
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — now closing the Work gap against web feature by feature (My Tasks grouping + sprint scope shipped; boards and card detail next)
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -1879,6 +1879,41 @@ composer, not inline with Send** — `MessageComposer` is shared with
 indicators' identical scoping above), so this stays a sibling element in
 `channel/[channelId].tsx` rather than a new prop threaded through the
 shared component for a feature only one of its two callers needs.
+
+## Work, closing the gap against web: My Tasks grouped + sprint scope
+
+The first slice of a broader pass bringing `apps/mobile`'s Work surface
+(My Tasks, Boards, card detail) up to what `apps/web`'s own Work feature
+already offers — audited section by section against
+`apps/web/src/features/work/*`, starting here since it was both the
+smallest gap and the one named first. My Tasks had been a flat,
+ungrouped list since Wave 2; it is now ported from
+`apps/web/src/features/work/home-page.tsx` in full.
+
+**`groupCardsByDue` (`work.ts`) is `grouping.ts`'s `groupCards('due', ...)`,
+narrowed to the one grouping this screen needs** — not the full five-way
+`GroupBy` union (`list`/`status`/`assignee`/`priority`/`due`). The other
+four are board-scoped concerns (a board's own group-by control is real,
+separate work — see "Boards" below), so carrying them here would be dead
+code; `dueBucketOf`'s bucketing (overdue / today / this week / later / no
+due date) is ported verbatim, with its own test (`work.test.ts`) pinning
+the clock the same way `formatDueDate`'s tests already do. `SectionList`
+— React Native's own sectioned-list primitive — renders the buckets; no
+new dependency, and it virtualizes exactly like the `FlatList` it
+replaced.
+
+**The sprint scope pills (All / This sprint / Backlog) mirror
+`home-page.tsx`'s own `scope` state, including "offered only when a
+sprint is actually running."** `ACTIVE_SPRINTS_QUERY_KEY` (`sprints.ts`,
+new) reads `work.sprints.active` ORG-WIDE — no `projectId` — for the
+identical reason web's own comment gives: My Tasks spans every board, so
+"this sprint" has to mean membership in ANY active sprint, not one
+board's. Reuses `isOpenSprint`'s sibling reasoning rather than inventing
+a second membership check.
+
+Status stays deliberately absent, matching web exactly — Wave 2's own
+investigation into why is unchanged (status definitions are per-project;
+My Tasks spans many projects at once).
 
 ## Not here yet
 
