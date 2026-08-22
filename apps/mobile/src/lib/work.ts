@@ -298,6 +298,35 @@ export function cardFieldsQueryKey(cardId: string): readonly ['work.fields.onCar
   return ['work.fields.onCard', cardId];
 }
 
+/** A card's attachments — `work.attachments.list`. */
+export type Attachment = Wire<
+  Awaited<ReturnType<MobileTRPCClient['work']['attachments']['list']['query']>>
+>[number];
+
+export function attachmentsQueryKey(cardId: string): readonly ['work.attachments.list', string] {
+  return ['work.attachments.list', cardId];
+}
+
+/**
+ * A byte count for an attachment row — `apps/web/src/lib/format.ts`'s
+ * `formatBytes`, verbatim logic. Decimal units, matching what operating
+ * systems show for downloads; bytes shown exactly rather than rounded, so
+ * a 40-byte file does not read as an upload failure ("0.0 KB").
+ */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1000) return `${String(bytes)} B`;
+
+  const units = ['KB', 'MB', 'GB'];
+  let value = bytes / 1000;
+  let unit = 0;
+
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit += 1;
+  }
+  return `${value.toFixed(1)} ${units[unit] ?? 'GB'}`;
+}
+
 /** A card's comments — read + post only on native for now; see card/[cardId].tsx's own header. */
 export type Comment = Wire<
   Awaited<ReturnType<MobileTRPCClient['work']['comments']['list']['query']>>

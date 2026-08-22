@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — closing the Work gap against web feature by feature (My Tasks, Boards, card detail's status/assignees/labels/checklists/custom fields all shipped; attachments and comment edit/delete next)
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — closing the Work gap against web feature by feature (My Tasks, Boards, and all six card-detail sections — status/assignees/labels/checklists/custom fields/attachments — now shipped; comment edit/delete/replies next)
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -2058,6 +2058,37 @@ substitute — a project's field option list is the same "handful of
 values" scale labels are. `AddFieldForm`'s type picker is a chip row for
 the identical reason.
 
+## Work, closing the gap against web: attachments on a card
+
+The sixth and final card-detail section this pass closes, following
+status, assignees, labels, checklists and custom fields — card detail is
+now at full parity with `apps/web/src/features/work/detail/*.tsx`.
+⚠ Human-review surface (CLAUDE.md §2.2: any file upload/download path).
+
+**`upload-card-attachment.ts` is a SEPARATE module from Chat's own
+`upload-message-file.ts`, structurally identical, rather than one shared
+uploader** — mirroring how `apps/web` itself keeps two independent
+`AttachmentSection` components (Chat's and Work's) rather than a generic
+one, and CLAUDE.md §6's own "extract at three, not two." The one real
+difference: `presign` here takes a `cardId` directly, with no
+`messageId`-style "send first" step, since a card — unlike a chat
+message — already exists by the time its detail screen can attach
+anything to it. `pick-attachment.ts` (the device-picker half) is reused
+completely unchanged; it never had any chat-specific coupling.
+
+**The same two rules Chat's own attach flow already lives by, restated as
+their own separate human-review surface**: a successful PUT is never
+treated as a successful upload (the object exists in storage the moment
+the PUT finishes and nothing can prevent that — only `confirm`'s verdict
+decides whether anyone is ever handed a download URL), and a download is
+offered ONLY for `status === 'clean'` — `presignDownload` refuses every
+other status with a 404, so the control would be a button that cannot
+work on `pending` and one that must not on `infected`.
+`ATTACHMENT_STATUS_TEXT` is `apps/web`'s own `STATUS_TEXT`, ported
+verbatim — a `Map`, not a `Record`, because the status comes from the
+server as a plain string a `Record` would TYPE as known while being
+`undefined` at runtime for a status this build has never heard of.
+
 ## Not here yet
 
 - **Confirming this on a simulator or physical device beyond what has
@@ -2110,16 +2141,15 @@ the identical reason.
   production domain, hosted `apple-app-site-association`/`assetlinks.json`
   files, and a real Android signing certificate, none of which exist yet.
   See that section's own checklist for exactly what to stand up first.
-- Attachments on a card (still entirely absent from card detail — see
-  "Work, closing the gap" above for what HAS shipped there: status,
-  assignees, labels, interactive checklists, and now custom fields),
-  comment edit/delete/replies (still read+post only), a native rich text
-  EDITOR (description/comment/message composers all stay plain-text until
-  one exists), due/start date editing on a CARD's own dates specifically
-  (no date-picker dependency added yet — a custom field of type `date` can
-  now hold a typed value, see "custom fields" above for why that is a
-  partial exception, not a reversal), and card drag-and-drop (boards' own
-  section above has the full reasoning). The rest of Chat (attachments
+- Comment edit/delete/replies (still read+post only — card detail's other
+  six sections are all done now, see "Work, closing the gap" above), a
+  native rich text EDITOR (description/comment/message composers all stay
+  plain-text until one exists), due/start date editing on a CARD's own
+  dates specifically (no date-picker dependency added yet — a custom
+  field of type `date` can now hold a typed value, see "custom fields"
+  above for why that is a partial exception, not a reversal), and card
+  drag-and-drop (boards' own section above has the full reasoning). The
+  rest of Chat (attachments
   from the
   composer — reactions, mentions composing, thread replies,
   edit/delete/"remove for me", read receipts, link unfurls, push, typing

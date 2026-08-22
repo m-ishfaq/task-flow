@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { dueBucketOf, formatDueDate, groupCardsByDue, type CardSummary } from './work.js';
+import {
+  dueBucketOf,
+  formatBytes,
+  formatDueDate,
+  groupCardsByDue,
+  type CardSummary,
+} from './work.js';
 
 /**
  * `formatDueDate` (Wave 2, "My Tasks") — ported from `apps/web/src/lib/
@@ -127,5 +133,23 @@ describe('groupCardsByDue', () => {
 
   it('returns no groups for no cards', () => {
     expect(groupCardsByDue([], NOW)).toEqual([]);
+  });
+});
+
+describe('formatBytes', () => {
+  it('shows small counts in exact bytes, never rounded to 0.0 KB', () => {
+    expect(formatBytes(40)).toBe('40 B');
+  });
+
+  it('switches to KB at 1000 bytes', () => {
+    expect(formatBytes(1500)).toBe('1.5 KB');
+  });
+
+  it('switches to MB once KB would exceed 1000', () => {
+    expect(formatBytes(1_500_000)).toBe('1.5 MB');
+  });
+
+  it('caps at GB rather than continuing past it', () => {
+    expect(formatBytes(2_500_000_000)).toBe('2.5 GB');
   });
 });
