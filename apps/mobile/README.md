@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed; the "needs a rich text editor" call on `@mention` composing turned out to be wrong for the mid-string case specifically (a plain `TextInput`'s own `onSelectionChange`/`selection` was enough) and is fixed too — see "`@mention` now works mid-string"
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -2432,6 +2432,62 @@ that catches a reversed direction or an un-filtered thread reply — was
 ported into `chat.test.ts` rather than a new file, matching where this
 file's other pure helpers (`groupReactions`, `describeTyping`, …) and
 their tests already live.
+
+## `@mention` now works mid-string — the "needs a rich text editor" claim was wrong
+
+Asked to fix this specifically, as the one remaining named chat gap.
+Every earlier mention of "mid-string insertion needs an actual rich text
+editor" in this file (first written when mentions shipped, repeated twice
+since) was a claim taken at face value and never actually tested — left
+as written above rather than edited, per this file's own habit of
+correcting a claim in place instead of silently rewriting history, with
+this section as the correction.
+
+**The real limitation was never composing a mention outside a rich text
+editor — it was tracking a CURSOR outside one, and React Native's plain
+`TextInput` already does that.** `onSelectionChange` plus a controlled
+`selection` prop (`{ start, end }`) have existed on `TextInput` for years,
+completely independent of whether the input renders rich formatting.
+Nothing about `@mention` composing actually needed bold text, links, or
+lists — it needed to know where the cursor was, which is a strictly
+smaller ask a plain text input can answer on its own.
+
+- **`message-compose.ts`**: `activeMentionQuery` takes a `cursor` argument
+  now (previously none — it only ever looked at the END of the draft) and
+  returns a `MentionQuery` (`{ query, start, end }`) instead of a bare
+  string, anchored to wherever the cursor actually is. `insertMention`
+  takes that `MentionQuery` instead of re-deriving a trailing `@` itself,
+  splices the picked label in at the RIGHT position (not necessarily the
+  end of the string), and reports a `cursor` the caller repositions the
+  input to — necessary because after a programmatic text splice, React
+  Native's native default cursor placement is not reliably "right after
+  what was just inserted." `buildMessageBody`, notably, needed NO changes
+  at all: it already finds a recorded marker's LITERAL text wherever it
+  sits (`indexOf`), which was already position-agnostic — the trailing-only
+  restriction lived entirely in the trigger/insert layer, never in how a
+  finished mention got sent.
+- **`message-composer.tsx`**: gained the actual cursor tracking
+  (`onSelectionChange` → local `selection` state → the `selection` prop,
+  clamped to `draft.length` on every read so a caller clearing `draft`
+  after send never hands the native input an out-of-bounds selection) and
+  now OWNS the text splice itself, rather than handing a bare `Member`
+  back to the caller for the caller to splice — the opposite ownership
+  from before, and necessary because the cursor position is state only
+  this component has. `onPickMention` (a `Member`) is gone; the new
+  `onMentionRecorded` (a finished `PendingMention`) is pure bookkeeping —
+  the caller still owns its running mentions list, for the identical
+  "clear on send success, keep on failure" reason it already owns `draft`.
+- **`channel/[channelId].tsx` and `thread/[messageId].tsx`** both lost
+  their own `insertMention` call and `onPickMention` handler, replaced
+  with a one-line `onMentionRecorded` that only appends to
+  `pendingMentions` — the splice logic they used to duplicate is gone
+  from both, not moved to a second copy.
+
+`message-compose.test.ts` gained cursor-position cases for both
+functions, including the one no trailing-only implementation could ever
+exercise: triggering and picking a mention with real text still ahead of
+the cursor, asserting the tail is preserved untouched and the reported
+cursor lands mid-string, not at the end.
 
 ## Not here yet
 

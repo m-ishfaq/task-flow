@@ -1,17 +1,26 @@
 /**
  * Turns a plain-text composer draft plus the mentions the user actually
  * picked from the `@`-trigger dropdown into a real TipTap-JSON document with
- * `mention` nodes — not literal `@Name` text. There is no native rich text
- * EDITOR (`card/[cardId].tsx`'s `TitleField` header already draws this
- * boundary for Work; chat's composer is the identical plain `TextInput`),
- * so mention COMPOSING cannot track a live cursor position/selection the
- * way `apps/web`'s TipTap `MentionExtension` does. This is the bounded
- * substitute: `channel/[channelId].tsx`'s composer only offers the dropdown
- * while the user is actively typing the END of the draft (never mid-string),
- * and every accepted pick is recorded as a `PendingMention` — the exact
- * `@Label` text inserted, tied to a `userId`. `buildMessageBody` then
- * replaces each recorded marker's LITERAL text with a real `mention` node at
- * send time, left-to-right by first occurrence.
+ * `mention` nodes — not literal `@Name` text. There is still no native rich
+ * text EDITOR (`card/[cardId].tsx`'s `TitleField` header draws the identical
+ * boundary for Work — no bold, links, or lists composed on this app), so a
+ * message's FORMATTING is always plain. But mention COMPOSING itself is not
+ * actually blocked on that: this file originally claimed a plain `TextInput`
+ * "cannot track a live cursor position/selection the way `apps/web`'s
+ * TipTap `MentionExtension` does," and restricted the trigger to the END of
+ * the draft only. That claim was wrong — `TextInput` has supported a
+ * controlled `selection` prop plus `onSelectionChange` for exactly this
+ * since long before this app's React Native pin, and `message-composer.tsx`
+ * now uses both, so `@mention` can be triggered and inserted anywhere in
+ * the draft, not only at the end.
+ *
+ * Every accepted pick is still recorded as a `PendingMention` — the exact
+ * `@Label` text inserted, tied to a `userId`. `buildMessageBody` replaces
+ * each recorded marker's LITERAL text with a real `mention` node at send
+ * time, left-to-right by first occurrence — unchanged by the cursor-tracking
+ * fix, and deliberately so: it was already POSITION-AGNOSTIC (`indexOf`
+ * finds a marker wherever it sits), so a marker inserted mid-string needs
+ * no different handling at send time than one typed at the end.
  *
  * Rendering was already built (`rich-text-view.tsx` has had a `case
  * 'mention'` since the read-only TipTap renderer shipped — it just had no
@@ -91,27 +100,55 @@ export function buildMessageBody(text: string, mentions: readonly PendingMention
   return { type: 'doc', content: [{ type: 'paragraph', content: segments }] };
 }
 
-/**
- * The active `@query` at the END of the draft, or `null` when the caller
- * is not (or is no longer) mid-mention — the dropdown's own visibility
- * signal. Only the trailing run counts: `@` earlier in the text is content
- * the user already finished typing, not a live trigger, and a whitespace
- * character always ends the active query (`@a b` is not a query for "a b").
- */
-export function activeMentionQuery(draft: string): string | null {
-  const at = draft.lastIndexOf('@');
-  if (at === -1) return null;
-  const tail = draft.slice(at + 1);
-  if (/\s/.test(tail)) return null;
-  return tail;
+/** An in-progress `@query`, anchored to where the triggering `@` sits (`start`) and where the cursor was when it was captured (`end`). */
+export interface MentionQuery {
+  readonly query: string;
+  readonly start: number;
+  readonly end: number;
 }
 
-/** Replaces the active trailing `@query` (see `activeMentionQuery`) with `@Label ` and records the pick. */
+/**
+ * The active `@query` nearest the CURSOR, or `null` when the cursor is not
+ * (or is no longer) inside one — the dropdown's own visibility signal.
+ * Anchored to `cursor`, not the end of the draft: `message-composer.tsx`
+ * passes the TextInput's own live selection, so typing `@` in the MIDDLE
+ * of existing text triggers the dropdown exactly the way typing it at the
+ * end always has. Only the run immediately before the cursor counts — an
+ * `@` earlier in the text, before wherever the cursor currently sits, is
+ * content already finished, not a live trigger — and a whitespace
+ * character always ends the active query (`@a b|` is not a query for
+ * "a b" once the cursor, `|`, has moved past the space).
+ */
+export function activeMentionQuery(draft: string, cursor: number): MentionQuery | null {
+  const prefix = draft.slice(0, cursor);
+  const at = prefix.lastIndexOf('@');
+  if (at === -1) return null;
+  const tail = draft.slice(at + 1, cursor);
+  if (/\s/.test(tail)) return null;
+  return { query: tail, start: at, end: cursor };
+}
+
+/**
+ * Replaces the active `@query` (see `activeMentionQuery`) with `@Label `,
+ * records the pick, and reports where the cursor belongs afterward — right
+ * after the inserted text, not necessarily the end of the draft, since the
+ * query being replaced may have been anywhere in the string. The caller
+ * (`message-composer.tsx`) feeds `cursor` back into the TextInput's own
+ * controlled `selection` prop; skipping that would leave the caret wherever
+ * it happened to land natively, which after a programmatic text splice is
+ * rarely where the person was actually typing.
+ */
 export function insertMention(
   draft: string,
+  active: MentionQuery,
   mention: PendingMention,
-): { readonly draft: string; readonly mention: PendingMention } {
-  const at = draft.lastIndexOf('@');
-  const head = at === -1 ? draft : draft.slice(0, at);
-  return { draft: `${head}@${mention.label} `, mention };
+): { readonly draft: string; readonly mention: PendingMention; readonly cursor: number } {
+  const before = draft.slice(0, active.start);
+  const after = draft.slice(active.end);
+  const inserted = `@${mention.label} `;
+  return {
+    draft: `${before}${inserted}${after}`,
+    mention,
+    cursor: before.length + inserted.length,
+  };
 }

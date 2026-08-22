@@ -25,8 +25,8 @@ import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { RichTextView } from '../../../src/lib/rich-text-view.js';
 import { Avatar } from '../../../src/lib/avatar.js';
-import { useMembers, type Member } from '../../../src/lib/use-members.js';
-import { buildMessageBody, insertMention } from '../../../src/lib/message-compose.js';
+import { useMembers } from '../../../src/lib/use-members.js';
+import { buildMessageBody } from '../../../src/lib/message-compose.js';
 import { MessageComposer } from '../../../src/lib/message-composer.js';
 import { useChatRoom } from '../../../src/lib/use-chat-room.js';
 import { pickAttachment } from '../../../src/lib/pick-attachment.js';
@@ -753,11 +753,8 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
             }}
             people={people}
             viewerId={userId}
-            onPickMention={(member: Member) => {
-              const label = member.displayName ?? member.email;
-              const result = insertMention(draft, { userId: member.userId, label });
-              setDraft(result.draft);
-              setPendingMentions((current) => [...current, result.mention]);
+            onMentionRecorded={(mention) => {
+              setPendingMentions((current) => [...current, mention]);
             }}
             onSubmit={submitDraft}
             sending={send.isPending || runCommand.isPending}
