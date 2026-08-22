@@ -3,6 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -1113,12 +1114,20 @@ function MessageGroupRow({
  * A message's resolved link previews — `apps/web`'s `MessagePreviews`,
  * ported. Every row is already ready to render (see `UnfurlPreview`'s own
  * comment — `pending`/`failed`/`refused` never reach the client), so this
- * does no status branching, just a card per preview: site name, title,
- * description, tap to open. `Linking.openURL`, not a re-validated scheme
- * check — the same trust boundary `rich-text-view.tsx`'s own `link` mark
- * draws, except the URL here came from the SERVER's own unfurl record
+ * does no status branching, just a card per preview: thumbnail, site name,
+ * title, description, tap to open. `Linking.openURL`, not a re-validated
+ * scheme check — the same trust boundary `rich-text-view.tsx`'s own `link`
+ * mark draws, except the URL here came from the SERVER's own unfurl record
  * rather than a sanitized document, so there is no client-side whitelist
  * to re-run in the first place.
+ *
+ * `imageUrl` was captured server-side from the start (`unfurl.service.ts`)
+ * but never rendered here, or on web — a real gap, not a deliberate scope
+ * boundary, found reviewing this exact screen. `Image`'s own network
+ * loading fails independently of the text above it (a broken/expired
+ * thumbnail cannot take the card's title or description down with it),
+ * and `resizeMode="cover"` in a fixed-size box is what keeps a wide
+ * screenshot or a tall og:image from distorting the row.
  */
 function LinkPreviewList({ previews }: { readonly previews: readonly UnfurlPreview[] }) {
   return (
@@ -1131,21 +1140,30 @@ function LinkPreviewList({ previews }: { readonly previews: readonly UnfurlPrevi
             void Linking.openURL(preview.url);
           }}
         >
-          {preview.siteName !== null && (
-            <Text style={styles.previewSite} numberOfLines={1}>
-              {preview.siteName}
-            </Text>
+          {preview.imageUrl !== null && (
+            <Image
+              source={{ uri: preview.imageUrl }}
+              style={styles.previewImage}
+              resizeMode="cover"
+            />
           )}
-          {preview.title !== null && (
-            <Text style={styles.previewTitle} numberOfLines={1}>
-              {preview.title}
-            </Text>
-          )}
-          {preview.description !== null && (
-            <Text style={styles.previewDescription} numberOfLines={2}>
-              {preview.description}
-            </Text>
-          )}
+          <View style={styles.previewText}>
+            {preview.siteName !== null && (
+              <Text style={styles.previewSite} numberOfLines={1}>
+                {preview.siteName}
+              </Text>
+            )}
+            {preview.title !== null && (
+              <Text style={styles.previewTitle} numberOfLines={1}>
+                {preview.title}
+              </Text>
+            )}
+            {preview.description !== null && (
+              <Text style={styles.previewDescription} numberOfLines={2}>
+                {preview.description}
+              </Text>
+            )}
+          </View>
         </Pressable>
       ))}
     </View>
@@ -1318,14 +1336,25 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   previewCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderLeftWidth: 2,
     borderLeftColor: colors.accent.hex,
     borderRadius: 4,
     backgroundColor: colors.surfaceRaised.hex,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    gap: 1,
+    padding: 6,
+    gap: 8,
     maxWidth: 320,
+  },
+  previewImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 4,
+    backgroundColor: colors.surface.hex,
+  },
+  previewText: {
+    flex: 1,
+    gap: 1,
   },
   previewSite: {
     fontSize: 11,

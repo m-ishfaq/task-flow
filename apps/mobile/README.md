@@ -2957,6 +2957,34 @@ marker paired with a genuinely different origin, both still refuse exactly as be
 (`rooms.test.ts`, `relay.test.ts`, and others) need real Postgres, unavailable in this sandbox —
 not run, but nothing they cover changed.
 
+### The Call button had no way to tell anyone it failed — found by testing the one call it correctly refuses
+
+`session.service.ts` has always refused a call started in a public channel with a clear, specific
+message: "Calls in public channels are not available yet — start one from a direct message or a
+private channel." (§6: a public channel has no bounded membership tuples to build a ring list
+from — see that file's own comment). `call-button.tsx`'s own header claimed this reaches the user
+"surfaced inline" — matching what the file it was ported from, `apps/web`'s `call-button.tsx`,
+actually does (a toast, on `useMutation`'s `onError`). The port dropped the `onError` handler
+entirely: `start.error` was never read anywhere in the mobile component. Tapping Call in a public
+channel spun and then did nothing — reading as "broken" rather than "not supported yet", for
+every failure reason, not only this one.
+
+This app has no toast system, unlike web, so the fix is `Alert.alert` on `onError` — the message
+from `apiErrorOf(error)?.error.message`, falling back to the generic string the same way the auth
+screens already do. Zero new infrastructure, and the same one-shot, dismiss-and-move-on shape a
+toast has. The header comment's now-accurate claim is corrected in place.
+
+### Link previews got their thumbnail — `imageUrl` was captured and never shown, on either platform
+
+Found reviewing this exact screen for other improvements. `unfurl.service.ts` has always resolved
+and stored `imageUrl` alongside `title`/`description`/`siteName`; neither `LinkPreviewList` here
+nor `apps/web`'s `MessagePreviews` ever rendered it — a real, shared gap, not a scope boundary.
+Added a 48×48 thumbnail via React Native's own `Image` (no new dependency — the first image this
+app renders from a URL, everything else is initials-only `Avatar` circles), laid out to the left
+of the site/title/description text rather than above it, to stay compact at this card's existing
+`maxWidth: 320`. `Image`'s own network loading fails independently of the text beside it, so a
+broken or expired thumbnail cannot take a preview's title or description down with it.
+
 ## Not here yet
 
 - **CallKit (iOS) / ConnectionService (Android) — a real lock-screen "incoming call" UI.** Named
