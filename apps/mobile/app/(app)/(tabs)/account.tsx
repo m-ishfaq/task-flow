@@ -63,6 +63,19 @@ export default function Account() {
         >
           <Text style={styles.secondaryButtonText}>Switch organization</Text>
         </Pressable>
+        {/* Always shown, not gated on a capability read here — the roster
+            itself is `member:read` (every role), and `org-settings.tsx`'s
+            own controls each gate on their own capability, the same
+            "the UI never re-derives authorization" argument CLAUDE.md's
+            §8.2 makes everywhere else. */}
+        <Pressable
+          style={styles.secondaryButton}
+          onPress={() => {
+            router.push('/org-settings');
+          }}
+        >
+          <Text style={styles.secondaryButtonText}>Manage organization</Text>
+        </Pressable>
       </View>
 
       <ProfileSection />

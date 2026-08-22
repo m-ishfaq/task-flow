@@ -246,6 +246,9 @@ importers:
       '@taskflow/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@taskflow/policy':
+        specifier: workspace:*
+        version: link:../../packages/policy
       '@taskflow/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens

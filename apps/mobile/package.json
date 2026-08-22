@@ -31,6 +31,7 @@
     "@taskflow/api": "workspace:*",
     "@taskflow/client": "workspace:*",
     "@taskflow/contracts": "workspace:*",
+    "@taskflow/policy": "workspace:*",
     "@taskflow/tokens": "workspace:*",
     "@trpc/client": "^11.18.0",
     "date-fns": "^4.4.0",

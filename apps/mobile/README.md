@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed; the "needs a rich text editor" call on `@mention` composing turned out to be wrong for the mid-string case specifically (a plain `TextInput`'s own `onSelectionChange`/`selection` was enough) and is fixed too — see "`@mention` now works mid-string"; a real native (no WebView) rich text editor — bold, links, and lists — now composes on all four surfaces named for it (chat message composer, thread replies, card description, card comments), via `@expensify/react-native-live-markdown`'s `MarkdownTextInput` and a live/send-time split for the one thing it cannot highlight live (lists) — see "A real rich text editor..."; **in-app voice calling (Phase 13, Wave 5 here) now ships on mobile** — signaling (`react-native-webrtc`), ringing, ringtones, call history, and recording-consent participation, by explicit project-owner direction scoped to in-app ringing only (CallKit/ConnectionService lock-screen UI named as a real, separate follow-up rather than included) — see "In-app voice calling..."
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed; the "needs a rich text editor" call on `@mention` composing turned out to be wrong for the mid-string case specifically (a plain `TextInput`'s own `onSelectionChange`/`selection` was enough) and is fixed too — see "`@mention` now works mid-string"; a real native (no WebView) rich text editor — bold, links, and lists — now composes on all four surfaces named for it (chat message composer, thread replies, card description, card comments), via `@expensify/react-native-live-markdown`'s `MarkdownTextInput` and a live/send-time split for the one thing it cannot highlight live (lists) — see "A real rich text editor..."; **in-app voice calling (Phase 13, Wave 5 here) now ships on mobile** — signaling (`react-native-webrtc`), ringing, ringtones, call history, and recording-consent participation, by explicit project-owner direction scoped to in-app ringing only (CallKit/ConnectionService lock-screen UI named as a real, separate follow-up rather than included) — see "In-app voice calling..."; the notification bell is now reachable from every tab and the org picker has a sign-out escape hatch — see "The notification bell was only reachable..."; **org settings (the member roster, invites, and role changes) now ships** — see "Org settings: the member roster..." — with project settings, Teams, billing, and ownership transfer still open, listed under "Not here yet"
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -3220,6 +3220,55 @@ real `expo export` for Android bundles cleanly. Not verified: exact pixel placem
 against a real status bar/notch — reasoned from `use-top-inset.ts`'s own documented inset math, not
 confirmed on-device yet.
 
+### Org settings: the member roster and role changes — the first slice of "org settings and perms not wired yet"
+
+A live report named four gaps in one message; two were fixed above (the bell, the org picker). This
+is the third: `apps/mobile/app/`'s own route list confirmed directly (not assumed) that nothing on
+this platform let anyone see who else is in the org, invite someone, change a role, or remove a
+member — `(tabs)/account.tsx` covers the SIGNED-IN PERSON's own settings only. `org-settings.tsx`
+(reached from a new "Manage organization" link on the Account tab, right below "Switch
+organization") ports `apps/web/src/features/admin/settings-page.tsx`'s org-rename and member-roster
+surfaces onto the same `tenancy.orgs.get`/`.update` and `tenancy.members.list`/`.add`/`.changeRole`/
+`.remove` routes web already uses — no new API surface.
+
+**The roster is `member:read` (every role sees it); each control above it gates on its own
+capability.** `tenancy.orgs.get`'s `capabilities` object (`updateOrg`, `inviteMember`,
+`manageMembers`, `removeMembers`) is what the screen reads, never a role comparison — the same
+"UI never re-derives authorization" argument CLAUDE.md §8.2 makes everywhere else, and the same
+shape `channel-details/[channelId].tsx`'s own roster already uses. A member who cannot invite
+anyone still sees the full roster; the invite form itself just never renders for them, matching
+that file's own "hidden rather than shown-and-refused" precedent for a control nobody could submit.
+
+**Change role and Remove both go through `useStepUp`, and this is not optional plumbing.**
+`tenancy.members.changeRole`/`.remove` are `stepUp: true` server-side — role changes are what an
+attacker holding a stolen session reaches for first — so both mutations wrap their `.mutate` call in
+the identical `guard(error, retry)` pattern `sessions-section.tsx` and `connected-accounts-
+section.tsx` already established: a `STEP_UP_REQUIRED` error opens `StepUpSheet`, confirming it
+retries the exact same call. `Add` carries no such guard, matching the server route it calls, which
+has none.
+
+**A genuine guardrail-2 false positive, fixed by renaming, not by touching the rule.** The invite
+form's own local UI state — which role chip is currently selected, before the user taps "Add
+member" — was named `role`, and the deliberately blunt, name-based `roleIdentifier` ESLint rule
+(`Identifier[name='role']` in a `===`/`!==` comparison) fired on it twice, even though nothing about
+it is an authorization decision. CLAUDE.md is explicit that this guardrail is blunt ON PURPOSE and
+must never be disabled or modified for a case like this — the fix is always to change the code, so
+the state (and its two comparison sites) is now `inviteRole`/`setInviteRole`.
+
+**What this deliberately does NOT port.** Teams (`TeamSection`), billing (`BillingSection`), and
+ownership transfer (`transferOwnership`'s own dialog) are all real, separate surfaces on web with no
+comparable urgency behind them — the roster and role changes are what "org settings and perms" was
+actually asking for. Project-level settings (labels, statuses, custom fields —
+`apps/web/src/features/work/project-settings-page.tsx`) is a second, larger, and separate gap the
+same report named and is still open; see "Not here yet" below.
+
+Verified: typecheck clean, lint clean (the guardrail fix above, and the one pre-existing unrelated
+`push-notifications.ts` warning untouched), all 218 tests pass unchanged (this screen has no
+standalone logic module the way e.g. `peer-mesh.ts` does — it is UI wiring over already-tested
+routes, the same shape as `channel-details/[channelId].tsx` itself), guardrail self-test clean,
+encoding check clean, prettier clean, and a real `expo export --platform android` bundles cleanly
+(2439 modules, no errors).
+
 ## Not here yet
 
 - **CallKit (iOS) / ConnectionService (Android) — a real lock-screen "incoming call" UI.** Named
@@ -3234,13 +3283,17 @@ confirmed on-device yet.
 - **Video and screen share.** Wave 3 on web too — this phase never claimed either.
 - **Reconnect-and-resume of a live peer connection.** A dropped socket ends that leg; rejoining is
   the recovery, matching web's own stated limit exactly.
-- **Org settings, project settings, and permissions/roles management — no screens at all yet.**
-  Confirmed directly against `apps/mobile/app/`'s own route list, not assumed: `(tabs)/account.tsx`
-  covers the SIGNED-IN PERSON's own settings (profile, passkeys, sessions, push, export); nothing
-  covers the ORG's or a PROJECT's — member roster and role changes, invites, project-level
-  configuration. `project/[projectId].tsx` exists and is an overview, not a settings screen. This
-  app never re-derives authorization (CLAUDE.md §8.2's own argument, ported unchanged) so building
-  any of this is real, separate work, not a config flag — genuinely not started.
+- **Project settings — no screen yet.** `project/[projectId].tsx` exists and is an overview, not a
+  settings screen: labels, statuses, and custom-field definitions (web's
+  `project-settings-page.tsx`, 958 lines) have no mobile equivalent. Org-level settings (the org
+  name, the member roster, invites, and role changes) shipped — see "Org settings: the member
+  roster..." above — so this is the remaining piece of the same live report. This app never
+  re-derives authorization (CLAUDE.md §8.2's own argument, ported unchanged) so building it is real,
+  separate work, not a config flag.
+- **Teams, billing, and ownership transfer — no screens, deliberately deferred.** All three are
+  real, separate surfaces on web (`TeamSection`, `BillingSection`, `transferOwnership`'s own dialog)
+  with no comparable urgency behind them yet; see `org-settings.tsx`'s own header for the same call
+  made explicitly at the point it was made.
 - **Confirming this on a simulator or physical device beyond what has
   already run.** The app has now actually been installed and driven on a
   real development build — sign-in, the org picker, "My Tasks", and card
