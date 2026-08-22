@@ -3103,6 +3103,34 @@ the right host. Narrowing that denial list for local development is a real secur
 file's own comments show was made deliberately — left for the project owner to decide rather than
 changed here.
 
+### Real device logs after the `.env` fix: signalling succeeds, ICE connectivity is still the open question
+
+A real test after switching `RTC_STUN_URLS`/`RTC_TURN_URLS` to a LAN IP and restarting `apps/api`
+still failed. `react-native-webrtc`'s own always-on debug logging (`rn-webrtc:pc:DEBUG`, enabled
+unconditionally by its `index.ts`) shows exactly where: `setRemoteDescription` → several
+`addIceCandidate` calls → `ontrack` → `setRemoteDescription OK` → `createAnswer` →
+`setLocalDescription OK`, then nothing at all for 45 seconds to 2 minutes, then `close`. That
+sequence is the WHOLE signalling exchange succeeding — offer and answer both applied, a remote
+track even described — followed by a gap shaped exactly like an ICE connectivity timeout (browsers
+give up on a candidate pair search in roughly that window), not a signalling failure. The bug is
+not in `peer-mesh.ts`'s negotiation logic; it is somewhere in whether a working candidate PAIR ever
+gets found, and that question has no answer in this log — `RTCPeerConnection.ts`'s own `log.debug`
+calls (checked directly against its source) cover every method call and `ontrack`/`onremovetrack`,
+but never `onicecandidate`, `oniceconnectionstatechange`, or `onconnectionstatechange`.
+
+`peer-mesh.ts` now logs what that library does not: each local candidate's `typ` (`host`/`srflx`/
+`relay`, parsed from the candidate line — the same field `chrome://webrtc-internals` reads),
+`iceConnectionState` transitions, and `connectionState` transitions, all via `console.warn` (this
+file's `no-console` guardrail permits `warn`/`error` only, so `console.log` was not an option). The
+next real device round settles the question directly: no `relay` candidate ever appearing means
+STUN/TURN still are not being reached (the `.env` fix did not fully take, or the phone cannot reach
+that address at all); a `relay` candidate appearing and `iceConnectionState` still never leaving
+`checking`/never reaching `connected` before `failed` is what the coturn denylist finding above
+would produce. Verified: typecheck, lint (0 new errors — `console.warn` is the only call this
+guardrail allows, `console.log` failed lint immediately and was corrected), all 218 tests pass
+(the fake `RTCPeerConnection` `peer-mesh.test.ts` constructs already satisfies the wider event
+surface structurally), guardrail self-test clean.
+
 ## Not here yet
 
 - **CallKit (iOS) / ConnectionService (Android) — a real lock-screen "incoming call" UI.** Named

@@ -50,7 +50,8 @@ import type { SignalKind } from './rtc-socket.js';
  * flowing through it.
  *
  * Events are read off the `onicecandidate`/`ontrack`/
- * `onconnectionstatechange` property SETTERS, not `addEventListener` —
+ * `oniceconnectionstatechange`/`onconnectionstatechange` property SETTERS,
+ * not `addEventListener` —
  * `RTCPeerConnection`'s own shipped type declarations (`lib/typescript/
  * RTCPeerConnection.d.ts`) import their event-map types from a
  * `./vendor/event-target-shim` path that exists in the package's SOURCE
@@ -243,13 +244,36 @@ export class PeerMesh {
       /* A null candidate is "gathering finished", not a candidate. Sending
          it would be a signal the far side has to special-case for no
          reason. */
-      if (event.candidate === null) return;
-      this.#options.transport.send(userId, 'candidate', JSON.stringify(event.candidate.toJSON()));
+      if (event.candidate === null) {
+        console.warn(`[rtc] ${userId} ICE gathering finished`);
+        return;
+      }
+      /* Diagnostic only — react-native-webrtc's own `rn-webrtc:pc:DEBUG`
+         logging (its `index.ts` enables it unconditionally) covers every
+         method call and the `ontrack`/`onremovetrack` events but never this
+         one, so a connectivity failure otherwise leaves no trace of which
+         candidate TYPES were even gathered. `typ host|srflx|relay` is
+         parsed straight from the candidate line, the same field a `tcpdump`
+         or browser's own `chrome://webrtc-internals` would read; no relay
+         candidate ever appearing is what distinguishes "TURN unreachable"
+         from "ICE found nothing to try at all". */
+      const json = event.candidate.toJSON();
+      const type = /typ (\w+)/.exec(json.candidate)?.[1] ?? 'unknown';
+      console.warn(`[rtc] ${userId} local candidate: typ=${type}`);
+      this.#options.transport.send(userId, 'candidate', JSON.stringify(json));
     };
 
     connection.ontrack = (event: RtcTrackEvent) => {
       const stream = event.streams[0];
       if (stream !== undefined) this.#options.onRemoteStream(userId, stream);
+    };
+
+    /* Diagnostic only, same reasoning as `onicecandidate` above —
+       `iceConnectionState` is the ICE-only half of `connectionState` (which
+       also folds in DTLS), so seeing BOTH tells apart "ICE itself never
+       found a pair" from "ICE connected and something else tore it down". */
+    connection.oniceconnectionstatechange = () => {
+      console.warn(`[rtc] ${userId} iceConnectionState -> ${connection.iceConnectionState}`);
     };
 
     /* Cleared to `null` by `#drop` BEFORE calling `close()` — see that
@@ -263,6 +287,7 @@ export class PeerMesh {
          tearing down on it would drop calls that were about to come
          back. */
       const state = connection.connectionState;
+      console.warn(`[rtc] ${userId} connectionState -> ${state}`);
       if (state === 'failed' || state === 'closed') this.#options.onPeerGone(userId);
     };
 
