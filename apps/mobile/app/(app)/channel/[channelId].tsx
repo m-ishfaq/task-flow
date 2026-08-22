@@ -29,6 +29,8 @@ import { useMembers, type Member } from '../../../src/lib/use-members.js';
 import { buildMessageBody, insertMention } from '../../../src/lib/message-compose.js';
 import { MessageComposer } from '../../../src/lib/message-composer.js';
 import { useChatRoom } from '../../../src/lib/use-chat-room.js';
+import { pickAttachment } from '../../../src/lib/pick-attachment.js';
+import { uploadMessageFile, type PickedFile } from '../../../src/lib/upload-message-file.js';
 import {
   channelDisplayName,
   channelQueryKey,
@@ -155,10 +157,22 @@ import {
  * main composer only, mirroring web: `thread/[messageId].tsx`'s reply
  * composer does not wire typing either there or here.
  *
+ * **Attaching a file from the composer** closes the last named gap
+ * (`pick-attachment.ts`, `upload-message-file.ts`) — the mirror image of
+ * the details screen's existing Files section, which could only download
+ * what was already there. Mirrors `apps/web/src/features/chat/chat-page.tsx`'s
+ * own `attach` mutation exactly: the message is sent FIRST (an attachment
+ * hangs off a message, and until one exists there is no channel to
+ * authorize the upload against — `attachment.service.ts`), using the
+ * current draft if there is one or a short "Shared **filename**" message
+ * otherwise, and typing stops the same way an ordinary send already does.
+ * `PickedFile.sizeBytes` comes from the fetched `Blob`, not the picker
+ * asset's own `size` field — see `pick-attachment.ts`'s own header for why
+ * that distinction matters to a signature-pinned upload.
+ *
  * **Still explicitly out of scope, all real and separate work**: mentions
  * AUTOCOMPLETE beyond the trailing-query case above (mid-string insertion
- * needs a real editor), and file ATTACHING from the composer (the details
- * screen's Files section can list and download what is already there).
+ * needs a real editor).
  *
  * `chat.messages.list` returns newest-first (`ORDER BY id DESC`) —
  * reversed here for display, since a chat thread reads oldest-at-top.
@@ -280,6 +294,66 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
     onSuccess: async () => {
       setDraft('');
       setPendingMentions([]);
+      await queryClient.invalidateQueries({ queryKey: messagesQueryKey(channelId) });
+    },
+  });
+
+  const [uploadStage, setUploadStage] = useState<string | null>(null);
+  const [uploadNotice, setUploadNotice] = useState<{
+    readonly kind: 'success' | 'failure';
+    readonly text: string;
+  } | null>(null);
+
+  // Uploads against the LAST message this pick sends — an attachment hangs
+  // off a message, and until one exists there is no channel to authorize
+  // the upload against (`attachment.service.ts`), the same ordering
+  // `apps/web`'s own `attach` mutation uses.
+  const attach = useMutation({
+    mutationFn: async (file: PickedFile) => {
+      setUploadNotice(null);
+      const carrier =
+        draft.trim().length === 0
+          ? await apiClient.chat.messages.send.mutate({
+              channelId,
+              body: plainParagraph(`Shared **${file.name}**`),
+            })
+          : await apiClient.chat.messages.send.mutate({
+              channelId,
+              body: buildMessageBody(draft.trim(), pendingMentions),
+            });
+
+      setDraft('');
+      setPendingMentions([]);
+      chatSocket.stopTyping(channelId);
+
+      return uploadMessageFile(
+        {
+          presign: (input) => apiClient.chat.attachments.presign.mutate(input),
+          confirm: (input) => apiClient.chat.attachments.confirm.mutate(input),
+        },
+        carrier.messageId,
+        file,
+        setUploadStage,
+      );
+    },
+    onSuccess: (result) => {
+      if (result.status === 'clean') {
+        setUploadNotice({ kind: 'success', text: 'File uploaded.' });
+      } else {
+        setUploadNotice({
+          kind: 'failure',
+          text:
+            result.status === 'infected'
+              ? 'That file was rejected: malware detected.'
+              : `That file was rejected: ${result.reason ?? 'it did not pass verification.'}`,
+        });
+      }
+    },
+    onError: () => {
+      setUploadNotice({ kind: 'failure', text: 'The file was not uploaded.' });
+    },
+    onSettled: async () => {
+      setUploadStage(null);
       await queryClient.invalidateQueries({ queryKey: messagesQueryKey(channelId) });
     },
   });
@@ -448,30 +522,59 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
 
       {typingLabel !== null && <Text style={styles.typingLabel}>{typingLabel}</Text>}
 
+      {(uploadStage !== null || uploadNotice !== null) && (
+        <Text
+          style={[
+            styles.uploadStatus,
+            uploadNotice?.kind === 'failure' ? styles.uploadStatusError : null,
+          ]}
+        >
+          {uploadStage ?? uploadNotice?.text}
+        </Text>
+      )}
+
       {canPost && (
-        <MessageComposer
-          draft={draft}
-          onDraftChange={(text) => {
-            setDraft(text);
-            chatSocket.startTyping(channelId);
-          }}
-          people={people}
-          viewerId={userId}
-          onPickMention={(member: Member) => {
-            const label = member.displayName ?? member.email;
-            const result = insertMention(draft, { userId: member.userId, label });
-            setDraft(result.draft);
-            setPendingMentions((current) => [...current, result.mention]);
-          }}
-          onSubmit={() => {
-            chatSocket.stopTyping(channelId);
-            send.mutate(buildMessageBody(draft.trim(), pendingMentions));
-          }}
-          sending={send.isPending}
-          error={send.isError ? send.error : null}
-          placeholder="Message…"
-          fallbackError="The message was not sent."
-        />
+        <>
+          <Pressable
+            style={styles.attachRow}
+            disabled={attach.isPending}
+            onPress={() => {
+              void pickAttachment().then((file) => {
+                if (file !== null) attach.mutate(file);
+              });
+            }}
+          >
+            {attach.isPending ? (
+              <ActivityIndicator color={colors.accent.hex} />
+            ) : (
+              <Text style={styles.attachRowText}>📎 Attach a file</Text>
+            )}
+          </Pressable>
+
+          <MessageComposer
+            draft={draft}
+            onDraftChange={(text) => {
+              setDraft(text);
+              chatSocket.startTyping(channelId);
+            }}
+            people={people}
+            viewerId={userId}
+            onPickMention={(member: Member) => {
+              const label = member.displayName ?? member.email;
+              const result = insertMention(draft, { userId: member.userId, label });
+              setDraft(result.draft);
+              setPendingMentions((current) => [...current, result.mention]);
+            }}
+            onSubmit={() => {
+              chatSocket.stopTyping(channelId);
+              send.mutate(buildMessageBody(draft.trim(), pendingMentions));
+            }}
+            sending={send.isPending}
+            error={send.isError ? send.error : null}
+            placeholder="Message…"
+            fallbackError="The message was not sent."
+          />
+        </>
       )}
 
       <Modal
@@ -941,6 +1044,23 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     color: colors.inkFaint.hex,
     paddingBottom: 2,
+  },
+  uploadStatus: {
+    fontSize: 12,
+    color: colors.inkFaint.hex,
+    paddingBottom: 2,
+  },
+  uploadStatusError: {
+    color: colors.danger.hex,
+  },
+  attachRow: {
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+  },
+  attachRowText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.accent.hex,
   },
   modalBackdrop: {
     flex: 1,

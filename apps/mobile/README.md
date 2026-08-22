@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete — Chat now live (typing indicators, broadcast-driven refresh); push code-complete (infra-blocked, matching passkeys) — Account parity complete, Sprints complete
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity — typing indicators, broadcast-driven refresh, and composer file attaching all shipped; push code-complete (infra-blocked, matching passkeys) — Account parity complete, Sprints complete
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -1486,7 +1486,13 @@ shipped/released split; cancelling releases everything, no modal needed.
 **No CSV import** — a file picker is a new native dependency this app does
 not have, plus a dry-run preview and a per-row error list are real,
 separate work at roughly the size of this increment's other pieces
-combined, not a corner to cut silently inside a sprints port. Export ships:
+combined, not a corner to cut silently inside a sprints port. _(The
+file-picker half is no longer true as written — `expo-document-picker`
+landed with Chat's own composer-attaching increment, "Chat, complete"
+below. The dry-run-preview-and-per-row-error-list half is still real,
+separate work; left as written rather than edited, per this file's own
+habit of correcting a stale claim in place instead of silently rewriting
+it.)_ Export ships:
 `work.cards.export`'s output is a plain string, wrapped in the same
 `Share.share` pattern `export-data-section.tsx`'s DSAR export already
 established — the one wrinkle is that `export` is a tRPC QUERY, not a
@@ -1813,8 +1819,66 @@ phone's width.
 there or on web — `startTyping` fires on every keystroke, no debounce,
 and `stopTyping` fires right before the message actually sends (mirrors
 `chat-page.tsx`'s three call sites: the ordinary send path, slash
-commands, and file-share sends — attachments are still out of scope here,
-so only the ordinary send path applies on native today).
+commands, and file-share sends — file-share sends joined the native
+composer next, see "Chat, complete" below, so both call sites now apply
+here too).
+
+## Chat, complete: attaching a file from the composer
+
+The last named Chat gap, closed after typing indicators — Chat is now at
+full parity with web. Ported from `apps/web/src/features/chat/api.ts`'s
+own `uploadMessageFile` and `chat-page.tsx`'s `attach` mutation.
+
+**Three new files, split for the same testability reason
+`notification-path.ts` already established**: `upload-message-file.ts` is
+the presign/PUT/confirm orchestration, with zero `react-native` import of
+its own — DI'd (`UploadMessageFileDeps`) rather than calling `apiClient`
+inline the way web's version does, purely so it stays unit-testable the
+way `push-provider.test.ts` already tests its own fetch-driven send path
+(`presign`/`confirm` stubbed, the PUT exercised against a stubbed global
+`fetch`). `pick-attachment.ts` is the native-touching half:
+`expo-document-picker` loaded lazily — the SIXTH time this codebase has
+hit the "a native module's entry file calls `requireNativeModule` at its
+own top level, and a static import poisons Metro's whole module graph"
+bug shape, after `device-key.ts`, `biometric-gate.native.ts`,
+`passkeys.ts`, `qr-code.tsx`, and `push-notifications.ts`. `accepted-file-
+types.ts` is a small MIME-only sibling of web's own `accepted-file-
+types.ts` — a courtesy for the picker's `type` filter, not a control; the
+real enforcement stays server-side in `packages/security/src/
+magic-bytes.ts`, unchanged.
+
+**`PickedFile.sizeBytes` comes from the fetched `Blob`, not the picker
+asset's own `size` field — the one real divergence from a straight
+port.** A browser's `File.size` is always accurate, so web's version never
+had to think about this; `expo-document-picker`'s `DocumentPickerAsset.
+size` is `undefined` on some Android content providers, and even where
+present is OS-reported metadata rather than the exact byte count about to
+be sent. `presign`'s `sizeBytes` PINS the upload signature
+(`packages/storage`'s `signableHeaders` — CLAUDE.md's own Phase 3
+attachments section), so what gets declared must be exactly what gets
+PUT. `pick-attachment.ts` reads the picked file into a `Blob`
+(`fetch(uri).then(r => r.blob())`, the standard React Native idiom for a
+local file URI) and hands that same `Blob` on as the PUT body, so
+`blob.size` and the declared `sizeBytes` can never disagree.
+
+**Send-then-attach, exactly as web does it and for the same reason**: an
+attachment hangs off a message, and until one exists there is no channel
+to authorize the upload against (`attachment.service.ts`). The current
+draft is sent if there is one, otherwise a short "Shared **filename**"
+message (`plainParagraph`, already imported for the edit mutation — not a
+new helper), and `chatSocket.stopTyping` fires the same as an ordinary
+send. No toast library on this app (established convention — see
+`push-notifications-section.tsx`'s own plain inline-`Text` pattern), so
+upload progress and the clean/infected/rejected verdict both render as a
+small status line above the composer instead: `uploadStage` while it is
+in flight, then `uploadNotice` once it settles.
+
+**The attach control is a plain text button ("📎 Attach a file") above the
+composer, not inline with Send** — `MessageComposer` is shared with
+`thread/[messageId].tsx`, which has no attach affordance (matching typing
+indicators' identical scoping above), so this stays a sibling element in
+`channel/[channelId].tsx` rather than a new prop threaded through the
+shared component for a feature only one of its two callers needs.
 
 ## Not here yet
 

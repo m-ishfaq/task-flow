@@ -25,6 +25,7 @@
     "expo": "~57.0.15",
     "expo-constants": "~57.0.13",
     "expo-dev-client": "~57.0.14",
+    "expo-document-picker": "~57.0.1",
     "expo-linking": "~57.0.7",
     "expo-local-authentication": "~57.0.2",
     "expo-modules-core": "~57.0.12",
