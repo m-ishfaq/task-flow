@@ -262,6 +262,42 @@ export function checklistsQueryKey(cardId: string): readonly ['work.checklists.l
   return ['work.checklists.list', cardId];
 }
 
+/**
+ * Custom field definitions and values — PROJECT-scoped vocabulary
+ * (`work.fields.list`) plus one card's own values (`work.fields.onCard`),
+ * the same two-tier shape `statusesQueryKey`/`labelsQueryKey` already
+ * establish. Mirrors `apps/web/src/features/work/detail/
+ * custom-field-section.tsx`'s own `FIELD_TYPES` — the server's `z.enum`
+ * is the real authority; a drift here is a rejected create, not a bad row.
+ */
+export const CUSTOM_FIELD_TYPES = [
+  'text',
+  'number',
+  'date',
+  'checkbox',
+  'select',
+  'multi_select',
+  'user',
+] as const;
+
+export type CustomFieldType = (typeof CUSTOM_FIELD_TYPES)[number];
+
+export type CustomField = Wire<
+  Awaited<ReturnType<MobileTRPCClient['work']['fields']['list']['query']>>
+>[number];
+
+export function fieldsQueryKey(projectId: string): readonly ['work.fields.list', string] {
+  return ['work.fields.list', projectId];
+}
+
+export type CardFieldValue = Wire<
+  Awaited<ReturnType<MobileTRPCClient['work']['fields']['onCard']['query']>>
+>[number];
+
+export function cardFieldsQueryKey(cardId: string): readonly ['work.fields.onCard', string] {
+  return ['work.fields.onCard', cardId];
+}
+
 /** A card's comments — read + post only on native for now; see card/[cardId].tsx's own header. */
 export type Comment = Wire<
   Awaited<ReturnType<MobileTRPCClient['work']['comments']['list']['query']>>

@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — closing the Work gap against web feature by feature (My Tasks, Boards, card detail's status/assignees/labels, and interactive checklists shipped; custom fields, attachments, and comment edit/delete next)
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — closing the Work gap against web feature by feature (My Tasks, Boards, card detail's status/assignees/labels/checklists/custom fields all shipped; attachments and comment edit/delete next)
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -2027,6 +2027,37 @@ on a `CardRow` badge today, so nothing is visibly wrong yet, but it is a
 real, separate follow-up rather than something this increment silently
 carries forward.
 
+## Work, closing the gap against web: custom fields
+
+The fifth and final "vocabulary" slice of the Work parity pass, following
+status, assignees, labels and checklists. Ported from `apps/web/src/
+features/work/detail/custom-field-section.tsx` in full — all seven field
+types (`text`, `number`, `date`, `checkbox`, `select`, `multi_select`,
+`user`), defining a new field, and setting its value on a card.
+
+**Two deliberate divergences from a straight port, both to stay honest
+about what this app actually has, not to add capability web doesn't
+carry.** `type: 'user'` falls through to the plain-text default —
+matching web's OWN `FieldInput` exactly, which has no specialized picker
+for it either (visible in that file's own field-type list: every other
+type gets an `if` branch, `user` does not). Building a nicer member
+picker here — this app already has one, from `AssigneeSelector` — would
+make mobile more capable than web in an undocumented way the two
+platforms would then quietly disagree about; the point of this whole pass
+is parity, not exceeding it by accident. `date` is a plain `YYYY-MM-DD`
+text entry rather than a calendar control, for the same "no date-picker
+dependency added yet" reason a card's own due/start dates are still
+uneditable — this is the first PARTIAL exception to that stance (a
+project-defined field can now hold a typed date; the card's own due/start
+columns still cannot be edited at all), typed by hand rather than picked,
+which is real but working.
+
+**`select`/`multi_select` reuse the same chip-row idiom `StatusSelector`/
+`LabelSelector` already established** rather than inventing a `<select>`
+substitute — a project's field option list is the same "handful of
+values" scale labels are. `AddFieldForm`'s type picker is a chip row for
+the identical reason.
+
 ## Not here yet
 
 - **Confirming this on a simulator or physical device beyond what has
@@ -2079,15 +2110,17 @@ carries forward.
   production domain, hosted `apple-app-site-association`/`assetlinks.json`
   files, and a real Android signing certificate, none of which exist yet.
   See that section's own checklist for exactly what to stand up first.
-- Custom fields and attachments on a card (still entirely absent from
-  card detail — see "Work, closing the gap" above for what HAS shipped
-  there), comment edit/delete/replies (still read+post only), a native
-  rich text EDITOR (description/comment/message composers all stay
-  plain-text until one exists), due/start date editing (no date-picker
-  dependency added yet), and card drag-and-drop (boards' own section above
-  has the full reasoning). Checklist items are no longer count-only — see
-  "Work, closing the gap against web: interactive checklists" above. The
-  rest of Chat (attachments from the
+- Attachments on a card (still entirely absent from card detail — see
+  "Work, closing the gap" above for what HAS shipped there: status,
+  assignees, labels, interactive checklists, and now custom fields),
+  comment edit/delete/replies (still read+post only), a native rich text
+  EDITOR (description/comment/message composers all stay plain-text until
+  one exists), due/start date editing on a CARD's own dates specifically
+  (no date-picker dependency added yet — a custom field of type `date` can
+  now hold a typed value, see "custom fields" above for why that is a
+  partial exception, not a reversal), and card drag-and-drop (boards' own
+  section above has the full reasoning). The rest of Chat (attachments
+  from the
   composer — reactions, mentions composing, thread replies,
   edit/delete/"remove for me", read receipts, link unfurls, push, typing
   indicators and broadcast-driven live refresh have all shipped, see "Chat,
