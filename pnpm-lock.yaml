@@ -14,6 +14,7 @@ overrides:
   nanoid@<3.3.17: '>=3.3.17'
   vite@<6.4.3: '>=6.4.3'
   ip-address: '>=10.3.1'
+  simply-deferred: npm:simply-deferred@3.0.0
 
 importers:
 
@@ -7159,9 +7160,8 @@ packages:
   simple-swizzle@0.2.4:
     resolution: {integrity: sha512-nAu1WFPQSMNr2Zn9PGSZK9AGn4t/y97lEm+MXTtUDwfP0ksAIX4nO+6ruD9Jwut4C49SB1Ws+fbXsm/yScWOHw==}
 
-  simply-deferred@git+https://git@github.com:Expensify/simply-deferred.git#77a08a95754660c7bd6e0b6979fdf84e8e831bf5:
-    resolution: {commit: 77a08a95754660c7bd6e0b6979fdf84e8e831bf5, repo: git@github.com:Expensify/simply-deferred.git, type: git}
-    version: 3.0.0
+  simply-deferred@3.0.0:
+    resolution: {integrity: sha512-r9JW995oSr+WgX4ZuvpqfBmL7fH300gIGqCDMSEZJwhsrAXwk/NetYMc7Lkjv4KiIkJzr92fBlphFo4m3OrDbQ==}
 
   sisteransi@1.0.5:
     resolution: {integrity: sha512-bLGGlR1QxBcynn2d5YmDX4MGjlZvy2MRBDRNHLJ8VI6l6+9FUiyTFNJ0IveOSP0bcXgVDPRcfGqA0pjaqUpfVg==}
@@ -12301,7 +12301,7 @@ snapshots:
       react: 16.12.0
       react-dom: 16.12.0(react@16.12.0)
       semver: 7.8.5
-      simply-deferred: git+https://git@github.com:Expensify/simply-deferred.git#77a08a95754660c7bd6e0b6979fdf84e8e831bf5
+      simply-deferred: 3.0.0
       ua-parser-js: 1.0.41
 
   expo-application@57.0.2(expo@57.0.15):
@@ -14953,7 +14953,7 @@ snapshots:
     dependencies:
       is-arrayish: 0.3.4
 
-  simply-deferred@git+https://git@github.com:Expensify/simply-deferred.git#77a08a95754660c7bd6e0b6979fdf84e8e831bf5: {}
+  simply-deferred@3.0.0: {}
 
   sisteransi@1.0.5: {}
 
