@@ -2916,6 +2916,47 @@ has one: this value backs three real production sockets, so a plausible-but-wron
 fail exactly as silently as the bug it replaces — the same "fail loudly, not plausibly" argument
 this file already makes for `MOBILE_API_BASE_URL`'s preview/production placeholder.
 
+### `apps/realtime/src/auth.ts`'s own "unverified against a real device" note, closed
+
+The socket-origin split above got a real device's Socket.IO connection all the way to
+`apps/realtime` for the first time — and every handshake was refused `forbidden_origin`.
+`isNativeClient`'s own header (⚠ human-review surface) had already named this exact risk and
+what to do about it: "What is NOT yet confirmed is whether the OS-level native networking stack
+underneath RN's `WebSocket` ever attaches some other fixed value [for `Origin`] on its own. If a
+real-device run ever finds one, the fix is to add THAT value to the allowedOrigins list."
+
+**What a real device actually sent was not a fixed value at all.** Added diagnostic logging
+(`apps/realtime/src/gateway.ts`) to see it rather than guess, and the log showed
+`"origin":"http://10.78.51.128:3001","hasNativeMarker":true` — the phone's own LAN IP and the
+realtime server's own port, which is a different value on every machine and meaningless in
+production. `engine.io-client` has no `window.location` to read a genuine page origin from
+off-browser, and synthesizes one from the connection's OWN target instead of omitting the header
+— so the comment's own prescribed fix (allow-list "that value") would have only worked for one
+developer's one LAN IP, forever.
+
+**The actual fix is `isSelfOrigin` (`apps/realtime/src/auth.ts`): compare `Origin` against the
+request's OWN `Host` header, not a list.** `apps/realtime` serves no HTML of its own — nothing a
+browser could ever be "on" when it opens this socket — so a real browser's Origin (attached by
+the browser itself, reflecting the page it was loaded from) can never legitimately equal this
+server's own address. The only client that produces that exact equality is one with no page to
+report an origin for, echoing its own connection target back. `verifyHandshake` still requires
+`isNativeClient` alongside `isSelfOrigin` before relaxing anything, so a browser presenting a
+forbidden, non-self origin is refused exactly as before — a malicious page cannot spoof `Host` to
+match its own `Origin`, since `Host` is what the real browser's own request line names, not
+something injectable script content controls. This grants nothing beyond the already-accepted
+interim gap `isNativeClient`'s own comment names (a forgeable header, whose real protection is
+`verifyAccessToken`'s cryptographic check) — it only recognizes a second SHAPE of that same gap,
+deployment-independent where a fixed allow-list entry could never be.
+
+`auth.ts`'s own "unverified against a real device" paragraph is corrected in place — not silently
+rewritten — per this repo's "a status marker is a claim, not a fact" discipline. 10 new tests in
+`auth.test.ts` cover `isSelfOrigin` directly and the full `verifyHandshake` path for the real
+device's exact shape, including that a self-origin match WITHOUT the native marker, or a native
+marker paired with a genuinely different origin, both still refuse exactly as before. Verified:
+`apps/realtime`'s typecheck, lint, and `auth.test.ts` (27/27) all clean; the DB-backed suites
+(`rooms.test.ts`, `relay.test.ts`, and others) need real Postgres, unavailable in this sandbox —
+not run, but nothing they cover changed.
+
 ## Not here yet
 
 - **CallKit (iOS) / ConnectionService (Android) — a real lock-screen "incoming call" UI.** Named

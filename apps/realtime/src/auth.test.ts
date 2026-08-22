@@ -8,6 +8,7 @@ import {
   clientAddress,
   HandshakeError,
   isNativeClient,
+  isSelfOrigin,
   originAllowed,
   verifyHandshake,
 } from './auth.js';
@@ -92,6 +93,32 @@ describe('originAllowed (§3.2)', () => {
     expect(originAllowed('http://localhost:5173.evil.test', ORIGINS)).toBe(false);
     expect(originAllowed('http://evil.test/http://localhost:5173', ORIGINS)).toBe(false);
     expect(originAllowed('https://localhost:5173', ORIGINS)).toBe(false);
+  });
+});
+
+describe('isSelfOrigin (§8, closing the "unverified against a real device" gap)', () => {
+  it('matches an origin naming exactly the request’s own host:port', () => {
+    expect(isSelfOrigin('http://10.78.51.128:3001', { host: '10.78.51.128:3001' })).toBe(true);
+  });
+
+  it('is scheme-independent — only host:port is compared', () => {
+    // engine.io-client's synthesized origin and Socket.io's own Host header
+    // are not guaranteed to agree on http vs ws; the equality that actually
+    // matters is "this is the same address the request itself arrived on".
+    expect(isSelfOrigin('ws://10.78.51.128:3001', { host: '10.78.51.128:3001' })).toBe(true);
+  });
+
+  it('does not match a real, different origin — this is not a blanket bypass', () => {
+    expect(isSelfOrigin('http://evil.test', { host: '10.78.51.128:3001' })).toBe(false);
+  });
+
+  it('does not match a same-host origin at a DIFFERENT port', () => {
+    expect(isSelfOrigin('http://10.78.51.128:9999', { host: '10.78.51.128:3001' })).toBe(false);
+  });
+
+  it('refuses rather than throws on a missing Host or a malformed origin', () => {
+    expect(isSelfOrigin('http://10.78.51.128:3001', {})).toBe(false);
+    expect(isSelfOrigin('not-a-url', { host: '10.78.51.128:3001' })).toBe(false);
   });
 });
 
@@ -202,6 +229,56 @@ describe('verifyHandshake (§3.2, §3.8)', () => {
           ),
         ),
       ).toBe('invalid_token');
+    });
+
+    describe('a self-referential Origin (§8, the real-device finding)', () => {
+      // The exact shape a real Android device sent: engine.io-client, with no
+      // window.location to read a page origin from, synthesized Origin from
+      // its own connection target instead of omitting the header.
+      const REAL_DEVICE_ORIGIN = 'http://10.78.51.128:3001';
+      const REAL_DEVICE_HOST = '10.78.51.128:3001';
+
+      it('is let through, with the marker and a valid token', async () => {
+        const identity = await verifyHandshake(
+          fakeSocket(
+            REAL_DEVICE_ORIGIN,
+            { token: await token() },
+            {
+              [CLIENT_HEADER]: MOBILE_CLIENT,
+              host: REAL_DEVICE_HOST,
+            },
+          ),
+          { jwtSecret: SECRET, allowedOrigins: ORIGINS },
+        );
+        expect(identity.userId).toBe(USER);
+      });
+
+      it('is refused without the native marker — this never weakens the browser path', async () => {
+        // Same self-referential origin, no marker: an ordinary origin check,
+        // and 10.78.51.128:3001 is not in ORIGINS either way.
+        expect(
+          await refusalOf(
+            fakeSocket(REAL_DEVICE_ORIGIN, { token: await token() }, { host: REAL_DEVICE_HOST }),
+          ),
+        ).toBe('forbidden_origin');
+      });
+
+      it('is refused when the marker is present but Origin does NOT match Host', async () => {
+        // The marker alone is not enough — see isNativeClient's own comment
+        // on why it must never override a real, non-self origin.
+        expect(
+          await refusalOf(
+            fakeSocket(
+              'http://evil.test',
+              { token: await token() },
+              {
+                [CLIENT_HEADER]: MOBILE_CLIENT,
+                host: REAL_DEVICE_HOST,
+              },
+            ),
+          ),
+        ).toBe('forbidden_origin');
+      });
     });
   });
 

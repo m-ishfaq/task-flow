@@ -160,18 +160,52 @@ export function originAllowed(origin: string | undefined, allowed: readonly stri
  * alongside it, since nothing about a fake marker changes what a browser
  * actually sent.
  *
- * ## Unverified against a real device
+ * ## Confirmed against a real device (2026-08-22) — and the finding corrects this section
  *
- * Confirmed against `engine.io-client`'s own source: it does not fabricate an
- * `Origin` for React Native, and this app's socket client does not set one
- * either. What is NOT yet confirmed is whether the OS-level native networking
- * stack underneath RN's `WebSocket` ever attaches some other fixed value on
- * its own. If a real-device run ever finds one, the fix is to add THAT value
- * to the ordinary `allowedOrigins` list — the unchanged, already-tested path
- * above — not to touch this function.
+ * This paragraph originally said the open question was "some other FIXED
+ * value" `allowedOrigins` could simply list. A real Android device instead
+ * showed `Origin: http://10.78.51.128:3001` — not fixed at all, but the exact
+ * host:port the phone dialed, which is a different LAN IP on every machine
+ * and meaningless in production. `engine.io-client` has no `window.location`
+ * to read a genuine page origin from off-browser, and synthesizes one from
+ * the connection's OWN target instead of omitting the header. Corrected in
+ * place, per this repo's own "a status marker is a claim, not a fact"
+ * discipline, rather than silently rewritten: `isSelfOrigin` below is the
+ * actual fix, and it is deployment-independent for exactly the reason a
+ * fixed allow-list entry could never be.
  */
 export function isNativeClient(headers: Socket['handshake']['headers']): boolean {
   return headers[CLIENT_HEADER] === MOBILE_CLIENT;
+}
+
+/**
+ * True when `origin` names exactly the same host:port this REQUEST itself
+ * arrived on. Read this together with `isNativeClient`'s own "confirmed
+ * against a real device" note above — this is what actually closes that
+ * finding, and it does so without weakening the browser path at all.
+ *
+ * The reasoning `verifyHandshake` relies on: `apps/realtime` serves no HTML
+ * of its own — nothing a browser could ever be "on" when it opens this
+ * socket — so a real browser's Origin header (which reflects the PAGE it was
+ * loaded from, attached by the browser itself, never the page's own script)
+ * can never legitimately equal this server's own address. The only client
+ * that produces that exact equality is one with no page to report an origin
+ * for, echoing its own connection target back — precisely `engine.io-client`
+ * off-browser. `verifyHandshake` still requires `isNativeClient` alongside
+ * this before relaxing anything, so the two together grant NOTHING beyond
+ * what an attacker could already do by omitting `Origin` entirely and
+ * setting the (trivially forgeable, per `isNativeClient`'s own comment)
+ * marker header — this only widens WHICH shape of that already-accepted
+ * interim gap is recognized, not what it allows once recognized.
+ */
+export function isSelfOrigin(origin: string, headers: Socket['handshake']['headers']): boolean {
+  const host = headers.host;
+  if (host === undefined) return false;
+  try {
+    return new URL(origin).host === host;
+  } catch {
+    return false;
+  }
 }
 
 export interface HandshakeOptions {
@@ -195,11 +229,17 @@ export async function verifyHandshake(
   const origin = socket.handshake.headers.origin;
 
   if (origin !== undefined && origin !== '') {
-    /* A real origin was presented — checked exactly as always, with no branch
-       for CLIENT_HEADER at all. A disallowed origin is refused regardless of
-       what any other header claims alongside it (see isNativeClient's own
-       comment on why that marker must never override this). */
-    if (!originAllowed(origin, options.allowedOrigins)) {
+    /* A real origin was presented. Checked exactly as always UNLESS it is
+       both self-referential (isSelfOrigin) AND paired with the native marker
+       — see that function's own comment for why that specific combination
+       cannot come from a real browser. A forbidden origin with no native
+       marker, or a native marker paired with a REAL (non-self) origin, is
+       refused exactly as before: a browser can never claim to be native by
+       adding a header, and a native client mis-forwarding some other origin
+       gets no special treatment either. */
+    const selfOriginNative =
+      isSelfOrigin(origin, socket.handshake.headers) && isNativeClient(socket.handshake.headers);
+    if (!selfOriginNative && !originAllowed(origin, options.allowedOrigins)) {
       throw new HandshakeError('forbidden_origin');
     }
   } else if (!isNativeClient(socket.handshake.headers)) {
