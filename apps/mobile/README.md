@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet")
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet")
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -2173,6 +2173,56 @@ matching the one it already had for `title`/`priority`/`dueDate`/
 OLD value until the round trip completed and invalidated, the same
 one-frame staleness this hook's own optimism exists to prevent for every
 other field on this screen.
+
+## Card detail, visual redesign: sections, horizontal-scroll chips, comments
+
+Direct feedback from a real device (2026-08-22), quoted because it names
+four separate problems, not one: "this is card details and looks very
+messy... we do not know which one a real user has to focus on and also if
+there are many labels, status etc why not put them in one row and if more
+we can use x axis scroll but with good UI also see we cant distinguish
+what is what also the comment section very messy." Every field/control
+from the parity pass above stayed — nothing was cut, only re-presented.
+
+**`Section` — a shared card wrapper, reusing `card-row.tsx`'s own tile
+look (border + `surfaceRaised`) rather than inventing a second "grouped
+block" visual language.** Every field section on this screen (Status,
+Priority, Dates, Assignees, Sprint, Labels, Fields, Description,
+Checklists, Attachments, Comments) used to share one bare label style
+(`sprintSection`/`sprintSectionLabel`, a `{ gap: 6 }` `View` with a small
+`Text` above it) with no boundary between one section and the next — the
+literal cause of "cannot distinguish what is what." `Section` gives each
+one an actual bordered, raised tile, and **`PrioritySelector` had no
+wrapper at all** — the one selector with no label on the whole screen,
+exactly the unlabeled chip row the screenshot showed between Status and
+the date fields. Fixed by giving it the same wrapper as every sibling,
+not a one-off label.
+
+**`ChipScroll` — every chip row that used to `flexWrap` onto a second and
+third line now scrolls horizontally instead**, the direct answer to "if
+there are many labels, status etc why not put them in one row... x axis
+scroll." Mirrors `board/[boardId].tsx`'s own tab strip exactly, including
+both halves of its fix for a horizontal `ScrollView` inside a flex
+column — `flexGrow`/`flexShrink: 0` on the scroll's own frame (or it
+sizes itself to fill the remaining column space) and
+`alignItems: 'flex-start'` on its content container (or each chip
+stretches to match the frame's height) — reusing that file's already-hard-
+won fix rather than rediscovering it. Applies to Status, Priority, Sprint,
+Labels, Assignees' chips, and both the type picker in `AddFieldForm` and
+the `select`/`multi_select` chip rows inside `FieldInput`. The old
+`priorityRow` (`flexWrap: 'wrap'`) style is gone — nothing uses it anymore.
+
+**Comments: an `Avatar` next to the author name (a real, one-line gap —
+web's own `CommentRow` has always rendered one), and a background bubble
+per comment instead of bare text in a flat list.** Top-level comments sit
+in `commentBubble` (`surfaceHover`, one elevation step lighter than the
+`Section` card around them — the same step `priorityChip`'s own active
+state already uses for "a distinct thing sitting on top of its section").
+Replies keep their left-border indent but gained a `surfaceSunken` fill —
+one step DARKER — reading as "tucked inside" the parent rather than
+merely float-indented under a thin gray line, and the border itself moved
+from `line` at 1px to `accent` at 2px, since a hairline in low-contrast
+gray was nearly invisible next to several reply threads stacked in a row.
 
 ## Not here yet
 

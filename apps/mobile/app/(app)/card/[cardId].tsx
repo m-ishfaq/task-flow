@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
   ActivityIndicator,
@@ -57,6 +57,55 @@ import {
 import { isOpenSprint, sprintsQueryKey } from '../../../src/lib/sprints.js';
 
 const PRIORITIES: readonly Priority[] = ['urgent', 'high', 'normal', 'low'];
+
+/**
+ * A titled card wrapping one field/section of the detail screen — added for
+ * the "too much info, we can't tell which one to focus on, can't
+ * distinguish what is what" feedback on a real device (2026-08-22). Every
+ * section previously shared one plain text label (the old `sprintSection`/
+ * `sprintSectionLabel` pair, now renamed `section`/`sectionLabel` since
+ * this component is what uses them) with no visual boundary between it and
+ * its neighbour, so "Status", "Priority" and "Sprint" read as one
+ * undifferentiated column of chips. This reuses `card-row.tsx`'s own `card`
+ * tile look (border + `surfaceRaised` background) — already the app's
+ * established "this is one distinct thing" idiom for a card tile on "My
+ * Tasks" and the board — rather than inventing a second grouped-block
+ * visual language for this one screen.
+ */
+function Section({ label, children }: { readonly label: string; readonly children: ReactNode }) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionLabel}>{label}</Text>
+      {children}
+    </View>
+  );
+}
+
+/**
+ * A chip row that scrolls horizontally instead of wrapping onto a second
+ * and third line — the direct answer to "if there are many labels, status
+ * etc why not put them in one row and if more we can use x axis scroll."
+ * Mirrors `board/[boardId].tsx`'s own tab strip exactly, including both
+ * halves of its fix for a horizontal `ScrollView` inside a flex column:
+ * `chipScrollFrame`'s `flexGrow`/`flexShrink: 0` stops the FRAME from
+ * stretching to fill the remaining column space (which renders every chip
+ * as a near-fullscreen vertical pill), and `chipScroll`'s
+ * `alignItems: 'flex-start'` stops each CHIP inside it from stretching to
+ * match the frame — see that file's own `tabStripFrame` comment; both are
+ * needed, not just one.
+ */
+function ChipScroll({ children }: { readonly children: ReactNode }) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={styles.chipScrollFrame}
+      contentContainerStyle={styles.chipScroll}
+    >
+      {children}
+    </ScrollView>
+  );
+}
 
 /**
  * Card detail (Wave 2's second slice, following "My Tasks", then made
@@ -382,9 +431,7 @@ function ChecklistSection({
     deleteItem.error;
 
   return (
-    <View style={styles.sprintSection}>
-      <Text style={styles.sprintSectionLabel}>Checklists</Text>
-
+    <Section label="Checklists">
       {(checklists.data ?? []).map((checklist) => {
         const done = checklist.items.filter((item) => item.done).length;
         return (
@@ -498,7 +545,7 @@ function ChecklistSection({
           {apiErrorOf(anyError)?.error.message ?? 'The checklist was not saved.'}
         </Text>
       )}
-    </View>
+    </Section>
   );
 }
 
@@ -545,6 +592,20 @@ function ChecklistSection({
  * plain "Comment deleted" placeholder rather than an empty `RichTextView`
  * (which would render nothing and look like a blank comment, not a
  * deleted one).
+ *
+ * **Visually, "very messy" (2026-08-22 device feedback) meant no boundary
+ * between one comment and the next and no author avatar** — both are
+ * fixed here, not by inventing new structure. Each top-level thread's
+ * `CommentRow` sits in `commentBubble` (`surfaceHover`, one shade lighter
+ * than this `Section`'s own `surfaceRaised` card, the same elevation step
+ * `assigneeChip`/`priorityChip` already use for "a distinct thing sitting
+ * on top of its section"), and each reply's existing `commentReply`
+ * indent gained a `surfaceSunken` fill — one shade DARKER, reading as
+ * "tucked inside" its parent rather than merely float-indented under a
+ * thin line. `CommentRow` itself is otherwise unchanged except for the
+ * `Avatar` next to the author name, matching web's own `CommentRow` (which
+ * has always rendered one) — a real, one-line gap on this screen, not a
+ * deliberate mobile omission.
  */
 function CommentsSection({ cardId }: { readonly cardId: CardId }) {
   const queryClient = useQueryClient();
@@ -607,41 +668,41 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
     all.filter((comment) => comment.parentCommentId === parentId);
 
   return (
-    <View style={styles.commentsSection}>
-      <Text style={styles.sectionHeading}>Comments</Text>
-
+    <Section label="Comments">
       {comments.isPending && <ActivityIndicator color={colors.accent.hex} />}
       {topLevel.map((comment) => (
         <View key={comment.commentId} style={styles.commentThread}>
-          <CommentRow
-            comment={comment}
-            viewerId={userId}
-            personOf={personOf}
-            isEditing={editingId === comment.commentId}
-            editDraft={editDraft}
-            onEditDraftChange={setEditDraft}
-            editPending={edit.isPending}
-            onStartEdit={() => {
-              setEditingId(comment.commentId);
-              setEditDraft(comment.bodyText);
-            }}
-            onCancelEdit={() => {
-              setEditingId(null);
-            }}
-            onSaveEdit={() => {
-              if (editDraft.trim().length === 0) return;
-              edit.mutate({ commentId: comment.commentId, text: editDraft.trim() });
-            }}
-            onDelete={() => {
-              remove.mutate(comment.commentId);
-            }}
-            onReply={() => {
-              setReplyDraft('');
-              setReplyingTo((current) =>
-                current === comment.commentId ? null : comment.commentId,
-              );
-            }}
-          />
+          <View style={styles.commentBubble}>
+            <CommentRow
+              comment={comment}
+              viewerId={userId}
+              personOf={personOf}
+              isEditing={editingId === comment.commentId}
+              editDraft={editDraft}
+              onEditDraftChange={setEditDraft}
+              editPending={edit.isPending}
+              onStartEdit={() => {
+                setEditingId(comment.commentId);
+                setEditDraft(comment.bodyText);
+              }}
+              onCancelEdit={() => {
+                setEditingId(null);
+              }}
+              onSaveEdit={() => {
+                if (editDraft.trim().length === 0) return;
+                edit.mutate({ commentId: comment.commentId, text: editDraft.trim() });
+              }}
+              onDelete={() => {
+                remove.mutate(comment.commentId);
+              }}
+              onReply={() => {
+                setReplyDraft('');
+                setReplyingTo((current) =>
+                  current === comment.commentId ? null : comment.commentId,
+                );
+              }}
+            />
+          </View>
 
           {repliesOf(comment.commentId).map((reply) => (
             <View key={reply.commentId} style={styles.commentReply}>
@@ -738,7 +799,7 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
             'That action could not be completed.'}
         </Text>
       )}
-    </View>
+    </Section>
   );
 }
 
@@ -777,6 +838,7 @@ function CommentRow({
   return (
     <View style={styles.commentRow}>
       <View style={styles.commentMeta}>
+        <Avatar label={author} size={20} />
         <Text style={styles.commentAuthor}>{author}</Text>
         <Text style={styles.commentTime}>
           {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
@@ -903,10 +965,12 @@ function DateSection({
   readonly onChangeDueDate: (iso: string | null) => void;
 }) {
   return (
-    <View style={styles.dateRow}>
-      <DateField label="Start" value={startDate} onChange={onChangeStartDate} />
-      <DateField label="Due" value={dueDate} onChange={onChangeDueDate} />
-    </View>
+    <Section label="Dates">
+      <View style={styles.dateRow}>
+        <DateField label="Start" value={startDate} onChange={onChangeStartDate} />
+        <DateField label="Due" value={dueDate} onChange={onChangeDueDate} />
+      </View>
+    </Section>
   );
 }
 
@@ -966,7 +1030,7 @@ function DescriptionField({
 
   if (!editing) {
     return (
-      <View style={styles.descriptionSection}>
+      <Section label="Description">
         <RichTextView document={description} />
         <Pressable
           onPress={() => {
@@ -978,40 +1042,42 @@ function DescriptionField({
             {sanitizeRichText(description) === null ? '+ Add a description' : 'Edit description'}
           </Text>
         </Pressable>
-      </View>
+      </Section>
     );
   }
 
   return (
-    <View style={styles.editRow}>
-      <TextInput
-        value={draft}
-        onChangeText={setDraft}
-        style={[styles.editInput, styles.descriptionInput]}
-        placeholder="Add a description…"
-        placeholderTextColor={colors.inkFaint.hex}
-        multiline
-        autoFocus
-      />
-      <View style={styles.editActions}>
-        <Pressable
-          onPress={() => {
-            setEditing(false);
-          }}
-        >
-          <Text style={styles.editCancelText}>Cancel</Text>
-        </Pressable>
-        <Pressable
-          style={styles.editSaveButton}
-          onPress={() => {
-            onSave(draft);
-            setEditing(false);
-          }}
-        >
-          <Text style={styles.editSaveText}>Save</Text>
-        </Pressable>
+    <Section label="Description">
+      <View style={styles.editRow}>
+        <TextInput
+          value={draft}
+          onChangeText={setDraft}
+          style={[styles.editInput, styles.descriptionInput]}
+          placeholder="Add a description…"
+          placeholderTextColor={colors.inkFaint.hex}
+          multiline
+          autoFocus
+        />
+        <View style={styles.editActions}>
+          <Pressable
+            onPress={() => {
+              setEditing(false);
+            }}
+          >
+            <Text style={styles.editCancelText}>Cancel</Text>
+          </Pressable>
+          <Pressable
+            style={styles.editSaveButton}
+            onPress={() => {
+              onSave(draft);
+              setEditing(false);
+            }}
+          >
+            <Text style={styles.editSaveText}>Save</Text>
+          </Pressable>
+        </View>
       </View>
-    </View>
+    </Section>
   );
 }
 
@@ -1050,9 +1116,8 @@ function StatusSelector({
   });
 
   return (
-    <View style={styles.sprintSection}>
-      <Text style={styles.sprintSectionLabel}>Status</Text>
-      <View style={styles.priorityRow}>
+    <Section label="Status">
+      <ChipScroll>
         <Pressable
           style={[styles.priorityChip, statusId === null && styles.priorityChipActive]}
           disabled={setStatus.isPending}
@@ -1075,13 +1140,13 @@ function StatusSelector({
             <Text style={styles.priorityChipText}>{status.name}</Text>
           </Pressable>
         ))}
-      </View>
+      </ChipScroll>
       {setStatus.isError && (
         <Text style={styles.error} accessibilityRole="alert">
           {apiErrorOf(setStatus.error)?.error.message ?? 'The status was not saved.'}
         </Text>
       )}
-    </View>
+    </Section>
   );
 }
 
@@ -1090,6 +1155,13 @@ function StatusSelector({
  * with no separate "Save" — unlike the title, tapping a chip already IS a
  * complete edit. Five options, not four: "None" clears the field, the same
  * choice web's `<select>` offers as its first `<option>`.
+ *
+ * Was the one selector on this screen with no `Section` wrapper at all —
+ * every sibling (`StatusSelector`, `SprintSelector`, ...) already labelled
+ * itself; this one rendered a bare chip row between "Status" and the dates,
+ * which is exactly the "can't tell what's what" bug the 2026-08-22 device
+ * screenshot caught. Fixed by giving it the same wrapper as everyone else,
+ * not a one-off label.
  */
 function PrioritySelector({
   value,
@@ -1099,28 +1171,30 @@ function PrioritySelector({
   readonly onChange: (priority: Priority | null) => void;
 }) {
   return (
-    <View style={styles.priorityRow}>
-      <Pressable
-        style={[styles.priorityChip, value === null && styles.priorityChipActive]}
-        onPress={() => {
-          onChange(null);
-        }}
-      >
-        <Text style={styles.priorityChipText}>None</Text>
-      </Pressable>
-      {PRIORITIES.map((priority) => (
+    <Section label="Priority">
+      <ChipScroll>
         <Pressable
-          key={priority}
-          style={[styles.priorityChip, value === priority && styles.priorityChipActive]}
+          style={[styles.priorityChip, value === null && styles.priorityChipActive]}
           onPress={() => {
-            onChange(priority);
+            onChange(null);
           }}
         >
-          <View style={[styles.swatch, { backgroundColor: PRIORITY_COLOR[priority] }]} />
-          <Text style={styles.priorityChipText}>{PRIORITY_LABEL[priority]}</Text>
+          <Text style={styles.priorityChipText}>None</Text>
         </Pressable>
-      ))}
-    </View>
+        {PRIORITIES.map((priority) => (
+          <Pressable
+            key={priority}
+            style={[styles.priorityChip, value === priority && styles.priorityChipActive]}
+            onPress={() => {
+              onChange(priority);
+            }}
+          >
+            <View style={[styles.swatch, { backgroundColor: PRIORITY_COLOR[priority] }]} />
+            <Text style={styles.priorityChipText}>{PRIORITY_LABEL[priority]}</Text>
+          </Pressable>
+        ))}
+      </ChipScroll>
+    </Section>
   );
 }
 
@@ -1180,9 +1254,8 @@ function SprintSelector({
       : undefined;
 
   return (
-    <View style={styles.sprintSection}>
-      <Text style={styles.sprintSectionLabel}>Sprint</Text>
-      <View style={styles.priorityRow}>
+    <Section label="Sprint">
+      <ChipScroll>
         <Pressable
           style={[styles.priorityChip, sprintId === null && styles.priorityChipActive]}
           disabled={release.isPending}
@@ -1211,13 +1284,13 @@ function SprintSelector({
             <Text style={styles.priorityChipText}>{closedCurrent.name}</Text>
           </View>
         )}
-      </View>
+      </ChipScroll>
       {(assign.isError || release.isError) && (
         <Text style={styles.error} accessibilityRole="alert">
           {apiErrorOf(assign.error ?? release.error)?.error.message ?? 'The sprint was not saved.'}
         </Text>
       )}
-    </View>
+    </Section>
   );
 }
 
@@ -1279,9 +1352,8 @@ function AssigneeSelector({
       : people.filter((member: Member) => member.email.toLowerCase().includes(needle));
 
   return (
-    <View style={styles.sprintSection}>
-      <Text style={styles.sprintSectionLabel}>Assignees</Text>
-      <View style={styles.assigneeRow}>
+    <Section label="Assignees">
+      <ChipScroll>
         {assigned.length === 0 && <Text style={styles.emptyHint}>Unassigned</Text>}
         {assigned.map((person) => (
           <Pressable
@@ -1306,7 +1378,7 @@ function AssigneeSelector({
         >
           <Text style={styles.addChipButtonText}>+</Text>
         </Pressable>
-      </View>
+      </ChipScroll>
       {assign.isError && (
         <Text style={styles.error} accessibilityRole="alert">
           {apiErrorOf(assign.error)?.error.message ?? 'Assignees were not saved.'}
@@ -1373,7 +1445,7 @@ function AssigneeSelector({
           </Pressable>
         </Pressable>
       </Modal>
-    </View>
+    </Section>
   );
 }
 
@@ -1443,13 +1515,11 @@ function LabelSelector({
   };
 
   return (
-    <View style={styles.sprintSection}>
-      <Text style={styles.sprintSectionLabel}>Labels</Text>
-
+    <Section label="Labels">
       {all.data?.length === 0 ? (
         <Text style={styles.emptyHint}>This project has no labels yet.</Text>
       ) : (
-        <View style={styles.assigneeRow}>
+        <ChipScroll>
           {(all.data ?? []).map((label) => {
             const on = selected.has(label.labelId);
             return (
@@ -1469,7 +1539,7 @@ function LabelSelector({
               </Pressable>
             );
           })}
-        </View>
+        </ChipScroll>
       )}
 
       <View style={styles.addCardRow}>
@@ -1500,7 +1570,7 @@ function LabelSelector({
           {apiErrorOf(setLabels.error ?? create.error)?.error.message ?? 'Labels were not saved.'}
         </Text>
       )}
-    </View>
+    </Section>
   );
 }
 
@@ -1555,9 +1625,7 @@ function CustomFieldSection({
   const byField = new Map((values.data ?? []).map((entry) => [entry.fieldId, entry.value]));
 
   return (
-    <View style={styles.sprintSection}>
-      <Text style={styles.sprintSectionLabel}>Fields</Text>
-
+    <Section label="Fields">
       {live.length === 0 && (
         <Text style={styles.emptyHint}>
           This project has no custom fields yet. Adding one here defines it for every card in the
@@ -1590,7 +1658,7 @@ function CustomFieldSection({
           {apiErrorOf(set.error)?.error.message ?? 'The field was not saved.'}
         </Text>
       )}
-    </View>
+    </Section>
   );
 }
 
@@ -1651,7 +1719,7 @@ function AddFieldForm({ projectId }: { readonly projectId: string }) {
         value={name}
         onChangeText={setName}
       />
-      <View style={styles.priorityRow}>
+      <ChipScroll>
         {CUSTOM_FIELD_TYPES.map((entry) => (
           <Pressable
             key={entry}
@@ -1663,7 +1731,7 @@ function AddFieldForm({ projectId }: { readonly projectId: string }) {
             <Text style={styles.priorityChipText}>{entry}</Text>
           </Pressable>
         ))}
-      </View>
+      </ChipScroll>
       {needsOptions && (
         <TextInput
           style={styles.modalInput}
@@ -1741,7 +1809,7 @@ function FieldInput({
   if (type === 'select') {
     const choices = Array.isArray(options) ? options.filter(isChoiceString) : [];
     return (
-      <View style={styles.priorityRow}>
+      <ChipScroll>
         {choices.map((choice) => {
           const on = value === choice;
           return (
@@ -1756,7 +1824,7 @@ function FieldInput({
             </Pressable>
           );
         })}
-      </View>
+      </ChipScroll>
     );
   }
 
@@ -1766,7 +1834,7 @@ function FieldInput({
     const choices = Array.isArray(options) ? options.filter(isChoiceString) : [];
     const selected = Array.isArray(value) ? value.filter(isChoiceString) : [];
     return (
-      <View style={styles.priorityRow}>
+      <ChipScroll>
         {choices.map((choice) => {
           const on = selected.includes(choice);
           return (
@@ -1781,7 +1849,7 @@ function FieldInput({
             </Pressable>
           );
         })}
-      </View>
+      </ChipScroll>
     );
   }
 
@@ -1927,9 +1995,7 @@ function AttachmentSection({ cardId }: { readonly cardId: CardId }) {
   });
 
   return (
-    <View style={styles.sprintSection}>
-      <Text style={styles.sprintSectionLabel}>Attachments</Text>
-
+    <Section label="Attachments">
       {(attachments.data ?? []).map((attachment) => {
         const downloadable = attachment.status === 'clean';
         return (
@@ -1996,7 +2062,7 @@ function AttachmentSection({ cardId }: { readonly cardId: CardId }) {
             'That action could not be completed.'}
         </Text>
       )}
-    </View>
+    </Section>
   );
 }
 
@@ -2037,25 +2103,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.surface.hex,
   },
-  commentsSection: {
-    marginTop: 16,
-    gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: colors.line.hex,
-    paddingTop: 16,
-  },
-  sectionHeading: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.ink.hex,
-  },
   commentRow: {
     gap: 4,
+  },
+  commentBubble: {
+    backgroundColor: colors.surfaceHover.hex,
+    borderRadius: radiusCard,
+    padding: 10,
   },
   commentMeta: {
     flexDirection: 'row',
     gap: 8,
-    alignItems: 'baseline',
+    alignItems: 'center',
   },
   commentAuthor: {
     fontSize: 13,
@@ -2078,8 +2137,18 @@ const styles = StyleSheet.create({
     gap: 4,
     marginLeft: 16,
     paddingLeft: 10,
-    borderLeftWidth: 1,
-    borderLeftColor: colors.line.hex,
+    paddingVertical: 8,
+    paddingRight: 8,
+    borderLeftWidth: 2,
+    // Accent, not `line` — a reply's left border was the one visual cue
+    // separating it from a top-level comment, and at 1px in `line`'s low-
+    // contrast gray it read as almost nothing next to several threads of
+    // replies in a row (2026-08-22 device feedback). `surfaceSunken`
+    // below is what actually carries the "tucked inside its parent" read;
+    // the border is now just reinforcement, not the whole signal.
+    borderLeftColor: colors.accent.hex,
+    backgroundColor: colors.surfaceSunken.hex,
+    borderRadius: radiusCard,
   },
   commentActions: {
     flexDirection: 'row',
@@ -2213,17 +2282,26 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.inkMuted.hex,
   },
-  descriptionSection: {
-    gap: 6,
-  },
   descriptionInput: {
     minHeight: 80,
     textAlignVertical: 'top',
   },
-  priorityRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  // Content container for `ChipScroll`'s `ScrollView` — `alignItems:
+  // 'flex-start'`, not the old `priorityRow`'s `flexWrap: 'wrap'`, is what
+  // stops each chip stretching to the frame's height (`board/[boardId]
+  // .tsx`'s `tabStrip`, mirrored here — see `ChipScroll`'s own header).
+  chipScroll: {
+    alignItems: 'flex-start',
     gap: 6,
+  },
+  // The SCROLL VIEW's own frame, as opposed to its content — without
+  // `flexGrow`/`flexShrink: 0` a horizontal ScrollView with no explicit
+  // size sizes itself to fill the remaining flex space of the column
+  // it sits in, one more time reusing `board/[boardId].tsx`'s own fix
+  // rather than rediscovering it.
+  chipScrollFrame: {
+    flexGrow: 0,
+    flexShrink: 0,
   },
   priorityChip: {
     flexDirection: 'row',
@@ -2246,13 +2324,26 @@ const styles = StyleSheet.create({
   priorityChipDisabled: {
     opacity: 0.6,
   },
-  sprintSection: {
-    gap: 6,
+  // The card tile behind every `Section` — reuses `card-row.tsx`'s own
+  // `card` style (border + `surfaceRaised`, one step lighter than this
+  // screen's `surface` background) rather than inventing a second "this is
+  // one distinct grouped thing" visual language. Was `sprintSection`, a
+  // bare `{ gap: 6 }` with no visual boundary at all — the direct cause of
+  // "we cannot distinguish what is what" (2026-08-22 device feedback).
+  section: {
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+    borderRadius: radiusCard,
+    backgroundColor: colors.surfaceRaised.hex,
+    padding: 12,
+    gap: 8,
   },
-  sprintSectionLabel: {
-    fontSize: 12,
-    fontWeight: '600',
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
     color: colors.inkMuted.hex,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
   badgeRow: {
     flexDirection: 'row',
