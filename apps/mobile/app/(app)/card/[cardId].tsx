@@ -24,6 +24,7 @@ import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { RichTextView } from '../../../src/lib/rich-text-view.js';
+import { flattenText, sanitizeRichText } from '../../../src/lib/rich-text.js';
 import { Avatar } from '../../../src/lib/avatar.js';
 import { useUpdateCard } from '../../../src/lib/use-update-card.js';
 import { useMembers, type Member } from '../../../src/lib/use-members.js';
@@ -179,6 +180,19 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
           }}
         />
 
+        <DateSection
+          startDate={data.startDate}
+          dueDate={data.dueDate}
+          onChangeStartDate={(iso) => {
+            setSaveError(null);
+            update.mutate({ startDate: iso });
+          }}
+          onChangeDueDate={(iso) => {
+            setSaveError(null);
+            update.mutate({ dueDate: iso });
+          }}
+        />
+
         <AssigneeSelector cardId={cardId} assigneeIds={data.assigneeIds} />
 
         <SprintSelector cardId={cardId} projectId={data.projectId} sprintId={data.sprintId} />
@@ -215,7 +229,14 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
           )}
         </View>
 
-        <RichTextView document={data.description} />
+        <DescriptionField
+          key={`${cardId}-description`}
+          description={data.description}
+          onSave={(text) => {
+            setSaveError(null);
+            update.mutate({ description: text.trim() === '' ? null : plainParagraph(text.trim()) });
+          }}
+        />
 
         <ChecklistSection cardId={cardId} boardId={data.boardId} />
 
@@ -850,6 +871,146 @@ function TitleField({
           <Text style={styles.saveButtonText}>Save</Text>
         </Pressable>
       )}
+    </View>
+  );
+}
+
+/**
+ * A card's own start/due dates — `apps/web`'s `DatesSection`, two
+ * `YYYY-MM-DD` text entries rather than web's native `<input type="date">`.
+ * The same "typed by hand rather than picked" trade this app already
+ * makes for a custom field of type `date` (`FieldInput`'s own header),
+ * applied here to the card's own dates for the first time — this app has
+ * no date-picker dependency, deliberately, and the alternative to typing
+ * one by hand was leaving these two fields uneditable entirely.
+ *
+ * Rides `cards.update`'s full replace via `useUpdateCard`, exactly like
+ * priority — `dueDate`/`startDate` were already carried on `CardPatch`
+ * (`card-patch.ts`'s own header: "kept... so a future date-editing screen
+ * is 'add a UI control'"), so this is that UI control, not new plumbing.
+ * An empty box clears the date (`null`), matching web's identical
+ * `day === '' ? null : ...` branch.
+ */
+function DateSection({
+  startDate,
+  dueDate,
+  onChangeStartDate,
+  onChangeDueDate,
+}: {
+  readonly startDate: string | null;
+  readonly dueDate: string | null;
+  readonly onChangeStartDate: (iso: string | null) => void;
+  readonly onChangeDueDate: (iso: string | null) => void;
+}) {
+  return (
+    <View style={styles.dateRow}>
+      <DateField label="Start" value={startDate} onChange={onChangeStartDate} />
+      <DateField label="Due" value={dueDate} onChange={onChangeDueDate} />
+    </View>
+  );
+}
+
+function DateField({
+  label,
+  value,
+  onChange,
+}: {
+  readonly label: string;
+  readonly value: string | null;
+  readonly onChange: (iso: string | null) => void;
+}) {
+  const [draft, setDraft] = useState(value?.slice(0, 10) ?? '');
+
+  return (
+    <View style={styles.dateField}>
+      <Text style={styles.dateLabel}>{label}</Text>
+      <TextInput
+        style={styles.addCardInput}
+        value={draft}
+        placeholder="YYYY-MM-DD"
+        placeholderTextColor={colors.inkFaint.hex}
+        onChangeText={setDraft}
+        onEndEditing={() => {
+          const trimmed = draft.trim();
+          onChange(trimmed === '' ? null : new Date(`${trimmed}T00:00:00`).toISOString());
+        }}
+      />
+    </View>
+  );
+}
+
+/**
+ * A card's description — `apps/web`'s own title+description editor, split
+ * in two here to match this screen's already-established one-field-one-
+ * control shape (`TitleField` above is title-only for the same reason).
+ * Renders `RichTextView` when not editing — preserving whatever formatting
+ * a WEB user gave it — and switches to a plain `TextInput` only on an
+ * explicit "Edit" tap, the same toggle `CommentRow`'s own edit mode
+ * already uses. `flattenText(sanitizeRichText(...))` (`rich-text.ts`) is
+ * what seeds that box, and saving necessarily flattens any existing
+ * formatting into one plain paragraph — the same trade-off already
+ * accepted for comments and checklist items, unavoidable with no native
+ * rich text EDITOR on this app. Cancelling never touches the card, so a
+ * description a mobile viewer merely opened and closed keeps its web
+ * formatting exactly as it was.
+ */
+function DescriptionField({
+  description,
+  onSave,
+}: {
+  readonly description: unknown;
+  readonly onSave: (text: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  if (!editing) {
+    return (
+      <View style={styles.descriptionSection}>
+        <RichTextView document={description} />
+        <Pressable
+          onPress={() => {
+            setDraft(flattenText(sanitizeRichText(description)));
+            setEditing(true);
+          }}
+        >
+          <Text style={styles.checklistAddItemText}>
+            {sanitizeRichText(description) === null ? '+ Add a description' : 'Edit description'}
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.editRow}>
+      <TextInput
+        value={draft}
+        onChangeText={setDraft}
+        style={[styles.editInput, styles.descriptionInput]}
+        placeholder="Add a description…"
+        placeholderTextColor={colors.inkFaint.hex}
+        multiline
+        autoFocus
+      />
+      <View style={styles.editActions}>
+        <Pressable
+          onPress={() => {
+            setEditing(false);
+          }}
+        >
+          <Text style={styles.editCancelText}>Cancel</Text>
+        </Pressable>
+        <Pressable
+          style={styles.editSaveButton}
+          onPress={() => {
+            onSave(draft);
+            setEditing(false);
+          }}
+        >
+          <Text style={styles.editSaveText}>Save</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -2038,6 +2199,26 @@ const styles = StyleSheet.create({
     color: colors.accentInk.hex,
     fontSize: 14,
     fontWeight: '600',
+  },
+  dateRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  dateField: {
+    flex: 1,
+    gap: 4,
+  },
+  dateLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.inkMuted.hex,
+  },
+  descriptionSection: {
+    gap: 6,
+  },
+  descriptionInput: {
+    minHeight: 80,
+    textAlignVertical: 'top',
   },
   priorityRow: {
     flexDirection: 'row',

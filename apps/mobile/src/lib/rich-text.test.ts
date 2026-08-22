@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sanitizeRichText } from './rich-text.js';
+import { flattenText, sanitizeRichText } from './rich-text.js';
 
 describe('sanitizeRichText', () => {
   it('passes through a well-formed document unchanged in shape', () => {
@@ -133,5 +133,43 @@ describe('sanitizeRichText', () => {
     const doc = { type: 'doc', content };
     const result = sanitizeRichText(doc);
     expect(result?.content?.length ?? 0).toBeLessThanOrEqual(12_000);
+  });
+});
+
+describe('flattenText', () => {
+  it('returns an empty string for null', () => {
+    expect(flattenText(null)).toBe('');
+  });
+
+  it('joins split marks with no separator, not "Hel lo"', () => {
+    const doc = sanitizeRichText({
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: 'Hel', marks: [{ type: 'bold' }] },
+            { type: 'text', text: 'lo' },
+          ],
+        },
+      ],
+    });
+    expect(flattenText(doc)).toBe('Hello');
+  });
+
+  it('concatenates two paragraphs with no separator between them, matching web', () => {
+    const doc = sanitizeRichText({
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'Hello' }] },
+        { type: 'paragraph', content: [{ type: 'text', text: 'World' }] },
+      ],
+    });
+    expect(flattenText(doc)).toBe('HelloWorld');
+  });
+
+  it('returns an empty string for an empty document', () => {
+    const doc = sanitizeRichText({ type: 'doc', content: [] });
+    expect(flattenText(doc)).toBe('');
   });
 });

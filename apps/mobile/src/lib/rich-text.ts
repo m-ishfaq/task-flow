@@ -142,3 +142,26 @@ export function sanitizeRichText(input: unknown): SanitizedNode | null {
   if (root?.type !== 'doc') return null;
   return root;
 }
+
+/**
+ * Concatenates every `text` node's own text, depth-first with no separator
+ * — the plain-text seed for a card description's edit box
+ * (`card/[cardId].tsx`'s `DescriptionField`, the first caller). Mirrors
+ * `apps/web/src/features/chat/chat-page.tsx`'s own `flattenDocument`
+ * exactly (used there for slash-command parsing): joining with `''`, not
+ * a space, is what keeps two adjacent inline runs of the SAME word split
+ * across a mark boundary (`**Hel**lo` — bold "Hel", plain "lo") from
+ * flattening to "Hel lo". The accepted imperfection, unchanged from web's
+ * own version, is the opposite case: two separate PARAGRAPHS run together
+ * with no space between them. No native rich text EDITOR exists on this
+ * app, so editing a description necessarily flattens any existing
+ * formatting (bold, links, lists) into one plain paragraph on save — the
+ * same trade-off this codebase already accepts for comments and checklist
+ * items, restated here for the field most likely to actually discard
+ * something a reader would notice.
+ */
+export function flattenText(node: SanitizedNode | null): string {
+  if (node === null) return '';
+  if (node.text !== undefined) return node.text;
+  return (node.content ?? []).map(flattenText).join('');
+}

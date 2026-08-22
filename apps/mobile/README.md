@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all six card-detail sections (status/assignees/labels/checklists/custom fields/attachments/comment edit-delete-replies)
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet")
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -2129,6 +2129,51 @@ has its own trailing-`@`-query dropdown machinery. Building a second,
 independent mention-composing surface for Work comments is real,
 separate work, not something to fold silently into "closing the gap."
 
+## Card detail, closing the LAST two card-specific gaps: dates and description
+
+Requested explicitly after the Work-parity pass above ("complete all
+related to cards") — the two fields `card/[cardId].tsx` could not edit at
+all until now, closing every remaining card-specific gap
+`card-patch.ts`'s own header already anticipated: "`CardPatch` kept
+[`description`]... so a future description-editing screen is 'add a UI
+control', not 'extend this hook's type'." Both ride `cards.update`'s
+existing full replace via `useUpdateCard` — no new server plumbing,
+exactly as that comment predicted.
+
+**`DateSection`/`DateField` are two `YYYY-MM-DD` text entries, not web's
+native `<input type="date">`** — the SAME "typed by hand rather than
+picked" trade this app already made for a custom field of type `date`
+(`FieldInput`'s own header, the Work-parity pass above). This app has no
+date-picker dependency, deliberately, and the alternative to typing one
+by hand was leaving a card's own start/due dates uneditable forever. An
+empty box clears the date, matching web's identical `day === '' ? null :
+...` branch in its own `DatesSection`.
+
+**`DescriptionField` shows `RichTextView` (preserving whatever formatting
+a web user gave the description) until an explicit "Edit" tap**, the same
+toggle `CommentRow`'s own edit mode already uses — not `TitleField`'s
+always-editable style, deliberately: a description can carry real
+formatting (bold, links, lists) worth seeing rendered, where a title
+never has any to lose. `flattenText` (`rich-text.ts`, new) is what seeds
+the edit box from that formatted document — ported from
+`apps/web/src/features/chat/chat-page.tsx`'s own `flattenDocument`
+(joining with `''`, not a space, which is what keeps two adjacent inline
+runs split across a mark boundary, `**Hel**lo`, from flattening to
+"Hel lo" — a bug the more obvious space-joined version has). Saving
+necessarily flattens any existing formatting into one plain paragraph —
+the same trade-off already accepted for comments and checklist items,
+restated here for the field most likely to actually discard something a
+reader would notice. Cancelling never touches the card, so opening and
+closing the editor on a richly-formatted web-authored description leaves
+it exactly as it was.
+
+**`useUpdateCard`'s optimistic patch gained a `description` branch**,
+matching the one it already had for `title`/`priority`/`dueDate`/
+`startDate` — without it, saving a description or a date would show the
+OLD value until the round trip completed and invalidated, the same
+one-frame staleness this hook's own optimism exists to prevent for every
+other field on this screen.
+
 ## Not here yet
 
 - **Confirming this on a simulator or physical device beyond what has
@@ -2181,18 +2226,20 @@ separate work, not something to fold silently into "closing the gap."
   production domain, hosted `apple-app-site-association`/`assetlinks.json`
   files, and a real Android signing certificate, none of which exist yet.
   See that section's own checklist for exactly what to stand up first.
-- Work is now at full parity with web (My Tasks, Boards, and all six
-  card-detail sections — see "Work, closing the gap" above for the full
-  account). Still genuinely open across the app: a native rich text
-  EDITOR (description/comment/message composers all stay plain-text until
-  one exists), `@mention` composing in Work comments specifically (Chat's
-  own composer has it; Work comments deliberately do not yet — see
-  "comment edit/delete/replies" above), due/start date editing on a
-  CARD's own dates specifically (no date-picker dependency added yet — a
-  custom field of type `date` can now hold a typed value, see "custom
-  fields" above for why that is a partial exception, not a reversal),
-  card drag-and-drop, and list reordering (both boards' own sections
-  above have the full reasoning). The rest of Chat (attachments
+- Work is now at full parity with web (My Tasks, Boards, all card-detail
+  sections, and a card's own dates and description — see "Work, closing
+  the gap" and "Card detail, closing the last two card-specific gaps"
+  above for the full account). Still genuinely open across the app: a
+  native rich text EDITOR (description/comment/message composers all
+  flatten to plain text on save, rather than preserving or composing rich
+  formatting, until one exists), `@mention` composing in Work comments
+  specifically (Chat's own composer has it; Work comments deliberately do
+  not yet — see "comment edit/delete/replies" above), a real DATE PICKER
+  (every date field on this app — a card's own dates, a custom field of
+  type `date` — is typed by hand as `YYYY-MM-DD` rather than picked, no
+  date-picker dependency added), card drag-and-drop, and list reordering
+  (both boards' own sections above have the full reasoning). The rest of
+  Chat (attachments
   from the
   composer — reactions, mentions composing, thread replies,
   edit/delete/"remove for me", read receipts, link unfurls, push, typing

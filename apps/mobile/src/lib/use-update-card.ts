@@ -72,6 +72,7 @@ export function useUpdateCard(cardId: CardId, onFailure: (title: string, error: 
                 ...('priority' in patch ? { priority: patch.priority ?? null } : {}),
                 ...('dueDate' in patch ? { dueDate: patch.dueDate ?? null } : {}),
                 ...('startDate' in patch ? { startDate: patch.startDate ?? null } : {}),
+                ...('description' in patch ? { description: patch.description ?? null } : {}),
               },
         );
       },
