@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   channelDisplayName,
   describeTyping,
+  firstUnreadAfter,
   groupMessages,
   groupPreviews,
   groupReactions,
@@ -212,5 +213,116 @@ describe('describeTyping', () => {
 
   it('summarizes three or more as a count', () => {
     expect(describeTyping(['a', 'b', 'c'], personOf)).toBe('3 people are typing…');
+  });
+});
+
+/**
+ * `firstUnreadAfter` — ported verbatim from `apps/web/src/features/chat/
+ * unread-divider.test.ts`, the entire file, because the module under test
+ * is itself a verbatim port. The rule the whole suite rests on: the
+ * position comes from the read CURSOR, never from the unread COUNT.
+ * Counting back N from the end is the obvious implementation and it is
+ * wrong the moment a message is deleted or the page is partially loaded —
+ * and wrong by exactly one, which is the least noticeable amount.
+ */
+describe('firstUnreadAfter', () => {
+  const MESSAGES = ['m1', 'm2', 'm3', 'm4'];
+
+  it('marks the message after the cursor', () => {
+    expect(firstUnreadAfter('m2', MESSAGES)).toBe('m3');
+  });
+
+  it('draws nothing while the cursor is still loading', () => {
+    // `undefined` is "not resolved yet", deliberately distinct from `null`.
+    // Treating it as "never read" would flash a divider at the top of the
+    // list for one render on every channel open.
+    expect(firstUnreadAfter(undefined, MESSAGES)).toBeNull();
+  });
+
+  it('draws nothing for a channel that has never been opened', () => {
+    // Everything is unread, so a line above the first message would label
+    // the whole conversation "new" — true, and useless.
+    expect(firstUnreadAfter(null, MESSAGES)).toBeNull();
+  });
+
+  it('draws nothing when the cursor is on the last message', () => {
+    // Caught up. The ordinary state of a channel someone left open.
+    expect(firstUnreadAfter('m4', MESSAGES)).toBeNull();
+  });
+
+  it('draws nothing when the cursor names a message not in the page', () => {
+    // Older than the loaded window, or since deleted. Guessing a position
+    // would put the line somewhere plausible and wrong.
+    expect(firstUnreadAfter('m0', MESSAGES)).toBeNull();
+  });
+
+  it('draws nothing when there are no messages at all', () => {
+    expect(firstUnreadAfter('m2', [])).toBeNull();
+    expect(firstUnreadAfter(null, [])).toBeNull();
+  });
+
+  it('marks the second message when only the first was read', () => {
+    expect(firstUnreadAfter('m1', MESSAGES)).toBe('m2');
+  });
+});
+
+/**
+ * The ORDER and CONTENT of the list this is given — the two things web's
+ * own suite found wrong at the call site, which no assertion above could
+ * catch in isolation. `firstUnreadAfter` is correct for any ascending,
+ * rendered list; the bug lived in `topLevel`'s own construction (this
+ * file's `oldestFirst`/`topLevel`, `channel/[channelId].tsx`'s own
+ * `useMemo`s). These tests apply the identical transformation, so a
+ * future change that drops the reverse or the reply filter fails here
+ * instead of silently removing the divider.
+ */
+describe('the list the divider is computed from', () => {
+  interface Row {
+    readonly messageId: string;
+    readonly parentMessageId: string | null;
+  }
+
+  /** Exactly what `channel/[channelId].tsx` does to build `topLevel`. */
+  const rendered = (rows: readonly Row[]): string[] =>
+    rows
+      .filter((row) => row.parentMessageId === null)
+      .toReversed()
+      .map((row) => row.messageId);
+
+  /* As the API returns it: newest first, replies interleaved. */
+  const FROM_API: readonly Row[] = [
+    { messageId: 'm4', parentMessageId: null },
+    { messageId: 'r1', parentMessageId: 'm2' },
+    { messageId: 'm3', parentMessageId: null },
+    { messageId: 'm2', parentMessageId: null },
+    { messageId: 'm1', parentMessageId: null },
+  ];
+
+  it('reads chronologically once transformed', () => {
+    expect(rendered(FROM_API)).toEqual(['m1', 'm2', 'm3', 'm4']);
+  });
+
+  it('points at the NEXT message, not the previous one', () => {
+    // The direction bug. On the raw newest-first list this returned 'm1'.
+    expect(firstUnreadAfter('m2', rendered(FROM_API))).toBe('m3');
+  });
+
+  it('never names a thread reply, which is rendered in no group', () => {
+    // `r1` sits next to `m2` in the raw list, so a naive divider could
+    // name a message the transcript does not contain. After the filter
+    // there is no reply to land on.
+    expect(rendered(FROM_API)).not.toContain('r1');
+    expect(firstUnreadAfter('m2', rendered(FROM_API))).not.toBe('r1');
+  });
+
+  it('shows a line when there is genuinely something unread', () => {
+    // Caught up to m2, two newer messages exist — the line belongs above m3.
+    expect(firstUnreadAfter('m2', rendered(FROM_API))).toBe('m3');
+  });
+
+  it('shows no line once the newest message has been read', () => {
+    // The state a channel is in immediately after being opened — so
+    // returning to it draws nothing.
+    expect(firstUnreadAfter('m4', rendered(FROM_API))).toBeNull();
   });
 });

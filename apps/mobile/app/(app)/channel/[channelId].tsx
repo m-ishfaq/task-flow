@@ -37,6 +37,8 @@ import {
   channelQueryKey,
   channelTypeGlyph,
   describeTyping,
+  entryCursorQueryKey,
+  firstUnreadAfter,
   groupMessages,
   groupPreviews,
   groupReactions,
@@ -218,6 +220,15 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   /** "There is no /xxx command" — a parse-time notice, not a mutation error,
       so it has nowhere else to live; see `runCommand` below. */
   const [commandNotice, setCommandNotice] = useState<string | null>(null);
+  /** The "who reacted" sheet — long-press on a reaction pill, not a tap
+      (which stays the fast toggle it already was; see `MessageGroupRow`'s
+      own header for why this app splits the two gestures where web's
+      click-through-a-popover does not need to). */
+  const [reactionInfoFor, setReactionInfoFor] = useState<{
+    readonly messageId: string;
+    readonly emoji: string;
+    readonly userIds: readonly string[];
+  } | null>(null);
 
   const channel = useQuery({
     queryKey: channelQueryKey(channelId),
@@ -242,21 +253,83 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   const replyCounts = useMemo(() => replyCountsOf(oldestFirst), [oldestFirst]);
   const messageIds = useMemo(() => oldestFirst.map((message) => message.messageId), [oldestFirst]);
 
+  /**
+   * The read cursor as it was the moment this screen opened — where the
+   * "new messages" divider goes. Ported from `apps/web/src/features/chat/
+   * chat-page.tsx`'s own `entryCursor`, reusing the identical `chat.
+   * channels.unreadCounts` route the channel LIST already calls for its
+   * badges (`(tabs)/chat.tsx`), narrowed to this one channel and read for
+   * `lastReadMessageId` instead of `unreadCount`.
+   *
+   * `staleTime: Infinity` is what makes this FROZEN rather than live: this
+   * screen's own `markRead` effect below advances the SAME cursor on the
+   * server every time a new message arrives, so a divider computed from a
+   * live read of it would chase itself — appearing for one render and
+   * vanishing, or walking down the list as each new message advanced the
+   * cursor past it. `gcTime: 0` is the other half: without it, leaving and
+   * reopening this same channel within TanStack Query's default cache
+   * window would reuse the STALE frozen value from the previous visit
+   * instead of fetching where the reader actually left off this time.
+   */
+  const entryCursor = useQuery({
+    queryKey: entryCursorQueryKey(channelId),
+    queryFn: async () => {
+      const rows = wire(
+        await apiClient.chat.channels.unreadCounts.query({ channelIds: [channelId] }),
+      );
+      return rows[0]?.lastReadMessageId ?? null;
+    },
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: 0,
+  });
+
   const markRead = useMutation({
     mutationFn: (messageId: string) =>
       apiClient.chat.channels.markRead.mutate({ channelId, messageId }),
     onSuccess: async () => {
-      // The bare prefix, not `unreadCountsQueryKey(someArray)` — see that
-      // function's own header on why a shorter key invalidates every
-      // longer one TanStack Query has cached under it.
-      await queryClient.invalidateQueries({ queryKey: ['chat.channels.unreadCounts'] });
+      await Promise.all([
+        // The bare prefix, not `unreadCountsQueryKey(someArray)` — see that
+        // function's own header on why a shorter key invalidates every
+        // longer one TanStack Query has cached under it.
+        queryClient.invalidateQueries({ queryKey: ['chat.channels.unreadCounts'] }),
+        // Re-freezes `entryCursor` at the position it just advanced TO —
+        // without this, sending a message would advance the server's
+        // cursor while this screen kept showing the PRE-SEND value, and
+        // the divider would stay stuck above the sender's own just-sent
+        // message.
+        queryClient.invalidateQueries({ queryKey: entryCursorQueryKey(channelId) }),
+      ]);
     },
   });
   const lastTopLevelId = topLevel.at(-1)?.messageId;
   useEffect(() => {
     if (lastTopLevelId === undefined) return;
+    /* ORDERED AFTER the entry cursor has been read — both this effect and
+       `entryCursor` touch the same server-side cursor, one advancing it and
+       the other reading it. Started together they race: if this wins, the
+       divider never appears; if the read wins, it appears correctly. Which
+       one happened was down to network timing, so waiting for the read
+       first is what makes the divider a function of what the person had
+       actually seen, not of request ordering. */
+    if (!entryCursor.isSuccess) return;
     markRead.mutate(lastTopLevelId);
-  }, [lastTopLevelId]);
+  }, [lastTopLevelId, entryCursor.isSuccess]);
+
+  // The RENDERED list's own ids — `topLevel`, never `messageIds` (which
+  // includes thread replies, rendered in no group here). Handing
+  // `firstUnreadAfter` the wrong list is exactly the bug web's own
+  // `unread-divider.test.ts` suite exists to catch: a reply sitting next
+  // to its parent in the raw feed could otherwise be named as the divider
+  // target, and nothing would draw a line for it.
+  const topLevelIds = useMemo(() => topLevel.map((message) => message.messageId), [topLevel]);
+  const firstUnreadId = firstUnreadAfter(entryCursor.data, topLevelIds);
+  /* Suppressed when the first unread message is the viewer's OWN — the
+     cursor advances in the same beat as the send (the invalidation above),
+     so without this the line would flash above your own just-sent message
+     for a render or two. "New" means "arrived while you were away", and
+     your own message is not that. */
+  const firstUnreadAuthorId =
+    topLevel.find((message) => message.messageId === firstUnreadId)?.authorId ?? null;
 
   const reactions = useQuery({
     queryKey: reactionsQueryKey(channelId),
@@ -562,35 +635,54 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
         data={groups}
         keyExtractor={(group, index) => `${group.authorId ?? 'unknown'}-${String(index)}`}
         renderItem={({ item }) => (
-          <MessageGroupRow
-            group={item}
-            viewerId={userId}
-            personOf={personOf}
-            reactionsByMessage={reactionsByMessage}
-            previewsByMessage={previewsByMessage}
-            replyCounts={replyCounts}
-            editingId={editingId}
-            editDraft={editDraft}
-            onEditDraftChange={setEditDraft}
-            editPending={edit.isPending}
-            onSaveEdit={(messageId) => {
-              if (editDraft.trim().length === 0) return;
-              edit.mutate({ messageId, text: editDraft.trim() });
-            }}
-            onCancelEdit={() => {
-              setEditingId(null);
-            }}
-            onTogglePill={(messageId, emoji) => {
-              react.mutate({ messageId, emoji });
-            }}
-            onLongPressMessage={setActionsFor}
-            onOpenThread={(message) => {
-              router.push({
-                pathname: '/thread/[messageId]',
-                params: { messageId: message.messageId, channelId },
-              });
-            }}
-          />
+          <>
+            {/* The "new messages" line, placed by the read CURSOR rather
+                than by counting back from the end — see `firstUnreadAfter`'s
+                own header on why a count-based position is silently wrong
+                the moment a message is deleted or the page is partially
+                loaded. */}
+            {firstUnreadId !== null &&
+              firstUnreadAuthorId !== userId &&
+              item.messages.some((message) => message.messageId === firstUnreadId) && (
+                <View style={styles.unreadDivider} accessibilityRole="none">
+                  <View style={styles.unreadDividerLine} />
+                  <Text style={styles.unreadDividerText}>New messages</Text>
+                  <View style={styles.unreadDividerLine} />
+                </View>
+              )}
+            <MessageGroupRow
+              group={item}
+              viewerId={userId}
+              personOf={personOf}
+              reactionsByMessage={reactionsByMessage}
+              previewsByMessage={previewsByMessage}
+              replyCounts={replyCounts}
+              editingId={editingId}
+              editDraft={editDraft}
+              onEditDraftChange={setEditDraft}
+              editPending={edit.isPending}
+              onSaveEdit={(messageId) => {
+                if (editDraft.trim().length === 0) return;
+                edit.mutate({ messageId, text: editDraft.trim() });
+              }}
+              onCancelEdit={() => {
+                setEditingId(null);
+              }}
+              onTogglePill={(messageId, emoji) => {
+                react.mutate({ messageId, emoji });
+              }}
+              onLongPressMessage={setActionsFor}
+              onLongPressReaction={(messageId, emoji, userIds) => {
+                setReactionInfoFor({ messageId, emoji, userIds });
+              }}
+              onOpenThread={(message) => {
+                router.push({
+                  pathname: '/thread/[messageId]',
+                  params: { messageId: message.messageId, channelId },
+                });
+              }}
+            />
+          </>
         )}
         contentContainerStyle={styles.list}
         style={styles.listContainer}
@@ -778,7 +870,82 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <ReactionInfoModal
+        info={reactionInfoFor}
+        viewerId={userId}
+        personOf={personOf}
+        onClose={() => {
+          setReactionInfoFor(null);
+        }}
+        onRemoveMine={() => {
+          if (reactionInfoFor === null) return;
+          react.mutate({ messageId: reactionInfoFor.messageId, emoji: reactionInfoFor.emoji });
+          setReactionInfoFor(null);
+        }}
+      />
     </KeyboardAvoidingView>
+  );
+}
+
+/**
+ * "Who reacted" — web's `ReactionBar` is a popover trigger on every pill,
+ * opened by the same tap that (for the viewer's own reaction) can be
+ * repeated to remove it. A single tap is this app's fast un-react gesture
+ * already (`MessageGroupRow`'s pill `onPress`, unchanged, and the "mine"
+ * fill/check styling already answers "did I react?" without opening
+ * anything) — replacing it with a tap-to-see-names step would be a real
+ * regression on a touchscreen, where the toggle is the thing people reach
+ * for constantly. LONG-press is this screen's own established second
+ * gesture instead, the same split the message body already draws between
+ * a normal tap (nothing, on the body itself) and a long-press (the
+ * reactions/pin/edit/delete sheet) — "who reacted" is exactly that kind
+ * of secondary, informational action.
+ */
+function ReactionInfoModal({
+  info,
+  viewerId,
+  personOf,
+  onClose,
+  onRemoveMine,
+}: {
+  readonly info: {
+    readonly messageId: string;
+    readonly emoji: string;
+    readonly userIds: readonly string[];
+  } | null;
+  readonly viewerId: string | null;
+  readonly personOf: (userId: string) => { readonly label: string };
+  readonly onClose: () => void;
+  readonly onRemoveMine: () => void;
+}) {
+  const mine = info !== null && viewerId !== null && info.userIds.includes(viewerId);
+
+  return (
+    <Modal visible={info !== null} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={styles.reactionSheetCard} onPress={() => undefined}>
+          {info !== null && (
+            <>
+              <Text style={styles.reactionInfoTitle}>
+                {info.emoji} · {info.userIds.length}{' '}
+                {info.userIds.length === 1 ? 'reaction' : 'reactions'}
+              </Text>
+              {info.userIds.map((userId) => (
+                <Text key={userId} style={styles.reactionInfoName}>
+                  {userId === viewerId ? 'You' : personOf(userId).label}
+                </Text>
+              ))}
+              {mine && (
+                <Pressable style={styles.actionOption} onPress={onRemoveMine}>
+                  <Text style={styles.actionOptionTextDanger}>Remove your reaction</Text>
+                </Pressable>
+              )}
+            </>
+          )}
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -797,6 +964,7 @@ function MessageGroupRow({
   onCancelEdit,
   onTogglePill,
   onLongPressMessage,
+  onLongPressReaction,
   onOpenThread,
 }: {
   readonly group: MessageGroup;
@@ -813,6 +981,11 @@ function MessageGroupRow({
   readonly onCancelEdit: () => void;
   readonly onTogglePill: (messageId: string, emoji: string) => void;
   readonly onLongPressMessage: (message: Message) => void;
+  readonly onLongPressReaction: (
+    messageId: string,
+    emoji: string,
+    userIds: readonly string[],
+  ) => void;
   readonly onOpenThread: (message: Message) => void;
 }) {
   const first = group.messages[0];
@@ -895,6 +1068,9 @@ function MessageGroupRow({
                         style={[styles.reactionPill, mine && styles.reactionPillMine]}
                         onPress={() => {
                           onTogglePill(message.messageId, emoji);
+                        }}
+                        onLongPress={() => {
+                          onLongPressReaction(message.messageId, emoji, userIds);
                         }}
                       >
                         <Text style={styles.reactionPillText}>
@@ -1248,5 +1424,34 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: colors.danger.hex,
+  },
+  unreadDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginVertical: 8,
+  },
+  unreadDividerLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.danger.hex + '66',
+  },
+  unreadDividerText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.danger.hex,
+  },
+  reactionInfoTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.ink.hex,
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+  },
+  reactionInfoName: {
+    fontSize: 14,
+    color: colors.inkMuted.hex,
+    paddingHorizontal: 20,
+    paddingVertical: 6,
   },
 });

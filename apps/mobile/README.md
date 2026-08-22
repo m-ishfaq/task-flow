@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, and an org-wide notification center (see "Chat, a real audit against web finds three more gaps" and "Chat, closing the last two named gaps") — Chat is now genuinely, not just claimedly, at full parity with web
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -2367,6 +2367,71 @@ function's parser. `notifications.test.ts` covers both this and
 for the identical reason: reading one mention should not silently mark
 forty others read too, which is exactly how a reply nobody actually saw
 goes unanswered.
+
+## Chat, the last two: "who reacted," and the "new messages" divider
+
+Asked to ship everything remaining from the chat-parity audit. These two
+were the ones left after the previous two increments — both real, both
+small enough to close in one pass, unlike the mid-string-mention-composing
+and RTC-call-history gaps also named that session, which stay open because
+they are each their own feature (a rich text editor; a WebRTC port),
+not a chat fix.
+
+**"Who reacted" — LONG-press a reaction pill, not a second tap.** Web's
+`ReactionBar` makes every pill a popover trigger: tap to see names, tap
+again (for your own reaction) to remove it. Porting that literally would
+have cost this app its existing fast un-react gesture — a single tap
+already toggles the viewer's own reaction directly, and the pill's
+filled/accent "mine" styling already answers "did I react?" without
+opening anything. Replacing that tap with a "see names first" step is a
+real regression on a touchscreen, where the toggle is the thing people
+reach for constantly. Long-press is this screen's own already-established
+SECOND gesture instead — the identical split the message body itself
+draws (tap does nothing on the body; long-press opens the reactions/pin/
+edit/delete sheet) — so `ReactionInfoModal` (new) is reached the same way:
+long-press a pill, see a name list (`personOf`, "You" for the viewer's
+own row) and, only if the viewer is among them, a "Remove your reaction"
+button. The ordinary tap-to-toggle behavior is completely unchanged.
+
+**The "new messages" divider — the gap named back when read receipts
+shipped and never closed since.** `chat.ts` gained `firstUnreadAfter`
+(ported verbatim from `chat-page.tsx`) and `entryCursorQueryKey`, and
+`channel/[channelId].tsx` gained an `entryCursor` query reusing the same
+`chat.channels.unreadCounts` route the channel list already calls for its
+badges — narrowed to this one channel, read for `lastReadMessageId`
+instead of `unreadCount`. Three subtleties carried over from web's own
+header, because skipping any one of them reintroduces a bug web already
+found and fixed once:
+
+- **The cursor must be FROZEN, `staleTime: Infinity` / `gcTime: 0`.**
+  This screen's own `markRead` effect advances the SAME server-side
+  cursor on every new message, so a divider computed from a LIVE read of
+  it would chase itself — appearing for one render and vanishing, or
+  walking down the list as each message advanced the cursor past it.
+  `gcTime: 0` is what stops a stale frozen value surviving a
+  leave-and-reopen of the same channel within TanStack Query's cache
+  window.
+- **`markRead`'s own effect must wait for `entryCursor.isSuccess` before
+  firing.** Both touch the same cursor — one advances it, the other reads
+  it — and started together they race: whichever wins is down to network
+  timing, so the divider would appear on some channel opens and not
+  others with nothing to distinguish the two cases. Ordering the write
+  after the read is what makes the line a function of what the person
+  had actually seen.
+- **`markRead`'s `onSuccess` re-invalidates `entryCursorQueryKey`, not
+  just the unread-count prefix it already invalidated.** Without this,
+  sending a message advances the server's cursor while the screen kept
+  showing the PRE-SEND frozen value, and the divider would stay stuck
+  above the sender's own just-sent message — exactly the failure the
+  `firstUnreadAuthorId !== viewerId` render guard exists to catch on the
+  READ side, doubled by a stale cursor on the WRITE side.
+
+`firstUnreadAfter`'s own test suite — the full 13 cases from web's
+`unread-divider.test.ts`, including the "list order and content" group
+that catches a reversed direction or an un-filtered thread reply — was
+ported into `chat.test.ts` rather than a new file, matching where this
+file's other pure helpers (`groupReactions`, `describeTyping`, …) and
+their tests already live.
 
 ## Not here yet
 

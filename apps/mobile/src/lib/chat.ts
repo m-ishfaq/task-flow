@@ -123,6 +123,63 @@ export function unreadCountsQueryKey(
   return ['chat.channels.unreadCounts', channelIds];
 }
 
+/**
+ * The FROZEN read cursor a channel screen captures once at mount — the
+ * "new messages" divider's whole correctness rests on this being a
+ * separate cache entry from `unreadCountsQueryKey` above, even though both
+ * read the same `chat.channels.unreadCounts` route. Mirrors
+ * `apps/web/src/features/chat/api.ts`'s own `entryCursorQuery` key shape
+ * (`[...keys.channel(orgId, channelId), 'entry-cursor']`) — extending
+ * `channelQueryKey` the same way, a suffix rather than a new prefix, so
+ * the relationship between "the channel" and "its entry cursor" is
+ * visible in the key itself. See `channel/[channelId].tsx`'s own header
+ * for why the query built on this key needs `staleTime: Infinity` and why
+ * `markRead`'s `onSuccess` invalidates it explicitly rather than letting
+ * it float.
+ */
+export function entryCursorQueryKey(
+  channelId: string,
+): readonly ['chat.channels.get', string, 'entry-cursor'] {
+  return ['chat.channels.get', channelId, 'entry-cursor'];
+}
+
+/**
+ * The message the "new messages" divider belongs above, or `null` for no
+ * divider — ported verbatim (logic unchanged) from `apps/web/src/features/
+ * chat/chat-page.tsx`'s own `firstUnreadAfter`. A pure function with its
+ * own test coverage (`chat.test.ts`) because every branch here is a case
+ * where drawing the line would be wrong, and every one of them fails
+ * SILENTLY: a divider in the wrong place looks exactly like a divider in
+ * the right place, so there is no bug report — just a line people stop
+ * trusting.
+ *
+ * `undefined` for the cursor means "not resolved yet"; `null` means
+ * "resolved, and this person has never read this channel". They are
+ * deliberately different: the first must not draw a line prematurely, the
+ * second must not draw one at all — a divider above the very first
+ * message labels the entire conversation "new", which is true and
+ * useless.
+ */
+export function firstUnreadAfter(
+  cursor: string | null | undefined,
+  messageIds: readonly string[],
+): string | null {
+  if (cursor === undefined || cursor === null) return null;
+
+  const index = messageIds.indexOf(cursor);
+
+  /* The cursor names a message outside the loaded page — older than it, or
+     since deleted. Neither is a place to put a line: guessing would land it
+     somewhere plausible and wrong. */
+  if (index === -1) return null;
+
+  /* Read right up to the end. Everything is read, so there is nothing new to
+     separate — this is the ordinary case for a channel someone left open. */
+  if (index === messageIds.length - 1) return null;
+
+  return messageIds[index + 1] ?? null;
+}
+
 /** Org-wide, same shape as `chat.saved.list`'s own scope — filtered client-side per channel, matching `apps/web`'s `SavedSection`. */
 export const SAVED_QUERY_KEY = ['chat.saved.list'] as const;
 
