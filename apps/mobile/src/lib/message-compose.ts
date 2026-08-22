@@ -1,33 +1,30 @@
 /**
- * Turns a plain-text composer draft plus the mentions the user actually
- * picked from the `@`-trigger dropdown into a real TipTap-JSON document with
- * `mention` nodes — not literal `@Name` text. There is still no native rich
- * text EDITOR (`card/[cardId].tsx`'s `TitleField` header draws the identical
- * boundary for Work — no bold, links, or lists composed on this app), so a
- * message's FORMATTING is always plain. But mention COMPOSING itself is not
- * actually blocked on that: this file originally claimed a plain `TextInput`
- * "cannot track a live cursor position/selection the way `apps/web`'s
- * TipTap `MentionExtension` does," and restricted the trigger to the END of
- * the draft only. That claim was wrong — `TextInput` has supported a
- * controlled `selection` prop plus `onSelectionChange` for exactly this
- * since long before this app's React Native pin, and `message-composer.tsx`
- * now uses both, so `@mention` can be triggered and inserted anywhere in
- * the draft, not only at the end.
+ * The `@`-trigger dropdown's own cursor-position logic — WHERE and WHEN a
+ * mention can be triggered and inserted, as distinct from `rich-text-
+ * compose.ts`'s job (turning the finished draft, mentions included, into a
+ * real TipTap document). Split across two files because they are two
+ * different kinds of state: this one is about a live CURSOR position,
+ * which only a mounted `TextInput` has; that one is a pure text-to-JSON
+ * conversion with no notion of a cursor at all. `buildMessageBody`, this
+ * file's original text-to-JSON function, moved there and grew bold/link/
+ * list support in the move — see that file's own header.
  *
- * Every accepted pick is still recorded as a `PendingMention` — the exact
- * `@Label` text inserted, tied to a `userId`. `buildMessageBody` replaces
- * each recorded marker's LITERAL text with a real `mention` node at send
- * time, left-to-right by first occurrence — unchanged by the cursor-tracking
- * fix, and deliberately so: it was already POSITION-AGNOSTIC (`indexOf`
- * finds a marker wherever it sits), so a marker inserted mid-string needs
- * no different handling at send time than one typed at the end.
+ * This file originally claimed a plain `TextInput` "cannot track a live
+ * cursor position/selection the way `apps/web`'s TipTap `MentionExtension`
+ * does," and restricted the trigger to the END of the draft only. That
+ * claim was wrong — `TextInput` has supported a controlled `selection`
+ * prop plus `onSelectionChange` for exactly this since long before this
+ * app's React Native pin, and `message-composer.tsx` now uses both, so
+ * `@mention` can be triggered and inserted anywhere in the draft, not only
+ * at the end.
  *
- * Rendering was already built (`rich-text-view.tsx` has had a `case
- * 'mention'` since the read-only TipTap renderer shipped — it just had no
- * caller producing one from native input until this file). Server-side
- * validation is unchanged: `RichTextDocument`'s `mention` node schema
- * requires `userId`/`label`, and this always supplies both from a real
- * roster entry the dropdown offered, never from unvalidated free text.
+ * Every accepted pick is recorded as a `PendingMention` — the exact
+ * `@Label` text inserted, tied to a `userId` — and handed to
+ * `parseFormattedText` at send time, which replaces each recorded
+ * marker's LITERAL text with a real `mention` node, left-to-right by
+ * first occurrence, POSITION-AGNOSTIC (`indexOf` finds a marker wherever
+ * it sits) so a marker inserted mid-string needs no different handling
+ * than one typed at the end.
  *
  * A pending mention that no longer appears verbatim in the final draft
  * (the user edited the middle of "@Jane Doe" after picking her) is simply
@@ -40,64 +37,6 @@
 export interface PendingMention {
   readonly userId: string;
   readonly label: string;
-}
-
-interface TextSegment {
-  readonly type: 'text';
-  readonly text: string;
-}
-
-interface MentionSegment {
-  readonly type: 'mention';
-  readonly attrs: { readonly userId: string; readonly label: string };
-}
-
-type Segment = TextSegment | MentionSegment;
-
-export interface RichTextDoc {
-  readonly type: 'doc';
-  readonly content: readonly [{ readonly type: 'paragraph'; readonly content: readonly Segment[] }];
-}
-
-export function buildMessageBody(text: string, mentions: readonly PendingMention[]): RichTextDoc {
-  const segments: Segment[] = [];
-  let remaining = text;
-
-  // Left-to-right by first occurrence: repeatedly find whichever pending
-  // mention's "@Label" marker appears earliest in what's left, emit the
-  // plain text before it, then the mention node, and continue past it. A
-  // mention can match more than once (the same person named twice) since
-  // it stays in the candidate list for every pass.
-  for (;;) {
-    let bestIndex = -1;
-    let bestMention: PendingMention | null = null;
-    let bestMarker = '';
-
-    for (const mention of mentions) {
-      const marker = `@${mention.label}`;
-      const index = remaining.indexOf(marker);
-      if (index !== -1 && (bestIndex === -1 || index < bestIndex)) {
-        bestIndex = index;
-        bestMention = mention;
-        bestMarker = marker;
-      }
-    }
-
-    if (bestIndex === -1 || bestMention === null) break;
-
-    if (bestIndex > 0) segments.push({ type: 'text', text: remaining.slice(0, bestIndex) });
-    segments.push({
-      type: 'mention',
-      attrs: { userId: bestMention.userId, label: bestMention.label },
-    });
-    remaining = remaining.slice(bestIndex + bestMarker.length);
-  }
-
-  if (remaining.length > 0 || segments.length === 0) {
-    segments.push({ type: 'text', text: remaining });
-  }
-
-  return { type: 'doc', content: [{ type: 'paragraph', content: segments }] };
 }
 
 /** An in-progress `@query`, anchored to where the triggering `@` sits (`start`) and where the cursor was when it was captured (`end`). */

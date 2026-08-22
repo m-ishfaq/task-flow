@@ -27,7 +27,7 @@ import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { RichTextView } from '../../../src/lib/rich-text-view.js';
 import { Avatar } from '../../../src/lib/avatar.js';
 import { useMembers } from '../../../src/lib/use-members.js';
-import { buildMessageBody } from '../../../src/lib/message-compose.js';
+import { parseFormattedText } from '../../../src/lib/rich-text-compose.js';
 import { MessageComposer } from '../../../src/lib/message-composer.js';
 import {
   channelQueryKey,
@@ -108,7 +108,7 @@ function ThreadContent({ messageId, channelId }: { messageId: MessageId; channel
   });
 
   const reply = useMutation({
-    mutationFn: (body: ReturnType<typeof buildMessageBody>) =>
+    mutationFn: (body: ReturnType<typeof parseFormattedText>) =>
       apiClient.chat.messages.send.mutate({ channelId, body, parentMessageId: messageId }),
     onSuccess: async () => {
       setDraft('');
@@ -175,7 +175,7 @@ function ThreadContent({ messageId, channelId }: { messageId: MessageId; channel
             setPendingMentions((current) => [...current, mention]);
           }}
           onSubmit={() => {
-            reply.mutate(buildMessageBody(draft.trim(), pendingMentions));
+            reply.mutate(parseFormattedText(draft.trim(), pendingMentions));
           }}
           sending={reply.isPending}
           error={reply.isError ? reply.error : null}

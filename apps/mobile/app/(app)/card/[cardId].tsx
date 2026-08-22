@@ -15,16 +15,17 @@ import {
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
+import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
 import { CardIdSchema, type CardId } from '@taskflow/contracts';
 import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
-import { plainParagraph } from '@taskflow/api/richtext';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { RichTextView } from '../../../src/lib/rich-text-view.js';
 import { flattenText, sanitizeRichText } from '../../../src/lib/rich-text.js';
+import { liveFormatParser, parseFormattedText } from '../../../src/lib/rich-text-compose.js';
 import { Avatar } from '../../../src/lib/avatar.js';
 import { useUpdateCard } from '../../../src/lib/use-update-card.js';
 import { useMembers, type Member } from '../../../src/lib/use-members.js';
@@ -283,7 +284,9 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
           description={data.description}
           onSave={(text) => {
             setSaveError(null);
-            update.mutate({ description: text.trim() === '' ? null : plainParagraph(text.trim()) });
+            update.mutate({
+              description: text.trim() === '' ? null : parseFormattedText(text.trim()),
+            });
           }}
         />
 
@@ -554,21 +557,29 @@ function ChecklistSection({
  * of replies, ported from `apps/web`'s own `CommentSection`.
  * `work.comments.list` shares TipTap-JSON's `RichTextDocument` shape with
  * a card's own description, so existing comments reuse `RichTextView`
- * unchanged. Posting AND editing use `plainParagraph`
- * (`@taskflow/api/richtext`, already a real dependency for the renderer)
- * rather than a native rich text EDITOR that does not exist yet — the
- * exact same boundary `card/[cardId].tsx`'s own `TitleField` already
- * draws for the description field. `@mention` composing in the comment
- * box is explicitly NOT ported — that lives only in Chat's message
- * composer (`message-compose.ts`), and adding a second, independent
- * mention-composing surface is real, separate work, not something to fold
- * silently into this increment.
+ * unchanged. Posting AND editing both go through `parseFormattedText`
+ * (`rich-text-compose.ts`) over a `MarkdownTextInput` — the same native
+ * `**bold**`/`[text](url)`/`- `/`1. ` composing `DescriptionField` below
+ * and Chat's message composer already use, not a plain `TextInput` plus
+ * `plainParagraph` anymore. `@mention` composing in the comment box is
+ * still explicitly NOT ported — that lives only in Chat's message composer
+ * (`message-compose.ts`), and adding a second, independent mention-
+ * composing surface (a member picker, a query dropdown) is real, separate
+ * work; `parseFormattedText`'s `mentions` argument is simply omitted here,
+ * the same way Work's callers were always meant to use it (that function's
+ * own header).
  *
  * **Edit is author-only with NO override, mirrored as a client-side
  * IDENTITY check rather than a role decision** — `comment.authorId ===
  * viewerId`, the same check `updateComment` makes inline on the server,
  * not `can()`. There is no legitimate way for anyone else's Edit to
  * succeed, so the control is hidden rather than shown-and-refused.
+ * `onStartEdit` seeds the box from `comment.bodyText` — the server's own
+ * FLATTENED plain-text projection, not markdown source — so an edit still
+ * loses any formatting the comment already had, exactly as it did before
+ * `parseFormattedText` existed; what changed is that new `**`/`[]()`/list
+ * syntax typed during THAT edit now composes correctly, same as a fresh
+ * comment.
  * **Delete stays visible to EVERYONE, unconditionally** — unlike Edit,
  * moderation is a real, legitimate path (author-or-moderator, and the
  * event records which), so this never re-derives that decision
@@ -632,7 +643,7 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
     mutationFn: (input: { body: string; parentCommentId: string | null }) =>
       apiClient.work.comments.create.mutate({
         cardId,
-        body: plainParagraph(input.body),
+        body: parseFormattedText(input.body),
         parentCommentId: input.parentCommentId,
       }),
     onSuccess: (_result, input) => {
@@ -649,7 +660,7 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
     mutationFn: (input: { commentId: string; text: string }) =>
       apiClient.work.comments.update.mutate({
         commentId: input.commentId,
-        body: plainParagraph(input.text),
+        body: parseFormattedText(input.text),
       }),
     onSuccess: () => {
       setEditingId(null);
@@ -734,7 +745,7 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
 
           {replyingTo === comment.commentId && (
             <View style={styles.commentReply}>
-              <TextInput
+              <MarkdownTextInput
                 value={replyDraft}
                 onChangeText={setReplyDraft}
                 placeholder="Write a reply…"
@@ -742,6 +753,11 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
                 style={styles.composerInput}
                 multiline
                 autoFocus
+                parser={liveFormatParser}
+                markdownStyle={{
+                  syntax: { color: colors.inkFaint.hex },
+                  link: { color: colors.accent.hex },
+                }}
               />
               <View style={styles.modalActions}>
                 <Pressable
@@ -771,13 +787,18 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
       )}
 
       <View style={styles.composerRow}>
-        <TextInput
+        <MarkdownTextInput
           value={draft}
           onChangeText={setDraft}
           placeholder="Add a comment…"
           placeholderTextColor={colors.inkFaint.hex}
           style={styles.composerInput}
           multiline
+          parser={liveFormatParser}
+          markdownStyle={{
+            syntax: { color: colors.inkFaint.hex },
+            link: { color: colors.accent.hex },
+          }}
         />
         <Pressable
           style={styles.sendButton}
@@ -850,12 +871,17 @@ function CommentRow({
         <Text style={styles.commentDeleted}>Comment deleted</Text>
       ) : isEditing ? (
         <View style={styles.editRow}>
-          <TextInput
+          <MarkdownTextInput
             value={editDraft}
             onChangeText={onEditDraftChange}
             style={styles.editInput}
             multiline
             autoFocus
+            parser={liveFormatParser}
+            markdownStyle={{
+              syntax: { color: colors.inkFaint.hex },
+              link: { color: colors.accent.hex },
+            }}
           />
           <View style={styles.editActions}>
             <Pressable onPress={onCancelEdit}>
@@ -1008,15 +1034,19 @@ function DateField({
  * in two here to match this screen's already-established one-field-one-
  * control shape (`TitleField` above is title-only for the same reason).
  * Renders `RichTextView` when not editing — preserving whatever formatting
- * a WEB user gave it — and switches to a plain `TextInput` only on an
- * explicit "Edit" tap, the same toggle `CommentRow`'s own edit mode
- * already uses. `flattenText(sanitizeRichText(...))` (`rich-text.ts`) is
- * what seeds that box, and saving necessarily flattens any existing
- * formatting into one plain paragraph — the same trade-off already
- * accepted for comments and checklist items, unavoidable with no native
- * rich text EDITOR on this app. Cancelling never touches the card, so a
- * description a mobile viewer merely opened and closed keeps its web
- * formatting exactly as it was.
+ * a WEB user gave it — and switches to a `MarkdownTextInput` (`rich-text-
+ * compose.ts`'s `liveFormatParser`/`parseFormattedText` — the same native,
+ * no-WebView composing Chat's message composer uses) only on an explicit
+ * "Edit" tap, the same toggle `CommentRow`'s own edit mode already uses.
+ * `flattenText(sanitizeRichText(...))` (`rich-text.ts`) is what SEEDS that
+ * box — the server's flattened plain-text projection, not markdown source
+ * — so opening Edit on a description a WEB user formatted still flattens
+ * whatever was already there into plain text, same as before this file's
+ * composer grew real bold/link/list support; what changed is that NEW
+ * `**`/`[]()`/list syntax typed during that edit now composes correctly on
+ * save, rather than being sent as literal asterisks and brackets forever.
+ * Cancelling never touches the card, so a description a mobile viewer
+ * merely opened and closed keeps its web formatting exactly as it was.
  */
 function DescriptionField({
   description,
@@ -1049,7 +1079,7 @@ function DescriptionField({
   return (
     <Section label="Description">
       <View style={styles.editRow}>
-        <TextInput
+        <MarkdownTextInput
           value={draft}
           onChangeText={setDraft}
           style={[styles.editInput, styles.descriptionInput]}
@@ -1057,6 +1087,11 @@ function DescriptionField({
           placeholderTextColor={colors.inkFaint.hex}
           multiline
           autoFocus
+          parser={liveFormatParser}
+          markdownStyle={{
+            syntax: { color: colors.inkFaint.hex },
+            link: { color: colors.accent.hex },
+          }}
         />
         <View style={styles.editActions}>
           <Pressable

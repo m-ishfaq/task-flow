@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed; the "needs a rich text editor" call on `@mention` composing turned out to be wrong for the mid-string case specifically (a plain `TextInput`'s own `onSelectionChange`/`selection` was enough) and is fixed too — see "`@mention` now works mid-string"
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed; the "needs a rich text editor" call on `@mention` composing turned out to be wrong for the mid-string case specifically (a plain `TextInput`'s own `onSelectionChange`/`selection` was enough) and is fixed too — see "`@mention` now works mid-string"; a real native (no WebView) rich text editor — bold, links, and lists — now composes on all four surfaces named for it (chat message composer, thread replies, card description, card comments), via `@expensify/react-native-live-markdown`'s `MarkdownTextInput` and a live/send-time split for the one thing it cannot highlight live (lists) — see "A real rich text editor..."
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -2542,6 +2542,102 @@ the expected label from `NOW` with the SAME arithmetic the implementation
 uses — making the assertion restate the code under test rather than check
 it independently, a worse trade for two Pacific time zones than naming
 the gap here.
+
+## A real rich text editor — bold, links, and lists — native, not a WebView
+
+Until now every composer on this app (`message-composer.tsx`, the card
+description field, comment editing) sent one flat plain-text paragraph no
+matter what was typed — `**bold**` posted as literal asterisks, `[text](url)`
+as literal brackets, and a `- ` line as a plain line starting with a dash.
+Meanwhile the READ side already handled all of it: `rich-text-view.tsx`
+renders `bulletList`/`orderedList`/`taskList` and every mark, and the
+server's own whitelist (`apps/api/src/work/richtext.ts`) has allowed `bold`,
+`italic`, `strike`, `code`, `underline`, and `link` marks plus
+`bulletList`/`orderedList`/`listItem` nodes since Work's rich text first
+landed. Nothing server-side changed for this — the gap was entirely that no
+composer on this app ever produced any of it.
+
+**No WebView, by explicit direction.** A real WYSIWYG option exists —
+`@10play/tentap-editor`, which hosts actual TipTap/ProseMirror inside a
+`react-native-webview` — and was ruled out in favor of staying fully native.
+The chosen library, `@expensify/react-native-live-markdown`, ships a
+genuinely native `MarkdownTextInput` (`NSAttributedString`/`Spannable`
+under the hood, not a browser engine) that is a drop-in replacement for RN's
+own `TextInput` — same `value`/`onChangeText`/`selection`/
+`onSelectionChange`/`multiline` props, so the mid-string `@mention`
+cursor-tracking `message-composer.tsx` already had (see this file's own
+"`@mention` now works mid-string" section) needed no changes at all.
+
+**A live/send-time split, because the library's own range type cannot
+express a list.** `MarkdownRange`'s `type` union has entries for `bold`,
+`link`, `syntax`, and several others, but nothing for a list — live
+highlighting is fundamentally "mark this character range," and a list is a
+block/tree structure, not a span within flowing text. So
+`apps/mobile/src/lib/rich-text-compose.ts` draws the same split this app's
+`@mention` composing already established (typed as plain text, converted to
+a real node only when the message is built): `liveFormatParser` highlights
+`**bold**` and `[text](url)` live, as a WORKLET running on the UI thread on
+every keystroke (wired into `MarkdownTextInput`'s `parser` prop); `- `/`* `/
+`N. ` list LINES are recognized only by `parseFormattedText`, at SEND time,
+grouping consecutive marker lines into one `bulletList`/`orderedList`.
+`liveFormatParser` and `parseFormattedText` read the identical
+`BOLD_PATTERN`/`LINK_PATTERN` regex definitions rather than each keeping
+their own copy — if they ever drifted, the composer could highlight
+something as bold that then posts as literal asterisks, a live preview that
+lies.
+
+**Worklets needed a Babel plugin this app never had a config file for.**
+`react-native-worklets/plugin` is what compiles a function carrying a
+`'worklet'` directive (inside the function body, not just module scope —
+the shape `liveFormatParser` uses) into something that can actually run on
+the UI thread. There was no `apps/mobile/babel.config.js` at all before
+this — Expo's own default preset applied implicitly — so one now exists,
+adding exactly that one plugin on top of `babel-preset-expo`.
+
+**A peer-dependency conflict on install, resolved by pinning the
+intersection.** `pnpm add react-native-worklets` with no version pulled
+`^0.12.1`, which satisfies neither `expo-modules-core`'s peer range
+(`^0.7.4||^0.8.0||^0.9.0||^0.10.0`) nor `react-native-reanimated@4.5.3`'s
+(`0.10.x - 0.11.x`). Pinned to `0.10.0` — the one version inside both
+ranges — rather than forcing either package to accept a version its own
+peer range refuses.
+
+**Wired into all four composers the scope named**: the chat message
+composer and thread replies (`message-composer.tsx`, shared by
+`channel/[channelId].tsx` and `thread/[messageId].tsx`), and Work's card
+description field and comment editor (`card/[cardId].tsx`'s
+`DescriptionField` and `CommentRow`'s edit mode). Every send path that
+used to call `plainParagraph`/`buildMessageBody` now calls
+`parseFormattedText` instead — including the attach flow's synthetic
+"Shared **filename**" carrier message, which now actually renders the
+filename in bold rather than posting literal asterisks around it.
+`message-compose.ts`'s own `buildMessageBody` was removed entirely,
+folded into `rich-text-compose.ts`'s more general `parseFormattedText`;
+`message-compose.ts` keeps only the cursor-position `@mention` logic
+(`activeMentionQuery`/`insertMention`), which is genuinely orthogonal — a
+live CURSOR position only a mounted `TextInput` has, versus a pure
+text-to-JSON conversion with no notion of a cursor at all.
+
+**One accepted trade-off, not a bug: editing loses existing formatting.**
+Both the description field's Edit tap and a comment's Edit tap seed their
+box from the server's FLATTENED plain-text projection
+(`flattenText(sanitizeRichText(...))` / `comment.bodyText`), not from
+markdown source — there is no honest way to reconstruct `**`/`[]()`/list
+syntax from marks a real editor never kept text-shaped in the first place.
+This is unchanged from before this feature; what changed is that NEW
+formatting syntax typed during that edit now composes correctly on save
+instead of being sent as literal punctuation. Chat's message edit draws
+the identical line, for the identical reason, and re-opening `@mention`
+composing during an edit is still out of scope everywhere, unchanged.
+
+Verified: `apps/mobile/src/lib/rich-text-compose.test.ts` (24 cases —
+plain text, bold, links, lists, mentions, and `liveFormatParser`'s own
+range output, including that a `javascript:` link is left as literal text
+rather than converted, matching the server's `SAFE_SCHEMES` refusal), the
+full suite, `tsc --noEmit`, `eslint`, the guardrail selftest, and a real
+`expo export` for both `--platform ios` and `--platform android` — the
+first actual exercise of the new native dependency through Metro's real
+bundler, not just `pnpm install` resolving cleanly.
 
 ## Not here yet
 

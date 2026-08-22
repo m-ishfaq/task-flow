@@ -1,23 +1,17 @@
 import { useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiErrorOf } from './trpc-client.js';
 import { activeMentionQuery, insertMention, type PendingMention } from './message-compose.js';
+import { liveFormatParser } from './rich-text-compose.js';
 import type { Member } from './use-members.js';
 
 /**
- * The plain-text composer + `@`-mention dropdown, extracted once a second
+ * The rich-text composer + `@`-mention dropdown, extracted once a second
  * screen (`thread/[messageId].tsx`) needed the identical block
- * `channel/[channelId].tsx`'s original composer already had — same
- * `TextInput`, same dropdown, same Send button. Purely presentational:
+ * `channel/[channelId].tsx`'s original composer already had — same input,
+ * same dropdown, same Send button. Purely presentational:
  * `draft`/`pendingMentions` stay owned by the CALLER, so "clear the draft
  * only on send success, leave it on failure" — `channel/[channelId].tsx`'s
  * own established behavior — is one `onSuccess` handler in each caller, not
@@ -55,6 +49,25 @@ import type { Member } from './use-members.js';
  * out-of-bounds selection a native text input should never be handed.
  * Deriving the clamp on every render is simpler than tracking "did the
  * draft change for a reason this component caused" and needs no effect.
+ *
+ * ## `MarkdownTextInput`, not `TextInput`
+ *
+ * The input below is `@expensify/react-native-live-markdown`'s
+ * `MarkdownTextInput` — a genuinely NATIVE drop-in replacement (no WebView;
+ * that option existed, `@10play/tentap-editor`, and was explicitly ruled
+ * out), so every prop above — `value`, `onChangeText`, `selection`,
+ * `onSelectionChange`, `multiline` — still applies unchanged; this is an
+ * ADDITIVE swap, not a rewrite of the cursor-tracking logic already
+ * described above. `parser={liveFormatParser}` (`rich-text-compose.ts`)
+ * live-highlights `**bold**` and `[text](url)` as the person types; list
+ * lines (`- `/`1. `) are NOT highlighted live — that file's own header
+ * explains why a character-range highlighter cannot express a list at all
+ * — and become real list nodes only at send time, in `parseFormattedText`.
+ * `markdownStyle` only needs `syntax`/`link` colors: bold has no color key
+ * in the library's `MarkdownStyle` at all (rendered as native bold weight
+ * unconditionally), and `syntax` is de-emphasized rather than hidden — the
+ * `**`/`[]()` characters stay ON SCREEN because this input has no separate
+ * "display value" from the real one `onChangeText` reports.
  */
 export function MessageComposer({
   draft,
@@ -130,7 +143,7 @@ export function MessageComposer({
       )}
 
       <View style={styles.composerRow}>
-        <TextInput
+        <MarkdownTextInput
           value={draft}
           onChangeText={onDraftChange}
           onSelectionChange={(event) => {
@@ -141,6 +154,11 @@ export function MessageComposer({
           placeholderTextColor={colors.inkFaint.hex}
           style={styles.composerInput}
           multiline
+          parser={liveFormatParser}
+          markdownStyle={{
+            syntax: { color: colors.inkFaint.hex },
+            link: { color: colors.accent.hex },
+          }}
         />
         <Pressable
           style={styles.sendButton}

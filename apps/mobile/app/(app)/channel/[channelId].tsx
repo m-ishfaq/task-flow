@@ -26,7 +26,7 @@ import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { RichTextView } from '../../../src/lib/rich-text-view.js';
 import { Avatar } from '../../../src/lib/avatar.js';
 import { useMembers } from '../../../src/lib/use-members.js';
-import { buildMessageBody } from '../../../src/lib/message-compose.js';
+import { parseFormattedText } from '../../../src/lib/rich-text-compose.js';
 import { MessageComposer } from '../../../src/lib/message-composer.js';
 import { useChatRoom } from '../../../src/lib/use-chat-room.js';
 import { pickAttachment } from '../../../src/lib/pick-attachment.js';
@@ -95,12 +95,13 @@ import {
  *
  * **Mentions**: rendering already existed (`rich-text-view.tsx`'s `case
  * 'mention'` predates this screen) — what was missing was a way to COMPOSE
- * one. `message-compose.ts`'s own header has the full design: typing a
- * trailing `@query` opens a dropdown of matching members, picking one
- * inserts literal `@Label ` text and records the pick, and
- * `buildMessageBody` turns the recorded picks into real `mention` nodes at
- * send time — the bounded substitute for not having a real rich text
- * editor to track a live cursor/selection with.
+ * one. `message-compose.ts`'s own header has the cursor-tracking design:
+ * typing `@query` anywhere in the draft opens a dropdown of matching
+ * members, and picking one inserts literal `@Label ` text and records the
+ * pick. `rich-text-compose.ts`'s `parseFormattedText` turns those recorded
+ * picks into real `mention` nodes at send time, alongside `**bold**`,
+ * `[text](url)` links, and `- `/`1. ` list lines — see that file's own
+ * header for the native (no WebView) live/send-time split behind it.
  *
  * **The header opens Details, and long-pressing a message now offers
  * "Pin"** alongside the quick-react row — the two gaps a second real device
@@ -125,9 +126,13 @@ import {
  * Edit is AUTHOR-ONLY with no server override — same reasoning as Work's
  * comments (CLAUDE.md §8.2) and `apps/web`'s own message toolbar: nobody
  * else's edit would ever succeed, so the option is hidden rather than
- * shown-and-refused. It reuses `plainParagraph`, not `buildMessageBody` —
- * an edit does not re-open mention composing, the same boundary
- * `card/[cardId].tsx`'s comment composer draws. Delete is two actions,
+ * shown-and-refused. It reuses `plainParagraph`, not `parseFormattedText` —
+ * an edit does not re-open mention composing or formatting syntax, since
+ * there is no honest way to reconstruct `**`/`[]()`/list markdown SOURCE
+ * from marks a real editor never kept text-shaped in the first place; the
+ * same boundary `card/[cardId].tsx`'s comment composer draws. An edited
+ * message therefore loses any formatting the original had — a known,
+ * accepted trade rather than a gap in this pass.
  * Slack-style: "Remove for me" (`chat.messages.hide`, `message:read`,
  * offered to everyone) only changes the viewer's own list; "Delete for
  * everyone" is author OR moderation, gated on `channel.data.capabilities.
@@ -175,9 +180,8 @@ import {
  * asset's own `size` field — see `pick-attachment.ts`'s own header for why
  * that distinction matters to a signature-pinned upload.
  *
- * **Still explicitly out of scope, all real and separate work**: mentions
- * AUTOCOMPLETE beyond the trailing-query case above (mid-string insertion
- * needs a real editor).
+ * **Still explicitly out of scope, all real and separate work**: preserving
+ * formatting across an edit (see the edit note above).
  *
  * `chat.messages.list` returns newest-first (`ORDER BY id DESC`) —
  * reversed here for display, since a chat thread reads oldest-at-top.
@@ -368,10 +372,10 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   const previewsByMessage = useMemo(() => groupPreviews(previews.data ?? []), [previews.data]);
 
   const send = useMutation({
-    // `RichTextNode`, not `ReturnType<typeof buildMessageBody>` — the
-    // ordinary send path always builds one via `buildMessageBody`, but a
+    // `RichTextNode`, not `ReturnType<typeof parseFormattedText>` — the
+    // ordinary send path always builds one via `parseFormattedText`, but a
     // `/shrug`/`/me` slash command's replacement text goes through
-    // `plainParagraph` instead (`submitDraft` below), and `RichTextDoc` is
+    // `plainParagraph` instead (`submitDraft` below), and `FormattedDoc` is
     // structurally a `RichTextNode` (a stricter `type: 'doc'` shape), so
     // this widens to the common supertype rather than adding a second
     // near-identical mutation just for the two commands that speak.
@@ -452,7 +456,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
       return;
     }
 
-    send.mutate(buildMessageBody(draft.trim(), pendingMentions));
+    send.mutate(parseFormattedText(draft.trim(), pendingMentions));
   };
 
   const [uploadStage, setUploadStage] = useState<string | null>(null);
@@ -468,15 +472,19 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   const attach = useMutation({
     mutationFn: async (file: PickedFile) => {
       setUploadNotice(null);
+      // `parseFormattedText`, not `plainParagraph`, for the synthetic
+      // "Shared **filename**" carrier too — now that `**` really means bold,
+      // leaving this on `plainParagraph` would post literal asterisks around
+      // the filename instead of the bold text they were always meant to be.
       const carrier =
         draft.trim().length === 0
           ? await apiClient.chat.messages.send.mutate({
               channelId,
-              body: plainParagraph(`Shared **${file.name}**`),
+              body: parseFormattedText(`Shared **${file.name}**`),
             })
           : await apiClient.chat.messages.send.mutate({
               channelId,
-              body: buildMessageBody(draft.trim(), pendingMentions),
+              body: parseFormattedText(draft.trim(), pendingMentions),
             });
 
       setDraft('');
