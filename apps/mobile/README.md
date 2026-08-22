@@ -3161,6 +3161,30 @@ interpolated `--external-ip` flag both ways), `python3 -c "yaml.safe_load(...)"`
 YAML, prettier and the encoding check pass. Not verified: an actual container boot and a real
 device retest — no Docker daemon in this environment — which is exactly what happens next.
 
+### The port-mapping fix worked — and immediately proved the denylist finding was real, not speculative
+
+The very next real device round confirmed reachability was fixed and surfaced the denylist as the
+actual remaining blocker, in coturn's own log rather than a guess: `stateless-nonce: listener
+fast-path challenge active` (a real request from the phone arrived) followed immediately by `ERROR
+session ...: A peer IP 10.132.189.2 denied in the range: 10.0.0.0-10.255.255.255`. That is
+`compose.yaml`'s own `--denied-peer-ip` rule doing exactly what it was written to do — refusing to
+relay to a private address — applied to a peer that was, in this dev topology, always going to be
+one: a phone and a desktop on the same home/office LAN.
+
+Fixed by adding `--allowed-peer-ip` for the three RFC1918 ranges (`10.0.0.0/8`, `172.16.0.0/12`,
+`192.168.0.0/16`), checked against coturn's own docs before writing it rather than assumed: "if
+there is an allowed rule that fits the address, then it is allowed, no matter what" — an ALLOW
+entry overrides a matching DENY, so this is a carved-out exception, not a removal of the control.
+`--denied-peer-ip` for loopback (`127.0.0.0/8`), this-network (`0.0.0.0/8`), and link-local
+(`169.254.0.0/16`, which is where a cloud metadata endpoint like `169.254.169.254` lives) stays —
+those three are what an SSRF pivot through an open relay would actually reach, and "another device
+on the developer's own LAN" was never a meaningful protection in a local dev context to begin
+with. `compose.prod.yaml`'s own coturn block is untouched — its denylist still covers all three
+RFC1918 ranges with no allow-list exception, because a production TURN server relaying to a private
+address is exactly the SSRF risk the control exists for. Verified the same way as the port-mapping
+change above (`docker compose config` resolves the new flags correctly, valid YAML, prettier and
+encoding checks pass) — no Docker daemon here to boot the container itself.
+
 ## Not here yet
 
 - **CallKit (iOS) / ConnectionService (Android) — a real lock-screen "incoming call" UI.** Named

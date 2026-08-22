@@ -204,16 +204,34 @@ services:
       # wants the full default range; this is a development convenience.
       - --min-port=49160
       - --max-port=49200
-      # Refuse to relay to loopback, multicast and private ranges. An open TURN
-      # server is an SSRF pivot into whatever network it sits on — the relay
-      # will happily carry traffic to 127.0.0.1:5432 if allowed to.
+      # Refuse to relay to loopback, this-network and link-local addresses. An
+      # open TURN server is an SSRF pivot into whatever network it sits on —
+      # the relay will happily carry traffic to 127.0.0.1:5432 or a cloud
+      # metadata endpoint at 169.254.169.254 if allowed to. These three are
+      # the ones that actually matter for that risk, dev included.
       - --no-multicast-peers
       - --denied-peer-ip=0.0.0.0-0.255.255.255
       - --denied-peer-ip=127.0.0.0-127.255.255.255
       - --denied-peer-ip=169.254.0.0-169.254.255.255
-      - --denied-peer-ip=172.16.0.0-172.31.255.255
-      - --denied-peer-ip=192.168.0.0-192.168.255.255
-      - --denied-peer-ip=10.0.0.0-10.255.255.255
+      # RFC1918 (the private ranges a phone/desktop on a home or office LAN
+      # actually sits in) is EXPLICITLY ALLOWED here, dev only —
+      # compose.prod.yaml's own coturn block still denies all three, unchanged.
+      # Found live: with them denied, coturn refused to relay to a real
+      # phone's own LAN address ("A peer IP ... denied in the range:
+      # 10.0.0.0-10.255.255.255"), which made local testing against a real
+      # device impossible — the whole point `network_mode: host` and
+      # COTURN_EXTERNAL_IP above already exist for. `--allowed-peer-ip`
+      # overrides a matching `--denied-peer-ip` — confirmed against coturn's
+      # own docs ("if there is an allowed rule that fits the address, then it
+      # is allowed, no matter what") — so this is a carved-out exception, not
+      # a removal of the SSRF control: "relay to another device on my own dev
+      # LAN" is exactly what local testing needs and is not a meaningful
+      # protection in that context to begin with; "relay to loopback or cloud
+      # metadata" (denied above) is the part that actually matters, and stays
+      # denied even here.
+      - --allowed-peer-ip=172.16.0.0-172.31.255.255
+      - --allowed-peer-ip=192.168.0.0-192.168.255.255
+      - --allowed-peer-ip=10.0.0.0-10.255.255.255
 
 volumes:
   postgres-data:
