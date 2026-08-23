@@ -212,6 +212,15 @@ services:
       - --listening-port=3478
       - --fingerprint
       - --use-auth-secret
+      # TEMPORARY diagnostic, not a permanent setting — coturn's default log
+      # level is too quiet to show individual STUN/TURN messages, which is
+      # exactly what's needed to tell "the phone's retry never arrived" apart
+      # from "coturn answered and the reply never made it back" after a real
+      # phone request was confirmed reaching the container (`stateless-nonce:
+      # listener fast-path challenge active`) with no completed exchange
+      # following it. Remove once that's answered — verbose logging is not
+      # something to ship even to a dev compose file long-term.
+      - -v
       # DEV ONLY, and public on purpose like every other credential in this
       # file. Must match RTC_TURN_SECRET in .env.
       - --static-auth-secret=coturn-dev-secret
