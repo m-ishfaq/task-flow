@@ -4549,3 +4549,68 @@ needs; that is the only code change this gap warranted. **The public Expo Go app
 out for this project** (see "confirming this on a simulator..." above, for the OAuth deep-link
 reason) — this is one more native dependency Expo Go could never carry regardless, since it ships a
 fixed SDK build with no way to add a project-specific native module at all.
+
+## The reader's header collided with the global chrome, and rendered nothing while unsynced
+
+Two real bugs, both found live on a rebuilt dev client, once a Docs page actually opened for the
+first time: a permanently blank body, and the connection pill cycling red → orange → red without
+ever settling. Neither one needed the collab auth change (still unverified, per this file's own
+note above) to be the explanation — both had ordinary causes.
+
+**The pill was never invisible — it was covered.** `top-bar.tsx` mounts Account and the
+notification bell once, above every screen under `(app)/`, at `position: 'absolute', top: insets
+.top + 4, right: 16, zIndex: 20`. Every existing screen's header keeps its own right-aligned
+content — `automations.tsx`'s "+ New rule", `org-settings.tsx`'s "Billing" link,
+`docs-space/[spaceId].tsx`'s own "+ New page" — on a row BELOW its back button, never beside it,
+which is what keeps it clear of that fixed overlay's band. `docs-page/[pageId].tsx` put the
+connection pill beside the back button on the same row instead, landing it directly under
+`TopBar`'s two icons — which draw on top, since they render outside the `<Stack>` with a higher
+`zIndex`/`elevation`. The pill was there the whole time, genuinely cycling status; it was just
+never on screen. Fixed by matching the pattern every other screen already uses: back button alone
+on the first row, a second `titleRow` below it for the page label and the pill. **This was scoped
+to the one new screen** — every other screen in the app already followed the back-button-own-row
+convention (checked directly: `board`, `project`, `card`, `thread`, `channel-details`, `person`,
+`automation-editor`, `billing`, `project-settings` all keep the same shape), so this is not a
+second, wider layout bug, just the one new screen that skipped the convention it should have
+copied.
+
+**The blank body was a real gap in the loading state, not the network problem underneath it.**
+`useDocPage`'s `doc` goes non-null the moment `HocuspocusProvider` is CONSTRUCTED, which happens
+before the WebSocket has synced anything — so `doc === null` is true for exactly one render, and
+every render after that handed a freshly-constructed, genuinely empty `Y.Doc` to `RichTextView`,
+which returns `null` for an empty document (the correct behaviour for Work, where an empty
+description is unremarkable and this component has other siblings on the screen). On a screen
+whose entire body IS this component, "empty" and "still loading" rendered identically: nothing.
+Fixed with a sticky `hasEverSynced` flag — gates the FIRST render of content on `synced`, not on
+`doc !== null`, and once first sync has happened does not re-hide already-loaded content on a
+later reconnect (a network blip should make the pill go stale, not yank the page the user is
+reading). A genuinely empty page — `hasEverSynced` true, zero content nodes — now says "This page
+has no content yet." instead of rendering nothing, so the two states stay visually distinct.
+
+**The reconnect loop itself is very likely a missing `.env` var, found while investigating.**
+`MOBILE_COLLAB_BASE_URL` was added to `config.ts`/`app.config.ts` in the previous pass but never
+added to `.env.example` — the one thing that actually tells a developer it needs setting.
+Unset, it falls back to `MOBILE_API_BASE_URL` (apps/api, port 3000) rather than dialing
+apps/collab (port 3002), the identical trap `MOBILE_REALTIME_BASE_URL`'s own `.env.example` entry
+already documents for chat/calls, just one port over — a connection to the wrong server cycling
+Connecting → Offline → Connecting forever is exactly the reported symptom. `.env.example` now has
+the matching entry. If setting it to the LAN IP/port apps/collab actually listens on does not
+resolve the loop, the next thing to check is apps/collab's own server log for the actual refusal
+reason on that connection attempt (`forbidden_origin` would point at the still-unverified
+`isNativeClient` change; anything else points elsewhere) — that diagnosis needs a real server this
+environment does not have.
+
+**The gear-shaped circle below the bell is very likely not this app's own UI at all.** No
+component anywhere in this codebase renders a settings/gear icon as a floating overlay — `TopBar`
+mounts exactly two buttons (Account, notifications), and nothing else in `(app)/_layout.tsx` adds
+a third. A circular button with a gear/menu glyph, positioned independent of any screen, appearing
+right after a fresh dev-client rebuild, matches `expo-dev-client`'s own floating dev-menu launcher
+— a NATIVE overlay the dev client itself draws, unrelated to anything in `app/` or `src/lib/`. It
+cannot be moved or removed from application code; it is a dev-client-only affordance (absent from
+a release/production build) for opening the dev menu without a shake gesture.
+
+Verified: typecheck clean, lint clean, all 314 tests pass, guardrail self-test clean, prettier
+clean, encoding check clean, and `expo export --platform android` bundles cleanly. **Not
+device-verified** — the actual on-device rendering (whether the pill truly clears `TopBar` now,
+whether the reconnect loop resolves once `MOBILE_COLLAB_BASE_URL` is set) needs the same real
+device that found the original two bugs.
