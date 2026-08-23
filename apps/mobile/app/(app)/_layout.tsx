@@ -9,7 +9,7 @@ import { useSession } from '../../src/lib/use-session.js';
 import { readRememberedOrg } from '../../src/lib/session.js';
 import { resolveRememberedOrg } from '../../src/lib/org-gate.js';
 import { CallSurface } from '../../src/lib/call-surface.js';
-import { NotificationBell } from '../../src/lib/notification-bell.js';
+import { TopBar } from '../../src/lib/top-bar.js';
 
 /**
  * The org gate (ai/phase-14-mobile.md §7), ported from apps/web's `OrgGate` +
@@ -126,8 +126,9 @@ export default function AppLayout() {
       {/* Same reasoning, same pattern — a mention or DM notification is not
           a Chat-tab concern, and `notification-bell.tsx`'s own header has
           the real-device report that found it was only reachable from
-          there. */}
-      <NotificationBell />
+          there. `top-bar.tsx` now also carries the Account icon, moved out
+          of the tab bar — see its own header for why. */}
+      <TopBar />
     </View>
   );
 }

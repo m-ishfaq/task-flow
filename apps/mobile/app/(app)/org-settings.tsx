@@ -41,10 +41,12 @@ import {
  * `role === 'admin'` outside `packages/policy` is a lint error this file
  * never triggers).
  *
- * Reached from `(tabs)/account.tsx`'s "Manage organization" link — real,
- * separate work found genuinely not started at all when checked directly
- * against `apps/mobile/app/`'s own route list (a live report: "still
- * project, org settings and perms not wired yet").
+ * Reached from `account.tsx`'s "Manage organization" link (that screen
+ * itself now a pushed sibling of this one under `(app)/`, not a tab — see
+ * `top-bar.tsx`'s header) — real, separate work found genuinely not
+ * started at all when checked directly against `apps/mobile/app/`'s own
+ * route list (a live report: "still project, org settings and perms not
+ * wired yet").
  *
  * **Change role, Remove, and Transfer ownership all go through
  * `useStepUp`**, the identical `guard`/retry pattern `sessions-section.tsx`

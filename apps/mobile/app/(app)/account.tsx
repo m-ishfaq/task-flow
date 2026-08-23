@@ -2,32 +2,34 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { colors, radiusCard } from '@taskflow/tokens';
-import { apiClient, session } from '../../../src/lib/app-session.js';
-import { useSession } from '../../../src/lib/use-session.js';
-import { useTopInset } from '../../../src/lib/use-top-inset.js';
-import { ProfileSection } from '../../../src/lib/profile-section.js';
-import { WorkingHoursSection } from '../../../src/lib/working-hours-section.js';
-import { PasskeySection } from '../../../src/lib/passkey-section.js';
-import { TotpSection } from '../../../src/lib/totp-section.js';
-import { ConnectedAccountsSection } from '../../../src/lib/connected-accounts-section.js';
-import { SessionsSection } from '../../../src/lib/sessions-section.js';
-import { PushNotificationsSection } from '../../../src/lib/push-notifications-section.js';
-import { RingtoneSection } from '../../../src/lib/ringtone-section.js';
-import { ExportDataSection } from '../../../src/lib/export-data-section.js';
+import { apiClient, session } from '../../src/lib/app-session.js';
+import { useSession } from '../../src/lib/use-session.js';
+import { useTopInset } from '../../src/lib/use-top-inset.js';
+import { ProfileSection } from '../../src/lib/profile-section.js';
+import { WorkingHoursSection } from '../../src/lib/working-hours-section.js';
+import { PasskeySection } from '../../src/lib/passkey-section.js';
+import { TotpSection } from '../../src/lib/totp-section.js';
+import { ConnectedAccountsSection } from '../../src/lib/connected-accounts-section.js';
+import { SessionsSection } from '../../src/lib/sessions-section.js';
+import { PushNotificationsSection } from '../../src/lib/push-notifications-section.js';
+import { RingtoneSection } from '../../src/lib/ringtone-section.js';
+import { ExportDataSection } from '../../src/lib/export-data-section.js';
 
 /**
- * The Account tab — the one place `apps/web`'s sidebar footer (`OrgSwitcher`
- * + the account dropdown, `shell.tsx`) puts "which org am I in", "switch
- * it", and "sign out"; nothing here had a home before the navigation-shell
- * increment (see `_layout.tsx`'s own header for why a tab bar exists now at
- * all) that first added this screen.
- *
- * **Growing toward parity with web's much larger `account-page.tsx`** (656
- * lines: profile editing, connected accounts, TOTP, device/session
- * inventory, DSAR export) — a real device video review asked for it by
- * name, and each section below documents its own porting notes. Still
- * ahead, in order: TOTP (needs a new QR-rendering dependency), profile
- * editing plus working hours/out-of-office, and self-serve DSAR export.
+ * Account — the one place `apps/web`'s sidebar footer (`OrgSwitcher` + the
+ * account dropdown, `shell.tsx`) puts "which org am I in", "switch it", and
+ * "sign out". A sibling of `org-settings.tsx` under `(app)/`, pushed from
+ * `top-bar.tsx`'s icon rather than a `(tabs)/_layout.tsx` tab — it lived
+ * there originally, moved out once a live report asked for two more real
+ * tab destinations (Docs, Automations) that `Tabs` has no room for on a
+ * phone-width bar without something else giving up its slot first.
+ * Account was the one existing tab nothing else routes to mid-task the way
+ * a card or a channel does, so it is the one screen that loses nothing by
+ * becoming a single tap from a fixed icon instead of a swipeable
+ * destination — see `top-bar.tsx`'s own header for the fuller argument.
+ * Nothing about the screen's own content changed in the move; it gained
+ * only the back button every other pushed screen under `(app)/` already
+ * draws, since it is no longer a tab's own root with nowhere to return to.
  *
  * "Switch organization" pushes `/org-picker` — the SAME screen
  * `(app)/_layout.tsx`'s gate already redirects to when no valid org is
@@ -49,6 +51,14 @@ export default function Account() {
 
   return (
     <ScrollView style={[styles.container, { paddingTop }]} contentContainerStyle={styles.content}>
+      <Pressable
+        style={styles.backButton}
+        onPress={() => {
+          router.back();
+        }}
+      >
+        <Text style={styles.backButtonText}>← Back</Text>
+      </Pressable>
       <Text style={styles.title}>Account</Text>
 
       <View style={styles.section}>
@@ -110,6 +120,15 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     gap: 24,
   },
+  backButton: {
+    alignSelf: 'flex-start',
+    marginBottom: -12,
+  },
+  backButtonText: {
+    color: colors.accent.hex,
+    fontSize: 15,
+    fontWeight: '600',
+  },
   title: {
     fontSize: 24,
     fontWeight: '700',
@@ -159,7 +178,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
     marginTop: 4,
   },
   secondaryButtonText: {

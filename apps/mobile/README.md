@@ -4111,3 +4111,55 @@ self-test clean, prettier clean, encoding check clean, and a real `expo export -
 bundles cleanly with the new tab and route wired in. Not yet confirmed against a real device — the
 `useInfiniteQuery` "Load more" behavior and the manager-picker `Modal`'s scroll are both new
 patterns on this app and worth a real scroll before calling this device-verified.
+
+## Account moves off the tab bar, and the notification bell gets a real redesign
+
+Two more real destinations were named for this bar — Docs and Automations — and `Tabs` has no
+scroll behaviour when it overflows a phone's width. Five tabs plus two more was never going to fit
+six- or seven-wide the way this platform's own primary-nav idiom expects, so before either of those
+ships, one existing tab had to stop being one.
+
+**Account was the correct tab to remove, not an arbitrary one.** Every other tab is a place someone
+actually browses or gets routed to mid-task — a card assignment opens Boards, a mention opens Chat,
+a missed call opens Calls. Nothing routes to Account mid-task, and nobody swipes to it between other
+work; it is a destination you deliberately go to and then leave. That is the one property that makes
+a tab safe to demote to a single tap from a fixed icon instead: `account.tsx` itself did not change
+shape at all, only its address — from `(tabs)/account.tsx` to a pushed sibling of `org-settings.tsx`
+under `(app)/`, gaining only the "← Back" row every other pushed screen already draws, since it is no
+longer a tab root with nowhere to return to. `(tabs)/_layout.tsx` is down to five screens.
+
+**`top-bar.tsx` is new — one absolutely-positioned row, not two.** `notification-bell.tsx` used to
+own the only thing anchored at the safe-area edge, with its own `position: 'absolute'` and its own
+guess at `right`. Bolting a second icon on next to it by giving IT an independent position is exactly
+how two icons drift out of alignment the day one badge renders one digit wider than the other — the
+actual "set the alignment" ask. So the position moved up one level: `TopBar` owns the one absolute
+row (`right: 16`, `flexDirection: 'row'`, a fixed `gap`), and `NotificationBell`'s own trigger is now
+a plain 36×36 button sized to sit inside it, with no positioning opinion of its own. The Account
+button reuses the same `person-circle`/`person-circle-outline` glyph pair the tab bar used, so
+tapping it does not read as a new feature — it is the same destination in a different place, and the
+glyph is what tells a reader that.
+
+**The notifications modal was genuinely bare — no timestamp, no unread signal beyond a
+background tint, an emoji floating with nothing around it.** `NotificationSummary.createdAt` was
+already on the wire and simply never rendered (the row's `rowTime` slot showed the ACTOR's name, not
+a time, which is its own small bug this pass fixes as a side effect). Now ported in, matching
+`chat.tsx`'s and `channel/[channelId].tsx`'s own established `formatDistanceToNow(date, { addSuffix:
+true })` call rather than inventing a second relative-time convention. Each row's icon sits in a
+small circular badge instead of bare text: still the same `notificationIcon()` glyph table, just with
+somewhere to sit. Unread state is now two signals instead of one — the existing background tint,
+plus a small accent dot at the row's trailing edge, matching web's own `NotificationRow`'s unread
+dot rather than inventing a third. The header gained an unread-count pill next to the title (the
+badge already shown on the bell's own trigger, restated where it is actually being read) and "Mark
+all read" moved from a bare text link to a bordered pill button — a properly-sized tap target rather
+than a line of text doubling as one. The empty state gained a real two-line message in place of one
+sentence of grey text, and the sheet gained a drag-handle bar at its top — no gesture wired to it
+(this sheet only ever closes via the backdrop or "Close"), but the same glance-able "this is a sheet"
+signal every native bottom-sheet carries even where the drag itself isn't implemented.
+
+Verified: typecheck clean, lint clean (the one pre-existing `push-notifications.ts` warning), all
+252 tests pass unchanged (no new logic module — this pass is navigation and presentation only, and
+`notifications.ts`'s own `oooStatus`-style pure functions did not need one), guardrail self-test
+clean, prettier clean, encoding check clean, and a real `expo export --platform android` bundles
+cleanly with `/account` resolving as a top-level route. Not yet confirmed on a real device — the
+`TopBar` row's alignment against a genuinely long unread count (`99+` next to a `9+` badge) and the
+modal's new layout are both worth a real screen before calling this device-verified.
