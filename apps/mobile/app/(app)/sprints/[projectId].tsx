@@ -20,6 +20,8 @@ import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { CardRow } from '../../../src/lib/card-row.js';
+import { DatePickerField } from '../../../src/lib/date-picker-field.js';
+import { dateToPlainDay, plainDayToDate } from '../../../src/lib/date-picker.js';
 import {
   MY_TASKS_QUERY_KEY,
   PROJECTS_QUERY_KEY,
@@ -584,8 +586,12 @@ function SprintForm({
   const queryClient = useQueryClient();
   const [name, setName] = useState(sprint?.name ?? '');
   const [goal, setGoal] = useState(sprint?.goal ?? '');
-  const [startsOn, setStartsOn] = useState(sprint?.startsOn ?? '');
-  const [endsOn, setEndsOn] = useState(sprint?.endsOn ?? '');
+  const [startsOnDate, setStartsOnDate] = useState<Date | null>(
+    sprint === undefined ? null : plainDayToDate(sprint.startsOn),
+  );
+  const [endsOnDate, setEndsOnDate] = useState<Date | null>(
+    sprint === undefined ? null : plainDayToDate(sprint.endsOn),
+  );
   const locked = sprint?.status === 'active';
 
   const save = useMutation({
@@ -595,11 +601,16 @@ function SprintForm({
     // `Promise<void>` rather than forcing one `MutationFunction` type to
     // cover both outputs.
     mutationFn: async (): Promise<void> => {
+      // Guarded by the Save button's own `disabled` below — both dates are
+      // required for a sprint (`startsOn`/`endsOn`'s `Day` schema takes no
+      // null), the same invariant the button already enforces before this
+      // ever runs.
+      if (startsOnDate === null || endsOnDate === null) return;
       const input = {
         name: name.trim(),
         goal: goal.trim() === '' ? null : goal.trim(),
-        startsOn,
-        endsOn,
+        startsOn: dateToPlainDay(startsOnDate),
+        endsOn: dateToPlainDay(endsOnDate),
       };
       if (sprint === undefined) {
         await apiClient.work.sprints.create.mutate({ projectId, ...input });
@@ -632,22 +643,17 @@ function SprintForm({
         style={styles.formInput}
       />
       <View style={styles.formDatesRow}>
-        <TextInput
-          value={startsOn}
-          onChangeText={setStartsOn}
-          placeholder="Starts YYYY-MM-DD"
-          placeholderTextColor={colors.inkFaint.hex}
-          style={[styles.formInput, styles.formDateInput]}
-          editable={!locked}
-        />
-        <TextInput
-          value={endsOn}
-          onChangeText={setEndsOn}
-          placeholder="Ends YYYY-MM-DD"
-          placeholderTextColor={colors.inkFaint.hex}
-          style={[styles.formInput, styles.formDateInput]}
-          editable={!locked}
-        />
+        <View style={styles.formDateInput}>
+          <DatePickerField
+            value={startsOnDate}
+            onChange={setStartsOnDate}
+            placeholder="Starts"
+            disabled={locked}
+          />
+        </View>
+        <View style={styles.formDateInput}>
+          <DatePickerField value={endsOnDate} onChange={setEndsOnDate} placeholder="Ends" />
+        </View>
       </View>
       {save.isError && (
         <Text style={styles.modalError} accessibilityRole="alert">
@@ -658,10 +664,15 @@ function SprintForm({
         <Pressable
           style={[
             styles.formSubmit,
-            (save.isPending || name.trim() === '' || startsOn === '' || endsOn === '') &&
+            (save.isPending ||
+              name.trim() === '' ||
+              startsOnDate === null ||
+              endsOnDate === null) &&
               styles.formSubmitDisabled,
           ]}
-          disabled={save.isPending || name.trim() === '' || startsOn === '' || endsOn === ''}
+          disabled={
+            save.isPending || name.trim() === '' || startsOnDate === null || endsOnDate === null
+          }
           onPress={() => {
             save.mutate();
           }}

@@ -17,7 +17,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
 import { CardIdSchema, type CardId } from '@taskflow/contracts';
-import { wire } from '@taskflow/client';
+import { parseNullableInstant, wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
@@ -32,6 +32,8 @@ import {
   type PendingMention,
 } from '../../../src/lib/message-compose.js';
 import { Avatar } from '../../../src/lib/avatar.js';
+import { DatePickerField } from '../../../src/lib/date-picker-field.js';
+import { dateToIsoInstant } from '../../../src/lib/date-picker.js';
 import { useUpdateCard } from '../../../src/lib/use-update-card.js';
 import { useMembers, type Member } from '../../../src/lib/use-members.js';
 import { pickAttachment } from '../../../src/lib/pick-attachment.js';
@@ -1095,19 +1097,17 @@ function TitleField({
 }
 
 /**
- * A card's own start/due dates — `apps/web`'s `DatesSection`, two
- * `YYYY-MM-DD` text entries rather than web's native `<input type="date">`.
- * The same "typed by hand rather than picked" trade this app already
- * makes for a custom field of type `date` (`FieldInput`'s own header),
- * applied here to the card's own dates for the first time — this app has
- * no date-picker dependency, deliberately, and the alternative to typing
- * one by hand was leaving these two fields uneditable entirely.
+ * A card's own start/due dates — `apps/web`'s `DatesSection`, now a real
+ * native calendar picker (`date-picker-field.tsx`) rather than the
+ * `YYYY-MM-DD` text box this section shipped with — see that component's
+ * own header for the platform split, and `FieldInput` below for the
+ * identical swap on a `date`-type custom field.
  *
  * Rides `cards.update`'s full replace via `useUpdateCard`, exactly like
  * priority — `dueDate`/`startDate` were already carried on `CardPatch`
  * (`card-patch.ts`'s own header: "kept... so a future date-editing screen
  * is 'add a UI control'"), so this is that UI control, not new plumbing.
- * An empty box clears the date (`null`), matching web's identical
+ * Clearing the picker clears the date (`null`), matching web's identical
  * `day === '' ? null : ...` branch.
  */
 function DateSection({
@@ -1140,20 +1140,13 @@ function DateField({
   readonly value: string | null;
   readonly onChange: (iso: string | null) => void;
 }) {
-  const [draft, setDraft] = useState(value?.slice(0, 10) ?? '');
-
   return (
     <View style={styles.dateField}>
       <Text style={styles.dateLabel}>{label}</Text>
-      <TextInput
-        style={styles.addCardInput}
-        value={draft}
-        placeholder="YYYY-MM-DD"
-        placeholderTextColor={colors.inkFaint.hex}
-        onChangeText={setDraft}
-        onEndEditing={() => {
-          const trimmed = draft.trim();
-          onChange(trimmed === '' ? null : new Date(`${trimmed}T00:00:00`).toISOString());
+      <DatePickerField
+        value={parseNullableInstant(value)}
+        onChange={(picked) => {
+          onChange(picked === null ? null : dateToIsoInstant(picked));
         }}
       />
     </View>
@@ -1942,9 +1935,8 @@ function AddFieldForm({ projectId }: { readonly projectId: string }) {
  * implementation, per that file's own field-type list), and this mirrors
  * web's ACTUAL behavior rather than quietly building a nicer one that
  * would leave the two platforms disagreeing on what a `user` field looks
- * like. `date` is a plain `YYYY-MM-DD` text entry rather than a native
- * calendar picker — the same "no date-picker dependency added yet" stance
- * this app already takes for a card's own due/start dates.
+ * like. `date` gets the same native `DatePickerField` `DateSection` above
+ * uses, in place of the `YYYY-MM-DD` text entry this used to be.
  */
 function FieldInput({
   type,
@@ -2019,15 +2011,25 @@ function FieldInput({
     );
   }
 
-  // text, number, date, and user (see this function's own header) all
-  // commit on blur, not on every keystroke — each commit is a mutation
-  // that emits a domain event and an audit entry, so one per character
-  // would make the audit log unreadable.
+  if (type === 'date') {
+    return (
+      <DatePickerField
+        value={typeof value === 'string' ? parseNullableInstant(value) : null}
+        onChange={(picked) => {
+          onCommit(picked === null ? null : dateToIsoInstant(picked));
+        }}
+      />
+    );
+  }
+
+  // text, number, and user (see this function's own header) all commit on
+  // blur, not on every keystroke — each commit is a mutation that emits a
+  // domain event and an audit entry, so one per character would make the
+  // audit log unreadable.
   return (
     <TextInput
       style={styles.addCardInput}
       value={draft}
-      placeholder={type === 'date' ? 'YYYY-MM-DD' : undefined}
       placeholderTextColor={colors.inkFaint.hex}
       keyboardType={type === 'number' ? 'numeric' : 'default'}
       onChangeText={setDraft}
@@ -2044,7 +2046,6 @@ function isChoiceString(value: unknown): value is string {
 
 function textValueOf(type: string, value: unknown): string {
   if (type === 'number') return typeof value === 'number' ? String(value) : '';
-  if (type === 'date') return typeof value === 'string' ? value.slice(0, 10) : '';
   return typeof value === 'string' ? value : '';
 }
 
@@ -2058,11 +2059,6 @@ function commitTextValue(type: string, raw: string, onCommit: (value: unknown) =
     }
     const parsed = Number(trimmed);
     if (Number.isFinite(parsed)) onCommit(parsed);
-    return;
-  }
-
-  if (type === 'date') {
-    onCommit(trimmed === '' ? null : new Date(`${trimmed}T00:00:00`).toISOString());
     return;
   }
 
@@ -2610,7 +2606,7 @@ const styles = StyleSheet.create({
     height: 18,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surfaceSunken.hex,
@@ -2698,7 +2694,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
   },
   addChipButtonText: {
     fontSize: 14,
@@ -2728,7 +2724,7 @@ const styles = StyleSheet.create({
   addCardInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -2768,7 +2764,7 @@ const styles = StyleSheet.create({
   },
   modalInput: {
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -2847,7 +2843,7 @@ const styles = StyleSheet.create({
   addFieldForm: {
     gap: 8,
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     padding: 10,
   },

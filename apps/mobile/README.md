@@ -3827,3 +3827,72 @@ a query-derived boolean, not new pure functions), guardrail self-test clean, pre
 encoding check clean, and a real `expo export --platform android` bundles cleanly. Not yet
 reconfirmed against a real device — that is the one thing only the project owner's own hardware can
 settle, and is worth doing before calling either half closed.
+
+## A real date picker, app-wide
+
+Closes the gap this file named in three separate places: a card's own start/due dates
+(`DateSection`), a `date`-type custom field (`FieldInput`), and a sprint's `startsOn`/`endsOn` —
+three independent `YYYY-MM-DD` text boxes, each "typed by hand rather than picked... this app has
+no date-picker dependency, deliberately." `@react-native-community/datetimepicker` is that
+dependency now, `^9.1.0` — the only version `pnpm add` resolved against this project's `expo@57.0.15`
+pin, and its own `peerDependencies` name `"expo": ">=52.0.0"` explicitly. `npx expo install` itself
+could not be used to add it: its own compatibility check reaches `reactnative.directory`, which this
+environment's proxy denies (confirmed via `$HTTPS_PROXY/__agentproxy/status`'s own recent-failures
+log) — `registry.npmjs.org` itself is proxy-EXEMPT (in `noProxy`), so a plain `pnpm add` reached it
+directly and installed cleanly. `expo-doctor` afterward reported four failures, and reading each one
+against `git diff package.json` (a single added line) is what confirmed none of them are this
+dependency's doing: two are the same `reactnative.directory`/config-schema network calls the proxy
+already denies, and the `expo-modules-core`/duplicate-`react` warnings both name packages
+(`expensify-common`, `packages/client`) that predate this change entirely.
+
+**Pure `Date` <-> wire-string conversions live in their own plain `date-picker.ts`, separate from
+the `date-picker-field.tsx` component that renders anything** — the same split
+`message-compose.ts`/`message-composer.tsx` already established, for the identical reason:
+`date-picker-field.tsx` statically imports `react-native` and the native picker module, and
+`use-call.ts`'s own header already proved `react-native`'s source fails to even PARSE under
+Vitest. A test file importing the pure conversions must never drag the component in with it, so
+`date-picker.test.ts` imports only `date-picker.ts` — 7 tests, all passing, none of them requiring
+a React renderer.
+
+**Two wire shapes, because the server has two, and the picker itself knows about neither.** A
+card's `dueDate`/`startDate` and a `date`-type custom field are `z.date()` — a full INSTANT — while
+a sprint's `startsOn`/`endsOn` are the `Day` contract type: a plain `YYYY-MM-DD` string with no time
+or zone component (`apps/api/src/work/router.ts`). The native picker hands back the same kind of
+value either way — a `Date` at LOCAL midnight for the picked day — so `DatePickerField` itself works
+in `Date | null` only, and each CALLER converts with whichever of `date-picker.ts`'s
+`dateToIsoInstant`/`dateToPlainDay` its own field needs. `dateToPlainDay` is built from the LOCAL
+calendar fields (`getFullYear`/`getMonth`/`getDate`), never `.toISOString().slice(0, 10)` — that
+reads the UTC day, which names the WRONG calendar day for anyone west of UTC picking a date near
+local midnight, the same class of bug this app's existing `${trimmed}T00:00:00}` parse pattern
+already worked around by hand for the card/custom-field case; `dateToPlainDay`/`plainDayToDate`
+extend that same care to the sprint's plain-day format instead of reintroducing the UTC-slice bug
+fresh.
+
+**Two genuinely different platform UIs, not one component pretending otherwise.** Android has no
+inline picker in this library at all — `DateTimePickerAndroid.open()` is imperative, showing the
+OS's own native dialog and returning through a callback with nothing mounted in this component's
+own tree. iOS has no equivalent imperative call, so a `<DateTimePicker>` renders inside a
+bottom-sheet `Modal` matching this app's own established pattern (`board/[boardId].tsx`'s
+`modalBackdrop`/`modalCard`/`modalPrimaryButton` shapes, restated here since this is a standalone
+shared component with no caller's `styles` to borrow) — picking a day on iOS is a DRAFT, committed
+only on "Done," since the wheel fires continuously while spinning and calling the real `onChange`
+on every tick would write a mutation, and the audit entry that comes with it, once per frame of
+scrolling.
+
+**`onChange` is deprecated in this library version — caught by lint, not by reading past it.**
+`@typescript-eslint/no-deprecated` flagged the first draft's `<DateTimePicker onChange={...}>` and
+`DateTimePickerAndroid.open({ onChange })` calls; both now use `onValueChange` instead, which fires
+only when a value was actually picked, with a guaranteed non-optional `Date` — simpler than
+`onChange`'s `(event, date?: Date)`, since there is no `event.type === 'set'` left to check.
+
+`sprints/[projectId].tsx`'s own `locked` rule (an ACTIVE sprint's start date cannot change, its end
+date can) is preserved via a new `disabled` prop on `DatePickerField` — the same rule the `TextInput`
+it replaces enforced with `editable={!locked}`, restated rather than dropped in the swap.
+
+Verified: typecheck clean, lint clean (the one pre-existing `push-notifications.ts` warning; the
+`onChange`-deprecation error above was found and fixed before this line was written, not left for
+someone else), all 233 tests pass (226 existing plus 7 new for `date-picker.ts`'s pure
+conversions), guardrail self-test clean, prettier clean, encoding check clean, and a real
+`expo export --platform android` bundles cleanly with the new native module linked. Not yet
+confirmed against a real device — the native picker's actual on-screen behavior (the Android
+dialog's look, the iOS spinner sheet) is something only the project owner's own hardware can settle.
