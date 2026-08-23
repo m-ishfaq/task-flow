@@ -4049,3 +4049,65 @@ until it runs somewhere Twilio is actually wired up; this is the same gap Phase 
 had until it was tested against a real carrier for the first time (CLAUDE.md's own "four defects a
 green suite could not see" account) — worth reading before assuming this port is carrier-correct
 just because it typechecks and bundles.
+
+## People: the org directory, ported
+
+Closes the other gap `(tabs)/_layout.tsx`'s own header named alongside Docs: "People join this
+bar as their own waves ship real screens." A 6th bottom tab, "People" — `apps/web/src/features/
+people/people-page.tsx` and `person-page.tsx`'s counterpart.
+
+**`people.profile.*` (the caller's OWN profile) was NOT missing — it shipped as sections on the
+Account tab (`profile-section.tsx`, `working-hours-section.tsx`, `export-data-section.tsx`) well
+before this pass, and this file's own conventions section already documents why: those are
+`selfRoute`s, answering with no org selected, which is a different question from `people.
+directory.*` (`member:read`) and the admin-edit routes (`member:manage`), both of which need an
+org and neither of which had ANY mobile screen at all. `people.ts`'s own header states this split
+explicitly so the next reader does not go looking for profile editing in the directory files.
+
+**The org directory (`(tabs)/people.tsx`) is this app's first `useInfiniteQuery`.** Every other
+list on this app either fetches everything in one shot (`work.cards.list`) or walks every page
+eagerly client-side up to a cap (`telephony-contact-picker.tsx`, 1,000 rows for a dropdown nobody
+reads past). A directory a person actually SCROLLS is the first place an unbounded org genuinely
+needs real pagination instead of either shortcut — the cursor is a user id (`directory.list`'s own
+doc: creation-ordered, a total order with no ties), and "Load more" is a button, not an
+`onEndReached` auto-load, matching web's own choice not to spend network on a scroll nobody asked
+for.
+
+**The person detail screen (`person/[userId].tsx`) is a sibling of `card/[cardId].tsx` under
+`(app)/`, not nested in `(tabs)` — no layout change was needed to add it.** `(app)/_layout.tsx`'s
+own `<Stack screenOptions={{ headerShown: false }} />` with no explicit `<Stack.Screen>` children
+auto-registers every route under `(app)/`, exactly the mechanism that file's own header documents
+for why `card/[cardId].tsx` gets real `router.back()` history; a new file was the entire
+integration cost.
+
+**The org chart, job facts, OOO state, and — only when viewing someone ELSE — an admin-edit form**
+(job title/department/work phone, a manager picker) are all one screen, matching web's single-page
+layout rather than splitting into tabs the way Calls' four genuinely-separate concerns did. Editing
+your OWN job title still happens on the Account tab through `people.profile.update` — this screen
+hides its own edit controls for yourself for the identical reason web's `AdminSection` does: a
+second path to the same field would drift from the first. The manager picker reuses this app's own
+bottom-sheet `Modal` pattern (`org-settings.tsx`'s `RolePickerModal` shape) rather than a native
+`<select>`, wrapped in a `ScrollView` this time — up to 100 candidates, unlike a short fixed role
+list, genuinely needs to scroll rather than just fit.
+
+**`oooStatus` is ported verbatim from `apps/web/src/lib/format.ts`, not reimplemented from
+memory** — same `date-fns` calls (`isAfter`/`isPast`), same two-step reasoning (a return date
+already past is not an active OOO; a start date not yet begun is a FUTURE one), and now has its
+own test coverage this app never had before (`people.test.ts`, 6 cases covering both edges plus
+the exact-instant boundary). `TelephonyCallButton` — already built for the Calls tab — is reused
+unchanged for a person's work-phone click-to-call, the same component `person-page.tsx` itself
+reuses from its own telephony feature on web.
+
+**Not ported, named rather than left implicit:** nothing — Wave 1 (directory) and Wave 2 (person
+detail, admin edit, reporting line) of `ai/phase-11.5-people.md` are both here in full. The one
+thing worth flagging is scale: `AdminSection`'s manager picker loads 100 directory rows per screen
+open, matching web's own "orgs are small, by this app's own convention" acceptance — a genuinely
+large org would want a searchable picker here the way `telephony-contact-picker.tsx` has one, not
+built now since nothing this pass touched needed it.
+
+Verified: typecheck clean, lint clean (the one pre-existing `push-notifications.ts` warning), all
+252 tests pass (244 existing plus 8 new for `people.ts`'s `oooStatus`/`directoryLabel`), guardrail
+self-test clean, prettier clean, encoding check clean, and a real `expo export --platform android`
+bundles cleanly with the new tab and route wired in. Not yet confirmed against a real device — the
+`useInfiniteQuery` "Load more" behavior and the manager-picker `Modal`'s scroll are both new
+patterns on this app and worth a real scroll before calling this device-verified.

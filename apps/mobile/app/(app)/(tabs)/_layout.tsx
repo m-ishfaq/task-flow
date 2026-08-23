@@ -14,16 +14,19 @@ import { colors } from '@taskflow/tokens';
  * equivalent for a phone-width screen is the platform's own primary-nav
  * idiom (iOS's tab bar, Android's bottom navigation), which `expo-router`'s
  * `Tabs` renders as the native component on each platform rather than a
- * hand-built approximation. Five tabs today — "My Tasks", "Boards" (Wave
+ * hand-built approximation. Six tabs today — "My Tasks", "Boards" (Wave
  * 2's remaining item — projects/boards/lists, `boards.tsx`), "Chat" (Wave
  * 3, read + send only — see `chat.ts`'s own header), "Calls" (Phase 7's
  * telephony client, `calls.tsx` — real, separate from Phase 13's in-app
  * WebRTC calling, which has no tab of its own and instead rings from
- * whatever screen is open, `call-surface.tsx`) and "Account" (org
+ * whatever screen is open, `call-surface.tsx`), "People" (Phase 11.5's org
+ * directory, `people.tsx` — the caller's OWN profile lives on the Account
+ * tab instead, `people.profile.*`; this tab is `people.directory.*`, a
+ * different member and a different set of screens) and "Account" (org
  * switching, passkeys, sign-out) — because those are the destinations that
- * exist; Docs/People join this bar as their own waves ship real screens,
- * the same way `apps/web`'s `Sidebar` grew its nav rail one item per phase
- * rather than all at once.
+ * exist; Docs joins this bar as its own wave ships a real screen, the same
+ * way `apps/web`'s `Sidebar` grew its nav rail one item per phase rather
+ * than all at once.
  *
  * **`@expo/vector-icons` (`Ionicons`), not "no icon set" as originally
  * shipped.** That original call was "nothing else in this app uses one
@@ -32,9 +35,10 @@ import { colors } from '@taskflow/tokens';
  * broken glyph box on every tab, on every screen, permanently on-screen
  * chrome rather than a one-off cosmetic gap. `Ionicons` ships bundled with
  * every Expo SDK template specifically for this — `checkmark-circle` (My
- * Tasks), `grid` (Boards), `chatbubbles` (Chat), `person-circle` (Account),
- * each with a matching `-outline` variant for the inactive state, which is
- * what `focused` below switches between.
+ * Tasks), `grid` (Boards), `chatbubbles` (Chat), `call` (Calls), `people`
+ * (People), `person-circle` (Account), each with a matching `-outline`
+ * variant for the inactive state, which is what `focused` below switches
+ * between.
  *
  * `card/[cardId].tsx` stays a SIBLING of this `(tabs)` group, not nested
  * inside it — `(app)/_layout.tsx` now composes both into one real
@@ -114,6 +118,15 @@ export default function TabsLayout() {
           title: 'Calls',
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'call' : 'call-outline'} color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="people"
+        options={{
+          title: 'People',
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'people' : 'people-outline'} color={color} size={size} />
           ),
         }}
       />
