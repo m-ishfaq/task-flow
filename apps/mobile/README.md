@@ -3736,6 +3736,9 @@ the same room, since both calls share one underlying socket connection — a rea
 hypothetical one, caught by reasoning through the navigator's actual mount lifecycle before writing
 the hook rather than after. So a card opened directly, outside a board, still has no live updates;
 giving rooms a genuine reference count in `socket.ts` is the real fix, and is separate work.
+_(True when written — `socket.ts`'s rooms are reference-counted now and `card/[cardId].tsx` has its
+own `useCardRoom`, see "Board rooms get a reference count" below; left as written rather than
+silently edited, per this file's own rule about correcting a stale claim in place.)_
 
 ### `@mention` composing reaches Work comments
 
@@ -3896,3 +3899,58 @@ conversions), guardrail self-test clean, prettier clean, encoding check clean, a
 `expo export --platform android` bundles cleanly with the new native module linked. Not yet
 confirmed against a real device — the native picker's actual on-screen behavior (the Android
 dialog's look, the iOS spinner sheet) is something only the project owner's own hardware can settle.
+
+## Board rooms get a reference count, and `card/[cardId].tsx` gets its own live room
+
+Closes the gap the previous section named and left open: a card opened OUTSIDE a board (My Tasks, a
+notification) had no live updates at all, because giving it its own `useBoardRoom` call would have
+let its own unmount sever a board screen's still-open room membership underneath it in the
+navigator stack — the exact bug that section's own header describes catching before it shipped.
+
+**`socket.ts`'s `joinedBoards` now tracks a REFCOUNT per `boardId`, not a single owner.** `Map<BoardId,
+string>` (boardId -> orgId) became `Map<BoardId, { orgId, refCount, granted }>`. `joinBoardRoom` on a
+board already joined bumps `refCount` and hands back the FIRST call's own `granted` promise rather
+than emitting a second `board:join` — not just an optimization: `apps/realtime/src/gateway.ts`'s
+`joinsPerSocket` is a real, finite rate limit per SOCKET CONNECTION
+(`REALTIME_MAX_JOINS_PER_MINUTE`), shared across every room kind a socket joins, and spending a slot
+of it on a room this connection is already in brings a genuinely new join closer to being refused
+for no reason. `leaveBoardRoom` decrements instead of deleting outright, and only emits `board:leave`
+— and drops the room from `joinedBoards`, which is what the reconnect-replay loop reads — once the
+LAST caller lets go. Five new tests in `socket.test.ts` cover this directly: one join emitted for two
+callers, the same grant handed to both, the first caller's room surviving the second's own leave, and
+`board:leave` firing only once the count reaches zero.
+
+**`use-board-room.ts` gains `useCardRoom`, mounted from `card/[cardId].tsx`.** Joins the SAME
+`board:{boardId}` room `useBoardRoom` joins — there is no separate `card:{cardId}` room anywhere in
+this system, since a card's authorization is its board's, one tier up (CLAUDE.md's "there is no
+`list` resource type" reasoning, restated at the next level). `boardId` is only known once
+`card.data` has loaded (it is a field on the card's own detail response, not a route param), so the
+hook simply does not join until then; `BoardIdSchema.parse` at the actual `joinBoardRoom`/
+`leaveBoardRoom` call sites is what produces the branded value those signatures require, kept as a
+real parse rather than a bare cast even though the value already arrived pre-validated on a typed
+tRPC response — guardrail 1's "a brand means a parser checked this," applied even where the parse is
+expected to always succeed.
+
+**A separate broadcast filter and query-key set from `useBoardRoom`'s, because a card screen and a
+board screen render different things from the same room's events.** `applyCardBroadcast` first
+checks the payload actually NAMES this card (`cardIdOf`, a plain-string read — never parsed into the
+branded type, since it is only ever compared, not constructed from) before invalidating anything;
+`message.boardId === boardId` alone would fire for every card on the board, over-invalidating the
+same way an unfiltered channel broadcast would for chat. Comments, checklists, labels, custom field
+values, and attachments — the fields `card/[cardId].tsx` renders that `CardRow`/the board tab strip
+never do — each map to their own query key; card-level fields (title, status, assignees, dates)
+invalidate `cardQueryKey` the same way `useBoardRoom` invalidates `boardCardsQueryKey` for the
+identical events.
+
+**No `onRoomClosed` handler on `useCardRoom`, unlike `useBoardRoom`.** A revoked board tuple would
+only invalidate `cardQueryKey`, re-running the exact `card.get` query that ALREADY answers FORBIDDEN
+on its own and renders through this screen's existing error branch — a second handler doing the same
+invalidation `onReconnect` already does on this hook would be a distinction with no different
+outcome.
+
+Verified: typecheck clean, lint clean (the one pre-existing `push-notifications.ts` warning), all
+238 tests pass (233 existing plus 5 new for the reference-counting behavior in `socket.test.ts`),
+guardrail self-test clean, prettier clean, encoding check clean, and a real
+`expo export --platform android` bundles cleanly. Not yet confirmed against a real device with both
+screens actually open at once — that specific interleaving (open a board, push into a card, back out)
+is the one thing only the project owner's own hardware can settle.

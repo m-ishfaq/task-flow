@@ -34,6 +34,7 @@ import {
 import { Avatar } from '../../../src/lib/avatar.js';
 import { DatePickerField } from '../../../src/lib/date-picker-field.js';
 import { dateToIsoInstant } from '../../../src/lib/date-picker.js';
+import { useCardRoom } from '../../../src/lib/use-board-room.js';
 import { useUpdateCard } from '../../../src/lib/use-update-card.js';
 import { useMembers, type Member } from '../../../src/lib/use-members.js';
 import { pickAttachment } from '../../../src/lib/pick-attachment.js';
@@ -176,10 +177,17 @@ export default function CardDetail() {
 }
 
 function CardDetailContent({ cardId }: { cardId: CardId }) {
+  const orgId = useSession((state) => state.orgId);
   const card = useQuery({
     queryKey: cardQueryKey(cardId),
     queryFn: async () => wire(await apiClient.work.cards.get.query({ cardId })),
   });
+  // `boardId` is only known once `card.data` has loaded — `useCardRoom`
+  // itself does not join until it is. See that hook's own header on why
+  // this is safe now (reference-counted board rooms) where it was not
+  // before: this screen can be open at the same time as `board/[boardId]
+  // .tsx`, unpopped underneath it in the navigator stack.
+  useCardRoom(orgId, card.data?.boardId ?? null, cardId);
 
   const [saveError, setSaveError] = useState<unknown>(null);
   const update = useUpdateCard(cardId, (_title, error) => {

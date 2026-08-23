@@ -201,6 +201,70 @@ describe('rejoining rooms after a reconnect', () => {
   });
 });
 
+describe('two callers wanting the same board room open at once', () => {
+  it('emits board:join only once for the second caller — not a fresh spend of the join rate limit', async () => {
+    const socket = createMobileSocket(fakeDeps());
+    await socket.joinBoardRoom(ORG, BOARD_A);
+    await socket.joinBoardRoom(ORG, BOARD_A);
+
+    expect(joinEmits()).toHaveLength(1);
+  });
+
+  it('hands the second caller the same grant the first one got', async () => {
+    const socket = createMobileSocket(fakeDeps());
+    const first = await socket.joinBoardRoom(ORG, BOARD_A);
+    const second = await socket.joinBoardRoom(ORG, BOARD_A);
+
+    expect(second).toBe(first);
+  });
+
+  it("does not sever the first caller's room when the second caller leaves", async () => {
+    const socket = createMobileSocket(fakeDeps());
+    await socket.joinBoardRoom(ORG, BOARD_A);
+    await socket.joinBoardRoom(ORG, BOARD_A);
+
+    // The second caller (say, a card pushed on top of the board screen)
+    // unmounts first — its own leave must not evict the board screen
+    // underneath, which is still mounted and still wants the room.
+    socket.leaveBoardRoom(BOARD_A);
+    expect(emits.filter((entry) => entry.event === 'board:leave')).toHaveLength(0);
+
+    const before = joinEmits().length;
+    fireReconnect();
+    expect(
+      joinEmits()
+        .slice(before)
+        .map((entry) => entry.payload),
+    ).toEqual([{ orgId: ORG, boardId: BOARD_A }]);
+  });
+
+  it('only leaves board:leave once the LAST caller lets go', async () => {
+    const socket = createMobileSocket(fakeDeps());
+    await socket.joinBoardRoom(ORG, BOARD_A);
+    await socket.joinBoardRoom(ORG, BOARD_A);
+
+    socket.leaveBoardRoom(BOARD_A);
+    socket.leaveBoardRoom(BOARD_A);
+
+    expect(emits.filter((entry) => entry.event === 'board:leave')).toHaveLength(1);
+
+    const before = joinEmits().length;
+    fireReconnect();
+    expect(joinEmits().slice(before)).toHaveLength(0);
+  });
+
+  it('a third leave beyond the number of joins is a harmless no-op', async () => {
+    const socket = createMobileSocket(fakeDeps());
+    await socket.joinBoardRoom(ORG, BOARD_A);
+
+    socket.leaveBoardRoom(BOARD_A);
+    expect(() => {
+      socket.leaveBoardRoom(BOARD_A);
+    }).not.toThrow();
+    expect(emits.filter((entry) => entry.event === 'board:leave')).toHaveLength(1);
+  });
+});
+
 describe('tearing the connection down', () => {
   it('forgets tracked rooms, so the next sign-in does not inherit them', async () => {
     const socket = createMobileSocket(fakeDeps());

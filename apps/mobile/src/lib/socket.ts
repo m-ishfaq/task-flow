@@ -127,8 +127,25 @@ export interface SocketDeps {
 }
 
 export interface MobileSocket {
-  /** Joins `board:{boardId}`'s room. Returns whether the join was granted. */
+  /**
+   * Joins `board:{boardId}`'s room. Returns whether the join was granted.
+   *
+   * Reference-counted per `boardId`, not per caller: `use-board-room.ts`'s
+   * own header names the bug this exists to prevent — two independent
+   * callers wanting the SAME board room open at once (a board screen and a
+   * card pushed on top of it, which stays mounted underneath in the
+   * native-stack navigator rather than unmounting) must not let the second
+   * one's own `leaveBoardRoom` sever the first's still-open membership. A
+   * SECOND `joinBoardRoom` call for a board already joined reuses the FIRST
+   * call's own in-flight/resolved grant rather than emitting a second
+   * `board:join` — the gateway's `joinsPerSocket` limiter
+   * (`REALTIME_MAX_JOINS_PER_MINUTE`) is a real, finite budget per SOCKET,
+   * and re-spending it on a room this connection is already in would only
+   * bring a genuinely new join closer to being refused.
+   */
   joinBoardRoom(orgId: string, boardId: BoardId): Promise<boolean>;
+  /** The other half of the same reference count — only the LAST caller's
+   *  `leaveBoardRoom` for a given `boardId` actually emits `board:leave`. */
   leaveBoardRoom(boardId: BoardId): void;
   /** Runs `handler` after every RECONNECT, never the first connection. */
   onReconnect(handler: () => void): () => void;
@@ -152,9 +169,21 @@ export function createMobileSocket(deps: SocketDeps): MobileSocket {
   let socket: GatewaySocket | undefined;
   let reauthTimer: ReturnType<typeof setTimeout> | undefined;
 
-  /** Boards this app currently wants joined — see apps/web's `joinedBoards`
-   *  for the full reasoning; ported verbatim. */
-  const joinedBoards = new Map<BoardId, string>();
+  /**
+   * Boards this app currently wants joined — see apps/web's `joinedBoards`
+   * for the single-caller version this generalizes from. `refCount` is the
+   * addition web has no reason to need (its own `useBoardRoom` is the only
+   * caller a board ever has): it is how many live callers on THIS app want
+   * `boardId` open right now, and `leaveBoardRoom`/`joinBoardRoom` above
+   * decide whether to actually touch the network by reading it. `granted`
+   * is the ack-resolved `Promise<boolean>` from whichever call actually
+   * reached the server — every additional caller on an already-joined board
+   * gets that SAME promise back, not a fresh emit.
+   */
+  const joinedBoards = new Map<
+    BoardId,
+    { orgId: string; refCount: number; granted: Promise<boolean> }
+  >();
   const reconnectListeners = new Set<() => void>();
 
   function scheduleReauth(reauthLeadSeconds: number): void {
@@ -197,7 +226,10 @@ export function createMobileSocket(deps: SocketDeps): MobileSocket {
     });
 
     created.io.on('reconnect', () => {
-      for (const [boardId, orgId] of joinedBoards) {
+      // Once per BOARD, never once per caller — `joinedBoards` is already
+      // keyed that way, so a board two callers both want open still only
+      // spends one join here, same as it did the first time.
+      for (const [boardId, { orgId }] of joinedBoards) {
         created.emit('board:join', { orgId, boardId }, () => {
           /* Best-effort — see apps/web's identical handler for why there is
              no further error path here. */
@@ -219,19 +251,42 @@ export function createMobileSocket(deps: SocketDeps): MobileSocket {
     const active = ensureSocket();
     if (!active.connected) active.connect();
 
-    // Recorded BEFORE the emit, regardless of the ack — see apps/web's
-    // `joinBoardRoom` for why recording it inside the ack instead loses
-    // exactly the join that was in flight when a connection drops.
-    joinedBoards.set(boardId, orgId);
+    // Already joined (by an earlier caller, or by this same one) — bump the
+    // refcount and hand back the SAME grant rather than spending another
+    // slot in the gateway's per-socket join rate limit on a room this
+    // connection is already in. See this function's own doc comment on
+    // `MobileSocket` for why that budget is worth protecting.
+    const existing = joinedBoards.get(boardId);
+    if (existing !== undefined) {
+      existing.refCount += 1;
+      return existing.granted;
+    }
 
-    return new Promise((resolve) => {
+    const granted = new Promise<boolean>((resolve) => {
       active.emit('board:join', { orgId, boardId }, (result) => {
         resolve(result.ok);
       });
     });
+
+    // Recorded BEFORE the ack resolves, regardless of what it answers — see
+    // apps/web's `joinBoardRoom` for why recording it inside the ack instead
+    // loses exactly the join that was in flight when a connection drops.
+    joinedBoards.set(boardId, { orgId, refCount: 1, granted });
+
+    return granted;
   }
 
   function leaveBoardRoom(boardId: BoardId): void {
+    const existing = joinedBoards.get(boardId);
+    if (existing === undefined) return;
+
+    // Another caller still wants this board open — leave the room, and the
+    // network state behind it, exactly as they are.
+    if (existing.refCount > 1) {
+      existing.refCount -= 1;
+      return;
+    }
+
     joinedBoards.delete(boardId);
     socket?.emit('board:leave', { boardId });
   }
