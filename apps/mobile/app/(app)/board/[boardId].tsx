@@ -3,7 +3,9 @@ import { useLocalSearchParams, router } from 'expo-router';
 import {
   ActivityIndicator,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -97,6 +99,14 @@ import {
  * deliberately does not also call it). A card someone else moves, edits, or
  * comments on now appears here live, without leaving and reopening the
  * board.
+ *
+ * **"Add a list" and "List options" are now wrapped in `KeyboardAvoidingView`**
+ * — both open a `TextInput` (the first `autoFocus`ed) inside a bottom-anchored
+ * sheet with nothing shrinking the screen when the keyboard rose, the same
+ * "composer behind the keyboard" shape this app has now hit four times (see
+ * `telephony-contact-picker.tsx`'s own header, found from the same live
+ * report). Fixed identically: `KeyboardAvoidingView` (`'padding'` on iOS,
+ * `'height'` on Android) around each modal's backdrop.
  */
 export default function BoardScreen() {
   const params = useLocalSearchParams<{ boardId: string }>();
@@ -434,48 +444,53 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
           setAddingList(false);
         }}
       >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => {
-            setAddingList(false);
-          }}
+        <KeyboardAvoidingView
+          style={styles.avoider}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          <Pressable style={styles.modalCard} onPress={() => undefined}>
-            <Text style={styles.modalTitle}>Add a list</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="e.g. In review"
-              placeholderTextColor={colors.inkFaint.hex}
-              value={newListName}
-              onChangeText={setNewListName}
-              autoFocus
-            />
-            {createList.isError && (
-              <Text style={styles.modalError} accessibilityRole="alert">
-                {apiErrorOf(createList.error)?.error.message ?? 'The list was not created.'}
-              </Text>
-            )}
-            <View style={styles.modalActions}>
-              <Pressable
-                style={styles.modalPrimaryButton}
-                disabled={createList.isPending || newListName.trim().length === 0}
-                onPress={() => {
-                  createList.mutate(newListName.trim());
-                }}
-              >
-                <Text style={styles.modalPrimaryButtonText}>Add list</Text>
-              </Pressable>
-              <Pressable
-                style={styles.modalSecondaryButton}
-                onPress={() => {
-                  setAddingList(false);
-                }}
-              >
-                <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
-              </Pressable>
-            </View>
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={() => {
+              setAddingList(false);
+            }}
+          >
+            <Pressable style={styles.modalCard} onPress={() => undefined}>
+              <Text style={styles.modalTitle}>Add a list</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="e.g. In review"
+                placeholderTextColor={colors.inkFaint.hex}
+                value={newListName}
+                onChangeText={setNewListName}
+                autoFocus
+              />
+              {createList.isError && (
+                <Text style={styles.modalError} accessibilityRole="alert">
+                  {apiErrorOf(createList.error)?.error.message ?? 'The list was not created.'}
+                </Text>
+              )}
+              <View style={styles.modalActions}>
+                <Pressable
+                  style={styles.modalPrimaryButton}
+                  disabled={createList.isPending || newListName.trim().length === 0}
+                  onPress={() => {
+                    createList.mutate(newListName.trim());
+                  }}
+                >
+                  <Text style={styles.modalPrimaryButtonText}>Add list</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.modalSecondaryButton}
+                  onPress={() => {
+                    setAddingList(false);
+                  }}
+                >
+                  <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
+                </Pressable>
+              </View>
+            </Pressable>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal
@@ -486,72 +501,77 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
           setListOptionsFor(null);
         }}
       >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => {
-            setListOptionsFor(null);
-          }}
+        <KeyboardAvoidingView
+          style={styles.avoider}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          <Pressable style={styles.modalCard} onPress={() => undefined}>
-            <Text style={styles.modalTitle}>List options</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="List name"
-              placeholderTextColor={colors.inkFaint.hex}
-              value={optionsName}
-              onChangeText={setOptionsName}
-            />
-            <TextInput
-              style={styles.modalInput}
-              placeholder="WIP limit (optional, advisory only)"
-              placeholderTextColor={colors.inkFaint.hex}
-              value={optionsWip}
-              onChangeText={setOptionsWip}
-              keyboardType="number-pad"
-            />
-            {optionsError !== null && (
-              <Text style={styles.modalError} accessibilityRole="alert">
-                {apiErrorOf(optionsError)?.error.message ?? 'The list was not updated.'}
-              </Text>
-            )}
-            <View style={styles.modalActions}>
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={() => {
+              setListOptionsFor(null);
+            }}
+          >
+            <Pressable style={styles.modalCard} onPress={() => undefined}>
+              <Text style={styles.modalTitle}>List options</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="List name"
+                placeholderTextColor={colors.inkFaint.hex}
+                value={optionsName}
+                onChangeText={setOptionsName}
+              />
+              <TextInput
+                style={styles.modalInput}
+                placeholder="WIP limit (optional, advisory only)"
+                placeholderTextColor={colors.inkFaint.hex}
+                value={optionsWip}
+                onChangeText={setOptionsWip}
+                keyboardType="number-pad"
+              />
+              {optionsError !== null && (
+                <Text style={styles.modalError} accessibilityRole="alert">
+                  {apiErrorOf(optionsError)?.error.message ?? 'The list was not updated.'}
+                </Text>
+              )}
+              <View style={styles.modalActions}>
+                <Pressable
+                  style={styles.modalPrimaryButton}
+                  disabled={updateList.isPending || optionsName.trim().length === 0}
+                  onPress={() => {
+                    if (listOptionsFor === null) return;
+                    const parsed = Number.parseInt(optionsWip, 10);
+                    updateList.mutate({
+                      listId: listOptionsFor.listId,
+                      name: optionsName.trim(),
+                      // An empty box means "no limit" (null), not zero — zero would
+                      // render the column as permanently over its limit.
+                      wipLimit: optionsWip.trim() === '' || Number.isNaN(parsed) ? null : parsed,
+                    });
+                  }}
+                >
+                  <Text style={styles.modalPrimaryButtonText}>Save</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.modalSecondaryButton}
+                  onPress={() => {
+                    setListOptionsFor(null);
+                  }}
+                >
+                  <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
+                </Pressable>
+              </View>
               <Pressable
-                style={styles.modalPrimaryButton}
-                disabled={updateList.isPending || optionsName.trim().length === 0}
+                style={styles.modalDangerRow}
+                disabled={archiveList.isPending}
                 onPress={() => {
-                  if (listOptionsFor === null) return;
-                  const parsed = Number.parseInt(optionsWip, 10);
-                  updateList.mutate({
-                    listId: listOptionsFor.listId,
-                    name: optionsName.trim(),
-                    // An empty box means "no limit" (null), not zero — zero would
-                    // render the column as permanently over its limit.
-                    wipLimit: optionsWip.trim() === '' || Number.isNaN(parsed) ? null : parsed,
-                  });
+                  if (listOptionsFor !== null) archiveList.mutate(listOptionsFor.listId);
                 }}
               >
-                <Text style={styles.modalPrimaryButtonText}>Save</Text>
+                <Text style={styles.modalDangerText}>Archive this list</Text>
               </Pressable>
-              <Pressable
-                style={styles.modalSecondaryButton}
-                onPress={() => {
-                  setListOptionsFor(null);
-                }}
-              >
-                <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
-              </Pressable>
-            </View>
-            <Pressable
-              style={styles.modalDangerRow}
-              disabled={archiveList.isPending}
-              onPress={() => {
-                if (listOptionsFor !== null) archiveList.mutate(listOptionsFor.listId);
-              }}
-            >
-              <Text style={styles.modalDangerText}>Archive this list</Text>
             </Pressable>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -655,7 +675,7 @@ const styles = StyleSheet.create({
   addListTab: {
     alignSelf: 'flex-start',
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
     borderStyle: 'dashed',
     borderRadius: 999,
     paddingHorizontal: 12,
@@ -721,6 +741,9 @@ const styles = StyleSheet.create({
     color: colors.danger.hex,
     paddingHorizontal: 24,
     paddingBottom: 8,
+  },
+  avoider: {
+    flex: 1,
   },
   modalBackdrop: {
     flex: 1,

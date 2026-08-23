@@ -4312,3 +4312,36 @@ guardrail self-test clean, prettier clean, encoding check clean, and a real
 route. Not yet confirmed against a real org on a real device — every picker here reads live data
 this app has never queried in quite this combination before (an org-wide rule pulling project-scoped
 vocabulary), and that is exactly the kind of thing a bundle export cannot prove.
+
+## The fourth occurrence of the composer-behind-the-keyboard bug — a real sweep this time
+
+**Reported live: the search box in the Calls tab's "Choose a person" picker looked broken — typing
+into it appeared to do nothing.** It was not the search logic; it was the same "composer hidden
+behind the keyboard" shape this file already has its own named section for, a third time. The
+picker's `Modal` is anchored to the bottom of the screen (`justifyContent: 'flex-end'`) with no
+`KeyboardAvoidingView` around it, so opening the keyboard rose up OVER the sheet instead of the sheet
+moving out of its way — the search results sitting below the input landed behind the keyboard,
+invisible, which reads exactly like "nothing happens when I type" even though the filter itself was
+working the whole time. `telephony-contact-picker.tsx` gained the identical fix `step-up-sheet.tsx`
+and `channel/[channelId].tsx` already carry: `KeyboardAvoidingView` (`'padding'` on iOS, `'height'`
+on Android) wrapping the modal's backdrop.
+
+**This time, rather than fixing only the reported instance, every `Modal` in the app containing a
+`TextInput` was checked.** Two more were found broken the identical way and had never been reported:
+`board/[boardId].tsx`'s "Add a list" sheet (whose name field is `autoFocus`ed, so the keyboard opens
+the INSTANT the sheet does — this one was guaranteed to break on first use) and its "List options"
+sheet (name + WIP limit). Both fixed identically. Checked and confirmed NOT affected, because their
+modals hold no `TextInput` at all: `person/[userId].tsx`'s manager picker, `org-settings.tsx`'s role
+and transfer-ownership pickers, `sprints/[projectId].tsx`'s move/complete pickers, and
+`automation-editor.tsx`'s own `SelectModal`.
+
+Four real occurrences of one root cause is a pattern, not four coincidences: any new `Modal` that
+opens a `TextInput` needs `KeyboardAvoidingView` from the moment it is written, not discovered by a
+report after the fact. Nothing currently enforces this at review or lint time — it is a real gap this
+file can only keep naming, not close by itself.
+
+Verified: typecheck clean, lint clean, all 291 tests pass unchanged (UI/layout only, no logic
+touched), guardrail self-test clean, prettier clean, encoding check clean, and a real
+`expo export --platform android` bundles cleanly. Not yet confirmed on a real device — exactly the
+kind of thing a bundle export cannot prove, which is how three of these four shipped in the first
+place.

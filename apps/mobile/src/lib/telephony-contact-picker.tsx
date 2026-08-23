@@ -1,6 +1,16 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from './app-session.js';
@@ -28,6 +38,22 @@ import { PHONE_CONTACTS_QUERY_KEY, type PhoneContact } from './telephony.js';
  * once and not retried below) and the picker button simply does not
  * render — the field still works, since dialling a typed number never
  * needed the directory at all.
+ *
+ * ## The search box, wrapped in `KeyboardAvoidingView` — a bug reported
+ * live, and the fourth time this exact class has hit this app
+ *
+ * The modal used to open the search `TextInput` with nothing shrinking the
+ * screen when the keyboard came up: the sheet is anchored to the bottom
+ * (`justifyContent: 'flex-end'`), so the keyboard rose up OVER it rather
+ * than the sheet moving out of its way, and the search results below the
+ * input landed behind the keyboard — typing appeared to do nothing, since
+ * the list a keystroke was supposed to filter was no longer on screen to
+ * show it. `step-up-sheet.tsx`'s own header already names three earlier
+ * occurrences of this identical shape (a `TextInput` inside an unguarded
+ * bottom sheet); this file was simply missed in that sweep. Fixed
+ * identically: `KeyboardAvoidingView` (`'padding'` on iOS, `'height'` on
+ * Android) now wraps the backdrop, matching `step-up-sheet.tsx`'s own
+ * `avoider`/`backdrop`/`card` structure exactly.
  */
 
 const CONTACT_PAGE_LIMIT = 100;
@@ -147,60 +173,65 @@ export function TelephonyContactPicker({
           setPickerOpen(false);
         }}
       >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => {
-            setPickerOpen(false);
-          }}
+        <KeyboardAvoidingView
+          style={styles.avoider}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          <Pressable style={styles.modalCard} onPress={() => undefined}>
-            <Text style={styles.modalTitle}>Choose a person</Text>
-            {people.length > 8 && (
-              <TextInput
-                style={styles.modalSearchInput}
-                value={query}
-                onChangeText={setQuery}
-                placeholder="Search people…"
-                placeholderTextColor={colors.inkFaint.hex}
-                autoCapitalize="none"
-              />
-            )}
-            {filtered.length === 0 ? (
-              <Text style={styles.emptyHint}>No matches.</Text>
-            ) : (
-              <ScrollableList>
-                {filtered.map((person) => (
-                  <Pressable
-                    key={person.userId}
-                    style={styles.modalRow}
-                    onPress={() => {
-                      onChange(person.phone);
-                      setPickerOpen(false);
-                    }}
-                  >
-                    <Avatar label={person.label} size={20} />
-                    <View style={styles.modalRowText}>
-                      <Text style={styles.modalRowName} numberOfLines={1}>
-                        {person.label}
-                      </Text>
-                      <Text style={styles.modalRowPhone} numberOfLines={1}>
-                        {person.phone}
-                      </Text>
-                    </View>
-                  </Pressable>
-                ))}
-              </ScrollableList>
-            )}
-            <Pressable
-              style={styles.modalCancel}
-              onPress={() => {
-                setPickerOpen(false);
-              }}
-            >
-              <Text style={styles.modalCancelText}>Cancel</Text>
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={() => {
+              setPickerOpen(false);
+            }}
+          >
+            <Pressable style={styles.modalCard} onPress={() => undefined}>
+              <Text style={styles.modalTitle}>Choose a person</Text>
+              {people.length > 8 && (
+                <TextInput
+                  style={styles.modalSearchInput}
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder="Search people…"
+                  placeholderTextColor={colors.inkFaint.hex}
+                  autoCapitalize="none"
+                />
+              )}
+              {filtered.length === 0 ? (
+                <Text style={styles.emptyHint}>No matches.</Text>
+              ) : (
+                <ScrollableList>
+                  {filtered.map((person) => (
+                    <Pressable
+                      key={person.userId}
+                      style={styles.modalRow}
+                      onPress={() => {
+                        onChange(person.phone);
+                        setPickerOpen(false);
+                      }}
+                    >
+                      <Avatar label={person.label} size={20} />
+                      <View style={styles.modalRowText}>
+                        <Text style={styles.modalRowName} numberOfLines={1}>
+                          {person.label}
+                        </Text>
+                        <Text style={styles.modalRowPhone} numberOfLines={1}>
+                          {person.phone}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </ScrollableList>
+              )}
+              <Pressable
+                style={styles.modalCancel}
+                onPress={() => {
+                  setPickerOpen(false);
+                }}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </Pressable>
             </Pressable>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -273,6 +304,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.inkMuted.hex,
     flexShrink: 1,
+  },
+  avoider: {
+    flex: 1,
   },
   modalBackdrop: {
     flex: 1,
