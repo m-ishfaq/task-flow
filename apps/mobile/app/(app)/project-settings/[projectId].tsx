@@ -879,9 +879,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   screenTitle: {
-    fontSize: 22,
-    fontWeight: '600',
+    fontSize: 24,
+    fontWeight: '700',
     color: colors.ink.hex,
+    letterSpacing: -0.3,
   },
   screenKey: {
     fontSize: 12,
@@ -892,15 +893,16 @@ const styles = StyleSheet.create({
   section: {
     gap: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.line.hex,
+    borderTopColor: colors.line.hex + '60',
     paddingTop: 14,
     paddingBottom: 4,
   },
   sectionTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: colors.inkMuted.hex,
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   sectionHint: {
     fontSize: 12,
@@ -917,10 +919,10 @@ const styles = StyleSheet.create({
   },
   formInput: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
-    borderRadius: radiusCard,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard + 2,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     fontSize: 14,
     color: colors.ink.hex,
   },
@@ -953,10 +955,11 @@ const styles = StyleSheet.create({
   },
   dangerButton: {
     borderWidth: 1,
-    borderColor: colors.danger.hex,
+    borderColor: colors.danger.hex + '40',
     borderRadius: radiusCard,
     paddingVertical: 8,
     paddingHorizontal: 14,
+    backgroundColor: colors.danger.hex + '08',
   },
   dangerButtonText: {
     color: colors.danger.hex,
@@ -967,7 +970,9 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: colors.surfaceRaised.hex,
     borderRadius: radiusCard,
-    padding: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.line.hex + '60',
   },
   formActions: {
     flexDirection: 'row',
@@ -1001,7 +1006,7 @@ const styles = StyleSheet.create({
   },
   roleChip: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + "80",
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 5,
@@ -1028,7 +1033,7 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + "80",
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surface.hex,

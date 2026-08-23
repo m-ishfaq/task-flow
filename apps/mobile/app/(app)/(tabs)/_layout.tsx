@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import { colors } from '@taskflow/tokens';
@@ -50,7 +51,22 @@ export default function TabsLayout() {
         tabBarInactiveTintColor: colors.inkMuted.hex,
         tabBarStyle: {
           backgroundColor: colors.surfaceRaised.hex,
-          borderTopColor: colors.line.hex,
+          borderTopWidth: 0,
+          ...Platform.select({
+            ios: {
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: -2 },
+              shadowOpacity: 0.15,
+              shadowRadius: 8,
+            },
+            android: {
+              elevation: 8,
+            },
+          }),
+        },
+        tabBarLabelStyle: {
+          fontSize: 10,
+          fontWeight: '600',
         },
       }}
     >

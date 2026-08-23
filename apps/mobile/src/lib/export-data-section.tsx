@@ -67,10 +67,11 @@ const styles = StyleSheet.create({
     paddingTop: 14,
   },
   sectionTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: colors.inkMuted.hex,
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   sectionHint: {
     fontSize: 12,
@@ -82,8 +83,8 @@ const styles = StyleSheet.create({
   },
   exportButton: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
-    borderRadius: radiusCard,
+    borderColor: colors.line.hex + "80",
+    borderRadius: radiusCard + 2,
     paddingVertical: 10,
     alignItems: 'center',
   },

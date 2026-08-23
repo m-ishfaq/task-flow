@@ -124,10 +124,11 @@ const styles = StyleSheet.create({
     paddingTop: 14,
   },
   sectionTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: colors.inkMuted.hex,
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   sectionHint: {
     fontSize: 12,

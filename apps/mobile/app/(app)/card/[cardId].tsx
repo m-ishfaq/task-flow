@@ -2142,9 +2142,9 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   commentBubble: {
-    backgroundColor: colors.surfaceHover.hex,
+    backgroundColor: colors.surfaceHover.hex + '60',
     borderRadius: radiusCard,
-    padding: 10,
+    padding: 12,
   },
   commentMeta: {
     flexDirection: 'row',
@@ -2175,14 +2175,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingRight: 8,
     borderLeftWidth: 2,
-    // Accent, not `line` — a reply's left border was the one visual cue
-    // separating it from a top-level comment, and at 1px in `line`'s low-
-    // contrast gray it read as almost nothing next to several threads of
-    // replies in a row (2026-08-22 device feedback). `surfaceSunken`
-    // below is what actually carries the "tucked inside its parent" read;
-    // the border is now just reinforcement, not the whole signal.
-    borderLeftColor: colors.accent.hex,
-    backgroundColor: colors.surfaceSunken.hex,
+    borderLeftColor: colors.accent.hex + '60',
+    backgroundColor: colors.surfaceSunken.hex + '80',
     borderRadius: radiusCard,
   },
   commentActions: {
@@ -2200,9 +2194,9 @@ const styles = StyleSheet.create({
   editInput: {
     borderWidth: 1,
     borderColor: colors.accent.hex,
-    borderRadius: radiusCard,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderRadius: radiusCard + 2,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontSize: 14,
     color: colors.ink.hex,
     backgroundColor: colors.surfaceSunken.hex,
@@ -2237,8 +2231,8 @@ const styles = StyleSheet.create({
   composerInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: colors.line.hex,
-    borderRadius: radiusCard,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard + 2,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
@@ -2343,14 +2337,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     borderRadius: 999,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
   },
   priorityChipActive: {
-    borderColor: colors.accent.hex,
-    backgroundColor: colors.surfaceHover.hex,
+    borderColor: colors.accent.hex + '60',
+    backgroundColor: colors.accent.hex + '10',
   },
   priorityChipText: {
     fontSize: 13,
@@ -2367,18 +2361,18 @@ const styles = StyleSheet.create({
   // "we cannot distinguish what is what" (2026-08-22 device feedback).
   section: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     backgroundColor: colors.surfaceRaised.hex,
-    padding: 12,
+    padding: 14,
     gap: 8,
   },
   sectionLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: colors.inkMuted.hex,
+    color: colors.inkFaint.hex,
     textTransform: 'uppercase',
-    letterSpacing: 0.4,
+    letterSpacing: 0.5,
   },
   badgeRow: {
     flexDirection: 'row',
@@ -2390,13 +2384,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    borderRadius: 999,
+    borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    backgroundColor: colors.surfaceHover.hex,
+    backgroundColor: colors.surfaceHover.hex + '80',
   },
   badgeOverdue: {
-    backgroundColor: colors.danger.hex + '33',
+    backgroundColor: colors.danger.hex + '20',
+    borderWidth: 1,
+    borderColor: colors.danger.hex + '30',
   },
   swatch: {
     width: 6,
@@ -2404,7 +2400,8 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   badgeText: {
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: '500',
     color: colors.inkMuted.hex,
   },
   badgeOverdueText: {
@@ -2464,7 +2461,7 @@ const styles = StyleSheet.create({
     height: 18,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + "80",
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surfaceSunken.hex,
@@ -2552,7 +2549,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + "80",
   },
   addChipButtonText: {
     fontSize: 14,
@@ -2582,7 +2579,7 @@ const styles = StyleSheet.create({
   addCardInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + "80",
     borderRadius: radiusCard,
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -2622,7 +2619,7 @@ const styles = StyleSheet.create({
   },
   modalInput: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + "80",
     borderRadius: radiusCard,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -2701,7 +2698,7 @@ const styles = StyleSheet.create({
   addFieldForm: {
     gap: 8,
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + "80",
     borderRadius: radiusCard,
     padding: 10,
   },

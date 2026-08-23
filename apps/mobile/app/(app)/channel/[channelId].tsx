@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
   ActivityIndicator,
@@ -396,6 +396,49 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   const firstUnreadAuthorId =
     topLevel.find((message) => message.messageId === firstUnreadId)?.authorId ?? null;
 
+  /* Auto-scroll: on first load, scroll to the first unread message (if any)
+     or the bottom of the list (if all read). Re-runs when timeline changes
+     but only if the user has not manually scrolled up (preserving their
+     reading position). */
+  const flatListRef = useRef<FlatList<TimelineItem>>(null);
+  const hasScrolledToTarget = useRef(false);
+  const scrollToTarget = useCallback(() => {
+    if (hasScrolledToTarget.current) return;
+    const list = flatListRef.current;
+    if (list === null) return;
+
+    if (firstUnreadId !== null && firstUnreadAuthorId !== userId) {
+      // Scroll to the first unread message
+      const index = timeline.findIndex(
+        (item) =>
+          item.kind === 'messages' &&
+          item.group.messages.some((message) => message.messageId === firstUnreadId),
+      );
+      if (index >= 0) {
+        hasScrolledToTarget.current = true;
+        // Small delay to ensure layout is measured
+        setTimeout(() => {
+          list.scrollToIndex({ index, viewPosition: 0, animated: false });
+        }, 100);
+        return;
+      }
+    }
+
+    // No unread — scroll to the bottom (last item)
+    if (timeline.length > 0) {
+      hasScrolledToTarget.current = true;
+      setTimeout(() => {
+        list.scrollToEnd({ animated: false });
+      }, 100);
+    }
+  }, [timeline, firstUnreadId, firstUnreadAuthorId, userId]);
+
+  useEffect(() => {
+    if (messages.isSuccess && timeline.length > 0) {
+      scrollToTarget();
+    }
+  }, [messages.isSuccess, timeline.length, scrollToTarget]);
+
   const reactions = useQuery({
     queryKey: reactionsQueryKey(channelId),
     queryFn: async () => {
@@ -699,13 +742,23 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
               <Text style={styles.headerSubtitle}>Details</Text>
             )}
           </Pressable>
-          {orgId !== null && <CallButton orgId={orgId} channelId={channelId} />}
+          {/* Hide the call button on public channels — calls are only supported
+              on DMs and private channels (server refuses with a clear error, but
+              showing the button at all is confusing UX). */}
+          {orgId !== null && channel.data?.type !== 'public' && (
+            <CallButton orgId={orgId} channelId={channelId} />
+          )}
         </View>
       </View>
 
       <FlatList<TimelineItem>
+        ref={flatListRef}
         data={timeline}
         keyExtractor={(item) => item.key}
+        onScrollToIndexFailed={() => {
+          // Fallback: scroll to end if index-based scroll fails
+          flatListRef.current?.scrollToEnd({ animated: false });
+        }}
         renderItem={({ item }) =>
           item.kind === 'call' ? (
             <CallTimelineCard entry={item.entry} viewerId={userId} personOf={personOf} />
@@ -1350,9 +1403,10 @@ const styles = StyleSheet.create({
     gap: 1,
   },
   headerTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     color: colors.ink.hex,
+    letterSpacing: -0.2,
   },
   headerSubtitle: {
     fontSize: 12,
@@ -1404,15 +1458,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: 999,
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 3,
     backgroundColor: colors.surfaceRaised.hex,
   },
   reactionPillMine: {
-    borderColor: colors.accent.hex,
-    backgroundColor: colors.accent.hex + '22',
+    borderColor: colors.accent.hex + '60',
+    backgroundColor: colors.accent.hex + '15',
   },
   reactionPillText: {
     fontSize: 12,
@@ -1429,9 +1483,9 @@ const styles = StyleSheet.create({
   editInput: {
     borderWidth: 1,
     borderColor: colors.accent.hex,
-    borderRadius: radiusCard,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderRadius: radiusCard + 2,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontSize: 14,
     color: colors.ink.hex,
     backgroundColor: colors.surfaceSunken.hex,
@@ -1531,7 +1585,7 @@ const styles = StyleSheet.create({
   slashMenu: {
     marginBottom: 4,
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     backgroundColor: colors.surfaceRaised.hex,
     overflow: 'hidden',
@@ -1559,8 +1613,8 @@ const styles = StyleSheet.create({
   },
   reactionSheetCard: {
     backgroundColor: colors.surfaceRaised.hex,
-    borderTopLeftRadius: radiusCard,
-    borderTopRightRadius: radiusCard,
+    borderTopLeftRadius: radiusCard + 6,
+    borderTopRightRadius: radiusCard + 6,
     paddingTop: 20,
   },
   reactionSheet: {

@@ -216,7 +216,7 @@ export default function BillingScreen() {
 
             {(data.billingStatus === 'active' || data.billingStatus === 'past_due') && (
               <Pressable
-                style={styles.secondaryButton}
+                style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
                 disabled={opening}
                 onPress={() => {
                   portal.mutate();
@@ -234,7 +234,7 @@ export default function BillingScreen() {
               !data.cancelAtPeriodEnd &&
               data.deadline?.kind === 'renews' && (
                 <Pressable
-                  style={styles.secondaryButton}
+                  style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
                   disabled={cancel.isPending}
                   onPress={() => {
                     cancel.mutate();
@@ -248,7 +248,7 @@ export default function BillingScreen() {
 
             {(data.cancelAtPeriodEnd || data.billingStatus === 'canceled') && (
               <Pressable
-                style={styles.saveButton}
+                style={({ pressed }) => [styles.saveButton, pressed && styles.saveButtonPressed]}
                 disabled={resume.isPending}
                 onPress={() => {
                   resume.mutate();
@@ -438,7 +438,10 @@ export default function BillingScreen() {
                     )}
                   </View>
                   <Pressable
-                    style={current ? styles.secondaryButton : styles.saveButton}
+                    style={({ pressed }) => [
+                      current ? styles.secondaryButton : styles.saveButton,
+                      pressed && (current ? styles.buttonPressed : styles.saveButtonPressed),
+                    ]}
                     disabled={
                       current ||
                       checkout.isPending ||
@@ -514,9 +517,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   screenTitle: {
-    fontSize: 22,
-    fontWeight: '600',
+    fontSize: 24,
+    fontWeight: '700',
     color: colors.ink.hex,
+    letterSpacing: -0.3,
     marginBottom: 4,
   },
   sectionHint: {
@@ -530,15 +534,17 @@ const styles = StyleSheet.create({
   card: {
     gap: 8,
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     backgroundColor: colors.surfaceRaised.hex,
-    padding: 14,
+    padding: 16,
   },
   cardTitle: {
     fontSize: 12,
     fontWeight: '700',
-    color: colors.ink.hex,
+    color: colors.inkMuted.hex,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   statusRow: {
     flexDirection: 'row',
@@ -562,7 +568,7 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     backgroundColor: colors.accent.hex,
-    borderRadius: radiusCard,
+    borderRadius: radiusCard + 2,
     paddingVertical: 10,
     alignItems: 'center',
     alignSelf: 'flex-start',
@@ -575,9 +581,9 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
-    borderRadius: radiusCard,
-    paddingVertical: 9,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard + 2,
+    paddingVertical: 10,
     paddingHorizontal: 16,
     alignItems: 'center',
     alignSelf: 'flex-start',
@@ -586,6 +592,12 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
     fontSize: 14,
     fontWeight: '600',
+  },
+  buttonPressed: {
+    opacity: 0.7,
+  },
+  saveButtonPressed: {
+    opacity: 0.8,
   },
   deadlineDanger: {
     fontSize: 12,
@@ -653,9 +665,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.line.hex,
+    borderTopColor: colors.line.hex + '60',
   },
   planInfo: {
     flex: 1,

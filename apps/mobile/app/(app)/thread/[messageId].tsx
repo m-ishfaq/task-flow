@@ -266,9 +266,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   headerTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     color: colors.ink.hex,
+    letterSpacing: -0.2,
   },
   listContainer: {
     flex: 1,
@@ -284,7 +285,7 @@ const styles = StyleSheet.create({
   rootRow: {
     paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.line.hex,
+    borderBottomColor: colors.line.hex + '60',
   },
   rowBody: {
     flex: 1,

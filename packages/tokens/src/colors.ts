@@ -45,17 +45,17 @@ export interface ColorToken {
  * Wave 2 work, not values this module can honestly claim to share today.
  */
 export const colors = {
-  surface: { oklch: { l: 17.5, c: 0.014, h: 262 }, hex: '#0d1117' },
-  surfaceRaised: { oklch: { l: 21, c: 0.016, h: 262 }, hex: '#141820' },
-  surfaceSunken: { oklch: { l: 13.5, c: 0.012, h: 262 }, hex: '#06080d' },
-  surfaceHover: { oklch: { l: 24, c: 0.016, h: 262 }, hex: '#1b1f27' },
+  surface: { oklch: { l: 16, c: 0.015, h: 262 }, hex: '#0a0d14' },
+  surfaceRaised: { oklch: { l: 20, c: 0.018, h: 262 }, hex: '#12161e' },
+  surfaceSunken: { oklch: { l: 12, c: 0.013, h: 262 }, hex: '#04060a' },
+  surfaceHover: { oklch: { l: 23, c: 0.018, h: 262 }, hex: '#181d26' },
 
   ink: { oklch: { l: 93, c: 0.008, h: 262 }, hex: '#e5e8ed' },
   inkMuted: { oklch: { l: 66, c: 0.015, h: 262 }, hex: '#8d929c' },
   inkFaint: { oklch: { l: 56, c: 0.014, h: 262 }, hex: '#70757d' },
 
-  line: { oklch: { l: 30, c: 0.012, h: 262 }, hex: '#2b2e34' },
-  lineStrong: { oklch: { l: 38, c: 0.014, h: 262 }, hex: '#3e434a' },
+  line: { oklch: { l: 28, c: 0.012, h: 262 }, hex: '#26292f' },
+  lineStrong: { oklch: { l: 35, c: 0.014, h: 262 }, hex: '#373b42' },
 
   accent: { oklch: { l: 55, c: 0.17, h: 285 }, hex: '#6b5dcf' },
   accentInk: { oklch: { l: 98, c: 0.01, h: 285 }, hex: '#f7f8ff' },

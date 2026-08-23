@@ -149,32 +149,36 @@ export default function Home() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     gap: 12,
     backgroundColor: colors.surface.hex,
   },
   header: {
-    gap: 2,
+    gap: 4,
+    paddingTop: 4,
   },
   title: {
-    fontSize: 22,
-    fontWeight: '600',
+    fontSize: 24,
+    fontWeight: '700',
     color: colors.ink.hex,
+    letterSpacing: -0.3,
   },
   subtitle: {
     fontSize: 13,
     color: colors.inkMuted.hex,
+    lineHeight: 18,
   },
   scopeRow: {
     flexDirection: 'row',
-    gap: 6,
+    gap: 8,
   },
   scopeChip: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    backgroundColor: colors.surfaceRaised.hex,
   },
   scopeChipActive: {
     backgroundColor: colors.accent.hex,
@@ -192,21 +196,23 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   list: {
-    gap: 8,
-    paddingBottom: 8,
+    gap: 10,
+    paddingBottom: 16,
   },
   sectionHeader: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: colors.inkFaint.hex,
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
     paddingTop: 12,
     paddingBottom: 6,
     backgroundColor: colors.surface.hex,
   },
   label: {
-    fontSize: 12,
+    fontSize: 13,
     color: colors.inkMuted.hex,
-    marginTop: 8,
+    marginTop: 12,
+    textAlign: 'center',
   },
 });
