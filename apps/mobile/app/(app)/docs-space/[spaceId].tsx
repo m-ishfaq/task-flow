@@ -43,6 +43,12 @@ import {
  * "no drag-and-drop" call: real, separate work if a space ever grows large
  * enough that collapsing sections becomes worth the added state.
  *
+ * A row tap now opens `docs-page/[pageId].tsx` — the live reader
+ * `use-doc-page.ts` exists for — rather than `PageOptionsModal` directly;
+ * a long press is what opens options now, the same `onPress`/`onLongPress`
+ * split `board/[boardId].tsx`'s own list-tab row already uses for the
+ * identical "one primary destination, one secondary action sheet" shape.
+ *
  * "Move" only ever appends a page to the END of its new parent's children
  * (`beforePageId`/`afterPageId` both null) — the identical "append only,
  * no reordering within a level" choice `board/[boardId].tsx`'s own card
@@ -183,6 +189,9 @@ export default function DocsSpaceScreen() {
               item.page.archivedAt !== null && styles.rowArchived,
             ]}
             onPress={() => {
+              router.push(`/docs-page/${item.page.pageId}`);
+            }}
+            onLongPress={() => {
               setOptionsFor(item.page);
               setOptionsTitle(item.page.title);
             }}

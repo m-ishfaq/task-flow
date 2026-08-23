@@ -80,8 +80,30 @@ const PINNED_SINGLETONS = new Set(['react', '@tanstack/react-query']);
 /** A real file inside this app, used only as the fixed resolution root below — never actually imported. */
 const APP_ROOT_MODULE = path.join(__dirname, 'package.json');
 
+/**
+ * `yjs` (added for `use-doc-page.ts`'s live Docs connection) pulls in
+ * `lib0`, whose own package `exports` map sends `lib0/webcrypto` through
+ * `dist/webcrypto.react-native.cjs` on this platform — a real, load-bearing
+ * choice `lib0` itself makes, not a Metro default — and that file
+ * unconditionally `require`s `isomorphic-webcrypto/src/react-native`, a
+ * package this app does not install (its own react-native path depends on
+ * the retired `@unimodules/*`/`expo-random` packages, incompatible with a
+ * modern Expo SDK — see `webcrypto-shim.ts`'s own header for the full
+ * account). `expo export --platform android` failed to bundle at all until
+ * this redirect existed; `resolver.extraNodeModules` cannot be the fix here
+ * for the identical reason the singleton pin above cannot use it — this is
+ * exactly one more bare specifier resolved through Metro's custom resolver,
+ * this time to a real file rather than to a different root.
+ */
+const WEBCRYPTO_SHIM_SPECIFIER = 'isomorphic-webcrypto/src/react-native';
+const WEBCRYPTO_SHIM_PATH = path.join(__dirname, 'src', 'lib', 'webcrypto-shim.ts');
+
 /** @type {import('metro-resolver').CustomResolver} */
 resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === WEBCRYPTO_SHIM_SPECIFIER) {
+    return { type: 'sourceFile', filePath: WEBCRYPTO_SHIM_PATH };
+  }
+
   const isRelative = moduleName.startsWith('./') || moduleName.startsWith('../');
 
   if (isRelative && moduleName.endsWith('.js')) {

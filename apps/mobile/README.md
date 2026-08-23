@@ -4406,3 +4406,114 @@ and a real `expo export --platform android` bundles cleanly with `/docs`, `/docs
 and `/people` all resolving. Not yet confirmed on a real device — the page tree's indentation at real
 depth and the org-switch card's tap target are both worth a real screen before calling this
 device-verified.
+
+## Docs gets a live reader — the content dependency the previous pass named, closed halfway
+
+The previous section's own "what does not ship, and why" named the whole reason this pass exists:
+there is no `pages.getContent` route, so reading a page's real body means being a genuine client of
+`apps/collab`'s live Yjs/Hocuspocus protocol — the same one `apps/web`'s editor speaks. This pass
+builds that connection and a read-only renderer on top of it. **It does not build the editor.**
+ProseMirror — what `apps/web`'s `DocsEditor` is built on — needs a DOM: `contenteditable`, DOM
+Selection/Range, `document.createElement`. React Native has none of that, by construction, not by
+this app's own choice. Writing from a phone needs a from-scratch rich-text input component with no
+ProseMirror underneath it at all, which is real, separate work — deliberately not attempted here.
+
+### `use-doc-page.ts` — one `HocuspocusProvider` per open page, the native counterpart of `use-collab-provider.ts`
+
+`docs-collab.ts` (pure — names the wire format, converts Yjs to plain JSON, no `react-native` or
+`@hocuspocus/provider` import) and `use-doc-page.ts` (the React half, mirrors
+`apps/web/src/features/docs/editor/use-collab-provider.ts`'s `useSyncExternalStore` shape exactly,
+for the identical reason: a `HocuspocusProvider` opens a WebSocket, so it can only be constructed in
+an effect, and the effect body cannot call `setState` synchronously). `useDocPage(orgId, pageId)`
+returns `{ doc, status, synced }` — `doc` is `null` for the render between mount and the effect
+running, same as web's `provider` starts `null`.
+
+**The one real difference from web is the WebSocket itself, and it is a two-layer problem.** A
+browser cannot set custom headers on a `WebSocket`, which is why web's own connection leans on the
+browser attaching a real `Origin` automatically. React Native's `WebSocket` is not that constructor
+— it is RN's own implementation, and its third constructor argument accepts `{ headers }`, threaded
+to the native networking layer. `NativeCollabSocket` in `use-doc-page.ts` is a thin subclass that
+always sends `CLIENT_HEADER: MOBILE_CLIENT` — the identical marker `socket.ts`'s Socket.IO
+connections already send — handed to `HocuspocusProvider` as `WebSocketPolyfill`. Two narrow type
+gaps came with it, both documented in that file's own header rather than suppressed: TypeScript's
+only `WebSocket` ambient type in scope is `lib.dom`'s 2-argument browser one (RN ships its real
+implementation as untyped Flow), so the subclass needs a restated constructor type, not a
+`@ts-expect-error`; and `HocuspocusProviderConfiguration`'s `url`-branch omits `WebSocketPolyfill`
+from its own published type even though the library reads it off the identical object at runtime
+(it forwards the same config straight into `new HocuspocusProviderWebsocket(...)` when no
+`websocketProvider` is supplied) — restating the field was chosen over switching to the
+`websocketProvider` branch, which skips the constructor's own `attach()` wiring and would need
+reimplementing by hand for no benefit.
+
+**The other half of "the WebSocket is different" lives on the server, and it is a ⚠ human-review
+surface.** `apps/collab/src/auth.ts` had no accommodation for a non-browser client at all — every
+connection with no `Origin` header (which is what a native client sends, since RN's `WebSocket` does
+not synthesize one) was refused outright. `apps/realtime/src/auth.ts` solved this identical problem
+for the Socket.IO gateway already, with a real device confirming it: `isNativeClient`/`isSelfOrigin`
+are ported VERBATIM from there rather than inventing a second mechanism, and `gateway.ts`'s
+`onAuthenticate` now passes `nativeClientHeader`/`host` the same way `realtime`'s own handshake does.
+**This is unverified in this environment** — there is no Docker here, so `authorize.test.ts`'s
+DB-backed suites and `gateway.integration.test.ts` (which boots a real gateway and a real
+`@hocuspocus/provider` client) could not be run; only `auth.test.ts`'s 17 non-DB tests (extended with
+an `isSelfOrigin`/`isNativeClient` suite mirroring realtime's own, plus an origin-gate isolation
+test using a wrong-secret-token trick to assert the refusal reason without touching Postgres) ran
+here. The author should run the full suite against real Postgres and confirm against a real device
+before merging this file's change, the same bar every other change to this file carries.
+
+### `yjsFragmentToRichTextDocument` — reusing Work's renderer, with zero new rendering code
+
+Docs' content schema is the SAME shared `@taskflow/api/richtext` schema Work's rich text already
+uses — `apps/collab/src/content-guard.ts`'s `enforceContentWhitelist` enforces it — and this app's
+existing `rich-text-view.tsx` already handles the Docs-specific `mention`/`pageLink` node types.
+So the only new piece needed was a converter: `docs-collab.ts`'s `yjsFragmentToRichTextDocument`
+walks a synced `Y.XmlFragment` into the same plain-JSON shape TipTap's own `getJSON()` produces
+(`Y.XmlElement.nodeName` is the node type, `getAttributes()` is `attrs`, `Y.XmlText.toDelta()` is
+Quill-delta runs whose `attributes` keys are mark type names), and `RichTextView` renders it with no
+changes of its own. `docs-page/[pageId].tsx` re-derives that JSON on every `observeDeep` firing —
+not just once on sync — so a page open while someone else edits it shows their changes live.
+
+**Verified against real Yjs structures, not against a real synced document.** `yjs` is pure JS with
+no DOM or native dependency, so `docs-collab.test.ts`'s 12 tests build genuine CRDT trees with Yjs's
+own mutation API (`new Y.XmlElement(...)`, `fragment.insert(...)`, `text.insert(..., marks)`) and
+assert the conversion against them — real confidence that the walk itself is correct. What none of
+that proves is that TipTap's live Yjs binding shapes a real document exactly this way; that needs a
+real page saved from a real editor and read back here, which is separate, real-device confirmation
+work, same caveat as the collab auth change above.
+
+### The bundler did not know `yjs` needs a random-number source on this platform, and neither did this app until `expo export` said so
+
+`yjs`'s own `lib0` dependency resolves `lib0/webcrypto` through its package `exports` map, and on
+`react-native` that map points at a file which unconditionally `require`s
+`isomorphic-webcrypto/src/react-native` — a package this app does not install, because its own
+react-native path depends on the retired `@unimodules/*`/`expo-random` packages and cannot cleanly
+install on a modern Expo SDK. `expo export --platform android` failed outright with an unresolved
+module error the moment `use-doc-page.ts` pulled `yjs` into the bundle; `tsc` and `eslint` had
+nothing to say about it, because neither one bundles. Fixed with a real native random source rather
+than a stub: `react-native-get-random-values` (a genuine CSPRNG — `SecRandomCopyBytes` on iOS,
+`SecureRandom` on Android) is imported for its side effect of polyfilling `global.crypto
+.getRandomValues`, and `metro.config.js`'s existing custom resolver (already used to pin `react`/
+`@tanstack/react-query` to one physical copy) gained one more redirect: the exact specifier
+`isomorphic-webcrypto/src/react-native` now resolves straight to `webcrypto-shim.ts`, which restates
+the three-property object shape that file is contractually required to export (`ensureSecure`,
+`getRandomValues`, `subtle`) backed by the real polyfill. Confirmed by re-running
+`expo export --platform android` AND `--platform ios` after the fix — both bundle clean.
+
+### Wiring: a page row now opens the reader, options move to a long press
+
+`docs-space/[spaceId].tsx`'s row tap used to open `PageOptionsModal` directly, because there was
+nowhere else for a tap to go. It now opens `docs-page/[pageId].tsx`; options (rename, add-child,
+move, archive/restore) moved to `onLongPress` on the same row — the identical split
+`board/[boardId].tsx`'s own list-tab row already uses for "one primary destination, one secondary
+action sheet," chosen over a nested second `Pressable` for the `⋯` icon once it was clear the
+established pattern already existed elsewhere.
+
+Verified: typecheck clean, lint clean, all 314 tests pass (299 existing plus 12 new for
+`docs-collab.ts` and 3 new for `config.ts`'s `collabBaseUrl` fallback), guardrail self-test clean,
+prettier clean, encoding check clean, and real `expo export --platform android`/`--platform ios`
+both bundle cleanly with `/docs-page/[pageId]` resolving. **Not device-verified** — this environment
+has no Docker and no physical device, so the collab auth change, the live WebSocket handshake, and
+whether TipTap's real Yjs output matches what `yjsFragmentToRichTextDocument` assumes are all
+reasoned from source and tested against real Yjs data structures, not confirmed end-to-end against a
+running `apps/collab` and a real page. The author should treat `apps/collab/src/auth.ts`'s change
+with the same review weight as any other change to that file before merging, and confirm the reader
+against a real page opened on both a device and web at once.

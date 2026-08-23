@@ -71,6 +71,12 @@ const API_BASE_URL = process.env['MOBILE_API_BASE_URL'] ?? 'http://localhost:300
    `MOBILE_API_BASE_URL` for preview/production already argues against. */
 const REALTIME_BASE_URL = process.env['MOBILE_REALTIME_BASE_URL'];
 
+/* Same shape and reasoning as REALTIME_BASE_URL above — `apps/collab` is a
+   THIRD separate local-dev process/port (`COLLAB_PORT`), fronted by the
+   same one public origin in a real deployment. Backs `use-doc-page.ts`'s
+   one Hocuspocus connection. */
+const COLLAB_BASE_URL = process.env['MOBILE_COLLAB_BASE_URL'];
+
 const config: ExpoConfig = {
   name: 'TaskFlow',
   slug: 'taskflow',
@@ -184,6 +190,7 @@ const config: ExpoConfig = {
   extra: {
     apiBaseUrl: API_BASE_URL,
     ...(REALTIME_BASE_URL === undefined ? {} : { realtimeBaseUrl: REALTIME_BASE_URL }),
+    ...(COLLAB_BASE_URL === undefined ? {} : { collabBaseUrl: COLLAB_BASE_URL }),
     /* EAS project linkage — not a secret per §10's own public/private test.
        A project id identifies which EAS project a build belongs to, nothing
        more, and is already visible in the Expo dashboard's URL for anyone

@@ -28,6 +28,25 @@ describe('parseConfig', () => {
     ).toThrow();
   });
 
+  it('defaults collabBaseUrl to apiBaseUrl when unset — the real-deployment case', () => {
+    const c = parseConfig({ apiBaseUrl: 'https://api.example.com' });
+    expect(c.collabBaseUrl).toBe('https://api.example.com');
+  });
+
+  it('honors an explicit collabBaseUrl, independently of the other two — the local-dev case', () => {
+    const c = parseConfig({
+      apiBaseUrl: 'http://192.168.1.10:3000',
+      realtimeBaseUrl: 'http://192.168.1.10:3001',
+      collabBaseUrl: 'http://192.168.1.10:3002/',
+    });
+    expect(c.collabBaseUrl).toBe('http://192.168.1.10:3002');
+    expect(c.realtimeBaseUrl).toBe('http://192.168.1.10:3001');
+  });
+
+  it('rejects a malformed collabBaseUrl', () => {
+    expect(() => parseConfig({ apiBaseUrl: 'https://a.co', collabBaseUrl: 'not-a-url' })).toThrow();
+  });
+
   it('rejects a missing url — a bad channel config fails at boot, not on first request', () => {
     expect(() => parseConfig({})).toThrow();
   });
