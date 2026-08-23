@@ -3473,6 +3473,138 @@ Verified: typecheck clean, lint clean (including the `restrict-template-expressi
 this runtime), guardrail self-test clean, encoding check clean, prettier clean, and a real
 `expo export --platform android` bundles cleanly with both routes included.
 
+### The coturn saga's actual ending — a phone hosting its own hotspot cannot hairpin back to itself
+
+The `network_mode: host` fix two sections up was disproven live, and the chain that followed —
+reverted to the `ports:` list, `-v` added to coturn temporarily as a diagnostic, a temporary
+`[rtc] ice servers: [...]` log added to `use-call.ts` — is carried in full in `compose.yaml`'s own
+header and this branch's commit history rather than restated here. The short version: every one of
+those rounds confirmed the Docker/coturn/Windows-Firewall stack was, by that point, genuinely
+correct — a full TURN allocation succeeded, mobile's own ICE server URLs were confirmed to be the
+right LAN address, not stale — and mobile STILL never produced anything past `typ=host`.
+
+The actual root cause was never in this repo at all: **the phone running the app was also hosting
+the Wi-Fi hotspot the dev machine was connected through.** A phone serving its own hotspot does not
+generally loop its own apps' outbound traffic back through that hotspot's own subnet to reach a
+service on a device it is itself serving — a hairpin-NAT limitation most phones simply don't
+support for their own traffic, and it isn't visible in any log this repo can produce because the
+packet is never sent, not dropped. Confirmed via the coturn session logs recording the ONLY two
+successful TURN allocations as originating from `172.19.0.1` — Docker's own bridge gateway, i.e.
+traffic from the SAME machine (almost certainly the web participant), never from the phone's own
+address. Fixed by moving the dev machine and phone onto a THIRD network — neither device hosting
+it — with no further compose.yaml or app change needed, since every layer this repo controls was
+already correct by that point.
+
+**This is dev-topology-specific and cannot recur in production.** `compose.prod.yaml`'s coturn sits
+on a real server with a public IP; a phone reaching a public address is ordinary internet routing
+regardless of what network it's on, hotspot included — the hairpin case only exists when the
+destination is a private address that only exists inside a network the SAME client is hosting.
+Confirmed against `.env.prod.example`, which documents a real public STUN/TURN address (even naming
+`stun:stun.l.google.com:19302` as an example), and against `compose.prod.yaml`'s own coturn block,
+which still carries the FULL RFC1918 deny list with no allow-list exception — the dev-only carve-out
+this saga added was never applied there.
+
+### Bluetooth routing, and the speaker/mute buttons that looked broken — a real, confirmed bug, found the moment audio finally worked
+
+The very next real-device round, once the network fix above landed, surfaced a genuine code bug that
+had been unreachable until audio worked at all: a connected Bluetooth headset was ignored (audio
+stayed on the phone's own speaker), and the on-screen speaker toggle looked like it did nothing.
+
+Root cause, confirmed against `react-native-incall-manager`'s own README rather than assumed:
+`setForceSpeakerphoneOn` takes THREE meaningful states, not two — `true` forces speaker, `false`
+forces the EARPIECE, and only `null` means "use default behaviour according to media type," the one
+value that lets the library's own documented automatic, device-aware routing (Bluetooth or wired,
+preferred over speaker or earpiece) actually run. `joinCall` called
+`setForceSpeakerphoneOn(true)` unconditionally at the start of every call — overriding an
+already-connected Bluetooth headset before the call even began — and the on-screen toggle's "off"
+state called `setForceSpeakerphoneOn(false)`, which routes to the EARPIECE, never to Bluetooth. Both
+looked identical from a user holding a phone with headphones on: audio stayed on the device either
+way.
+
+Fixed in `use-call.ts`: `setSpeakerphone(false)` now passes `null`, not `false` — turning the toggle
+"off" hands the decision back to automatic routing instead of forcing a second, still-wrong
+destination. At join, `getIsWiredHeadsetPluggedIn()` is checked first, and a wired headset already
+connected skips the force-speaker default entirely; there is no equivalent query for Bluetooth in
+this library's JS surface, so a Bluetooth device connected BEFORE a call still gets forced to
+speaker at join — but the toggle, tapped once, now correctly reaches it, where before it silently
+did not.
+
+**A real third-party typing gap, fixed honestly rather than cast around.** The package's shipped
+`.d.ts` types `setForceSpeakerphoneOn` as `(flag: boolean) => void`, with no `null` — incomplete
+against its own README. A bare `null as boolean` cast at each call site would have been a lie about
+what actually crosses the native boundary; instead a single local `setForceSpeakerphoneOn` wrapper
+in `use-call.ts` corrects the one signature that's wrong, in one place, with a comment explaining
+why, rather than suppressing type-checking per call site.
+
+**Named as future work below, and since done**: `InCallManager.chooseAudioRoute(route: string)` is
+the library's real answer to letting someone pick a SPECIFIC device instead of the two-state
+force/auto toggle above — see "A real device picker, not a two-state toggle" further down, which
+replaces the `setForceSpeakerphoneOn`-based toggle described in this section entirely. The reported
+"mic button not working" is still open: `setMuted`'s implementation (`track.enabled = false` on the
+local audio track) is structurally the same well-established pattern web's own mute uses, and only
+affects what OTHER participants hear — a solo test with nobody confirming they'd stopped hearing you
+would look identical to a broken button. Revisit with a two-participant test before assuming there's
+a second bug here.
+
+Verified: typecheck clean (including the local type-signature fix), lint clean, all 226 tests pass
+unchanged (no new logic module — a real device audio-routing fix has no meaningful unit-testable
+surface), guardrail self-test clean, prettier clean, and a real `expo export --platform android`
+bundles cleanly. Not yet reverified against a real Bluetooth headset — that requires the project
+owner's own device.
+
+### A real device picker, not a two-state toggle — the third and final shape of this fix
+
+The section above shipped a two-state force/auto toggle as an interim fix — real, but crude: "auto"
+hands routing to the OS, with no way to choose a SPECIFIC device when more than one is available (a
+Bluetooth headset AND a wired headset both connected, say). Requested explicitly as the next
+shippable, credential-free call improvement once voice itself worked, this replaces that toggle with
+`InCallManager.chooseAudioRoute`, the call named but deliberately deferred above.
+
+Confirmed against the library's native Android source
+(`InCallManagerModule.java`), not assumed from the `.d.ts` alone: `chooseAudioRoute` accepts exactly
+one of `'EARPIECE' | 'SPEAKER_PHONE' | 'WIRED_HEADSET' | 'BLUETOOTH'` (the Java
+`enum AudioDevice`), and resolves to `{ availableAudioDeviceList: <JSON-string>,
+selectedAudioDevice: <string> }`. There is no passive getter for "what's available right now" — the
+only way to learn it is the `onAudioDeviceChanged` `DeviceEventEmitter` event, which fires with that
+same status shape whenever availability changes (a Bluetooth headset connecting or disconnecting
+mid-call, a wired plug pulled out) as well as in response to `chooseAudioRoute` itself.
+
+`use-call.ts`'s `CallState` now carries `availableAudioDevices` and `selectedAudioDevice` instead of
+the old `speakerOn` boolean, kept current by an `onAudioDeviceChanged` subscription started
+alongside `InCallManager.start()` in `joinCall` and torn down alongside it in `hangUp` — paired
+1:1, the same lifecycle discipline the module itself already followed. The "loud by default" join
+behaviour from the section above is preserved, but now correctly scoped: it seeds speaker only on
+the FIRST event, and only when neither `BLUETOOTH` nor `WIRED_HEADSET` is in the available list —
+so a headset already connected at join is never overridden, closing the gap the interim fix
+explicitly left open ("a Bluetooth device connected BEFORE a call still gets forced to speaker at
+join").
+
+**`DeviceEventEmitter` needed the same deferred-import treatment as `react-native-webrtc` and
+`react-native-incall-manager` — and for a different reason.** Both native modules throw
+synchronously if unlinked, which is reason enough on its own. But `react-native` itself turns out to
+need it here too: its own source fails to even parse under Vitest (Flow syntax) — confirmed by the
+fact that `push-notifications.ts`, the one other file in this codebase that statically imports
+`{ Platform }` from `'react-native'`, has no test file exercising it, deliberately. So
+`const { DeviceEventEmitter } = await import('react-native');` runs inside `joinCall`, never as a
+top-level import — keeping `use-call.ts` unit-testable with no React renderer, its own stated design
+goal.
+
+The old `setForceSpeakerphoneOn` local wrapper (the previous section's own fix for the package's
+incomplete `.d.ts`) is gone entirely — `chooseAudioRoute`'s real signature has no such gap, so there
+is nothing left to correct.
+
+`call-surface.tsx`'s speaker-toggle button is replaced with a picker trigger (hidden when
+`availableAudioDevices` is empty, matching this app's existing "hidden rather than shown-and-refused"
+convention) opening a bottom-sheet `AudioRoutePicker` — one row per available device, mirroring
+`org-settings.tsx`'s own `RolePickerModal` shape rather than inventing a new one, so the pattern a
+user already learned there is the same one here.
+
+Verified: typecheck clean, lint clean (one pre-existing, unrelated warning in
+`push-notifications.ts`), all 226 tests pass unchanged (no new logic module — same reasoning as the
+section above), guardrail self-test clean, prettier clean, encoding check clean, and a real
+`expo export --platform android` bundles cleanly. Not yet reverified against a real device with
+multiple simultaneous audio devices connected — that requires the project owner's own hardware.
+
 ## Not here yet
 
 - **CallKit (iOS) / ConnectionService (Android) — a real lock-screen "incoming call" UI.** Named
@@ -3501,8 +3633,10 @@ this runtime), guardrail self-test clean, encoding check clean, prettier clean, 
   found the navigation-shell gap this file's newest section fixes. What is
   still unconfirmed: `isNativeClient`'s own header names what a real-device
   run would need to confirm about `Origin` on RN's WebSocket transport (see
-  `apps/realtime/src/auth.ts`) — nothing has joined a socket room yet, since
-  nothing on native calls `joinBoardRoom`.
+  `apps/realtime/src/auth.ts`). _(True when written — `board/[boardId].tsx`'s
+  `useBoardRoom` is now a real caller of `joinBoardRoom`, see "Work boards go
+  live" below; the `isNativeClient` real-device confirmation itself is still
+  open.)_
 
   **The public Expo Go app cannot open this project on SDK 57 today.** Expo
   Go's per-SDK build has a review-queue lag behind each SDK release, and the
@@ -3547,26 +3681,91 @@ this runtime), guardrail self-test clean, encoding check clean, prettier clean, 
 - Work is now at full parity with web (My Tasks, Boards, all card-detail
   sections, and a card's own dates and description — see "Work, closing
   the gap" and "Card detail, closing the last two card-specific gaps"
-  above for the full account). Still genuinely open across the app: a
-  native rich text EDITOR (description/comment/message composers all
-  flatten to plain text on save, rather than preserving or composing rich
-  formatting, until one exists), `@mention` composing in Work comments
-  specifically (Chat's own composer has it; Work comments deliberately do
-  not yet — see "comment edit/delete/replies" above), a real DATE PICKER
-  (every date field on this app — a card's own dates, a custom field of
-  type `date` — is typed by hand as `YYYY-MM-DD` rather than picked, no
-  date-picker dependency added), card drag-and-drop, and list reordering
-  (both boards' own sections above have the full reasoning). The rest of
-  Chat (attachments
-  from the
-  composer — reactions, mentions composing, thread replies,
-  edit/delete/"remove for me", read receipts, link unfurls, push, typing
-  indicators and broadcast-driven live refresh have all shipped, see "Chat,
-  reworked", "Chat, closer to complete", "Push notifications", and "Chat,
-  live" above) and the other product waves (Docs, RTC). Chat now joins a
-  room (`chat-socket.ts`, `use-chat-room.ts`) and stays live while a
-  channel screen is open; Work's `gatewaySocket` still has no caller —
-  nothing calls `joinBoardRoom` yet — so every board/card screen remains a
-  plain `useQuery`: fresh on navigation and on app-foreground (see
-  `_layout.tsx`'s `AppState` wiring, below), not live while the screen
-  stays open and nobody moves.
+  above for the full account). `@mention` composing in Work comments and
+  live socket updates on boards have SINCE shipped — see "Work boards go
+  live, and `@mention` reaches comments" below; left as written above
+  rather than silently edited, per this file's own rule about correcting a
+  stale claim in place. Still genuinely open across the app: a native rich
+  text EDITOR (description/comment/message composers all flatten to plain
+  text on save, rather than preserving or composing rich formatting, until
+  one exists), a real DATE PICKER (every date field on this app — a card's
+  own dates, a custom field of type `date` — is typed by hand as
+  `YYYY-MM-DD` rather than picked, no date-picker dependency added), card
+  drag-and-drop, and list reordering (both boards' own sections above have
+  the full reasoning). The rest of Chat (attachments from the composer —
+  reactions, mentions composing, thread replies, edit/delete/"remove for
+  me", read receipts, link unfurls, push, typing indicators and
+  broadcast-driven live refresh have all shipped, see "Chat, reworked",
+  "Chat, closer to complete", "Push notifications", and "Chat, live"
+  above) and the other product waves (Docs, RTC). Chat now joins a room
+  (`chat-socket.ts`, `use-chat-room.ts`) and stays live while a channel
+  screen is open; Work's board screen does too now (`use-board-room.ts`) —
+  see below for exactly what that does and does not cover.
+
+## Work boards go live, and `@mention` reaches comments
+
+Two gaps this file itself had named as open: `gatewaySocket` had no caller at all on this app
+(every board and card screen was a plain `useQuery`, fresh only on navigation or app-foreground),
+and `@mention` composing existed in Chat's composer but never reached a Work comment.
+
+### `use-board-room.ts` — `board/[boardId].tsx`'s first live room
+
+Ported from `apps/web/src/features/work/use-board-room.ts`, joining `board:{boardId}` on the same
+`gatewaySocket` singleton `call-surface.tsx` already forces open for incoming calls. A card someone
+else moves, edits, assigns, or comments on, or a list someone renames, now appears on an open board
+without leaving and reopening it.
+
+**Invalidates, never patches — the same call `use-chat-room.ts` already made for Chat.** Web's own
+hook patches `CardSummary` fields directly and adjusts counters by an exact delta, because it
+already has `patchBoardCards`/`patchChecklistCounters` from its optimistic-mutation layer. Mobile
+has no equivalent cache-patch helpers for board cards, so every broadcast here invalidates the
+query the event touched instead of hand-splicing the payload into it — one extra round trip per
+live event is a smaller ongoing cost than a second, independently-maintained patch implementation
+that could drift from web's.
+
+**Board-scoped only, and `card/[cardId].tsx` is a deliberate non-caller — not an oversight.** Web's
+card detail is a modal INSIDE `board-page.tsx`, sharing that one page's single `useBoardRoom` call.
+Mobile's card detail is its own ROUTE, reached both from a board (which stays mounted underneath it
+in the native-stack navigator when a card is pushed on top — confirmed against this app's own
+navigation config, which sets no `unmountOnBlur`) and from places that never opened a board at all
+(My Tasks, a notification). `joinBoardRoom`/`leaveBoardRoom` in `socket.ts` are keyed by boardId
+alone with no per-caller reference count, ported straight from web where only one caller per board
+ever exists. Giving the card screen its own `useBoardRoom` call would mean ITS OWN unmount (going
+back to the board) calls `leaveBoardRoom` and severs the board screen's still-open membership in
+the same room, since both calls share one underlying socket connection — a real bug, not a
+hypothetical one, caught by reasoning through the navigator's actual mount lifecycle before writing
+the hook rather than after. So a card opened directly, outside a board, still has no live updates;
+giving rooms a genuine reference count in `socket.ts` is the real fix, and is separate work.
+
+### `@mention` composing reaches Work comments
+
+`message-compose.ts`'s `activeMentionQuery`/`insertMention` were already chat-agnostic pure
+text/cursor functions — built for `message-composer.tsx`, reused here VERBATIM, not reimplemented.
+A new `CommentComposer` in `card/[cardId].tsx` wraps them for Work's two comment composers (a new
+top-level comment, and whichever reply box is open), which had the identical input+dropdown logic
+duplicated between them already, with neither getting mentions.
+
+**Not the shared `<MessageComposer />`.** That component also owns an icon-styled send button and
+an optional attach affordance shaped for Chat's one-row WhatsApp layout (ai/"Chat, reworked"
+above). Work's comment composer keeps its own existing look — a bordered input with a text "Send"
+button beside it for a new comment, Reply/Cancel buttons BELOW the input for a reply — two
+different button arrangements the shared component cannot express. `CommentComposer` accepts an
+optional `trailing` node rendered inside its own row instead: supplied for the top-level composer
+(the Send button), absent for a reply (whose Reply/Cancel row is a sibling the caller still renders
+itself, unchanged from before this component existed).
+
+The server derives `mentionedUserIds` from the TipTap document itself (`work/richtext.ts`, at
+comment-creation time) rather than a separate field, so the client's only job is producing a
+document with real `mention` nodes — `parseFormattedText(text, mentions)`, already built for Chat,
+already defaulting its second argument to `[]` for every OTHER caller in this codebase (edits, and
+every other `parseFormattedText` call site) that does not need it.
+
+Out of scope, deliberately: mention support on comment EDITING (only create and reply), matching
+this component's narrow brief — Chat itself does not offer it on edit either.
+
+Verified: typecheck clean, lint clean (one pre-existing, unrelated warning in
+`push-notifications.ts`), all 226 tests pass unchanged (both changes reuse already-tested pure
+logic — `message-compose.test.ts` for the mention functions, `use-chat-room.ts`'s own precedent for
+why a room-join hook gets no dedicated test of its own — rather than adding new logic that would
+need one), guardrail self-test clean, prettier clean, encoding check clean, and a real
+`expo export --platform android` bundles cleanly.

@@ -118,13 +118,16 @@ export const apiClient: MobileTRPCClient = createMobileClient({
 });
 
 /**
- * The app's one realtime connection (§8). No Wave 1 screen opens a board yet
- * — home is a placeholder (§7) — so nothing calls `gatewaySocket.joinBoardRoom`
- * today; it is wired here anyway, alongside `session` and `apiClient`, so the
- * spine is complete and testable at the composition level rather than
- * something a later wave has to remember to assemble correctly under time
- * pressure. `getExpiresAt` reads the store fresh on every call, never once at
- * construction, so a renewed token reschedules `ready`'s reauth correctly.
+ * The app's one realtime connection (§8). Wired here alongside `session` and
+ * `apiClient` regardless of who calls it, so the spine is complete and
+ * testable at the composition level rather than something a later wave has
+ * to remember to assemble correctly under time pressure — which is exactly
+ * what happened: this was written when no screen opened a board yet and
+ * `joinBoardRoom` had no caller at all. `board/[boardId].tsx`'s own
+ * `useBoardRoom` is the first one, `call-surface.tsx`'s `onIncomingCall` the
+ * second (forcing the connection open for calls). `getExpiresAt` reads the
+ * store fresh on every call, never once at construction, so a renewed token
+ * reschedules `ready`'s reauth correctly.
  */
 export const gatewaySocket: MobileSocket = createMobileSocket({
   apiBaseUrl: config.realtimeBaseUrl,

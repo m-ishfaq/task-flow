@@ -26,6 +26,11 @@ import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { RichTextView } from '../../../src/lib/rich-text-view.js';
 import { flattenText, sanitizeRichText } from '../../../src/lib/rich-text.js';
 import { liveFormatParser, parseFormattedText } from '../../../src/lib/rich-text-compose.js';
+import {
+  activeMentionQuery,
+  insertMention,
+  type PendingMention,
+} from '../../../src/lib/message-compose.js';
 import { Avatar } from '../../../src/lib/avatar.js';
 import { useUpdateCard } from '../../../src/lib/use-update-card.js';
 import { useMembers, type Member } from '../../../src/lib/use-members.js';
@@ -621,12 +626,14 @@ function ChecklistSection({
 function CommentsSection({ cardId }: { readonly cardId: CardId }) {
   const queryClient = useQueryClient();
   const userId = useSession((state) => state.userId);
-  const { personOf } = useMembers();
+  const { personOf, people } = useMembers();
   const [draft, setDraft] = useState('');
+  const [pendingMentions, setPendingMentions] = useState<readonly PendingMention[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyDraft, setReplyDraft] = useState('');
+  const [replyMentions, setReplyMentions] = useState<readonly PendingMention[]>([]);
 
   const comments = useQuery({
     queryKey: commentsQueryKey(cardId),
@@ -640,16 +647,23 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
     ]);
 
   const post = useMutation({
-    mutationFn: (input: { body: string; parentCommentId: string | null }) =>
+    mutationFn: (input: {
+      body: string;
+      parentCommentId: string | null;
+      mentions: readonly PendingMention[];
+    }) =>
       apiClient.work.comments.create.mutate({
         cardId,
-        body: parseFormattedText(input.body),
+        body: parseFormattedText(input.body, input.mentions),
         parentCommentId: input.parentCommentId,
       }),
     onSuccess: (_result, input) => {
-      if (input.parentCommentId === null) setDraft('');
-      else {
+      if (input.parentCommentId === null) {
+        setDraft('');
+        setPendingMentions([]);
+      } else {
         setReplyDraft('');
+        setReplyMentions([]);
         setReplyingTo(null);
       }
     },
@@ -745,26 +759,27 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
 
           {replyingTo === comment.commentId && (
             <View style={styles.commentReply}>
-              <MarkdownTextInput
-                value={replyDraft}
-                onChangeText={setReplyDraft}
-                placeholder="Write a reply…"
-                placeholderTextColor={colors.inkFaint.hex}
-                style={styles.composerInput}
-                multiline
-                autoFocus
-                parser={liveFormatParser}
-                markdownStyle={{
-                  syntax: { color: colors.inkFaint.hex },
-                  link: { color: colors.accent.hex },
+              <CommentComposer
+                draft={replyDraft}
+                onDraftChange={setReplyDraft}
+                onMentionRecorded={(mention) => {
+                  setReplyMentions((current) => [...current, mention]);
                 }}
+                people={people}
+                viewerId={userId}
+                placeholder="Write a reply…"
+                autoFocus
               />
               <View style={styles.modalActions}>
                 <Pressable
                   style={styles.modalPrimaryButton}
                   disabled={replyDraft.trim().length === 0 || post.isPending}
                   onPress={() => {
-                    post.mutate({ body: replyDraft.trim(), parentCommentId: comment.commentId });
+                    post.mutate({
+                      body: replyDraft.trim(),
+                      parentCommentId: comment.commentId,
+                      mentions: replyMentions,
+                    });
                   }}
                 >
                   <Text style={styles.modalPrimaryButtonText}>Reply</Text>
@@ -786,34 +801,31 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
         <Text style={styles.label}>No comments yet.</Text>
       )}
 
-      <View style={styles.composerRow}>
-        <MarkdownTextInput
-          value={draft}
-          onChangeText={setDraft}
-          placeholder="Add a comment…"
-          placeholderTextColor={colors.inkFaint.hex}
-          style={styles.composerInput}
-          multiline
-          parser={liveFormatParser}
-          markdownStyle={{
-            syntax: { color: colors.inkFaint.hex },
-            link: { color: colors.accent.hex },
-          }}
-        />
-        <Pressable
-          style={styles.sendButton}
-          disabled={draft.trim().length === 0 || post.isPending}
-          onPress={() => {
-            post.mutate({ body: draft.trim(), parentCommentId: null });
-          }}
-        >
-          {post.isPending ? (
-            <ActivityIndicator color={colors.accentInk.hex} />
-          ) : (
-            <Text style={styles.sendButtonText}>Send</Text>
-          )}
-        </Pressable>
-      </View>
+      <CommentComposer
+        draft={draft}
+        onDraftChange={setDraft}
+        onMentionRecorded={(mention) => {
+          setPendingMentions((current) => [...current, mention]);
+        }}
+        people={people}
+        viewerId={userId}
+        placeholder="Add a comment…"
+        trailing={
+          <Pressable
+            style={styles.sendButton}
+            disabled={draft.trim().length === 0 || post.isPending}
+            onPress={() => {
+              post.mutate({ body: draft.trim(), parentCommentId: null, mentions: pendingMentions });
+            }}
+          >
+            {post.isPending ? (
+              <ActivityIndicator color={colors.accentInk.hex} />
+            ) : (
+              <Text style={styles.sendButtonText}>Send</Text>
+            )}
+          </Pressable>
+        }
+      />
       {(post.isError || edit.isError || remove.isError) && (
         <Text style={styles.error} accessibilityRole="alert">
           {apiErrorOf(post.error ?? edit.error ?? remove.error)?.error.message ??
@@ -821,6 +833,125 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
         </Text>
       )}
     </Section>
+  );
+}
+
+/**
+ * `@mention` composing for a card comment — the gap named in `apps/mobile/
+ * README.md`: Chat's own composer (`message-composer.tsx`) has had this
+ * since the rich-text-editor pass; Work's comment composer never did.
+ * Reuses `message-compose.ts`'s cursor logic verbatim (`activeMentionQuery`/
+ * `insertMention` are chat-agnostic pure text/cursor functions, not
+ * duplicated here), but is its OWN small component rather than the shared
+ * `<MessageComposer />` — that component also owns an icon-styled send
+ * button and an optional attach affordance shaped for Chat's one-row
+ * WhatsApp layout, and `CommentsSection` below needs two different button
+ * arrangements the shared component cannot express: the top-level composer
+ * wants a button BESIDE the input, and a reply wants Reply/Cancel BELOW it,
+ * entirely outside this component. `trailing` is that seam — rendered
+ * inside this component's own row when supplied (the top-level composer),
+ * left absent otherwise (a reply, whose Reply/Cancel row is a sibling the
+ * caller renders itself, exactly as it already did before this component
+ * existed).
+ *
+ * `CommentsSection` had this exact input+dropdown logic duplicated once
+ * already (a plain composer for a new top-level comment, a second copy for
+ * whichever reply box is open) with neither getting mentions — extracting
+ * it here means the two call sites share one implementation instead of one
+ * gaining mentions and the other silently not.
+ */
+function CommentComposer({
+  draft,
+  onDraftChange,
+  onMentionRecorded,
+  people,
+  viewerId,
+  placeholder,
+  autoFocus,
+  trailing,
+}: {
+  readonly draft: string;
+  readonly onDraftChange: (text: string) => void;
+  readonly onMentionRecorded: (mention: PendingMention) => void;
+  readonly people: readonly Member[];
+  readonly viewerId: string | null;
+  readonly placeholder: string;
+  readonly autoFocus?: boolean;
+  /** Rendered inside this component's own row, after the input — see this
+   *  component's own header for why only the top-level composer supplies one. */
+  readonly trailing?: ReactNode;
+}) {
+  // `undefined` until the first `onSelectionChange` event, matching
+  // `message-composer.tsx`'s identical reasoning: the very first render
+  // leaves the input's cursor fully native rather than forcing a guess.
+  const [selection, setSelection] = useState<{ start: number; end: number } | undefined>(undefined);
+  const clampedSelection =
+    selection === undefined
+      ? undefined
+      : {
+          start: Math.min(selection.start, draft.length),
+          end: Math.min(selection.end, draft.length),
+        };
+
+  const active = activeMentionQuery(draft, clampedSelection?.end ?? draft.length);
+  const mentionCandidates =
+    active === null
+      ? []
+      : people
+          .filter((member) => member.userId !== viewerId)
+          .filter((member) =>
+            (member.displayName ?? member.email).toLowerCase().includes(active.query.toLowerCase()),
+          )
+          .slice(0, 6);
+
+  const pickMention = (member: Member): void => {
+    if (active === null) return;
+    const label = member.displayName ?? member.email;
+    const result = insertMention(draft, active, { userId: member.userId, label });
+    onDraftChange(result.draft);
+    onMentionRecorded(result.mention);
+    setSelection({ start: result.cursor, end: result.cursor });
+  };
+
+  return (
+    <>
+      {active !== null && mentionCandidates.length > 0 && (
+        <ScrollView style={styles.mentionList} keyboardShouldPersistTaps="handled">
+          {mentionCandidates.map((member) => (
+            <Pressable
+              key={member.userId}
+              style={styles.mentionRow}
+              onPress={() => {
+                pickMention(member);
+              }}
+            >
+              <Text style={styles.mentionRowText}>{member.displayName ?? member.email}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
+      <View style={styles.composerRow}>
+        <MarkdownTextInput
+          value={draft}
+          onChangeText={onDraftChange}
+          onSelectionChange={(event) => {
+            setSelection(event.nativeEvent.selection);
+          }}
+          selection={clampedSelection}
+          placeholder={placeholder}
+          placeholderTextColor={colors.inkFaint.hex}
+          style={styles.composerInput}
+          multiline
+          autoFocus={autoFocus}
+          parser={liveFormatParser}
+          markdownStyle={{
+            syntax: { color: colors.inkFaint.hex },
+            link: { color: colors.accent.hex },
+          }}
+        />
+        {trailing}
+      </View>
+    </>
   );
 }
 
@@ -2221,6 +2352,24 @@ const styles = StyleSheet.create({
     color: colors.accentInk.hex,
     fontSize: 13,
     fontWeight: '600',
+  },
+  mentionList: {
+    maxHeight: 180,
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+    borderRadius: radiusCard,
+    backgroundColor: colors.surfaceRaised.hex,
+    marginTop: 4,
+  },
+  mentionRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line.hex,
+  },
+  mentionRowText: {
+    fontSize: 14,
+    color: colors.ink.hex,
   },
   composerRow: {
     flexDirection: 'row',

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
@@ -18,13 +18,15 @@ import {
   type RecordingStatus,
 } from './rtc.js';
 import {
+  AUDIO_DEVICE_LABEL,
   callStore,
+  chooseAudioRoute,
   clearEviction,
   hangUp,
   joinCall,
   setMuted,
-  setSpeakerphone,
   useCallStore,
+  type AudioDevice,
 } from './use-call.js';
 
 /**
@@ -265,12 +267,14 @@ function ActiveCallBar(): React.JSX.Element | null {
 
   const status = useCallStore((state) => state.status);
   const muted = useCallStore((state) => state.muted);
-  const speakerOn = useCallStore((state) => state.speakerOn);
+  const availableAudioDevices = useCallStore((state) => state.availableAudioDevices);
+  const selectedAudioDevice = useCallStore((state) => state.selectedAudioDevice);
   const peers = useCallStore((state) => state.peers);
   const sessionId = useCallStore((state) => state.sessionId);
   const channelId = useCallStore((state) => state.channelId);
   const evicted = useCallStore((state) => state.evicted);
   const connectedAt = useCallStore((state) => state.connectedAt);
+  const [audioPickerOpen, setAudioPickerOpen] = useState(false);
 
   useTicker(connectedAt !== null);
   const durationSeconds = connectedAt === null ? 0 : elapsedSeconds(connectedAt);
@@ -378,14 +382,18 @@ function ActiveCallBar(): React.JSX.Element | null {
             <Text style={styles.recordingIndicator}>● Recording</Text>
           )}
         </View>
-        <Pressable
-          style={styles.muteButton}
-          onPress={() => {
-            setSpeakerphone(!speakerOn);
-          }}
-        >
-          <Text style={styles.muteButtonText}>{speakerOn ? '🔊' : '🔈'}</Text>
-        </Pressable>
+        {availableAudioDevices.length > 0 && (
+          <Pressable
+            style={styles.muteButton}
+            onPress={() => {
+              setAudioPickerOpen(true);
+            }}
+          >
+            <Text style={styles.muteButtonText}>
+              {selectedAudioDevice === null ? '🔊' : AUDIO_DEVICE_ICON[selectedAudioDevice]}
+            </Text>
+          </Pressable>
+        )}
         <Pressable
           style={styles.muteButton}
           onPress={() => {
@@ -405,7 +413,81 @@ function ActiveCallBar(): React.JSX.Element | null {
           <Text style={styles.hangUpButtonText}>Hang up</Text>
         </Pressable>
       </View>
+
+      <AudioRoutePicker
+        visible={audioPickerOpen}
+        devices={availableAudioDevices}
+        selected={selectedAudioDevice}
+        onPick={chooseAudioRoute}
+        onClose={() => {
+          setAudioPickerOpen(false);
+        }}
+      />
     </View>
+  );
+}
+
+/**
+ * Emoji per `AudioDevice` — a loose visual shorthand, not a claim that any of
+ * these are the "correct" icon for the device (there is no widely-supported
+ * Bluetooth glyph across Android/iOS emoji fonts). The row inside the picker
+ * itself carries the real, unambiguous label from `AUDIO_DEVICE_LABEL`; this
+ * map only decorates the collapsed trigger button.
+ */
+const AUDIO_DEVICE_ICON: Readonly<Record<AudioDevice, string>> = {
+  EARPIECE: '☎️',
+  SPEAKER_PHONE: '🔊',
+  WIRED_HEADSET: '🎧',
+  BLUETOOTH: '📶',
+};
+
+/**
+ * Bottom-sheet picker mirroring `org-settings.tsx`'s `RolePickerModal` —
+ * same backdrop/card/row/cancel shape, so a user who has already learned
+ * that pattern from org settings recognizes it here. Only ever rendered
+ * with `devices.length > 0`, per `ActiveCallBar`'s own gate above: a picker
+ * offering nothing to pick is worse than no picker (this file's own
+ * "hidden rather than shown-and-refused" convention).
+ */
+function AudioRoutePicker({
+  visible,
+  devices,
+  selected,
+  onPick,
+  onClose,
+}: {
+  readonly visible: boolean;
+  readonly devices: readonly AudioDevice[];
+  readonly selected: AudioDevice | null;
+  readonly onPick: (route: AudioDevice) => void;
+  readonly onClose: () => void;
+}): React.JSX.Element {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={styles.modalCard} onPress={() => undefined}>
+          <Text style={styles.modalTitle}>Audio output</Text>
+          {devices.map((device) => (
+            <Pressable
+              key={device}
+              style={styles.modalRow}
+              onPress={() => {
+                onPick(device);
+                onClose();
+              }}
+            >
+              <Text style={styles.modalRowText}>
+                {AUDIO_DEVICE_LABEL[device]}
+                {device === selected ? '  ✓' : ''}
+              </Text>
+            </Pressable>
+          ))}
+          <Pressable style={styles.modalCancel} onPress={onClose}>
+            <Text style={styles.modalCancelText}>Cancel</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -702,5 +784,40 @@ const styles = StyleSheet.create({
     color: colors.inkMuted.hex,
     fontSize: 12,
     fontWeight: '600',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: '#00000099',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: colors.surfaceRaised.hex,
+    borderTopLeftRadius: radiusCard,
+    borderTopRightRadius: radiusCard,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.ink.hex,
+    marginBottom: 8,
+  },
+  modalRow: {
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line.hex,
+  },
+  modalRowText: {
+    fontSize: 15,
+    color: colors.ink.hex,
+  },
+  modalCancel: {
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.danger.hex,
   },
 });
