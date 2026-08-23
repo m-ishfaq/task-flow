@@ -86,15 +86,63 @@ import { PeerMesh, type RtcConfiguration } from './peer-mesh.js';
  * `react-native-webrtc` — the identical "lower-risk than hand-rolling
  * native audio-manager code" reasoning `@config-plugins/react-native-webrtc`
  * was chosen for earlier in this phase). `start()` puts Android into
- * `MODE_IN_COMMUNICATION` for the call's duration; `setForceSpeakerphoneOn`
- * is the actual fix — loudspeaker by default, since this app is used
- * looking at a screen, not held to an ear like a phone call. `stop()` on
- * `hangUp()` hands audio routing back to whatever else wants it (the
- * ringtone/ringback tones already use `expo-audio`, and never overlap this:
- * ringing stops before a call is joined, `InCallManager` starts only once
- * it is). Best-effort — a build without the native module linked yet must
- * still let the call itself proceed, only without the routing fix.
+ * `MODE_IN_COMMUNICATION` for the call's duration. `stop()` on `hangUp()`
+ * hands audio routing back to whatever else wants it (the ringtone/ringback
+ * tones already use `expo-audio`, and never overlap this: ringing stops
+ * before a call is joined, `InCallManager` starts only once it is).
+ * Best-effort — a build without the native module linked yet must still let
+ * the call itself proceed, only without the routing fix.
+ *
+ * ## `setForceSpeakerphoneOn(false)` is not "not speaker" — found live, a
+ * second time, against a real Bluetooth headset
+ *
+ * The first fix above shipped `setForceSpeakerphoneOn(speakerOn)` called
+ * unconditionally at join, `speakerOn` defaulting `true`. That is a real bug
+ * once a Bluetooth headset is in the picture, confirmed live: the library's
+ * own README states `setForceSpeakerphoneOn`'s three states plainly —
+ * `true` forces speaker, `false` forces EARPIECE, and only `null` means "use
+ * default behaviour according to media type," which is the ONE state that
+ * lets its documented automatic device-aware routing (Bluetooth or wired,
+ * preferred over speaker or earpiece) actually run. Forcing `true`
+ * unconditionally at join overrides an already-connected Bluetooth device
+ * before the call even starts; forcing `false` from the on-screen toggle —
+ * the previous code's idea of "turn speaker off" — routes to the EARPIECE,
+ * not to Bluetooth, which is why tapping it looked like it did nothing: audio
+ * stayed on the phone either way.
+ *
+ * So `speakerOn` in this store means "explicitly forced to speaker," not
+ * "speaker vs. everything else" — `setSpeakerphone(true)` still forces
+ * speaker; `setSpeakerphone(false)` passes `null`, handing the decision back
+ * to automatic routing rather than forcing the earpiece. At join,
+ * `getIsWiredHeadsetPluggedIn()` is checked first: a wired headset already
+ * connected skips the force-speaker default entirely (there is no
+ * equivalent query for Bluetooth in this library's JS surface — see
+ * `chooseAudioRoute` below for the real fix if that gap matters enough to
+ * close). A Bluetooth headset connected AFTER join is unaffected by any of
+ * this and is exactly what tapping the toggle once now correctly reaches.
+ *
+ * **Not yet done, and worth naming rather than pretending this is
+ * complete**: `InCallManager.chooseAudioRoute(route: string)` is the
+ * library's real answer to "let the user pick a specific device" (Speaker /
+ * Earpiece / a named Bluetooth device / Wired) rather than the two-state
+ * force/auto toggle here — building that needs the platform-specific route
+ * names enumerated first, which is real, separate work, not a one-line
+ * change alongside this fix.
  */
+
+/**
+ * `react-native-incall-manager`'s own shipped `.d.ts` types
+ * `setForceSpeakerphoneOn` as `(flag: boolean) => void`, but its README
+ * documents a real third state this codebase depends on: `null` means "use
+ * default behaviour according to media type" — the one value that lets its
+ * automatic, Bluetooth-aware routing run instead of forcing a destination.
+ * A value cast (`null as boolean`) would lie about what crosses the
+ * boundary; this instead corrects the ONE signature that is wrong, in one
+ * place, rather than suppressing type-checking on every call site.
+ */
+function setForceSpeakerphoneOn(manager: typeof InCallManagerInstance, flag: boolean | null): void {
+  (manager.setForceSpeakerphoneOn as (flag: boolean | null) => void)(flag);
+}
 
 export interface CallPeer {
   readonly userId: string;
@@ -275,7 +323,18 @@ export async function joinCall(input: {
     try {
       const InCallManager = (await import('react-native-incall-manager')).default;
       InCallManager.start({ media: 'audio' });
-      InCallManager.setForceSpeakerphoneOn(callStore.getState().speakerOn);
+      /* A wired headset already connected at join time skips the
+         force-speaker default entirely — see the module header on why
+         `false`/forced-earpiece is never the right choice here, and why
+         there is no equivalent check for Bluetooth. A failed check is
+         treated as "not plugged in", the same default-to-loud bias the
+         unconditional force used before this fix. */
+      const wired = await InCallManager.getIsWiredHeadsetPluggedIn().catch(() => ({
+        isWiredHeadsetPluggedIn: false,
+      }));
+      const forceSpeaker = !wired.isWiredHeadsetPluggedIn;
+      setForceSpeakerphoneOn(InCallManager, forceSpeaker ? true : null);
+      callStore.setState({ speakerOn: forceSpeaker });
       inCallManager = InCallManager;
     } catch {
       inCallManager = null;
@@ -411,12 +470,18 @@ export function setMuted(muted: boolean): void {
 }
 
 /**
- * Toggles loudspeaker vs earpiece — see the module header on why this
- * exists and defaults on. A no-op on a build without the native module
- * linked (`inCallManager` stays `null`); the stored `speakerOn` still
- * updates so the button reflects what was asked for.
+ * Toggles FORCED speaker vs automatic device-aware routing — see the
+ * module header on why `false` here passes `null` to the native call, not
+ * `false`. `setForceSpeakerphoneOn(false)` forces the EARPIECE, which is
+ * never what turning this toggle "off" means: the intent is always "let a
+ * connected Bluetooth or wired device win, or fall back to the earpiece if
+ * there isn't one" — `null` is the one value that hands that decision to
+ * the library's own automatic routing instead of forcing a second, wrong
+ * destination. A no-op on a build without the native module linked
+ * (`inCallManager` stays `null`); the stored `speakerOn` still updates so
+ * the button reflects what was asked for.
  */
 export function setSpeakerphone(speakerOn: boolean): void {
-  inCallManager?.setForceSpeakerphoneOn(speakerOn);
+  if (inCallManager !== null) setForceSpeakerphoneOn(inCallManager, speakerOn ? true : null);
   callStore.setState({ speakerOn });
 }

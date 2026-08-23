@@ -3473,6 +3473,85 @@ Verified: typecheck clean, lint clean (including the `restrict-template-expressi
 this runtime), guardrail self-test clean, encoding check clean, prettier clean, and a real
 `expo export --platform android` bundles cleanly with both routes included.
 
+### The coturn saga's actual ending — a phone hosting its own hotspot cannot hairpin back to itself
+
+The `network_mode: host` fix two sections up was disproven live, and the chain that followed —
+reverted to the `ports:` list, `-v` added to coturn temporarily as a diagnostic, a temporary
+`[rtc] ice servers: [...]` log added to `use-call.ts` — is carried in full in `compose.yaml`'s own
+header and this branch's commit history rather than restated here. The short version: every one of
+those rounds confirmed the Docker/coturn/Windows-Firewall stack was, by that point, genuinely
+correct — a full TURN allocation succeeded, mobile's own ICE server URLs were confirmed to be the
+right LAN address, not stale — and mobile STILL never produced anything past `typ=host`.
+
+The actual root cause was never in this repo at all: **the phone running the app was also hosting
+the Wi-Fi hotspot the dev machine was connected through.** A phone serving its own hotspot does not
+generally loop its own apps' outbound traffic back through that hotspot's own subnet to reach a
+service on a device it is itself serving — a hairpin-NAT limitation most phones simply don't
+support for their own traffic, and it isn't visible in any log this repo can produce because the
+packet is never sent, not dropped. Confirmed via the coturn session logs recording the ONLY two
+successful TURN allocations as originating from `172.19.0.1` — Docker's own bridge gateway, i.e.
+traffic from the SAME machine (almost certainly the web participant), never from the phone's own
+address. Fixed by moving the dev machine and phone onto a THIRD network — neither device hosting
+it — with no further compose.yaml or app change needed, since every layer this repo controls was
+already correct by that point.
+
+**This is dev-topology-specific and cannot recur in production.** `compose.prod.yaml`'s coturn sits
+on a real server with a public IP; a phone reaching a public address is ordinary internet routing
+regardless of what network it's on, hotspot included — the hairpin case only exists when the
+destination is a private address that only exists inside a network the SAME client is hosting.
+Confirmed against `.env.prod.example`, which documents a real public STUN/TURN address (even naming
+`stun:stun.l.google.com:19302` as an example), and against `compose.prod.yaml`'s own coturn block,
+which still carries the FULL RFC1918 deny list with no allow-list exception — the dev-only carve-out
+this saga added was never applied there.
+
+### Bluetooth routing, and the speaker/mute buttons that looked broken — a real, confirmed bug, found the moment audio finally worked
+
+The very next real-device round, once the network fix above landed, surfaced a genuine code bug that
+had been unreachable until audio worked at all: a connected Bluetooth headset was ignored (audio
+stayed on the phone's own speaker), and the on-screen speaker toggle looked like it did nothing.
+
+Root cause, confirmed against `react-native-incall-manager`'s own README rather than assumed:
+`setForceSpeakerphoneOn` takes THREE meaningful states, not two — `true` forces speaker, `false`
+forces the EARPIECE, and only `null` means "use default behaviour according to media type," the one
+value that lets the library's own documented automatic, device-aware routing (Bluetooth or wired,
+preferred over speaker or earpiece) actually run. `joinCall` called
+`setForceSpeakerphoneOn(true)` unconditionally at the start of every call — overriding an
+already-connected Bluetooth headset before the call even began — and the on-screen toggle's "off"
+state called `setForceSpeakerphoneOn(false)`, which routes to the EARPIECE, never to Bluetooth. Both
+looked identical from a user holding a phone with headphones on: audio stayed on the device either
+way.
+
+Fixed in `use-call.ts`: `setSpeakerphone(false)` now passes `null`, not `false` — turning the toggle
+"off" hands the decision back to automatic routing instead of forcing a second, still-wrong
+destination. At join, `getIsWiredHeadsetPluggedIn()` is checked first, and a wired headset already
+connected skips the force-speaker default entirely; there is no equivalent query for Bluetooth in
+this library's JS surface, so a Bluetooth device connected BEFORE a call still gets forced to
+speaker at join — but the toggle, tapped once, now correctly reaches it, where before it silently
+did not.
+
+**A real third-party typing gap, fixed honestly rather than cast around.** The package's shipped
+`.d.ts` types `setForceSpeakerphoneOn` as `(flag: boolean) => void`, with no `null` — incomplete
+against its own README. A bare `null as boolean` cast at each call site would have been a lie about
+what actually crosses the native boundary; instead a single local `setForceSpeakerphoneOn` wrapper
+in `use-call.ts` corrects the one signature that's wrong, in one place, with a comment explaining
+why, rather than suppressing type-checking per call site.
+
+**Not fixed, and named rather than left implicit**: `InCallManager.chooseAudioRoute(route: string)`
+is the library's real answer to letting someone pick a SPECIFIC device (Speaker / Earpiece / a named
+Bluetooth device / Wired) instead of the two-state force/auto toggle here — real, separate work,
+since it needs the platform-specific route name strings enumerated first. The reported "mic button
+not working" is still open: `setMuted`'s implementation (`track.enabled = false` on the local audio
+track) is structurally the same well-established pattern web's own mute uses, and only affects what
+OTHER participants hear — a solo test with nobody confirming they'd stopped hearing you would look
+identical to a broken button. Revisit with a two-participant test before assuming there's a second
+bug here.
+
+Verified: typecheck clean (including the local type-signature fix), lint clean, all 226 tests pass
+unchanged (no new logic module — a real device audio-routing fix has no meaningful unit-testable
+surface), guardrail self-test clean, prettier clean, and a real `expo export --platform android`
+bundles cleanly. Not yet reverified against a real Bluetooth headset — that requires the project
+owner's own device.
+
 ## Not here yet
 
 - **CallKit (iOS) / ConnectionService (Android) — a real lock-screen "incoming call" UI.** Named
