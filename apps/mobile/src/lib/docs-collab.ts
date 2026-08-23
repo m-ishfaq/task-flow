@@ -1,4 +1,5 @@
 import * as Y from 'yjs';
+import { encodeBase64 } from './base64.js';
 
 /**
  * The live collaborative connection for one Docs page (Phase 6, ported to
@@ -59,6 +60,19 @@ import * as Y from 'yjs';
  * device. What those tests cannot prove is that TipTap's live Yjs binding
  * shapes content EXACTLY as assumed here — that needs a real save from a
  * real editor, which is real, separate confirmation work.
+ *
+ * ## `pageStartAnchor` — the other genuinely new piece
+ *
+ * Comment/suggestion anchors on web are TEXT-RANGE positions, built by
+ * converting a ProseMirror selection through `@tiptap/y-tiptap`'s
+ * editor-state binding — see `apps/api/src/docs/anchor.ts`'s own header for
+ * why the server never builds one itself. This app has no editor and
+ * therefore no selection to convert; `pageStartAnchor` builds the same wire
+ * shape (a base64-encoded `Y.RelativePosition`) at a fixed point instead —
+ * index 0 of the content fragment itself — so a mobile comment/suggestion
+ * is anchored to the PAGE rather than to a phrase in it. The server-side
+ * `decodeAnchor` genuinely cannot tell the difference: it validates that
+ * the bytes decode, never what position they name.
  */
 
 export function pageDocumentName(pageId: string): string {
@@ -77,6 +91,38 @@ export function collabWebsocketUrl(collabBaseUrl: string, orgId: string): string
   const scheme = collabBaseUrl.startsWith('https:') ? 'wss:' : 'ws:';
   const host = collabBaseUrl.replace(/^https?:/, '');
   return `${scheme}${host}/collab?orgId=${encodeURIComponent(orgId)}`;
+}
+
+/**
+ * A comment/suggestion anchor at the very start of a page's content — "this
+ * comment belongs to the page," not to a text range. `apps/web`'s own
+ * anchor builder (`editor/anchor.ts`) needs a live ProseMirror↔Yjs binding
+ * (`@tiptap/y-tiptap`'s `absolutePositionToRelativePosition`, reading the
+ * selection's `[from, to]` off `editor.state`) to turn a selected range into
+ * one — this app has no editor and therefore no selection to convert. The
+ * WIRE FORMAT is identical either way: `apps/api/src/docs/anchor.ts`'s
+ * `decodeAnchor` only checks that the bytes are A well-formed
+ * `Y.RelativePosition` (`Y.decodeRelativePosition` either parses or
+ * throws) — it was never told, and never asks, what position a relative
+ * position names. So a page-level anchor, built with pure Yjs and no
+ * ProseMirror at all, is exactly as valid a `docs.comments.create`/
+ * `docs.suggestions.create` payload as a true text-range one.
+ *
+ * `Y.createRelativePositionFromTypeIndex(fragment, 0)` anchors at index 0
+ * of the CONTENT FRAGMENT ITSELF — not inside any one paragraph's
+ * `Y.XmlText` — so it names a stable point that exists for the lifetime of
+ * the page regardless of what its actual content becomes. `anchorFrom` and
+ * `anchorTo` are the same encoded bytes: a collapsed, zero-width range,
+ * the same shape a "comment on this page" affordance would use even with
+ * a real editor present.
+ */
+export function pageStartAnchor(fragment: Y.XmlFragment): {
+  readonly anchorFrom: string;
+  readonly anchorTo: string;
+} {
+  const relative = Y.createRelativePositionFromTypeIndex(fragment, 0);
+  const encoded = encodeBase64(Y.encodeRelativePosition(relative));
+  return { anchorFrom: encoded, anchorTo: encoded };
 }
 
 interface PlainNode {

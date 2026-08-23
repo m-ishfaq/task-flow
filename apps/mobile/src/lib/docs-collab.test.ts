@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
+import { decodeBase64 } from './base64.js';
 import {
   collabWebsocketUrl,
   pageDocumentName,
+  pageStartAnchor,
   yjsFragmentToRichTextDocument,
 } from './docs-collab.js';
 
@@ -192,5 +194,38 @@ describe('yjsFragmentToRichTextDocument', () => {
       type: 'doc',
       content: [{ type: 'paragraph' }],
     });
+  });
+});
+
+describe('pageStartAnchor', () => {
+  it('produces a wire anchor apps/api/src/docs/anchor.ts would decode as valid', () => {
+    const { content } = docWithContent();
+    const { anchorFrom, anchorTo } = pageStartAnchor(content);
+
+    // Mirrors decodeAnchor's own two steps exactly: base64 decode, then
+    // Y.decodeRelativePosition — the server never asks for more than this
+    // to accept an anchor, per that file's own header.
+    expect(() => Y.decodeRelativePosition(decodeBase64(anchorFrom))).not.toThrow();
+    expect(() => Y.decodeRelativePosition(decodeBase64(anchorTo))).not.toThrow();
+  });
+
+  it('is collapsed — anchorFrom and anchorTo are identical', () => {
+    const { content } = docWithContent();
+    const { anchorFrom, anchorTo } = pageStartAnchor(content);
+    expect(anchorFrom).toBe(anchorTo);
+  });
+
+  it('resolves back to the start of the fragment via real Yjs, content or not', () => {
+    const { doc, content } = docWithContent();
+    const paragraph = new Y.XmlElement('paragraph');
+    content.insert(0, [paragraph]);
+
+    const { anchorFrom } = pageStartAnchor(content);
+    const relative = Y.decodeRelativePosition(decodeBase64(anchorFrom));
+    const absolute = Y.createAbsolutePositionFromRelativePosition(relative, doc);
+
+    expect(absolute).not.toBeNull();
+    expect(absolute?.type).toBe(content);
+    expect(absolute?.index).toBe(0);
   });
 });

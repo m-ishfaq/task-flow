@@ -28,6 +28,7 @@ import {
   type Page,
   type PageTreeRow,
 } from '../../../src/lib/docs.js';
+import { templatesQueryKey, type DocTemplate } from '../../../src/lib/docs-templates.js';
 
 /**
  * One space's page tree — reached by tapping a space on the Docs tab.
@@ -59,6 +60,14 @@ import {
  * offering a page's own descendant, which would create a cycle the server
  * would refuse anyway — filtering it out client-side is a better
  * experience than offering it and then explaining why not.
+ *
+ * Page templates (Phase 6 Wave 4) are fully portable to this screen with
+ * no editor at all — `docs.templates.createPage` copies a stored Yjs
+ * snapshot entirely server-side, so `CreatePageModal` only ever needs to
+ * send a `templateId` string, exactly like web's own `<select>` picker.
+ * "Templates" opens a small manage sheet (list + delete) — creating one
+ * ("save this page as a template") lives on `docs-page/[pageId].tsx`
+ * instead, since it needs a `pageId` this screen has no single one of.
  */
 export default function DocsSpaceScreen() {
   const params = useLocalSearchParams<{ spaceId: string }>();
@@ -78,26 +87,60 @@ export default function DocsSpaceScreen() {
   });
   const rows = buildPageTree(pages.data ?? []);
 
+  const templates = useQuery({
+    queryKey: templatesQueryKey(spaceId),
+    queryFn: async () => wire(await apiClient.docs.templates.list.query({ spaceId })),
+  });
+
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: pagesQueryKey(spaceId) });
+  };
+  const invalidateTemplates = () => {
+    void queryClient.invalidateQueries({ queryKey: templatesQueryKey(spaceId) });
   };
 
   const [creatingUnder, setCreatingUnder] = useState<string | null>();
   const [newTitle, setNewTitle] = useState('');
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [optionsFor, setOptionsFor] = useState<Page | null>(null);
   const [optionsTitle, setOptionsTitle] = useState('');
   const [movingPage, setMovingPage] = useState<Page | null>(null);
+  const [managingTemplates, setManagingTemplates] = useState(false);
 
   const createPage = useMutation({
-    mutationFn: (input: { parentPageId: string | null; title: string }) =>
-      apiClient.docs.pages.create.mutate({ spaceId, ...input }),
+    mutationFn: (input: {
+      parentPageId: string | null;
+      title: string;
+      templateId: string | null;
+    }) =>
+      input.templateId === null
+        ? apiClient.docs.pages.create.mutate({
+            spaceId,
+            parentPageId: input.parentPageId,
+            title: input.title,
+          })
+        : apiClient.docs.templates.createPage.mutate({
+            spaceId,
+            parentPageId: input.parentPageId,
+            title: input.title,
+            templateId: input.templateId,
+          }),
     onSuccess: () => {
       invalidate();
       setCreatingUnder(undefined);
       setNewTitle('');
+      setSelectedTemplateId(null);
     },
     onError: (error: unknown) => {
       Alert.alert('This page could not be created', apiErrorOf(error)?.error.message);
+    },
+  });
+
+  const deleteTemplate = useMutation({
+    mutationFn: (templateId: string) => apiClient.docs.templates.delete.mutate({ templateId }),
+    onSettled: invalidateTemplates,
+    onError: (error: unknown) => {
+      Alert.alert('This template could not be deleted', apiErrorOf(error)?.error.message);
     },
   });
 
@@ -157,14 +200,24 @@ export default function DocsSpaceScreen() {
         <Text style={styles.title} numberOfLines={1}>
           {space?.name ?? 'Space'}
         </Text>
-        <Pressable
-          style={styles.newButton}
-          onPress={() => {
-            setCreatingUnder(null);
-          }}
-        >
-          <Text style={styles.newButtonText}>+ New page</Text>
-        </Pressable>
+        <View style={styles.titleActions}>
+          <Pressable
+            style={styles.templatesButton}
+            onPress={() => {
+              setManagingTemplates(true);
+            }}
+          >
+            <Text style={styles.templatesButtonText}>Templates</Text>
+          </Pressable>
+          <Pressable
+            style={styles.newButton}
+            onPress={() => {
+              setCreatingUnder(null);
+            }}
+          >
+            <Text style={styles.newButtonText}>+ New page</Text>
+          </Pressable>
+        </View>
       </View>
 
       {pages.isPending && <ActivityIndicator style={styles.loading} color={colors.accent.hex} />}
@@ -189,7 +242,10 @@ export default function DocsSpaceScreen() {
               item.page.archivedAt !== null && styles.rowArchived,
             ]}
             onPress={() => {
-              router.push(`/docs-page/${item.page.pageId}`);
+              router.push({
+                pathname: '/docs-page/[pageId]',
+                params: { pageId: item.page.pageId, spaceId },
+              });
             }}
             onLongPress={() => {
               setOptionsFor(item.page);
@@ -218,14 +274,34 @@ export default function DocsSpaceScreen() {
         }
         title={newTitle}
         onChangeTitle={setNewTitle}
+        templates={templates.data ?? []}
+        selectedTemplateId={selectedTemplateId}
+        onSelectTemplate={setSelectedTemplateId}
         pending={createPage.isPending}
         error={createPage.error}
         onCreate={() => {
-          createPage.mutate({ parentPageId: creatingUnder ?? null, title: newTitle.trim() });
+          createPage.mutate({
+            parentPageId: creatingUnder ?? null,
+            title: newTitle.trim(),
+            templateId: selectedTemplateId,
+          });
         }}
         onClose={() => {
           setCreatingUnder(undefined);
           setNewTitle('');
+          setSelectedTemplateId(null);
+        }}
+      />
+
+      <ManageTemplatesModal
+        visible={managingTemplates}
+        templates={templates.data ?? []}
+        deletePending={deleteTemplate.isPending}
+        onDelete={(templateId) => {
+          deleteTemplate.mutate(templateId);
+        }}
+        onClose={() => {
+          setManagingTemplates(false);
         }}
       />
 
@@ -280,6 +356,9 @@ function CreatePageModal({
   parentTitle,
   title,
   onChangeTitle,
+  templates,
+  selectedTemplateId,
+  onSelectTemplate,
   pending,
   error,
   onCreate,
@@ -289,6 +368,9 @@ function CreatePageModal({
   readonly parentTitle: string | null;
   readonly title: string;
   readonly onChangeTitle: (value: string) => void;
+  readonly templates: readonly DocTemplate[];
+  readonly selectedTemplateId: string | null;
+  readonly onSelectTemplate: (templateId: string | null) => void;
   readonly pending: boolean;
   readonly error: unknown;
   readonly onCreate: () => void;
@@ -313,6 +395,54 @@ function CreatePageModal({
               maxLength={200}
               autoFocus
             />
+            {templates.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.templatePickerRow}
+              >
+                <Pressable
+                  style={[
+                    styles.templateChip,
+                    selectedTemplateId === null && styles.templateChipActive,
+                  ]}
+                  onPress={() => {
+                    onSelectTemplate(null);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.templateChipText,
+                      selectedTemplateId === null && styles.templateChipTextActive,
+                    ]}
+                  >
+                    Blank page
+                  </Text>
+                </Pressable>
+                {templates.map((template) => (
+                  <Pressable
+                    key={template.templateId}
+                    style={[
+                      styles.templateChip,
+                      selectedTemplateId === template.templateId && styles.templateChipActive,
+                    ]}
+                    onPress={() => {
+                      onSelectTemplate(template.templateId);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.templateChipText,
+                        selectedTemplateId === template.templateId && styles.templateChipTextActive,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {template.name}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            )}
             {error !== null && (
               <Text style={styles.errorText} accessibilityRole="alert">
                 {apiErrorOf(error)?.error.message ?? 'The page was not created.'}
@@ -411,6 +541,56 @@ function PageOptionsModal({
           </Pressable>
         </Pressable>
       </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+function ManageTemplatesModal({
+  visible,
+  templates,
+  deletePending,
+  onDelete,
+  onClose,
+}: {
+  readonly visible: boolean;
+  readonly templates: readonly DocTemplate[];
+  readonly deletePending: boolean;
+  readonly onDelete: (templateId: string) => void;
+  readonly onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={styles.modalCard} onPress={() => undefined}>
+          <Text style={styles.modalTitle}>Templates</Text>
+          {templates.length === 0 ? (
+            <Text style={styles.modalHint}>
+              No templates yet — open a page and tap "Save as template" to create one.
+            </Text>
+          ) : (
+            <ScrollView style={styles.modalList} nestedScrollEnabled>
+              {templates.map((template) => (
+                <View key={template.templateId} style={styles.templateRow}>
+                  <Text style={styles.modalOptionText} numberOfLines={1}>
+                    {template.name}
+                  </Text>
+                  <Pressable
+                    disabled={deletePending}
+                    onPress={() => {
+                      onDelete(template.templateId);
+                    }}
+                  >
+                    <Text style={styles.modalDangerText}>Delete</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+          <Pressable style={styles.modalCancel} onPress={onClose}>
+            <Text style={styles.modalCancelText}>Close</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
@@ -515,6 +695,55 @@ const styles = StyleSheet.create({
     color: colors.accentInk.hex,
     fontSize: 12,
     fontWeight: '700',
+  },
+  titleActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  templatesButton: {
+    borderRadius: radiusCard,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: colors.line.hex + '80',
+  },
+  templatesButtonText: {
+    color: colors.ink.hex,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  templatePickerRow: {
+    flexDirection: 'row',
+    maxHeight: 40,
+  },
+  templateChip: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: colors.line.hex + '80',
+    maxWidth: 160,
+  },
+  templateChipActive: {
+    backgroundColor: colors.accent.hex,
+    borderColor: colors.accent.hex,
+  },
+  templateChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.ink.hex,
+  },
+  templateChipTextActive: {
+    color: colors.accentInk.hex,
+  },
+  templateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line.hex,
   },
   loading: {
     marginTop: 12,
