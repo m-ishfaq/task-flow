@@ -31,13 +31,27 @@ import { ExportDataSection } from '../../src/lib/export-data-section.js';
  * only the back button every other pushed screen under `(app)/` already
  * draws, since it is no longer a tab's own root with nowhere to return to.
  *
- * "Switch organization" pushes `/org-picker` — the SAME screen
- * `(app)/_layout.tsx`'s gate already redirects to when no valid org is
- * remembered, now also reachable on demand. That screen already handles the
- * "no memberships" case, already calls `session.selectOrg` +
- * `router.replace('/home')` on pick, and already lives outside `(app)/` for
- * the gate-loop reason its own header documents — nothing about it needed
- * to change to be reachable voluntarily as well as by force.
+ * **The org card at the top of the Organization section IS the switcher —
+ * tap it, not a separate button below it.** Raised live: should this be
+ * more prominent, and should it be styled like Sign out (danger red)? Red
+ * stays where it was: reserved for the one action on this screen that
+ * actually ends the session, and switching organizations is neither
+ * destructive nor rare for anyone belonging to more than one — coloring it
+ * like a warning would misstate what it does. What DID change is
+ * prominence: the current org's own name/role display is now the tappable
+ * element, in the app's accent color, first in the section — pushing
+ * `/org-picker`, the SAME screen `(app)/_layout.tsx`'s gate already
+ * redirects to when no valid org is remembered, now also reachable on
+ * demand. That screen already handles the "no memberships" case, already
+ * calls `session.selectOrg` + `router.replace('/home')` on pick, and
+ * already lives outside `(app)/` for the gate-loop reason its own header
+ * documents — nothing about it needed to change to be reachable
+ * voluntarily as well as by force.
+ *
+ * **"People" joined "Manage organization" and "Automations" as a third
+ * link here** the same pass that moved `people.tsx` off the tab bar to
+ * make room for Docs — see `(tabs)/_layout.tsx`'s own header for why
+ * People was the tab that gave up its slot.
  */
 export default function Account() {
   const orgId = useSession((state) => state.orgId);
@@ -63,15 +77,27 @@ export default function Account() {
 
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>Organization</Text>
-        <Text style={styles.orgName}>{currentOrg?.name ?? '—'}</Text>
-        {currentOrg !== undefined && <Text style={styles.orgRole}>{currentOrg.role}</Text>}
+        {/* The current org IS the switcher, tap-to-open — not a name
+            display with a separate "Switch organization" button below it.
+            Switching is a normal, frequent, non-destructive action for
+            anyone in more than one org, so it gets the opposite visual
+            treatment from Sign out below: the most prominent element in
+            this section, in the app's own accent color, never danger red —
+            red is reserved for the one action here that actually ends the
+            session. Placing it first and making the whole row tappable is
+            what "easier to reach" means for an action nobody should have
+            to hesitate before pressing. */}
         <Pressable
-          style={styles.secondaryButton}
+          style={styles.orgSwitchCard}
           onPress={() => {
             router.push('/org-picker');
           }}
         >
-          <Text style={styles.secondaryButtonText}>Switch organization</Text>
+          <View style={styles.orgSwitchText}>
+            <Text style={styles.orgName}>{currentOrg?.name ?? '—'}</Text>
+            {currentOrg !== undefined && <Text style={styles.orgRole}>{currentOrg.role}</Text>}
+          </View>
+          <Text style={styles.orgSwitchAction}>Switch ›</Text>
         </Pressable>
         {/* Always shown, not gated on a capability read here — the roster
             itself is `member:read` (every role), and `org-settings.tsx`'s
@@ -86,8 +112,17 @@ export default function Account() {
         >
           <Text style={styles.secondaryButtonText}>Manage organization</Text>
         </Pressable>
-        {/* Same "always shown, floored on the server" reasoning as "Manage
-            organization" above — `automation:manage` decides who can act
+        {/* Same "always shown, floored on the server" reasoning — `member
+            :read` decides who sees rows once there, not a check here. */}
+        <Pressable
+          style={styles.secondaryButton}
+          onPress={() => {
+            router.push('/people');
+          }}
+        >
+          <Text style={styles.secondaryButtonText}>People</Text>
+        </Pressable>
+        {/* Same reasoning again — `automation:manage` decides who can act
             once there, not a check here (§8.2). */}
         <Pressable
           style={styles.secondaryButton}
@@ -158,6 +193,27 @@ const styles = StyleSheet.create({
     color: colors.inkMuted.hex,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  orgSwitchCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    borderRadius: radiusCard + 2,
+    borderWidth: 1,
+    borderColor: colors.accent.hex + '40',
+    backgroundColor: colors.accent.hex + '0C',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  orgSwitchText: {
+    flex: 1,
+    gap: 1,
+  },
+  orgSwitchAction: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.accent.hex,
   },
   orgName: {
     fontSize: 16,

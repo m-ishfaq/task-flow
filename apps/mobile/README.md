@@ -4345,3 +4345,64 @@ touched), guardrail self-test clean, prettier clean, encoding check clean, and a
 `expo export --platform android` bundles cleanly. Not yet confirmed on a real device — exactly the
 kind of thing a bundle export cannot prove, which is how three of these four shipped in the first
 place.
+
+## Docs ships as structure only, People trades tab slots with it, and the org switcher gets a real look
+
+Three changes from the same pass, causally linked: Docs needed a tab slot, People was the tab that
+gave it up, and the Account screen it moved to is where the org switcher's own redesign landed too.
+
+### Docs: spaces and the page tree — no content, named as the reason why
+
+`docs.ts`/`docs.tsx`/`docs-space/[spaceId].tsx` — the 6th... really the same 5th slot again: a real
+tab, not an Account-screen link, because a Docs space is something people browse and drill into the
+way a board or a chat inbox is, not an occasional config screen the way Automations is. Ships create
+space, create page, rename, move (to a different parent, append-only — the identical "no
+client-computed position" call `board/[boardId].tsx`'s own card Move already makes), and
+archive/restore. `buildPageTree` flattens `docs.pages.list`'s flat, parent-pointer rows into one
+indented list ordered by the same base62 `rank` scheme Work cards use — no collapse/expand state,
+every page always visible, the simpler choice for a first pass.
+
+**What does not ship, and why it genuinely cannot yet: reading or writing a page's actual content.**
+`pages.list` returns tree metadata only (`pageId`, `parentPageId`, `title`, `rank`, `archivedAt`,
+`publishedAt`); `pageVersions.list` returns version METADATA only. Neither carries the document body
+— there is no `pages.getContent`-style route to fall back on, because the real content only exists
+as a live Yjs document synced over `apps/collab`'s Hocuspocus WebSocket protocol. Building that
+client for React Native (the `yjs` package itself is pure JS and would run; the handshake, snapshot
+replay, and turning a `Y.XmlFragment` into something this app can render are the real work) is a
+separate undertaking on the scale of Phase 8's TQL/filter builder, not a corner cut from this pass.
+Publish/unpublish is left out for a related reason, even though it is a pure metadata flip with no
+content dependency: publishing something nobody can read on this device to check first is the wrong
+order to ship those two capabilities in. Comments, suggestions, backlinks, templates, and PDF export
+all sit on the same content dependency and are not touched either.
+
+### People trades its tab slot for Docs, and gets an Account-screen link like Automations
+
+`(tabs)/_layout.tsx` was already full at five when Docs needed a slot — `Tabs` has no scroll
+behaviour when it overflows a phone's width, so something had to give one up. People was the correct
+one to move: you go to the org directory to look someone up, not to browse it between other work the
+way a board or an inbox gets browsed, the same "who reaches for this mid-task" test that already
+moved Account off this bar. `people.tsx` itself is unchanged in shape, just relocated from
+`(tabs)/people.tsx` to a pushed sibling of `automations.tsx` under `(app)/`, reached from a new
+"People" link on the Account screen. The tab bar's remaining five now read in the SAME order
+CLAUDE.md's own opening line names the product's modules — Work (My Tasks, Boards), Chat, Docs,
+Voice & Messaging (Calls) — rather than an arbitrary order, which is what "what comes first" settled
+into once there was a real reference to check against instead of a guess.
+
+### The org switcher: raised live — should it be red, at the bottom right?
+
+**No to red.** Red is reserved on this screen for Sign out, the one action here that actually ends
+the session; switching organizations is a normal, frequent, non-destructive action for anyone
+belonging to more than one, and coloring it like a warning would misstate what it does. What
+genuinely needed to change was prominence, and the fix was not a new color — it was making the
+current org's own display THE switcher: the name/role card that used to just show state is now the
+tappable element itself, in the app's accent color, first in the Organization section, opening
+`/org-picker` on tap rather than requiring a separate "Switch organization" button below it. That is
+the more effective answer to "easier to reach" than a corner-anchored button would have been: the
+thing people already look at to check which org they are in is now also the thing that switches it.
+
+Verified: typecheck clean, lint clean, all 299 tests pass (291 existing plus 8 new for `docs.ts`'s
+`buildPageTree`/`descendantIdsOf`), guardrail self-test clean, prettier clean, encoding check clean,
+and a real `expo export --platform android` bundles cleanly with `/docs`, `/docs-space/[spaceId]`,
+and `/people` all resolving. Not yet confirmed on a real device — the page tree's indentation at real
+depth and the org-switch card's tap target are both worth a real screen before calling this
+device-verified.
