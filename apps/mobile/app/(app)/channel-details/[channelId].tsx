@@ -66,12 +66,17 @@ import {
  *
  * **Still genuinely excluded: `DirectCallAction`**, web's click-to-call
  * button for a two-person DM's counterparty WORK PHONE — a Phase 7
- * (Twilio/PSTN) telephony affordance, not Phase 13's in-app WebRTC calling,
- * and Phase 7's telephony client has never been ported to `apps/mobile` at
- * all. The two are easy to conflate because both put a phone icon near a
- * DM's header; they dial through entirely different systems (a real PSTN
- * number vs. this app's own signaling gateway), and only the second one
- * exists here.
+ * (Twilio/PSTN) telephony affordance, not Phase 13's in-app WebRTC calling.
+ * "Phase 7's telephony client has never been ported to `apps/mobile` at
+ * all" was true when this paragraph was written; `(tabs)/calls.tsx` is that
+ * port now, and `telephony-call-button.tsx`'s `TelephonyCallButton` is the
+ * exact component `DirectCallAction` would reuse. Still not wired in HERE,
+ * though — adding it to this screen is its own small follow-up, not
+ * something the telephony port did on its way past. The two are easy to
+ * conflate because both put a phone icon near a DM's header; they dial
+ * through entirely different systems (a real PSTN number vs. this app's own
+ * signaling gateway), and only the second one exists on this specific
+ * screen today.
  *
  * **Every control here is shown; the server decides** — the same rule
  * `channel-details.tsx`'s own header states for web, restated because this

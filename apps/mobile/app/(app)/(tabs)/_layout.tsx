@@ -14,9 +14,12 @@ import { colors } from '@taskflow/tokens';
  * equivalent for a phone-width screen is the platform's own primary-nav
  * idiom (iOS's tab bar, Android's bottom navigation), which `expo-router`'s
  * `Tabs` renders as the native component on each platform rather than a
- * hand-built approximation. Four tabs today — "My Tasks", "Boards" (Wave
+ * hand-built approximation. Five tabs today — "My Tasks", "Boards" (Wave
  * 2's remaining item — projects/boards/lists, `boards.tsx`), "Chat" (Wave
- * 3, read + send only — see `chat.ts`'s own header) and "Account" (org
+ * 3, read + send only — see `chat.ts`'s own header), "Calls" (Phase 7's
+ * telephony client, `calls.tsx` — real, separate from Phase 13's in-app
+ * WebRTC calling, which has no tab of its own and instead rings from
+ * whatever screen is open, `call-surface.tsx`) and "Account" (org
  * switching, passkeys, sign-out) — because those are the destinations that
  * exist; Docs/People join this bar as their own waves ship real screens,
  * the same way `apps/web`'s `Sidebar` grew its nav rail one item per phase
@@ -102,6 +105,15 @@ export default function TabsLayout() {
               color={color}
               size={size}
             />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="calls"
+        options={{
+          title: 'Calls',
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'call' : 'call-outline'} color={color} size={size} />
           ),
         }}
       />

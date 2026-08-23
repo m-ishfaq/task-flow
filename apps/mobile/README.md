@@ -1299,6 +1299,17 @@ button; a "past calls" list with no query layer behind it is the same
 mistake this app's own history already warns against — a control that
 reads correctly and does nothing real. Real, separate work, named here
 rather than quietly missing.
+_(True when written — both have since shipped: Phase 13's WebRTC calling
+got `call-surface.tsx`/`use-call.ts` (see "In-app voice calling" below),
+and Phase 7's telephony client got its own "Calls" tab (see "Voice &
+Messaging: Phase 7's telephony client, ported" further down). The
+in-channel RTC call history this section's own `CallHistorySection`
+already shows is that first half; a DM's click-to-call against the
+counterparty's work phone specifically is not yet wired into THIS
+screen — `TelephonyCallButton` exists and could be reused here, but that
+is its own small follow-up, not done as part of either port. Left as
+written rather than silently edited, per this file's own rule about
+correcting a stale claim in place.)_
 
 ## Account screen parity with web — complete
 
@@ -3954,3 +3965,87 @@ guardrail self-test clean, prettier clean, encoding check clean, and a real
 `expo export --platform android` bundles cleanly. Not yet confirmed against a real device with both
 screens actually open at once — that specific interleaving (open a board, push into a card, back out)
 is the one thing only the project owner's own hardware can settle.
+
+## Voice & Messaging: Phase 7's telephony client, ported
+
+Closes a gap this file named twice as never-started: "Phase 7's telephony client has never been
+ported to `apps/mobile` at all." A 5th bottom tab, "Calls" — the same tier as Chat, not a link
+buried in a settings screen, matching web's own `/calls` sidebar item and `(tabs)/_layout.tsx`'s
+own stated growth pattern ("Docs/People join this bar as their own waves ship real screens").
+
+**PSTN telephony (Twilio, real phone numbers, real carrier calls and SMS), not this app's own
+in-app calling — two systems that share the word "call" and nothing else.** `telephony.*`
+(Phase 7) and `rtc.*` (Phase 13, already built — `call-surface.tsx`, `use-call.ts`) are separate
+tRPC namespaces with separate authorization, separate spend, separate everything. Web keeps the
+two apart with a directory boundary (`features/rtc/call-button.tsx` vs `features/telephony/
+call-button.tsx`, same component name, different modules); this app is flat under `src/lib/`, so
+the name itself has to do that job — `telephony-call-button.tsx`'s `TelephonyCallButton`, never
+just `CallButton` (already taken by Phase 13's own in-app `call-button.tsx`).
+
+**Four tabs, a pill strip instead of nested routes.** Web uses a search param so the open tab is
+a shareable link (`telephony-page.tsx`'s own `settings-page.tsx`-derived pattern); this app has no
+URL to carry that, so it is local `useState<TabId>` instead — the same simplification
+`org-settings.tsx` already makes for its own sections. Nothing here re-derives authorization
+(CLAUDE.md §8.2): every control renders unconditionally, and `phoneNumber:read`/`call:read`/
+`sms:read` cover Member for three tabs while Spend's itemized report needs `recording:read`
+(Admin) — a Member sees "current spend" and a real FORBIDDEN on the report below it, exactly as
+the server's own tiering intends, never a hidden section.
+
+**`telephony.ts` holds only types, query keys, and pure formatters — no `react-native` import
+anywhere in it**, the same split `work.ts`/`billing.ts`/`sprints.ts` already establish, so
+`durationLabel`/`callStatusLabel` get real Vitest coverage (`telephony.test.ts`, 6 tests) without
+dragging in anything that fails to parse under it. No `orgId` in any query key
+(`PHONE_NUMBERS_QUERY_KEY`, `CALLS_QUERY_KEY`, and the rest) — matching `MY_TASKS_QUERY_KEY`'s own
+convention: switching orgs on this app remounts the whole screen tree via `OrgGate`, so these keys
+never need to disambiguate two orgs' data coexisting in one cache the way a persistent web SPA's
+might.
+
+**A real, caught-before-shipping type error, not a guess: several telephony fields are BRANDED
+opaque strings, not plain `string`.** `call.counterparty`, `number.e164`, `available.phoneNumber`,
+`thread.counterparty` all failed to typecheck as JSX children, template-literal interpolations, or
+`Alert.alert` arguments on first pass — the exact same pattern web's own panels already work
+around with `String(available.phoneNumber)`, `String(number.e164)`, etc., confirmed by reading
+those call sites rather than assumed. Every one of this screen's own equivalents does the same
+explicit `String(...)` — `tsc` caught all of them; none were found by inspection.
+
+**`TelephonyContactPicker`, the "To" field's person search, wraps a free-text `TextInput` rather
+than replacing it with a picker-only control** — a destination is an E.164 string and always has
+been (`calls.place`/`messages.send` both take `to`, never a user id), so picking a colleague FILLS
+the field and typing a number nobody in the org owns stays equally valid. The picker button opens
+a bottom-sheet `Modal` (`org-settings.tsx`'s `RolePickerModal` shape, since this app has no
+anchored-popover primitive), listing `people.directory.list` filtered to members with a work
+phone, walked page-by-page client-side exactly as web's own `phoneContactsQuery` does — there is
+no "directory of people with phones" route, only a directory. Hidden rather than shown-and-empty
+when nobody qualifies, matching this app's own established convention.
+
+**Recording download and number purchase/release reuse `use-step-up.ts`/`step-up-sheet.tsx`
+unchanged** — both already existed for `org-settings.tsx`'s own step-up-gated mutations
+(transferring ownership, removing a passkey), and both routes here are genuinely the same shape:
+a mutation the server refuses with `STEP_UP_REQUIRED` until a fresh password/TOTP proof arrives.
+No new step-up plumbing was written for this feature; `guard`/`pending`/`confirm`/`cancel` and a
+single `<StepUpSheet>` per screen were enough.
+
+**A recording's transcript renders nothing on error or while pending**, matching
+`calls-panel.tsx`'s own `Transcript` exactly and for the same reason: most calls are never
+transcribed, NOT_FOUND is the overwhelmingly common answer, and a red box on every un-transcribed
+recording would train people to ignore the one that matters. A caller without `recording:read`
+lands in the identical branch — the server's decision, never re-derived or explained here.
+
+**Not ported, named rather than left implicit:** the channel-details screen's own click-to-call
+against a DM counterparty's work phone (`DirectCallAction` on web) — see that screen's own header,
+corrected in place, for exactly what would be needed to add it (`TelephonyCallButton`, already
+built, already exported). `telephony.cards.recordings` (attaching a call recording to a Work
+card, web's `recording-section.tsx`) also has no mobile screen yet. Both are real, separate,
+credential-free follow-ups, not gaps this pass silently left open.
+
+Verified: typecheck clean (including the branded-string fixes above), lint clean (the one
+pre-existing `push-notifications.ts` warning), all 244 tests pass (238 existing plus 6 new for
+`telephony.ts`'s pure formatters), guardrail self-test clean, prettier clean, encoding check
+clean, and a real `expo export --platform android` bundles cleanly with the new tab wired in.
+**Not yet confirmed against a real Twilio-backed environment** — every route here answers
+`SERVICE_UNAVAILABLE` on an instance with no `TelephonyDeps` configured (`apps/api/src/telephony`'s
+own boot check), so the UI's correctness against a live carrier is unverified by construction
+until it runs somewhere Twilio is actually wired up; this is the same gap Phase 7's own web build
+had until it was tested against a real carrier for the first time (CLAUDE.md's own "four defects a
+green suite could not see" account) — worth reading before assuming this port is carrier-correct
+just because it typechecks and bundles.
