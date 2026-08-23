@@ -3536,21 +3536,74 @@ what actually crosses the native boundary; instead a single local `setForceSpeak
 in `use-call.ts` corrects the one signature that's wrong, in one place, with a comment explaining
 why, rather than suppressing type-checking per call site.
 
-**Not fixed, and named rather than left implicit**: `InCallManager.chooseAudioRoute(route: string)`
-is the library's real answer to letting someone pick a SPECIFIC device (Speaker / Earpiece / a named
-Bluetooth device / Wired) instead of the two-state force/auto toggle here — real, separate work,
-since it needs the platform-specific route name strings enumerated first. The reported "mic button
-not working" is still open: `setMuted`'s implementation (`track.enabled = false` on the local audio
-track) is structurally the same well-established pattern web's own mute uses, and only affects what
-OTHER participants hear — a solo test with nobody confirming they'd stopped hearing you would look
-identical to a broken button. Revisit with a two-participant test before assuming there's a second
-bug here.
+**Named as future work below, and since done**: `InCallManager.chooseAudioRoute(route: string)` is
+the library's real answer to letting someone pick a SPECIFIC device instead of the two-state
+force/auto toggle above — see "A real device picker, not a two-state toggle" further down, which
+replaces the `setForceSpeakerphoneOn`-based toggle described in this section entirely. The reported
+"mic button not working" is still open: `setMuted`'s implementation (`track.enabled = false` on the
+local audio track) is structurally the same well-established pattern web's own mute uses, and only
+affects what OTHER participants hear — a solo test with nobody confirming they'd stopped hearing you
+would look identical to a broken button. Revisit with a two-participant test before assuming there's
+a second bug here.
 
 Verified: typecheck clean (including the local type-signature fix), lint clean, all 226 tests pass
 unchanged (no new logic module — a real device audio-routing fix has no meaningful unit-testable
 surface), guardrail self-test clean, prettier clean, and a real `expo export --platform android`
 bundles cleanly. Not yet reverified against a real Bluetooth headset — that requires the project
 owner's own device.
+
+### A real device picker, not a two-state toggle — the third and final shape of this fix
+
+The section above shipped a two-state force/auto toggle as an interim fix — real, but crude: "auto"
+hands routing to the OS, with no way to choose a SPECIFIC device when more than one is available (a
+Bluetooth headset AND a wired headset both connected, say). Requested explicitly as the next
+shippable, credential-free call improvement once voice itself worked, this replaces that toggle with
+`InCallManager.chooseAudioRoute`, the call named but deliberately deferred above.
+
+Confirmed against the library's native Android source
+(`InCallManagerModule.java`), not assumed from the `.d.ts` alone: `chooseAudioRoute` accepts exactly
+one of `'EARPIECE' | 'SPEAKER_PHONE' | 'WIRED_HEADSET' | 'BLUETOOTH'` (the Java
+`enum AudioDevice`), and resolves to `{ availableAudioDeviceList: <JSON-string>,
+selectedAudioDevice: <string> }`. There is no passive getter for "what's available right now" — the
+only way to learn it is the `onAudioDeviceChanged` `DeviceEventEmitter` event, which fires with that
+same status shape whenever availability changes (a Bluetooth headset connecting or disconnecting
+mid-call, a wired plug pulled out) as well as in response to `chooseAudioRoute` itself.
+
+`use-call.ts`'s `CallState` now carries `availableAudioDevices` and `selectedAudioDevice` instead of
+the old `speakerOn` boolean, kept current by an `onAudioDeviceChanged` subscription started
+alongside `InCallManager.start()` in `joinCall` and torn down alongside it in `hangUp` — paired
+1:1, the same lifecycle discipline the module itself already followed. The "loud by default" join
+behaviour from the section above is preserved, but now correctly scoped: it seeds speaker only on
+the FIRST event, and only when neither `BLUETOOTH` nor `WIRED_HEADSET` is in the available list —
+so a headset already connected at join is never overridden, closing the gap the interim fix
+explicitly left open ("a Bluetooth device connected BEFORE a call still gets forced to speaker at
+join").
+
+**`DeviceEventEmitter` needed the same deferred-import treatment as `react-native-webrtc` and
+`react-native-incall-manager` — and for a different reason.** Both native modules throw
+synchronously if unlinked, which is reason enough on its own. But `react-native` itself turns out to
+need it here too: its own source fails to even parse under Vitest (Flow syntax) — confirmed by the
+fact that `push-notifications.ts`, the one other file in this codebase that statically imports
+`{ Platform }` from `'react-native'`, has no test file exercising it, deliberately. So
+`const { DeviceEventEmitter } = await import('react-native');` runs inside `joinCall`, never as a
+top-level import — keeping `use-call.ts` unit-testable with no React renderer, its own stated design
+goal.
+
+The old `setForceSpeakerphoneOn` local wrapper (the previous section's own fix for the package's
+incomplete `.d.ts`) is gone entirely — `chooseAudioRoute`'s real signature has no such gap, so there
+is nothing left to correct.
+
+`call-surface.tsx`'s speaker-toggle button is replaced with a picker trigger (hidden when
+`availableAudioDevices` is empty, matching this app's existing "hidden rather than shown-and-refused"
+convention) opening a bottom-sheet `AudioRoutePicker` — one row per available device, mirroring
+`org-settings.tsx`'s own `RolePickerModal` shape rather than inventing a new one, so the pattern a
+user already learned there is the same one here.
+
+Verified: typecheck clean, lint clean (one pre-existing, unrelated warning in
+`push-notifications.ts`), all 226 tests pass unchanged (no new logic module — same reasoning as the
+section above), guardrail self-test clean, prettier clean, encoding check clean, and a real
+`expo export --platform android` bundles cleanly. Not yet reverified against a real device with
+multiple simultaneous audio devices connected — that requires the project owner's own hardware.
 
 ## Not here yet
 
