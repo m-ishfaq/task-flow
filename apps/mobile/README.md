@@ -4517,3 +4517,35 @@ reasoned from source and tested against real Yjs data structures, not confirmed 
 running `apps/collab` and a real page. The author should treat `apps/collab/src/auth.ts`'s change
 with the same review weight as any other change to that file before merging, and confirm the reader
 against a real page opened on both a device and web at once.
+
+### A native dependency, and the dev client that predates it
+
+Found live, on the author's own dev client, the day this shipped: opening `/docs-page/[pageId]`
+crashed with a bare `Native module not found` thrown from inside
+`react-native-get-random-values`'s `getRandomBase64`, called from `Y.Doc`'s own constructor
+(`lib0/random`'s `uuidv4` → `uint32` → `getRandomValues`). `expo export` cannot catch this — it
+proves the bundle RESOLVES, never that a native module the bundle references is actually LINKED
+into whatever binary is currently installed. This is the identical failure class `use-call.ts`'s
+own header already documents for `react-native-webrtc`: adding any native dependency (this one
+included) requires the dev client itself to be rebuilt — Metro's Fast Refresh reloads JavaScript
+into an already-built binary, and cannot link new native code into it. A dev client built before
+`react-native-get-random-values` existed in `package.json` genuinely does not have it, and no
+amount of restarting `expo start` changes that.
+
+The fix is not a code change; it is the rebuild this project already required for
+`react-native-webrtc`, `expo-local-authentication`, and `modules/device-key` before this:
+
+```bash
+npx eas-cli build --profile development --platform android   # or --platform ios
+# install the resulting build on-device, then:
+pnpm --filter @taskflow/mobile start --dev-client
+```
+
+(Or `npx expo run:android` / `npx expo run:ios` for a local toolchain build instead of EAS's cloud
+one, if Android Studio/Xcode is already set up.) `webcrypto-shim.ts`'s `getRandomValues` now catches
+the underlying native throw and rethrows it naming this section directly, since the library's own
+`Error('Native module not found')` gives no hint that a rebuild — not a code fix — is what it
+needs; that is the only code change this gap warranted. **The public Expo Go app was already ruled
+out for this project** (see "confirming this on a simulator..." above, for the OAuth deep-link
+reason) — this is one more native dependency Expo Go could never carry regardless, since it ships a
+fixed SDK build with no way to add a project-specific native module at all.

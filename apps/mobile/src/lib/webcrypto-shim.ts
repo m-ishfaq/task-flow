@@ -32,10 +32,30 @@ import 'react-native-get-random-values';
  * project's own dependency tree already pull it in transitively for
  * exactly that reason). Importing it for its side effect is what makes
  * `crypto.getRandomValues` below real rather than absent.
+ *
+ * A NATIVE MODULE, though — found live, the same way `use-call.ts`'s own
+ * header already documents for `react-native-webrtc`: JS-only Fast Refresh
+ * cannot link new native code into a dev client built before this
+ * dependency existed. The underlying `NativeModules.RNGetRandomValues`
+ * lookup throws its own bare `Error('Native module not found')` with
+ * nothing pointing at the actual fix, so it is caught and rethrown here
+ * with one — see README.md's "A native dependency, and the dev client that
+ * predates it" for the full account and the exact rebuild command.
  */
 export default {
   ensureSecure: () => undefined,
-  getRandomValues: (array: Parameters<typeof crypto.getRandomValues>[0]) =>
-    crypto.getRandomValues(array),
+  getRandomValues: (array: Parameters<typeof crypto.getRandomValues>[0]) => {
+    try {
+      return crypto.getRandomValues(array);
+    } catch (cause) {
+      throw new Error(
+        'react-native-get-random-values needs a native rebuild — this dev client predates it. ' +
+          'Run `npx eas-cli build --profile development --platform android` (or `ios`), install ' +
+          'the result, then `pnpm --filter @taskflow/mobile start --dev-client`. See ' +
+          'apps/mobile/README.md, "A native dependency, and the dev client that predates it".',
+        { cause },
+      );
+    }
+  },
   subtle: crypto.subtle,
 };
