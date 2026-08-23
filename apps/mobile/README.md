@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed; the "needs a rich text editor" call on `@mention` composing turned out to be wrong for the mid-string case specifically (a plain `TextInput`'s own `onSelectionChange`/`selection` was enough) and is fixed too — see "`@mention` now works mid-string"; a real native (no WebView) rich text editor — bold, links, and lists — now composes on all four surfaces named for it (chat message composer, thread replies, card description, card comments), via `@expensify/react-native-live-markdown`'s `MarkdownTextInput` and a live/send-time split for the one thing it cannot highlight live (lists) — see "A real rich text editor..."; **in-app voice calling (Phase 13, Wave 5 here) now ships on mobile** — signaling (`react-native-webrtc`), ringing, ringtones, call history, and recording-consent participation, by explicit project-owner direction scoped to in-app ringing only (CallKit/ConnectionService lock-screen UI named as a real, separate follow-up rather than included) — see "In-app voice calling..."; the notification bell is now reachable from every tab and the org picker has a sign-out escape hatch — see "The notification bell was only reachable..."; **org settings (the member roster, invites, and role changes) now ships** — see "Org settings: the member roster..." — and **project settings (labels, statuses, custom fields, board rename/archive) now ships too** — see "Project settings: labels, statuses, and custom fields..." — with only Teams, billing, and ownership transfer still open, listed under "Not here yet"
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed; the "needs a rich text editor" call on `@mention` composing turned out to be wrong for the mid-string case specifically (a plain `TextInput`'s own `onSelectionChange`/`selection` was enough) and is fixed too — see "`@mention` now works mid-string"; a real native (no WebView) rich text editor — bold, links, and lists — now composes on all four surfaces named for it (chat message composer, thread replies, card description, card comments), via `@expensify/react-native-live-markdown`'s `MarkdownTextInput` and a live/send-time split for the one thing it cannot highlight live (lists) — see "A real rich text editor..."; **in-app voice calling (Phase 13, Wave 5 here) now ships on mobile** — signaling (`react-native-webrtc`), ringing, ringtones, call history, and recording-consent participation, by explicit project-owner direction scoped to in-app ringing only (CallKit/ConnectionService lock-screen UI named as a real, separate follow-up rather than included) — see "In-app voice calling..."; the notification bell is now reachable from every tab and the org picker has a sign-out escape hatch — see "The notification bell was only reachable..."; **org settings (the member roster, invites, and role changes) now ships** — see "Org settings: the member roster..." — and **project settings (labels, statuses, custom fields, board rename/archive) now ships too** — see "Project settings: labels, statuses, and custom fields..." — and **Teams, ownership transfer, and billing now ship as well** — see "Teams, ownership transfer, and billing..." — closing every item the original "org settings and perms not wired yet" report named
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -3322,6 +3322,75 @@ UI wiring over already-tested routes, the same shape as `org-settings.tsx`), gua
 clean, encoding check clean, prettier clean, and a real `expo export --platform android` bundles
 cleanly with the new route included.
 
+### Teams, ownership transfer, and billing — the three surfaces this file had named as deferred
+
+Closes the three items `org-settings.tsx`'s own header used to list as deliberately not ported.
+Teams and ownership transfer extend that same screen (`tenancy.teams.list/create/addMember/
+removeMember`, `tenancy.members.transferOwnership`); billing is `billing.tsx`, a new screen of its
+own, on the seven `billing.*` routes web's `billing-section.tsx` already uses.
+
+**Billing is its own screen, not a third section on `org-settings.tsx` — a deliberate divergence
+from web's single page.** `org:billing` answers "what does this org pay," a different question
+from "who is in it and what can they do," and web only bundles both because a wide layout has the
+room; a phone does not, and they were already two separate `Section`s there. A "Billing" link sits
+at the top of `org-settings.tsx`, always visible for the identical §8.2 reason every other control
+on that screen is — `org:billing` is Owner-only and satisfiable by no tuple, so a non-owner reaching
+it sees the same honest error every other permission-gated read on this app renders, not a hidden
+button.
+
+**"Transfer ownership…" is gated on `capabilities.manageMembers`, the same flag that gates changing
+a role — not a separate capability.** Ownership has exactly one holder, so the button is never
+usable by anyone but the current Owner, not "usually not." The candidate list is every member
+except the caller, deliberately unfiltered by role: filtering it here would be the UI re-deriving
+authorization (§8.2's own rule), and the server already refuses a guest jumping straight to Owner
+regardless of what this screen offers. Like `changeRole`/`remove`, `transferOwnership` is
+`stepUp: true` server-side, so it goes through the same `useStepUp` `guard`/retry pattern.
+
+**Team member removal has no confirm, matching this screen's own existing "Remove member"
+control** — not a two-tap chip confirm the way web's `TeamCard` does it. Both are the same class of
+action (an immediate authorization change with no server-side step-up), and this app's own
+established convention elsewhere (`project-settings.tsx`'s header lists it) is that `Alert.alert`
+is reserved for the FEW genuinely irreversible or high-consequence actions — introducing a THIRD
+confirmation style on one screen, alongside the member roster's own unconfirmed "Remove" a few rows
+above, would be inconsistent rather than careful.
+
+**Checkout and the customer portal are processor-hosted redirects here too, but the return signal
+is not web's.** Web navigates the whole page to the processor's URL and detects a completed
+checkout from `?checkout=success` reappearing in the address bar on return — a phone has no address
+bar to carry that. `WebBrowser.openBrowserAsync` (the same `expo-web-browser` module `oauth.ts`
+already uses for sign-in, here in its plain non-auth-session form, since a Stripe-hosted page has
+no `taskflow://` scheme to intercept) opens the URL and its promise resolves the moment the person
+dismisses that browser view — success, cancellation, or a portal-side change, all the same signal.
+Calling `reconcile` unconditionally on that resolution is actually a STRONGER guarantee than web's
+query parameter, since it fires on every kind of return rather than only the one URL shape checkout
+happens to redirect to, and `reconcile` is idempotent either way — the webhook stays the primary
+path, this only makes the screen correct immediately without waiting on one.
+
+**The plan-switch confirmation is `Alert.alert`, not a rebuilt `SwitchPlanDialog`.** The web dialog
+exists because "Switch" hides two genuinely different outcomes — an upgrade charges today, a
+downgrade waits until the period ends — and a two-button alert carrying the identical wording says
+exactly as much, matching this app's established use of `Alert.alert` for a real confirm decision.
+
+**One real type fight, not a shortcut.** RN's `DimensionValue` wants a computed usage-bar width as
+the literal shape `` `${number}%` ``, but this repo's `restrict-template-expressions` lint config
+disallows a bare number inside a template literal's `${...}`. `usagePercentWidth` in `billing.tsx`
+resolves it with plain string concatenation (outside that rule's scope) and a narrow cast back to
+`DimensionValue` — honest, since the computed percentage is always a finite 0–100 number, not a
+workaround for something the type system was right to catch.
+
+**`formatMoney`/`daysUntil` are the one pure logic this slice adds**, ported verbatim from
+`billing-section.tsx`'s own `money`/`daysUntil` — `billing.test.ts` is new because, unlike
+`org-settings.tsx`/`project-settings.tsx`, this file actually has something worth unit-testing:
+currency formatting (including the lowercase-to-uppercase currency-code step the wire value needs,
+since `Intl.NumberFormat` requires an uppercase ISO code) and the day-rounding/past-deadline edge
+cases, with the clock pinned via `vi.setSystemTime` the same way `work.test.ts` already does for
+`formatDueDate`.
+
+Verified: typecheck clean, lint clean (including the `restrict-template-expressions` fix above),
+226 tests pass (218 existing + 8 new in `billing.test.ts`, confirming `Intl.NumberFormat` works in
+this runtime), guardrail self-test clean, encoding check clean, prettier clean, and a real
+`expo export --platform android` bundles cleanly with both routes included.
+
 ## Not here yet
 
 - **CallKit (iOS) / ConnectionService (Android) — a real lock-screen "incoming call" UI.** Named
@@ -3341,10 +3410,8 @@ cleanly with the new route included.
   settings (labels, statuses, custom fields, plus board rename/archive) both shipped — see "Org
   settings: the member roster..." and "Project settings: labels, statuses, and custom fields..."
   above.
-- **Teams, billing, and ownership transfer — no screens, deliberately deferred.** All three are
-  real, separate surfaces on web (`TeamSection`, `BillingSection`, `transferOwnership`'s own dialog)
-  with no comparable urgency behind them yet; see `org-settings.tsx`'s own header for the same call
-  made explicitly at the point it was made.
+- **Teams, ownership transfer, and billing all shipped** — see "Teams, ownership transfer, and
+  billing..." above. Nothing from the original "org settings and perms" report remains deferred.
 - **Confirming this on a simulator or physical device beyond what has
   already run.** The app has now actually been installed and driven on a
   real development build — sign-in, the org picker, "My Tasks", and card

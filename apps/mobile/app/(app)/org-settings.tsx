@@ -23,39 +23,50 @@ import { StepUpSheet } from '../../src/lib/step-up-sheet.js';
 import {
   ORG_DETAIL_QUERY_KEY,
   MEMBERS_QUERY_KEY,
+  TEAMS_QUERY_KEY,
   type Member,
+  type Team,
 } from '../../src/lib/org-settings.js';
 
 /**
- * Organization settings — the org itself and its members, ported from
- * `apps/web/src/features/admin/settings-page.tsx`. Same routes, same
- * capability-gated shape: the member roster is `member:read` (every role
- * sees it, matching `channel-details/[channelId].tsx`'s own precedent of
- * showing a full roster and gating only the ACTIONS on top of it), while
- * inviting, changing a role, and removing each check their own
- * `capabilities` flag from `tenancy.orgs.get` — never a role comparison
- * here (CLAUDE.md rule 2; `role === 'admin'` outside `packages/policy` is a
- * lint error this file never triggers).
+ * Organization settings — the org itself, its members, and its teams,
+ * ported from `apps/web/src/features/admin/settings-page.tsx`. Same
+ * routes, same capability-gated shape: the member and team ROSTERS are
+ * `member:read`/`team:read` (every role sees them, matching
+ * `channel-details/[channelId].tsx`'s own precedent of showing a full
+ * roster and gating only the ACTIONS on top of it), while inviting,
+ * changing a role, removing, transferring ownership, creating a team, and
+ * managing its members each check their own `capabilities` flag from
+ * `tenancy.orgs.get` — never a role comparison here (CLAUDE.md rule 2;
+ * `role === 'admin'` outside `packages/policy` is a lint error this file
+ * never triggers).
  *
  * Reached from `(tabs)/account.tsx`'s "Manage organization" link — real,
  * separate work found genuinely not started at all when checked directly
  * against `apps/mobile/app/`'s own route list (a live report: "still
  * project, org settings and perms not wired yet").
  *
- * **Change role and Remove both go through `useStepUp`**, the identical
- * `guard`/retry pattern `sessions-section.tsx` and `connected-accounts-
- * section.tsx` already use — `tenancy.members.changeRole`/`.remove` are
- * both `stepUp: true` server-side (§8.1: role changes are what an attacker
+ * **Change role, Remove, and Transfer ownership all go through
+ * `useStepUp`**, the identical `guard`/retry pattern `sessions-section.tsx`
+ * and `connected-accounts-section.tsx` already use — the three routes are
+ * `stepUp: true` server-side (§8.1: role changes are what an attacker
  * holding a stolen session reaches for first), so this is not optional
- * plumbing to add later; the mutation genuinely fails without it. `Add` has
- * no such guard, matching the server route it calls, which carries none.
+ * plumbing to add later; the mutation genuinely fails without it. `Add`,
+ * team `create`, and team `addMember`/`removeMember` carry no such guard,
+ * matching the server routes they call, none of which do either.
  *
- * **What this deliberately does NOT port**: Teams (`TeamSection`),
- * billing (`BillingSection`), and ownership transfer
- * (`transferOwnership`'s own dialog) are all real, separate surfaces on
- * web with no comparable urgency behind them — the roster and role
- * changes are what "org settings and perms" was actually asking for. A
- * follow-up, not a silent omission.
+ * **"Transfer ownership…" is gated on `capabilities.manageMembers`, same
+ * as changing a role** — ownership has exactly one holder, so the button
+ * is never usable by anyone but the current Owner, not "usually not,
+ * never." The candidate list is every member except the caller,
+ * deliberately unfiltered by role: filtering it here would be the UI
+ * re-deriving authorization, which is exactly what §8.2 forbids — the
+ * server refuses a guest jumping straight to Owner and the route answers
+ * FORBIDDEN for anyone but the Owner regardless of what this screen shows.
+ *
+ * **What this deliberately does NOT port**: billing (`BillingSection`) is
+ * a real, separate surface — see `billing.tsx`'s own header for why it is
+ * a whole screen rather than a section appended here.
  */
 export default function OrgSettingsScreen() {
   const paddingTop = useTopInset();
@@ -71,11 +82,16 @@ export default function OrgSettingsScreen() {
     queryKey: MEMBERS_QUERY_KEY,
     queryFn: async () => wire(await apiClient.tenancy.members.list.query()),
   });
+  const teams = useQuery({
+    queryKey: TEAMS_QUERY_KEY,
+    queryFn: async () => wire(await apiClient.tenancy.teams.list.query()),
+  });
 
   const [name, setName] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<Role>('member');
   const [rolePickerFor, setRolePickerFor] = useState<Member | null>(null);
+  const [transferOpen, setTransferOpen] = useState(false);
 
   const capabilities = org.data?.capabilities ?? {
     updateOrg: false,
@@ -139,6 +155,49 @@ export default function OrgSettingsScreen() {
     });
   };
 
+  const transfer = useMutation({
+    mutationFn: (input: { toUserId: string; selfNewRole: 'admin' | 'member' }) =>
+      apiClient.tenancy.members.transferOwnership.mutate(input),
+    onSuccess: async () => {
+      setTransferOpen(false);
+      await refreshMembers();
+    },
+  });
+  const runTransfer = (input: { toUserId: string; selfNewRole: 'admin' | 'member' }): void => {
+    transfer.mutate(input, {
+      onError: (error) => {
+        guard(error, () => {
+          runTransfer(input);
+        });
+      },
+    });
+  };
+  const transferCandidates = (members.data ?? []).filter(
+    (member) => member.userId !== currentUserId,
+  );
+
+  const refreshTeams = async (): Promise<void> => {
+    await queryClient.invalidateQueries({ queryKey: TEAMS_QUERY_KEY });
+  };
+
+  const createTeam = useMutation({
+    mutationFn: (input: { name: string; slug: string }) =>
+      apiClient.tenancy.teams.create.mutate(input),
+    onSuccess: refreshTeams,
+  });
+
+  const addTeamMember = useMutation({
+    mutationFn: (input: { teamId: string; userId: string }) =>
+      apiClient.tenancy.teams.addMember.mutate(input),
+    onSuccess: refreshTeams,
+  });
+
+  const removeTeamMember = useMutation({
+    mutationFn: (input: { teamId: string; userId: string }) =>
+      apiClient.tenancy.teams.removeMember.mutate(input),
+    onSuccess: refreshTeams,
+  });
+
   const currentName = name ?? org.data?.name ?? '';
 
   return (
@@ -151,7 +210,21 @@ export default function OrgSettingsScreen() {
       >
         <Text style={styles.backButtonText}>← Back</Text>
       </Pressable>
-      <Text style={styles.screenTitle}>Organization settings</Text>
+      <View style={styles.titleRow}>
+        <Text style={styles.screenTitle}>Organization settings</Text>
+        {/* Always visible, like every other section on this page — `org:billing`
+            is Owner-only and answered by no tuple, so a non-owner reaching this
+            link sees the same honest error `billing.tsx` renders for anyone else
+            lacking a permission, not a hidden button (§8.2). */}
+        <Pressable
+          style={styles.billingLink}
+          onPress={() => {
+            router.push('/billing');
+          }}
+        >
+          <Text style={styles.billingLinkText}>Billing</Text>
+        </Pressable>
+      </View>
 
       {org.isPending ? (
         <ActivityIndicator color={colors.accent.hex} />
@@ -254,6 +327,29 @@ export default function OrgSettingsScreen() {
               </View>
             )}
 
+            {/* Never usable by anyone but the current Owner, not "usually not" —
+                ownership has exactly one holder. The server (`member:manage`)
+                is still what actually enforces it; this only stops offering the
+                action to everyone who structurally cannot take it. */}
+            {capabilities.manageMembers && (
+              <Pressable
+                style={styles.transferLink}
+                disabled={transferCandidates.length === 0}
+                onPress={() => {
+                  setTransferOpen(true);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.transferLinkText,
+                    transferCandidates.length === 0 && styles.transferLinkTextDisabled,
+                  ]}
+                >
+                  Transfer ownership…
+                </Text>
+              </Pressable>
+            )}
+
             {members.isPending ? (
               <ActivityIndicator color={colors.accent.hex} />
             ) : members.isError ? (
@@ -306,6 +402,65 @@ export default function OrgSettingsScreen() {
               </Text>
             )}
           </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Teams · {teams.data?.length ?? 0}</Text>
+            <Text style={styles.sectionHint}>
+              A team is a subject a grant can name. Adding someone to a team gives them everything
+              that team has been granted, immediately.
+            </Text>
+
+            {capabilities.manageTeams && (
+              <NewTeamForm
+                pending={createTeam.isPending}
+                onCreate={(teamName) => {
+                  createTeam.mutate({ name: teamName, slug: slugifyTeamName(teamName) });
+                }}
+              />
+            )}
+            {createTeam.isError && (
+              <Text style={styles.sectionError} accessibilityRole="alert">
+                {apiErrorOf(createTeam.error)?.error.message ?? 'Could not create this team.'}
+              </Text>
+            )}
+
+            {teams.isPending ? (
+              <ActivityIndicator color={colors.accent.hex} />
+            ) : teams.isError ? (
+              <Text style={styles.sectionError} accessibilityRole="alert">
+                {apiErrorOf(teams.error)?.error.message ?? "Couldn't load teams."}
+              </Text>
+            ) : teams.data.length === 0 ? (
+              <Text style={styles.emptyHint}>No teams yet.</Text>
+            ) : (
+              teams.data.map((team) => (
+                <TeamCard
+                  key={team.teamId}
+                  team={team}
+                  orgMembers={members.data ?? []}
+                  canManage={capabilities.manageTeams}
+                  busy={addTeamMember.isPending || removeTeamMember.isPending}
+                  onAdd={(userId) => {
+                    addTeamMember.mutate({ teamId: team.teamId, userId });
+                  }}
+                  onRemove={(userId) => {
+                    removeTeamMember.mutate({ teamId: team.teamId, userId });
+                  }}
+                />
+              ))
+            )}
+            {addTeamMember.isError && (
+              <Text style={styles.sectionError} accessibilityRole="alert">
+                {apiErrorOf(addTeamMember.error)?.error.message ?? 'Could not add that member.'}
+              </Text>
+            )}
+            {removeTeamMember.isError && (
+              <Text style={styles.sectionError} accessibilityRole="alert">
+                {apiErrorOf(removeTeamMember.error)?.error.message ??
+                  'Could not remove that member.'}
+              </Text>
+            )}
+          </View>
         </>
       )}
 
@@ -318,6 +473,17 @@ export default function OrgSettingsScreen() {
         }}
         onClose={() => {
           setRolePickerFor(null);
+        }}
+      />
+      <TransferOwnershipModal
+        visible={transferOpen}
+        candidates={transferCandidates}
+        pending={transfer.isPending}
+        onTransfer={(input) => {
+          runTransfer(input);
+        }}
+        onClose={() => {
+          setTransferOpen(false);
         }}
       />
       <StepUpSheet visible={pending} onConfirmed={confirm} onCancel={cancel} />
@@ -374,6 +540,228 @@ function RolePickerModal({
   );
 }
 
+/**
+ * Names the new owner AND the caller's resulting role, because the
+ * transaction changes both rows at once — there is never an observable
+ * zero-owner moment in between, matching `settings-page.tsx`'s own dialog.
+ */
+function TransferOwnershipModal({
+  visible,
+  candidates,
+  pending,
+  onTransfer,
+  onClose,
+}: {
+  readonly visible: boolean;
+  readonly candidates: readonly Member[];
+  readonly pending: boolean;
+  readonly onTransfer: (input: { toUserId: string; selfNewRole: 'admin' | 'member' }) => void;
+  readonly onClose: () => void;
+}) {
+  const [selfNewRole, setSelfNewRole] = useState<'admin' | 'member'>('admin');
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={styles.modalCard} onPress={() => undefined}>
+          <Text style={styles.modalTitle}>Transfer ownership</Text>
+          <Text style={styles.sectionHint}>
+            The new owner gets everything Owner allows, immediately. You become {selfNewRole} in the
+            same transaction — there is never a moment with no owner.
+          </Text>
+
+          <Text style={[styles.sectionTitle, styles.modalSubTitle]}>Your role afterwards</Text>
+          <View style={styles.roleRow}>
+            {(['admin', 'member'] as const).map((entry) => (
+              <Pressable
+                key={entry}
+                style={[styles.roleChip, selfNewRole === entry && styles.roleChipActive]}
+                onPress={() => {
+                  setSelfNewRole(entry);
+                }}
+              >
+                <Text
+                  style={[styles.roleChipText, selfNewRole === entry && styles.roleChipTextActive]}
+                >
+                  {entry}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Text style={[styles.sectionTitle, styles.modalSubTitle]}>New owner</Text>
+          {candidates.length === 0 ? (
+            <Text style={styles.emptyHint}>There is nobody else to transfer to yet.</Text>
+          ) : (
+            candidates.map((member) => (
+              <Pressable
+                key={member.userId}
+                style={styles.modalRow}
+                disabled={pending}
+                onPress={() => {
+                  onTransfer({ toUserId: member.userId, selfNewRole });
+                }}
+              >
+                <Text style={styles.modalRowText}>
+                  {member.displayName ?? member.email} ({member.role})
+                </Text>
+              </Pressable>
+            ))
+          )}
+          <Pressable style={styles.modalCancel} onPress={onClose}>
+            <Text style={styles.modalCancelText}>Cancel</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function NewTeamForm({
+  pending,
+  onCreate,
+}: {
+  readonly pending: boolean;
+  readonly onCreate: (name: string) => void;
+}) {
+  const [name, setName] = useState('');
+
+  return (
+    <View style={styles.addForm}>
+      <TextInput
+        value={name}
+        onChangeText={setName}
+        placeholder="Engineering"
+        placeholderTextColor={colors.inkFaint.hex}
+        style={styles.formInput}
+      />
+      <Text style={styles.sectionHint}>
+        {name.trim() === ''
+          ? 'The address is derived from the name and must be unique.'
+          : `Address: ${slugifyTeamName(name)}`}
+      </Text>
+      <Pressable
+        style={styles.saveButton}
+        disabled={pending || name.trim() === ''}
+        onPress={() => {
+          onCreate(name.trim());
+          setName('');
+        }}
+      >
+        {pending ? (
+          <ActivityIndicator color={colors.accentInk.hex} />
+        ) : (
+          <Text style={styles.saveButtonText}>Create team</Text>
+        )}
+      </Pressable>
+    </View>
+  );
+}
+
+/**
+ * One team with its roster — mirrors `settings-page.tsx`'s own `TeamCard`:
+ * membership shown as the thing it is, a list of people, with each removal
+ * on the row of the person being removed, and an add picker offering only
+ * candidates NOT already on the team (an empty picker is a fact worth
+ * rendering — "everyone is already here" — not a control that silently
+ * does nothing).
+ */
+function TeamCard({
+  team,
+  orgMembers,
+  canManage,
+  busy,
+  onAdd,
+  onRemove,
+}: {
+  readonly team: Team;
+  readonly orgMembers: readonly Member[];
+  readonly canManage: boolean;
+  readonly busy: boolean;
+  readonly onAdd: (userId: string) => void;
+  readonly onRemove: (userId: string) => void;
+}) {
+  const [picking, setPicking] = useState(false);
+  const onTeam = new Set(team.members.map((member) => member.userId));
+  const candidates = orgMembers.filter((member) => !onTeam.has(member.userId));
+
+  return (
+    <View style={styles.teamCard}>
+      <View style={styles.teamCardHeader}>
+        <Text style={styles.teamCardName}>{team.name}</Text>
+        <Text style={styles.teamCardSlug}>{team.slug}</Text>
+        <Text style={styles.rowCount}>
+          {team.members.length} {team.members.length === 1 ? 'member' : 'members'}
+        </Text>
+      </View>
+
+      {team.members.length === 0 ? (
+        <Text style={styles.emptyHint}>Nobody on this team yet.</Text>
+      ) : (
+        <View style={styles.teamChipRow}>
+          {team.members.map((member) => (
+            <View key={member.userId} style={styles.teamChip}>
+              <Text style={styles.teamChipText} numberOfLines={1}>
+                {member.email}
+              </Text>
+              {canManage && (
+                <Pressable
+                  disabled={busy}
+                  hitSlop={8}
+                  onPress={() => {
+                    onRemove(member.userId);
+                  }}
+                >
+                  <Text style={styles.teamChipRemove}>✕</Text>
+                </Pressable>
+              )}
+            </View>
+          ))}
+        </View>
+      )}
+
+      {canManage &&
+        (picking ? (
+          candidates.length === 0 ? (
+            <Text style={styles.emptyHint}>Everyone in the organization is on this team.</Text>
+          ) : (
+            candidates.map((member) => (
+              <Pressable
+                key={member.userId}
+                style={styles.modalRow}
+                disabled={busy}
+                onPress={() => {
+                  onAdd(member.userId);
+                  setPicking(false);
+                }}
+              >
+                <Text style={styles.modalRowText}>{member.email}</Text>
+              </Pressable>
+            ))
+          )
+        ) : (
+          <Pressable
+            style={styles.transferLink}
+            onPress={() => {
+              setPicking(true);
+            }}
+          >
+            <Text style={styles.transferLinkText}>Add member…</Text>
+          </Pressable>
+        ))}
+    </View>
+  );
+}
+
+/** Ported verbatim from `settings-page.tsx`'s own `slugify` — the address is derived, not typed. */
+function slugifyTeamName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -393,11 +781,97 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
   screenTitle: {
     fontSize: 22,
     fontWeight: '600',
     color: colors.ink.hex,
-    marginBottom: 8,
+  },
+  billingLink: {
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+    borderRadius: radiusCard,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  billingLinkText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.ink.hex,
+  },
+  emptyHint: {
+    fontSize: 13,
+    color: colors.inkFaint.hex,
+    paddingVertical: 6,
+  },
+  transferLink: {
+    alignSelf: 'flex-end',
+    paddingVertical: 4,
+  },
+  transferLinkText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.accent.hex,
+  },
+  transferLinkTextDisabled: {
+    color: colors.inkFaint.hex,
+  },
+  teamCard: {
+    gap: 8,
+    backgroundColor: colors.surfaceRaised.hex,
+    borderRadius: radiusCard,
+    padding: 12,
+  },
+  teamCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  teamCardName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.ink.hex,
+  },
+  teamCardSlug: {
+    fontSize: 11,
+    fontFamily: 'monospace',
+    color: colors.inkFaint.hex,
+    flex: 1,
+  },
+  rowCount: {
+    fontSize: 11,
+    color: colors.inkFaint.hex,
+  },
+  teamChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  teamChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    backgroundColor: colors.surfaceSunken.hex,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    maxWidth: 200,
+  },
+  teamChipText: {
+    fontSize: 12,
+    color: colors.ink.hex,
+  },
+  teamChipRemove: {
+    fontSize: 12,
+    color: colors.danger.hex,
+  },
+  modalSubTitle: {
+    marginTop: 8,
   },
   section: {
     gap: 8,
