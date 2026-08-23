@@ -17,7 +17,9 @@ import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
+import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
+import { useBoardRoom } from '../../../src/lib/use-board-room.js';
 import { CardRow } from '../../../src/lib/card-row.js';
 import {
   MY_TASKS_QUERY_KEY,
@@ -89,6 +91,12 @@ import {
  * equivalent yet — the tab strip's order is whatever `lists.list` returns),
  * saved views, filters, and the group-by/sort-by controls `home.tsx`'s own
  * due-date grouping is the one instance of on this app so far.
+ *
+ * **`useBoardRoom` joins this board's room** — `gatewaySocket`'s first real
+ * caller on this app (see that hook's own header for why `card/[cardId].tsx`
+ * deliberately does not also call it). A card someone else moves, edits, or
+ * comments on now appears here live, without leaving and reopening the
+ * board.
  */
 export default function BoardScreen() {
   const params = useLocalSearchParams<{ boardId: string }>();
@@ -108,6 +116,8 @@ export default function BoardScreen() {
 
 function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.parse> }) {
   const queryClient = useQueryClient();
+  const orgId = useSession((state) => state.orgId);
+  useBoardRoom(orgId, boardId);
   const [moving, setMoving] = useState<CardSummary | null>(null);
   const [moveError, setMoveError] = useState<unknown>(null);
   const [selectedListId, setSelectedListId] = useState<string | null>(null);

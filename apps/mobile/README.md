@@ -3633,8 +3633,10 @@ multiple simultaneous audio devices connected — that requires the project owne
   found the navigation-shell gap this file's newest section fixes. What is
   still unconfirmed: `isNativeClient`'s own header names what a real-device
   run would need to confirm about `Origin` on RN's WebSocket transport (see
-  `apps/realtime/src/auth.ts`) — nothing has joined a socket room yet, since
-  nothing on native calls `joinBoardRoom`.
+  `apps/realtime/src/auth.ts`). _(True when written — `board/[boardId].tsx`'s
+  `useBoardRoom` is now a real caller of `joinBoardRoom`, see "Work boards go
+  live" below; the `isNativeClient` real-device confirmation itself is still
+  open.)_
 
   **The public Expo Go app cannot open this project on SDK 57 today.** Expo
   Go's per-SDK build has a review-queue lag behind each SDK release, and the
@@ -3679,26 +3681,91 @@ multiple simultaneous audio devices connected — that requires the project owne
 - Work is now at full parity with web (My Tasks, Boards, all card-detail
   sections, and a card's own dates and description — see "Work, closing
   the gap" and "Card detail, closing the last two card-specific gaps"
-  above for the full account). Still genuinely open across the app: a
-  native rich text EDITOR (description/comment/message composers all
-  flatten to plain text on save, rather than preserving or composing rich
-  formatting, until one exists), `@mention` composing in Work comments
-  specifically (Chat's own composer has it; Work comments deliberately do
-  not yet — see "comment edit/delete/replies" above), a real DATE PICKER
-  (every date field on this app — a card's own dates, a custom field of
-  type `date` — is typed by hand as `YYYY-MM-DD` rather than picked, no
-  date-picker dependency added), card drag-and-drop, and list reordering
-  (both boards' own sections above have the full reasoning). The rest of
-  Chat (attachments
-  from the
-  composer — reactions, mentions composing, thread replies,
-  edit/delete/"remove for me", read receipts, link unfurls, push, typing
-  indicators and broadcast-driven live refresh have all shipped, see "Chat,
-  reworked", "Chat, closer to complete", "Push notifications", and "Chat,
-  live" above) and the other product waves (Docs, RTC). Chat now joins a
-  room (`chat-socket.ts`, `use-chat-room.ts`) and stays live while a
-  channel screen is open; Work's `gatewaySocket` still has no caller —
-  nothing calls `joinBoardRoom` yet — so every board/card screen remains a
-  plain `useQuery`: fresh on navigation and on app-foreground (see
-  `_layout.tsx`'s `AppState` wiring, below), not live while the screen
-  stays open and nobody moves.
+  above for the full account). `@mention` composing in Work comments and
+  live socket updates on boards have SINCE shipped — see "Work boards go
+  live, and `@mention` reaches comments" below; left as written above
+  rather than silently edited, per this file's own rule about correcting a
+  stale claim in place. Still genuinely open across the app: a native rich
+  text EDITOR (description/comment/message composers all flatten to plain
+  text on save, rather than preserving or composing rich formatting, until
+  one exists), a real DATE PICKER (every date field on this app — a card's
+  own dates, a custom field of type `date` — is typed by hand as
+  `YYYY-MM-DD` rather than picked, no date-picker dependency added), card
+  drag-and-drop, and list reordering (both boards' own sections above have
+  the full reasoning). The rest of Chat (attachments from the composer —
+  reactions, mentions composing, thread replies, edit/delete/"remove for
+  me", read receipts, link unfurls, push, typing indicators and
+  broadcast-driven live refresh have all shipped, see "Chat, reworked",
+  "Chat, closer to complete", "Push notifications", and "Chat, live"
+  above) and the other product waves (Docs, RTC). Chat now joins a room
+  (`chat-socket.ts`, `use-chat-room.ts`) and stays live while a channel
+  screen is open; Work's board screen does too now (`use-board-room.ts`) —
+  see below for exactly what that does and does not cover.
+
+## Work boards go live, and `@mention` reaches comments
+
+Two gaps this file itself had named as open: `gatewaySocket` had no caller at all on this app
+(every board and card screen was a plain `useQuery`, fresh only on navigation or app-foreground),
+and `@mention` composing existed in Chat's composer but never reached a Work comment.
+
+### `use-board-room.ts` — `board/[boardId].tsx`'s first live room
+
+Ported from `apps/web/src/features/work/use-board-room.ts`, joining `board:{boardId}` on the same
+`gatewaySocket` singleton `call-surface.tsx` already forces open for incoming calls. A card someone
+else moves, edits, assigns, or comments on, or a list someone renames, now appears on an open board
+without leaving and reopening it.
+
+**Invalidates, never patches — the same call `use-chat-room.ts` already made for Chat.** Web's own
+hook patches `CardSummary` fields directly and adjusts counters by an exact delta, because it
+already has `patchBoardCards`/`patchChecklistCounters` from its optimistic-mutation layer. Mobile
+has no equivalent cache-patch helpers for board cards, so every broadcast here invalidates the
+query the event touched instead of hand-splicing the payload into it — one extra round trip per
+live event is a smaller ongoing cost than a second, independently-maintained patch implementation
+that could drift from web's.
+
+**Board-scoped only, and `card/[cardId].tsx` is a deliberate non-caller — not an oversight.** Web's
+card detail is a modal INSIDE `board-page.tsx`, sharing that one page's single `useBoardRoom` call.
+Mobile's card detail is its own ROUTE, reached both from a board (which stays mounted underneath it
+in the native-stack navigator when a card is pushed on top — confirmed against this app's own
+navigation config, which sets no `unmountOnBlur`) and from places that never opened a board at all
+(My Tasks, a notification). `joinBoardRoom`/`leaveBoardRoom` in `socket.ts` are keyed by boardId
+alone with no per-caller reference count, ported straight from web where only one caller per board
+ever exists. Giving the card screen its own `useBoardRoom` call would mean ITS OWN unmount (going
+back to the board) calls `leaveBoardRoom` and severs the board screen's still-open membership in
+the same room, since both calls share one underlying socket connection — a real bug, not a
+hypothetical one, caught by reasoning through the navigator's actual mount lifecycle before writing
+the hook rather than after. So a card opened directly, outside a board, still has no live updates;
+giving rooms a genuine reference count in `socket.ts` is the real fix, and is separate work.
+
+### `@mention` composing reaches Work comments
+
+`message-compose.ts`'s `activeMentionQuery`/`insertMention` were already chat-agnostic pure
+text/cursor functions — built for `message-composer.tsx`, reused here VERBATIM, not reimplemented.
+A new `CommentComposer` in `card/[cardId].tsx` wraps them for Work's two comment composers (a new
+top-level comment, and whichever reply box is open), which had the identical input+dropdown logic
+duplicated between them already, with neither getting mentions.
+
+**Not the shared `<MessageComposer />`.** That component also owns an icon-styled send button and
+an optional attach affordance shaped for Chat's one-row WhatsApp layout (ai/"Chat, reworked"
+above). Work's comment composer keeps its own existing look — a bordered input with a text "Send"
+button beside it for a new comment, Reply/Cancel buttons BELOW the input for a reply — two
+different button arrangements the shared component cannot express. `CommentComposer` accepts an
+optional `trailing` node rendered inside its own row instead: supplied for the top-level composer
+(the Send button), absent for a reply (whose Reply/Cancel row is a sibling the caller still renders
+itself, unchanged from before this component existed).
+
+The server derives `mentionedUserIds` from the TipTap document itself (`work/richtext.ts`, at
+comment-creation time) rather than a separate field, so the client's only job is producing a
+document with real `mention` nodes — `parseFormattedText(text, mentions)`, already built for Chat,
+already defaulting its second argument to `[]` for every OTHER caller in this codebase (edits, and
+every other `parseFormattedText` call site) that does not need it.
+
+Out of scope, deliberately: mention support on comment EDITING (only create and reply), matching
+this component's narrow brief — Chat itself does not offer it on edit either.
+
+Verified: typecheck clean, lint clean (one pre-existing, unrelated warning in
+`push-notifications.ts`), all 226 tests pass unchanged (both changes reuse already-tested pure
+logic — `message-compose.test.ts` for the mention functions, `use-chat-room.ts`'s own precedent for
+why a room-join hook gets no dedicated test of its own — rather than adding new logic that would
+need one), guardrail self-test clean, prettier clean, encoding check clean, and a real
+`expo export --platform android` bundles cleanly.
