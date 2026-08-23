@@ -115,7 +115,7 @@ export default function Account() {
           void session.signOut();
         }}
       >
-        <Text style={styles.buttonText}>Sign out</Text>
+        <Text style={[styles.buttonText, { marginBottom: 12 }]}>Sign out</Text>
       </Pressable>
     </ScrollView>
   );
