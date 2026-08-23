@@ -3244,6 +3244,29 @@ in this file used, since there is no Docker daemon in this environment to boot t
 **Not yet verified against a real device call** — that requires restarting Docker Desktop with the
 new setting and retrying from a phone, which only the project owner's own machine can do.
 
+**Corrected in place, per this file's own habit of recording a wrong premise rather than silently
+rewriting it: the `network_mode: host` fix above was disproven by the very next real device round.**
+Coturn's own listener-discovery log — ground truth for what network namespace the container actually
+sits in, not an inference — enumerated `192.168.65.6`, `192.168.65.3`, `172.18.0.1`, `172.17.0.1`,
+`172.19.0.1`: the exact Docker-internal address pattern (`192.168.65.x`, `172.1x.0.1`) the FIRST
+diagnosis in this whole saga already named as "the Desktop VM's own loopback/bridge, never the real
+machine's LAN interface." Not one of the seven discovered addresses was a real LAN IP. "Enable host
+networking" turned on had made no difference to what `network_mode: host` actually binds to — because
+Docker Desktop always runs a VM in between on Windows/Mac, with or without that setting, and a
+`network_mode: host` container shares THAT VM's namespace, never Windows' own.
+
+What the setting actually fixes, per Docker's own documentation, is narrower and different: **published
+ports** binding directly to the host machine instead of routing through the userland proxy — which is
+exactly the mechanism the `netstat` evidence upstream in this section caught silently dropping UDP.
+So the real fix is a combination nothing had tried yet: the `ports:` list (reverted back to, undoing
+the `network_mode: host` change one section up) WITH "Enable host networking" actually turned on.
+`compose.yaml`'s own header now records both configurations tried, in order, with the evidence that
+disproved the first — a reader hitting this bug a third time should not have to re-run the same dead
+end.
+
+Verified the same way as the fix it corrects: `docker compose config --quiet`, valid YAML, prettier
+and encoding checks pass. Still not verified against a real device call with this exact combination.
+
 ### The notification bell was only reachable from the Chat tab, and a stuck org picker had no way out
 
 Two real gaps from live testing, both about getting somewhere this app already has, not missing
