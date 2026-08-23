@@ -86,6 +86,17 @@ export default function Account() {
         >
           <Text style={styles.secondaryButtonText}>Manage organization</Text>
         </Pressable>
+        {/* Same "always shown, floored on the server" reasoning as "Manage
+            organization" above — `automation:manage` decides who can act
+            once there, not a check here (§8.2). */}
+        <Pressable
+          style={styles.secondaryButton}
+          onPress={() => {
+            router.push('/automations');
+          }}
+        >
+          <Text style={styles.secondaryButtonText}>Automations</Text>
+        </Pressable>
       </View>
 
       <ProfileSection />

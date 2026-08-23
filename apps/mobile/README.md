@@ -4163,3 +4163,51 @@ clean, prettier clean, encoding check clean, and a real `expo export --platform 
 cleanly with `/account` resolving as a top-level route. Not yet confirmed on a real device — the
 `TopBar` row's alignment against a genuinely long unread count (`99+` next to a `9+` badge) and the
 modal's new layout are both worth a real screen before calling this device-verified.
+
+## Automations: read, toggle, delete, and run history — deliberately not the builder
+
+`automation.ts`/`automations.tsx`, reached from `account.tsx`'s new "Automations" link (a sibling
+of "Manage organization" — both org-level configuration links shown unconditionally, per §8.2, not
+tab-bar destinations someone browses between other work; the same reasoning that moved Account off
+the tab bar in the pass above applies to this screen from day one instead of needing a later move).
+
+**What this deliberately does NOT port: creating or editing a rule.** Web's builder
+(`RuleEditor` + `action-pickers.tsx`, 973 lines together) exists to fill in a `FilterTree`
+condition and one of ten action-type-specific argument forms — a card's target list, a chat
+channel, a webhook, an org member, a label, a Slack/GitHub connector. Every one of those needs a
+picker this app either does not have (a webhook registry, a connector picker, a condition builder
+— Phase 8's TQL/filter UI has never touched native at all) or would need building fresh for this
+one screen. That is real, dedicated work, not a corner cut to hit a deadline — naming it here
+rather than a silent gap is this file's own standing habit. What ships instead is a complete,
+honest slice on its own terms: see what rules exist, see WHY one did or did not fire, kill a
+misbehaving one, delete one outright — the things someone actually reaches for from a phone, as
+opposed to composing a new rule through a ten-field form on a 6-inch screen. Webhooks, Slack/GitHub
+connectors, and API tokens (the other three tabs on web's `/automations`) are separate,
+developer-facing surfaces on the same web page and are not touched here either.
+
+**The condition itself is never rendered, on web or here — that is not a mobile shortcut.**
+`RuleRow` shows "and a condition matches" when one is set, never the tree; the builder is the only
+place a condition's actual shape renders, because it is the only place with the field/operator
+vocabulary loaded to render it meaningfully. `describeAction`, `triggerLabel`, `explainReason`, and
+`REASON_TEXT`/`STATUS_COLOR`'s mobile equivalents are ported near-verbatim from `vocabulary.ts` and
+`automations-page.tsx`'s own `RuleRow`/`RunHistory` — same words, so a rule built on web reads
+identically once opened on a phone, right down to ids staying truncated rather than resolved to
+names (resolving would mean a lookup per action per rule; a deleted target would render as a blank
+or a spinner, worse than a visible id someone can match by eye elsewhere).
+
+**Run history answers "why didn't my rule fire", which a list of successes alone cannot.**
+Skipped and refused runs render alongside successful ones, each with the engine's own reason code
+translated to a sentence (`condition_not_met` → "the condition did not match, so nothing ran") and,
+per action, what actually happened — the engine stops at the first failure, so "action 2 failed"
+also means action 3 never ran, and a bare count would hide both facts. The list uses this app's
+established `useInfiniteQuery` (from the People pass) for the rule list itself, and the same
+single-expand accordion `calls.tsx`'s `CallRow` already established for run history per rule, so
+neither pattern is new to this codebase — only the screen is.
+
+Verified: typecheck clean, lint clean (the one pre-existing `push-notifications.ts` warning), 268
+tests pass (252 existing plus 16 new for `automation.ts`'s `describeAction`/`explainReason`/
+`explainStatus`/`actionOutcomeOf`/`triggerLabel`/`statusColor`), guardrail self-test clean, prettier
+clean, encoding check clean, and a real `expo export --platform android` bundles cleanly with
+`/automations` resolving as a top-level route. Not yet confirmed against a real org with rules that
+have actually run — the run-history accordion and its per-action outcome list are worth a real
+screen before calling this device-verified.
