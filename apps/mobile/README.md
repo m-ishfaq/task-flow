@@ -3185,6 +3185,65 @@ address is exactly the SSRF risk the control exists for. Verified the same way a
 change above (`docker compose config` resolves the new flags correctly, valid YAML, prettier and
 encoding checks pass) — no Docker daemon here to boot the container itself.
 
+### The port-mapping fix had regressed silently — the real, final root cause was Windows Docker Desktop's UDP port-publishing itself
+
+Reopened by a live report: mobile still could not hear voice, and — a second symptom that turned out
+to be the SAME bug — a call showed every other participant as having left after roughly 20 seconds,
+even though nobody had. The second symptom traced straight to `peer-mesh.ts`'s own
+`onconnectionstatechange` handler: `if (state === 'failed' || state === 'closed')
+this.#options.onPeerGone(userId)`. A connection that never finishes ICE eventually gets declared
+`failed` by the browser/native stack itself, and this app reports that as the peer having gone —
+correct behaviour for a genuinely dropped peer, indistinguishable from "never connected" without
+looking at what came before it.
+
+What came before it, in the real device log: mobile gathered exactly four local candidates, all
+`typ=host` — zero `srflx`, zero `relay`, for two separate call attempts six minutes apart. Coturn's
+own logs, spanning two full container restarts, showed nothing after the boot sequence — no STUN
+binding, no auth attempt, no denied-peer line, nothing. That combination means the "port-mapping fix
+worked" finding two sections up had stopped holding: STUN requests from the phone were no longer
+reaching the container at all, silently.
+
+Two hypotheses were tested against real evidence before touching anything, in order, because this
+file's own standing lesson is to diagnose from logs rather than guess:
+
+1. **A missing Windows Firewall inbound rule for UDP 3478/49160-49200.** Plausible — the port-mapping
+   era publishes to the host, and Windows blocks unsolicited inbound traffic from other LAN devices by
+   default. Added `New-NetFirewallRule -Direction Inbound -Protocol UDP -LocalPort
+3478,49160-49200 -Action Allow` and retried. **Ruled out**: identical failure, byte-for-byte the
+   same shape, on the very next call attempt.
+2. **Docker Desktop never actually bound UDP 3478 on the host's real interface at all.** `netstat -ano
+| findstr :3478` on the Windows host showed three TCP listeners (`0.0.0.0:3478`, `[::]:3478`,
+   `[::1]:3478`) and **no UDP line whatsoever**. Windows `netstat` with no `-p` filter lists both
+   protocols, so a total absence means Docker Desktop's UDP port-publishing proxy silently failed to
+   bind — coturn's own UDP listener was running correctly _inside_ the container the entire time,
+   reachable by nothing outside it. **Confirmed**: this is a known Docker Desktop for Windows weak
+   spot (TCP port publishing is solid, UDP has real reliability issues), and it explains every
+   symptom — the vanished STUN requests, the host-only candidates, the eventual `failed` state, and
+   through that, "everyone left."
+
+Fixed at the source rather than worked around a third time: Docker Desktop's **"Enable host
+networking"** setting (Settings → Resources → Network) makes `network_mode: host` bind to the REAL
+Windows network stack instead of the Desktop VM's own internal loopback/bridge — the original bug
+that motivated moving to the `ports:` list in the first place. With that setting on, host networking
+finally means what it says, and bypasses the broken UDP-publishing proxy entirely instead of routing
+around it. `compose.yaml`'s coturn service is back to `network_mode: host`, `--external-ip` stays
+explicit (a dev machine can have more than one active interface, and auto-discovery has no way to
+know which one a phone can reach), and the file's own header now documents all three configurations
+this block has been through and why, so a future contributor hitting "calls don't connect from a
+phone" again checks the Docker Desktop setting before re-diagnosing from scratch.
+
+**Requires that Docker Desktop setting to be turned on manually — it is not automatic, and there is
+no way for this repo to detect or enforce it.** A contributor on a fresh machine, or one who never
+enabled it, is back to the very first bug in this whole saga (loopback-only binding). Documented
+prominently in the compose.yaml header rather than assumed obvious, per this file's own repeated
+lesson that a status claim needs to say what it depends on.
+
+Verified so far: `docker compose config --quiet` resolves the file with no errors, valid YAML,
+prettier and encoding checks pass — the same config-only verification the two earlier coturn fixes
+in this file used, since there is no Docker daemon in this environment to boot the container itself.
+**Not yet verified against a real device call** — that requires restarting Docker Desktop with the
+new setting and retrying from a phone, which only the project owner's own machine can do.
+
 ### The notification bell was only reachable from the Chat tab, and a stuck org picker had no way out
 
 Two real gaps from live testing, both about getting somewhere this app already has, not missing

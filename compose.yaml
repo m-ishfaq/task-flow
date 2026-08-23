@@ -144,37 +144,42 @@ services:
 
   # TURN/STUN for in-app voice (Phase 13, ai/phase-13-webrtc.md §5).
   #
-  # An explicit `ports:` list, NOT `network_mode: host` — compose.prod.yaml's
-  # own coturn block still uses host networking, for the reason its comment
-  # gives (TURN allocates a fresh UDP port per relayed stream out of a wide
-  # range; a Docker port mapping publishing that whole range costs a userland
-  # proxy process per port, and takes noticeably longer to start). That
-  # reasoning holds on a real Linux host, which is what production is. It does
-  # NOT hold here: confirmed live, against a real phone, that under Docker
-  # Desktop (Windows/Mac) `network_mode: host` binds coturn to the DESKTOP
-  # VM's own loopback/bridge addresses — `127.0.0.1`, `192.168.65.x`,
-  # `172.1x.0.1` — never the actual machine's LAN interface, so nothing
-  # outside the machine itself, a real phone included, can ever reach it. The
-  # slower startup this trades for is a one-time `docker compose up` cost, not
-  # a per-call one; the alternative (host networking, silently unreachable
-  # from any other device) is not an alternative at all for testing this
-  # feature against a real phone rather than two browser tabs.
+  # `network_mode: host` — REQUIRES Docker Desktop's "Enable host networking"
+  # setting turned on (Settings -> Resources -> Network), on Windows/Mac. This
+  # is the third configuration this block has used, and the middle one
+  # (an explicit `ports:` list, kept here in history because the reasoning
+  # matters) is why: `network_mode: host` alone binds coturn to the DESKTOP
+  # VM's own loopback/bridge addresses under Docker Desktop, not the real
+  # machine's LAN interface, so a real phone can never reach it — confirmed
+  # live. Switching to an explicit `ports:` list was the fix for THAT bug, but
+  # created a new one, also confirmed live: Windows Docker Desktop's UDP
+  # port-publishing silently failed to bind at all. `netstat -ano | findstr
+  # :3478` on the host showed TCP:3478 LISTENING and no UDP:3478 line
+  # whatsoever — coturn's own UDP listener was running fine INSIDE the
+  # container the entire time, reachable by nothing outside it. That is why
+  # every STUN request from a real phone vanished with no trace in coturn's
+  # own logs (not even a denied-peer line — the packets never arrived
+  # anywhere), while mobile ICE gathering produced only `typ=host` candidates
+  # and every call eventually hit `iceConnectionState: failed`.
   #
-  # `--external-ip` is the other half, and skipping it just moves the same
-  # bug: without it, coturn advertises the CONTAINER's own bridge-network
-  # address in every candidate — this file's own next paragraph already names
-  # the symptom ("a relayed candidate naming a bridge-network IP is accepted
-  # by the client, tried, and silently times out"). Unset, it defaults to
-  # `127.0.0.1`, which is exactly right for two browser tabs on this same
-  # machine (`RTC_STUN_URLS`'s own default points there too) and exactly
-  # wrong for a phone; set `COTURN_EXTERNAL_IP` in `.env` to the same LAN IP
-  # `MOBILE_API_BASE_URL`/`RTC_STUN_URLS`/`RTC_TURN_URLS` already use before
-  # testing against a real device.
+  # "Enable host networking" is what makes `network_mode: host` finally mean
+  # what it says under Docker Desktop: a real bind to the host's actual
+  # network stack, bypassing the broken UDP-publishing proxy entirely rather
+  # than working around it. Without that setting on, this reverts to the
+  # FIRST bug above (VM-loopback binding) — so a contributor hitting "calls
+  # don't connect from a phone" again should check that setting before
+  # re-diagnosing from scratch.
   #
-  # A relayed candidate naming a bridge-network IP is accepted by the client,
-  # tried, and silently times out, which presents as "calls do not connect"
-  # with nothing in any log — the reason `--external-ip` above is not
-  # optional the moment this container is not host-networked.
+  # `--external-ip` stays explicit even under real host networking, rather
+  # than relying on coturn's own interface auto-discovery: a dev machine can
+  # have more than one active interface (Wi-Fi, a VPN adapter, a virtual
+  # switch), and auto-discovery has no way to know which one a phone can
+  # actually reach. Skipping it moves the same bug that motivated it
+  # originally — a relayed candidate naming the wrong address is accepted by
+  # the client, tried, and silently times out, which presents as "calls do
+  # not connect" with nothing in any log. Set `COTURN_EXTERNAL_IP` in `.env`
+  # to the same LAN IP `MOBILE_API_BASE_URL`/`RTC_STUN_URLS`/`RTC_TURN_URLS`
+  # already use before testing against a real device.
   #
   # `use-auth-secret` is the whole reason this can be developed against safely:
   # no static user exists, so there is no credential to leak from the client
@@ -184,10 +189,7 @@ services:
     image: coturn/coturn:latest
     container_name: taskflow-coturn
     restart: unless-stopped
-    ports:
-      - '3478:3478/udp'
-      - '3478:3478/tcp'
-      - '49160-49200:49160-49200/udp'
+    network_mode: host
     command:
       - -n
       - --log-file=stdout
@@ -198,7 +200,7 @@ services:
       # file. Must match RTC_TURN_SECRET in .env.
       - --static-auth-secret=coturn-dev-secret
       - --realm=taskflow.local
-      # See the header on why this is not optional under port mapping.
+      # See the header on why this stays explicit even under real host networking.
       - --external-ip=${COTURN_EXTERNAL_IP:-127.0.0.1}
       # A narrow relay range keeps the container's startup fast. Production
       # wants the full default range; this is a development convenience.
