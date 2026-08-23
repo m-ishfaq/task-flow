@@ -22,6 +22,7 @@
     "verify:guardrails": "node packages/guardrail-selftest/verify.js && node scripts/check-migration-rls.mjs && node scripts/verify-semgrep-rules.mjs",
     "check:encoding": "node scripts/check-encoding.mjs",
     "check:encoding:fix": "node scripts/check-encoding.mjs --fix",
+    "check:mobile-bundle-secrets": "node scripts/check-mobile-bundle-secrets.mjs",
     "preflight": "node scripts/preflight.mjs"
   },
   "devDependencies": {
@@ -58,12 +59,18 @@
       "js-yaml@4": ">=4.3.1",
       "nanoid@<3.3.17": ">=3.3.17",
       "vite@<6.4.3": ">=6.4.3",
-      "ip-address": ">=10.3.1"
+      "ip-address": ">=10.3.1",
+      "simply-deferred": "npm:simply-deferred@3.0.0"
     },
     "auditConfig": {
       "ignoreGhsas": [
-        "GHSA-mh99-v99m-4gvg"
+        "GHSA-mh99-v99m-4gvg",
+        "GHSA-w3rx-r6r6-pgpr",
+        "GHSA-5p2g-fcmc-qvqq"
       ]
+    },
+    "patchedDependencies": {
+      "html-entities@2.5.3": "patches/html-entities@2.5.3.patch"
     }
   }
 }

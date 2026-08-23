@@ -1,4 +1,5 @@
-import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
+import { createQueryClient as createSharedQueryClient } from '@taskflow/client';
 import { errorCodeOf, isUnauthenticated } from './trpc.js';
 import { refresh, useSession } from './session.js';
 
@@ -10,42 +11,17 @@ import { refresh, useSession } from './session.js';
  * only what has no server representation (`ui-store.ts`). Copying a card out of
  * the cache into a store is the single most reliable way for an app this size to
  * rot, because the copy has no invalidation story and drifts silently.
- */
-
-/**
- * Failures that retrying cannot fix.
  *
- * Retrying an authorization failure is worse than useless: it triples the audit
- * noise for a denied action and delays the message the user needs by several
- * seconds. Retrying a validation failure re-sends the same invalid input.
+ * The retry policy and the client's own defaults (staleTime, gcTime, refetch
+ * behaviour) live in `@taskflow/client` now (ai/phase-14-mobile.md §12
+ * decision 4) — they were never actually apps/web-specific, only wired
+ * through apps/web's own `errorCodeOf`/`isUnauthenticated`. What stays here
+ * is genuinely apps/web product surface: the `keys` registry (Chat, Docs,
+ * Search, Platform Admin — none of it exists on mobile yet) and the
+ * NOT_A_MEMBER org-recovery flow, which reads `useSession.getState()`, this
+ * app's own module-singleton store with no equivalent shape in
+ * `apps/mobile`'s dependency-injected session.
  */
-const TERMINAL_CODES = new Set([
-  'FORBIDDEN',
-  'NOT_A_MEMBER',
-  'ORG_SUSPENDED',
-  'ORG_BILLING_LAPSED',
-  'NOT_FOUND',
-  'GONE',
-  'VALIDATION_FAILED',
-  'CONFLICT',
-  'ALREADY_EXISTS',
-  'STEP_UP_REQUIRED',
-  'PAYLOAD_TOO_LARGE',
-  'UNSUPPORTED_MEDIA_TYPE',
-  'QUOTA_EXCEEDED',
-]);
-
-function shouldRetry(failureCount: number, error: unknown): boolean {
-  /* An expired access token is handled by `authHeaders()` before the request is
-     sent, so reaching here means the refresh itself failed — the session is
-     gone, and retrying just repeats a signed-out request. */
-  if (isUnauthenticated(error)) return false;
-
-  const code = errorCodeOf(error);
-  if (code !== null && TERMINAL_CODES.has(code)) return false;
-
-  return failureCount < 2;
-}
 
 /**
  * What to do when the selected organization turns out not to be one the caller
@@ -90,39 +66,13 @@ function recoverFromLostOrg(error: unknown): void {
 }
 
 export function createQueryClient(): QueryClient {
-  return new QueryClient({
+  return createSharedQueryClient({
+    isUnauthenticated,
+    errorCodeOf,
     /* On the caches rather than in each query's `onError`, because it has to
        fire for a failure nobody wrote a handler for — which is every query on a
        page whose org just went away. */
-    queryCache: new QueryCache({ onError: recoverFromLostOrg }),
-    mutationCache: new MutationCache({ onError: recoverFromLostOrg }),
-
-    defaultOptions: {
-      queries: {
-        retry: shouldRetry,
-
-        /* Long enough that opening a card and coming back does not refetch the
-           board, short enough that a colleague's change appears without a
-           reload. Phase 5 replaces most of this with socket invalidation, at
-           which point staleness stops being a timing guess. */
-        staleTime: 30_000,
-        gcTime: 5 * 60_000,
-
-        /* On by default, and deliberately kept: returning to a tab after lunch
-           should not show yesterday's board. */
-        refetchOnWindowFocus: true,
-        refetchOnReconnect: true,
-      },
-
-      mutations: {
-        /* Mutations are NOT retried automatically. Almost every one here is
-           non-idempotent — `cards.create` twice is two cards, `comments.create`
-           twice is two comments — and a retry after an ambiguous timeout is how
-           duplicates appear. §7 specifies mutation ids for idempotent replay;
-           until those are wired through, the safe default is one attempt. */
-        retry: false,
-      },
-    },
+    onCacheError: recoverFromLostOrg,
   });
 }
 

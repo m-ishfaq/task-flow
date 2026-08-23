@@ -167,6 +167,15 @@ export const EnvSchema = z
     VAPID_PUBLIC_KEY: OptionalNonEmpty,
     VAPID_PRIVATE_KEY: OptionalNonEmpty,
 
+    /* Native mobile push (Phase 14 §9, ai/phase-14-mobile.md). Unlike VAPID
+       above, `ExpoPushProvider` needs no secret to construct at all — see
+       that class's own header in `push-provider.ts` — so this is NOT a
+       "push is on" gate the way the VAPID trio is; the provider is always
+       constructed in `main.ts`. This token only raises Expo's per-project
+       rate limits and scopes sends to this Expo project specifically, so
+       it stays optional even once set for one deployment. */
+    EXPO_ACCESS_TOKEN: OptionalNonEmpty,
+
     /* OAuth sign-in (Phase 12 Wave 2 §3.3). Optional per provider, the same
        "an unconfigured integration is a valid deployment" convention as VAPID
        above: a provider whose client id/secret are unset simply does not
@@ -175,6 +184,16 @@ export const EnvSchema = z
     GOOGLE_CLIENT_SECRET: OptionalNonEmpty,
     GITHUB_CLIENT_ID: OptionalNonEmpty,
     GITHUB_CLIENT_SECRET: OptionalNonEmpty,
+
+    /* The NATIVE (mobile) counterpart (ai/phase-14-mobile.md §4.4) — a
+       SEPARATE provider registration, not the pair above reused. Google's
+       native client is a public/installed-app type with no secret to
+       configure (`NativeOAuthProviderCredentials`'s own comment in
+       oauth.service.ts); GitHub's is a second, dedicated OAuth App whose one
+       callback URL is the native deep link, so it still carries a secret. */
+    GOOGLE_NATIVE_CLIENT_ID: OptionalNonEmpty,
+    GITHUB_NATIVE_CLIENT_ID: OptionalNonEmpty,
+    GITHUB_NATIVE_CLIENT_SECRET: OptionalNonEmpty,
 
     MASTER_KEY_ID: NonEmpty,
     MASTER_KEY_BASE64: Base64Key,
@@ -639,6 +658,9 @@ const KNOWN_VARIABLES = new Set([
   'GOOGLE_CLIENT_SECRET',
   'GITHUB_CLIENT_ID',
   'GITHUB_CLIENT_SECRET',
+  'GOOGLE_NATIVE_CLIENT_ID',
+  'GITHUB_NATIVE_CLIENT_ID',
+  'GITHUB_NATIVE_CLIENT_SECRET',
   'MASTER_KEY_ID',
   'MASTER_KEY_BASE64',
   'JWT_SECRET',

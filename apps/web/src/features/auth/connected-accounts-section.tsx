@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
-import { wire } from '../../lib/wire.js';
+import { wire } from '@taskflow/client';
 import { formatDate } from '../../lib/format.js';
 import {
   AddPanel,
@@ -96,7 +96,7 @@ export function ConnectedAccountsSection() {
       )}
 
       {connected.data !== undefined && connected.data.length > 0 && (
-        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
+        <ul className="divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
           {connected.data.map((account) => (
             <li
               key={account.provider}

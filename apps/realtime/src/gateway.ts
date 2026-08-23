@@ -3,7 +3,7 @@ import { Server } from 'socket.io';
 import { createAdapter } from '@socket.io/postgres-adapter';
 import { createRealtimeAdapterPool, isDatabaseHealthy, type OutboxRow } from '@taskflow/db';
 import type { Logger } from '@taskflow/observability';
-import { clientAddress, HandshakeError, verifyHandshake } from './auth.js';
+import { clientAddress, HandshakeError, isNativeClient, verifyHandshake } from './auth.js';
 import { allowedOrigins, type Env } from './config/env.js';
 import {
   assertRoomTableIsSafe,
@@ -229,7 +229,23 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
            and the same address refused across a burst of attempts is exactly
            what probing looks like. */
         const refusal = error instanceof HandshakeError ? error.refusal : 'invalid_token';
-        logger.warn({ address, refusal }, 'handshake refused');
+        /* `origin`/`hasNativeMarker` only, never the full header set — enough
+           to answer `isNativeClient`'s own still-open question ("what does a
+           real device's networking stack actually send here?") without
+           logging the bearer token that also travels on this handshake. A
+           `forbidden_origin` refusal is otherwise underspecified: it says a
+           connection was refused, not WHICH unexpected origin to add to
+           `allowedOrigins`, or whether the CLIENT_HEADER marker made it
+           across the wire at all. */
+        logger.warn(
+          {
+            address,
+            refusal,
+            origin: socket.handshake.headers.origin ?? null,
+            hasNativeMarker: isNativeClient(socket.handshake.headers),
+          },
+          'handshake refused',
+        );
         next(error instanceof HandshakeError ? error : new HandshakeError('invalid_token'));
       }
     })();

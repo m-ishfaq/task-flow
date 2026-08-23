@@ -397,6 +397,14 @@ async function withOrgContext(
  * `platform.vapidPublicKey` above. A provider missing either half of its
  * client id/secret is simply absent from `providers`, and `oauth.service.ts`
  * refuses with `NOT_FOUND` rather than the app failing to boot.
+ *
+ * `nativeProviders` is a SEPARATE map, deliberately not derived from
+ * `providers` (ai/phase-14-mobile.md §4.4): Google's native client is a
+ * different registration with no secret (`NativeOAuthProviderCredentials`'s
+ * own comment explains why), and GitHub's is a second, dedicated OAuth App
+ * whose one callback URL is the native deep link rather than the web origin.
+ * A deployment with only the browser pair configured simply has no native
+ * OAuth — `apps/mobile`'s sign-in screen omits that provider's button.
  */
 function buildOAuthDeps(env: Env): Omit<OAuthDeps, 'identity'> {
   return {
@@ -408,11 +416,28 @@ function buildOAuthDeps(env: Env): Omit<OAuthDeps, 'identity'> {
         ? { github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET } }
         : {}),
     },
+    nativeProviders: {
+      ...(env.GOOGLE_NATIVE_CLIENT_ID ? { google: { clientId: env.GOOGLE_NATIVE_CLIENT_ID } } : {}),
+      ...(env.GITHUB_NATIVE_CLIENT_ID && env.GITHUB_NATIVE_CLIENT_SECRET
+        ? {
+            github: {
+              clientId: env.GITHUB_NATIVE_CLIENT_ID,
+              clientSecret: env.GITHUB_NATIVE_CLIENT_SECRET,
+            },
+          }
+        : {}),
+    },
     /* Registered with each provider's own console ahead of time — this is the
        one value that has to match exactly what was registered there, since
        an OAuth authorization server refuses a redirect_uri it does not
-       recognize verbatim. */
-    redirectUri: (provider) => `${env.WEB_ORIGIN}/oauth/callback/${provider}`,
+       recognize verbatim. Native ignores `provider`: both providers' native
+       clients redirect to the SAME custom-scheme deep link
+       (`app.config.ts`'s `scheme: 'taskflow'`), disambiguated server-side by
+       `state.provider` in `oauth.service.ts`'s `callback`, not by the URL. */
+    redirectUri: (provider, channel) =>
+      channel === 'native'
+        ? 'taskflow://oauth-callback'
+        : `${env.WEB_ORIGIN}/oauth/callback/${provider}`,
   };
 }
 

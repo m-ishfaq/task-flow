@@ -277,6 +277,35 @@ describe('the real application router', () => {
     expect(paths).toEqual([
       'auth.login',
       'auth.logout',
+      /* The NATIVE auth surface (ai/phase-14-mobile.md §4.3). Public for the
+         same reason their browser counterparts are — this is how a phone
+         obtains, renews, and ends a session — and a deliberate expansion of the
+         unauthenticated surface, reviewed here. They differ from the browser
+         routes only in delivery: a phone has no httpOnly cookie, so the refresh
+         token travels in the body via a SEPARATE schema (`NativeSessionResponse`)
+         and is read back from the request input, never `ctx.refreshToken`. See
+         the `native` block in identity/router.ts. */
+      'auth.native.login',
+      'auth.native.logout',
+      /* The native counterpart of the OAuth block below (ai/phase-14-mobile.md
+         §4.4) — public for the identical reason, minted through a system
+         browser session rather than a page redirect. `providers` answers
+         which providers have NATIVE credentials configured, a separate
+         question from the browser `auth.oauth.providers` below it, since
+         `nativeProviders` is its own map on the server. */
+      'auth.native.oauth.callback',
+      'auth.native.oauth.providers',
+      'auth.native.oauth.start',
+      /* The native counterpart of `auth.passkeys.finishAuthentication`
+         (ai/phase-14-mobile.md §4.4) — public for the identical reason: the
+         assertion IS the credential, there is no session yet on either
+         channel. `startAuthentication` needs no counterpart at all (no
+         session minted, nothing channel-specific in ceremony options), and
+         enrollment is `selfRoute` already — only session issuance differs
+         by channel. */
+      'auth.native.passkeys.finishAuthentication',
+      'auth.native.refresh',
+      'auth.native.totp.verifyLogin',
       /* OAuth sign-in (Phase 12 Wave 2 §3.3). Both public for the same reason
          auth.login is — `callback` is reached via a browser redirect with no
          session either way, whether it turns out to sign someone in or to
@@ -342,6 +371,26 @@ describe('the real application router', () => {
          the entire reason `/account` exists as a route independent of
          `/settings`. Not step-up: reading is not credential-adjacent. */
       'auth.me',
+      /* Device binding (Phase 14 Wave 1b §4.5) — binding a session to its own
+         device key. `selfRoute`, not `publicRoute`: `sessions.
+         registerDeviceKey` reads `sessionId` off the caller's own verified
+         access token rather than trusting anything the client names, so the
+         caller must already be authenticated to reach it at all. */
+      'auth.native.deviceKey.register',
+      /* Native connected-accounts linking (Phase 14 §4.4) — the mobile
+         counterpart of `auth.oauth.startLink` just below, added once the
+         mobile account screen needed it (this route did not exist when
+         Wave 1b's own comment on the native oauth router named linking
+         out of scope on purpose). `stepUp: true` for the identical reason
+         the browser route carries it: adding a new way into the account
+         is as credential-adjacent from a phone as it is from a browser.
+         `auth.native.oauth.start`/`callback` are NOT here: `start` is
+         public (there is no session yet to require), and `callback`'s
+         SESSION branch is public for the same reason while its LINKED
+         branch is reached mid-flow with the state token already proving
+         who is linking, not a fresh authenticated request this manifest
+         would see as self-scoped. */
+      'auth.native.oauth.startLink',
       /* Connected-accounts management (Phase 12 Wave 2 §3.3) — reading and
          changing your own account's sign-in methods. `startLink`/`unlink`
          are step-up: adding or removing a way in is credential-adjacent the
@@ -380,6 +429,14 @@ describe('the real application router', () => {
          the values are non-sensitive (feature visibility, never a security
          control). */
       'flags.snapshot',
+      /* Native mobile push tokens (Phase 14 §9) — `notifications.push`'s
+         counterpart for `apps/mobile`, a device belongs to a PERSON not an
+         org for the identical reason. No `publicKey`-shaped route here:
+         unlike VAPID, there is no server-held key material a client would
+         ever need (`ExpoPushProvider`'s own header in `push-provider.ts`). */
+      'notifications.expoPush.list',
+      'notifications.expoPush.register',
+      'notifications.expoPush.unregister',
       /* Notification preferences (Phase 9) — global per user, not per org
          (`identity.notification_prefs`; see that table's own comment in
          `packages/db/src/schema/identity.ts`), so `selfRoute` for the same
@@ -446,6 +503,24 @@ describe('the real application router', () => {
     // until they next try to sign in (§8.1).
     const entries = routeManifest(appRouter);
     expect(entries.find((entry) => entry.path === 'auth.passkeys.remove')?.stepUp).toBe(true);
+  });
+
+  it('requires step-up to link a new native OAuth provider', () => {
+    // The native counterpart of the browser assertion below — a stolen
+    // session linking a second, attacker-controlled sign-in method is the
+    // same class of attack `auth.passkeys.remove` and `auth.oauth.startLink`
+    // both guard against, and the app credentials/redirect being NATIVE
+    // rather than browser is not a reason this control could be weaker.
+    const entries = routeManifest(appRouter);
+    expect(entries.find((entry) => entry.path === 'auth.native.oauth.startLink')?.stepUp).toBe(
+      true,
+    );
+  });
+
+  it('requires step-up to link or unlink a browser OAuth provider', () => {
+    const entries = routeManifest(appRouter);
+    expect(entries.find((entry) => entry.path === 'auth.oauth.startLink')?.stepUp).toBe(true);
+    expect(entries.find((entry) => entry.path === 'auth.oauth.unlink')?.stepUp).toBe(true);
   });
 
   it('gives every public route a written justification', () => {

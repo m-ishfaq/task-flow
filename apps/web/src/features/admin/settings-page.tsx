@@ -7,7 +7,7 @@ import { DIRECTLY_ASSIGNABLE_ROLES, type Role } from '@taskflow/policy';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useSession } from '../../lib/session.js';
-import { wire } from '../../lib/wire.js';
+import { wire } from '@taskflow/client';
 import { formatDate } from '../../lib/format.js';
 import {
   AddPanel,
@@ -56,14 +56,14 @@ export function SettingsPage() {
   const orgId = useSession((state) => state.orgId) ?? '';
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-9 p-8">
+    <div className="mx-auto flex max-w-5xl flex-col gap-9 p-8">
       <PageHeader
         title="Organization settings"
         description="Members, teams, and who can reach what."
         actions={
           <Link
             to="/settings/audit"
-            className="rounded border border-line px-2.5 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
+            className="rounded-lg border border-line/50 px-2.5 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
           >
             Audit log
           </Link>
@@ -107,7 +107,7 @@ function OrgSection({ orgId }: { readonly orgId: string }) {
 
   return (
     <Section title="Organization">
-      <div className="rounded-lg border border-line bg-surface-raised p-3">
+      <div className="rounded-lg border border-line/50 bg-surface-raised p-4">
         <form
           className="flex items-end gap-2"
           onSubmit={(event) => {
@@ -293,7 +293,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
               onChange={(event) => {
                 setRole(event.target.value as Role);
               }}
-              className="h-9 rounded border border-line bg-surface px-2 text-sm text-ink"
+              className="h-9 rounded-lg border border-line/50 bg-surface px-2 text-sm text-ink"
             >
               {DIRECTLY_ASSIGNABLE_ROLES.map((entry) => (
                 <option key={entry} value={entry}>
@@ -342,7 +342,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
       {members.isError && <ErrorView error={members.error} title="Could not load members" />}
 
       {members.data !== undefined && (
-        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
+        <ul className="divide-y divide-line/40 overflow-hidden rounded-xl border border-line/50">
           {members.data.map((member) => (
             <MemberRow
               key={member.userId}
@@ -398,7 +398,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
                   onChange={(event) => {
                     setTransferTo(event.target.value);
                   }}
-                  className="h-9 w-full rounded border border-line bg-surface px-2 text-sm text-ink"
+                  className="h-9 w-full rounded-lg border border-line/50 bg-surface px-2 text-sm text-ink"
                 >
                   {transferCandidates.map((member) => (
                     <option key={member.userId} value={member.userId}>
@@ -415,7 +415,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
                   onChange={(event) => {
                     setTransferSelfRole(event.target.value as 'admin' | 'member');
                   }}
-                  className="h-9 w-full rounded border border-line bg-surface px-2 text-sm text-ink"
+                  className="h-9 w-full rounded-lg border border-line/50 bg-surface px-2 text-sm text-ink"
                 >
                   <option value="admin">Admin</option>
                   <option value="member">Member</option>
@@ -505,7 +505,7 @@ function MemberRow({
           onChange={(event) => {
             onRoleChange(event.target.value as Role);
           }}
-          className="h-7 rounded border border-line bg-surface-sunken px-1.5 text-xs text-ink"
+          className="h-7 rounded-lg border border-line/50 bg-surface-sunken px-1.5 text-xs text-ink"
         >
           {/* The CURRENT role is always present as an option even when it is not
               directly assignable — an owner's row would otherwise render showing
@@ -705,7 +705,7 @@ function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCa
   const candidates = orgMembers.filter((member) => !onTeam.has(member.userId));
 
   return (
-    <li className="rounded-lg border border-line bg-surface-raised p-3 shadow-sm">
+    <li className="rounded-xl border border-line/50 bg-surface-raised p-4 shadow-sm">
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-ink">{team.name}</span>
         <span className="font-mono text-[11px] text-ink-faint">{team.slug}</span>
@@ -735,7 +735,7 @@ function TeamCard({ team, orgMembers, canManage, onAdd, onRemove, busy }: TeamCa
                 if (userId === '') return;
                 onAdd(userId as UserId);
               }}
-              className="h-8 w-full rounded border border-line bg-surface-sunken px-2 text-xs text-ink"
+              className="h-8 w-full rounded-lg border border-line/50 bg-surface-sunken px-2 text-xs text-ink"
             >
               <option value="">Add member…</option>
               {candidates.map((member) => (

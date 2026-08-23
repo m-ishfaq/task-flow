@@ -280,7 +280,7 @@ export function Shell() {
             window scrollbar dragged the entire fixed-height frame — header,
             sidebar and all — off the top. Positioning `main` keeps those
             descendants inside the frame that clips them. */}
-        <main className="relative min-h-0 flex-1 overflow-x-auto">
+        <main className="relative min-h-0 flex-1 overflow-x-auto bg-surface">
           <Outlet />
         </main>
       </div>
@@ -330,7 +330,7 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
   const toggleMobileNav = useUi((state) => state.toggleMobileNav);
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-4">
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line/50 px-4">
       {/* Below `md`, the sidebar is an off-canvas drawer (Shell) with no
           permanent trigger of its own — this is the only way to open it.
           `showMenuButton` is false in the org-picker's pre-org state, where
@@ -340,7 +340,7 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
           type="button"
           onClick={toggleMobileNav}
           aria-label="Open navigation"
-          className="-ml-1 shrink-0 rounded p-1.5 text-ink-muted hover:bg-surface-hover hover:text-ink md:hidden"
+          className="-ml-1 shrink-0 rounded p-1.5 text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink md:hidden"
         >
           <Menu aria-hidden="true" className="size-5" strokeWidth={2} />
         </button>
@@ -358,7 +358,7 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
           short breadcrumb still fit without scrolling; scrolling is the
           fallback for narrower or zoomed cases, not the primary path. */}
       <nav
-        className="ml-auto flex flex-nowrap items-center gap-1 overflow-x-auto"
+        className="ml-auto flex flex-nowrap items-center gap-1.5 overflow-x-auto"
         aria-label="Settings"
       >
         {/* Mentions and direct messages. In the shell rather than on the chat
@@ -376,7 +376,7 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
           }}
           aria-label="Keyboard shortcuts"
           title="Keyboard shortcuts (?)"
-          className="shrink-0 rounded p-1.5 text-ink-muted hover:bg-surface-hover hover:text-ink"
+          className="shrink-0 rounded p-1.5 text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
         >
           <Keyboard aria-hidden="true" className="size-4" strokeWidth={2} />
         </button>
@@ -437,7 +437,7 @@ function Breadcrumbs() {
      label. This is the one-line fix for a bug that only shows up once the
      header actually gets tight, which the desktop-only build before this wave
      never exercised. */
-  return <h1 className="min-w-0 truncate text-sm font-medium text-ink">{label}</h1>;
+  return <h1 className="min-w-0 truncate font-display text-[15px] font-semibold tracking-tight text-ink">{label}</h1>;
 }
 
 /** A `lucide-react` icon component — matches sidebar.tsx's own alias. */
@@ -457,8 +457,8 @@ function NavLink({
       to={to}
       aria-label={label}
       title={label}
-      className="shrink-0 rounded p-1.5 text-ink-muted hover:bg-surface-hover hover:text-ink"
-      activeProps={{ className: 'bg-surface-hover text-ink' }}
+      className="shrink-0 rounded-lg p-2 text-ink-muted transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover hover:text-ink"
+      activeProps={{ className: 'bg-accent/10 text-accent hover:bg-accent/15 hover:text-accent' }}
     >
       <Icon aria-hidden="true" className="size-4" strokeWidth={2} />
     </Link>

@@ -176,6 +176,17 @@ export const passkeyRemoved = defineEvent(
 );
 
 /**
+ * A native session bound itself to a hardware-backed device key
+ * (ai/phase-14-mobile.md §4.5). Carries no key material — an audit log
+ * entry is not the place for even a public key, and nothing downstream
+ * needs it; the interesting fact is WHEN a session became device-bound.
+ */
+export const deviceKeyRegistered = defineEvent(
+  'session.device_key_registered',
+  z.object({ userId: z.string(), sessionId: z.string() }).strict(),
+);
+
+/**
  * A passkey sign-in that did not succeed.
  *
  * Separate from `loginFailed` because it carries no email — a passkey ceremony

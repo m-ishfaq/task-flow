@@ -2,7 +2,7 @@ import { queryOptions, type QueryClient } from '@tanstack/react-query';
 import type { CardId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
-import { wire, type Wire } from '../../lib/wire.js';
+import { wire, type Wire } from '@taskflow/client';
 
 /**
  * Every telephony read, in one place (Phase 7 Wave 5 — the UI wave; the API

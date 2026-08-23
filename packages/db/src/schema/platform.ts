@@ -451,6 +451,35 @@ export const pushSubscriptions = platform.table(
 );
 
 /**
+ * Native mobile push (migration 0082, ai/phase-14-mobile.md §9) — the
+ * `ExpoPushProvider` counterpart to `pushSubscriptions` above. See that
+ * migration's own header for why this is a separate table rather than a
+ * widened `pushSubscriptions`: an Expo push token is one opaque string, not
+ * a (endpoint, p256dh, auth) triple, and the server holds no key material
+ * for it at all.
+ */
+export const expoPushTokens = platform.table(
+  'expo_push_tokens',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+
+    /** Expo's own opaque token format, e.g. "ExponentPushToken[xxxxxxxxxxxx]". */
+    expoPushToken: text('expo_push_token').notNull(),
+
+    /** Parsed at registration into something a person recognizes, e.g. "iPhone 15". */
+    deviceLabel: text('device_label'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Touched on every successful push — Phase 12's "is this device alive" answer. */
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('expo_push_tokens_user_token_key').on(table.userId, table.expoPushToken)],
+);
+
+/**
  * Automation rules (migration 0047, ai/phase-10-automation.md Wave 1).
  *
  * `triggerEvent` is a domain event NAME validated against the live registry at

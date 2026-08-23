@@ -90,43 +90,67 @@ export function CardTile({
       {card.priority !== null && (
         <span
           aria-hidden="true"
-          className={cn('absolute inset-y-0 left-0 w-[3px]', PRIORITY_SWATCH[card.priority])}
+          className={cn(
+            'absolute inset-y-0 left-0 w-[3px]',
+            PRIORITY_SWATCH[card.priority],
+          )}
         />
       )}
 
-      <span className="block text-sm leading-snug text-ink">{card.title}</span>
+      {/* Title — bold, clean, 14px for proper readability on a kanban board */}
+      <span className="block text-[14px] font-medium leading-snug text-ink">{card.title}</span>
 
-      <div className="mt-2 flex items-center gap-1.5">
-        {/* 12px, not the 11px this used to be — the reference is one of the
-            most-scanned pieces of a tile, and 11px sat below the pass's
-            readability floor for anything read repeatedly. */}
-        <span className="font-mono text-xs text-ink-faint">{card.reference}</span>
+      {/* Metadata row — reference, due, checklist, comments, and avatars.
+          Generous spacing so the row doesn't feel cramped. */}
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        {/* Reference code — styled as a subtle pill for quick scanning */}
+        <span className="rounded-md bg-surface-sunken/80 px-2 py-0.5 font-mono text-[11px] font-medium text-ink-faint">
+          {card.reference}
+        </span>
 
+        {/* Due date — colored when overdue */}
         {due !== null && (
-          <Badge className={cn(due.overdue && 'bg-danger/20 text-danger')}>{due.label}</Badge>
+          <span
+            className={cn(
+              'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+              due.overdue
+                ? 'bg-danger/15 text-danger'
+                : 'bg-surface-hover text-ink-muted',
+            )}
+          >
+            <Calendar aria-hidden="true" className="size-3" strokeWidth={2} />
+            {due.label}
+          </span>
         )}
 
+        {/* Checklist progress */}
         {card.checklistTotal > 0 && (
-          <Badge
+          <span
             title="Checklist progress"
-            className={cn(card.checklistDone === card.checklistTotal && 'text-success')}
+            className={cn(
+              'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+              card.checklistDone === card.checklistTotal
+                ? 'bg-success/10 text-success'
+                : 'bg-surface-hover text-ink-muted',
+            )}
           >
             <SquareCheck aria-hidden="true" className="size-3" strokeWidth={2} />
             {card.checklistDone}/{card.checklistTotal}
-          </Badge>
+          </span>
         )}
 
+        {/* Comment count */}
         {card.commentCount > 0 && (
-          <Badge title="Comments">
+          <span
+            title="Comments"
+            className="inline-flex items-center gap-1 rounded-md bg-surface-hover px-2 py-0.5 text-[11px] font-medium text-ink-muted"
+          >
             <MessageSquare aria-hidden="true" className="size-3" strokeWidth={2} />
             {card.commentCount}
-          </Badge>
+          </span>
         )}
 
-        {/* Pushed right and kept on the metadata row rather than wrapping with
-            it. Faces are what the eye scans a column for, so they need a fixed
-            position — badges reflowing them to a different x per card is what
-            makes a board tiring to read. */}
+        {/* Pushed right — faces are what the eye scans a column for */}
         <span className="ml-auto">
           <AvatarStack people={assignees} />
         </span>
@@ -135,26 +159,13 @@ export function CardTile({
   );
 
   const tileClassName = cn(
-    /* `shadow-sm` separates the tile from its sunken column by DEPTH rather
-       than by border alone — the border stays (it survives on any surface)
-       but the resting shadow is what makes the stack of cards read as
-       elevated objects on the board. */
-    'relative w-full overflow-hidden rounded-card border border-line bg-surface-raised px-3 py-2.5 text-left shadow-sm',
-    'transition-[color,background-color,border-color,box-shadow,transform] duration-[var(--motion-fast)] ease-[var(--motion-ease)]',
-    dragging
-      ? /* The dragged tile's OWN transform stays inert — see SortableCard's
-           inline `style` comment on why the ancestor wrapper, not this
-           element, is what dnd-kit moves. A hover lift here would be
-           imperceptible anyway: the DragOverlay ghost is what the pointer
-           is actually over during a drag. */
-        'shadow-lg ring-1 ring-accent'
-      : /* The lift is on THIS element (the tile's own div/button), never the
-           `SortableCard` wrapper dnd-kit applies its transform to — two
-           separate nodes, so the two transforms compose rather than
-           collide. `-translate-y-px` is subtle on purpose: this fires on
-           every card under the pointer while scanning a column, and
-           anything larger reads as jitter rather than depth. */
-        'hover:-translate-y-px hover:border-line-strong hover:bg-surface-hover hover:shadow-sm',
+    /* Premium card: clean surface, subtle border, generous padding.
+       The card sits on surface-raised, one step above the tinted column.
+       Border uses 60% opacity for a hairline effect that reads as a
+       boundary without noise. */
+    'card-tile w-full text-left',
+    dragging && 'ring-1 ring-accent/70',
+    selected === true && 'ring-1 ring-accent',
   );
 
   /* The drag overlay is not interactive — it is a picture following the pointer

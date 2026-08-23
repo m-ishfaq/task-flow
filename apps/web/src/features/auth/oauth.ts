@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
-import { wire } from '../../lib/wire.js';
+import { wire } from '@taskflow/client';
 
 /**
  * OAuth sign-in, the browser half (Phase 12 Wave 2 §3.3).

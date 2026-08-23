@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useSession } from '../../lib/session.js';
 import { keys } from '../../lib/query.js';
 import { displayName, formatDate } from '../../lib/format.js';
-import { parseNullableInstant } from '../../lib/wire.js';
+import { parseNullableInstant } from '@taskflow/client';
 import {
   Avatar,
   Badge,
@@ -44,10 +44,10 @@ export function PersonPage({ userId }: { readonly userId: string }) {
 
   const detail = useQuery(directoryMemberQuery(orgId, userId));
 
-  if (detail.isPending) return <SkeletonRows rows={5} className="mx-auto max-w-3xl p-6" />;
+  if (detail.isPending) return <SkeletonRows rows={5} className="mx-auto max-w-5xl p-6" />;
   if (detail.isError) {
     return (
-      <div className="mx-auto max-w-3xl p-6">
+      <div className="mx-auto max-w-5xl p-6">
         <ErrorView error={detail.error} title="Could not load this person" />
       </div>
     );
@@ -57,7 +57,7 @@ export function PersonPage({ userId }: { readonly userId: string }) {
   const label = displayName({ name: member.displayName, email: member.email });
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-8 p-6">
+    <div className="mx-auto flex max-w-5xl flex-col gap-8 p-6">
       <header className="flex items-center gap-4">
         <Avatar userId={member.userId} label={label} size="sm" className="size-12 text-lg" />
         <div className="min-w-0">

@@ -488,12 +488,12 @@ function DroppableColumn({
       ref={setNodeRef}
       aria-label={group.label}
       className={cn(
-        'flex max-h-full w-72 shrink-0 flex-col rounded-card bg-surface-sunken',
-        isOver && 'ring-1 ring-accent',
+        'column-container flex max-h-full w-72 shrink-0 flex-col',
+        isOver && 'ring-2 ring-accent/50 border-accent/30',
       )}
     >
       <ColumnHeader group={group} />
-      <div className="flex min-h-16 flex-col gap-2 overflow-y-auto px-2 pb-2">{children}</div>
+      <div className="flex min-h-16 flex-col gap-1.5 overflow-y-auto px-2 pb-2 pt-0.5">{children}</div>
     </section>
   );
 }
@@ -509,26 +509,30 @@ function StaticColumn({
   return (
     <section
       aria-label={group.label}
-      className="flex max-h-full w-72 shrink-0 flex-col rounded-card bg-surface-sunken"
+      className="column-container flex max-h-full w-72 shrink-0 flex-col"
     >
       <ColumnHeader group={group} />
-      <div className="flex min-h-16 flex-col gap-2 overflow-y-auto px-2 pb-2">{children}</div>
+      <div className="flex min-h-16 flex-col gap-1.5 overflow-y-auto px-2 pb-2 pt-0.5">{children}</div>
     </section>
   );
 }
 
 function ColumnHeader({ group }: { readonly group: Group }) {
   return (
-    <header className="flex items-center gap-2 px-3 py-2.5">
+    <header className="column-header">
+      {/* Status dot — colored indicator matching the column's status color.
+          Slightly larger (10px) for better visibility on dark background. */}
       {group.color !== null && (
         <span
-          className="size-2.5 shrink-0 rounded-full"
+          className="status-dot shrink-0"
           style={{ backgroundColor: group.color }}
           aria-hidden="true"
         />
       )}
       <h2 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{group.label}</h2>
-      <span className="font-mono text-xs text-ink-faint">{group.cards.length}</span>
+      <span className="rounded-full bg-surface-hover/80 px-2 py-0.5 text-[11px] font-medium text-ink-faint">
+        {group.cards.length}
+      </span>
     </header>
   );
 }

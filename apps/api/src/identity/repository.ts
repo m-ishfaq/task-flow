@@ -11,6 +11,7 @@ import {
   schema,
   withGlobalScope,
   type GlobalDb,
+  type SessionChannel,
 } from '@taskflow/db';
 import { newId } from '@taskflow/security';
 
@@ -288,6 +289,8 @@ export interface CreateSessionInput {
   country: string | null;
   /** Set when this sign-in was flagged by impossible-travel detection (§3.4). */
   impossibleTravelAt: Date | null;
+  /** Which client minted the session — bounds which route may later refresh it. */
+  channel: SessionChannel;
   refreshToken: { id: string; tokenHash: string; expiresAt: Date };
 }
 
@@ -302,6 +305,7 @@ export async function createSession(input: CreateSessionInput): Promise<void> {
       userAgent: input.userAgent,
       country: input.country,
       impossibleTravelAt: input.impossibleTravelAt,
+      channel: input.channel,
     });
 
     await tx.insert(schema.refreshTokens).values({
@@ -323,6 +327,15 @@ export interface RefreshLookup {
   sessionRevokedAt: Date | null;
   sessionExpiresAt: Date;
   authenticatedAt: Date;
+  /** The channel the session was minted on — the refresh path enforces it (§4.3). */
+  channel: SessionChannel;
+  /**
+   * The session's bound device key (§4.5), or `null` when none is bound —
+   * a session predating device binding, or a native session whose
+   * registration call has not landed yet. `identity.refresh()` requires a
+   * signature only when this is non-null.
+   */
+  devicePublicKey: { x: string; y: string } | null;
 }
 
 export async function findRefreshToken(tokenHash: string): Promise<RefreshLookup | undefined> {
@@ -337,12 +350,102 @@ export async function findRefreshToken(tokenHash: string): Promise<RefreshLookup
         sessionRevokedAt: schema.sessions.revokedAt,
         sessionExpiresAt: schema.sessions.expiresAt,
         authenticatedAt: schema.sessions.authenticatedAt,
+        channel: schema.sessions.channel,
+        devicePublicKeyX: schema.sessions.devicePublicKeyX,
+        devicePublicKeyY: schema.sessions.devicePublicKeyY,
       })
       .from(schema.refreshTokens)
       .innerJoin(schema.sessions, eq(schema.sessions.id, schema.refreshTokens.sessionId))
       .where(eq(schema.refreshTokens.tokenHash, tokenHash))
       .limit(1);
 
+    const row = rows[0];
+    if (row === undefined) return undefined;
+
+    const { devicePublicKeyX, devicePublicKeyY, ...rest } = row;
+    return {
+      ...rest,
+      // The paired CHECK constraint (migration 0081) guarantees these are
+      // both present or both null — never one without the other.
+      devicePublicKey:
+        devicePublicKeyX !== null && devicePublicKeyY !== null
+          ? { x: devicePublicKeyX, y: devicePublicKeyY }
+          : null,
+    };
+  });
+}
+
+/**
+ * Binds a device's public key to a session, once.
+ *
+ * Scoped by BOTH `sessionId` and `userId` — `sessionId` alone would already
+ * be enough (it is never caller-supplied; `registerDeviceKey` always passes
+ * the id off the caller's own verified access token), but naming the user too
+ * costs nothing and matches `revokeSessionForUser`'s own defence-in-depth
+ * reasoning: never trust an id's unguessability as the only thing standing
+ * between one account's write and another's row.
+ *
+ * The `WHERE` clause is what makes this idempotent-but-immutable rather than
+ * a plain UPDATE: resubmitting the SAME key (a client retrying after a lost
+ * response) succeeds silently, but a DIFFERENT key naming an already-bound
+ * session matches zero rows and the caller reports a conflict — the same
+ * "no legitimate reason for this to change" reasoning `packages/db`'s custom
+ * field types use for their own immutability.
+ */
+export async function bindDeviceKey(input: {
+  userId: string;
+  sessionId: string;
+  x: string;
+  y: string;
+  now: Date;
+}): Promise<boolean> {
+  return withGlobalScope(async (tx) => {
+    const updated = await tx
+      .update(schema.sessions)
+      .set({
+        devicePublicKeyX: input.x,
+        devicePublicKeyY: input.y,
+        deviceKeyRegisteredAt: input.now,
+      })
+      .where(
+        and(
+          eq(schema.sessions.id, input.sessionId),
+          eq(schema.sessions.userId, input.userId),
+          or(
+            isNull(schema.sessions.devicePublicKeyX),
+            and(
+              eq(schema.sessions.devicePublicKeyX, input.x),
+              eq(schema.sessions.devicePublicKeyY, input.y),
+            ),
+          ),
+        ),
+      )
+      .returning({ id: schema.sessions.id });
+
+    return updated.length > 0;
+  });
+}
+
+/** What `registerDeviceKey` needs to know before it writes: is this session the
+ * caller's own, alive, native, and does it already carry a key (so a retry
+ * can be told apart from a first-time bind without a second round trip). */
+export async function findSessionForDeviceKey(
+  userId: string,
+  sessionId: string,
+): Promise<
+  | { channel: SessionChannel; revokedAt: Date | null; deviceKeyRegisteredAt: Date | null }
+  | undefined
+> {
+  return withGlobalScope(async (tx) => {
+    const rows = await tx
+      .select({
+        channel: schema.sessions.channel,
+        revokedAt: schema.sessions.revokedAt,
+        deviceKeyRegisteredAt: schema.sessions.deviceKeyRegisteredAt,
+      })
+      .from(schema.sessions)
+      .where(and(eq(schema.sessions.id, sessionId), eq(schema.sessions.userId, userId)))
+      .limit(1);
     return rows[0];
   });
 }

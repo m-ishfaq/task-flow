@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
-import { wire } from '../../lib/wire.js';
+import { wire } from '@taskflow/client';
 import { formatDate, formatDateTime } from '../../lib/format.js';
 import {
   AddPanel,
@@ -137,7 +137,7 @@ export function PasskeySection() {
       )}
 
       {passkeys.data !== undefined && passkeys.data.length > 0 && (
-        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
+        <ul className="divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
           {passkeys.data.map((passkey) => (
             <PasskeyRow
               key={passkey.id}

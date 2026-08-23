@@ -168,7 +168,7 @@ export function BoardPage() {
           than the viewport — it must sit above the cards and below any dialog,
           and anchoring it to the viewport would put it over the sidebar. */}
       <div className="relative flex min-w-0 flex-1 flex-col">
-        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line bg-surface-raised px-4 py-2.5">
+        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line/50 bg-surface-raised/80 px-4 py-2.5 backdrop-blur-sm">
           <ViewToggle
             value={view}
             onChange={(next) => {
@@ -359,7 +359,7 @@ function ViewToggle({
   readonly onChange: (value: 'board' | 'table' | 'list') => void;
 }) {
   return (
-    <div className="inline-flex rounded border border-line" role="group" aria-label="View">
+    <div className="inline-flex rounded-lg border border-line/60 bg-surface-sunken/40 p-0.5" role="group" aria-label="View">
       {(['board', 'list', 'table'] as const).map((mode) => (
         <button
           key={mode}
@@ -369,8 +369,10 @@ function ViewToggle({
             onChange(mode);
           }}
           className={cn(
-            'px-2.5 py-1 text-xs capitalize first:rounded-l last:rounded-r',
-            value === mode ? 'bg-accent text-accent-ink' : 'text-ink-muted hover:bg-surface-hover',
+            'rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-all duration-[var(--motion-fast)]',
+            value === mode
+              ? 'bg-accent text-accent-ink shadow-sm'
+              : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
           )}
         >
           {mode}

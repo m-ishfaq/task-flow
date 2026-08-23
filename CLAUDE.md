@@ -136,9 +136,25 @@ apps/       api
                                with no caller yet, and cost-attribution
                                reporting (Wave 4 — see status header, its
                                MFA half is not apps/api/src/identity work)
-packages/   config, contracts, db, security, policy, events, mail, observability,
-            feature-flags, guardrail-selftest, ⚠ storage, filter,
-            telephony (carrier boundary + geo allowlist)          (arriving: ui)
+            mobile             Expo / React Native (Phase 14) — Android & iOS,
+                               sharing @taskflow/contracts and the generated
+                               tRPC client with apps/web (guardrails 1 and 5
+                               extended to a third platform)
+              src/lib          session (DI factory, refresh token in
+                               Keychain/Keystore via SecureStore), org-gate,
+                               socket (ported, reconnect-and-replay), trpc-
+                               client, config (per-channel API base URL)
+              app/             expo-router routes — Wave 1: auth + org gates,
+                               one placeholder home screen proving the spine
+packages/   client (shared Wire<T>, retry policy, optimistic-mutation
+            contract — apps/web and apps/mobile alike), config, contracts,
+            db, security, policy, events, mail, observability,
+            feature-flags, guardrail-selftest, payments, seed, ⚠ storage,
+            filter, telephony (carrier boundary + geo allowlist), tokens
+            (shared color/radius/motion VALUES, kept in sync by hand with
+            apps/web/src/styles.css's @theme block — not a build-time
+            Tailwind dependency), ui (design system extracted from apps/web,
+            Phase 6.5 Wave 3)
 docker/     compose config + Postgres init (roles, RLS)
 ```
 

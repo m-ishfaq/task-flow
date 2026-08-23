@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { closeDatabase, initializeDatabase, sql, withGlobalScope } from '@taskflow/db';
 import { up } from '@taskflow/db/migrate';
 import { RecordingEventBus } from '@taskflow/events';
-import { isAppError } from '@taskflow/contracts';
+import { errors, isAppError } from '@taskflow/contracts';
 import { signOAuthState } from '@taskflow/security';
 import * as identity from './identity.service.js';
 import * as repo from './repository.js';
@@ -128,30 +128,40 @@ function fakeGithubFetch(profile: {
   };
 }
 
-function googleDeps(claims: { subject: string; email: string }): OAuthDeps {
+/** Native credentials are a SEPARATE map from `providers` — opt in per test, not a fixed default. */
+function googleDeps(
+  claims: { subject: string; email: string },
+  nativeProviders: OAuthDeps['nativeProviders'] = {},
+): OAuthDeps {
   return {
     identity: identityDeps(),
     providers: {
       google: { clientId: 'google-client', clientSecret: 'google-secret' },
     },
-    redirectUri: (provider: OAuthProvider) => `https://app.test/oauth/callback/${provider}`,
+    nativeProviders,
+    redirectUri: (provider: OAuthProvider, channel) =>
+      channel === 'native'
+        ? 'taskflow://oauth-callback'
+        : `https://app.test/oauth/callback/${provider}`,
     fetchImpl: fakeGoogleFetch(claims),
     verifyGoogleIdToken: fakeVerifyGoogleIdToken,
   };
 }
 
-function githubDeps(profile: {
-  id: number;
-  email: string;
-  primary?: boolean;
-  verified?: boolean;
-}): OAuthDeps {
+function githubDeps(
+  profile: { id: number; email: string; primary?: boolean; verified?: boolean },
+  nativeProviders: OAuthDeps['nativeProviders'] = {},
+): OAuthDeps {
   return {
     identity: identityDeps(),
     providers: {
       github: { clientId: 'github-client', clientSecret: 'github-secret' },
     },
-    redirectUri: (provider: OAuthProvider) => `https://app.test/oauth/callback/${provider}`,
+    nativeProviders,
+    redirectUri: (provider: OAuthProvider, channel) =>
+      channel === 'native'
+        ? 'taskflow://oauth-callback'
+        : `https://app.test/oauth/callback/${provider}`,
     fetchImpl: fakeGithubFetch(profile),
   };
 }
@@ -168,6 +178,9 @@ async function codeOfRejection(promise: Promise<unknown>): Promise<string> {
     (error: unknown) => codeOf(error),
   );
 }
+
+/** The code a cross-channel refresh refusal surfaces as (channel-binding.test.ts's own constant). */
+const REFUSED = codeOf(errors.tokenExpired());
 
 /** Registers and verifies a password account, returning its id and email. */
 async function registeredUser(email: string): Promise<string> {
@@ -370,6 +383,7 @@ describe('start', () => {
     const deps: OAuthDeps = {
       identity: identityDeps(),
       providers: {},
+      nativeProviders: {},
       redirectUri: (provider) => `https://app.test/oauth/callback/${provider}`,
     };
 
@@ -389,6 +403,125 @@ describe('start', () => {
   });
 });
 
+describe('native channel', () => {
+  it('mints a session bound to the native channel, not the browser one', async () => {
+    const deps = googleDeps(
+      { subject: 'google-sub-native-1', email: 'oauth-native-1@example.test' },
+      { google: { clientId: 'google-native-client' } },
+    );
+    const state = await signOAuthState(
+      { provider: 'google', codeVerifier: 'v', channel: 'native' },
+      { secret: JWT_SECRET },
+    );
+
+    const result = await oauth.callback(deps, { provider: 'google', code: 'c', state }, meta);
+    if (result.kind !== 'session') throw new Error('expected a session, got a link result');
+
+    // Bound to 'native' (migration 0080): refused on the browser refresh
+    // route, and the refusal does not revoke it — accepted on its own route.
+    expect(
+      await codeOfRejection(
+        identity.refresh(
+          identityDeps(),
+          { refreshToken: result.pair.refreshToken },
+          meta,
+          'browser',
+        ),
+      ),
+    ).toBe(REFUSED);
+    const next = await identity.refresh(
+      identityDeps(),
+      { refreshToken: result.pair.refreshToken },
+      meta,
+      'native',
+    );
+    expect(next.refreshToken).not.toBe(result.pair.refreshToken);
+  });
+
+  it('omits client_secret from the Google token exchange when the native client has none', async () => {
+    let sawSecret = false;
+    const fetchImpl: typeof fetch = (input, init) => {
+      const href = urlOf(input);
+      if (href !== 'https://oauth2.googleapis.com/token') {
+        throw new Error(`oauth.service.test.ts: unexpected fetch to ${href}`);
+      }
+      const body = typeof init?.body === 'string' ? init.body : '';
+      sawSecret = new URLSearchParams(body).has('client_secret');
+      return Promise.resolve(
+        jsonResponse({
+          id_token: JSON.stringify({
+            subject: 'google-sub-native-3',
+            email: 'oauth-native-3@example.test',
+          }),
+        }),
+      );
+    };
+    const deps: OAuthDeps = {
+      identity: identityDeps(),
+      providers: { google: { clientId: 'google-client', clientSecret: 'google-secret' } },
+      nativeProviders: { google: { clientId: 'google-native-client' } },
+      redirectUri: (provider, channel) =>
+        channel === 'native'
+          ? 'taskflow://oauth-callback'
+          : `https://app.test/oauth/callback/${provider}`,
+      fetchImpl,
+      verifyGoogleIdToken: fakeVerifyGoogleIdToken,
+    };
+    const state = await signOAuthState(
+      { provider: 'google', codeVerifier: 'v', channel: 'native' },
+      { secret: JWT_SECRET },
+    );
+
+    const result = await oauth.callback(deps, { provider: 'google', code: 'c', state }, meta);
+    expect(result.kind).toBe('session');
+    expect(sawSecret).toBe(false);
+  });
+
+  it('refuses native sign-in for a provider with no native credentials, even with a browser pair configured', async () => {
+    const deps = googleDeps({ subject: 'unused', email: 'unused@example.test' });
+    const state = await signOAuthState(
+      { provider: 'google', codeVerifier: 'v', channel: 'native' },
+      { secret: JWT_SECRET },
+    );
+
+    const errorCode = await codeOfRejection(
+      oauth.callback(deps, { provider: 'google', code: 'c', state }, meta),
+    );
+    expect(errorCode).toBe('NOT_FOUND');
+  });
+
+  it('refuses a native GitHub exchange when the native app has no secret configured', async () => {
+    const deps = githubDeps(
+      { id: 999, email: 'oauth-native-gh@example.test' },
+      { github: { clientId: 'github-native-client-no-secret' } },
+    );
+    const state = await signOAuthState(
+      { provider: 'github', codeVerifier: 'v', channel: 'native' },
+      { secret: JWT_SECRET },
+    );
+
+    const errorCode = await codeOfRejection(
+      oauth.callback(deps, { provider: 'github', code: 'c', state }, meta),
+    );
+    expect(errorCode).toBe('NOT_FOUND');
+  });
+
+  it('start signs a state carrying the native channel and uses the native redirect and credentials', async () => {
+    const deps = googleDeps(
+      { subject: 'unused', email: 'unused@example.test' },
+      { google: { clientId: 'google-native-client' } },
+    );
+
+    const { authorizationUrl } = await oauth.start(deps, {
+      provider: 'google',
+      channel: 'native',
+    });
+    const url = new URL(authorizationUrl);
+    expect(url.searchParams.get('client_id')).toBe('google-native-client');
+    expect(url.searchParams.get('redirect_uri')).toBe('taskflow://oauth-callback');
+  });
+});
+
 describe('linking to an existing session', () => {
   it('links without issuing a new session', async () => {
     const userId = await registeredUser('oauth-linker@example.test');
@@ -405,6 +538,40 @@ describe('linking to an existing session', () => {
     expect(result).toEqual({ kind: 'linked', provider: 'google' });
     const links = await repo.listOAuthIdentities(userId);
     expect(links).toHaveLength(1);
+    expect(events.names()).toEqual(['user.oauth_linked']);
+  });
+
+  /**
+   * `auth.native.oauth.startLink` (added alongside this test) wires no new
+   * SERVICE logic — `start` already accepted `{ linkUserId, channel }`
+   * together, and `callback`'s `kind: 'linked'` branch is shared by both
+   * channels regardless. What was never exercised end-to-end is a `start`
+   * that carries BOTH at once, the exact combination the new route calls.
+   */
+  it('links over the native channel, using native credentials and redirect', async () => {
+    const userId = await registeredUser('oauth-linker-native@example.test');
+    events.events.length = 0;
+
+    const deps = googleDeps(
+      { subject: 'google-sub-native-link', email: 'someone-else-native@example.test' },
+      { google: { clientId: 'google-native-client' } },
+    );
+
+    const { authorizationUrl } = await oauth.start(deps, {
+      provider: 'google',
+      linkUserId: userId,
+      channel: 'native',
+    });
+    const url = new URL(authorizationUrl);
+    expect(url.searchParams.get('client_id')).toBe('google-native-client');
+    expect(url.searchParams.get('redirect_uri')).toBe('taskflow://oauth-callback');
+    const state = url.searchParams.get('state');
+    if (state === null) throw new Error('expected a state param');
+
+    const result = await oauth.callback(deps, { provider: 'google', code: 'c', state }, meta);
+
+    expect(result).toEqual({ kind: 'linked', provider: 'google' });
+    expect(await repo.listOAuthIdentities(userId)).toHaveLength(1);
     expect(events.names()).toEqual(['user.oauth_linked']);
   });
 

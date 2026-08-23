@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
-import { wire } from '../../lib/wire.js';
+import { wire } from '@taskflow/client';
 import { formatDate } from '../../lib/format.js';
 import { Badge, Button, Section, SkeletonRows } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
@@ -154,7 +154,7 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
 
       {data !== undefined && (
         <div className="flex flex-col gap-3">
-          <div className="rounded-lg border border-line bg-surface-raised p-3">
+          <div className="rounded-lg border border-line/50 bg-surface-raised p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <StatusBadge billingStatus={data.billingStatus} />
@@ -292,7 +292,7 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
           </div>
 
           {data.features.length > 0 && (
-            <div className="rounded-lg border border-line p-3">
+            <div className="rounded-xl border border-line/50 p-4">
               <h4 className="text-xs font-semibold text-ink">Included in your plan</h4>
               <ul className="mt-1.5 flex flex-col gap-1">
                 {data.features.map((feature) => (
@@ -319,7 +319,7 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
               `null` is unlimited and showing "spent $0 of unlimited" is noise;
               a real cap is the thing worth watching. */}
           {data.usage.telephonyCapCents !== null && (
-            <div className="rounded-lg border border-line p-3">
+            <div className="rounded-xl border border-line/50 p-4">
               <div className="flex items-baseline justify-between text-xs">
                 <span className="font-semibold text-ink">Voice &amp; messaging, last 30 days</span>
                 <span className="text-ink-muted">
@@ -358,7 +358,7 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
 
           <InvoiceHistory orgId={orgId} />
 
-          <div className="rounded-lg border border-line p-3">
+          <div className="rounded-xl border border-line/50 p-4">
             <h4 className="text-xs font-semibold text-ink">Plans</h4>
 
             {plans.isPending && <SkeletonRows rows={2} className="mt-1.5 *:h-10" />}
@@ -586,7 +586,7 @@ function InvoiceHistory({ orgId }: { readonly orgId: string }) {
   if (invoices.data === undefined || invoices.data.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-line p-3">
+    <div className="rounded-xl border border-line/50 p-4">
       <h4 className="text-xs font-semibold text-ink">Invoices</h4>
       <ul className="mt-1.5 divide-y divide-line">
         {invoices.data.map((invoice) => (

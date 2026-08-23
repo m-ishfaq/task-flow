@@ -1,7 +1,7 @@
 import { queryOptions } from '@tanstack/react-query';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
-import { wire, type Wire } from '../../lib/wire.js';
+import { wire, type Wire } from '@taskflow/client';
 
 /** Tenancy reads: the org switcher, the member list, the permission explainer. */
 

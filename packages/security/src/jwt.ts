@@ -188,16 +188,27 @@ export interface OAuthStateClaims {
   readonly codeVerifier: string;
   /** Set when linking a provider to an already signed-in account, rather than signing in fresh. */
   readonly linkUserId?: string;
+  /**
+   * Set when `start` was called from the native app. Carries the channel
+   * through the redirect round trip — the state is the only thing that
+   * survives it — so `callback` knows to exchange the code against the
+   * NATIVE redirect URI/credentials and mint a body-delivered session
+   * (ai/phase-14-mobile.md §4.4). Absent means browser, the same fail-safe
+   * default `issueSession` callers use elsewhere: a forged or truncated
+   * claim can only fall back to the cookie path, never forge native delivery.
+   */
+  readonly channel?: 'native';
 }
 
 export async function signOAuthState(claims: OAuthStateClaims, config: JwtConfig): Promise<string> {
   assertSecret(config.secret);
 
-  const { linkUserId } = claims;
+  const { linkUserId, channel } = claims;
   return new SignJWT({
     provider: claims.provider,
     verifier: claims.codeVerifier,
     ...(linkUserId === undefined ? {} : { link: linkUserId }),
+    ...(channel === undefined ? {} : { channel }),
   })
     .setProtectedHeader({ alg: ALGORITHM, typ: 'JWT' })
     .setIssuer(ISSUER)
@@ -221,16 +232,18 @@ export async function verifyOAuthState(
       clockTolerance: 5,
     });
 
-    const { provider, verifier, link } = payload;
+    const { provider, verifier, link, channel } = payload;
     if (typeof provider !== 'string' || typeof verifier !== 'string') {
       throw new InvalidTokenError();
     }
     if (link !== undefined && typeof link !== 'string') throw new InvalidTokenError();
+    if (channel !== undefined && channel !== 'native') throw new InvalidTokenError();
 
     return {
       provider,
       codeVerifier: verifier,
       ...(link === undefined ? {} : { linkUserId: link }),
+      ...(channel === undefined ? {} : { channel }),
     };
   } catch {
     throw new InvalidTokenError();

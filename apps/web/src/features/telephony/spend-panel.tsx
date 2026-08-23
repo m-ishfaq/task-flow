@@ -56,7 +56,7 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
   const automationOver = automationRatio > 1;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6">
       <section className="space-y-3">
         <div className="flex items-center gap-2">
           <h2 className="text-[13px] font-semibold text-ink">This organization's spend</h2>
@@ -173,7 +173,7 @@ export function SpendPanel({ orgId }: { readonly orgId: string }) {
             description="Place a call or send an SMS to see it itemized here."
           />
         ) : (
-          <div className="overflow-hidden rounded-lg border border-line">
+          <div className="overflow-hidden rounded-lg border border-line/50">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-line bg-surface-raised text-ink-faint">

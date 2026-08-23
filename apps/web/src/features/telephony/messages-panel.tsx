@@ -44,7 +44,7 @@ export function MessagesPanel({ orgId }: { readonly orgId: string }) {
   };
 
   return (
-    <div className="mx-auto flex h-full min-h-0 max-w-4xl gap-4">
+    <div className="mx-auto flex h-full min-h-0 max-w-5xl gap-4">
       <div className="w-64 shrink-0 space-y-1 overflow-y-auto">
         {/* Until this existed there was NO way to start an SMS from the UI —
             the composer lived only inside an already-open thread, and threads

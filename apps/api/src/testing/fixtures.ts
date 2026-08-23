@@ -115,6 +115,7 @@ export const TEST_IDENTITY_DATA_KEY = Buffer.alloc(32, 7);
  */
 const NO_OAUTH_PROVIDERS: Omit<OAuthDeps, 'identity'> = {
   providers: {},
+  nativeProviders: {},
   redirectUri: (provider) => `${TEST_ENV.WEB_ORIGIN}/oauth/callback/${provider}`,
 };
 

@@ -144,19 +144,37 @@ services:
 
   # TURN/STUN for in-app voice (Phase 13, ai/phase-13-webrtc.md §5).
   #
-  # `network_mode: host` rather than a port list, and it is not a shortcut.
-  # TURN allocates a fresh UDP port per relayed stream out of a wide range; a
-  # Docker port mapping would have to publish that whole range, which Docker
-  # Desktop does one userland proxy process per port for and takes minutes to
-  # start. Host networking also means the addresses coturn advertises in its
-  # ICE candidates are addresses the browser can actually reach — a relayed
-  # candidate naming a bridge-network IP is accepted by the client, tried, and
-  # silently times out, which presents as "calls do not connect" with nothing
-  # in any log.
+  # An explicit `ports:` list, NOT `network_mode: host` — compose.prod.yaml's
+  # own coturn block still uses host networking, for the reason its comment
+  # gives (TURN allocates a fresh UDP port per relayed stream out of a wide
+  # range; a Docker port mapping publishing that whole range costs a userland
+  # proxy process per port, and takes noticeably longer to start). That
+  # reasoning holds on a real Linux host, which is what production is. It does
+  # NOT hold here: confirmed live, against a real phone, that under Docker
+  # Desktop (Windows/Mac) `network_mode: host` binds coturn to the DESKTOP
+  # VM's own loopback/bridge addresses — `127.0.0.1`, `192.168.65.x`,
+  # `172.1x.0.1` — never the actual machine's LAN interface, so nothing
+  # outside the machine itself, a real phone included, can ever reach it. The
+  # slower startup this trades for is a one-time `docker compose up` cost, not
+  # a per-call one; the alternative (host networking, silently unreachable
+  # from any other device) is not an alternative at all for testing this
+  # feature against a real phone rather than two browser tabs.
   #
-  # Consequence, stated because it will bite: host networking is Linux-only in
-  # its full form. On Docker Desktop, run coturn natively or accept STUN-only
-  # local development — which is what RTC_TURN_URLS being optional is for.
+  # `--external-ip` is the other half, and skipping it just moves the same
+  # bug: without it, coturn advertises the CONTAINER's own bridge-network
+  # address in every candidate — this file's own next paragraph already names
+  # the symptom ("a relayed candidate naming a bridge-network IP is accepted
+  # by the client, tried, and silently times out"). Unset, it defaults to
+  # `127.0.0.1`, which is exactly right for two browser tabs on this same
+  # machine (`RTC_STUN_URLS`'s own default points there too) and exactly
+  # wrong for a phone; set `COTURN_EXTERNAL_IP` in `.env` to the same LAN IP
+  # `MOBILE_API_BASE_URL`/`RTC_STUN_URLS`/`RTC_TURN_URLS` already use before
+  # testing against a real device.
+  #
+  # A relayed candidate naming a bridge-network IP is accepted by the client,
+  # tried, and silently times out, which presents as "calls do not connect"
+  # with nothing in any log — the reason `--external-ip` above is not
+  # optional the moment this container is not host-networked.
   #
   # `use-auth-secret` is the whole reason this can be developed against safely:
   # no static user exists, so there is no credential to leak from the client
@@ -166,7 +184,10 @@ services:
     image: coturn/coturn:latest
     container_name: taskflow-coturn
     restart: unless-stopped
-    network_mode: host
+    ports:
+      - '3478:3478/udp'
+      - '3478:3478/tcp'
+      - '49160-49200:49160-49200/udp'
     command:
       - -n
       - --log-file=stdout
@@ -177,20 +198,40 @@ services:
       # file. Must match RTC_TURN_SECRET in .env.
       - --static-auth-secret=coturn-dev-secret
       - --realm=taskflow.local
+      # See the header on why this is not optional under port mapping.
+      - --external-ip=${COTURN_EXTERNAL_IP:-127.0.0.1}
       # A narrow relay range keeps the container's startup fast. Production
       # wants the full default range; this is a development convenience.
       - --min-port=49160
       - --max-port=49200
-      # Refuse to relay to loopback, multicast and private ranges. An open TURN
-      # server is an SSRF pivot into whatever network it sits on — the relay
-      # will happily carry traffic to 127.0.0.1:5432 if allowed to.
+      # Refuse to relay to loopback, this-network and link-local addresses. An
+      # open TURN server is an SSRF pivot into whatever network it sits on —
+      # the relay will happily carry traffic to 127.0.0.1:5432 or a cloud
+      # metadata endpoint at 169.254.169.254 if allowed to. These three are
+      # the ones that actually matter for that risk, dev included.
       - --no-multicast-peers
       - --denied-peer-ip=0.0.0.0-0.255.255.255
       - --denied-peer-ip=127.0.0.0-127.255.255.255
       - --denied-peer-ip=169.254.0.0-169.254.255.255
-      - --denied-peer-ip=172.16.0.0-172.31.255.255
-      - --denied-peer-ip=192.168.0.0-192.168.255.255
-      - --denied-peer-ip=10.0.0.0-10.255.255.255
+      # RFC1918 (the private ranges a phone/desktop on a home or office LAN
+      # actually sits in) is EXPLICITLY ALLOWED here, dev only —
+      # compose.prod.yaml's own coturn block still denies all three, unchanged.
+      # Found live: with them denied, coturn refused to relay to a real
+      # phone's own LAN address ("A peer IP ... denied in the range:
+      # 10.0.0.0-10.255.255.255"), which made local testing against a real
+      # device impossible — the whole point `network_mode: host` and
+      # COTURN_EXTERNAL_IP above already exist for. `--allowed-peer-ip`
+      # overrides a matching `--denied-peer-ip` — confirmed against coturn's
+      # own docs ("if there is an allowed rule that fits the address, then it
+      # is allowed, no matter what") — so this is a carved-out exception, not
+      # a removal of the SSRF control: "relay to another device on my own dev
+      # LAN" is exactly what local testing needs and is not a meaningful
+      # protection in that context to begin with; "relay to loopback or cloud
+      # metadata" (denied above) is the part that actually matters, and stays
+      # denied even here.
+      - --allowed-peer-ip=172.16.0.0-172.31.255.255
+      - --allowed-peer-ip=192.168.0.0-192.168.255.255
+      - --allowed-peer-ip=10.0.0.0-10.255.255.255
 
 volumes:
   postgres-data:

@@ -18,7 +18,7 @@ import {
 } from '@taskflow/policy';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
-import { wire } from '../../lib/wire.js';
+import { wire } from '@taskflow/client';
 import { formatDate } from '../../lib/format.js';
 import { Button, Empty } from '../../components/primitives.js';
 import { ErrorText } from '../../components/error-view.js';
@@ -132,7 +132,7 @@ function ShareBody({ orgId, boardId }: ShareBoardProps) {
       {grants.data?.length === 0 ? (
         <Empty title="Not shared with anyone yet" />
       ) : (
-        <ul className="divide-y divide-line rounded border border-line">
+        <ul className="divide-y divide-line/40 rounded border border-line/50">
           {(grants.data ?? []).map((tuple) => (
             <li key={tuple.tupleId} className="flex items-center gap-2 px-3 py-2">
               <div className="min-w-0 flex-1">

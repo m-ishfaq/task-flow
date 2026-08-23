@@ -2,8 +2,14 @@ import { z } from 'zod';
 import { errors } from '@taskflow/contracts';
 import { TRPCError } from '@trpc/server';
 import { publicRoute, router, selfRoute } from '../trpc/builder.js';
-import { SessionResponse, handOff } from './session-response.js';
-import { createPasskeyRouter } from './passkey.router.js';
+import {
+  NativeSessionResponse,
+  SessionResponse,
+  handOff,
+  nativeSession,
+} from './session-response.js';
+import { createPasskeyRouter, AuthenticationResponse } from './passkey.router.js';
+import * as passkeys from './passkey.service.js';
 import type { PasskeyDeps } from './passkey.service.js';
 import type { IdentityDeps, RequestMeta } from './identity.service.js';
 import * as identity from './identity.service.js';
@@ -131,7 +137,7 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
         ]),
       )
       .mutation(async ({ input, ctx }) => {
-        const result = await identity.login(deps.identity, input, meta(ctx));
+        const result = await identity.login(deps.identity, input, meta(ctx), 'browser');
         if (result.kind === 'totp_required') return result;
         return { kind: 'session' as const, ...handOff(ctx, result.pair) };
       }),
@@ -147,6 +153,7 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
           deps.identity,
           { refreshToken: ctx.refreshToken },
           meta(ctx),
+          'browser',
         );
         return handOff(ctx, pair);
       }),
@@ -163,6 +170,284 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
         if (!ctx.refreshToken) return { status: 'ok' as const };
         return identity.logout(deps.identity, { refreshToken: ctx.refreshToken });
       }),
+
+    /**
+     * The NATIVE auth surface (ai/phase-14-mobile.md §4.3).
+     *
+     * A phone has no httpOnly cookie, so these routes deliver the refresh token
+     * in the response BODY (via `nativeSession`) and read it back from the
+     * request INPUT — never `ctx.refreshToken` (the cookie) and never
+     * `ctx.setRefreshCookie`. Kept a SEPARATE namespace from the browser routes
+     * above, with a SEPARATE output schema (`NativeSessionResponse`), so the two
+     * delivery mechanisms are structurally unable to cross: the browser body
+     * cannot gain a refresh token, and the native body cannot silently lose one.
+     * They reuse the SAME services (`identity.login/refresh/logout`,
+     * `totp.verifyLogin`) — two paths minting sessions differently is how one
+     * ends up without rotation or reuse detection, which this deliberately
+     * avoids.
+     *
+     * Channel-bound (migration 0080, ai/phase-14-mobile.md §4.3 part 2):
+     * `identity.sessions.channel` records which of these routes minted the
+     * session, and `identity.refresh` refuses a presented token whose stored
+     * channel does not match the route it was presented to — a browser-minted
+     * token can no longer be rotated into a native body, or vice versa.
+     */
+    native: router({
+      login: publicRoute({
+        publicReason:
+          'The native counterpart of auth.login — how a phone obtains a session. No cookie, so the refresh token is returned in the body.',
+      })
+        .input(
+          z
+            .object({
+              email: Email,
+              password: Password,
+              name: z.string().trim().min(1).max(80).optional(),
+            })
+            .strict(),
+        )
+        .output(
+          z.discriminatedUnion('kind', [
+            NativeSessionResponse.extend({ kind: z.literal('session') }),
+            z.object({ kind: z.literal('totp_required'), challengeToken: z.string() }).strict(),
+          ]),
+        )
+        .mutation(async ({ input, ctx }) => {
+          const result = await identity.login(deps.identity, input, meta(ctx), 'native');
+          if (result.kind === 'totp_required') return result;
+          return { kind: 'session' as const, ...nativeSession(result.pair) };
+        }),
+
+      refresh: publicRoute({
+        publicReason:
+          'The native refresh: the phone presents its stored refresh token as input (it has no cookie) and receives a rotated pair in the body.',
+      })
+        .input(
+          z
+            .object({
+              refreshToken: z.string().min(1).max(1024),
+              /**
+               * Base64 DER ECDSA-P256-SHA256 signature over `refreshToken`,
+               * from the session's bound device key (§4.5) — required only
+               * when `auth.native.deviceKey.register` has bound one; absent
+               * for every session that predates it. `identity.refresh()`
+               * decides which case applies, never this schema.
+               */
+              deviceSignature: z.string().min(1).max(1024).optional(),
+            })
+            .strict(),
+        )
+        .output(NativeSessionResponse)
+        .mutation(async ({ input, ctx }) => {
+          const pair = await identity.refresh(
+            deps.identity,
+            {
+              refreshToken: input.refreshToken,
+              ...(input.deviceSignature !== undefined
+                ? { deviceSignature: input.deviceSignature }
+                : {}),
+            },
+            meta(ctx),
+            'native',
+          );
+          return nativeSession(pair);
+        }),
+
+      logout: publicRoute({
+        publicReason:
+          'Ending a native session must work with an expired access token, the same as auth.logout — the phone presents its refresh token as input.',
+      })
+        .input(z.object({ refreshToken: z.string().min(1).max(1024) }).strict())
+        .output(z.object({ status: z.literal('ok') }))
+        .mutation(({ input }) =>
+          identity.logout(deps.identity, { refreshToken: input.refreshToken }),
+        ),
+
+      /** The native counterpart of auth.totp.verifyLogin — same challenge, body delivery. */
+      totp: router({
+        verifyLogin: publicRoute({
+          publicReason:
+            'The caller has no session yet — the signed challenge token is the proof the password step succeeded. Native delivery is body, not cookie.',
+        })
+          .input(
+            z
+              .object({
+                challengeToken: z.string(),
+                credential: z.discriminatedUnion('kind', [
+                  z.object({ kind: z.literal('totp'), code: z.string().min(6).max(10) }).strict(),
+                  z
+                    .object({ kind: z.literal('recovery'), code: z.string().min(6).max(20) })
+                    .strict(),
+                ]),
+              })
+              .strict(),
+          )
+          .output(NativeSessionResponse)
+          .mutation(async ({ input, ctx }) => {
+            const pair = await totp.verifyLogin(
+              totpDeps,
+              { challengeToken: input.challengeToken, credential: input.credential },
+              meta(ctx),
+              'native',
+            );
+            return nativeSession(pair);
+          }),
+      }),
+
+      /**
+       * The native counterpart of `auth.oauth.start`/`startLink`/`callback`
+       * (ai/phase-14-mobile.md §4.4).
+       *
+       * `start` is unauthenticated for the same reason `auth.native.login` is:
+       * this is how a session is obtained. Its `channel: 'native'` is what
+       * `oauth.service.ts`'s `start` uses to sign a state token carrying
+       * `channel: 'native'` and to resolve the NATIVE redirect URI/credentials
+       * — a custom-scheme `taskflow://oauth-callback` deep link and, for
+       * Google, a distinct public client with no secret (§4.4's own
+       * reasoning). The mobile app opens `authorizationUrl` in a system
+       * browser session and parses `code`/`state` back out of the redirect.
+       *
+       * `startLink` did NOT exist here until the mobile account screen needed
+       * it — Wave 1's own comment (superseded by this one) named it
+       * out-of-scope on purpose, since sign-in and account management are
+       * different pieces of work. It required no new SERVICE code: `oauth.
+       * start` already accepted `{ provider, linkUserId, channel }` together
+       * (the browser route already assembles exactly that shape), and
+       * `callback`'s output union and handler already branch on `kind ===
+       * 'linked'` — necessarily, since `oauth.callback` is the one function
+       * BOTH channels call, and its return type includes `linked` regardless
+       * of whether anything on this channel could produce it yet. So this is
+       * the entire gap: one route, wiring `ctx.principal.userId` into the
+       * link the exact way `auth.oauth.startLink` already does for the
+       * browser. `stepUp: true` for the identical reason browser's carries
+       * it — adding a new way into the account is as sensitive as removing
+       * one (`unlink`, also `stepUp: true`).
+       */
+      oauth: router({
+        /**
+         * Which providers this server has NATIVE credentials for — a
+         * separate answer from `auth.oauth.providers` (browser), since
+         * `nativeProviders` is a separate map (§4.4): a deployment can have
+         * Google configured for the web and nothing for native, and the
+         * sign-in screen must show no button for a provider it cannot
+         * complete rather than one that always ends in `NOT_FOUND`.
+         */
+        providers: publicRoute({
+          publicReason: 'Read from the sign-in screen, before any session exists.',
+        })
+          .output(z.object({ google: z.boolean(), github: z.boolean() }))
+          .query(() => ({
+            google: 'google' in oauthDeps.nativeProviders,
+            github: 'github' in oauthDeps.nativeProviders,
+          })),
+
+        start: publicRoute({
+          publicReason: 'This is how a session is obtained — the same reason auth.login is public.',
+        })
+          .input(z.object({ provider: OAuthProviderSchema }).strict())
+          .output(z.object({ authorizationUrl: z.string() }))
+          .mutation(({ input }) =>
+            oauth.start(oauthDeps, { provider: input.provider, channel: 'native' }),
+          ),
+
+        startLink: selfRoute({
+          selfReason: 'Linking a new provider to your own account.',
+          stepUp: true,
+        })
+          .input(z.object({ provider: OAuthProviderSchema }).strict())
+          .output(z.object({ authorizationUrl: z.string() }))
+          .mutation(({ input, ctx }) =>
+            oauth.start(oauthDeps, {
+              provider: input.provider,
+              linkUserId: ctx.principal.userId,
+              channel: 'native',
+            }),
+          ),
+
+        callback: publicRoute({
+          publicReason:
+            'Reached after the system-browser redirect, with no session — the signed state token carries whatever context the flow needs.',
+        })
+          .input(
+            z
+              .object({ provider: OAuthProviderSchema, code: z.string(), state: z.string() })
+              .strict(),
+          )
+          .output(
+            z.discriminatedUnion('kind', [
+              NativeSessionResponse.extend({ kind: z.literal('session') }),
+              z.object({ kind: z.literal('linked'), provider: OAuthProviderSchema }).strict(),
+            ]),
+          )
+          .mutation(async ({ input, ctx }) => {
+            const result = await oauth.callback(oauthDeps, input, meta(ctx));
+            if (result.kind === 'linked') return result;
+            return { kind: 'session' as const, ...nativeSession(result.pair) };
+          }),
+      }),
+
+      /**
+       * Device binding (ai/phase-14-mobile.md §4.5) — a hardware-backed
+       * public key, bound to the CALLING session. `selfRoute`, not
+       * `publicRoute`: the whole point is that the caller has just proven
+       * they ARE this session (a fresh access token), and `sessions.
+       * registerDeviceKey` reads `sessionId` off that token rather than
+       * trusting anything the client names. Called once, right after any
+       * native login succeeds — see that function's own header for the
+       * conflict/idempotency shape.
+       */
+      deviceKey: router({
+        register: selfRoute({
+          selfReason:
+            'Binding a session to its own device key is an identity-slice operation with no org context — the same reason auth.native.sessions has none.',
+        })
+          .input(
+            z
+              .object({
+                publicKey: z.object({ x: z.string(), y: z.string() }).strict(),
+              })
+              .strict(),
+          )
+          .output(z.object({ status: z.literal('bound') }))
+          .mutation(({ input, ctx }) =>
+            sessions.registerDeviceKey(
+              deps.identity,
+              ctx.principal.userId,
+              ctx.principal.sessionId,
+              input.publicKey,
+            ),
+          ),
+      }),
+
+      /**
+       * The native counterpart of `auth.passkeys.finishAuthentication`
+       * (ai/phase-14-mobile.md §4.4). `startAuthentication` and enrollment
+       * (`startRegistration`/`finishRegistration`) need no native
+       * counterpart at all: the first returns ceremony options with no
+       * session and no channel to get wrong, and enrollment is already
+       * `selfRoute` — bearer-token authenticated identically on both
+       * channels, the same reasoning `auth.native.deviceKey.register` is
+       * the only new route device binding needed. Only session ISSUANCE
+       * differs by channel, so only `finishAuthentication` does.
+       */
+      passkeys: router({
+        finishAuthentication: publicRoute({
+          publicReason:
+            'The assertion IS the credential — there is no session yet, the same reason the browser route is public.',
+        })
+          .input(z.object({ response: AuthenticationResponse }).strict())
+          .output(NativeSessionResponse)
+          .mutation(async ({ ctx, input }) => {
+            const pair = await passkeys.finishAuthentication(
+              deps.passkeys,
+              { response: input.response as never },
+              meta(ctx),
+              'native',
+            );
+            return nativeSession(pair);
+          }),
+      }),
+    }),
 
     requestPasswordReset: publicRoute({
       publicReason: 'Requested precisely because the caller cannot sign in.',
@@ -367,6 +652,7 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
             totpDeps,
             { challengeToken: input.challengeToken, credential: input.credential },
             meta(ctx),
+            'browser',
           );
           return handOff(ctx, pair);
         }),

@@ -4,7 +4,7 @@ import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useToast } from '../../lib/toast-context.js';
 import { useStepUp } from '../auth/use-step-up.js';
-import type { Wire } from '../../lib/wire.js';
+import type { Wire } from '@taskflow/client';
 import { Button, ConfirmButton, Empty, SkeletonRows } from '../../components/primitives.js';
 import { ErrorText } from '../../components/error-view.js';
 import { integrationCapabilitiesQuery, integrationsQuery } from './api.js';
@@ -171,7 +171,7 @@ function ProviderRow({
     webhookUrl === null ? null : `${webhookUrl}/integrations/${provider}`;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-line">
+    <div className="overflow-hidden rounded-lg border border-line/50">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 bg-surface-raised px-3 py-2">
         <div className="min-w-0 flex-1 basis-48">
           <p className="flex items-center gap-2">
@@ -220,7 +220,7 @@ function ProviderRow({
           the scope was once authorized — the same reason the row survives a
           disconnect in the database at all. */}
       {rows.length > 0 && (
-        <ul className="divide-y divide-line border-t border-line">
+        <ul className="divide-y divide-line/40 border-t border-line/50/50">
           {rows.map((row) => (
             <li
               key={row.integrationId}
@@ -272,7 +272,7 @@ function ProviderRow({
           secret is different: that one is shown exactly once, on the connect
           callback page. */}
       {webhookUrl !== null && (
-        <div className="flex items-center gap-2 border-t border-line px-3 py-1.5">
+        <div className="flex items-center gap-2 border-t border-line/50 px-3 py-1.5">
           <code
             className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-faint"
             title={webhookUrlFor() ?? undefined}

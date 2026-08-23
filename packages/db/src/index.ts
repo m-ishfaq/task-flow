@@ -159,6 +159,12 @@ export {
 export * as schema from './schema/index.js';
 
 /**
+ * A schema-level union that call sites take as a value, not through the `schema`
+ * namespace: the session channel a refresh token is bound to (migration 0080).
+ */
+export type { SessionChannel } from './schema/identity.js';
+
+/**
  * Drizzle's query helpers, re-exported.
  *
  * Feature code needs `eq`, `and`, `isNull` and friends to build a WHERE clause,

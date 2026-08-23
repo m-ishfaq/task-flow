@@ -53,9 +53,9 @@ const DURATIONS: Readonly<Record<ToastTone, number>> = {
 };
 
 const TONES: Readonly<Record<ToastTone, string>> = {
-  neutral: 'border-line bg-surface-raised',
-  success: 'border-success/40 bg-success/10',
-  danger: 'border-danger/40 bg-danger/10',
+  neutral: 'border-line/60 bg-surface-raised',
+  success: 'border-success/30 bg-success/10',
+  danger: 'border-danger/30 bg-danger/10',
 };
 
 export function ToastProvider({ children }: { readonly children: ReactNode }) {
@@ -118,7 +118,7 @@ export function ToastProvider({ children }: { readonly children: ReactNode }) {
             onOpenChange={(open) => {
               if (!open) dismiss(toast.id);
             }}
-            className={cn('relative rounded border px-3 py-2 pr-7 shadow-lg', TONES[toast.tone])}
+            className={cn('relative rounded-xl border px-3.5 py-2.5 pr-7 shadow-lg backdrop-blur-sm', TONES[toast.tone])}
           >
             <RadixToast.Title className="text-sm font-medium text-ink">
               {toast.title}

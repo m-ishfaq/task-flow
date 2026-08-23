@@ -199,7 +199,7 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
   };
 
   return (
-    <div className="mx-auto flex h-full max-w-3xl flex-col gap-5 overflow-y-auto p-4 md:p-8">
+    <div className="mx-auto flex h-full max-w-5xl flex-col gap-5 overflow-y-auto p-4 md:p-8">
       <PageHeader
         title="Search"
         description="One query across cards, messages, pages, comments and call transcripts — TQL, the same language the board filter speaks."
@@ -251,10 +251,10 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
               }}
               aria-pressed={facet === entry.id}
               className={cn(
-                'rounded-full border px-2.5 py-0.5 text-xs transition-colors',
+                'rounded-full border px-3 py-1 text-[11px] font-medium transition-colors duration-[var(--motion-fast)]',
                 facet === entry.id
                   ? 'border-accent bg-accent text-white'
-                  : 'border-line text-ink-muted hover:border-ink-faint hover:text-ink',
+                  : 'border-line/50 text-ink-muted hover:border-ink-faint hover:text-ink',
               )}
             >
               {entry.label}
@@ -310,10 +310,10 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
                     open(hit);
                   }}
                   className={cn(
-                    'flex w-full flex-col gap-1 rounded-lg border px-3 py-2.5 text-left shadow-sm transition-colors',
+                    'flex w-full flex-col gap-1 rounded-xl border px-4 py-3 text-left transition-all duration-[var(--motion-fast)]',
                     index === active
-                      ? 'border-accent/40 bg-surface-hover'
-                      : 'border-line bg-surface-raised hover:bg-surface-hover',
+                      ? 'border-accent/40 bg-accent/5 shadow-sm'
+                      : 'border-line/50 bg-surface-raised hover:border-line-strong hover:bg-surface-hover',
                   )}
                 >
                   <div className="flex items-center gap-2">
@@ -487,7 +487,7 @@ function SavedSearches({
             maxLength={60}
             aria-label="Name for this saved search"
             placeholder="Name it"
-            className="min-w-32 flex-1 rounded border border-line bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent"
+            className="min-w-32 flex-1 rounded-lg border border-line/50 bg-surface-sunken px-2.5 py-1.5 text-xs text-ink outline-none focus:border-accent"
           />
           <label className="flex items-center gap-1.5 text-xs text-ink-muted">
             <input
@@ -596,7 +596,7 @@ function QueryInput({
         autoComplete="off"
         aria-label="Search query (TQL)"
         placeholder='Try "deploy outage", or `assignee = me AND due < -7d`'
-        className="relative block w-full resize-none overflow-hidden rounded-lg border border-line bg-surface-raised px-3 py-2 font-mono text-sm leading-6 text-ink outline-none focus:border-accent placeholder:font-sans placeholder:text-ink-faint"
+        className="relative block w-full resize-none overflow-hidden rounded-xl border border-line/50 bg-surface-raised px-3.5 py-2.5 font-mono text-sm leading-6 text-ink outline-none focus:border-accent focus:ring-1 focus:ring-accent/25 placeholder:font-sans placeholder:text-ink-faint"
       />
     </div>
   );

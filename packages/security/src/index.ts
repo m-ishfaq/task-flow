@@ -105,6 +105,12 @@ export {
 } from './webauthn.js';
 
 export {
+  isPlausibleDevicePublicKey,
+  verifyDeviceSignature,
+  type DevicePublicKeyCoordinates,
+} from './device-binding.js';
+
+export {
   auditEntryHash,
   verifyAuditChain,
   type AuditChainEntry,

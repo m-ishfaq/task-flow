@@ -1,5 +1,6 @@
 import { errors } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
+import type { SessionChannel } from '@taskflow/db';
 import {
   beginPasskeyAuthentication,
   beginPasskeyRegistration,
@@ -207,6 +208,14 @@ export async function finishAuthentication(
   deps: PasskeyDeps,
   input: { response: AuthenticationResponseJSON },
   meta: RequestMeta,
+  /**
+   * The channel obtaining the session (ai/phase-14-mobile.md §4.4). Defaults
+   * to 'browser' for the same fail-safe reason every other channel-aware
+   * caller defaults to it: an omission can only under-admit (refuse a
+   * native token presented on the browser route), never cross a channel it
+   * should not.
+   */
+  channel: SessionChannel = 'browser',
 ): Promise<TokenPair> {
   const now = clock(deps);
 
@@ -274,7 +283,7 @@ export async function finishAuthentication(
    * authenticator plus a user-verification gesture, and it can only have been
    * enrolled by someone already signed in — so the mailbox check has nothing
    * left to add here. */
-  const pair = await issueSession(deps, user.id, now, now, meta);
+  const pair = await issueSession(deps, user.id, now, now, meta, channel);
 
   await deps.events.publish([
     createEvent(

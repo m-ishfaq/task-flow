@@ -4,7 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useSession } from '../../lib/session.js';
-import { wire } from '../../lib/wire.js';
+import { wire } from '@taskflow/client';
 import { formatDateTime } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
 import { Avatar, Button, Empty, PageHeader, Spinner } from '../../components/primitives.js';
@@ -112,7 +112,7 @@ export function AuditPage() {
           <Empty title="Nothing recorded yet" />
         ) : (
           <>
-            <div className="overflow-x-auto rounded border border-line">
+            <div className="overflow-x-auto rounded border border-line/50">
               <table className="data-table">
                 <thead>
                   <tr>

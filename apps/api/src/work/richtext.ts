@@ -195,8 +195,15 @@ export interface RichTextNode {
  * Nesting is unbounded in the format and bounded in every renderer. A document
  * 10,000 lists deep is not a document; it is a stack overflow in whatever walks
  * it — including `flattenToText` below, which recurses.
+ *
+ * Exported alongside `MAX_NODES` so `apps/mobile/src/lib/rich-text.ts`'s
+ * renderer-side sanitizer can enforce the identical bound on a tree it walks
+ * a second time, on a device, for a document this schema already accepted —
+ * see that file's own header for why a client-side recursive walk needs the
+ * same stack-overflow guard this comment describes, not just a smaller copy
+ * of this number.
  */
-const MAX_DEPTH = 32;
+export const MAX_DEPTH = 32;
 
 /**
  * Total node budget, so a wide-but-shallow document cannot do the same job.
@@ -208,7 +215,7 @@ const MAX_DEPTH = 32;
  * Raising the body limit without revisiting this would make it the only thing
  * standing between a 50 MB request and a parse.
  */
-const MAX_NODES = 10_000;
+export const MAX_NODES = 10_000;
 
 const MAX_TEXT_LENGTH = 100_000;
 

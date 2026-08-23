@@ -3,7 +3,7 @@ import type { FilterNode } from '@taskflow/filter';
 import type { BoardId, CardId, ProjectId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
-import { wire, type Wire } from '../../lib/wire.js';
+import { wire, type Wire } from '@taskflow/client';
 
 /**
  * Every Work read, in one place.
