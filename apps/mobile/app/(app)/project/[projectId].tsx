@@ -44,11 +44,21 @@ import { PROJECTS_QUERY_KEY, boardsQueryKey, type Board } from '../../../src/lib
  * request) whenever this screen is reached the normal way, by tapping a row
  * that query already rendered.
  *
- * **"Sprints" always shows, unlike "+ New board".** Viewing sprints is
- * `project:read` — the same floor this whole screen is already gated on —
- * so there is no capability to hide the entry point behind;
+ * **"Sprints" and "Settings" always show, unlike "+ New board".** Viewing
+ * sprints is `project:read` — the same floor this whole screen is already
+ * gated on — so there is no capability to hide the entry point behind;
  * `sprints/[projectId].tsx` itself hides its own create/manage actions the
- * identical way this screen hides board creation.
+ * identical way this screen hides board creation. Settings
+ * (`project-settings/[projectId].tsx`) is the same: reachable by anyone who
+ * can see this screen, with each control on it individually gated.
+ *
+ * **Rename and Archive live on each board's own row**, gated on that
+ * board's own `capabilities.update`/`.delete` — per-board, not inherited
+ * from the project, since a board can carry its own share grant
+ * independent of project-level access (mirrors web's
+ * `project-settings-page.tsx`'s `BoardSection`). No confirm on archive: it
+ * is reversible and the board's cards are untouched, the same call web
+ * makes for the identical control.
  */
 export default function ProjectBoards() {
   const params = useLocalSearchParams<{ projectId: string }>();
@@ -74,6 +84,8 @@ function ProjectBoardsContent({
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
+  const [editingBoard, setEditingBoard] = useState<string | null>(null);
+  const [editBoardName, setEditBoardName] = useState('');
 
   const boards = useQuery({
     queryKey: boardsQueryKey(projectId),
@@ -96,6 +108,23 @@ function ProjectBoardsContent({
     onSuccess: async () => {
       setName('');
       setCreating(false);
+      await queryClient.invalidateQueries({ queryKey: boardsQueryKey(projectId) });
+    },
+  });
+
+  const rename = useMutation({
+    mutationFn: (input: { boardId: string; name: string }) =>
+      apiClient.work.boards.update.mutate(input),
+    onSuccess: async () => {
+      setEditingBoard(null);
+      await queryClient.invalidateQueries({ queryKey: boardsQueryKey(projectId) });
+    },
+  });
+
+  const archive = useMutation({
+    mutationFn: (boardId: string) =>
+      apiClient.work.boards.archive.mutate({ boardId, archived: true }),
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: boardsQueryKey(projectId) });
     },
   });
@@ -125,6 +154,14 @@ function ProjectBoardsContent({
             }}
           >
             <Text style={styles.sprintsButtonText}>Sprints</Text>
+          </Pressable>
+          <Pressable
+            style={styles.sprintsButton}
+            onPress={() => {
+              router.push(`/project-settings/${projectId}`);
+            }}
+          >
+            <Text style={styles.sprintsButtonText}>Settings</Text>
           </Pressable>
           {/* Hidden rather than disabled: a caller without `project:update`
               could not submit this form regardless, so showing it as
@@ -176,16 +213,70 @@ function ProjectBoardsContent({
       <FlatList<Board>
         data={boards.data}
         keyExtractor={(board) => board.boardId}
-        renderItem={({ item }) => (
-          <Pressable
-            style={styles.row}
-            onPress={() => {
-              router.push(`/board/${item.boardId}`);
-            }}
-          >
-            <Text style={styles.rowTitle}>{item.name}</Text>
-          </Pressable>
-        )}
+        renderItem={({ item }) =>
+          editingBoard === item.boardId ? (
+            <View style={styles.editRow}>
+              <TextInput
+                value={editBoardName}
+                onChangeText={setEditBoardName}
+                style={styles.createInput}
+                autoFocus
+              />
+              <Pressable
+                style={styles.createSubmit}
+                disabled={rename.isPending || editBoardName.trim().length === 0}
+                onPress={() => {
+                  rename.mutate({ boardId: item.boardId, name: editBoardName.trim() });
+                }}
+              >
+                {rename.isPending ? (
+                  <ActivityIndicator color={colors.accentInk.hex} />
+                ) : (
+                  <Text style={styles.createSubmitText}>Save</Text>
+                )}
+              </Pressable>
+              <Pressable
+                style={styles.cancelButton}
+                onPress={() => {
+                  setEditingBoard(null);
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.row}>
+              <Pressable
+                style={styles.rowMain}
+                onPress={() => {
+                  router.push(`/board/${item.boardId}`);
+                }}
+              >
+                <Text style={styles.rowTitle}>{item.name}</Text>
+              </Pressable>
+              {item.capabilities.update && (
+                <Pressable
+                  onPress={() => {
+                    setEditingBoard(item.boardId);
+                    setEditBoardName(item.name);
+                  }}
+                >
+                  <Text style={styles.rowAction}>Rename</Text>
+                </Pressable>
+              )}
+              {item.capabilities.delete && (
+                <Pressable
+                  disabled={archive.isPending}
+                  onPress={() => {
+                    archive.mutate(item.boardId);
+                  }}
+                >
+                  <Text style={styles.rowAction}>Archive</Text>
+                </Pressable>
+              )}
+            </View>
+          )
+        }
         contentContainerStyle={styles.list}
         style={styles.listContainer}
         ListEmptyComponent={
@@ -196,6 +287,16 @@ function ProjectBoardsContent({
           )
         }
       />
+      {rename.isError && (
+        <Text style={styles.createError} accessibilityRole="alert">
+          {apiErrorOf(rename.error)?.error.message ?? 'Could not rename this board.'}
+        </Text>
+      )}
+      {archive.isError && (
+        <Text style={styles.createError} accessibilityRole="alert">
+          {apiErrorOf(archive.error)?.error.message ?? 'Could not archive this board.'}
+        </Text>
+      )}
     </View>
   );
 }
@@ -319,15 +420,46 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     borderWidth: 1,
     borderColor: colors.line.hex,
     borderRadius: radiusCard,
     backgroundColor: colors.surfaceRaised.hex,
     padding: 14,
   },
+  rowMain: {
+    flex: 1,
+  },
   rowTitle: {
     fontSize: 15,
     color: colors.ink.hex,
+  },
+  rowAction: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.accent.hex,
+  },
+  editRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+    borderRadius: radiusCard,
+    backgroundColor: colors.surfaceRaised.hex,
+    padding: 14,
+  },
+  cancelButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  cancelButtonText: {
+    color: colors.inkMuted.hex,
+    fontSize: 14,
+    fontWeight: '600',
   },
   label: {
     fontSize: 14,

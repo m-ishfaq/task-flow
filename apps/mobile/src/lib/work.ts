@@ -233,14 +233,28 @@ export function cardLabelsQueryKey(cardId: string): readonly ['work.labels.onCar
 }
 
 /**
- * A color for a newly-created label, cycled from a fixed palette — ported
- * verbatim from `apps/web/src/features/work/detail/label-section.tsx`'s
- * own `nextColor`. Deterministic rather than randomized (`Math.random()`
- * is banned workspace-wide, and a crypto RNG for a swatch pick would be
+ * A fixed swatch set, cycled rather than picked freely — ported verbatim
+ * from `apps/web/src/features/work/detail/label-section.tsx`'s own
+ * `nextColor`. Deterministic rather than randomized (`Math.random()` is
+ * banned workspace-wide, and a crypto RNG for a swatch pick would be
  * absurd) — two labels created in a row read as visibly different rather
  * than occasionally identical.
+ *
+ * Web's project-settings-page.tsx recolors a label or a status with an
+ * `<input type="color">`, which has no RN equivalent; `project-
+ * settings.tsx` reuses this same palette as a row of tappable swatches for
+ * both, rather than introducing a second one or a native color-picker
+ * dependency this app carries nowhere else.
  */
-const LABEL_PALETTE = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#6366f1', '#d946ef'];
+export const LABEL_PALETTE = [
+  '#ef4444',
+  '#f97316',
+  '#eab308',
+  '#22c55e',
+  '#06b6d4',
+  '#6366f1',
+  '#d946ef',
+];
 
 export function nextLabelColor(existing: number): string {
   return LABEL_PALETTE[existing % LABEL_PALETTE.length] ?? '#6366f1';
@@ -288,6 +302,20 @@ export type CustomField = Wire<
 
 export function fieldsQueryKey(projectId: string): readonly ['work.fields.list', string] {
   return ['work.fields.list', projectId];
+}
+
+/**
+ * Every field, including archived ones — `work.fields.list` with
+ * `includeArchived: true`. A card panel only ever wants the live set
+ * (`fieldsQueryKey` above); `project-settings.tsx` is the one place an
+ * archived field can be found again and restored, so it needs the wider
+ * read under its own cache entry — nested under `fieldsQueryKey`'s own key
+ * family (mirroring `archivedListsQuery`'s own precedent on web) so
+ * archiving or restoring a field, which already invalidates that family,
+ * refreshes this one too with no second invalidation to remember.
+ */
+export function allFieldsQueryKey(projectId: string): readonly ['work.fields.list', string, 'all'] {
+  return ['work.fields.list', projectId, 'all'];
 }
 
 export type CardFieldValue = Wire<

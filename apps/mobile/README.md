@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed; the "needs a rich text editor" call on `@mention` composing turned out to be wrong for the mid-string case specifically (a plain `TextInput`'s own `onSelectionChange`/`selection` was enough) and is fixed too — see "`@mention` now works mid-string"; a real native (no WebView) rich text editor — bold, links, and lists — now composes on all four surfaces named for it (chat message composer, thread replies, card description, card comments), via `@expensify/react-native-live-markdown`'s `MarkdownTextInput` and a live/send-time split for the one thing it cannot highlight live (lists) — see "A real rich text editor..."; **in-app voice calling (Phase 13, Wave 5 here) now ships on mobile** — signaling (`react-native-webrtc`), ringing, ringtones, call history, and recording-consent participation, by explicit project-owner direction scoped to in-app ringing only (CallKit/ConnectionService lock-screen UI named as a real, separate follow-up rather than included) — see "In-app voice calling..."; the notification bell is now reachable from every tab and the org picker has a sign-out escape hatch — see "The notification bell was only reachable..."; **org settings (the member roster, invites, and role changes) now ships** — see "Org settings: the member roster..." — with project settings, Teams, billing, and ownership transfer still open, listed under "Not here yet"
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed; the "needs a rich text editor" call on `@mention` composing turned out to be wrong for the mid-string case specifically (a plain `TextInput`'s own `onSelectionChange`/`selection` was enough) and is fixed too — see "`@mention` now works mid-string"; a real native (no WebView) rich text editor — bold, links, and lists — now composes on all four surfaces named for it (chat message composer, thread replies, card description, card comments), via `@expensify/react-native-live-markdown`'s `MarkdownTextInput` and a live/send-time split for the one thing it cannot highlight live (lists) — see "A real rich text editor..."; **in-app voice calling (Phase 13, Wave 5 here) now ships on mobile** — signaling (`react-native-webrtc`), ringing, ringtones, call history, and recording-consent participation, by explicit project-owner direction scoped to in-app ringing only (CallKit/ConnectionService lock-screen UI named as a real, separate follow-up rather than included) — see "In-app voice calling..."; the notification bell is now reachable from every tab and the org picker has a sign-out escape hatch — see "The notification bell was only reachable..."; **org settings (the member roster, invites, and role changes) now ships** — see "Org settings: the member roster..." — and **project settings (labels, statuses, custom fields, board rename/archive) now ships too** — see "Project settings: labels, statuses, and custom fields..." — with only Teams, billing, and ownership transfer still open, listed under "Not here yet"
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -3269,6 +3269,59 @@ routes, the same shape as `channel-details/[channelId].tsx` itself), guardrail s
 encoding check clean, prettier clean, and a real `expo export --platform android` bundles cleanly
 (2439 modules, no errors).
 
+### Project settings: labels, statuses, and custom fields — the second half of "project, org settings and perms not wired yet"
+
+The remaining piece from the same live report, once org settings shipped: `project-
+settings/[projectId].tsx` ports `apps/web/src/features/work/project-settings-page.tsx`'s vocabulary
+management onto the same `work.projects.update/archive`, `work.labels.update/delete`,
+`work.statuses.create/update/delete`, and `work.fields.update/archive` routes web already uses.
+Reached from a new "Settings" button next to "Sprints" on `project/[projectId].tsx`, always visible
+— the same "the UI never re-derives authorization" argument `org-settings.tsx` already documents,
+since every control on the page individually gates on `project:update` via each resource's own
+`capabilities`/response shape rather than a role check.
+
+**Boards are deliberately NOT a section here, unlike web's single page.** `project/[projectId].tsx`
+is already this app's "browse and create boards" screen; building a second Boards list inside
+project-settings would read the same data under a different query and invite the two going stale
+against each other. Instead, that existing screen gained the Rename and Archive controls it was
+missing, right on each board's own row, gated on that board's own `capabilities.update`/`.delete`
+— per-board, not inherited from the project, since a board can carry its own share grant
+independent of project-level access. No confirm on archive: it is reversible and the board's cards
+are untouched, the same call web makes for the identical control.
+
+**No create form for labels or custom fields, matching web exactly.** Both are already minted from
+a card's detail panel the first time one is needed — confirmed directly against
+`card/[cardId].tsx`, which already has both flows — so a project-level "new label" box here would
+invite naming vocabulary nobody has a card for yet; this screen only edits what that use already
+produced. Statuses are the one exception, with a genuine create form above the list: a board
+grouped by status needs the columns to exist before a card can be dragged into one, and there is no
+other entry point for minting one.
+
+**Labels and statuses are deleted for real; custom fields are archived — matching each resource's
+own service, not a UI choice.** A label or status holds no content of its own, so deleting one only
+un-tags or un-classifies cards; a field can hold real values someone entered, so it is archived
+instead, and archived fields stay listed here (the only place they can be restored).
+
+**`Alert.alert` confirms the three genuinely irreversible or high-consequence actions** — archiving
+the project (it also navigates back to the Projects tab), and deleting a label or status, with the
+affected card count in the message, mirroring web's own `ConfirmButton` reasoning that the count
+_is_ the decision. Renaming, recoloring, archiving/restoring a field, and archiving a board are left
+unconfirmed, matching this app's own established convention elsewhere (`card/[cardId].tsx`'s
+checklist and item deletes, `org-settings.tsx`'s member removal) for actions that are either
+reversible or genuinely small — a deliberate per-action split, not a blanket "always confirm" or
+"never confirm" rule, and the first place on mobile `Alert.alert` is used as a real confirm dialog
+rather than the one unrelated prior use in `call-button.tsx`.
+
+**No manual color picker — RN has no `<input type="color">`.** Recoloring a label and picking a
+status's color both reuse `work.ts`'s existing `LABEL_PALETTE` (previously scoped to "next color
+for a new label," now exported generically) as a row of tappable swatches, rather than adding a
+native color-picker dependency this app carries nowhere else.
+
+Verified: typecheck clean, lint clean, all 218 tests pass unchanged (no new logic module — this is
+UI wiring over already-tested routes, the same shape as `org-settings.tsx`), guardrail self-test
+clean, encoding check clean, prettier clean, and a real `expo export --platform android` bundles
+cleanly with the new route included.
+
 ## Not here yet
 
 - **CallKit (iOS) / ConnectionService (Android) — a real lock-screen "incoming call" UI.** Named
@@ -3283,13 +3336,11 @@ encoding check clean, prettier clean, and a real `expo export --platform android
 - **Video and screen share.** Wave 3 on web too — this phase never claimed either.
 - **Reconnect-and-resume of a live peer connection.** A dropped socket ends that leg; rejoining is
   the recovery, matching web's own stated limit exactly.
-- **Project settings — no screen yet.** `project/[projectId].tsx` exists and is an overview, not a
-  settings screen: labels, statuses, and custom-field definitions (web's
-  `project-settings-page.tsx`, 958 lines) have no mobile equivalent. Org-level settings (the org
-  name, the member roster, invites, and role changes) shipped — see "Org settings: the member
-  roster..." above — so this is the remaining piece of the same live report. This app never
-  re-derives authorization (CLAUDE.md §8.2's own argument, ported unchanged) so building it is real,
-  separate work, not a config flag.
+- **Both named gaps from the "project, org settings and perms not wired yet" live report are now
+  closed.** Org-level settings (name, member roster, invites, role changes) and project-level
+  settings (labels, statuses, custom fields, plus board rename/archive) both shipped — see "Org
+  settings: the member roster..." and "Project settings: labels, statuses, and custom fields..."
+  above.
 - **Teams, billing, and ownership transfer — no screens, deliberately deferred.** All three are
   real, separate surfaces on web (`TeamSection`, `BillingSection`, `transferOwnership`'s own dialog)
   with no comparable urgency behind them yet; see `org-settings.tsx`'s own header for the same call
