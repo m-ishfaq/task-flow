@@ -20,6 +20,7 @@ import {
   AUTOMATIONS_QUERY_KEY,
   actionOutcomeOf,
   automationRunsQueryKey,
+  canEditOnMobile,
   describeAction,
   explainReason,
   explainStatus,
@@ -37,14 +38,17 @@ import {
  * reasoning that moved Account itself out of the tab bar applies to this
  * screen from the start rather than needing a later move).
  *
- * `automation.ts`'s own header has the full account of what this pass
- * ports and what it deliberately does not (creating or editing a rule —
- * the ten-argument-shape builder web ships needs picker infrastructure
- * this app does not have yet). This screen is the UI half of that same
- * decision: `RuleRow` below has no "New rule" button and no edit action,
- * only Enable/Disable, Runs, and Delete — every control a real, complete
- * feature in its own right, not a partial rule builder with the hard
- * parts missing.
+ * **Creating and editing a rule now ship too — `automation-editor.tsx`,
+ * pushed from the "+ New rule" button below and from a `RuleRow`'s own
+ * "Edit" action.** `automation.ts`'s own header has the full account of
+ * the two real boundaries that editor draws (no condition, no webhook or
+ * connector actions) rather than a silent gap. `RuleRow`'s "Edit" only
+ * ever appears when `canEditOnMobile(rule)` says the rule is one this
+ * editor can fully and safely represent — a rule with a condition, or
+ * with an action this platform has no picker for, still gets
+ * Enable/Disable, Runs, and Delete, just not Edit; opening it stays "go
+ * to web" rather than a form that would silently drop what it cannot
+ * show.
  */
 export default function AutomationsScreen() {
   const paddingTop = useTopInset();
@@ -80,11 +84,22 @@ export default function AutomationsScreen() {
       >
         <Text style={styles.backButtonText}>← Back</Text>
       </Pressable>
-      <Text style={styles.title}>Automations</Text>
-      <Text style={styles.subtitle}>
-        Rules that react to what happens on a card, a comment, or a connected app. Created and
-        edited on web — enable, disable, and delete them here.
-      </Text>
+      <View style={styles.titleRow}>
+        <View style={styles.titleColumn}>
+          <Text style={styles.title}>Automations</Text>
+          <Text style={styles.subtitle}>
+            Rules that react to what happens on a card, a comment, or a connected app.
+          </Text>
+        </View>
+        <Pressable
+          style={styles.newRuleButton}
+          onPress={() => {
+            router.push('/automation-editor');
+          }}
+        >
+          <Text style={styles.newRuleButtonText}>+ New rule</Text>
+        </Pressable>
+      </View>
 
       {rules.isPending && <ActivityIndicator style={styles.loading} color={colors.accent.hex} />}
       {rules.isError && (
@@ -94,8 +109,7 @@ export default function AutomationsScreen() {
       )}
       {rules.isSuccess && rows.length === 0 && (
         <Text style={styles.emptyHint}>
-          No automation rules yet. Build one on web at Settings → Automations, then manage it from
-          here.
+          No automation rules yet. Tap "+ New rule" above, or build a more advanced one on web.
         </Text>
       )}
 
@@ -217,6 +231,19 @@ function RuleRow({
         >
           <Text style={styles.ruleActionText}>{rule.enabled ? 'Disable' : 'Enable'}</Text>
         </Pressable>
+        {canEditOnMobile(rule) && (
+          <Pressable
+            style={styles.ruleActionButton}
+            onPress={() => {
+              router.push({
+                pathname: '/automation-editor',
+                params: { automationId: rule.automationId },
+              });
+            }}
+          >
+            <Text style={styles.ruleActionText}>Edit</Text>
+          </Pressable>
+        )}
         <Pressable style={styles.ruleActionButton} onPress={onToggleExpanded}>
           <Text style={styles.ruleActionText}>Runs {expanded ? '▴' : '▾'}</Text>
         </Pressable>
@@ -332,19 +359,39 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingHorizontal: 20,
+    marginBottom: 10,
+  },
+  titleColumn: {
+    flex: 1,
+  },
   title: {
     fontSize: 24,
     fontWeight: '700',
     color: colors.ink.hex,
     letterSpacing: -0.3,
-    paddingHorizontal: 20,
   },
   subtitle: {
-    paddingHorizontal: 20,
     marginTop: 4,
-    marginBottom: 10,
     fontSize: 13,
     color: colors.inkMuted.hex,
+  },
+  newRuleButton: {
+    backgroundColor: colors.accent.hex,
+    borderRadius: radiusCard,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 2,
+  },
+  newRuleButtonText: {
+    color: colors.accentInk.hex,
+    fontSize: 12,
+    fontWeight: '700',
   },
   loading: {
     marginTop: 12,

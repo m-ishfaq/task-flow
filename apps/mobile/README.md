@@ -4249,3 +4249,66 @@ logic changed), guardrail self-test clean, prettier clean, encoding check clean,
 `expo export --platform android` bundles cleanly. Not yet confirmed against a real device — a
 `ScrollView`'s scroll behavior and a `KeyboardAvoidingView`'s keyboard response are exactly the two
 things a simulator and a static bundle export cannot prove.
+
+## Org picker: a real redesign, and creating an organization from a phone
+
+`org-picker.tsx` had no way to CREATE an organization at all — the screen someone with zero
+memberships lands on, unable to escape it except by signing out. Ported from
+`apps/web/src/features/org/org-picker-page.tsx`, which is a genuinely different screen depending on
+whether the caller belongs to any org yet: `CreateOrgPanel` collapses behind a dashed
+"+ New organization" button when orgs exist and expands with no cancel option when the list is
+empty — a first organization is not optional, so there is nothing to cancel back to.
+`tenancy.orgs.create` is a `selfRoute` for the reason its own header states: a caller in no
+organization has no role, so no org permission can describe what a first org's creation would need.
+`org-picker.ts`'s own `slugify` is ported from web's identical helper, with its own test coverage
+this screen never had before.
+
+**The org rows themselves gained the visual hierarchy the old version never had** — a bare
+`<Text>` name and role with no separation, no slug, nothing suggesting the row was tappable. `OrgMark`
+(a square initial, deliberately NOT `Avatar` — that component hues from a USER id, and an
+organization is not a person) plus the slug and a trailing chevron now match this app's other
+list-row convention (`people.tsx`'s `PersonRow`).
+
+**Sign out was a full-width, danger-red bordered button sitting directly under the org list — the
+same visual weight as a warning, for an action nobody reaches for by mistake and everybody reaches
+for rarely.** It exists at all because this screen has no shell to fall back on (it lives outside
+`(app)/`, so `top-bar.tsx`'s Account icon is not mounted here) — someone belonging to zero
+organizations used to land with nothing else to press. Kept for the identical reason, restyled to
+match its actual priority: a small, quiet text link below everything else.
+
+Verified: typecheck clean, lint clean, all 273 tests pass (268 existing plus 5 new for `slugify`),
+guardrail self-test clean, prettier clean, encoding check clean, and a real
+`expo export --platform android` bundles cleanly. Not yet confirmed on a real device.
+
+## Automations: rule creation and editing, narrower than web on two stated axes
+
+`automation-editor.tsx` closes the gap the Automations pass named explicitly as deferred — "creating
+or editing a rule" — and does it by reusing queries this app already had rather than inventing new
+API surface. `MemberField` reads the same `tenancy.members.list` `org-settings.tsx` renders as a
+roster; `ChannelField` the same `chat.channels.list` the Chat tab lists; `PhoneNumberField` the same
+numbers `(tabs)/calls.tsx` already shows owned; the `to` field of `call.place`/`sms.send` reuses
+`TelephonyContactPicker` UNCHANGED — the identical component the Calls tab's dial pad uses. `List`/
+`Status`/`Label` needed one genuinely new query shape (`work.boards.list` + `work.lists.list`
+cascaded, `work.statuses.list`, `work.labels.list`), because nothing before this queried them
+OUTSIDE a single project's own screens — `ListField` flattens the board→list cascade into ONE
+board-prefixed picker rather than web's stacked per-board `<select>`s, a real improvement this
+platform's own bottom-sheet shape makes possible instead of a corner cut.
+
+**Two real boundaries, stated rather than silently missing.** No condition: this editor never
+writes one, full stop — every rule it creates has `condition: null`, and `canEditOnMobile`
+(`automation.ts`) refuses to offer "Edit" at all for an existing rule that already has one, because
+saving it back would silently CLEAR it. No webhook or connector actions: `call_webhook`,
+`slack.post_message` and `github.create_issue` have no picker on this platform (no webhook registry,
+no Slack/GitHub connector list), so they are absent from `ARGUMENTS` entirely — a rule using one
+still shows correctly in the read-only list (`describeAction` still knows their labels), but "Edit"
+is hidden for it the same way it is hidden for a rule with a condition. A rule failing either check
+still gets Enable/Disable/Delete; only Edit is gated, and the gate is a pure function
+(`canEditOnMobile`) with its own test coverage, not a judgment call made once in the UI.
+
+Verified: typecheck clean, lint clean, all 291 tests pass (273 existing plus 18 new for
+`offeredActions`/`needsProject`/`blankAction`/`actionsComplete`/`draftsFrom`/`canEditOnMobile`),
+guardrail self-test clean, prettier clean, encoding check clean, and a real
+`expo export --platform android` bundles cleanly with `/automation-editor` resolving as a top-level
+route. Not yet confirmed against a real org on a real device — every picker here reads live data
+this app has never queried in quite this combination before (an org-wide rule pulling project-scoped
+vocabulary), and that is exactly the kind of thing a bundle export cannot prove.

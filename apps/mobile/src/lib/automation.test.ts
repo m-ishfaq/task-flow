@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   actionOutcomeOf,
+  actionsComplete,
+  blankAction,
+  canEditOnMobile,
   describeAction,
+  draftsFrom,
   explainReason,
   explainStatus,
+  needsProject,
+  offeredActions,
   statusColor,
   triggerLabel,
 } from './automation.js';
@@ -84,6 +90,153 @@ describe('statusColor', () => {
       ['succeeded', 'failed', 'refused', 'skipped'].map((status) => statusColor(status)),
     );
     expect(colors.size).toBe(4);
+  });
+});
+
+describe('offeredActions', () => {
+  it('excludes call_webhook, slack.post_message and github.create_issue always', () => {
+    const types = offeredActions(true).map(([type]) => type);
+    expect(types).not.toContain('call_webhook');
+    expect(types).not.toContain('slack.post_message');
+    expect(types).not.toContain('github.create_issue');
+  });
+
+  it('excludes the telephony actions when the flag is off', () => {
+    const types = offeredActions(false).map(([type]) => type);
+    expect(types).not.toContain('call.place');
+    expect(types).not.toContain('sms.send');
+  });
+
+  it('includes the telephony actions when the flag is on', () => {
+    const types = offeredActions(true).map(([type]) => type);
+    expect(types).toContain('call.place');
+    expect(types).toContain('sms.send');
+  });
+
+  it('includes every card and chat action regardless of the flag', () => {
+    const types = offeredActions(false).map(([type]) => type);
+    expect(types).toEqual(
+      expect.arrayContaining([
+        'card.move',
+        'card.set_status',
+        'card.set_priority',
+        'card.assign',
+        'card.add_label',
+        'card.remove_label',
+        'card.unassign',
+        'card.add_comment',
+        'chat.post_message',
+      ]),
+    );
+  });
+});
+
+describe('needsProject', () => {
+  it('is true for the list/status/label actions', () => {
+    expect(needsProject('card.move')).toBe(true);
+    expect(needsProject('card.set_status')).toBe(true);
+    expect(needsProject('card.add_label')).toBe(true);
+  });
+
+  it('is false for actions with no project-scoped argument', () => {
+    expect(needsProject('card.assign')).toBe(false);
+    expect(needsProject('card.add_comment')).toBe(false);
+  });
+});
+
+describe('blankAction', () => {
+  it('builds an empty draft matching the requested type', () => {
+    expect(blankAction('card.assign', 'k1')).toEqual({
+      key: 'k1',
+      value: { type: 'card.assign', userId: '' },
+    });
+  });
+
+  it('builds a multi-field draft for chat.post_message', () => {
+    expect(blankAction('chat.post_message', 'k2')).toEqual({
+      key: 'k2',
+      value: { type: 'chat.post_message', channelId: '', body: '' },
+    });
+  });
+
+  it('falls back to card.set_priority for an unrecognized type', () => {
+    expect(blankAction('future.action', 'k3')).toEqual({
+      key: 'k3',
+      value: { type: 'card.set_priority', priority: 'high' },
+    });
+  });
+});
+
+describe('actionsComplete', () => {
+  it('is true once every required field is filled in', () => {
+    expect(actionsComplete([{ key: 'a', value: { type: 'card.assign', userId: 'u1' } }])).toBe(
+      true,
+    );
+  });
+
+  it('is false while a required field is empty', () => {
+    expect(actionsComplete([{ key: 'a', value: { type: 'card.assign', userId: '' } }])).toBe(false);
+  });
+
+  it('is true for an empty list of actions', () => {
+    expect(actionsComplete([])).toBe(true);
+  });
+});
+
+describe('draftsFrom', () => {
+  it('rebuilds a draft per stored action, narrowing each field from unknown', () => {
+    const drafts = draftsFrom([
+      { type: 'card.assign', userId: 'u1' },
+      { type: 'chat.post_message', channelId: 'c1', body: 'hi' },
+    ]);
+    expect(drafts).toHaveLength(2);
+    expect(drafts[0]?.value).toEqual({ type: 'card.assign', userId: 'u1' });
+    expect(drafts[1]?.value).toEqual({ type: 'chat.post_message', channelId: 'c1', body: 'hi' });
+  });
+
+  it('degrades a malformed row to an empty field rather than throwing', () => {
+    const drafts = draftsFrom([{ type: 'card.assign', userId: 42 }]);
+    expect(drafts[0]?.value).toEqual({ type: 'card.assign', userId: '' });
+  });
+
+  it('assigns stable, distinct keys by position', () => {
+    const drafts = draftsFrom([
+      { type: 'card.add_comment', body: 'one' },
+      { type: 'card.add_comment', body: 'two' },
+    ]);
+    expect(drafts[0]?.key).not.toBe(drafts[1]?.key);
+  });
+});
+
+describe('canEditOnMobile', () => {
+  it('is true for a condition-less rule using only editable action types', () => {
+    expect(
+      canEditOnMobile({
+        condition: null,
+        actions: [{ type: 'card.assign', userId: 'u1' }],
+      }),
+    ).toBe(true);
+  });
+
+  it('is false when the rule has a condition', () => {
+    expect(
+      canEditOnMobile({
+        condition: { op: 'and', clauses: [] },
+        actions: [{ type: 'card.assign', userId: 'u1' }],
+      }),
+    ).toBe(false);
+  });
+
+  it('is false when any action has no picker on this platform', () => {
+    expect(
+      canEditOnMobile({
+        condition: null,
+        actions: [
+          { type: 'card.assign', userId: 'u1' },
+          { type: 'call_webhook', webhookId: 'w1' },
+        ],
+      }),
+    ).toBe(false);
   });
 });
 
