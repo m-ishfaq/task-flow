@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from './app-session.js';
@@ -208,9 +208,29 @@ export function TelephonyContactPicker({
 
 /** A capped-height scroll region for the picker list — its own tiny
  *  component only so the `maxHeight` style lives in one place rather than
- *  duplicated at every caller. */
+ *  duplicated at every caller.
+ *
+ *  This used to be a plain `View`, which clips anything past `maxHeight`
+ *  rather than letting it scroll — for an org with more than a handful of
+ *  phone-enabled members, the list past the fold was simply unreachable,
+ *  reported live as "the modal can't scroll it is stuck". A `View` with a
+ *  capped height LOOKS identical to a `ScrollView` with the same style
+ *  until a list long enough to overflow it is actually on screen, which is
+ *  how this shipped and passed every check that does not scroll a real
+ *  list — `nestedScrollEnabled` is set because this sits inside the
+ *  bottom-sheet `Modal`'s own backdrop `Pressable`, which is not itself
+ *  scrollable but is close enough in the view tree on Android to need the
+ *  explicit opt-in. */
 function ScrollableList({ children }: { readonly children: React.ReactNode }) {
-  return <View style={styles.modalList}>{children}</View>;
+  return (
+    <ScrollView
+      style={styles.modalList}
+      contentContainerStyle={styles.modalListContent}
+      nestedScrollEnabled
+    >
+      {children}
+    </ScrollView>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -288,6 +308,15 @@ const styles = StyleSheet.create({
   },
   modalList: {
     maxHeight: 320,
+  },
+  /* `gap` belongs on the SCROLLED content, not the scroll container's own
+     `style` — a `ScrollView`'s `style` sizes the outer, non-scrolling box,
+     and only `contentContainerStyle` reaches the inner view that actually
+     lays out `children`. Putting it on `modalList` above (as when this was
+     a plain `View`, where the two collapse into the same node) would
+     silently drop all spacing between rows the moment this became a real
+     `ScrollView`. */
+  modalListContent: {
     gap: 2,
   },
   modalRow: {

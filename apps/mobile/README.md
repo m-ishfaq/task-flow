@@ -4211,3 +4211,41 @@ clean, encoding check clean, and a real `expo export --platform android` bundles
 `/automations` resolving as a top-level route. Not yet confirmed against a real org with rules that
 have actually run — the run-history accordion and its per-action outcome list are worth a real
 screen before calling this device-verified.
+
+## Two bugs from the Calls/Messages pass, reported live
+
+### The "Choose a person" picker wasn't a scroll view — it only looked like one
+
+**Calls tab → place a call → the contact picker modal: past the first handful of names, nothing
+below the fold was reachable.** `telephony-contact-picker.tsx`'s own `ScrollableList` helper was
+named for what it was supposed to be, not what it was — a plain `View` with `maxHeight: 320`, which
+CLIPS content past that height rather than letting it scroll. A `View` with a capped height and a
+`ScrollView` with the identical style look pixel-identical until a list long enough to actually
+overflow it is on screen, which is exactly the gap between "typechecks and renders in a short test
+org" and a real roster. Fixed by making it a real `ScrollView` (`nestedScrollEnabled`, since it sits
+inside a `Modal`'s own backdrop `Pressable`). One side effect worth naming: `gap: 2` had been sitting
+on what is now the `ScrollView`'s outer `style`, which sizes the non-scrolling box — only
+`contentContainerStyle` reaches the inner view that actually lays out the rows, so the spacing moved
+to a new `modalListContent` style rather than silently disappearing. `person/[userId].tsx`'s own
+manager-picker modal was checked against the same bug and was already a real `ScrollView` — this was
+a one-off miss in the telephony picker specifically, not a pattern repeated elsewhere.
+
+### The message composer, behind the keyboard, a third time
+
+**Messages tab → open any thread → typing showed nothing, the input was rendering behind the open
+keyboard.** This exact bug already has its own section above ("The composer hidden behind the
+keyboard, in two places" — `card/[cardId].tsx`'s comment box and `channel/[channelId].tsx`'s message
+box), and the fix there was `KeyboardAvoidingView` with an Android `behavior` of `'height'` rather
+than relying on `windowSoftInputMode`. `calls.tsx`'s `ThreadView` and `ComposeView` were built in a
+later pass and never got that treatment — a plain `View` wrapping a message `ScrollView` plus a
+composer row pinned below it, with nothing to shrink the screen when the keyboard opens. Fixed
+identically in both: `KeyboardAvoidingView` (`'padding'` on iOS, `'height'` on Android) replacing the
+outer `View`. Third occurrence of the same class of bug in this codebase — worth naming as a pattern
+rather than three unrelated fixes: any new screen with a composer needs this, and nothing currently
+catches a missing `KeyboardAvoidingView` except someone actually typing on a device.
+
+Verified: typecheck clean, lint clean, all 268 tests pass unchanged (both are UI/layout fixes, no
+logic changed), guardrail self-test clean, prettier clean, encoding check clean, and a real
+`expo export --platform android` bundles cleanly. Not yet confirmed against a real device — a
+`ScrollView`'s scroll behavior and a `KeyboardAvoidingView`'s keyboard response are exactly the two
+things a simulator and a static bundle export cannot prove.

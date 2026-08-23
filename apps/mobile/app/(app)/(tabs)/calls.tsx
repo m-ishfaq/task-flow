@@ -2,7 +2,9 @@ import { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Linking,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -746,7 +748,10 @@ function ComposeView({
   });
 
   return (
-    <View style={styles.panelScroll}>
+    <KeyboardAvoidingView
+      style={styles.panelScroll}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       <View style={styles.threadHeader}>
         <Text style={styles.threadHeaderText}>New message</Text>
         <Pressable onPress={onCancel}>
@@ -820,7 +825,7 @@ function ComposeView({
           )}
         </Pressable>
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -874,7 +879,10 @@ function ThreadView({
   });
 
   return (
-    <View style={styles.panelScroll}>
+    <KeyboardAvoidingView
+      style={styles.panelScroll}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       <View style={styles.threadHeader}>
         <Pressable onPress={onBack}>
           <Text style={styles.linkText}>‹ Threads</Text>
@@ -984,7 +992,7 @@ function ThreadView({
           {apiErrorOf(send.error)?.error.message ?? 'The message was not sent.'}
         </Text>
       )}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
