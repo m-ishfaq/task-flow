@@ -281,6 +281,18 @@ export async function joinCall(input: {
       inCallManager = null;
     }
 
+    /* TEMPORARY diagnostic — never logs credentials, only the URLs
+       themselves. Added to settle, directly rather than by inference from
+       coturn's own logs, whether mobile is even being handed a STUN/TURN
+       URL it can reach at all (a stale IP or a `localhost` left over from
+       the RTC_STUN_URLS/RTC_TURN_URLS bug this file's README already
+       documents would look exactly like "coturn is unreachable" from every
+       other angle this has been diagnosed from so far). Remove once
+       answered. */
+    console.warn(
+      `[rtc] ice servers: ${JSON.stringify(ice.iceServers.map((server) => server.urls))}`,
+    );
+
     const configuration: RtcConfiguration = {
       iceServers: ice.iceServers.map((server) => ({
         urls: [...server.urls],
