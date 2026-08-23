@@ -4724,3 +4724,114 @@ suggestion creation (a real anchor reaching the server and round-tripping throug
 .list`), publish/unpublish's UI state actually flipping, and PDF export's save-and-share flow all
 need a real dev-client rebuild and a real page to open before any of this is confirmed working
 end-to-end rather than merely type-correct and unit-tested in isolation.
+
+## Writing a page — a whole-page compose-and-save editor, not live collaboration
+
+The one piece explicitly out of reach in every earlier Docs pass: a way to actually change a
+page's content from a phone. Still cannot be "the same as web" — ProseMirror needs a DOM, React
+Native has none, and that is a permanent platform wall, not a scope choice deferred for later.
+What shipped instead is real, honest writing within that wall: open a page, tap Edit, the page's
+current content appears as editable markdown-style text in the same kind of native text box
+already used for comments, edit it, tap Save, and the result becomes the page's new content —
+synced to every other connected client, web included, the instant it lands. No live cursor, no
+per-keystroke sync while composing, no true operational merge with a concurrent edit; Save checks
+for one before committing (below).
+
+### The markdown syntax got a lot bigger, on purpose — "as much feature as possible"
+
+`rich-text-compose.ts`'s `parseFormattedText` (shared with Work comments, Chat messages, and the
+Docs comments/suggestions composers from the previous pass) went from four constructs — bold,
+links, bullet/ordered lists, mentions — to the full node/mark vocabulary `apps/api/src/work
+/richtext.ts` actually whitelists, everything short of `mention`/`pageLink` composing UI (mentions
+already worked; page links are the one deliberate gap, below): headings (`#` through `######`),
+blockquotes (`> `), fenced code blocks (` ``` `, with an optional language on the opening fence),
+task lists (`- [ ] `/`- [x] `), horizontal rules (`---`), and four more inline marks — italic
+(`*text*`), strikethrough (`~~text~~`), inline code (`` `text` ``), underline (`__text__`). Every
+addition is backward compatible: the 24 tests already covering bold/links/lists/mentions still
+pass unchanged, confirming Work's and Chat's existing composers only gained capability, nothing
+about their existing behavior moved. `liveFormatParser` (the live syntax-highlighting half, for
+`MarkdownTextInput`'s `parser` prop) grew alongside it — every new inline mark highlights live,
+using `MarkdownType` members the library itself defines (`italic`, `code`, `strikethrough`); block
+constructs (headings, lists, quotes, fences) still cannot be represented as a character range
+within one line, so — matching how a `- ` list marker already worked — they stay plain text until
+save, the identical LIVE-vs-SAVE-TIME split this file already drew for lists.
+
+### `serializeToText` — the inverse, so "Edit" opens with real content, not a blank box
+
+Pre-filling the edit box with a page's EXISTING content (rather than starting blank, which would
+read as "this page is empty" even when it is not) needed the reverse direction: rich-JSON back to
+the same plain-text syntax `parseFormattedText` reads. Verified as an actual round trip, not two
+independently-plausible halves: `rich-text-compose.test.ts`'s new suite asserts
+`parseFormattedText(serializeToText(doc))` reproduces `doc` for every node and mark type, including
+headings at all six levels, nested lists, and mixed inline marks. A run carrying more than one mark
+(never produced by this file's own parser, but real TipTap content can) keeps only the
+highest-priority one on serialize — link beats the purely visual marks, since a dropped link
+destination is unrecoverable prose and a dropped bold is not — documented as a real, deliberate
+loss rather than an attempt at fidelity `parseFormattedText` could not consume back anyway.
+
+### `writeRichTextDocumentToFragment` — the write side, and the bug its own round-trip test caught
+
+`docs-collab.ts` gained the inverse of `yjsFragmentToRichTextDocument`: replace a page's entire
+`content` fragment with a tree built from plain JSON, in one `doc.transact(...)` (so a connected
+viewer — including this same client's own reader — sees the final state once, never a flash of
+"content cleared" mid-rebuild). Two real, non-obvious things had to be gotten right, both found by
+testing against real Yjs rather than trusted from the type signature:
+
+- **Attach-then-fill, not build-then-attach.** `Y.XmlText.insert()` needs the text to already be
+  reachable from the document root before it accepts content (confirmed by `docs-collab.test.ts`'s
+  own existing fixtures, which always attach an empty child before inserting into it) — the writer
+  constructs and attaches each element top-down, only recursing into its children once it is
+  already wired to an attached parent.
+- **A missing `attributes` argument means "inherit," not "clear."** `Y.XmlText.insert(index, text,
+attributes)` — when `attributes` is left `undefined` for an unmarked run sitting between two
+  marked ones, Yjs does not treat that as "no formatting here"; it inherits the PRECEDING run's
+  attributes. `**bold**, *italic*` written with `undefined` for the plain `, ` in between came back
+  from a real Yjs round trip as `**bold, **` — the comma and space silently bolded. Confirmed with
+  a throwaway isolated reproduction against real Yjs before touching the real function, not assumed
+  from the `attributes?: Object | undefined` signature reading like "optional means none." Fixed by
+  always passing a real object (`{}` for "no marks"), never `undefined` — `attributesFromMarks`'s
+  own header names this as the reason it changed. This is the kind of bug a round-trip test finds
+  and a shape-only unit test cannot: `docs-collab.test.ts`'s new end-to-end suite (compose text →
+  `parseFormattedText` → write → read back via the existing reader) is what caught it, exercising
+  every node and mark type from the previous section in one document.
+
+### `docs-page-editor.ts` — deciding whether it is safe to enter Edit at all
+
+Two small, pure functions gate what "Edit" actually does, given the writer replaces a page's WHOLE
+content: `hasPageLink` walks a page's current content for a `pageLink` node — the one node type
+`serializeToText` cannot round-trip (its own header: a page link degrades to its plain `label` text
+with no way back) — and warns before entering edit mode on one, rather than losing a page's
+internal links silently the next time someone saves. `extractMentions` collects every existing
+`mention` node's `userId`/`label` pair into the list `parseFormattedText` needs to turn a RETYPED
+`@Label` marker back into a real mention on save — an existing mention round-trips as long as its
+exact label text survives editing; there is no mention-picker UI on this screen (matching the
+previous pass's Comments composer), so a NEW mention cannot be created here, only an existing one
+preserved.
+
+### The conflict check — Save compares against a captured baseline, not against nothing
+
+This screen has no live sync while composing, so "did the page change while I was editing" is a
+real question with a real answer needed before overwriting it. `docs-page/[pageId].tsx` captures
+`serializeToText` of the page's content the MOMENT Edit is pressed; at Save, it re-reads the
+page's CURRENT live content and compares. A match saves normally; a mismatch means someone else's
+edit landed in between, and the screen asks — overwrite their change, or go back — rather than
+silently discarding it. Not a true CRDT merge (there is no way to merge two divergent whole-page
+markdown edits without an editor tracking both), but a real, honest guard against the most common
+failure mode of a whole-document overwrite model.
+
+### Verified, and what still needs a real device
+
+Typecheck clean, lint clean, all 369 tests pass (321 existing, plus 31 for `rich-text-compose
+.ts`'s expanded parser/serializer, 9 for `docs-collab.ts`'s new writer, and 8 new for
+`docs-page-editor.ts`), guardrail self-test clean, prettier clean, encoding check clean, and real
+`expo export`
+for both `--platform android` and `--platform ios` bundle cleanly — no new native dependency this
+pass, so no additional dev-client rebuild beyond the one `expo-sharing` already required. The whole
+screen is now wrapped in `KeyboardAvoidingView` (`channel/[channelId].tsx`'s own established
+pattern) — with three composers on one screen now (Comments, Suggestions, the page editor), this
+was the moment to apply it proactively rather than wait for a fifth live report of the same bug
+class this README already has four of. **Not device-verified**: the parser/serializer/writer
+round trip is proven against real Yjs structures built by hand, not against a real page saved from
+a real TipTap editor and then opened here — that is the one gap no amount of unit testing in this
+environment can close, the same boundary `yjsFragmentToRichTextDocument`'s own header has named
+since the reader shipped.

@@ -125,7 +125,7 @@ export function pageStartAnchor(fragment: Y.XmlFragment): {
   return { anchorFrom: encoded, anchorTo: encoded };
 }
 
-interface PlainNode {
+export interface PlainNode {
   readonly type: string;
   readonly attrs?: Record<string, unknown>;
   readonly content?: readonly PlainNode[];
@@ -169,4 +169,131 @@ function nodesFrom(child: Y.XmlElement | Y.XmlText | Y.XmlHook): readonly PlainN
  *  `RichTextView`'s `sanitizeRichText` already knows how to walk. */
 export function yjsFragmentToRichTextDocument(fragment: Y.XmlFragment): unknown {
   return { type: 'doc', content: fragment.toArray().flatMap((child) => nodesFrom(child)) };
+}
+
+/**
+ * `writeRichTextDocumentToFragment` — the inverse of
+ * `yjsFragmentToRichTextDocument`, and the piece that makes
+ * `docs-page-editor.ts` a real WRITE path rather than only a read one.
+ * Replaces a page's ENTIRE `content` fragment with a fresh tree built from
+ * plain JSON (`rich-text-compose.ts`'s `parseFormattedText` output) — a
+ * whole-document overwrite, not a live per-keystroke edit; see
+ * `docs-page-editor.ts`'s own header for why that is the honest scope
+ * here, not "the same as web."
+ *
+ * ## Attach-then-fill, not build-then-attach
+ *
+ * `Y.XmlText.insert()` needs the text to already be reachable from the
+ * document root before it will accept content — confirmed directly by
+ * this file's own tests (`docs-collab.test.ts` builds every fixture
+ * `parent.insert(0, [child]); child.insert(0, 'text')`, never the reverse)
+ * and by Yjs's own CRDT model, where an operation needs a client id and
+ * document context a detached type does not have. `Y.XmlElement.
+ * setAttribute` has no such requirement (every existing test sets
+ * attributes BEFORE attaching). `buildInto` below follows that order
+ * exactly: construct an element, set its attributes, ATTACH it to its
+ * now-attached parent, and only then recurse into building ITS children —
+ * so by the time any `Y.XmlText` is reached, the whole chain back to the
+ * root `fragment` (already attached, since it came from `doc.getXmlFragment
+ * ('content')`) is attached too.
+ *
+ * ## One `Y.XmlText` per run of consecutive text nodes, not one per mark
+ *
+ * Mirrors `textRunsFrom`'s own read-side assumption (a `Y.XmlText.
+ * toDelta()` naturally groups multiple marked runs as sequential inserts
+ * into ONE text instance) rather than one `Y.XmlText` per run — an atomic
+ * inline node (`mention`, `pageLink`) breaks a run and starts a new one,
+ * exactly the shape `docs-collab.test.ts`'s own mention fixture already
+ * builds by hand.
+ *
+ * ## One transaction, so no connected viewer sees a flash of "empty page"
+ *
+ * `doc.transact(...)` is what makes the delete-then-rebuild ONE Yjs
+ * update, not two — a viewer connected to the same page (including this
+ * same client's own `observeDeep` handler in `docs-page/[pageId].tsx`)
+ * observes the FINAL state once, never an intermediate "content cleared"
+ * frame.
+ */
+function setRawAttribute(element: Y.XmlElement, key: string, value: unknown): void {
+  // `YXmlElement<KV>`'s own type defaults an attribute's value to `string`
+  // when no generic is supplied — this app writes numbers (`heading
+  // .level`, `orderedList.start`), booleans (`taskItem.checked`), and
+  // nullable strings (`codeBlock.language`) too, none of which Yjs itself
+  // restricts at runtime; only the ambient TS type does. Cast once, here,
+  // rather than at every call site — the identical trade
+  // `docs-collab.test.ts`'s own header already documents for its heading
+  // fixture, promoted from a test-only pattern to the real writer.
+  (
+    element as unknown as { setAttribute: (attributeName: string, attributeValue: unknown) => void }
+  ).setAttribute(key, value);
+}
+
+/**
+ * ALWAYS returns a real object, never `undefined` — found live, by this
+ * function's own round-trip test: `Y.XmlText.insert(index, text,
+ * attributes)` treats a MISSING third argument as "inherit whatever
+ * formatting is already active at this position," not "no formatting."
+ * Two marked runs separated by plain text (`**bold**, *italic*`) written
+ * with `undefined` for the plain middle run came back merged into the
+ * FIRST run's own bold mark, silently bolding text that was never marked
+ * — confirmed against real Yjs, not assumed from the type signature (`?:
+ * Object | undefined` reads as "optional == no formatting," and is not).
+ * `{}` is the explicit "clear formatting here" this API actually needs.
+ */
+function attributesFromMarks(
+  marks: readonly { readonly type: string; readonly attrs?: Record<string, unknown> }[] | undefined,
+): Record<string, unknown> {
+  const attributes: Record<string, unknown> = {};
+  for (const mark of marks ?? []) attributes[mark.type] = mark.attrs ?? true;
+  return attributes;
+}
+
+function buildInto(parent: Y.XmlFragment | Y.XmlElement, nodes: readonly PlainNode[]): void {
+  let index = 0;
+  while (index < nodes.length) {
+    const node = nodes[index];
+    if (node === undefined) {
+      index += 1;
+      continue;
+    }
+
+    if (node.type === 'text') {
+      const textNode = new Y.XmlText();
+      parent.insert(parent.length, [textNode]);
+      let offset = 0;
+      while (index < nodes.length) {
+        const run = nodes[index];
+        if (run?.type !== 'text') break;
+        const runText = run.text ?? '';
+        textNode.insert(offset, runText, attributesFromMarks(run.marks));
+        offset += runText.length;
+        index += 1;
+      }
+      continue;
+    }
+
+    const element = new Y.XmlElement(node.type);
+    for (const [key, value] of Object.entries(node.attrs ?? {}))
+      setRawAttribute(element, key, value);
+    parent.insert(parent.length, [element]);
+    if (node.content !== undefined) buildInto(element, node.content);
+    index += 1;
+  }
+}
+
+export function writeRichTextDocumentToFragment(
+  fragment: Y.XmlFragment,
+  document: { readonly content: readonly PlainNode[] },
+): void {
+  const run = (): void => {
+    if (fragment.length > 0) fragment.delete(0, fragment.length);
+    buildInto(fragment, document.content);
+  };
+
+  const doc = fragment.doc;
+  if (doc === null) {
+    run();
+    return;
+  }
+  doc.transact(run);
 }

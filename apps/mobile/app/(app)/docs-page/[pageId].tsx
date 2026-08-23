@@ -25,9 +25,20 @@ import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { useMembers } from '../../../src/lib/use-members.js';
-import { liveFormatParser, parseFormattedText } from '../../../src/lib/rich-text-compose.js';
+import {
+  liveFormatParser,
+  parseFormattedText,
+  serializeToText,
+  type SerializableNode,
+} from '../../../src/lib/rich-text-compose.js';
 import { useDocPage, type DocPageStatus } from '../../../src/lib/use-doc-page.js';
-import { pageStartAnchor, yjsFragmentToRichTextDocument } from '../../../src/lib/docs-collab.js';
+import {
+  pageStartAnchor,
+  writeRichTextDocumentToFragment,
+  yjsFragmentToRichTextDocument,
+} from '../../../src/lib/docs-collab.js';
+import { extractMentions, hasPageLink } from '../../../src/lib/docs-page-editor.js';
+import type { PendingMention } from '../../../src/lib/message-compose.js';
 import { savePdfAndShare } from '../../../src/lib/pdf-save.js';
 import { RichTextView } from '../../../src/lib/rich-text-view.js';
 import { pagesQueryKey, backlinksQueryKey, type Backlink } from '../../../src/lib/docs.js';
@@ -35,14 +46,14 @@ import { commentsQueryKey, type DocComment } from '../../../src/lib/docs-comment
 import { suggestionsQueryKey, type DocSuggestion } from '../../../src/lib/docs-suggestions.js';
 
 /**
- * A page's live content, read-only, plus everything web's Docs feature has
- * that does NOT need an editor — comments, suggestions, backlinks, publish/
+ * A page's live content — reading it, AND now writing it — plus everything
+ * else web's Docs feature has: comments, suggestions, backlinks, publish/
  * unpublish, PDF export, and saving the page as a template. Reached by
  * tapping a page row on `docs-space/[spaceId].tsx`. The counterpart of
- * `apps/web/src/features/docs/docs-page.tsx`'s `PagePanel`, minus the one
- * half that cannot exist here: `use-doc-page.ts`'s own header names why
- * there is no `useEditor` call anywhere on this screen — ProseMirror needs
- * a DOM, and React Native has none.
+ * `apps/web/src/features/docs/docs-page.tsx`'s `PagePanel`, with one
+ * permanent, structural difference: there is no `useEditor` call anywhere
+ * on this screen, and there cannot be — ProseMirror needs a DOM, and React
+ * Native has none.
  *
  * `spaceId` arrives as a second route param (`router.push({ pathname,
  * params })`, the same shape `thread/[messageId].tsx` uses for `channelId`)
@@ -67,9 +78,32 @@ import { suggestionsQueryKey, type DocSuggestion } from '../../../src/lib/docs-s
  * expressible against a page-level anchor. Listing still shows every kind,
  * including ones created on web — only creation is narrowed.
  *
+ * ## Writing — real, but honestly NOT "the same as web"
+ *
+ * `PageEditor` below is a whole-page markdown-style compose-and-save flow,
+ * not live per-keystroke collaboration: tap Edit, the page's current
+ * content is serialized to plain text (`serializeToText`) into one big
+ * `MarkdownTextInput`, and Save replaces the page's ENTIRE content with
+ * the re-parsed result (`parseFormattedText` → `writeRichTextDocumentToFragment`)
+ * as one real Yjs update — which DOES sync to every other connected
+ * client, web included, the moment it lands. What it does not have: a
+ * live cursor, character-by-character sync while composing, or a true
+ * operational merge with someone editing at the same time — Save compares
+ * the page's CURRENT content against what this screen captured when
+ * editing started, and warns before overwriting a genuine concurrent
+ * change, rather than silently discarding it.
+ *
+ * A page containing a `pageLink` node cannot round-trip through this —
+ * `rich-text-compose.ts`'s own header on `serializeToText` is explicit
+ * that a page link degrades to plain text with no way back — so `Edit`
+ * warns and asks before entering edit mode on one, rather than losing a
+ * page's internal links silently on the next Save.
+ *
  * Nothing here re-derives authorization (CLAUDE.md §8.2). Every button
- * (Publish, Export, comment/suggestion actions) is always shown; the
- * server answers, exactly as `card/[cardId].tsx`'s own sections do.
+ * (Edit, Publish, Export, comment/suggestion actions) is always shown; the
+ * server answers, exactly as `card/[cardId].tsx`'s own sections do — a
+ * viewer with no `page:update` still sees "Edit", and a save attempt comes
+ * back FORBIDDEN rather than the control being hidden.
  */
 export default function DocsPageScreen() {
   const params = useLocalSearchParams<{ pageId: string; spaceId: string }>();
@@ -112,6 +146,79 @@ function DocsPageContent({
   useEffect(() => {
     if (synced) setHasEverSynced(true);
   }, [synced]);
+
+  /* `editing` gates which of `PageContent` (read-only) or `PageEditor`
+     (compose-and-save) renders below — never both. `baselineText` is
+     captured once, the moment Edit is pressed, and compared against the
+     page's CURRENT content at Save time: this screen has no live
+     per-keystroke sync while composing (this file's own header explains
+     why), so that comparison is the one thing standing between "someone
+     else's edit landed while I was typing" and silently overwriting it. */
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [draftMentions, setDraftMentions] = useState<readonly PendingMention[]>([]);
+  const [baselineText, setBaselineText] = useState('');
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const startEditing = (): void => {
+    if (doc === null) return;
+    const current = yjsFragmentToRichTextDocument(doc.getXmlFragment('content'));
+    const beginEditing = (): void => {
+      const text = serializeToText(current as { readonly content: readonly SerializableNode[] });
+      setDraft(text);
+      setBaselineText(text);
+      setDraftMentions(extractMentions(current));
+      setSaveError(null);
+      setEditing(true);
+    };
+
+    if (hasPageLink(current)) {
+      Alert.alert(
+        'This page has links to other pages',
+        'Editing here cannot preserve them — saving will turn them into plain text. Continue anyway?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Continue', style: 'destructive', onPress: beginEditing },
+        ],
+      );
+      return;
+    }
+    beginEditing();
+  };
+
+  const saveEdit = (overwrite: boolean): void => {
+    if (doc === null) return;
+    const fragment = doc.getXmlFragment('content');
+    const current = yjsFragmentToRichTextDocument(fragment);
+    const currentText = serializeToText(
+      current as { readonly content: readonly SerializableNode[] },
+    );
+
+    if (!overwrite && currentText !== baselineText) {
+      Alert.alert(
+        'This page changed since you started editing',
+        'Someone else’s changes are on the page now. Save anyway and overwrite them, or go back and re-check?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Overwrite',
+            style: 'destructive',
+            onPress: () => {
+              saveEdit(true);
+            },
+          },
+        ],
+      );
+      return;
+    }
+
+    try {
+      writeRichTextDocumentToFragment(fragment, parseFormattedText(draft, draftMentions));
+      setEditing(false);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'This page could not be saved.');
+    }
+  };
 
   const pages = useQuery({
     queryKey: pagesQueryKey(spaceId),
@@ -163,7 +270,10 @@ function DocsPageContent({
   });
 
   return (
-    <View style={[styles.container, { paddingTop }]}>
+    <KeyboardAvoidingView
+      style={[styles.container, { paddingTop }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Pressable
           style={styles.backButton}
@@ -185,6 +295,11 @@ function DocsPageContent({
         </View>
 
         <View style={styles.actionsRow}>
+          {!editing && (
+            <Pressable style={styles.actionButton} disabled={doc === null} onPress={startEditing}>
+              <Text style={styles.actionButtonText}>Edit</Text>
+            </Pressable>
+          )}
           <Pressable
             style={styles.actionButton}
             disabled={publish.isPending || unpublish.isPending}
@@ -241,7 +356,20 @@ function DocsPageContent({
               {status === 'disconnected' ? 'Reconnecting…' : 'Connecting…'}
             </Text>
           </View>
-        ) : doc === null ? null : (
+        ) : doc === null ? null : editing ? (
+          <PageEditor
+            draft={draft}
+            onDraftChange={setDraft}
+            error={saveError}
+            onSave={() => {
+              saveEdit(false);
+            }}
+            onCancel={() => {
+              setEditing(false);
+              setSaveError(null);
+            }}
+          />
+        ) : (
           <PageContent doc={doc} />
         )}
 
@@ -260,7 +388,7 @@ function DocsPageContent({
           setSavingTemplate(false);
         }}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -305,6 +433,61 @@ function PageContent({ doc }: { readonly doc: Y.Doc }) {
   }
 
   return <RichTextView document={document} />;
+}
+
+/**
+ * The compose-and-save half — see this screen's own header for the "real
+ * writing, not live collaboration" scope this represents. `liveFormatParser`
+ * is the SAME live-highlighting worklet `CommentsSection`'s composer uses,
+ * now doing real work on a much longer draft: headings, blockquotes, lists,
+ * and fenced code all stay plain text until Save (block structure has no
+ * character-range representation `MarkdownTextInput` can highlight — that
+ * file's own header explains why), but every inline mark highlights live.
+ */
+function PageEditor({
+  draft,
+  onDraftChange,
+  error,
+  onSave,
+  onCancel,
+}: {
+  readonly draft: string;
+  readonly onDraftChange: (text: string) => void;
+  readonly error: string | null;
+  readonly onSave: () => void;
+  readonly onCancel: () => void;
+}) {
+  return (
+    <View style={styles.editorContainer}>
+      <MarkdownTextInput
+        value={draft}
+        onChangeText={onDraftChange}
+        placeholder="Write the page…"
+        placeholderTextColor={colors.inkFaint.hex}
+        style={styles.editorInput}
+        multiline
+        autoFocus
+        parser={liveFormatParser}
+        markdownStyle={{
+          syntax: { color: colors.inkFaint.hex },
+          link: { color: colors.accent.hex },
+        }}
+      />
+      {error !== null && (
+        <Text style={styles.sectionError} accessibilityRole="alert">
+          {error}
+        </Text>
+      )}
+      <View style={styles.editorActions}>
+        <Pressable style={styles.actionButton} onPress={onCancel}>
+          <Text style={styles.actionButtonText}>Cancel</Text>
+        </Pressable>
+        <Pressable style={styles.editorSaveButton} onPress={onSave}>
+          <Text style={styles.editorSaveButtonText}>Save</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
 }
 
 /** The native counterpart of `docs-editor.tsx`'s own `ConnectionPill`. */
@@ -952,6 +1135,39 @@ const styles = StyleSheet.create({
     marginTop: 24,
     fontSize: 13,
     color: colors.inkFaint.hex,
+  },
+  editorContainer: {
+    gap: 10,
+  },
+  editorInput: {
+    minHeight: 220,
+    borderWidth: 1,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.ink.hex,
+    backgroundColor: colors.surface.hex,
+    textAlignVertical: 'top',
+  },
+  editorActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  editorSaveButton: {
+    backgroundColor: colors.accent.hex,
+    borderRadius: radiusCard,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    alignItems: 'center',
+  },
+  editorSaveButtonText: {
+    color: colors.accentInk.hex,
+    fontSize: 13,
+    fontWeight: '700',
   },
   section: {
     marginTop: 28,

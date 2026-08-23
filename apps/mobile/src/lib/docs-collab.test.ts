@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { decodeBase64 } from './base64.js';
+import { parseFormattedText } from './rich-text-compose.js';
 import {
   collabWebsocketUrl,
   pageDocumentName,
   pageStartAnchor,
+  writeRichTextDocumentToFragment,
   yjsFragmentToRichTextDocument,
 } from './docs-collab.js';
 
@@ -227,5 +229,207 @@ describe('pageStartAnchor', () => {
     expect(absolute).not.toBeNull();
     expect(absolute?.type).toBe(content);
     expect(absolute?.index).toBe(0);
+  });
+});
+
+describe('writeRichTextDocumentToFragment', () => {
+  it('writes a plain paragraph, readable back via yjsFragmentToRichTextDocument', () => {
+    const { content } = docWithContent();
+    writeRichTextDocumentToFragment(content, {
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hello world' }] }],
+    });
+
+    expect(yjsFragmentToRichTextDocument(content)).toEqual({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hello world' }] }],
+    });
+  });
+
+  it('writes multiple marked runs into one Y.XmlText, readable back with marks intact', () => {
+    const { content } = docWithContent();
+    writeRichTextDocumentToFragment(content, {
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: 'hey ' },
+            { type: 'text', text: 'Jane', marks: [{ type: 'bold' }] },
+            { type: 'text', text: ' see ' },
+            {
+              type: 'text',
+              text: 'this',
+              marks: [{ type: 'link', attrs: { href: 'https://example.com' } }],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(yjsFragmentToRichTextDocument(content)).toEqual({
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: 'hey ' },
+            { type: 'text', text: 'Jane', marks: [{ type: 'bold' }] },
+            { type: 'text', text: ' see ' },
+            {
+              type: 'text',
+              text: 'this',
+              marks: [{ type: 'link', attrs: { href: 'https://example.com' } }],
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('writes an atomic mention as its own element, breaking the surrounding text run', () => {
+    const { content } = docWithContent();
+    writeRichTextDocumentToFragment(content, {
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: 'hey ' },
+            { type: 'mention', attrs: { userId: 'u1', label: 'Jane Doe' } },
+            { type: 'text', text: ' look' },
+          ],
+        },
+      ],
+    });
+
+    expect(yjsFragmentToRichTextDocument(content)).toEqual({
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: 'hey ' },
+            { type: 'mention', attrs: { userId: 'u1', label: 'Jane Doe' } },
+            { type: 'text', text: ' look' },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('writes numeric and boolean attrs correctly (heading level, taskItem checked)', () => {
+    const { content } = docWithContent();
+    writeRichTextDocumentToFragment(content, {
+      content: [
+        { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Title' }] },
+        {
+          type: 'taskList',
+          content: [
+            {
+              type: 'taskItem',
+              attrs: { checked: true },
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'done' }] }],
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = yjsFragmentToRichTextDocument(content) as {
+      content: readonly { attrs?: Record<string, unknown> }[];
+    };
+    expect(result.content[0]?.attrs).toEqual({ level: 2 });
+    const taskList = result.content[1] as {
+      content: readonly { attrs?: Record<string, unknown> }[];
+    };
+    expect(taskList.content[0]?.attrs).toEqual({ checked: true });
+  });
+
+  it('replaces existing content entirely rather than appending', () => {
+    const { content } = docWithContent();
+    writeRichTextDocumentToFragment(content, {
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'first version' }] }],
+    });
+    writeRichTextDocumentToFragment(content, {
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'second version' }] }],
+    });
+
+    expect(yjsFragmentToRichTextDocument(content)).toEqual({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'second version' }] }],
+    });
+  });
+
+  it('an empty document clears the fragment down to nothing', () => {
+    const { content } = docWithContent();
+    writeRichTextDocumentToFragment(content, {
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'will be cleared' }] }],
+    });
+    writeRichTextDocumentToFragment(content, { content: [] });
+
+    expect(yjsFragmentToRichTextDocument(content)).toEqual({ type: 'doc', content: [] });
+  });
+
+  it('fires exactly one observeDeep notification per write — one transaction, not a delete-then-rebuild flash', () => {
+    const { content } = docWithContent();
+    writeRichTextDocumentToFragment(content, {
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'first' }] }],
+    });
+
+    let firings = 0;
+    content.observeDeep(() => {
+      firings += 1;
+    });
+    writeRichTextDocumentToFragment(content, {
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'second' }] }],
+    });
+
+    expect(firings).toBe(1);
+  });
+
+  describe('end-to-end: compose text -> parseFormattedText -> write -> read back', () => {
+    it('round-trips a document exercising every supported node and mark type', () => {
+      // No blank-line separators between blocks — a blank line becomes a
+      // degenerate empty paragraph (`{type:'paragraph', content:[{type:
+      // 'text', text:''}]}`), and `yjsFragmentToRichTextDocument`'s own
+      // README-documented, already-tested simplification ("skips an empty
+      // text run rather than emitting a zero-length text node") collapses
+      // that specific shape to `{type:'paragraph'}` on the way back out —
+      // a real, deliberate, PRE-EXISTING reader behavior this test is not
+      // the place to re-litigate, and invisible in `RichTextView` either
+      // way (an empty `content` array and a missing `content` key render
+      // identically: nothing). Keeping every line non-blank here isolates
+      // this test to the property it actually exists to prove.
+      const source = [
+        '# Heading one',
+        'A paragraph with **bold**, *italic*, ~~strike~~, __underline__, `code`,',
+        'and a [link](https://example.com/a).',
+        '> A quoted line',
+        '- bullet one',
+        '- bullet two',
+        '1. ordered one',
+        '2. ordered two',
+        '- [ ] todo',
+        '- [x] done',
+        '```ts',
+        'const x = 1;',
+        '```',
+        '---',
+      ].join('\n');
+
+      const parsed = parseFormattedText(source);
+      const { content } = docWithContent();
+      writeRichTextDocumentToFragment(content, parsed);
+
+      expect(yjsFragmentToRichTextDocument(content)).toEqual(parsed);
+    });
+
+    it('round-trips a mention typed against a real pending-mentions list', () => {
+      const parsed = parseFormattedText('cc @Jane Doe for review', [
+        { userId: 'u1', label: 'Jane Doe' },
+      ]);
+      const { content } = docWithContent();
+      writeRichTextDocumentToFragment(content, parsed);
+
+      expect(yjsFragmentToRichTextDocument(content)).toEqual(parsed);
+    });
   });
 });
