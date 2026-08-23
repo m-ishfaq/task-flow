@@ -80,7 +80,7 @@ export function CommentsSuggestionsPanel({
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-1 border-b border-line">
+      <div className="flex gap-1 border-b border-line/50">
         <TabButton
           active={tab === 'comments'}
           onClick={() => {

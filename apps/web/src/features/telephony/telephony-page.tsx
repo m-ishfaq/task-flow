@@ -44,7 +44,7 @@ export function TelephonyPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="border-b border-line px-4 pt-4 pb-2">
+      <header className="border-b border-line/50 px-4 pt-4 pb-2">
         <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
           Voice &amp; Messaging
         </h1>

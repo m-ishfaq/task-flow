@@ -44,7 +44,7 @@ export function PeoplePage() {
   });
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-7 p-8">
+    <div className="mx-auto flex max-w-5xl flex-col gap-7 p-8">
       <PageHeader
         title="People"
         description="Everyone in this organization, with their profile, role, and who they report to."
@@ -88,18 +88,18 @@ export function PeoplePage() {
 
 function DirectoryRows({ rows }: { readonly rows: readonly DirectoryMember[] }) {
   return (
-    <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
+    <ul className="divide-y divide-line/40 overflow-hidden rounded-xl border border-line/50 bg-surface-raised/50">
       {rows.map((member) => {
         const label = displayName({ name: member.displayName, email: member.email });
         return (
-          <li key={member.userId} className="flex items-center gap-3 px-3 py-2.5">
+          <li key={member.userId} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover/50">
             <Avatar userId={member.userId} label={label} />
 
             <div className="min-w-0 flex-1">
               <Link
                 to="/people/$userId"
                 params={{ userId: member.userId }}
-                className="block truncate text-sm text-ink hover:text-accent"
+                className="block truncate text-[13px] font-medium text-ink hover:text-accent"
               >
                 {label}
               </Link>
@@ -108,7 +108,7 @@ function DirectoryRows({ rows }: { readonly rows: readonly DirectoryMember[] }) 
 
             <OooBadge member={member} />
 
-            <Badge>{member.role}</Badge>
+            <Badge className="text-[11px]">{member.role}</Badge>
           </li>
         );
       })}

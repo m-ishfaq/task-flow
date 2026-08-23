@@ -63,7 +63,7 @@ export function OrgPickerPage() {
 
   if (orgs.isPending) {
     return (
-      <div className="mx-auto w-full max-w-lg p-6">
+      <div className="mx-auto w-full max-w-xl p-6">
         <SkeletonRows rows={3} className="*:h-16" />
       </div>
     );
@@ -71,7 +71,7 @@ export function OrgPickerPage() {
 
   if (orgs.isError) {
     return (
-      <div className="mx-auto max-w-lg p-6">
+      <div className="mx-auto max-w-xl p-6">
         <ErrorView error={orgs.error} title="Could not load your organizations" />
       </div>
     );
@@ -80,7 +80,7 @@ export function OrgPickerPage() {
   const isEmpty = orgs.data.length === 0;
 
   return (
-    <div className="mx-auto flex w-full max-w-lg flex-col gap-6 p-8">
+    <div className="mx-auto flex w-full max-w-xl flex-col gap-6 p-8">
       <div>
         <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
           {isEmpty ? 'Create your first organization' : 'Choose an organization'}

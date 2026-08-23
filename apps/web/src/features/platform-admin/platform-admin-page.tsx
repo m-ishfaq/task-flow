@@ -349,7 +349,7 @@ function OrgsTab({
       {orgs.isError && <ErrorView error={orgs.error} title="Could not load organizations" />}
 
       {orgs.data !== undefined && (
-        <div className="overflow-x-auto rounded border border-line">
+        <div className="overflow-x-auto rounded border border-line/50">
           <table className="data-table">
             <thead>
               <tr>
@@ -658,7 +658,7 @@ function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
       {users.isError && <ErrorView error={users.error} title="Could not load users" />}
 
       {users.data !== undefined && (
-        <div className="overflow-x-auto rounded border border-line">
+        <div className="overflow-x-auto rounded border border-line/50">
           <table className="data-table">
             <thead>
               <tr>
@@ -787,7 +787,7 @@ function FlagsTab({
         (flags.data.length === 0 ? (
           <Empty title="No flags registered" />
         ) : (
-          <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
+          <ul className="divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
             {flags.data.map((flag) => (
               <li key={flag.flagName} className="flex items-center gap-3 px-3 py-2.5">
                 <div className="min-w-0 flex-1">
@@ -1223,7 +1223,7 @@ function UserDetailDialog({
                   picker with nothing to choose.
                 </p>
               ) : (
-                <ul className="mt-1 divide-y divide-line overflow-hidden rounded-lg border border-line">
+                <ul className="mt-1 divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
                   {data.memberships.map((membership) => (
                     <li key={membership.orgId} className="px-2 py-1.5 text-xs">
                       <div className="flex items-center gap-2">
@@ -1366,7 +1366,7 @@ function OrgDetailDialog({
 
             <section>
               <h3 className="text-xs font-semibold text-ink">Entitlements</h3>
-              <ul className="mt-1 divide-y divide-line overflow-hidden rounded-lg border border-line">
+              <ul className="mt-1 divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
                 {data.features.map((feature) => (
                   <li
                     key={feature.flagName}
@@ -1395,7 +1395,7 @@ function OrgDetailDialog({
               <h3 className="text-xs font-semibold text-ink">
                 Members ({data.memberCount} active of {data.members.length})
               </h3>
-              <ul className="mt-1 divide-y divide-line overflow-hidden rounded-lg border border-line">
+              <ul className="mt-1 divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
                 {data.members.map((member) => (
                   <li key={member.userId} className="flex items-center gap-2 px-2 py-1.5 text-xs">
                     <span className="min-w-0 flex-1 truncate text-ink">
@@ -1418,7 +1418,7 @@ function OrgDetailDialog({
             {data.invoices.length > 0 && (
               <section>
                 <h3 className="text-xs font-semibold text-ink">Invoices</h3>
-                <ul className="mt-1 divide-y divide-line overflow-hidden rounded-lg border border-line">
+                <ul className="mt-1 divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
                   {data.invoices.map((invoice) => (
                     <li
                       key={invoice.providerInvoiceId}
@@ -1567,7 +1567,7 @@ function ChangeOrgPlanDialog({
           {plans.isError && <ErrorView error={plans.error} title="Could not load plans" />}
 
           {plans.data !== undefined && (
-            <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
+            <ul className="divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
               {selectable.map((plan) => (
                 <li key={plan.id} className="px-3 py-2">
                   <div className="flex items-start gap-2">
@@ -1745,7 +1745,7 @@ function PlansTab({
         (plans.data.length === 0 ? (
           <Empty title="No plans yet" />
         ) : (
-          <ul className="mt-3 divide-y divide-line overflow-hidden rounded-lg border border-line">
+          <ul className="mt-3 divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
             {plans.data.map((plan) => (
               <li key={plan.id} className="flex flex-col gap-2 px-3 py-3">
                 <div className="flex items-start gap-3">
@@ -2266,7 +2266,7 @@ function EditFeaturesDialog({
           )}
 
           {registry.data !== undefined && (
-            <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
+            <ul className="divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
               {grantable.map((flag) => (
                 <li key={flag.flagName} className="px-3 py-2 hover:bg-surface-hover">
                   {/* htmlFor/id rather than nesting the text: the description
@@ -2575,7 +2575,7 @@ function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
           <Empty title="Nothing recorded yet" />
         ) : (
           <>
-            <div className="overflow-x-auto rounded border border-line">
+            <div className="overflow-x-auto rounded border border-line/50">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -2702,7 +2702,7 @@ function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
           <Empty title="Nothing recorded yet" />
         ) : (
           <>
-            <div className="overflow-x-auto rounded border border-line">
+            <div className="overflow-x-auto rounded border border-line/50">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -2817,7 +2817,7 @@ function BillingTab({
       {billing.isError && <ErrorView error={billing.error} title="Could not load billing" />}
 
       {billing.data !== undefined && (
-        <div className="overflow-x-auto rounded border border-line">
+        <div className="overflow-x-auto rounded border border-line/50">
           <table className="data-table">
             <thead>
               <tr>

@@ -69,7 +69,7 @@ export function PermissionDebugPage() {
   });
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
+    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6">
       <div>
         <h1 className="text-lg font-semibold text-ink">Permission debugger</h1>
         <p className="mt-1 text-sm text-ink-muted">
@@ -79,7 +79,7 @@ export function PermissionDebugPage() {
       </div>
 
       <form
-        className="grid gap-3 rounded border border-line bg-surface-raised p-3 sm:grid-cols-2"
+        className="grid gap-3 rounded-lg border border-line/50 bg-surface-raised p-3 sm:grid-cols-2"
         onSubmit={(event) => {
           event.preventDefault();
           setSubmitted(JSON.stringify(input));
@@ -92,7 +92,7 @@ export function PermissionDebugPage() {
             onChange={(event) => {
               setUserId(event.target.value);
             }}
-            className="h-9 w-full rounded border border-line bg-surface-sunken px-2 text-sm text-ink"
+            className="h-9 w-full rounded-lg border border-line/50 bg-surface-sunken px-2 text-sm text-ink"
           >
             <option value="">Select a member…</option>
             {(members.data ?? []).map((member) => (
@@ -110,7 +110,7 @@ export function PermissionDebugPage() {
             onChange={(event) => {
               setPermission(event.target.value as Permission);
             }}
-            className="h-9 w-full rounded border border-line bg-surface-sunken px-2 text-sm text-ink"
+            className="h-9 w-full rounded-lg border border-line/50 bg-surface-sunken px-2 text-sm text-ink"
           >
             {PERMISSIONS.map((entry) => (
               <option key={entry} value={entry}>
@@ -131,7 +131,7 @@ export function PermissionDebugPage() {
             onChange={(event) => {
               setResourceType(event.target.value as ResourceType | '');
             }}
-            className="h-9 w-full rounded border border-line bg-surface-sunken px-2 text-sm text-ink"
+            className="h-9 w-full rounded-lg border border-line/50 bg-surface-sunken px-2 text-sm text-ink"
           >
             <option value="">(none)</option>
             {RESOURCE_TYPES.map((entry) => (
@@ -171,7 +171,7 @@ export function PermissionDebugPage() {
       </form>
 
       {submitted === null && (
-        <div className="rounded-lg border border-dashed border-line px-3 py-6 text-center">
+        <div className="rounded-xl border border-dashed border-line/50 px-3 py-6 text-center">
           <p className="text-sm text-ink-muted">Pick a member and a permission, then Explain.</p>
           <p className="mt-1 text-xs text-ink-faint">
             Every layer the engine consulted is listed in order, including the ones that did not
@@ -282,7 +282,7 @@ export function PermissionDebugPage() {
 
           {/* Collapsed: it is the same information again, and it is here so the
               page can be pasted into an issue verbatim rather than to be read. */}
-          <details className="rounded-lg border border-line">
+          <details className="rounded-lg border border-line/50">
             <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-ink-muted hover:text-ink">
               As the server formats it
             </summary>
@@ -290,7 +290,7 @@ export function PermissionDebugPage() {
                 server. Rendered as text in a <pre>, never as markup — there is
                 no HTML anywhere in this app, and `dangerouslySetInnerHTML` is a
                 lint error workspace-wide. */}
-            <pre className="overflow-x-auto border-t border-line bg-surface-sunken p-3 font-mono text-[11px] text-ink-muted">
+            <pre className="overflow-x-auto border-t border-line/50 bg-surface-sunken p-3 font-mono text-[11px] text-ink-muted">
               {explanation.data.formatted}
             </pre>
           </details>

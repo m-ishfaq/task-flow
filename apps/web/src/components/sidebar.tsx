@@ -198,7 +198,8 @@ function NavLink({
     <Link
       to={to}
       className={cn(
-        'relative mb-0.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-ink-muted',
+        'relative mb-0.5 flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-ink-muted',
+        'transition-colors duration-[var(--motion-fast)]',
         'hover:bg-surface-hover hover:text-ink',
       )}
       activeProps={{
@@ -250,11 +251,11 @@ export function Sidebar() {
         open ? 'w-72 md:w-60' : 'w-12',
       )}
     >
-      <div className="flex h-14 shrink-0 items-center gap-1 border-b border-line px-3">
+      <div className="flex h-14 shrink-0 items-center gap-1 border-b border-line/50 px-4">
         {open && (
           <Link
             to="/projects"
-            className="flex min-w-0 items-center gap-2 truncate px-1 text-sm font-semibold text-ink"
+            className="flex min-w-0 items-center gap-2.5 truncate px-1 text-[14px] font-semibold text-ink transition-colors hover:text-accent"
           >
             {logoUrl !== null && (
               <img src={logoUrl} alt="" className="size-5 shrink-0 rounded object-contain" />

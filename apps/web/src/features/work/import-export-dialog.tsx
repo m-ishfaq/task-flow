@@ -435,7 +435,7 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
           Jira or a hand-kept spreadsheet works without anyone renaming
           columns in Excel first. */}
       {table !== null && mapping !== null && (
-        <div className="rounded border border-line">
+        <div className="rounded border border-line/50">
           <p className="border-b border-line px-3 py-2 text-xs font-medium text-ink">
             Match the file&rsquo;s columns
             <span className="mt-0.5 block font-normal text-[11px] text-ink-faint">
@@ -443,7 +443,7 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
               <code className="font-mono">title</code> is required.
             </span>
           </p>
-          <ul className="divide-y divide-line">
+          <ul className="divide-y divide-line/40">
             {IMPORT_COLUMNS.map((column) => (
               <li key={column} className="flex items-center gap-2 px-3 py-1.5">
                 <span className="w-24 shrink-0 font-mono text-[11px] text-ink">
@@ -514,7 +514,7 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
       )}
 
       {preview !== null && rows !== null && (
-        <div className="rounded border border-line">
+        <div className="rounded border border-line/50">
           {/* What the file needs that the project does not have, named. This
               is the difference between "80 rows failed" and "these four labels
               are missing" — the same fact, but one of them can be acted on. */}
@@ -554,7 +554,7 @@ function ImportTab({ orgId, boardId }: { readonly orgId: string; readonly boardI
                   </span>
                 )}
               </p>
-              <ul className="max-h-48 divide-y divide-line overflow-y-auto">
+              <ul className="max-h-48 divide-y divide-line/40 overflow-y-auto">
                 {preview.errors.map((entry) => (
                   <li key={entry.line} className="px-3 py-1.5 text-xs text-danger">
                     <span className="font-medium">Row {String(entry.line + 1)}:</span> {entry.error}

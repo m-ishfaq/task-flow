@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronRight, MessageSquare, SquareCheck } from 'lucide-react';
+import { Calendar, ChevronRight, MessageSquare, SquareCheck } from 'lucide-react';
 import { AvatarStack, Badge, Empty } from '../../components/primitives.js';
 import { formatDueDate } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
@@ -116,13 +116,13 @@ export function ListView({
                 <h2 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
                   {group.label}
                 </h2>
-                <span className="rounded-full bg-surface-hover px-2 py-0.5 text-xs font-medium text-ink-muted">
+                <span className="rounded-full bg-surface-hover/80 px-2 py-0.5 text-[11px] font-medium text-ink-faint">
                   {group.cards.length}
                 </span>
               </button>
 
               {!isCollapsed && (
-                <ul className="divide-y divide-line border-t border-line">
+                <ul className="divide-y divide-line/30 border-t border-line/30">
                   {ordered.map((card) => {
                     const due = formatDueDate(card.dueDate);
                     const assignees = peopleOf(card.assigneeIds);
@@ -134,15 +134,20 @@ export function ListView({
                           onClick={() => {
                             onOpenCard(card.cardId);
                           }}
-                          className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-hover/60"
+                          className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover/60"
                         >
-                          <span className="font-mono text-xs text-ink-faint">{card.reference}</span>
-                          <span className="min-w-0 flex-1 truncate text-sm text-ink">
+                          <span className="rounded-md bg-surface-sunken/80 px-2 py-0.5 font-mono text-[11px] font-medium text-ink-faint">
+                            {card.reference}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">
                             {card.title}
                           </span>
 
                           {card.priority !== null && (
-                            <Badge>
+                            <span className={cn(
+                              'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+                              'bg-surface-hover text-ink-muted',
+                            )}>
                               <span
                                 aria-hidden="true"
                                 className={cn(
@@ -151,35 +156,38 @@ export function ListView({
                                 )}
                               />
                               {PRIORITY_LABEL[card.priority]}
-                            </Badge>
+                            </span>
                           )}
 
                           {due !== null && (
-                            <Badge className={cn(due.overdue && 'bg-danger/20 text-danger')}>
+                            <span className={cn(
+                              'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+                              due.overdue ? 'bg-danger/15 text-danger' : 'bg-surface-hover text-ink-muted',
+                            )}>
+                              <Calendar aria-hidden="true" className="size-3" strokeWidth={2} />
                               {due.label}
-                            </Badge>
+                            </span>
                           )}
 
                           {card.checklistTotal > 0 && (
-                            <Badge
-                              className={cn(
-                                card.checklistDone === card.checklistTotal && 'text-success',
-                              )}
-                            >
+                            <span className={cn(
+                              'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+                              card.checklistDone === card.checklistTotal ? 'bg-success/10 text-success' : 'bg-surface-hover text-ink-muted',
+                            )}>
                               <SquareCheck aria-hidden="true" className="size-3" strokeWidth={2} />
                               {card.checklistDone}/{card.checklistTotal}
-                            </Badge>
+                            </span>
                           )}
 
                           {card.commentCount > 0 && (
-                            <Badge>
+                            <span className="inline-flex items-center gap-1 rounded-md bg-surface-hover px-2 py-0.5 text-[11px] font-medium text-ink-muted">
                               <MessageSquare
                                 aria-hidden="true"
                                 className="size-3"
                                 strokeWidth={2}
                               />
                               {card.commentCount}
-                            </Badge>
+                            </span>
                           )}
 
                           <AvatarStack people={assignees} />

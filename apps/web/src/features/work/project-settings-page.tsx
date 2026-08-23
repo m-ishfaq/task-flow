@@ -79,7 +79,7 @@ export function ProjectSettingsPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-8 p-6">
+    <div className="mx-auto flex max-w-5xl flex-col gap-8 p-6">
       <div className="flex items-center gap-2">
         <Link to="/projects" className="text-sm text-accent underline">
           Projects
@@ -282,7 +282,7 @@ function BoardSection({
           description="A project without a board has nowhere to put cards."
         />
       ) : (
-        <ul className="divide-y divide-line rounded border border-line">
+        <ul className="divide-y divide-line/40 rounded border border-line/50">
           {live.map((board) => (
             <li key={board.boardId} className="flex items-center gap-2 px-3 py-2">
               {editing === board.boardId ? (
@@ -444,7 +444,7 @@ function LabelSettings({
           description="Labels are created from a card's detail panel, the first time one is needed. They can be renamed and recoloured here afterwards."
         />
       ) : (
-        <ul className="divide-y divide-line rounded border border-line">
+        <ul className="divide-y divide-line/40 rounded border border-line/50">
           {(labels.data ?? []).map((label) => (
             <li key={label.labelId} className="flex items-center gap-2 px-3 py-2">
               {editing === label.labelId ? (
@@ -695,7 +695,7 @@ function StatusSettings({
           description="A board grouped by status needs these to exist before a card can be dragged into one."
         />
       ) : (
-        <ul className="divide-y divide-line rounded border border-line">
+        <ul className="divide-y divide-line/40 rounded border border-line/50">
           {(statuses.data ?? []).map((status) => (
             <li key={status.statusId} className="flex items-center gap-2 px-3 py-2">
               {editing === status.statusId ? (
@@ -879,7 +879,7 @@ function FieldSettings({
           description="Fields are created from a card's detail panel. Archived ones stay listed here, which is the only place they can be restored."
         />
       ) : (
-        <ul className="divide-y divide-line rounded border border-line">
+        <ul className="divide-y divide-line/40 rounded border border-line/50">
           {(fields.data ?? []).map((field) => (
             <li key={field.fieldId} className="flex items-center gap-2 px-3 py-2">
               {editing === field.fieldId ? (

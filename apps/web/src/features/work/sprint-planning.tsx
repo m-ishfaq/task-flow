@@ -216,7 +216,7 @@ function Panel({
   });
 
   return (
-    <div className="rounded-lg border border-line">
+    <div className="rounded-lg border border-line/50">
       <div className="border-b border-line px-3 py-2">
         <p className="truncate text-xs font-medium text-ink">{title}</p>
         <p className="text-[11px] text-ink-faint">{subtitle}</p>
@@ -225,7 +225,7 @@ function Panel({
       {cards.length === 0 ? (
         <p className="px-3 py-4 text-center text-[11px] text-ink-faint">{empty}</p>
       ) : (
-        <ul className="max-h-96 divide-y divide-line overflow-y-auto">
+        <ul className="max-h-96 divide-y divide-line/40 overflow-y-auto">
           {cards.map((card) => (
             <li key={card.cardId} className="flex items-center gap-2 px-3 py-1.5">
               <div className="min-w-0 flex-1">

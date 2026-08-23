@@ -209,7 +209,7 @@ function Toolbar({ editor }: { readonly editor: Editor }) {
   );
 
   return (
-    <div className="flex flex-wrap gap-0.5 border-b border-line px-1.5 py-1">
+    <div className="flex flex-wrap gap-0.5 border-b border-line/50 px-1.5 py-1">
       {item('B', editor.isActive('bold'), () => editor.chain().focus().toggleBold().run(), 'Bold')}
       {item(
         'I',

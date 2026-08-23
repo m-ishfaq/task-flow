@@ -47,7 +47,7 @@ import { profileQuery, updateProfile } from '../people/api.js';
  */
 export function AccountPage() {
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-10 p-6">
+    <div className="mx-auto flex max-w-5xl flex-col gap-10 p-6">
       <div>
         <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Account</h1>
         <p className="text-xs text-ink-muted">
@@ -487,7 +487,7 @@ function SessionsSection() {
       )}
 
       {sessions.data !== undefined && (
-        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
+        <ul className="divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
           {sessions.data.sessions.map((session) => (
             <li
               key={session.id}
@@ -638,7 +638,7 @@ function OrganizationsSection() {
       )}
 
       {orgs.data !== undefined && orgs.data.length > 0 && (
-        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
+        <ul className="divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
           {orgs.data.map((org) => (
             <li key={org.orgId} className="flex items-center justify-between px-3 py-2 text-sm">
               <span className="text-ink">{org.name}</span>

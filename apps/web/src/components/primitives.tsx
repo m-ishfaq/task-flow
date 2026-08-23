@@ -45,10 +45,10 @@ const BUTTON_VARIANTS: Readonly<Record<ButtonVariant, string>> = {
      control. On the accent fill it is nearly invisible, which is the point:
      it is a boundary, not a decoration. */
   primary:
-    'bg-accent text-accent-ink shadow-sm ring-1 ring-inset ring-white/10 hover:bg-accent-hover',
-  secondary: 'bg-surface-raised text-ink border border-line shadow-sm hover:bg-surface-hover',
+    'bg-accent text-accent-ink shadow-[0_2px_8px_oklch(55%_0.17_285/30%)] ring-1 ring-inset ring-white/10 hover:bg-accent-hover hover:shadow-[0_4px_12px_oklch(55%_0.17_285/40%)]',
+  secondary: 'bg-surface-raised text-ink border border-line/60 shadow-sm hover:bg-surface-hover hover:border-line-strong',
   ghost: 'text-ink-muted hover:bg-surface-hover hover:text-ink',
-  danger: 'bg-danger text-danger-ink shadow-sm ring-1 ring-inset ring-white/10 hover:opacity-90',
+  danger: 'bg-danger text-danger-ink shadow-sm ring-1 ring-inset ring-white/10 hover:bg-danger/90 hover:shadow-[0_2px_8px_oklch(55%_0.19_22/30%)]',
 };
 
 const BUTTON_SIZES: Readonly<Record<ButtonSize, string>> = {
@@ -94,7 +94,7 @@ export function Input({ className, ...props }: InputProps) {
   return (
     <input
       className={cn(
-        'h-9 w-full rounded-md border border-line bg-surface-sunken px-2.5 text-sm text-ink transition-all',
+        'h-9 w-full rounded-lg border border-line/50 bg-surface-sunken px-3 text-sm text-ink transition-all',
         /* `focus:bg-surface` — a step lighter than the resting `surface-sunken`
            — is the "considered" touch here: a field that visibly comes
            forward when it takes focus. A soft `ring-2` at 25% accent is the
@@ -139,7 +139,7 @@ export function Textarea({ className, ...props }: TextareaProps) {
   return (
     <textarea
       className={cn(
-        'w-full rounded-md border border-line bg-surface-sunken px-2.5 py-2 text-sm text-ink transition-all',
+        'w-full rounded-lg border border-line/50 bg-surface-sunken px-3 py-2 text-sm text-ink transition-all',
         /* Same reasoning as Input's `focus:bg-surface` above. */
         'placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:outline-none',
         className,
@@ -215,8 +215,8 @@ export function Badge({ children, className, title }: BadgeProps) {
            more often than it is decorative. The slightly larger footprint is
            the same 12px the board's other metadata uses, so badges sit level
            with their neighbours rather than one size down from them. */
-        'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium',
-        'bg-surface-hover text-ink-muted',
+        'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium',
+        'bg-surface-hover/80 text-ink-muted border border-line/30',
         className,
       )}
     >
@@ -431,9 +431,9 @@ export function Empty({
   readonly icon?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2.5 rounded-card border border-dashed border-line bg-surface-sunken/40 p-10 text-center">
+    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line/50 bg-surface-sunken/30 p-12 text-center">
       {icon !== undefined && (
-        <span className="mb-1 flex size-11 items-center justify-center rounded-full bg-surface-raised text-ink-faint ring-1 ring-line">
+        <span className="mb-1 flex size-12 items-center justify-center rounded-full bg-surface-raised text-ink-faint ring-1 ring-line/50">
           {icon}
         </span>
       )}
@@ -475,11 +475,11 @@ export function PageHeader({
   readonly actions?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="flex flex-wrap items-start justify-between gap-4">
       <div className="min-w-0">
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">{title}</h1>
+        <h1 className="font-display text-2xl font-bold tracking-tight text-ink">{title}</h1>
         {description !== undefined && (
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-ink-muted">{description}</p>
+          <p className="mt-1.5 max-w-2xl text-[15px] leading-relaxed text-ink-muted">{description}</p>
         )}
       </div>
       {actions !== undefined && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
@@ -515,9 +515,9 @@ export function Section({
   readonly children: ReactNode;
 }) {
   return (
-    <section className="space-y-3">
+    <section className="space-y-4">
       <div className="flex items-center gap-2">
-        <h2 className="text-[13px] font-semibold text-ink">{title}</h2>
+        <h2 className="text-base font-semibold text-ink">{title}</h2>
         {count !== undefined && <Badge>{count}</Badge>}
       </div>
       {description !== undefined && (
@@ -538,7 +538,7 @@ export function Section({
  */
 export function AddPanel({ children }: { readonly children: ReactNode }) {
   return (
-    <div className="rounded-lg border border-dashed border-line bg-surface-sunken/60 p-3">
+    <div className="rounded-xl border border-dashed border-line/50 bg-surface-sunken/40 p-4">
       {children}
     </div>
   );

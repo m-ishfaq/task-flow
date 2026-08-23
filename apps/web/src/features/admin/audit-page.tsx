@@ -112,7 +112,7 @@ export function AuditPage() {
           <Empty title="Nothing recorded yet" />
         ) : (
           <>
-            <div className="overflow-x-auto rounded border border-line">
+            <div className="overflow-x-auto rounded border border-line/50">
               <table className="data-table">
                 <thead>
                   <tr>

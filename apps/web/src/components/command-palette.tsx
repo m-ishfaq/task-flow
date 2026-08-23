@@ -254,7 +254,7 @@ function PaletteDialog({
           }}
           placeholder="Jump to a project, or run an action…"
           aria-label="Command palette"
-          className="w-full border-b border-line bg-transparent px-4 py-3 text-sm text-ink outline-none placeholder:text-ink-faint"
+          className="w-full border-b border-line/50 bg-transparent px-4 py-3 text-sm text-ink outline-none placeholder:text-ink-faint"
         />
 
         <ul role="listbox" className="max-h-80 overflow-y-auto p-1">
@@ -274,12 +274,12 @@ function PaletteDialog({
                     runAt(index);
                   }}
                   className={cn(
-                    'flex w-full items-center justify-between gap-2 rounded px-3 py-2 text-left text-sm',
-                    index === active ? 'bg-surface-hover text-ink' : 'text-ink-muted',
+                    'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
+                    index === active ? 'bg-accent/10 text-ink' : 'text-ink-muted hover:bg-surface-hover',
                   )}
                 >
                   <span className="truncate">{command.label}</span>
-                  <span className="shrink-0 text-[11px] text-ink-faint">{command.hint}</span>
+                  <span className="shrink-0 rounded bg-surface-hover/80 px-1.5 py-0.5 text-[11px] font-medium text-ink-faint">{command.hint}</span>
                 </button>
               </li>
             ))
@@ -340,14 +340,14 @@ function ShortcutsDialog({
         <div className="mt-3 space-y-4">
           {SHORTCUT_GROUPS.map((group) => (
             <div key={group.title}>
-              <p className="mb-1 text-[11px] font-semibold tracking-wide text-ink-faint uppercase">
+              <p className="mb-1.5 text-[11px] font-semibold tracking-wide text-ink-faint uppercase">
                 {group.title}
               </p>
               <ul className="space-y-1">
                 {group.items.map((item) => (
                   <li key={item.keys} className="flex items-center justify-between text-sm">
                     <span className="text-ink-muted">{item.description}</span>
-                    <kbd className="rounded border border-line bg-surface-sunken px-1.5 py-0.5 font-mono text-[11px] text-ink">
+                    <kbd className="rounded-md border border-line/60 bg-surface-sunken px-1.5 py-0.5 font-mono text-[11px] font-medium text-ink">
                       {item.keys}
                     </kbd>
                   </li>

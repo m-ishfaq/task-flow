@@ -85,7 +85,7 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
   });
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6">
       <section className="space-y-3">
         <div className="flex items-center gap-2">
           <h2 className="text-[13px] font-semibold text-ink">This org's numbers</h2>
