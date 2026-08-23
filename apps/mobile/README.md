@@ -3769,3 +3769,61 @@ logic — `message-compose.test.ts` for the mention functions, `use-chat-room.ts
 why a room-join hook gets no dedicated test of its own — rather than adding new logic that would
 need one), guardrail self-test clean, prettier clean, encoding check clean, and a real
 `expo export --platform android` bundles cleanly.
+
+## A channel opening at the top, and a `scrollToIndex`-based fix that could not have worked
+
+A real device report: opening a channel showed the TOP of the conversation, needing a manual scroll
+down to reach anything current — and a first attempt at fixing it (scrolling straight to the first
+unread message via `FlatList.scrollToIndex`, added directly to the branch) still did not visibly
+work.
+
+**Both halves trace to the same file, and the second one explains why the fix "did nothing."**
+`scrollToIndex` can only reliably reach a row already inside `FlatList`'s own MEASURED render
+window — RN's own documented limitation without a `getItemLayout`, and one cannot be given here:
+message groups are variable height (reactions, attachments, reply counts all change a bubble's
+height), so there is no formula to precompute row offsets from. For a channel with any real
+history, the first unread message sits well outside that initial window, `scrollToIndex` failed,
+and the `onScrollToIndexFailed` handler's own fallback silently converted every failure into
+"scroll to the very bottom" — indistinguishable from the fix never having run, which is exactly
+what "not working" looked like from a real device.
+
+**The actual fix does not try to scroll to the unread message's position at all — because web
+doesn't either.** Checked directly against `apps/web/src/features/chat/chat-page.tsx` before
+writing anything: its own `useLayoutEffect` scrolls to the BOTTOM on the first render
+(`firstAnchor`) and stays there while a reader is near it (`atBottom`, a 160px threshold — "a
+bottom-anchored reader does not sit at exactly `scrollHeight` because of the list's own bottom
+padding," per that file's own comment). The "New messages" divider — which this app's own code
+already rendered correctly, inline above the right message group — is a passive marker a reader
+finds by scrolling UP, never a scroll target. So the honest answer to "does web scroll to where
+the unread starts, like a proper indicator" is: no — it shows the same divider line this app
+already had, and always opens at the bottom, exactly like every other message list.
+
+`channel/[channelId].tsx` now does the same thing, `FlatList`'s way: `onContentSizeChange` (fires
+whenever the rendered content's own height changes — the first page landing, a new message
+arriving, a reaction row changing a bubble's height) is the equivalent of web's DOM `scrollHeight`
+growing, `onScroll` tracks whether the reader is still within that same 160px of the bottom, and
+`hasAnchoredRef`/`nearBottomRef` mirror web's `firstAnchor`/`atBottom` exactly, threshold included.
+No `getItemLayout`, no `scrollToIndex`, no failure path to mask — this is why it is more reliable
+than the previous attempt, not merely different from it.
+
+**The call button now also hides once a DM or private channel's roster exceeds the mesh cap** —
+requested alongside the scroll fix, and the same reasoning the user's own already-shipped
+public-channel hide used: `session.service.ts`'s `startSession` refuses the WHOLE conversation
+once `roster.length > MESH_PARTICIPANT_CAP` (`apps/api/src/rtc/shared.ts`, four) rather than ringing
+only the first four, so a button that can only ever fail is worse than no button —
+`ai/phase-13-webrtc.md`'s own §3.5 argument for why the cap exists at all. `MESH_PARTICIPANT_CAP`
+is NOT imported from `apps/api/src/rtc/shared.ts` — that module pulls in `@taskflow/db` (Drizzle,
+the Postgres driver) at module scope, which this app must never bundle (CLAUDE.md guardrail 1) — so
+`channel/[channelId].tsx` carries its own copy of the constant, with a comment naming exactly what
+it mirrors and why a stale copy is harmless (the server's own check is what actually enforces the
+cap; this only decides whether to show a button that would otherwise be guaranteed to fail).
+`channel.data.memberIds` — already fetched by this screen's own `chat.channels.get` query, already
+used elsewhere on this same screen — is the identical roster `channelMemberIds` computes
+server-side, so no new query was needed.
+
+Verified: typecheck clean, lint clean (the one pre-existing `push-notifications.ts` warning), all
+226 tests pass unchanged (no new unit-testable logic — both changes are `FlatList` prop wiring and
+a query-derived boolean, not new pure functions), guardrail self-test clean, prettier clean,
+encoding check clean, and a real `expo export --platform android` bundles cleanly. Not yet
+reconfirmed against a real device — that is the one thing only the project owner's own hardware can
+settle, and is worth doing before calling either half closed.

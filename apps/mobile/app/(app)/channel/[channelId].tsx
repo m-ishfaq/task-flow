@@ -13,6 +13,8 @@ import {
   Text,
   TextInput,
   View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
@@ -198,6 +200,18 @@ import {
  * fully behind the open keyboard); see the mobile README's own bug-fix
  * section for the full account.
  */
+
+/**
+ * Mirrors `apps/api/src/rtc/shared.ts`'s `MESH_PARTICIPANT_CAP` — not
+ * imported from there, since that module pulls in `@taskflow/db` (Drizzle,
+ * the Postgres driver) at module scope, which this app must never bundle
+ * (CLAUDE.md guardrail 1). The value only decides whether to SHOW the Call
+ * button; `session.service.ts`'s own check is what actually enforces it —
+ * a stale copy here would only make the button appear one call too early or
+ * late, never let anyone past the real cap, the same courtesy-only relationship
+ * the public-channel hide below already has to `startSession`'s own refusal.
+ */
+const MESH_PARTICIPANT_CAP = 4;
 
 /** One row in the merged list — a group of messages or a call event, ordered
  *  by `at` — mirrors `apps/web/src/features/chat/chat-page.tsx`'s identical
@@ -396,48 +410,60 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   const firstUnreadAuthorId =
     topLevel.find((message) => message.messageId === firstUnreadId)?.authorId ?? null;
 
-  /* Auto-scroll: on first load, scroll to the first unread message (if any)
-     or the bottom of the list (if all read). Re-runs when timeline changes
-     but only if the user has not manually scrolled up (preserving their
-     reading position). */
+  /**
+   * Bottom-anchored on open, and follows a new message down while the reader
+   * is still near the bottom — the mobile counterpart of `apps/web/src/
+   * features/chat/chat-page.tsx`'s own `useLayoutEffect`/`atBottom` pair,
+   * including WHY: a reader who has scrolled up into history must not be
+   * yanked back down by a message arriving while they read.
+   *
+   * This does NOT try to scroll straight to the first-UNREAD message's own
+   * position. Neither does web — `firstUnreadId`'s own comment above and web's
+   * identical one both describe the divider rendered below as a passive
+   * marker a reader finds by scrolling up, never a scroll TARGET. The
+   * previous version of this effect tried to be cleverer than web here,
+   * scrolling to `timeline.findIndex(...)` via `FlatList.scrollToIndex` —
+   * which RN can only do reliably for a row already inside the list's
+   * measured render window. Message groups are variable height (reactions,
+   * attachments, reply counts), so there is no `getItemLayout` to give it,
+   * and for any channel with real history the first unread message sits well
+   * outside that window. `scrollToIndex` failed there, and
+   * `onScrollToIndexFailed`'s fallback silently turned every failure into
+   * "scroll to the very bottom" — indistinguishable from this effect never
+   * having run at all, which is exactly the "the fix doesn't do anything"
+   * symptom this replaces.
+   *
+   * `onContentSizeChange` is `FlatList`'s equivalent of web's DOM
+   * `scrollHeight` growing — it fires whenever the rendered content's own
+   * height changes (the first page landing, a new message, a reaction row
+   * changing a bubble's height), which is web's own trigger for "maybe
+   * follow." `hasAnchoredRef` mirrors web's `firstAnchor`: the very first
+   * change scrolls unconditionally (mounting this channel), every
+   * subsequent one only scrolls if `nearBottomRef` — tracked from `onScroll`
+   * the same way web reads `scrollTop`/`scrollHeight`/`clientHeight`, with
+   * the identical 160px threshold and the identical reasoning for it
+   * (`chat-page.tsx`'s own comment: a bottom-anchored reader does not sit at
+   * exactly `scrollHeight` because of the list's own bottom padding).
+   */
   const flatListRef = useRef<FlatList<TimelineItem>>(null);
-  const hasScrolledToTarget = useRef(false);
-  const scrollToTarget = useCallback(() => {
-    if (hasScrolledToTarget.current) return;
-    const list = flatListRef.current;
-    if (list === null) return;
+  const hasAnchoredRef = useRef(false);
+  const nearBottomRef = useRef(true);
 
-    if (firstUnreadId !== null && firstUnreadAuthorId !== userId) {
-      // Scroll to the first unread message
-      const index = timeline.findIndex(
-        (item) =>
-          item.kind === 'messages' &&
-          item.group.messages.some((message) => message.messageId === firstUnreadId),
-      );
-      if (index >= 0) {
-        hasScrolledToTarget.current = true;
-        // Small delay to ensure layout is measured
-        setTimeout(() => {
-          list.scrollToIndex({ index, viewPosition: 0, animated: false });
-        }, 100);
-        return;
-      }
+  const onContentSizeChange = useCallback(() => {
+    if (!hasAnchoredRef.current) {
+      hasAnchoredRef.current = true;
+      flatListRef.current?.scrollToEnd({ animated: false });
+      return;
     }
+    if (nearBottomRef.current) {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }
+  }, []);
 
-    // No unread — scroll to the bottom (last item)
-    if (timeline.length > 0) {
-      hasScrolledToTarget.current = true;
-      setTimeout(() => {
-        list.scrollToEnd({ animated: false });
-      }, 100);
-    }
-  }, [timeline, firstUnreadId, firstUnreadAuthorId, userId]);
-
-  useEffect(() => {
-    if (messages.isSuccess && timeline.length > 0) {
-      scrollToTarget();
-    }
-  }, [messages.isSuccess, timeline.length, scrollToTarget]);
+  const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    nearBottomRef.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 160;
+  }, []);
 
   const reactions = useQuery({
     queryKey: reactionsQueryKey(channelId),
@@ -744,10 +770,16 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
           </Pressable>
           {/* Hide the call button on public channels — calls are only supported
               on DMs and private channels (server refuses with a clear error, but
-              showing the button at all is confusing UX). */}
-          {orgId !== null && channel.data?.type !== 'public' && (
-            <CallButton orgId={orgId} channelId={channelId} />
-          )}
+              showing the button at all is confusing UX) — and on a DM/private
+              channel whose roster already exceeds the mesh cap, for the same
+              reason: `startSession` refuses the whole conversation rather than
+              ringing only the first four, so a button that can only ever fail
+              is worse than no button. */}
+          {orgId !== null &&
+            channel.data?.type !== 'public' &&
+            (channel.data?.memberIds.length ?? 0) <= MESH_PARTICIPANT_CAP && (
+              <CallButton orgId={orgId} channelId={channelId} />
+            )}
         </View>
       </View>
 
@@ -755,10 +787,9 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
         ref={flatListRef}
         data={timeline}
         keyExtractor={(item) => item.key}
-        onScrollToIndexFailed={() => {
-          // Fallback: scroll to end if index-based scroll fails
-          flatListRef.current?.scrollToEnd({ animated: false });
-        }}
+        onContentSizeChange={onContentSizeChange}
+        onScroll={onScroll}
+        scrollEventThrottle={200}
         renderItem={({ item }) =>
           item.kind === 'call' ? (
             <CallTimelineCard entry={item.entry} viewerId={userId} personOf={personOf} />
