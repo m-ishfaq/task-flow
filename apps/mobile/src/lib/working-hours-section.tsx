@@ -274,7 +274,7 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard + 2,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -296,7 +296,7 @@ const styles = StyleSheet.create({
   },
   dayChip: {
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 5,

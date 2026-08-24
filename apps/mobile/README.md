@@ -5241,7 +5241,7 @@ reads smoothly the first time a board with cards actually loads on a real device
 
 ## Native CallKit / ConnectionService — the app-alive half of a real reliability gap, in three passes
 
-The mobile-vs-web audit's own Tier 3 named this "the most consequential *reliability* gap in the
+The mobile-vs-web audit's own Tier 3 named this "the most consequential _reliability_ gap in the
 whole app": a ringing call today reaches only `call-surface.tsx`'s in-app `IncomingCallBanner` — a
 component rendered inside this app's own React tree, so a backgrounded app, a locked phone, or a
 killed process all mean the same thing, a call that rings and nobody sees it. The scope is genuinely

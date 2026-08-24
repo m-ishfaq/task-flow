@@ -255,7 +255,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
   },
   enrollButtonText: {
     color: colors.ink.hex,
@@ -303,7 +303,7 @@ const styles = StyleSheet.create({
   editInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard + 2,
     paddingHorizontal: 10,
     paddingVertical: 6,

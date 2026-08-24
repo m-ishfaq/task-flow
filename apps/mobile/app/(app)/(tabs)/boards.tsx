@@ -213,7 +213,7 @@ const styles = StyleSheet.create({
   createForm: {
     gap: 8,
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     backgroundColor: colors.surfaceSunken.hex,
     padding: 12,

@@ -175,10 +175,7 @@ export async function drainCallWake(
               /* See this file's own header on why a wake push does not get
                  the rest of this codebase's "leave it, retry next tick"
                  treatment — logged and left at that. */
-              logger.warn(
-                { err: error, channelId: call.channelId },
-                'call-wake push failed',
-              );
+              logger.warn({ err: error, channelId: call.channelId }, 'call-wake push failed');
             }
           }
         }

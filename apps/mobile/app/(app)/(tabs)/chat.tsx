@@ -735,7 +735,7 @@ const styles = StyleSheet.create({
   },
   formInput: {
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -749,7 +749,7 @@ const styles = StyleSheet.create({
   },
   typeChip: {
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 6,

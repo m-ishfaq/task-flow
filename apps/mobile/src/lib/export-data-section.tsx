@@ -83,7 +83,7 @@ const styles = StyleSheet.create({
   },
   exportButton: {
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard + 2,
     paddingVertical: 10,
     alignItems: 'center',

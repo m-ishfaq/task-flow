@@ -291,7 +291,7 @@ const styles = StyleSheet.create({
   },
   enableButton: {
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard + 2,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -308,7 +308,7 @@ const styles = StyleSheet.create({
   },
   panel: {
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard + 2,
     padding: 14,
     gap: 8,
@@ -333,7 +333,7 @@ const styles = StyleSheet.create({
   },
   codeInput: {
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard + 2,
     paddingHorizontal: 12,
     paddingVertical: 10,

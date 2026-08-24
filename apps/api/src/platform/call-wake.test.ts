@@ -47,8 +47,12 @@ describe('callWakeEvent', () => {
   });
 
   it('ignores every other event name', () => {
-    expect(callWakeEvent(row('rtc_session.ended', { channelId: 'x', invitedUserIds: [ALICE] }))).toBeNull();
-    expect(callWakeEvent(row('message.sent', { channelId: 'x', invitedUserIds: [ALICE] }))).toBeNull();
+    expect(
+      callWakeEvent(row('rtc_session.ended', { channelId: 'x', invitedUserIds: [ALICE] })),
+    ).toBeNull();
+    expect(
+      callWakeEvent(row('message.sent', { channelId: 'x', invitedUserIds: [ALICE] })),
+    ).toBeNull();
   });
 
   it('rejects a payload missing channelId', () => {
@@ -61,9 +65,10 @@ describe('callWakeEvent', () => {
   });
 
   it('defaults invitedUserIds to empty when absent or malformed, rather than throwing', () => {
-    expect(
-      callWakeEvent(row('rtc_session.started', { channelId: 'x' })),
-    ).toEqual({ channelId: 'x', invitedUserIds: [] });
+    expect(callWakeEvent(row('rtc_session.started', { channelId: 'x' }))).toEqual({
+      channelId: 'x',
+      invitedUserIds: [],
+    });
 
     expect(
       callWakeEvent(row('rtc_session.started', { channelId: 'x', invitedUserIds: 'not-an-array' })),

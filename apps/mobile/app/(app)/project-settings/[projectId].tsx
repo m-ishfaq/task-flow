@@ -1006,7 +1006,7 @@ const styles = StyleSheet.create({
   },
   roleChip: {
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 5,
@@ -1033,7 +1033,7 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: colors.line.hex + "80",
+    borderColor: colors.line.hex + '80',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surface.hex,
