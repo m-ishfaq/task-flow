@@ -6,6 +6,17 @@
  * components, and this file re-exports the underlying Radix primitives they
  * wrap. `index.ts` re-exports everything from both.
  */
-export { Root as DropdownMenuRoot, Trigger as DropdownMenuTrigger } from '@radix-ui/react-dropdown-menu';
-export { Root as ModalRoot, Trigger as ModalTrigger, Close as ModalClose } from '@radix-ui/react-dialog';
-export { Root as PopoverRoot, Trigger as PopoverTrigger, Close as PopoverClose } from '@radix-ui/react-popover';
+export {
+  Root as DropdownMenuRoot,
+  Trigger as DropdownMenuTrigger,
+} from '@radix-ui/react-dropdown-menu';
+export {
+  Root as ModalRoot,
+  Trigger as ModalTrigger,
+  Close as ModalClose,
+} from '@radix-ui/react-dialog';
+export {
+  Root as PopoverRoot,
+  Trigger as PopoverTrigger,
+  Close as PopoverClose,
+} from '@radix-ui/react-popover';

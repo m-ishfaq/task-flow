@@ -2,11 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { DropdownMenuRoot, DropdownMenuTrigger } from './primitives.js';
-import {
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from './dropdown-menu.js';
+import { DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from './dropdown-menu.js';
 
 function TestMenu({ onSelect }: { readonly onSelect: () => void }) {
   return (

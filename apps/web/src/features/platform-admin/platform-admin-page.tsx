@@ -177,7 +177,10 @@ function MemberBar({ count, cap = 50 }: { readonly count: number; readonly cap?:
       <span className="tabular-nums text-ink-muted">{count}</span>
       <div className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-hover">
         <div
-          className={cn('h-full rounded-full transition-all', pct > 80 ? 'bg-danger' : pct > 50 ? 'bg-warning' : 'bg-accent')}
+          className={cn(
+            'h-full rounded-full transition-all',
+            pct > 80 ? 'bg-danger' : pct > 50 ? 'bg-warning' : 'bg-accent',
+          )}
           style={{ width: `${String(pct)}%` }}
         />
       </div>
@@ -190,11 +193,7 @@ function MemberBar({ count, cap = 50 }: { readonly count: number; readonly cap?:
  * separated from safe actions (Plan, Suspend/Reactivate) so an operator
  * does not misclick a destructive action.
  */
-function RowActionsMenu({
-  children,
-}: {
-  readonly children: React.ReactNode;
-}) {
+function RowActionsMenu({ children }: { readonly children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="relative">
@@ -850,7 +849,9 @@ function OrgsTab({
                   }}
                 >
                   <td className="px-3 py-2.5">
-                    <p className="font-medium text-ink transition-colors group-hover:text-accent">{org.name}</p>
+                    <p className="font-medium text-ink transition-colors group-hover:text-accent">
+                      {org.name}
+                    </p>
                     <p className="font-mono text-[11px] text-ink-faint">{org.slug}</p>
                   </td>
                   <td className="px-3 py-2.5">
@@ -979,15 +980,20 @@ function OrgsTab({
                     {search.trim() !== '' ? (
                       <div className="flex flex-col items-center gap-2">
                         <Search className="size-5 text-ink-faint" strokeWidth={1.5} />
-                        <p className="text-sm text-ink-faint">No organizations match your search.</p>
-                        <p className="text-xs text-ink-faint">Try a different name, slug, or owner email.</p>
+                        <p className="text-sm text-ink-faint">
+                          No organizations match your search.
+                        </p>
+                        <p className="text-xs text-ink-faint">
+                          Try a different name, slug, or owner email.
+                        </p>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center gap-2">
                         <Building2 className="size-8 text-ink-faint" strokeWidth={1.5} />
                         <p className="text-sm font-medium text-ink">No organizations yet</p>
                         <p className="max-w-xs text-xs text-ink-faint">
-                          Organizations are created when users sign up. Once the first user joins, their org will appear here.
+                          Organizations are created when users sign up. Once the first user joins,
+                          their org will appear here.
                         </p>
                       </div>
                     )}
@@ -1241,7 +1247,9 @@ function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
                   }}
                 >
                   <td className="px-3 py-2.5">
-                    <p className="max-w-full truncate font-medium text-ink transition-colors group-hover:text-accent">{user.name ?? user.email}</p>
+                    <p className="max-w-full truncate font-medium text-ink transition-colors group-hover:text-accent">
+                      {user.name ?? user.email}
+                    </p>
                     {user.name !== null && <p className="truncate text-ink-muted">{user.email}</p>}
                     <p className="font-mono text-[11px] text-ink-faint">
                       {user.userId.slice(0, 8)}
@@ -3550,7 +3558,8 @@ function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
             <Shield className="size-8 text-ink-faint" strokeWidth={1.5} />
             <p className="text-sm font-medium text-ink">Nothing recorded yet</p>
             <p className="max-w-xs text-center text-xs text-ink-faint">
-              Operator actions will appear here once they are taken. Every call — including reads — is recorded in the hash chain.
+              Operator actions will appear here once they are taken. Every call — including reads —
+              is recorded in the hash chain.
             </p>
           </div>
         ) : (
@@ -3578,7 +3587,10 @@ function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
                 </thead>
                 <tbody className="divide-y divide-line/50">
                   {(filteredEntries ?? []).map((entry) => (
-                    <tr key={entry.seq} className="border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50">
+                    <tr
+                      key={entry.seq}
+                      className="border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50"
+                    >
                       <td className="px-3 py-2.5 font-mono text-xs text-ink-faint">{entry.seq}</td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
                         {formatDateTime(entry.occurredAt)}
@@ -3604,7 +3616,9 @@ function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
                         <div className="flex flex-col items-center gap-2">
                           <Search className="size-5 text-ink-faint" strokeWidth={1.5} />
                           <p className="text-sm text-ink-faint">No entries match your search.</p>
-                          <p className="text-xs text-ink-faint">Try a different action, operator email, or target.</p>
+                          <p className="text-xs text-ink-faint">
+                            Try a different action, operator email, or target.
+                          </p>
                         </div>
                       </td>
                     </tr>
@@ -3715,7 +3729,8 @@ function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
             <Zap className="size-8 text-ink-faint" strokeWidth={1.5} />
             <p className="text-sm font-medium text-ink">Nothing recorded yet</p>
             <p className="max-w-xs text-center text-xs text-ink-faint">
-              Operational events will appear here as system actions occur — mail delivery, billing webhooks, and sweep heartbeats.
+              Operational events will appear here as system actions occur — mail delivery, billing
+              webhooks, and sweep heartbeats.
             </p>
           </div>
         ) : (
@@ -3743,7 +3758,10 @@ function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
                 </thead>
                 <tbody className="divide-y divide-line/50">
                   {(filteredEvents ?? []).map((event) => (
-                    <tr key={event.id} className="border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50">
+                    <tr
+                      key={event.id}
+                      className="border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50"
+                    >
                       <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
                         {formatDateTime(event.occurredAt)}
                       </td>
@@ -3771,7 +3789,9 @@ function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
                         <div className="flex flex-col items-center gap-2">
                           <Search className="size-5 text-ink-faint" strokeWidth={1.5} />
                           <p className="text-sm text-ink-faint">No events match your search.</p>
-                          <p className="text-xs text-ink-faint">Try a different kind, outcome, or target.</p>
+                          <p className="text-xs text-ink-faint">
+                            Try a different kind, outcome, or target.
+                          </p>
                         </div>
                       </td>
                     </tr>
@@ -4120,7 +4140,9 @@ function BillingTab({
                   }}
                 >
                   <td className="px-3 py-2.5">
-                    <p className="font-medium text-ink transition-colors group-hover:text-accent">{org.name}</p>
+                    <p className="font-medium text-ink transition-colors group-hover:text-accent">
+                      {org.name}
+                    </p>
                     <p className="font-mono text-[11px] text-ink-faint">{org.slug}</p>
                   </td>
                   <td className="px-3 py-2.5">
@@ -4203,15 +4225,20 @@ function BillingTab({
                     {search.trim() !== '' ? (
                       <div className="flex flex-col items-center gap-2">
                         <Search className="size-5 text-ink-faint" strokeWidth={1.5} />
-                        <p className="text-sm text-ink-faint">No organizations match your search.</p>
-                        <p className="text-xs text-ink-faint">Try a different name, slug, plan, or Stripe ID.</p>
+                        <p className="text-sm text-ink-faint">
+                          No organizations match your search.
+                        </p>
+                        <p className="text-xs text-ink-faint">
+                          Try a different name, slug, plan, or Stripe ID.
+                        </p>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center gap-2">
                         <CreditCard className="size-8 text-ink-faint" strokeWidth={1.5} />
                         <p className="text-sm font-medium text-ink">No billing entries yet</p>
                         <p className="max-w-xs text-xs text-ink-faint">
-                          Billing data appears here once an organization subscribes to a plan through Stripe.
+                          Billing data appears here once an organization subscribes to a plan
+                          through Stripe.
                         </p>
                       </div>
                     )}

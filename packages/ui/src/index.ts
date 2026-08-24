@@ -1,15 +1,7 @@
-export {
-  ModalContent,
-  ModalTitle,
-  ModalDescription,
-} from './modal.js';
+export { ModalContent, ModalTitle, ModalDescription } from './modal.js';
 export type { ModalSize, ModalContentProps } from './modal.js';
 
-export {
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from './dropdown-menu.js';
+export { DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from './dropdown-menu.js';
 export type { DropdownMenuContentProps, DropdownMenuItemProps } from './dropdown-menu.js';
 
 export { PopoverContent } from './popover.js';
