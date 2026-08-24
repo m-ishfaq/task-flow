@@ -12,20 +12,35 @@ import { PRIORITY_COLOR, PRIORITY_LABEL, formatDueDate, type CardSummary } from 
  * the identical `CardSummaryOutput` schema server-side — one type, two
  * callers, same as the type itself already documents.
  *
- * `onMove`, when given, renders a small trailing "Move" button — the board
- * view's one card-level action; "My Tasks" passes nothing and gets none.
+ * `onMove`, when given, renders a small trailing "Move" button — one of the
+ * board view's card-level actions; "My Tasks" passes nothing and gets none.
  * Not a drag gesture: `home.tsx`'s own header already argues why "no
  * drag-and-drop" is the right call for a reshaping-cards-that-live-elsewhere
  * screen, and a kanban board is the SAME argument at list granularity — a
  * full drag implementation is real, separate work (rebalancing, WIP-limit
  * feedback mid-drag), not something to half-build alongside a read screen.
+ *
+ * `selected`, when given (even `false`), renders a leading checkbox instead
+ * of leaving the row's own default navigation `onPress` in place — the
+ * caller is expected to supply `onPress` (toggle selection) and usually
+ * `onLongPress` (enter selection mode) alongside it. Omitting `selected`
+ * entirely (as `home.tsx` and the board's own non-selection render both do)
+ * keeps this row exactly as it always was: tap navigates, no checkbox. The
+ * bulk-actions bar this feeds is `board/[boardId].tsx`'s own, ported from
+ * `apps/web/src/features/work/bulk-bar.tsx`.
  */
 export function CardRow({
   card,
   onMove,
+  selected,
+  onPress,
+  onLongPress,
 }: {
   readonly card: CardSummary;
-  readonly onMove?: () => void;
+  readonly onMove?: (() => void) | undefined;
+  readonly selected?: boolean | undefined;
+  readonly onPress?: (() => void) | undefined;
+  readonly onLongPress?: (() => void) | undefined;
 }): ReactNode {
   const due = formatDueDate(card.dueDate);
   const checklistDone = card.checklistTotal > 0 && card.checklistDone === card.checklistTotal;
@@ -34,14 +49,23 @@ export function CardRow({
 
   return (
     <Pressable
-      style={({ pressed }) => [
-        styles.card,
-        pressed && styles.cardPressed,
-      ]}
-      onPress={() => {
-        router.push(`/card/${card.cardId}`);
-      }}
+      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+      onPress={
+        onPress ??
+        (() => {
+          router.push(`/card/${card.cardId}`);
+        })
+      }
+      onLongPress={onLongPress}
     >
+      {selected !== undefined && (
+        <View style={styles.checkboxColumn}>
+          <View style={[styles.checkbox, selected && styles.checkboxChecked]}>
+            {selected && <Text style={styles.checkboxMark}>✓</Text>}
+          </View>
+        </View>
+      )}
+
       {/* Priority bar — a thin colored strip on the left edge, matching
           the web redesign's card-tile priority indicator. */}
       {card.priority !== null && (
@@ -120,6 +144,28 @@ const styles = StyleSheet.create({
   },
   priorityBar: {
     width: 3,
+  },
+  checkboxColumn: {
+    justifyContent: 'center',
+    paddingLeft: 12,
+  },
+  checkbox: {
+    height: 20,
+    width: 20,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: colors.line.hex,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: colors.accent.hex,
+    borderColor: colors.accent.hex,
+  },
+  checkboxMark: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.accentInk.hex,
   },
   cardContent: {
     flex: 1,

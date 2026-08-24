@@ -4936,3 +4936,72 @@ fixed proactively instead: `KeyboardAvoidingView` (`'padding'` on iOS, `'height'
 around the modal's backdrop, `board/[boardId].tsx`'s own established shape for a `Modal`-hosted
 sheet with a `TextInput` in it. **Not device-verified**: the fix follows an established, working
 pattern exactly, but has not itself been checked against a real keyboard on a real device.
+
+## Work: bulk actions on the board — long-press to select, ported from `bulk-bar.tsx`
+
+`src/lib/work-bulk.ts` (pure — `runBulk`, `describeOutcome`, ported verbatim from
+`apps/web/src/features/work/bulk.ts`) and `board/[boardId].tsx`'s own new selection state, gap #1
+off a fresh mobile-vs-web audit that named Work as the module furthest behind (bulk actions,
+filters/saved views, table view, board sharing, archived-cards restore — all real, all currently
+absent). Bulk actions was the one worth building first: the highest daily-use friction point,
+self-contained, and needing no native module.
+
+**There is no bulk endpoint, on mobile any more than on web, and for the same reason.**
+`ai/phase-3.5-work-ux.md` §6: "server side these are loops over existing routes — resist inventing
+a bulk endpoint that bypasses per-card authorization." `runBulk` calls the exact same
+`work.cards.setStatus`/`assign`/`update`/`archive` routes the single-card UI already calls,
+concurrency-4, and reports BOTH halves of the outcome rather than throwing — selecting cards
+across two boards and archiving them SHOULD archive the ones the caller may edit and refuse the
+rest, and `Promise.all` would discard the successes it already had the moment the first refusal
+landed. `describeOutcome` is the wording that keeps that honest ("8 cards archived. 2 could not be
+changed." — never "8 cards archived" alone, which reads like a clean run of ten).
+
+**No optimistic patch, matching web's bar exactly.** Every single-card mutation in this app
+(`use-update-card.ts`) patches its cache optimistically; the bulk bar invalidates and refetches
+instead. Optimism is a bet the write succeeds, and it is a good bet for the one card someone just
+edited — across a selection the bet is wrong BY CONSTRUCTION, since per-card authorization means a
+partial outcome is the designed behavior, not a rare failure. An optimistic patch would show every
+selected card changing and then roll some back, which reads as the board glitching rather than as
+a permission boundary holding.
+
+**Entering selection mode is a long-press on any card; once inside it, a plain tap toggles.**
+`card-row.tsx` gained three additive props — `selected`, `onPress`, `onLongPress` — all optional
+and all `undefined` in every existing caller (`home.tsx` passes none of them, so "My Tasks" is
+pixel-identical to before). `selected` being _present at all_ (even `false`) is what switches the
+row from "tap navigates" to "tap toggles, checkbox shows" — the caller decides which mode a row is
+in by whether it supplies the prop, not by a second boolean. Selection lives in `selectedIds`, a
+plain `Set`, not in anything keyed by the active list tab — switching tabs mid-selection keeps what
+was already picked, the same as web's bar being rendered once for the whole board rather than once
+per column.
+
+**Status, Priority, and Assign each open the same small bottom-sheet picker `board/[boardId].tsx`
+already had for "Move"** — no new modal pattern, just a third caller of one. Priority is the one
+action that needs a read-then-patch (`bulkSetPriority`, mirroring `use-update-card.ts`'s
+`applyPatch` and web's own inline version in `bulk-bar.tsx`): `cards.update` is a full replace
+whose Zod schema defaults every field it is not given to `null`, so writing only `priority` would
+silently erase every selected card's description and both dates. `setStatus` and `assign` have
+dedicated routes and need no such read.
+
+**Archive is immediate, matching web's own ghost button — no confirmation dialog.** That is a
+real, honest trade: this app still has no archived-cards RESTORE view (a separate, still-open gap
+from the same audit), so a card archived here in bulk is reachable again only from `apps/web`'s
+`archived-cards-dialog.tsx` until that view ships on mobile too. Worth naming plainly rather than
+adding a confirmation dialog web itself does not have, which would just be a workaround for a
+different, still-missing feature.
+
+**The result message uses `Alert.alert`, this app's established no-toast substitute** (the same
+one `person/[userId].tsx`'s "Profile updated" and every other one-shot result in this app already
+uses) — `use-update-card.ts`'s own header is explicit that this app has no toast system and would
+not share web's even if it did.
+
+Verified: typecheck clean, lint clean (`cardId as CardId` casts came out unnecessary at every new
+call site — tRPC's own inferred input types accept a plain `string` directly; only the pre-existing
+`moving.cardId as CardId` cast, going through a locally-typed mutation wrapper, still needs one),
+9 new tests in `work-bulk.test.ts` ported line-for-line from `bulk.test.ts` (concurrency bound,
+partial-failure reporting, empty-selection handling, outcome wording including the singular/plural
+and partial-failure cases) alongside the existing 376 — 385 total — guardrail self-test clean,
+encoding check clean, and real `expo export` for both platforms bundle cleanly. No new native
+dependency. **Not device-verified**: long-press-to-select is a real gesture with real platform
+timing (`Pressable`'s default `delayLongPress`), and has not been checked against how it feels on
+a real device — in particular whether it reads as responsive or as an accidental double-trigger
+against a quick tap meant to open the card.

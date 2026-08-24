@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useLocalSearchParams, router } from 'expo-router';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -22,14 +23,21 @@ import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { useBoardRoom } from '../../../src/lib/use-board-room.js';
+import { useMembers } from '../../../src/lib/use-members.js';
 import { CardRow } from '../../../src/lib/card-row.js';
+import { mergePatch } from '../../../src/lib/card-patch.js';
+import { describeOutcome, runBulk } from '../../../src/lib/work-bulk.js';
 import {
   MY_TASKS_QUERY_KEY,
+  PRIORITY_LABEL,
   boardCardsQueryKey,
   cardQueryKey,
+  statusesQueryKey,
   listsQueryKey,
+  type CardDetail,
   type CardSummary,
   type ListSummary,
+  type Priority,
 } from '../../../src/lib/work.js';
 
 /**
@@ -107,6 +115,35 @@ import {
  * `telephony-contact-picker.tsx`'s own header, found from the same live
  * report). Fixed identically: `KeyboardAvoidingView` (`'padding'` on iOS,
  * `'height'` on Android) around each modal's backdrop.
+ *
+ * **Bulk actions — long-press a card to enter selection mode, ported from
+ * `apps/web/src/features/work/bulk-bar.tsx`.** `work-bulk.ts`'s `runBulk` is
+ * the identical concurrency-4 loop over the SAME per-card routes the
+ * single-card UI calls — there is no bulk endpoint, deliberately
+ * (`ai/phase-3.5-work-ux.md` §6: a `cards.bulkUpdate` would authorize once,
+ * against something, and the something would not be each card). That makes
+ * partial failure the normal case: selecting cards across two lists and
+ * archiving them SHOULD archive the ones the caller may edit and refuse the
+ * rest, so nothing here reports "done" — it reports what `describeOutcome`
+ * says happened, via `Alert.alert` (this app's own established substitute
+ * for web's toast, `use-update-card.ts`'s own header). No optimistic patch,
+ * for the identical reason web's bar has none: an optimistic patch is a bet
+ * the write succeeds, and per-card authorization means that bet is wrong by
+ * construction across a selection. `card-row.tsx`'s `selected`/`onPress`/
+ * `onLongPress` props are additive — `home.tsx` never passes them, so
+ * nothing there changes. Selection is board-wide, not list-scoped: it lives
+ * in `selectedIds`, not in anything keyed by `activeListId`, so switching
+ * tabs mid-selection keeps what was already picked, matching web's bar
+ * being rendered once for the whole board rather than once per column.
+ * Status/Priority/Assign each open the same small bottom-sheet picker this
+ * file already uses for "Move"; priority alone needs a read-then-patch
+ * (`bulkSetPriority`, mirroring `use-update-card.ts`'s `applyPatch`) because
+ * `cards.update` is a full replace and `setStatus`/`assign` are not. Archive
+ * is immediate, matching web's own ghost button with no confirmation — and,
+ * same as web, this app still has no archived-cards RESTORE view, so an
+ * archived card stays reachable only from `apps/web`'s own
+ * `archived-cards-dialog.tsx` until that ships here too. A named gap, not a
+ * silent one.
  */
 export default function BoardScreen() {
   const params = useLocalSearchParams<{ boardId: string }>();
@@ -137,6 +174,10 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
   const [listOptionsFor, setListOptionsFor] = useState<ListSummary | null>(null);
   const [optionsName, setOptionsName] = useState('');
   const [optionsWip, setOptionsWip] = useState('');
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const [bulkPicker, setBulkPicker] = useState<'status' | 'priority' | 'assignee' | null>(null);
+  const [bulkRunning, setBulkRunning] = useState(false);
+  const { people, personOf } = useMembers();
   const [optionsError, setOptionsError] = useState<unknown>(null);
 
   const lists = useQuery({
@@ -201,6 +242,74 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
       queryClient.invalidateQueries({ queryKey: boardCardsQueryKey(boardId) }),
       queryClient.invalidateQueries({ queryKey: listsQueryKey(boardId) }),
     ]);
+
+  const toggleSelect = (cardId: string): void => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(cardId)) {
+        next.delete(cardId);
+      } else {
+        next.add(cardId);
+      }
+      return next;
+    });
+  };
+
+  // Selection is board-wide, not list-scoped — switching tabs mid-selection
+  // keeps what was already picked, the same as web's bar being rendered once
+  // for the whole board rather than once per column.
+  const selectionMode = selectedIds.size > 0;
+
+  // Any card on the board answers this the same way (`project_id` is
+  // denormalized onto every card — CLAUDE.md's own note on why). Only ever
+  // consulted once a selection exists, so an empty board never needs it.
+  const bulkProjectId = cards.data?.[0]?.projectId ?? null;
+  const bulkStatuses = useQuery({
+    queryKey: statusesQueryKey(bulkProjectId ?? ''),
+    queryFn: async () =>
+      wire(await apiClient.work.statuses.list.query({ projectId: bulkProjectId ?? '' })),
+    enabled: bulkPicker === 'status' && bulkProjectId !== null,
+  });
+
+  /**
+   * One loop over the same per-card routes the single-card UI calls — see
+   * `work-bulk.ts` for why there is no bulk endpoint. No optimistic patch,
+   * unlike every single-card mutation in this app: per-card authorization
+   * means a partial outcome is the DESIGNED behaviour, and an optimistic
+   * patch would show every selected card changing and then roll some back,
+   * which reads as the board glitching rather than as a permission
+   * boundary. Ported from `apps/web/src/features/work/bulk-bar.tsx`'s `run`.
+   */
+  const runBulkAction = async (
+    verb: string,
+    apply: (cardId: string) => Promise<unknown>,
+  ): Promise<void> => {
+    const ids = [...selectedIds];
+    setBulkPicker(null);
+    setBulkRunning(true);
+    try {
+      const outcome = await runBulk(ids, apply);
+      await refreshBoard();
+      Alert.alert(describeOutcome(outcome, verb));
+      // Only clear on a clean run — leaving a partial selection in place is
+      // what lets someone see which cards were refused and act on them.
+      if (outcome.failed.length === 0) setSelectedIds(new Set());
+    } finally {
+      setBulkRunning(false);
+    }
+  };
+
+  const bulkSetPriority = async (cardId: string, priority: Priority | null): Promise<unknown> => {
+    // `cards.update` is a full replace — read-then-patch, exactly as
+    // `use-update-card.ts`'s `applyPatch` does, since `setStatus`/`assign`
+    // have dedicated routes but priority does not.
+    const current: CardDetail = wire(await apiClient.work.cards.get.query({ cardId }));
+    return apiClient.work.cards.update.mutate({
+      cardId,
+      version: current.version,
+      ...mergePatch(current, { priority }),
+    });
+  };
 
   // Field clears on SUBMIT, not on success, and only refills on failure if
   // the box is still empty — see this file's own header on why, and why
@@ -339,9 +448,24 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
           renderItem={({ item }) => (
             <CardRow
               card={item}
-              onMove={() => {
-                setMoveError(null);
-                setMoving(item);
+              onMove={
+                selectionMode
+                  ? undefined
+                  : () => {
+                      setMoveError(null);
+                      setMoving(item);
+                    }
+              }
+              selected={selectionMode ? selectedIds.has(item.cardId) : undefined}
+              onPress={
+                selectionMode
+                  ? () => {
+                      toggleSelect(item.cardId);
+                    }
+                  : undefined
+              }
+              onLongPress={() => {
+                toggleSelect(item.cardId);
               }}
             />
           )}
@@ -351,38 +475,98 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
         />
       )}
 
-      {activeListId !== null && (
-        <View style={styles.addCardRow}>
-          <TextInput
-            style={styles.addCardInput}
-            placeholder="Add a card"
-            placeholderTextColor={colors.inkFaint.hex}
-            value={newCardTitle}
-            onChangeText={setNewCardTitle}
-            onSubmitEditing={() => {
-              const value = newCardTitle.trim();
-              if (value === '') return;
-              setNewCardTitle('');
-              createCard.mutate({ listId: activeListId, title: value });
-            }}
-          />
-          <Pressable
-            style={styles.addCardButton}
-            onPress={() => {
-              const value = newCardTitle.trim();
-              if (value === '') return;
-              setNewCardTitle('');
-              createCard.mutate({ listId: activeListId, title: value });
-            }}
-          >
-            <Text style={styles.addCardButtonText}>Add</Text>
-          </Pressable>
+      {selectionMode ? (
+        <View style={styles.bulkBar} accessibilityRole="menubar" accessibilityLabel="Bulk actions">
+          <Text style={styles.bulkBarCount}>{selectedIds.size} selected</Text>
+          <View style={styles.bulkBarActions}>
+            <Pressable
+              style={styles.bulkBarButton}
+              disabled={bulkRunning}
+              onPress={() => {
+                setBulkPicker('status');
+              }}
+            >
+              <Text style={styles.bulkBarButtonText}>Status</Text>
+            </Pressable>
+            <Pressable
+              style={styles.bulkBarButton}
+              disabled={bulkRunning}
+              onPress={() => {
+                setBulkPicker('priority');
+              }}
+            >
+              <Text style={styles.bulkBarButtonText}>Priority</Text>
+            </Pressable>
+            <Pressable
+              style={styles.bulkBarButton}
+              disabled={bulkRunning}
+              onPress={() => {
+                setBulkPicker('assignee');
+              }}
+            >
+              <Text style={styles.bulkBarButtonText}>Assign</Text>
+            </Pressable>
+            <Pressable
+              style={styles.bulkBarButton}
+              disabled={bulkRunning}
+              onPress={() => {
+                void runBulkAction('archived', (cardId) =>
+                  apiClient.work.cards.archive.mutate({ cardId, archived: true }),
+                );
+              }}
+            >
+              <Text style={styles.bulkBarButtonText}>Archive</Text>
+            </Pressable>
+            <Pressable
+              style={styles.bulkBarButton}
+              disabled={bulkRunning}
+              onPress={() => {
+                setSelectedIds(new Set());
+              }}
+            >
+              <Text style={styles.bulkBarButtonText}>Clear</Text>
+            </Pressable>
+          </View>
+          {bulkRunning && (
+            <ActivityIndicator color={colors.accent.hex} style={styles.bulkBarSpinner} />
+          )}
         </View>
-      )}
-      {createCard.isError && (
-        <Text style={styles.error} accessibilityRole="alert">
-          {apiErrorOf(createCard.error)?.error.message ?? 'The card was not created.'}
-        </Text>
+      ) : (
+        <>
+          {activeListId !== null && (
+            <View style={styles.addCardRow}>
+              <TextInput
+                style={styles.addCardInput}
+                placeholder="Add a card"
+                placeholderTextColor={colors.inkFaint.hex}
+                value={newCardTitle}
+                onChangeText={setNewCardTitle}
+                onSubmitEditing={() => {
+                  const value = newCardTitle.trim();
+                  if (value === '') return;
+                  setNewCardTitle('');
+                  createCard.mutate({ listId: activeListId, title: value });
+                }}
+              />
+              <Pressable
+                style={styles.addCardButton}
+                onPress={() => {
+                  const value = newCardTitle.trim();
+                  if (value === '') return;
+                  setNewCardTitle('');
+                  createCard.mutate({ listId: activeListId, title: value });
+                }}
+              >
+                <Text style={styles.addCardButtonText}>Add</Text>
+              </Pressable>
+            </View>
+          )}
+          {createCard.isError && (
+            <Text style={styles.error} accessibilityRole="alert">
+              {apiErrorOf(createCard.error)?.error.message ?? 'The card was not created.'}
+            </Text>
+          )}
+        </>
       )}
 
       <Modal
@@ -428,6 +612,133 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
               style={styles.modalCancel}
               onPress={() => {
                 setMoving(null);
+              }}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={bulkPicker !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setBulkPicker(null);
+        }}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => {
+            setBulkPicker(null);
+          }}
+        >
+          <Pressable style={styles.modalCard} onPress={() => undefined}>
+            <Text style={styles.modalTitle}>
+              {bulkPicker === 'status'
+                ? 'Set status'
+                : bulkPicker === 'priority'
+                  ? 'Set priority'
+                  : 'Assign to'}
+            </Text>
+            <ScrollView style={styles.bulkPickerList}>
+              {bulkPicker === 'status' && (
+                <>
+                  <Pressable
+                    style={styles.modalRow}
+                    onPress={() => {
+                      void runBulkAction('updated', (cardId) =>
+                        apiClient.work.cards.setStatus.mutate({
+                          cardId,
+                          statusId: null,
+                        }),
+                      );
+                    }}
+                  >
+                    <Text style={styles.modalRowText}>No status</Text>
+                  </Pressable>
+                  {(bulkStatuses.data ?? []).map((status) => (
+                    <Pressable
+                      key={status.statusId}
+                      style={styles.modalRow}
+                      onPress={() => {
+                        void runBulkAction('updated', (cardId) =>
+                          apiClient.work.cards.setStatus.mutate({
+                            cardId,
+                            statusId: status.statusId,
+                          }),
+                        );
+                      }}
+                    >
+                      <Text style={styles.modalRowText}>{status.name}</Text>
+                    </Pressable>
+                  ))}
+                </>
+              )}
+              {bulkPicker === 'priority' && (
+                <>
+                  <Pressable
+                    style={styles.modalRow}
+                    onPress={() => {
+                      void runBulkAction('updated', (cardId) => bulkSetPriority(cardId, null));
+                    }}
+                  >
+                    <Text style={styles.modalRowText}>No priority</Text>
+                  </Pressable>
+                  {(Object.keys(PRIORITY_LABEL) as Priority[]).map((priority) => (
+                    <Pressable
+                      key={priority}
+                      style={styles.modalRow}
+                      onPress={() => {
+                        void runBulkAction('updated', (cardId) =>
+                          bulkSetPriority(cardId, priority),
+                        );
+                      }}
+                    >
+                      <Text style={styles.modalRowText}>{PRIORITY_LABEL[priority]}</Text>
+                    </Pressable>
+                  ))}
+                </>
+              )}
+              {bulkPicker === 'assignee' && (
+                <>
+                  <Pressable
+                    style={styles.modalRow}
+                    onPress={() => {
+                      void runBulkAction('updated', (cardId) =>
+                        apiClient.work.cards.assign.mutate({
+                          cardId,
+                          assigneeIds: [],
+                        }),
+                      );
+                    }}
+                  >
+                    <Text style={styles.modalRowText}>Unassign</Text>
+                  </Pressable>
+                  {people.map((member) => (
+                    <Pressable
+                      key={member.userId}
+                      style={styles.modalRow}
+                      onPress={() => {
+                        void runBulkAction('updated', (cardId) =>
+                          apiClient.work.cards.assign.mutate({
+                            cardId,
+                            assigneeIds: [member.userId],
+                          }),
+                        );
+                      }}
+                    >
+                      <Text style={styles.modalRowText}>{personOf(member.userId).label}</Text>
+                    </Pressable>
+                  ))}
+                </>
+              )}
+            </ScrollView>
+            <Pressable
+              style={styles.modalCancel}
+              onPress={() => {
+                setBulkPicker(null);
               }}
             >
               <Text style={styles.modalCancelText}>Cancel</Text>
@@ -741,6 +1052,49 @@ const styles = StyleSheet.create({
     color: colors.danger.hex,
     paddingHorizontal: 24,
     paddingBottom: 8,
+  },
+  bulkBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 10,
+    borderRadius: radiusCard,
+    borderWidth: 1,
+    borderColor: colors.accent.hex + '40',
+    backgroundColor: colors.surfaceRaised.hex,
+  },
+  bulkBarCount: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.ink.hex,
+  },
+  bulkBarActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    flex: 1,
+  },
+  bulkBarButton: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: colors.line.hex + '80',
+    backgroundColor: colors.surfaceSunken.hex,
+  },
+  bulkBarButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.ink.hex,
+  },
+  bulkBarSpinner: {
+    marginLeft: 'auto',
+  },
+  bulkPickerList: {
+    maxHeight: 320,
   },
   avoider: {
     flex: 1,
