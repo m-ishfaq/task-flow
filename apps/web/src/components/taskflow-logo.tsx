@@ -1,43 +1,31 @@
-import { useBranding } from '../lib/branding-context.js';
-import { cn } from '../lib/cn.js';
-
 /**
- * The product's mark — three connected nodes representing tasks flowing
- * through a pipeline. Uses `currentColor` so it inherits the accent palette
- * via CSS. When an operator uploads a custom logo, that image replaces this
- * mark wherever it appears.
+ * The TaskFlow abstract flow-mark — three connected nodes representing
+ * tasks flowing through a pipeline.
+ *
+ * Uses `currentColor` so it inherits whatever text color the parent sets,
+ * meaning it automatically picks up the accent palette without any prop.
+ * Renders at any size via the `size` prop (default 32px).
+ *
+ * The design: three circles of increasing size connected by a flowing
+ * bezier curve. The path suggests forward motion — tasks entering at
+ * the small node, flowing through the pipeline, and arriving at the
+ * large node as completed work.
  */
-export function BrandMark({
-  size = 40,
-  className,
-}: {
+export function TaskFlowLogo({ size = 32, className }: {
   readonly size?: number;
   readonly className?: string;
 }) {
-  const { logoUrl, productName } = useBranding();
-
-  if (logoUrl !== null) {
-    return (
-      <img
-        src={logoUrl}
-        alt=""
-        className={cn('rounded-lg object-contain', className)}
-        style={{ width: size, height: size }}
-      />
-    );
-  }
-
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 32 32"
       fill="none"
-      role="img"
-      aria-label={productName}
+      xmlns="http://www.w3.org/2000/svg"
       className={className}
+      aria-hidden="true"
     >
-      {/* Flowing paths connecting the three nodes */}
+      {/* Flowing path connecting the three nodes — a smooth S-curve */}
       <path
         d="M8 12C8 12 12 8 16 12C20 16 24 12 24 12"
         stroke="currentColor"
@@ -52,13 +40,18 @@ export function BrandMark({
         strokeLinecap="round"
         opacity="0.3"
       />
+
       {/* Node 1 — entry point (small) */}
       <circle cx="8" cy="16" r="3.5" fill="currentColor" opacity="0.9" />
+
       {/* Node 2 — in-progress (medium) */}
       <circle cx="16" cy="16" r="4.5" fill="currentColor" />
-      {/* Node 3 — completion (large, with subtle highlight) */}
+
+      {/* Node 3 — completion (large, with a subtle highlight) */}
       <circle cx="24" cy="16" r="5.5" fill="currentColor" opacity="0.85" />
       <circle cx="24" cy="16" r="5.5" fill="white" opacity="0.15" />
     </svg>
   );
 }
+
+

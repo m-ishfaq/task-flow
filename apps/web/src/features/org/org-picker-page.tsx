@@ -7,6 +7,7 @@ import { api } from '../../lib/trpc.js';
 import { useSession } from '../../lib/session.js';
 import { keys, resetCache } from '../../lib/query.js';
 import { Badge, Button, Field, Input, SkeletonRows } from '../../components/primitives.js';
+import { BrandMark } from '../../components/brand-mark.js';
 import { ErrorView } from '../../components/error-view.js';
 import { orgsQuery } from './api.js';
 
@@ -81,15 +82,18 @@ export function OrgPickerPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-lg flex-col gap-6 p-8">
-      <div>
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
-          {isEmpty ? 'Create your first organization' : 'Choose an organization'}
-        </h1>
-        <p className="mt-0.5 text-xs text-ink-muted">
-          {isEmpty
-            ? 'An organization owns its own projects, members and audit trail. You become its owner.'
-            : 'Everything you see afterwards belongs to the one you pick.'}
-        </p>
+      <div className="flex items-center gap-3">
+        <BrandMark size={36} className="text-accent" />
+        <div>
+          <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
+            {isEmpty ? 'Create your first organization' : 'Choose an organization'}
+          </h1>
+          <p className="mt-0.5 text-xs text-ink-muted">
+            {isEmpty
+              ? 'An organization owns its own projects, members and audit trail. You become its owner.'
+              : 'Everything you see afterwards belongs to the one you pick.'}
+          </p>
+        </div>
       </div>
 
       {isOperator.data === true && (

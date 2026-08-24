@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import type { OrgId, PageId } from '@taskflow/contracts';
 import { formatDateTime } from '../../lib/format.js';
+import { BrandMark } from '../../components/brand-mark.js';
 import { Skeleton } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { useBranding } from '../../lib/branding-context.js';
@@ -30,7 +31,7 @@ export function PublicPageView({
   readonly pageId: PageId;
 }) {
   const page = useQuery(publicPageQuery(orgId, pageId));
-  const { productName, logoUrl } = useBranding();
+  const { productName } = useBranding();
 
   if (page.isPending) {
     return (
@@ -62,9 +63,7 @@ export function PublicPageView({
           `BrandingProvider` in app.tsx, which wraps the router — including
           this bare route — so nothing extra needs fetching here. */}
       <div className="flex items-center gap-2 border-t border-line pt-4 text-xs text-ink-faint">
-        {logoUrl !== null && (
-          <img src={logoUrl} alt="" className="size-4 shrink-0 rounded object-contain" />
-        )}
+        <BrandMark size={16} className="text-ink-faint" />
         <span>Published with {productName}</span>
       </div>
     </div>

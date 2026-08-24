@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../../lib/trpc.js';
 import { Button, Field, Input } from '../../components/primitives.js';
+import { BrandMark } from '../../components/brand-mark.js';
 import { ErrorView } from '../../components/error-view.js';
 
 /**
@@ -37,6 +38,7 @@ export function ForgotPasswordPage() {
   if (request.isSuccess) {
     return (
       <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-4 p-6">
+        <BrandMark size={36} className="text-accent" />
         <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
           Check your email
         </h1>
@@ -53,6 +55,7 @@ export function ForgotPasswordPage() {
 
   return (
     <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-6 p-6">
+      <BrandMark size={36} className="text-accent" />
       <div>
         <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
           Reset your password

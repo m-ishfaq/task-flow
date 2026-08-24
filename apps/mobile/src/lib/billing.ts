@@ -32,7 +32,12 @@ export const BILLING_INVOICES_QUERY_KEY = ['billing.invoices'] as const;
 
 /** Cents to a display string. Integer arithmetic only — money is never a float here. Ported verbatim from `billing-section.tsx`'s own `money`. */
 export function formatMoney(cents: number, currency = 'usd'): string {
-  return new Intl.NumberFormat(undefined, {
+  /* Pass 'en-US' explicitly rather than relying on the runtime's default
+     locale. `undefined` produces locale-dependent output — 'US$19.99' in
+     some locales — which breaks snapshot tests and gives operators an
+     unexpected prefix. The app's billing is USD-denominated, so en-US
+     formatting (no country prefix) is the correct display. */
+  return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: currency.toUpperCase(),
   }).format(cents / 100);

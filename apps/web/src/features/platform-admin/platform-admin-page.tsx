@@ -2,6 +2,20 @@ import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import { PALETTE_IDS, type OrgId, type PaletteId } from '@taskflow/contracts';
+import {
+  Building2,
+  CreditCard,
+  Flag,
+  LayoutGrid,
+  Palette,
+  Search,
+  Shield,
+  ShieldAlert,
+  Users,
+  Zap,
+  type LucideProps,
+} from 'lucide-react';
+import { TaskFlowLogo } from '../../components/taskflow-logo.js';
 import { api, errorCodeOf } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { wire } from '@taskflow/client';
@@ -23,6 +37,111 @@ import { ErrorView } from '../../components/error-view.js';
 import { LIMIT_COPY, featureDescription, featureLabel } from '../../lib/feature-labels.js';
 import { useStepUp } from '../auth/use-step-up.js';
 import { StepUpDialog } from '../auth/step-up.js';
+
+/**
+ * Stat card shown in the summary overview at the top of the page.
+ * An icon, a label, and a value — the same metric-widget shape every
+ * SaaS admin console uses for at-a-glance numbers.
+ */
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  accent = false,
+}: {
+  readonly icon: React.ComponentType<LucideProps>;
+  readonly label: string;
+  readonly value: string | number;
+  readonly accent?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-3 rounded-xl border px-4 py-3',
+        accent ? 'border-accent/30 bg-accent/5' : 'border-line bg-surface-raised',
+      )}
+    >
+      <span
+        className={cn(
+          'flex size-9 shrink-0 items-center justify-center rounded-lg',
+          accent ? 'bg-accent/15 text-accent' : 'bg-surface-hover text-ink-muted',
+        )}
+      >
+        <Icon aria-hidden="true" className="size-4.5" strokeWidth={2} />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[11px] font-medium uppercase tracking-wider text-ink-faint">{label}</p>
+        <p className="truncate text-lg font-semibold tracking-tight text-ink">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A small search input with an icon, used above tables to filter rows
+ * client-side. Not debounced — the filter is client-side against already-
+ * loaded data, so every keystroke is instant.
+ */
+function TableSearch({
+  value,
+  onChange,
+  placeholder = 'Search…',
+  className,
+}: {
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly placeholder?: string;
+  readonly className?: string;
+}) {
+  return (
+    <div className={cn('relative', className)}>
+      <Search
+        aria-hidden="true"
+        className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-ink-faint"
+        strokeWidth={2}
+      />
+      <input
+        type="text"
+        value={value}
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
+        placeholder={placeholder}
+        className="h-8 w-full rounded-lg border border-line bg-surface-sunken pl-8 pr-3 text-xs text-ink placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/25 focus:outline-none"
+      />
+    </div>
+  );
+}
+
+/**
+ * Improved pagination controls with count display.
+ * Replaces the bare "Newest / Older" buttons with a more informative bar.
+ */
+function Pagination({
+  hasMore,
+  onNewest,
+  onOlder,
+  countLabel,
+}: {
+  readonly hasMore: boolean;
+  readonly onNewest: () => void;
+  readonly onOlder: () => void;
+  readonly countLabel?: string | undefined;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      {countLabel !== undefined && <p className="text-xs text-ink-faint">{countLabel}</p>}
+      <div className="flex items-center gap-1.5">
+        <Button size="sm" variant="ghost" disabled={!hasMore} onClick={onNewest}>
+          ← Newest
+        </Button>
+        <Button size="sm" variant="ghost" disabled={!hasMore} onClick={onOlder}>
+          Older →
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 /**
  * The platform administration console (Phase 12 Wave 1, ai/phase-12-admin.md).
@@ -82,7 +201,10 @@ function TabBar<T extends string | null>({
     <div
       role="tablist"
       aria-label={ariaLabel}
-      className={cn('flex gap-1 rounded-lg border border-line bg-surface-sunken p-1', className)}
+      className={cn(
+        'inline-flex gap-0.5 rounded-xl border border-line bg-surface-sunken/80 p-1',
+        className,
+      )}
     >
       {items.map(([itemValue, label]) => (
         <button
@@ -94,10 +216,10 @@ function TabBar<T extends string | null>({
             onChange(itemValue);
           }}
           className={cn(
-            'flex-1 rounded-md px-3 py-1.5 font-medium transition-colors',
+            'relative rounded-lg px-3 py-1.5 font-medium transition-all duration-150',
             size === 'sm' ? 'text-sm' : 'text-xs',
             value === itemValue
-              ? 'bg-surface-raised text-ink shadow-sm'
+              ? 'bg-accent/10 text-accent shadow-sm ring-1 ring-accent/20'
               : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
           )}
         >
@@ -124,34 +246,168 @@ export function PlatformAdminPage() {
     void queryClient.invalidateQueries({ queryKey: ['platform'] });
   };
 
+  /* Summary stats — computed from the first page of each list. The queries
+     are keyed without pagination cursors, so they return the default first
+     page and are deduped with the tabs' own queries when those mount. */
+  const orgs = useQuery({
+    queryKey: keys.platformOrgs(null),
+    queryFn: async () =>
+      wire(await api.platformAdmin.orgs.list.query({ cursor: null, limit: 100 })),
+  });
+  const users = useQuery({
+    queryKey: keys.platformUsers(null),
+    queryFn: async () =>
+      wire(await api.platformAdmin.users.list.query({ cursor: null, limit: 100 })),
+  });
+  const billing = useQuery({
+    queryKey: keys.platformBilling(null),
+    queryFn: async () =>
+      wire(await api.platformAdmin.billing.list.query({ cursor: null, limit: 100 })),
+  });
+
+  const orgData = orgs.data;
+  const totalOrgs = orgData?.orgs.length ?? 0;
+  const activeOrgs = orgData?.orgs.filter((o) => o.status === 'active').length ?? 0;
+  const totalMembers = orgData?.orgs.reduce((sum, o) => sum + o.memberCount, 0) ?? 0;
+  const totalUsers = users.data?.users.length ?? 0;
+  const mrr =
+    billing.data?.orgs.reduce((sum, o) => {
+      if (o.currentPriceCents !== null && o.billingStatus === 'active') {
+        return sum + o.currentPriceCents;
+      }
+      return sum;
+    }, 0) ?? 0;
+  const trials = billing.data?.orgs.filter((o) => o.billingStatus === 'trialing').length ?? 0;
+
+  const hasExportData =
+    (orgs.data?.orgs.length ?? 0) > 0 ||
+    (users.data?.users.length ?? 0) > 0 ||
+    (billing.data?.orgs.length ?? 0) > 0;
+
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-7 p-8">
+    <div className="mx-auto flex max-w-7xl flex-col gap-6 p-8">
       <PageHeader
         title="Platform administration"
         description="Every organization, user, and release flag. There is no organization selected here on purpose — this console spans them all."
+        actions={
+          hasExportData ? (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                const date = new Date().toISOString().slice(0, 10);
+                const orgRows = orgs.data?.orgs;
+                const userRows = users.data?.users;
+                const billingRows = billing.data?.orgs;
+
+                if (orgRows !== undefined && orgRows.length > 0) {
+                  downloadCsv(`orgs-export-${date}.csv`, [
+                    ['Organization', 'Slug', 'Owner name', 'Owner email', 'Plan', 'Billing status', 'Trial ends', 'Grace ends', 'Renews', 'Last invoice status', 'Last invoice amount', 'Last invoice date', 'Status', 'Members', 'Created'],
+                    ...orgRows.map((org) => [
+                      org.name, org.slug, org.ownerName ?? '', org.ownerEmail ?? '',
+                      org.planId ?? '', org.billingStatus,
+                      org.trialEndsAt !== null ? formatDate(org.trialEndsAt) : '',
+                      org.billingGraceEndsAt !== null ? formatDate(org.billingGraceEndsAt) : '',
+                      org.currentPeriodEnd !== null ? formatDate(org.currentPeriodEnd) : '',
+                      org.lastInvoice?.status ?? '',
+                      org.lastInvoice !== null ? money(org.lastInvoice.amountDueCents, org.lastInvoice.currency) : '',
+                      org.lastInvoice !== null ? formatDate(org.lastInvoice.issuedAt) : '',
+                      org.status, String(org.memberCount), formatDate(org.createdAt),
+                    ]),
+                  ]);
+                }
+
+                if (userRows !== undefined && userRows.length > 0) {
+                  downloadCsv(`users-export-${date}.csv`, [
+                    ['User id', 'Name', 'Email', 'Email verified', 'Organizations', 'Created'],
+                    ...userRows.map((user) => [
+                      user.userId, user.name ?? '', user.email,
+                      user.emailVerifiedAt !== null ? formatDate(user.emailVerifiedAt) : 'no',
+                      String(user.orgCount), formatDate(user.createdAt),
+                    ]),
+                  ]);
+                }
+
+                if (billingRows !== undefined && billingRows.length > 0) {
+                  downloadCsv(`billing-export-${date}.csv`, [
+                    ['Organization', 'Slug', 'Billing status', 'Plan', 'Plan name', 'Current price', 'Interval', 'Renews', 'Last invoice status', 'Last invoice amount', 'Last invoice date', 'Trial ends', 'Grace ends', 'Pending plan', 'Stripe customer'],
+                    ...billingRows.map((org) => [
+                      org.name, org.slug, org.billingStatus,
+                      org.planId ?? '', org.planName ?? '',
+                      org.currentPriceCents !== null ? money(org.currentPriceCents, 'usd') : '',
+                      org.currentPriceInterval ?? '',
+                      org.currentPeriodEnd !== null ? formatDate(org.currentPeriodEnd) : '',
+                      org.lastInvoice?.status ?? '',
+                      org.lastInvoice !== null ? money(org.lastInvoice.amountDueCents, org.lastInvoice.currency) : '',
+                      org.lastInvoice !== null ? formatDate(org.lastInvoice.issuedAt) : '',
+                      org.trialEndsAt !== null ? formatDate(org.trialEndsAt) : '',
+                      org.billingGraceEndsAt !== null ? formatDate(org.billingGraceEndsAt) : '',
+                      org.pendingPlanId ?? '', org.stripeCustomerId ?? '',
+                    ]),
+                  ]);
+                }
+              }}
+            >
+              Export all CSVs
+            </Button>
+          ) : undefined
+        }
       />
+
+      {/* Summary stat cards — the at-a-glance dashboard every admin console leads with. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <StatCard icon={Building2} label="Orgs" value={totalOrgs} accent={tab === 'orgs'} />
+        <StatCard icon={Users} label="Users" value={totalUsers} accent={tab === 'users'} />
+        <StatCard icon={Building2} label="Active" value={activeOrgs} />
+        <StatCard icon={Users} label="Members" value={totalMembers} />
+        <StatCard
+          icon={CreditCard}
+          label="MRR"
+          value={`$${String(mrr / 100)}`}
+          accent={tab === 'billing'}
+        />
+        <StatCard icon={Zap} label="Trials" value={trials} />
+      </div>
 
       {/* Tabs, not routes: the console is one surface with four views, and a
           child route per tab would mount a fresh component tree on every
           switch for no benefit — the queries are already keyed per page. */}
-      <TabBar
-        ariaLabel="Platform administration sections"
-        className="overflow-x-auto whitespace-nowrap"
-        value={tab}
-        onChange={setTab}
-        items={
+      <div
+        role="tablist"
+        aria-label="Platform administration sections"
+        className="flex gap-1 overflow-x-auto rounded-xl border border-line bg-surface-sunken/80 p-1"
+      >
+        {(
           [
-            ['orgs', 'Organizations'],
-            ['users', 'Users'],
-            ['plans', 'Plans'],
-            ['billing', 'Billing'],
-            ['flags', 'Feature flags'],
-            ['branding', 'Branding'],
-            ['audit', 'Operator audit'],
-            ['operations', 'Operations'],
+            ['orgs', 'Organizations', Building2],
+            ['users', 'Users', Users],
+            ['plans', 'Plans', LayoutGrid],
+            ['billing', 'Billing', CreditCard],
+            ['flags', 'Feature flags', Flag],
+            ['branding', 'Branding', Palette],
+            ['audit', 'Operator audit', Shield],
+            ['operations', 'Operations', Zap],
           ] as const
-        }
-      />
+        ).map(([value, label, Icon]) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={tab === value}
+            onClick={() => {
+              setTab(value);
+            }}
+            className={cn(
+              'flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-150',
+              tab === value
+                ? 'bg-accent/10 text-accent shadow-sm ring-1 ring-accent/20'
+                : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
+            )}
+          >
+            <Icon aria-hidden="true" className="size-4" strokeWidth={2} />
+            {label}
+          </button>
+        ))}
+      </div>
 
       {tab === 'orgs' && (
         <OrgsTab
@@ -239,19 +495,17 @@ export function PlatformAdminPage() {
  */
 function StepUpGate({ onStepUp }: { readonly onStepUp: () => void }) {
   return (
-    <div className="flex flex-col items-start gap-3 rounded-lg border border-line bg-surface-raised p-4">
-      {/* The old wording — "your last one is more than five minutes old" —
-          was accurate and read as "you have been in here five minutes",
-          which is not what is measured. The window runs from the last time
-          you PROVED a credential, not from when you opened this page: sign in,
-          spend four minutes elsewhere in the app, and the console asks
-          immediately. Refreshing an access token deliberately does not reset
-          it (`identity.service.ts`: refreshing is not proof of a credential),
-          so the only thing that moves it is re-entering a password. */}
-      <p className="text-sm text-ink">
-        Confirm your password to continue. This console re-checks it every five minutes from the
-        last time you entered it — not from when you opened this page.
-      </p>
+    <div className="flex items-center gap-4 rounded-xl border border-warning/30 bg-warning/5 p-5">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-warning/15 text-warning">
+        <ShieldAlert className="size-5" strokeWidth={2} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-ink">Re-authentication required</p>
+        <p className="mt-0.5 text-xs text-ink-muted">
+          This console re-checks your password every five minutes from the last time you entered it
+          — not from when you opened this page.
+        </p>
+      </div>
       <Button variant="primary" onClick={onStepUp}>
         Re-authenticate
       </Button>
@@ -272,6 +526,7 @@ function OrgsTab({
 }) {
   const queryClient = useQueryClient();
   const [cursor, setCursor] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   const orgs = useQuery({
     queryKey: keys.platformOrgs(cursor),
@@ -343,37 +598,117 @@ function OrgsTab({
 
   if (errorCodeOf(orgs.error) === 'STEP_UP_REQUIRED') return <StepUpGate onStepUp={onStepUp} />;
 
+  const filteredOrgs = orgs.data?.orgs.filter((org) => {
+    if (search.trim() === '') return true;
+    const q = search.toLowerCase();
+    return (
+      org.name.toLowerCase().includes(q) ||
+      org.slug.toLowerCase().includes(q) ||
+      org.ownerEmail?.toLowerCase().includes(q) === true ||
+      org.ownerName?.toLowerCase().includes(q) === true
+    );
+  });
+
   return (
     <section aria-label="Organizations">
-      {orgs.isPending && <SkeletonRows rows={5} className="*:h-12" />}
+      <div className="flex items-center justify-between gap-3">
+        <TableSearch
+          value={search}
+          onChange={setSearch}
+          placeholder="Filter orgs by name, slug, or owner…"
+        />
+        {orgs.data !== undefined && orgs.data.orgs.length > 0 && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              const header = [
+                'Organization',
+                'Slug',
+                'Owner name',
+                'Owner email',
+                'Plan',
+                'Billing status',
+                'Trial ends',
+                'Grace ends',
+                'Renews',
+                'Last invoice status',
+                'Last invoice amount',
+                'Last invoice date',
+                'Status',
+                'Members',
+                'Created',
+              ];
+              const rows = [
+                header,
+                ...orgs.data.orgs.map((org) => [
+                  org.name,
+                  org.slug,
+                  org.ownerName ?? '',
+                  org.ownerEmail ?? '',
+                  org.planId ?? '',
+                  org.billingStatus,
+                  org.trialEndsAt !== null ? formatDate(org.trialEndsAt) : '',
+                  org.billingGraceEndsAt !== null ? formatDate(org.billingGraceEndsAt) : '',
+                  org.currentPeriodEnd !== null ? formatDate(org.currentPeriodEnd) : '',
+                  org.lastInvoice?.status ?? '',
+                  org.lastInvoice !== null ? money(org.lastInvoice.amountDueCents, org.lastInvoice.currency) : '',
+                  org.lastInvoice !== null ? formatDate(org.lastInvoice.issuedAt) : '',
+                  org.status,
+                  String(org.memberCount),
+                  formatDate(org.createdAt),
+                ]),
+              ];
+              downloadCsv(`orgs-export-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+            }}
+          >
+            Export CSV
+          </Button>
+        )}
+      </div>
+
+      {orgs.isPending && <SkeletonRows rows={5} className="mt-3 *:h-12" />}
       {orgs.isError && <ErrorView error={orgs.error} title="Could not load organizations" />}
 
       {orgs.data !== undefined && (
-        <div className="overflow-x-auto rounded border border-line">
-          <table className="data-table">
+        <div className="mt-3 overflow-x-auto rounded-xl border border-line">
+          <table className="w-full text-sm">
             <thead>
-              <tr>
-                <th>Organization</th>
-                <th>Owner</th>
-                <th>Plan</th>
-                <th>Renews</th>
-                <th>Last invoice</th>
-                <th>Status</th>
-                <th>Members</th>
-                <th>Created</th>
-                <th />
+              <tr className="border-b border-line bg-surface-sunken/60">
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Organization
+                </th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Owner
+                </th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Plan
+                </th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Renews
+                </th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Last invoice
+                </th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Status
+                </th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Members
+                </th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Created
+                </th>
+                <th className="px-3 py-2.5" />
               </tr>
             </thead>
-            <tbody>
-              {orgs.data.orgs.map((org) => (
-                <tr key={org.orgId} className="border-b border-line/50 last:border-0">
-                  <td>
-                    {/* The clickable name. A button rather than a route: the
-                        detail opens as a panel over this table, so the page's
-                        cursor position survives opening and closing one. */}
+            <tbody className="divide-y divide-line/50">
+              {(filteredOrgs ?? []).map((org) => (
+                <tr key={org.orgId} className="group transition-colors hover:bg-surface-hover/50">
+                  <td className="px-3 py-2.5">
                     <button
                       type="button"
-                      className="text-left font-medium text-ink underline decoration-dotted underline-offset-2 hover:text-accent"
+                      className="text-left font-medium text-ink transition-colors hover:text-accent"
                       onClick={() => {
                         setDetailOrgId(org.orgId);
                       }}
@@ -382,28 +717,20 @@ function OrgsTab({
                     </button>
                     <p className="font-mono text-[11px] text-ink-faint">{org.slug}</p>
                   </td>
-                  <td>
+                  <td className="px-3 py-2.5">
                     {org.ownerEmail === null ? (
                       <span className="text-ink-faint">—</span>
                     ) : (
                       <>
-                        {/* Name when they have set one, address ALWAYS: a
-                            profile row is lazily created so the name is
-                            frequently absent, and an operator needs something
-                            to put in a support ticket either way. */}
                         {org.ownerName !== null && <p className="text-ink">{org.ownerName}</p>}
                         <p className="text-[11px] text-ink-muted">{org.ownerEmail}</p>
                       </>
                     )}
                   </td>
-                  <td>
+                  <td className="px-3 py-2.5">
                     <p className="text-ink">
                       {org.planId ?? <span className="text-ink-faint">no plan</span>}
                     </p>
-                    {/* Two independent columns, deliberately (migration 0059):
-                        `status` is the operator kill switch, `billingStatus` is
-                        what the processor says. Showing them in the same cell
-                        would suggest one derives from the other. */}
                     <p className="text-[11px] text-ink-faint">
                       {org.billingStatus}
                       {org.billingStatus === 'trialing' &&
@@ -414,10 +741,10 @@ function OrgsTab({
                         ` — grace ends ${formatDate(org.billingGraceEndsAt)}`}
                     </p>
                   </td>
-                  <td className="text-ink-muted">
+                  <td className="px-3 py-2.5 text-ink-muted">
                     {org.currentPeriodEnd === null ? '—' : formatDate(org.currentPeriodEnd)}
                   </td>
-                  <td>
+                  <td className="px-3 py-2.5">
                     {org.lastInvoice === null ? (
                       <span className="text-ink-faint">—</span>
                     ) : (
@@ -436,12 +763,14 @@ function OrgsTab({
                       </>
                     )}
                   </td>
-                  <td>
+                  <td className="px-3 py-2.5">
                     <StatusBadge status={org.status} />
                   </td>
-                  <td className="text-ink-muted">{org.memberCount}</td>
-                  <td className="whitespace-nowrap text-ink-muted">{formatDate(org.createdAt)}</td>
-                  <td className="text-right">
+                  <td className="px-3 py-2.5 text-ink-muted">{org.memberCount}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
+                    {formatDate(org.createdAt)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right">
                     <div className="flex justify-end gap-1.5">
                       <Button
                         size="sm"
@@ -494,6 +823,15 @@ function OrgsTab({
                   </td>
                 </tr>
               ))}
+              {(filteredOrgs ?? []).length === 0 && (
+                <tr>
+                  <td colSpan={9} className="px-3 py-8 text-center text-sm text-ink-faint">
+                    {search.trim() !== ''
+                      ? 'No organizations match your search.'
+                      : 'No organizations found.'}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -601,25 +939,21 @@ function OrgsTab({
 
       {/* Keyset pagination on created_at — a directory read while orgs are
           being created must not shift under the reader. */}
-      <div className="flex items-center gap-2">
-        <Button
-          variant="secondary"
-          disabled={cursor === null}
-          onClick={() => {
+      <div className="mt-3">
+        <Pagination
+          hasMore={cursor !== null || (orgs.data?.nextCursor ?? null) !== null}
+          onNewest={() => {
             setCursor(null);
           }}
-        >
-          Newest
-        </Button>
-        <Button
-          variant="secondary"
-          disabled={orgs.data?.nextCursor === null}
-          onClick={() => {
+          onOlder={() => {
             setCursor(orgs.data?.nextCursor ?? null);
           }}
-        >
-          Older
-        </Button>
+          {...(filteredOrgs !== undefined
+            ? {
+                countLabel: `${String(filteredOrgs.length)} organization${filteredOrgs.length === 1 ? '' : 's'}`,
+              }
+            : {})}
+        />
       </div>
     </section>
   );
@@ -628,12 +962,26 @@ function OrgsTab({
 /** The one column in the org directory that has meaning beyond itself. */
 function StatusBadge({ status }: { readonly status: string }) {
   if (status === 'suspended') {
-    return <Badge className="border-danger/40 bg-danger/10 text-danger">suspended</Badge>;
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">
+        <ShieldAlert className="size-3" strokeWidth={2.5} />
+        suspended
+      </span>
+    );
   }
   if (status === 'deleted') {
-    return <Badge className="border-line bg-surface-sunken text-ink-faint">deleted</Badge>;
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-faint">
+        deleted
+      </span>
+    );
   }
-  return <Badge className="border-success/40 bg-success/10 text-success">active</Badge>;
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
+      <span className="size-1.5 rounded-full bg-success" />
+      active
+    </span>
+  );
 }
 
 /* -------------------------------------------------------------------------- *
@@ -644,6 +992,7 @@ function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
   /** The drill-down panel's subject, or null when closed. */
   const [detailUserId, setDetailUserId] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   const users = useQuery({
     queryKey: keys.platformUsers(cursor),
@@ -652,35 +1001,81 @@ function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
 
   if (errorCodeOf(users.error) === 'STEP_UP_REQUIRED') return <StepUpGate onStepUp={onStepUp} />;
 
+  const filteredUsers = users.data?.users.filter((user) => {
+    if (search.trim() === '') return true;
+    const q = search.toLowerCase();
+    return user.email.toLowerCase().includes(q) || user.name?.toLowerCase().includes(q) === true;
+  });
+
   return (
     <section aria-label="Users">
-      {users.isPending && <SkeletonRows rows={5} className="*:h-12" />}
+      <div className="flex items-center justify-between gap-3">
+        <TableSearch
+          value={search}
+          onChange={setSearch}
+          placeholder="Filter users by name or email…"
+        />
+        {users.data !== undefined && users.data.users.length > 0 && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              const header = [
+                'User id',
+                'Name',
+                'Email',
+                'Email verified',
+                'Organizations',
+                'Created',
+              ];
+              const rows = [
+                header,
+                ...users.data.users.map((user) => [
+                  user.userId,
+                  user.name ?? '',
+                  user.email,
+                  user.emailVerifiedAt !== null ? formatDate(user.emailVerifiedAt) : 'no',
+                  String(user.orgCount),
+                  formatDate(user.createdAt),
+                ]),
+              ];
+              downloadCsv(`users-export-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+            }}
+          >
+            Export CSV
+          </Button>
+        )}
+      </div>
+
+      {users.isPending && <SkeletonRows rows={5} className="mt-3 *:h-12" />}
       {users.isError && <ErrorView error={users.error} title="Could not load users" />}
 
       {users.data !== undefined && (
-        <div className="overflow-x-auto rounded border border-line">
-          <table className="data-table">
+        <div className="mt-3 overflow-x-auto rounded-xl border border-line">
+          <table className="w-full text-sm">
             <thead>
-              <tr>
-                <th>User</th>
-                <th>Email verified</th>
-                <th>Orgs</th>
-                <th>Created</th>
+              <tr className="border-b border-line bg-surface-sunken/60">
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  User
+                </th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Email verified
+                </th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Orgs
+                </th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Created
+                </th>
               </tr>
             </thead>
-            <tbody>
-              {users.data.users.map((user) => (
-                <tr key={user.userId} className="border-b border-line/50 last:border-0">
-                  <td>
-                    {/* Null for an account that never set a profile name, which
-                        is why this renders conditionally rather than falling
-                        back to the email — that is already the line below. */}
-                    {/* Clickable, like the org name — the drill-down is where
-                        WHICH orgs and WHICH roles live, which is what the
-                        `orgCount` column cannot say. */}
+            <tbody className="divide-y divide-line/50">
+              {(filteredUsers ?? []).map((user) => (
+                <tr key={user.userId} className="group transition-colors hover:bg-surface-hover/50">
+                  <td className="px-3 py-2.5">
                     <button
                       type="button"
-                      className="block max-w-full truncate text-left text-ink underline decoration-dotted underline-offset-2 hover:text-accent"
+                      className="block max-w-full truncate text-left font-medium text-ink transition-colors hover:text-accent"
                       onClick={() => {
                         setDetailUserId(user.userId);
                       }}
@@ -692,37 +1087,44 @@ function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
                       {user.userId.slice(0, 8)}
                     </p>
                   </td>
-                  <td className="text-ink-muted">
-                    {user.emailVerifiedAt === null ? 'no' : formatDate(user.emailVerifiedAt)}
+                  <td className="px-3 py-2.5 text-ink-muted">
+                    {user.emailVerifiedAt === null ? (
+                      <span className="text-ink-faint">no</span>
+                    ) : (
+                      <span className="text-success">{formatDate(user.emailVerifiedAt)}</span>
+                    )}
                   </td>
-                  <td className="text-ink-muted">{user.orgCount}</td>
-                  <td className="whitespace-nowrap text-ink-muted">{formatDate(user.createdAt)}</td>
+                  <td className="px-3 py-2.5 text-ink-muted">{user.orgCount}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
+                    {formatDate(user.createdAt)}
+                  </td>
                 </tr>
               ))}
+              {(filteredUsers ?? []).length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-3 py-8 text-center text-sm text-ink-faint">
+                    {search.trim() !== '' ? 'No users match your search.' : 'No users found.'}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       )}
 
-      <div className="flex items-center gap-2">
-        <Button
-          variant="secondary"
-          disabled={cursor === null}
-          onClick={() => {
+      <div className="mt-3">
+        <Pagination
+          hasMore={cursor !== null || (users.data?.nextCursor ?? null) !== null}
+          onNewest={() => {
             setCursor(null);
           }}
-        >
-          Newest
-        </Button>
-        <Button
-          variant="secondary"
-          disabled={users.data?.nextCursor === null}
-          onClick={() => {
+          onOlder={() => {
             setCursor(users.data?.nextCursor ?? null);
           }}
-        >
-          Older
-        </Button>
+          {...(filteredUsers !== undefined
+            ? { countLabel: `${String(filteredUsers.length)} users` }
+            : {})}
+        />
       </div>
 
       {detailUserId !== null && (
@@ -775,7 +1177,7 @@ function FlagsTab({
 
   return (
     <section aria-label="Feature flags">
-      <p className="text-xs text-ink-muted">
+      <p className="mb-3 text-[13px] leading-relaxed text-ink-muted">
         Global overrides — the table the evaluator never had. A toggle here changes what every
         organization resolves until the override is reset.
       </p>
@@ -785,24 +1187,35 @@ function FlagsTab({
 
       {flags.data !== undefined &&
         (flags.data.length === 0 ? (
-          <Empty title="No flags registered" />
+          <Empty
+            title="No flags registered"
+            description="Feature flags appear here once they are registered in the codebase."
+          />
         ) : (
-          <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
+          <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line">
             {flags.data.map((flag) => (
-              <li key={flag.flagName} className="flex items-center gap-3 px-3 py-2.5">
+              <li
+                key={flag.flagName}
+                className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover/30"
+              >
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink">
                     {flag.flagName}
-                    <span className="font-mono text-[11px] text-ink-faint">Phase {flag.phase}</span>
+                    <span className="rounded bg-surface-hover px-1.5 py-0.5 font-mono text-[11px] text-ink-faint">
+                      Phase {flag.phase}
+                    </span>
                     {flag.perOrg && (
-                      <span className="text-[11px] text-ink-faint">org-toggleable</span>
+                      <span className="rounded bg-accent/10 px-1.5 py-0.5 text-[11px] text-accent">
+                        org-toggleable
+                      </span>
                     )}
                   </p>
-                  <p className="truncate text-xs text-ink-muted">{flag.description}</p>
-                  <p className="text-[11px] text-ink-faint">
+                  <p className="mt-0.5 truncate text-xs text-ink-muted">{flag.description}</p>
+                  <p className="mt-0.5 text-[11px] text-ink-faint">
                     {flag.source === 'override' ? (
                       <>
-                        overridden — default was {String(flag.defaultValue)}
+                        <span className="font-medium text-warning">overridden</span> — default was{' '}
+                        {String(flag.defaultValue)}
                         {flag.overrideSetAt !== null && `, set ${formatDate(flag.overrideSetAt)}`}
                       </>
                     ) : (
@@ -819,7 +1232,7 @@ function FlagsTab({
                       onClick={() => {
                         set.mutate({ flagName: flag.flagName, value: null });
                       }}
-                      className="rounded border border-line px-2 py-1 text-[11px] text-ink-muted hover:bg-surface-hover hover:text-ink"
+                      className="rounded-md border border-line px-2 py-1 text-[11px] font-medium text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
                     >
                       Reset
                     </button>
@@ -834,17 +1247,15 @@ function FlagsTab({
                       set.mutate({ flagName: flag.flagName, value: !flag.value });
                     }}
                     className={cn(
-                      'relative h-5 w-9 rounded-full border transition-colors',
-                      flag.value
-                        ? 'border-accent bg-accent'
-                        : 'border-line bg-surface-sunken hover:bg-surface-hover',
+                      'relative h-6 w-11 rounded-full transition-colors',
+                      flag.value ? 'bg-accent' : 'bg-surface-hover',
                     )}
                   >
                     <span
                       aria-hidden="true"
                       className={cn(
-                        'absolute top-0.5 size-3.5 rounded-full bg-surface-raised shadow-sm transition-transform',
-                        flag.value ? 'translate-x-[18px]' : 'translate-x-0.5',
+                        'absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow-sm transition-transform duration-200',
+                        flag.value ? 'translate-x-5' : 'translate-x-0',
                       )}
                     />
                   </button>
@@ -964,6 +1375,9 @@ function BrandingTab({
   const faviconInputRef = useRef<HTMLInputElement>(null);
   const [logoProgress, setLogoProgress] = useState<string | null>(null);
   const [faviconProgress, setFaviconProgress] = useState<string | null>(null);
+  /* Pending palette selection for the live preview — tracks what the user has
+     chosen but not yet saved, so the preview updates instantly. */
+  const [previewPalette, setPreviewPalette] = useState<string | null>(null);
 
   const brandingQuery = useQuery({
     queryKey: keys.platformBranding(),
@@ -977,6 +1391,7 @@ function BrandingTab({
       api.platformAdmin.branding.set.mutate(input),
     onSuccess: async () => {
       setNameDirty(false);
+      setPreviewPalette(null);
       await refresh();
     },
     onError: (error, input) => {
@@ -1025,7 +1440,7 @@ function BrandingTab({
 
       {data !== undefined && (
         <>
-          <div className="flex flex-col gap-3 rounded-lg border border-line p-4">
+          <div className="flex flex-col gap-4 rounded-xl border border-line p-5">
             <Field label="Product name" htmlFor="branding-name">
               <div className="flex gap-2">
                 <Input
@@ -1045,11 +1460,37 @@ function BrandingTab({
                 >
                   Save
                 </Button>
+                {nameDirty && (
+                  <Button
+                    variant="ghost"
+                    disabled={setBranding.isPending}
+                    onClick={() => {
+                      setName('');
+                      setNameDirty(false);
+                    }}
+                  >
+                    Reset
+                  </Button>
+                )}
               </div>
             </Field>
 
             <div>
-              <p className="mb-1.5 text-xs font-medium text-ink">Accent palette</p>
+              <div className="mb-1.5 flex items-center gap-2">
+                <p className="text-xs font-medium text-ink">Accent palette</p>
+                {previewPalette !== null && previewPalette !== data.paletteId && (
+                  <button
+                    type="button"
+                    disabled={setBranding.isPending}
+                    onClick={() => {
+                      setPreviewPalette(null);
+                    }}
+                    className="text-[11px] text-accent underline underline-offset-2 hover:text-accent/80"
+                  >
+                    Reset to {data.paletteId}
+                  </button>
+                )}
+              </div>
               <div className="flex flex-wrap gap-2">
                 {PALETTE_IDS.map((paletteId) => (
                   <button
@@ -1057,15 +1498,16 @@ function BrandingTab({
                     type="button"
                     title={paletteId}
                     aria-label={`Use the ${paletteId} palette`}
-                    aria-pressed={data.paletteId === paletteId}
+                    aria-pressed={(previewPalette ?? data.paletteId) === paletteId}
                     disabled={setBranding.isPending}
                     onClick={() => {
+                      setPreviewPalette(paletteId);
                       setBranding.mutate({ paletteId });
                     }}
                     className={cn(
                       'size-8 rounded-full border-2 transition-transform',
-                      data.paletteId === paletteId
-                        ? 'scale-110 border-ink'
+                      (previewPalette ?? data.paletteId) === paletteId
+                        ? 'scale-110 border-ink ring-2 ring-accent/30'
                         : 'border-transparent hover:scale-105',
                     )}
                     style={{ backgroundColor: paletteColorsOf(paletteId).base }}
@@ -1078,6 +1520,13 @@ function BrandingTab({
               <ErrorView error={setBranding.error} title="Could not save branding" />
             )}
           </div>
+
+          <BrandingPreview
+            productName={displayName}
+            paletteId={previewPalette ?? data.paletteId}
+            logoUrl={data.logoUrl}
+            faviconUrl={data.faviconUrl}
+          />
 
           <BrandingAssetUpload
             label="Logo"
@@ -1126,12 +1575,14 @@ function BrandingAssetUpload({
   readonly onSelect: (file: File) => void;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-line p-4">
-      <div className="flex size-12 shrink-0 items-center justify-center rounded border border-line bg-surface-sunken">
+    <div className="flex items-center gap-4 rounded-xl border border-line p-4 transition-colors hover:bg-surface-hover/20">
+      <div className="flex size-14 shrink-0 items-center justify-center rounded-lg border border-line bg-surface-sunken">
         {currentUrl !== null ? (
-          <img src={currentUrl} alt="" className="max-h-full max-w-full object-contain" />
+          <img src={currentUrl} alt="" className="max-h-full max-w-full rounded object-contain" />
+        ) : label === 'Logo' ? (
+          <TaskFlowLogo size={28} className="text-accent" />
         ) : (
-          <span className="text-[11px] text-ink-faint">None</span>
+          <TaskFlowLogo size={20} className="text-accent" />
         )}
       </div>
 
@@ -1168,6 +1619,136 @@ function BrandingAssetUpload({
 }
 
 /**
+ * A live preview of the branding changes — shows how the sidebar, a page
+ * header, and a sample card will look with the current name, palette, and
+ * logo applied. Updates instantly as the operator edits.
+ */
+function BrandingPreview({
+  productName,
+  paletteId,
+  logoUrl,
+  faviconUrl,
+}: {
+  readonly productName: string;
+  readonly paletteId: string;
+  readonly logoUrl: string | null;
+  readonly faviconUrl: string | null;
+}) {
+  const colors = paletteColorsOf(paletteId);
+
+  return (
+    <div className="rounded-xl border border-line bg-surface-sunken/40 p-4">
+      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+        Live preview
+      </p>
+
+      {/* Browser tab preview */}
+      <div className="mb-3 overflow-hidden rounded-lg border border-line bg-surface-raised">
+        <div className="flex items-center gap-2 border-b border-line bg-surface-sunken/60 px-2.5 py-1.5">
+          <div className="flex items-center gap-1.5 rounded-md bg-surface px-2.5 py-1">
+            {faviconUrl !== null ? (
+              <img src={faviconUrl} alt="" className="size-3 shrink-0 rounded-sm object-contain" />
+            ) : (
+              <TaskFlowLogo size={12} className="shrink-0 text-accent" />
+            )}
+            <span className="max-w-30 truncate text-[10px] text-ink">
+              {productName || 'TaskFlow'}
+            </span>
+            <span className="ml-0.5 text-ink-faint">×</span>
+          </div>
+          <div className="flex items-center gap-1 rounded bg-surface-sunken px-2 py-0.5">
+            <span className="text-[9px] text-ink-faint">🔒</span>
+            <span className="max-w-25 truncate text-[9px] text-ink-muted">
+              app.{(productName || 'taskflow').toLowerCase().replace(/\s+/g, '-')}.io/home
+            </span>
+          </div>
+        </div>
+        <div className="flex h-10 items-center px-3">
+          <span className="text-[10px] text-ink-faint">Page content…</span>
+        </div>
+      </div>
+
+      <div className="flex gap-3">
+        {/* Mini sidebar */}
+        <div className="flex w-40 shrink-0 flex-col overflow-hidden rounded-lg border border-line bg-surface-raised">
+          <div className="flex h-9 items-center gap-1.5 border-b border-line px-2.5">
+            {logoUrl !== null ? (
+              <img src={logoUrl} alt="" className="size-4 shrink-0 rounded object-contain" />
+            ) : (
+              <TaskFlowLogo size={16} className="shrink-0 text-accent" />
+            )}
+            <span className="truncate text-[11px] font-semibold text-ink">
+              {productName || 'TaskFlow'}
+            </span>
+          </div>
+          <nav className="flex flex-col gap-0.5 p-1.5">
+            {['My tasks', 'Chat', 'Docs', 'People'].map((item, index) => (
+              <span
+                key={item}
+                className={cn(
+                  'flex items-center gap-1.5 rounded px-2 py-1 text-[10px]',
+                  index === 0 ? 'bg-accent/10 font-medium text-accent' : 'text-ink-muted',
+                )}
+              >
+                <span
+                  className="size-1.5 rounded-full"
+                  style={{ backgroundColor: index === 0 ? colors.base : 'transparent' }}
+                />
+                {item}
+              </span>
+            ))}
+          </nav>
+        </div>
+
+        {/* Mini page content */}
+        <div className="min-w-0 flex-1 space-y-2.5">
+          {/* Mini header */}
+          <div className="flex items-center justify-between rounded-lg border border-line bg-surface-raised px-3 py-2">
+            <span className="text-[11px] font-semibold text-ink">Projects</span>
+            <span
+              className="rounded-md px-2 py-0.5 text-[10px] font-medium text-white"
+              style={{ backgroundColor: colors.base }}
+            >
+              New project
+            </span>
+          </div>
+
+          {/* Mini card */}
+          <div className="rounded-lg border border-line bg-surface-raised p-2.5">
+            <div className="mb-1.5 flex items-center gap-1.5">
+              <span className="size-2 rounded-full" style={{ backgroundColor: colors.base }} />
+              <span className="text-[10px] font-medium text-ink">Sample card</span>
+            </div>
+            <p className="text-[10px] text-ink-muted">
+              This is how cards will look with your brand accent.
+            </p>
+            <div className="mt-1.5 flex gap-1">
+              <span
+                className="rounded px-1 py-0.5 text-[9px] font-medium"
+                style={{ backgroundColor: `${colors.base}20`, color: colors.base }}
+              >
+                In progress
+              </span>
+              <span className="rounded bg-surface-hover px-1 py-0.5 text-[9px] text-ink-faint">
+                Design
+              </span>
+            </div>
+          </div>
+
+          {/* Color swatches */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-ink-faint">Accent:</span>
+            <span className="size-3 rounded-full" style={{ backgroundColor: colors.base }} />
+            <span className="size-3 rounded-full" style={{ backgroundColor: colors.hover }} />
+            <span className="text-[10px] text-ink-faint">• {paletteId}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Everything the console knows about one account.
  *
  * The Users tab could say a person belongs to N orgs and never WHICH, or with
@@ -1192,18 +1773,18 @@ function UserDetailDialog({
 
   return (
     <ModalRoot open onOpenChange={onClose}>
-      <ModalContent className="max-h-[85vh] overflow-y-auto p-4">
+      <ModalContent className="max-h-[85vh] overflow-y-auto p-5">
         <ModalTitle>{data?.name ?? data?.email ?? 'Account'}</ModalTitle>
         <ModalDescription>
           {data === undefined ? 'Loading…' : `${data.email} · joined ${formatDate(data.createdAt)}`}
         </ModalDescription>
 
-        {detail.isPending && <SkeletonRows rows={4} className="mt-3 *:h-10" />}
+        {detail.isPending && <SkeletonRows rows={4} className="mt-4 *:h-10" />}
         {detail.isError && <ErrorView error={detail.error} title="Could not load this account" />}
 
         {data !== undefined && (
-          <div className="mt-3 flex flex-col gap-4">
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+          <div className="mt-4 flex flex-col gap-5">
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
               <DetailRow label="Account status" value={data.status} />
               <DetailRow
                 label="Email verified"
@@ -1213,21 +1794,24 @@ function UserDetailDialog({
             </dl>
 
             <section>
-              <h3 className="text-xs font-semibold text-ink">
+              <h3 className="mb-2 text-[13px] font-semibold text-ink">
                 Organizations ({data.memberships.length})
               </h3>
 
               {data.memberships.length === 0 ? (
-                <p className="mt-1 text-xs text-ink-faint">
+                <p className="rounded-lg border border-dashed border-line bg-surface-sunken/40 p-4 text-center text-xs text-ink-faint">
                   This account belongs to no organization. They can sign in and will land on the org
                   picker with nothing to choose.
                 </p>
               ) : (
-                <ul className="mt-1 divide-y divide-line overflow-hidden rounded-lg border border-line">
+                <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line">
                   {data.memberships.map((membership) => (
-                    <li key={membership.orgId} className="px-2 py-1.5 text-xs">
+                    <li
+                      key={membership.orgId}
+                      className="px-3 py-2.5 text-xs transition-colors hover:bg-surface-hover/30"
+                    >
                       <div className="flex items-center gap-2">
-                        <span className="min-w-0 flex-1 truncate text-ink">
+                        <span className="min-w-0 flex-1 truncate font-medium text-ink">
                           {membership.orgName}
                         </span>
                         <Badge>{membership.role}</Badge>
@@ -1235,12 +1819,7 @@ function UserDetailDialog({
                           <span className="text-[11px] text-ink-faint">{membership.status}</span>
                         )}
                       </div>
-                      {/* The ORG's own state, not the membership's. A valid
-                          membership in a suspended or lapsed org is refused at
-                          request time by resolveOrgMembership, and from the
-                          user's side that is indistinguishable from having
-                          been removed. */}
-                      <p className="text-[11px] text-ink-faint">
+                      <p className="mt-0.5 text-[11px] text-ink-faint">
                         {membership.orgSlug} · org {membership.orgStatus} ·{' '}
                         {membership.orgBillingStatus} · since {formatDate(membership.joinedAt)}
                       </p>
@@ -1294,22 +1873,22 @@ function OrgDetailDialog({
 
   return (
     <ModalRoot open onOpenChange={onClose}>
-      <ModalContent size="lg" className="max-h-[85vh] overflow-y-auto p-4">
+      <ModalContent size="lg" className="max-h-[85vh] overflow-y-auto p-5">
         <ModalTitle>{data?.name ?? 'Organization'}</ModalTitle>
         <ModalDescription>
           {data === undefined ? 'Loading…' : `${data.slug} · created ${formatDate(data.createdAt)}`}
         </ModalDescription>
 
-        {detail.isPending && <SkeletonRows rows={6} className="mt-3 *:h-10" />}
+        {detail.isPending && <SkeletonRows rows={6} className="mt-4 *:h-10" />}
         {detail.isError && (
           <ErrorView error={detail.error} title="Could not load this organization" />
         )}
 
         {data !== undefined && (
-          <div className="mt-3 flex flex-col gap-4">
+          <div className="mt-4 flex flex-col gap-5">
             <section>
-              <h3 className="text-xs font-semibold text-ink">Billing</h3>
-              <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+              <h3 className="mb-2 text-[13px] font-semibold text-ink">Billing</h3>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                 <DetailRow label="Plan" value={data.planName ?? data.planId ?? 'none'} />
                 <DetailRow label="Billing status" value={data.billingStatus} />
                 <DetailRow label="Operator status" value={data.status} />
@@ -1347,7 +1926,7 @@ function OrgDetailDialog({
 
             {data.override !== null && (
               <section className="rounded-lg border border-warning/40 bg-warning/5 p-2">
-                <h3 className="text-xs font-semibold text-ink">
+                <h3 className="mb-1 text-[13px] font-semibold text-ink">
                   Operator override — outranks the plan
                 </h3>
                 <p className="mt-0.5 text-xs text-ink-muted">{data.override.reason}</p>
@@ -1365,12 +1944,12 @@ function OrgDetailDialog({
             )}
 
             <section>
-              <h3 className="text-xs font-semibold text-ink">Entitlements</h3>
-              <ul className="mt-1 divide-y divide-line overflow-hidden rounded-lg border border-line">
+              <h3 className="mb-2 text-[13px] font-semibold text-ink">Entitlements</h3>
+              <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line">
                 {data.features.map((feature) => (
                   <li
                     key={feature.flagName}
-                    className="flex items-center gap-2 px-2 py-1.5 text-xs"
+                    className="flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-surface-hover/30"
                   >
                     <span className={feature.enabled ? 'text-success' : 'text-ink-faint'}>
                       {feature.enabled ? '✓' : '✗'}
@@ -1392,12 +1971,15 @@ function OrgDetailDialog({
             </section>
 
             <section>
-              <h3 className="text-xs font-semibold text-ink">
+              <h3 className="mb-2 text-[13px] font-semibold text-ink">
                 Members ({data.memberCount} active of {data.members.length})
               </h3>
-              <ul className="mt-1 divide-y divide-line overflow-hidden rounded-lg border border-line">
+              <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line">
                 {data.members.map((member) => (
-                  <li key={member.userId} className="flex items-center gap-2 px-2 py-1.5 text-xs">
+                  <li
+                    key={member.userId}
+                    className="flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-surface-hover/30"
+                  >
                     <span className="min-w-0 flex-1 truncate text-ink">
                       {member.name ?? member.email}
                       {member.name !== null && (
@@ -1417,12 +1999,13 @@ function OrgDetailDialog({
                 panel on every trialing org is noise about a normal state. */}
             {data.invoices.length > 0 && (
               <section>
-                <h3 className="text-xs font-semibold text-ink">Invoices</h3>
-                <ul className="mt-1 divide-y divide-line overflow-hidden rounded-lg border border-line">
+                {' '}
+                <h3 className="mb-2 text-[13px] font-semibold text-ink">Invoices</h3>
+                <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line">
                   {data.invoices.map((invoice) => (
                     <li
                       key={invoice.providerInvoiceId}
-                      className="flex items-center gap-2 px-2 py-1.5 text-xs"
+                      className="flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-surface-hover/30"
                     >
                       <span className="w-20 shrink-0 text-ink-muted">
                         {formatDate(invoice.issuedAt)}
@@ -1454,7 +2037,7 @@ function OrgDetailDialog({
             )}
 
             <section>
-              <h3 className="text-xs font-semibold text-ink">Operator history</h3>
+              <h3 className="mb-2 text-[13px] font-semibold text-ink">Operator history</h3>
               {history.isPending && <SkeletonRows rows={3} className="mt-1 *:h-6" />}
               {history.data !== undefined &&
                 (history.data.length === 0 ? (
@@ -1660,6 +2243,28 @@ function ceiling(value: number | null, unit: string): string {
 }
 
 /**
+ * Trigger a browser download of a CSV file.
+ * No library needed — a Blob with the right MIME type and a temporary
+ * anchor click is the standard approach.
+ */
+function downloadCsv(filename: string, rows: readonly (readonly string[])[]): void {
+  const quote = (cell: string): string => {
+    if (cell.includes(',') || cell.includes('"') || cell.includes('\n')) {
+      return '"' + cell.replaceAll('"', '""') + '"';
+    }
+    return cell;
+  };
+  const csvContent = rows.map((row) => row.map(quote).join(',')).join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
  * The plan catalog.
  *
  * The tab that replaces opening the Stripe dashboard. Two things here are
@@ -1687,6 +2292,13 @@ function PlansTab({
   const [editingFeatures, setEditingFeatures] = useState<string | null>(null);
   const [editingLimits, setEditingLimits] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [search, setSearch] = useState('');
+  const [retireTarget, setRetireTarget] = useState<{
+    planId: string;
+    name: string;
+    orgCount: number;
+    features: readonly string[];
+  } | null>(null);
 
   const plans = useQuery({
     queryKey: keys.platformPlans(),
@@ -1719,6 +2331,17 @@ function PlansTab({
 
   if (errorCodeOf(plans.error) === 'STEP_UP_REQUIRED') return <StepUpGate onStepUp={onStepUp} />;
 
+  const filteredPlans = plans.data?.filter((plan) => {
+    if (search.trim() === '') return true;
+    const q = search.toLowerCase();
+    return (
+      plan.name.toLowerCase().includes(q) ||
+      plan.id.toLowerCase().includes(q) ||
+      plan.description?.toLowerCase().includes(q) === true ||
+      plan.features.some((feature) => feature.toLowerCase().includes(q))
+    );
+  });
+
   return (
     <section aria-label="Plans">
       <div className="flex items-start justify-between gap-3">
@@ -1738,16 +2361,30 @@ function PlansTab({
         </Button>
       </div>
 
-      {plans.isPending && <SkeletonRows rows={3} className="*:h-24" />}
+      {plans.data !== undefined && plans.data.length > 0 && (
+        <TableSearch
+          value={search}
+          onChange={setSearch}
+          placeholder="Filter by name, id, or feature…"
+        />
+      )}
+
+      {plans.isPending && <SkeletonRows rows={3} className="mt-3 *:h-24" />}
       {plans.isError && <ErrorView error={plans.error} title="Could not load plans" />}
 
       {plans.data !== undefined &&
         (plans.data.length === 0 ? (
-          <Empty title="No plans yet" />
+          <Empty
+            title="No plans yet"
+            description="Create your first plan to start defining what tenants can buy."
+          />
         ) : (
-          <ul className="mt-3 divide-y divide-line overflow-hidden rounded-lg border border-line">
-            {plans.data.map((plan) => (
-              <li key={plan.id} className="flex flex-col gap-2 px-3 py-3">
+          <ul className="mt-3 divide-y divide-line overflow-hidden rounded-xl border border-line">
+            {(filteredPlans ?? []).map((plan) => (
+              <li
+                key={plan.id}
+                className="flex flex-col gap-2 px-4 py-4 transition-colors hover:bg-surface-hover/30"
+              >
                 <div className="flex items-start gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink">
@@ -1862,23 +2499,30 @@ function PlansTab({
                       </Button>
                     )}
                     {plan.isActive && !plan.isDefault && (
-                      /* The count is in the label because retiring a tier
-                         does NOT eject its tenants — they keep the plan and
-                         keep working — and that is the thing an operator most
-                         needs to know before clicking. */
-                      <ConfirmButton
-                        label="Retire"
-                        confirmLabel={`Retire — ${String(plan.orgCount)} org${plan.orgCount === 1 ? '' : 's'} stay`}
+                      <Button
+                        variant="danger"
                         disabled={archive.isPending}
-                        onConfirm={() => {
-                          archive.mutate({ planId: plan.id });
+                        onClick={() => {
+                          setRetireTarget({
+                            planId: plan.id,
+                            name: plan.name,
+                            orgCount: plan.orgCount,
+                            features: plan.features,
+                          });
                         }}
-                      />
+                      >
+                        Retire
+                      </Button>
                     )}
                   </div>
                 </div>
               </li>
             ))}
+            {(filteredPlans ?? []).length === 0 && search.trim() !== '' && (
+              <li className="px-4 py-8 text-center text-sm text-ink-faint">
+                No plans match your search.
+              </li>
+            )}
           </ul>
         ))}
 
@@ -1941,7 +2585,108 @@ function PlansTab({
           }}
         />
       )}
+
+      {retireTarget !== null && (
+        <RetirePlanDialog
+          plan={retireTarget}
+          disabled={archive.isPending}
+          onClose={() => {
+            setRetireTarget(null);
+          }}
+          onConfirm={() => {
+            archive.mutate({ planId: retireTarget.planId });
+            setRetireTarget(null);
+          }}
+        />
+      )}
     </section>
+  );
+}
+
+/**
+ * Confirmation dialog before retiring a plan.
+ *
+ * Retiring a plan does NOT eject its tenants — they keep the plan and keep
+ * working. But it means no new org can subscribe to it, and the dialog
+ * states both facts so the operator understands the blast radius.
+ */
+function RetirePlanDialog({
+  plan,
+  disabled,
+  onClose,
+  onConfirm,
+}: {
+  readonly plan: {
+    readonly planId: string;
+    readonly name: string;
+    readonly orgCount: number;
+    readonly features: readonly string[];
+  };
+  readonly disabled: boolean;
+  readonly onClose: () => void;
+  readonly onConfirm: () => void;
+}) {
+  return (
+    <ModalRoot
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <ModalContent size="sm" className="p-5">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-danger/15 text-danger">
+            <ShieldAlert className="size-5" strokeWidth={2} />
+          </span>
+          <div>
+            <ModalTitle>Retire {plan.name}?</ModalTitle>
+            <ModalDescription>
+              This plan has {String(plan.orgCount)} active organization{plan.orgCount === 1 ? '' : 's'}.
+            </ModalDescription>
+          </div>
+        </div>
+
+        <div className="space-y-3 text-sm text-ink">
+          <p>
+            Retiring a plan means <strong>no new organization can subscribe to it</strong>, but
+            existing tenants <strong>keep the plan and keep working</strong>. They are not
+            ejected or downgraded.
+          </p>
+
+          {plan.orgCount > 0 && (
+            <div className="rounded-lg border border-warning/30 bg-warning/5 p-3">
+              <p className="text-xs font-medium text-warning">
+                {String(plan.orgCount)} organization{plan.orgCount === 1 ? '' : 's'} currently on this plan
+              </p>
+              <p className="mt-0.5 text-[11px] text-ink-muted">
+                They will continue to have access to all features until their plan is
+                manually changed or they cancel.
+              </p>
+            </div>
+          )}
+
+          {plan.features.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-ink-muted">Features on this plan:</p>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {plan.features.map((feature) => (
+                  <Badge key={feature}>{feature}</Badge>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="danger" disabled={disabled} onClick={onConfirm}>
+            {disabled ? <Spinner /> : `Retire ${plan.name}`}
+          </Button>
+        </div>
+      </ModalContent>
+    </ModalRoot>
   );
 }
 
@@ -2128,6 +2873,21 @@ function EditLimitsDialog({
 
           <div className="flex justify-end gap-2">
             <Button onClick={onClose}>Cancel</Button>
+            {(cap !== null || runs !== null || turn !== null || included !== null || markup !== null) && (
+              <Button
+                variant="ghost"
+                disabled={save.isPending}
+                onClick={() => {
+                  setCap(null);
+                  setRuns(null);
+                  setTurn(null);
+                  setIncluded(null);
+                  setMarkup(null);
+                }}
+              >
+                Reset all
+              </Button>
+            )}
             <Button
               variant="primary"
               disabled={save.isPending || !valid || allowanceNeedsProduct}
@@ -2310,6 +3070,17 @@ function EditFeaturesDialog({
 
           <div className="flex justify-end gap-2">
             <Button onClick={onClose}>Cancel</Button>
+            {selected !== null && (
+              <Button
+                variant="ghost"
+                disabled={save.isPending}
+                onClick={() => {
+                  setSelected(null);
+                }}
+              >
+                Reset
+              </Button>
+            )}
             <Button
               variant="primary"
               disabled={save.isPending || selected === null}
@@ -2550,6 +3321,7 @@ function SetPriceDialog({
 
 function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
   const [before, setBefore] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   const entries = useQuery({
     queryKey: keys.platformAudit(before),
@@ -2558,77 +3330,114 @@ function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
 
   if (errorCodeOf(entries.error) === 'STEP_UP_REQUIRED') return <StepUpGate onStepUp={onStepUp} />;
 
+  const filteredEntries = entries.data?.entries.filter((entry) => {
+    if (search.trim() === '') return true;
+    const q = search.toLowerCase();
+    return (
+      entry.action.toLowerCase().includes(q) ||
+      entry.operatorEmail.toLowerCase().includes(q) ||
+      (entry.target !== null && JSON.stringify(entry.target).toLowerCase().includes(q))
+    );
+  });
+
   return (
     <section aria-label="Operator audit">
-      <p className="text-xs text-ink-muted">
+      <p className="mb-3 text-[13px] leading-relaxed text-ink-muted">
         Every platform-admin call lands in a global hash chain — the accountability record of this
         tier itself. Reading it is recorded too.
       </p>
 
-      {entries.isPending && <Spinner />}
+      <div className="flex items-center justify-between gap-3">
+        <TableSearch
+          value={search}
+          onChange={setSearch}
+          placeholder="Filter by action, operator, or target…"
+        />
+      </div>
+
+      {entries.isPending && (
+        <div className="mt-3">
+          <SkeletonRows rows={5} className="*:h-12" />
+        </div>
+      )}
       {entries.isError && (
         <ErrorView error={entries.error} title="Could not load the operator audit" />
       )}
 
       {entries.data !== undefined &&
         (entries.data.entries.length === 0 ? (
-          <Empty title="Nothing recorded yet" />
+          <Empty
+            title="Nothing recorded yet"
+            description="Operator actions will appear here once they are taken."
+          />
         ) : (
           <>
-            <div className="overflow-x-auto rounded border border-line">
-              <table className="data-table">
+            <div className="mt-3 overflow-x-auto rounded-xl border border-line">
+              <table className="w-full text-sm">
                 <thead>
-                  <tr>
-                    <th>Seq</th>
-                    <th>When</th>
-                    <th>Action</th>
-                    <th>Target</th>
-                    <th>Operator</th>
+                  <tr className="border-b border-line bg-surface-sunken/60">
+                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                      Seq
+                    </th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                      When
+                    </th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                      Action
+                    </th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                      Target
+                    </th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                      Operator
+                    </th>
                   </tr>
                 </thead>
-                <tbody>
-                  {entries.data.entries.map((entry) => (
-                    <tr key={entry.seq} className="border-b border-line/50 last:border-0">
-                      <td className="font-mono text-ink-faint">{entry.seq}</td>
-                      <td className="whitespace-nowrap text-ink-muted">
+                <tbody className="divide-y divide-line/50">
+                  {(filteredEntries ?? []).map((entry) => (
+                    <tr key={entry.seq} className="transition-colors hover:bg-surface-hover/50">
+                      <td className="px-3 py-2.5 font-mono text-xs text-ink-faint">{entry.seq}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
                         {formatDateTime(entry.occurredAt)}
                       </td>
-                      <td className="font-medium text-ink">{entry.action}</td>
-                      <td className="font-mono text-[11px] text-ink-muted">
+                      <td className="px-3 py-2.5">
+                        <span className="inline-flex items-center gap-1 rounded-md bg-surface-hover px-1.5 py-0.5 text-xs font-medium text-ink">
+                          {entry.action}
+                        </span>
+                      </td>
+                      <td className="max-w-50 px-3 py-2.5 font-mono text-[11px] text-ink-muted">
                         {entry.target === null ? '—' : JSON.stringify(entry.target)}
                       </td>
-                      <td className="text-ink-muted">
+                      <td className="px-3 py-2.5 text-ink-muted">
                         <span className="truncate" title={entry.operatorId}>
                           {entry.operatorEmail}
                         </span>
                       </td>
                     </tr>
                   ))}
+                  {(filteredEntries ?? []).length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-8 text-center text-sm text-ink-faint">
+                        {search.trim() !== ''
+                          ? 'No entries match your search.'
+                          : 'No entries found.'}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
 
-            {/* Keyset pagination on seq — the same reasoning as the org audit:
-                an append-only log must not shift under a reader. */}
-            <div className="flex gap-2">
-              <Button
-                variant="secondary"
-                disabled={before === null}
-                onClick={() => {
+            <div className="mt-3">
+              <Pagination
+                hasMore={before !== null || entries.data.entries.length >= 50}
+                onNewest={() => {
                   setBefore(null);
                 }}
-              >
-                Newest
-              </Button>
-              <Button
-                variant="secondary"
-                disabled={entries.data.entries.length < 50}
-                onClick={() => {
+                onOlder={() => {
                   setBefore(entries.data.entries[entries.data.entries.length - 1]?.seq ?? null);
                 }}
-              >
-                Older
-              </Button>
+              />
             </div>
           </>
         ))}
@@ -2655,6 +3464,7 @@ const OPERATIONAL_EVENT_KINDS: readonly (readonly [OperationalEventKind | null, 
 function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
   const [cursor, setCursor] = useState<string | null>(null);
   const [kind, setKind] = useState<OperationalEventKind | null>(null);
+  const [search, setSearch] = useState('');
 
   const events = useQuery({
     queryKey: keys.platformOperations(cursor, kind),
@@ -2664,10 +3474,20 @@ function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
 
   if (errorCodeOf(events.error) === 'STEP_UP_REQUIRED') return <StepUpGate onStepUp={onStepUp} />;
 
+  const filteredEvents = events.data?.events.filter((event) => {
+    if (search.trim() === '') return true;
+    const q = search.toLowerCase();
+    return (
+      event.kind.toLowerCase().includes(q) ||
+      event.outcome.toLowerCase().includes(q) ||
+      event.target?.toLowerCase().includes(q) === true
+    );
+  });
+
   return (
     <section aria-label="Operations">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-ink-muted">
+        <p className="text-[13px] leading-relaxed text-ink-muted">
           System-action outcomes across every process, newest first. For the raw container output —
           every request, not only what this table records — see{' '}
           <a
@@ -2682,82 +3502,102 @@ function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
         </p>
       </div>
 
-      <TabBar
-        ariaLabel="Filter by kind"
-        className="mb-3"
-        size="xs"
-        value={kind}
-        onChange={(value) => {
-          setKind(value);
-          setCursor(null);
-        }}
-        items={OPERATIONAL_EVENT_KINDS}
-      />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <TabBar
+          ariaLabel="Filter by kind"
+          size="xs"
+          value={kind}
+          onChange={(value) => {
+            setKind(value);
+            setCursor(null);
+          }}
+          items={OPERATIONAL_EVENT_KINDS}
+        />
+        <TableSearch
+          value={search}
+          onChange={setSearch}
+          placeholder="Filter events…"
+          className="sm:w-48"
+        />
+      </div>
 
-      {events.isPending && <SkeletonRows rows={5} className="*:h-12" />}
+      {events.isPending && <SkeletonRows rows={5} className="mt-3 *:h-12" />}
       {events.isError && <ErrorView error={events.error} title="Could not load operations" />}
 
       {events.data !== undefined &&
         (events.data.events.length === 0 ? (
-          <Empty title="Nothing recorded yet" />
+          <Empty
+            title="Nothing recorded yet"
+            description="Operational events will appear here as system actions occur."
+          />
         ) : (
           <>
-            <div className="overflow-x-auto rounded border border-line">
-              <table className="data-table">
+            <div className="mt-3 overflow-x-auto rounded-xl border border-line">
+              <table className="w-full text-sm">
                 <thead>
-                  <tr>
-                    <th>When</th>
-                    <th>Kind</th>
-                    <th>Outcome</th>
-                    <th>Target</th>
-                    <th>Detail</th>
+                  <tr className="border-b border-line bg-surface-sunken/60">
+                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                      When
+                    </th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                      Kind
+                    </th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                      Outcome
+                    </th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                      Target
+                    </th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                      Detail
+                    </th>
                   </tr>
                 </thead>
-                <tbody>
-                  {events.data.events.map((event) => (
-                    <tr key={event.id} className="border-b border-line/50 last:border-0">
-                      <td className="whitespace-nowrap text-ink-muted">
+                <tbody className="divide-y divide-line/50">
+                  {(filteredEvents ?? []).map((event) => (
+                    <tr key={event.id} className="transition-colors hover:bg-surface-hover/50">
+                      <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
                         {formatDateTime(event.occurredAt)}
                       </td>
-                      <td className="font-medium text-ink">{event.kind}</td>
-                      <td className="px-3 py-1.5">
+                      <td className="px-3 py-2.5">
+                        <span className="inline-flex items-center gap-1 rounded-md bg-surface-hover px-1.5 py-0.5 text-xs font-medium text-ink">
+                          {event.kind}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5">
                         <OutcomeBadge outcome={event.outcome} />
                       </td>
-                      <td className="font-mono text-[11px] text-ink-muted">
+                      <td className="max-w-50 px-3 py-2.5 font-mono text-[11px] text-ink-muted">
                         {event.target ?? '—'}
                       </td>
-                      <td className="font-mono text-[11px] text-ink-muted">
+                      <td className="max-w-50 px-3 py-2.5 font-mono text-[11px] text-ink-muted">
                         {event.detail === null || event.detail === undefined
                           ? '—'
                           : JSON.stringify(event.detail)}
                       </td>
                     </tr>
                   ))}
+                  {(filteredEvents ?? []).length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-8 text-center text-sm text-ink-faint">
+                        {search.trim() !== '' ? 'No events match your search.' : 'No events found.'}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
 
-            {/* Keyset pagination on (occurredAt, id) — pagination.ts's own
-                reasoning, reused. */}
-            <div className="mt-3 flex gap-2">
-              <Button
-                variant="secondary"
-                disabled={cursor === null}
-                onClick={() => {
+            <div className="mt-3">
+              <Pagination
+                hasMore={cursor !== null || (events.data.nextCursor ?? null) !== null}
+                onNewest={() => {
                   setCursor(null);
                 }}
-              >
-                Newest
-              </Button>
-              <Button
-                variant="secondary"
-                disabled={events.data.nextCursor === null}
-                onClick={() => {
+                onOlder={() => {
                   setCursor(events.data.nextCursor);
                 }}
-              >
-                Older
-              </Button>
+              />
             </div>
           </>
         ))}
@@ -2767,14 +3607,162 @@ function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
 
 function OutcomeBadge({ outcome }: { readonly outcome: string }) {
   if (outcome === 'success') {
-    return <Badge className="border-success/40 bg-success/10 text-success">success</Badge>;
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
+        <span className="size-1.5 rounded-full bg-success" />
+        success
+      </span>
+    );
   }
-  return <Badge className="border-danger/40 bg-danger/10 text-danger">failure</Badge>;
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">
+      <ShieldAlert className="size-3" strokeWidth={2.5} />
+      failure
+    </span>
+  );
 }
 
 /* -------------------------------------------------------------------------- *
  * Billing (Phase 12 Wave 3 §3.6)
  * -------------------------------------------------------------------------- */
+
+/**
+ * A pure-SVG horizontal bar chart for billing summary stats.
+ * No charting library — just rect elements sized proportionally.
+ */
+function BillingBarChart({
+  data,
+  maxValue,
+}: {
+  readonly data: readonly { readonly label: string; readonly value: number; readonly color: string }[];
+  readonly maxValue: number;
+}) {
+  if (maxValue === 0) return null;
+
+  return (
+    <div className="space-y-1.5">
+      {data.map((item) => {
+        const width = Math.max((item.value / maxValue) * 100, item.value > 0 ? 4 : 0);
+        return (
+          <div key={item.label} className="flex items-center gap-2">
+            <span className="w-20 shrink-0 text-right text-[11px] text-ink-muted">
+              {item.label}
+            </span>
+            <div className="min-w-0 flex-1">
+              <svg width="100%" height="16" className="overflow-visible">
+                <rect
+                  x={0}
+                  y={2}
+                  width={`${String(width)}%`}
+                  height={12}
+                  rx={4}
+                  fill={item.color}
+                  opacity={item.value > 0 ? 0.85 : 0.15}
+                />
+              </svg>
+            </div>
+            <span className="w-8 shrink-0 text-right text-[11px] font-medium text-ink">
+              {String(item.value)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Billing summary dashboard — computed from the current page of billing data.
+ * Shows MRR, status breakdown, and plan distribution as compact bar charts.
+ */
+function BillingSummary({ orgs }: { readonly orgs: readonly Record<string, unknown>[] }) {
+  /* MRR — sum of currentPriceCents for active orgs only. */
+  const mrr = orgs.reduce((sum, org) => {
+    const price = (org as { currentPriceCents?: number | null; billingStatus?: string }).currentPriceCents;
+    const status = (org as { billingStatus?: string }).billingStatus;
+    if (price !== null && price !== undefined && status === 'active') {
+      return sum + price;
+    }
+    return sum;
+  }, 0);
+
+  /* Status counts */
+  const statusCounts = {
+    active: 0,
+    trialing: 0,
+    past_due: 0,
+    canceled: 0,
+  };
+  for (const org of orgs) {
+    const status = (org as { billingStatus?: string }).billingStatus;
+    if (status === 'active') statusCounts.active++;
+    else if (status === 'trialing') statusCounts.trialing++;
+    else if (status === 'past_due') statusCounts.past_due++;
+    else statusCounts.canceled++;
+  }
+
+  /* Plan distribution */
+  const planCounts = new Map<string, number>();
+  for (const org of orgs) {
+    const plan = (org as { planId?: string | null }).planId ?? 'none';
+    planCounts.set(plan, (planCounts.get(plan) ?? 0) + 1);
+  }
+  const planData = [...planCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([label, value]) => ({
+      label,
+      value,
+      color: 'var(--color-accent)',
+    }));
+
+  const statusData = [
+    { label: 'Active', value: statusCounts.active, color: 'var(--color-success)' },
+    { label: 'Trialing', value: statusCounts.trialing, color: 'var(--color-accent)' },
+    { label: 'Past due', value: statusCounts.past_due, color: 'var(--color-danger)' },
+    { label: 'Canceled', value: statusCounts.canceled, color: 'var(--color-ink-faint)' },
+  ];
+
+  const maxStatus = Math.max(statusCounts.active, statusCounts.trialing, statusCounts.past_due, statusCounts.canceled);
+  const maxPlan = planData.length > 0 ? Math.max(...planData.map((d) => d.value)) : 0;
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-3">
+      {/* MRR card */}
+      <div className="rounded-xl border border-line bg-surface-raised p-4">
+        <p className="text-[11px] font-medium uppercase tracking-wider text-ink-faint">
+          Monthly recurring revenue
+        </p>
+        <p className="mt-1 text-2xl font-semibold tracking-tight text-ink">
+          {money(mrr, 'usd')}
+        </p>
+        <p className="mt-0.5 text-[11px] text-ink-faint">
+          from {String(statusCounts.active)} active organization{statusCounts.active === 1 ? '' : 's'}
+        </p>
+      </div>
+
+      {/* Status breakdown */}
+      <div className="rounded-xl border border-line bg-surface-raised p-4">
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-ink-faint">
+          By status
+        </p>
+        <BillingBarChart data={statusData} maxValue={maxStatus} />
+      </div>
+
+      {/* Plan distribution */}
+      <div className="rounded-xl border border-line bg-surface-raised p-4">
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-ink-faint">
+          By plan
+        </p>
+        {planData.length === 0 ? (
+          <p className="text-[11px] text-ink-faint">No data</p>
+        ) : (
+          <BillingBarChart data={planData} maxValue={maxPlan} />
+        )}
+      </div>
+    </div>
+  );
+}
 
 function BillingTab({
   guard,
@@ -2789,6 +3777,7 @@ function BillingTab({
   const [cursor, setCursor] = useState<string | null>(null);
   const [extendTarget, setExtendTarget] = useState<{ orgId: string; name: string } | null>(null);
   const [extendByDays, setExtendByDays] = useState('7');
+  const [search, setSearch] = useState('');
 
   const billing = useQuery({
     queryKey: keys.platformBilling(cursor),
@@ -2811,36 +3800,120 @@ function BillingTab({
 
   if (errorCodeOf(billing.error) === 'STEP_UP_REQUIRED') return <StepUpGate onStepUp={onStepUp} />;
 
+  const filteredOrgs = billing.data?.orgs.filter((org) => {
+    if (search.trim() === '') return true;
+    const q = search.toLowerCase();
+    return (
+      org.name.toLowerCase().includes(q) ||
+      org.slug.toLowerCase().includes(q) ||
+      org.planId?.toLowerCase().includes(q) === true ||
+      org.planName?.toLowerCase().includes(q) === true ||
+      org.stripeCustomerId?.toLowerCase().includes(q) === true ||
+      org.billingStatus.toLowerCase().includes(q)
+    );
+  });
+
   return (
     <section aria-label="Billing">
-      {billing.isPending && <SkeletonRows rows={5} className="*:h-12" />}
+      {billing.data !== undefined && billing.data.orgs.length > 0 && (
+        <BillingSummary orgs={billing.data.orgs} />
+      )}
+
+      <div className="flex items-center justify-between gap-3">
+        <TableSearch
+          value={search}
+          onChange={setSearch}
+          placeholder="Filter by name, slug, plan, or Stripe ID…"
+        />
+        {billing.data !== undefined && billing.data.orgs.length > 0 && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              const header = [
+                'Organization',
+                'Slug',
+                'Billing status',
+                'Plan',
+                'Plan name',
+                'Current price',
+                'Interval',
+                'Renews',
+                'Last invoice status',
+                'Last invoice amount',
+                'Last invoice date',
+                'Trial ends',
+                'Grace ends',
+                'Pending plan',
+                'Stripe customer',
+              ];
+              const rows = [
+                header,
+                ...billing.data.orgs.map((org) => [
+                  org.name,
+                  org.slug,
+                  org.billingStatus,
+                  org.planId ?? '',
+                  org.planName ?? '',
+                  org.currentPriceCents !== null ? money(org.currentPriceCents, 'usd') : '',
+                  org.currentPriceInterval ?? '',
+                  org.currentPeriodEnd !== null ? formatDate(org.currentPeriodEnd) : '',
+                  org.lastInvoice?.status ?? '',
+                  org.lastInvoice !== null ? money(org.lastInvoice.amountDueCents, org.lastInvoice.currency) : '',
+                  org.lastInvoice !== null ? formatDate(org.lastInvoice.issuedAt) : '',
+                  org.trialEndsAt !== null ? formatDate(org.trialEndsAt) : '',
+                  org.billingGraceEndsAt !== null ? formatDate(org.billingGraceEndsAt) : '',
+                  org.pendingPlanId ?? '',
+                  org.stripeCustomerId ?? '',
+                ]),
+              ];
+              downloadCsv(`billing-export-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+            }}
+          >
+            Export CSV
+          </Button>
+        )}
+      </div>
+
+      {billing.isPending && <SkeletonRows rows={5} className="mt-3 *:h-12" />}
       {billing.isError && <ErrorView error={billing.error} title="Could not load billing" />}
 
       {billing.data !== undefined && (
-        <div className="overflow-x-auto rounded border border-line">
-          <table className="data-table">
+        <div className="mt-3 overflow-x-auto rounded-xl border border-line">
+          <table className="w-full text-sm">
             <thead>
-              <tr>
-                <th>Organization</th>
-                <th>Status</th>
-                <th>Plan</th>
-                <th>Renews</th>
-                <th>Last invoice</th>
-                <th>Trial / grace ends</th>
-                <th>Stripe customer</th>
-                <th />
+              <tr className="border-b border-line bg-surface-sunken/60">
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Organization
+                </th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Status
+                </th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Plan
+                </th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Renews
+                </th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Last invoice
+                </th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Trial / grace ends
+                </th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Stripe customer
+                </th>
+                <th className="px-3 py-2.5" />
               </tr>
-            </thead>
-            <tbody>
-              {billing.data.orgs.map((org) => (
-                <tr key={org.orgId} className="border-b border-line/50 last:border-0">
-                  <td>
-                    {/* Clickable here too — the drill-down is the same panel
-                        the Orgs tab opens, and an operator triaging a payment
-                        should not have to switch tabs to reach it. */}
+            </thead>{' '}
+            <tbody className="divide-y divide-line/50">
+              {(filteredOrgs ?? []).map((org) => (
+                <tr key={org.orgId} className="group transition-colors hover:bg-surface-hover/50">
+                  <td className="px-3 py-2.5">
                     <button
                       type="button"
-                      className="text-left font-medium text-ink underline decoration-dotted underline-offset-2 hover:text-accent"
+                      className="text-left font-medium text-ink transition-colors hover:text-accent"
                       onClick={() => {
                         setBillingDetailOrgId(org.orgId);
                       }}
@@ -2849,29 +3922,26 @@ function BillingTab({
                     </button>
                     <p className="font-mono text-[11px] text-ink-faint">{org.slug}</p>
                   </td>
-                  <td>
+                  <td className="px-3 py-2.5">
                     <BillingStatusBadge billingStatus={org.billingStatus} />
                   </td>
-                  <td>
+                  <td className="px-3 py-2.5">
                     <p className="text-ink">{org.planName ?? org.planId ?? '—'}</p>
                     {org.currentPriceCents !== null && (
                       <p className="text-[11px] text-ink-faint">
                         {money(org.currentPriceCents, 'usd')}/{org.currentPriceInterval ?? 'month'}
                       </p>
                     )}
-                    {/* A parked downgrade is the most surprising fact on this
-                        row — "renews on the 14th" is true and misleading when
-                        what happens on the 14th is a plan change. */}
                     {org.pendingPlanId !== null && org.pendingPlanEffectiveAt !== null && (
-                      <p className="text-[11px] text-warning">
+                      <p className="text-[11px] font-medium text-warning">
                         → {org.pendingPlanId} {formatDate(org.pendingPlanEffectiveAt)}
                       </p>
                     )}
                   </td>
-                  <td className="text-ink-muted">
+                  <td className="px-3 py-2.5 text-ink-muted">
                     {org.currentPeriodEnd === null ? '—' : formatDate(org.currentPeriodEnd)}
                   </td>
-                  <td>
+                  <td className="px-3 py-2.5">
                     {org.lastInvoice === null ? (
                       <span className="text-ink-faint">—</span>
                     ) : (
@@ -2890,17 +3960,17 @@ function BillingTab({
                       </>
                     )}
                   </td>
-                  <td className="whitespace-nowrap text-ink-muted">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
                     {org.billingStatus === 'past_due' && org.billingGraceEndsAt !== null
                       ? formatDate(org.billingGraceEndsAt)
                       : org.trialEndsAt !== null
                         ? formatDate(org.trialEndsAt)
                         : '—'}
                   </td>
-                  <td className="font-mono text-[11px] text-ink-faint">
+                  <td className="max-w-35 truncate px-3 py-2.5 font-mono text-[11px] text-ink-faint">
                     {org.stripeCustomerId ?? '—'}
                   </td>
-                  <td className="text-right">
+                  <td className="px-3 py-2.5 text-right">
                     {org.billingStatus === 'past_due' && (
                       <Button
                         size="sm"
@@ -2917,6 +3987,15 @@ function BillingTab({
                   </td>
                 </tr>
               ))}
+              {(filteredOrgs ?? []).length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-ink-faint">
+                    {search.trim() !== ''
+                      ? 'No organizations match your search.'
+                      : 'No billing entries found.'}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -2993,25 +4072,16 @@ function BillingTab({
         </ModalRoot>
       )}
 
-      <div className="flex items-center gap-2">
-        <Button
-          variant="secondary"
-          disabled={cursor === null}
-          onClick={() => {
+      <div className="mt-3">
+        <Pagination
+          hasMore={cursor !== null || (billing.data?.nextCursor ?? null) !== null}
+          onNewest={() => {
             setCursor(null);
           }}
-        >
-          Newest
-        </Button>
-        <Button
-          variant="secondary"
-          disabled={billing.data?.nextCursor === null}
-          onClick={() => {
+          onOlder={() => {
             setCursor(billing.data?.nextCursor ?? null);
           }}
-        >
-          Older
-        </Button>
+        />
       </div>
     </section>
   );
@@ -3019,13 +4089,31 @@ function BillingTab({
 
 function BillingStatusBadge({ billingStatus }: { readonly billingStatus: string }) {
   if (billingStatus === 'active') {
-    return <Badge className="border-success/40 bg-success/10 text-success">active</Badge>;
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
+        <span className="size-1.5 rounded-full bg-success" />
+        active
+      </span>
+    );
   }
   if (billingStatus === 'trialing') {
-    return <Badge className="border-line bg-surface-sunken text-ink-faint">trial</Badge>;
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-faint">
+        trial
+      </span>
+    );
   }
   if (billingStatus === 'past_due') {
-    return <Badge className="border-danger/40 bg-danger/10 text-danger">past due</Badge>;
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">
+        <ShieldAlert className="size-3" strokeWidth={2.5} />
+        past due
+      </span>
+    );
   }
-  return <Badge className="border-danger/40 bg-danger/10 text-danger">canceled</Badge>;
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">
+      canceled
+    </span>
+  );
 }
