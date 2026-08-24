@@ -5051,3 +5051,43 @@ as `push-notifications-section.tsx`'s own precedent — the whole component is `
 `useMutation` wiring and JSX with no pure logic worth extracting, the same reasoning that file's
 absence of a test already establishes. **Not device-verified**: the toggle-chip interaction and the
 disabled-reason text have not been checked against a real screen size or a real registered device.
+
+## Docs: version history — save and restore, gap #3 off the same audit
+
+`src/lib/docs-versions.ts` (types + query key) and `docs-page/[pageId].tsx`'s new
+`VersionHistorySection`, ported from `apps/web/src/features/docs/version-history.tsx`. The last of
+the three Tier-1 items the fresh mobile-vs-web audit named (bulk actions, the notification-prefs
+matrix, this) — chosen third for the same reason web's own file was easy to port: `save`/`restore`
+never send or receive rich text, exactly like backlinks/publish/PDF export/templates before them.
+`save` snapshots whatever the server's live Yjs document currently holds; `restore` copies a stored
+snapshot back over it — both entirely server-side, so a mobile caller only ever sends a `pageId` or
+a `pageId` + `versionId`, never document content.
+
+**Restoring does not touch an already-open live connection, on mobile any more than on web, and
+this app needed its own fix for it.** `page-version.service.ts`'s own header is explicit: restore
+writes a fresh snapshot without notifying a currently-connected `apps/collab` session, which only
+picks it up on its NEXT connect. Web's answer is `onRestored` remounting `DocsEditor` with a fresh
+`key`; this screen's answer is the same shape, one level up — `DocsPageScreen` now renders through
+a new `DocsPageScreenBody`, which owns a `reconnectKey` state and keys `DocsPageContent` on it.
+`useDocPage`'s effect only re-runs when `orgId`/`pageId` change, neither of which a restore
+touches, so bumping that key is what forces a full unmount/remount — a fresh `Y.Doc`, a fresh
+`HocuspocusProvider` — after a successful restore. Skipping this would make "Restore" appear to do
+nothing until the page is left and reopened, indistinguishable from having failed; that gap did not
+exist before this pass because nothing on this screen previously needed to force a reconnect.
+
+**`kind` is not filtered, matching web's own reasoning**: someone restoring to "right before I
+broke it" may well want to reach for an autosave point, not just a manual save, so every version
+kind (`manual`/`autosave`/`publish`) is listed and only shown as a small pill, never hidden.
+Restoring asks first — an `Alert.alert` confirm ("Restore this version? The page will be replaced
+with this version's content.") — the native equivalent of web's `ConfirmButton`, since this app has
+no two-step hover-then-click affordance to borrow.
+
+Verified: typecheck clean on first pass, lint clean, guardrail self-test clean, encoding check
+clean, and real `expo export` for both platforms bundle cleanly. No new test file: `save`/`restore`
+are one-shot mutations with no pure logic to extract, the same shape publish/unpublish and template
+creation already established with no dedicated tests of their own. **Not device-verified**: the
+`reconnectKey` remount is the one genuinely new mechanism in this pass and has not been checked
+against a real restore on a real device — in particular, whether the brief unmount/remount reads as
+a flicker or a clean transition, and whether a second client (web, open on the same page) actually
+picks up the restored content on ITS next reconnect the way `page-version.service.ts`'s own header
+says it should.

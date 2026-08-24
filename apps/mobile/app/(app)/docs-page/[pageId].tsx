@@ -44,6 +44,7 @@ import { RichTextView } from '../../../src/lib/rich-text-view.js';
 import { pagesQueryKey, backlinksQueryKey, type Backlink } from '../../../src/lib/docs.js';
 import { commentsQueryKey, type DocComment } from '../../../src/lib/docs-comments.js';
 import { suggestionsQueryKey, type DocSuggestion } from '../../../src/lib/docs-suggestions.js';
+import { pageVersionsQueryKey, type PageVersionSummary } from '../../../src/lib/docs-versions.js';
 
 /**
  * A page's live content — reading it, AND now writing it — plus everything
@@ -126,15 +127,51 @@ export default function DocsPageScreen() {
     );
   }
 
-  return <DocsPageContent pageId={parsedPageId.data} spaceId={parsedSpaceId.data} />;
+  return <DocsPageScreenBody pageId={parsedPageId.data} spaceId={parsedSpaceId.data} />;
 }
 
-function DocsPageContent({
+/**
+ * Owns the remount key `VersionHistorySection`'s restore needs.
+ * `page-version.service.ts`'s own header (mirrored on web) is explicit that
+ * restoring writes a fresh `docs.page_versions` snapshot without touching
+ * an already-open live `apps/collab` session — a connected client only
+ * picks it up on its NEXT connect, not live. `useDocPage`'s effect only
+ * re-runs when `orgId`/`pageId` change, neither of which a restore
+ * touches, so `key={reconnectKey}` on `DocsPageContent` is what forces a
+ * full unmount/remount (a fresh `Y.Doc`, a fresh `HocuspocusProvider`)
+ * after a successful restore — the same mechanism web's `onRestored` uses
+ * to remount `DocsEditor` with a fresh key. Without it, "Restore" would
+ * appear to do nothing until the screen is left and reopened, which is
+ * indistinguishable from having failed.
+ */
+function DocsPageScreenBody({
   pageId,
   spaceId,
 }: {
   readonly pageId: PageId;
   readonly spaceId: SpaceId;
+}) {
+  const [reconnectKey, setReconnectKey] = useState(0);
+  return (
+    <DocsPageContent
+      key={reconnectKey}
+      pageId={pageId}
+      spaceId={spaceId}
+      onRestored={() => {
+        setReconnectKey((current) => current + 1);
+      }}
+    />
+  );
+}
+
+function DocsPageContent({
+  pageId,
+  spaceId,
+  onRestored,
+}: {
+  readonly pageId: PageId;
+  readonly spaceId: SpaceId;
+  readonly onRestored: () => void;
 }) {
   const orgId = useSession((state) => state.orgId);
   const paddingTop = useTopInset();
@@ -376,6 +413,7 @@ function DocsPageContent({
         <CommentsSection pageId={pageId} doc={doc} />
         <SuggestionsSection pageId={pageId} doc={doc} />
         <BacklinksSection pageId={pageId} />
+        <VersionHistorySection pageId={pageId} onRestored={onRestored} />
       </ScrollView>
 
       <SaveTemplateModal
@@ -972,6 +1010,120 @@ function BacklinksSection({ pageId }: { readonly pageId: string }) {
   );
 }
 
+/**
+ * Save a snapshot on demand, or restore an earlier one — ported from
+ * `apps/web/src/features/docs/version-history.tsx`; that file's own header
+ * is the one to read on the "does not touch an already-open live session"
+ * point, since `DocsPageScreenBody`'s `onRestored` is this app's answer to
+ * the identical problem. `kind` is not filtered here either, matching
+ * web's own reasoning: someone restoring to "right before I broke it" may
+ * well want an autosave point, not just a manual save.
+ */
+function VersionHistorySection({
+  pageId,
+  onRestored,
+}: {
+  readonly pageId: string;
+  readonly onRestored: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const { personOf } = useMembers();
+  const queryKey = pageVersionsQueryKey(pageId);
+
+  const versions = useQuery({
+    queryKey,
+    queryFn: async () => wire(await apiClient.docs.pageVersions.list.query({ pageId })),
+  });
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey });
+
+  const save = useMutation({
+    mutationFn: () => apiClient.docs.pageVersions.save.mutate({ pageId }),
+    onSuccess: invalidate,
+    onError: (error: unknown) => {
+      Alert.alert('The version was not saved', apiErrorOf(error)?.error.message);
+    },
+  });
+
+  const restore = useMutation({
+    mutationFn: (versionId: string) =>
+      apiClient.docs.pageVersions.restore.mutate({ pageId, versionId }),
+    onSuccess: async () => {
+      await invalidate();
+      onRestored();
+    },
+    onError: (error: unknown) => {
+      Alert.alert('The version was not restored', apiErrorOf(error)?.error.message);
+    },
+  });
+
+  const rows = versions.data ?? [];
+
+  return (
+    <Section label="Version history">
+      <Pressable
+        style={styles.actionButton}
+        disabled={save.isPending}
+        onPress={() => {
+          save.mutate();
+        }}
+      >
+        {save.isPending ? (
+          <ActivityIndicator size="small" color={colors.ink.hex} />
+        ) : (
+          <Text style={styles.actionButtonText}>Save current version</Text>
+        )}
+      </Pressable>
+
+      {versions.isPending && <ActivityIndicator color={colors.accent.hex} />}
+      {rows.map((version: PageVersionSummary) => {
+        const authorLabel = version.createdBy === null ? null : personOf(version.createdBy).label;
+        return (
+          <View key={version.versionId} style={styles.versionRow}>
+            <View style={styles.versionInfo}>
+              <View style={styles.versionKindPill}>
+                <Text style={styles.versionKindText}>{version.kind}</Text>
+              </View>
+              <Text style={styles.versionAuthor} numberOfLines={1}>
+                {authorLabel ?? (version.kind === 'autosave' ? 'Autosave' : 'Unknown')}
+              </Text>
+              <Text style={styles.versionTime}>
+                {formatDistanceToNow(new Date(version.createdAt), { addSuffix: true })}
+              </Text>
+            </View>
+            <Pressable
+              disabled={restore.isPending}
+              onPress={() => {
+                Alert.alert(
+                  'Restore this version?',
+                  'The page will be replaced with this version’s content.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Restore',
+                      style: 'destructive',
+                      onPress: () => {
+                        restore.mutate(version.versionId);
+                      },
+                    },
+                  ],
+                );
+              }}
+            >
+              <Text style={styles.versionRestoreText}>Restore</Text>
+            </Pressable>
+          </View>
+        );
+      })}
+      {rows.length === 0 && !versions.isPending && (
+        <Text style={styles.sectionEmptyHint}>
+          No saved versions yet. Save one, or wait for the next autosave.
+        </Text>
+      )}
+    </Section>
+  );
+}
+
 function SaveTemplateModal({
   visible,
   pending,
@@ -1321,6 +1473,47 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.accent.hex,
     fontWeight: '600',
+  },
+  versionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line.hex,
+  },
+  versionInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  versionKindPill: {
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    backgroundColor: colors.surfaceSunken.hex,
+  },
+  versionKindText: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    color: colors.inkMuted.hex,
+  },
+  versionAuthor: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.inkMuted.hex,
+  },
+  versionTime: {
+    fontSize: 11,
+    color: colors.inkFaint.hex,
+  },
+  versionRestoreText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.danger.hex,
   },
   avoider: {
     flex: 1,
