@@ -28,6 +28,13 @@ import { CardRow } from '../../../src/lib/card-row.js';
 import { mergePatch } from '../../../src/lib/card-patch.js';
 import { describeOutcome, runBulk } from '../../../src/lib/work-bulk.js';
 import { ShareBoardButton } from '../../../src/lib/share-board-modal.js';
+import { BoardFilterButton } from '../../../src/lib/board-filter-sheet.js';
+import {
+  EMPTY_BOARD_FILTER,
+  boardFilterKey,
+  buildBoardFilter,
+  type BoardFilterSelection,
+} from '../../../src/lib/board-filter.js';
 import {
   MY_TASKS_QUERY_KEY,
   PRIORITY_LABEL,
@@ -35,6 +42,7 @@ import {
   archivedListsQueryKey,
   boardCardsQueryKey,
   cardQueryKey,
+  filteredBoardCardsQueryKey,
   statusesQueryKey,
   listsQueryKey,
   type CardDetail,
@@ -102,8 +110,17 @@ import {
  * **Still explicitly out of scope, real and separate work**: list
  * REORDERING (web's own left/right buttons in `ListMenu` have no mobile
  * equivalent yet — the tab strip's order is whatever `lists.list` returns),
- * saved views, filters, and the group-by/sort-by controls `home.tsx`'s own
- * due-date grouping is the one instance of on this app so far.
+ * SAVED views (`BoardFilterButton`'s own selection resets on leaving the
+ * screen — no `work.views.*` persistence yet, a real, separate follow-up),
+ * and the group-by/sort-by controls `home.tsx`'s own due-date grouping is
+ * the one instance of on this app so far. **Filtering itself is no longer
+ * on this list** — `board-filter.ts`/`board-filter-sheet.tsx`'s
+ * `BoardFilterButton`, ported as a simplified status/priority/assignee/
+ * label chip filter rather than web's full AND/OR tree editor, the same
+ * "flat, not a reduced port of the tree" call `search-button.tsx`'s own
+ * header makes for TQL text. Tab counts stay unfiltered — they answer
+ * "how close to this list's WIP limit," a question the true count answers
+ * and a filtered one would not — while the card list itself narrows.
  *
  * **`useBoardRoom` joins this board's room** — `gatewaySocket`'s first real
  * caller on this app (see that hook's own header for why `card/[cardId].tsx`
@@ -187,9 +204,13 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
     queryKey: listsQueryKey(boardId),
     queryFn: async () => wire(await apiClient.work.lists.list.query({ boardId })),
   });
+  const [filterSelection, setFilterSelection] = useState<BoardFilterSelection>(EMPTY_BOARD_FILTER);
+  const filterNode = buildBoardFilter(filterSelection);
+
   const cards = useQuery({
-    queryKey: boardCardsQueryKey(boardId),
-    queryFn: async () => wire(await apiClient.work.cards.list.query({ boardId })),
+    queryKey: filteredBoardCardsQueryKey(boardId, boardFilterKey(filterNode)),
+    queryFn: async () =>
+      wire(await apiClient.work.cards.list.query({ boardId, filter: filterNode })),
   });
 
   const cardsByList = useMemo(() => {
@@ -264,14 +285,26 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
   const selectionMode = selectedIds.size > 0;
 
   // Any card on the board answers this the same way (`project_id` is
-  // denormalized onto every card — CLAUDE.md's own note on why). Only ever
-  // consulted once a selection exists, so an empty board never needs it.
-  const bulkProjectId = cards.data?.[0]?.projectId ?? null;
+  // denormalized onto every card — CLAUDE.md's own note on why). Shared by
+  // the bulk-action status picker below AND `BoardFilterButton`'s own
+  // status/label chip rows, since neither has any other source for it.
+  //
+  // Captured ONCE from the first response that has one, not re-derived on
+  // every render — `cards` is now filter-aware, and a filter that narrows
+  // the board to zero rows would otherwise make this go back to null the
+  // moment someone actually uses the filter it feeds, breaking the very
+  // sheet that set it.
+  const [capturedProjectId, setCapturedProjectId] = useState<string | null>(null);
+  const firstCardProjectId = cards.data?.[0]?.projectId ?? null;
+  if (firstCardProjectId !== null && capturedProjectId === null) {
+    setCapturedProjectId(firstCardProjectId);
+  }
+  const boardProjectId = capturedProjectId;
   const bulkStatuses = useQuery({
-    queryKey: statusesQueryKey(bulkProjectId ?? ''),
+    queryKey: statusesQueryKey(boardProjectId ?? ''),
     queryFn: async () =>
-      wire(await apiClient.work.statuses.list.query({ projectId: bulkProjectId ?? '' })),
-    enabled: bulkPicker === 'status' && bulkProjectId !== null,
+      wire(await apiClient.work.statuses.list.query({ projectId: boardProjectId ?? '' })),
+    enabled: bulkPicker === 'status' && boardProjectId !== null,
   });
 
   /**
@@ -388,6 +421,11 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
       <View style={styles.header}>
         <BackButton />
         <View style={styles.headerActions}>
+          <BoardFilterButton
+            projectId={boardProjectId}
+            selection={filterSelection}
+            onChange={setFilterSelection}
+          />
           <ShareBoardButton boardId={boardId} />
           <Pressable
             style={styles.archivedButton}

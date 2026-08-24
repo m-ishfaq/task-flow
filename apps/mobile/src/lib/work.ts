@@ -155,6 +155,24 @@ export function archivedCardsQueryKey(
 }
 
 /**
+ * The board's card read, filter-aware — nested UNDER `boardCardsQueryKey`'s
+ * own key, the same convention `archivedCardsQueryKey` uses, so every
+ * mutation that already invalidates the unfiltered key (create, move,
+ * archive, bulk actions) refreshes whatever filtered view is on screen too,
+ * with no second invalidation to remember. `filterKey` is a caller-computed
+ * fragment (`board-filter.ts`'s own `boardFilterKey`, mirroring web's
+ * `filterKey` in `apps/web/src/features/work/api.ts`) rather than the raw
+ * `FilterNode` itself, so two structurally-equal filters built at different
+ * times share one cache entry instead of comparing objects by reference.
+ */
+export function filteredBoardCardsQueryKey(
+  boardId: string,
+  filterKey: string,
+): readonly ['work.cards.list', string, string] {
+  return ['work.cards.list', boardId, filterKey];
+}
+
+/**
  * Due-date grouping for "My Tasks" — ported from
  * `apps/web/src/features/work/grouping.ts`'s `dueBucketOf`/`groupCards`,
  * narrowed to just the `'due'` case rather than the full five-way

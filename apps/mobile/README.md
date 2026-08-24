@@ -5169,3 +5169,72 @@ the share modal's mode-swap transition, the step-up re-authentication round trip
 specifically (as opposed to the account-page flows it was built for), and whether restoring an
 archived list with cards still on the board's OTHER active lists reads correctly once the sheet
 closes.
+
+## The last Tier-2 item: a simplified board filter, not a reduced port of the tree editor
+
+`src/lib/board-filter.ts` (pure AST construction) and `board-filter-sheet.tsx` (the trigger +
+sheet), wired into `board/[boardId].tsx`'s header row. Web's own filter is a full, arbitrarily
+nested AND/OR tree editor over every field `packages/filter/src/fields.ts` whitelists —
+`filter-builder.tsx` plus its value editor and TQL-draft round trip come to 1,353 lines. This is
+not a cut-down port of that: it is a flat AND of the four fields people actually reach for while
+scanning a board on a phone — status, priority, assignee, label — the same "the reduced surface IS
+the whole feature, not a partial one" call `search-button.tsx`'s own header made for TQL text.
+
+**`@taskflow/filter` is a real new dependency of this app — the first genuinely new workspace
+package since `@taskflow/policy` landed for board sharing, and the same category of addition: pure
+`zod`, no native code, no dev-client rebuild.** `compare`/`and` are `packages/filter/src/ast.ts`'s
+own constructors — the SAME ones web's visual builder and Phase 8's TQL parser both call — so a
+node built here is guaranteed shape-correct rather than a hand-typed object that compiles today and
+silently stops matching the real type after a server-side rename. The server still re-validates
+every field name and operator against the real whitelist regardless
+(`packages/filter/src/fields.ts`'s own header, "no user string ever reaches the database as a field
+name or operator") — this file only has to build something well-formed, not something trustworthy
+on its own. Confirmed clean via the guardrail self-test and both platforms' `expo export`, the same
+verification `@taskflow/policy`'s own addition needed.
+
+**A `null` filter is `work.cards.list`'s own default, sent as `null` rather than an empty AND
+group** — an unfiltered board sends exactly what it always has, byte for byte. A single populated
+field is still wrapped in `and(...)` rather than sent as a bare comparison: one shape to reason
+about instead of two, and the server treats a one-child group identically to the clause alone.
+
+**The query key nests the filter fragment UNDER the board's own unfiltered key**
+(`filteredBoardCardsQueryKey`, mirroring `archivedCardsQueryKey`'s own convention two sections up),
+using a stable JSON-string fragment (`boardFilterKey`, mirroring web's identically-named
+`filterKey` in `apps/web/src/features/work/api.ts`) rather than the raw `FilterNode` object, so two
+structurally-equal filters built at different moments share one cache entry instead of comparing by
+reference. Every existing mutation that already invalidates the plain `boardCardsQueryKey(boardId)`
+— create, move, archive, bulk actions — refreshes whatever filtered view happens to be on screen
+too, via TanStack Query's own prefix matching, with no invalidation call site touched.
+
+**A real bug this pass introduced and then fixed before it shipped: the status/label picker used to
+lose its own data source the moment its filter actually filtered.** `board/[boardId].tsx` already
+derived a "some card's `project_id`" value for the bulk-action status picker
+(`cards.data?.[0]?.projectId`) — safe when `cards` was always unfiltered, since any card at all
+answered it. Making `cards` filter-aware breaks that the instant a filter narrows the board to zero
+matching cards: `cards.data` becomes `[]`, the derived project id goes back to `null`, and the
+filter sheet's own status/label rows — which need that same id — would render "Add a card to this
+board first" on a board that plainly has cards, just not ones matching the current filter. Fixed by
+capturing the id ONCE, into real state, the first time any response has one, using the identical
+compare-and-`setState`-during-render pattern `use-doc-page.tsx`'s own `connectionKey` already
+established in this codebase — not a new pattern, the existing one applied where a second caller
+now needed the same guarantee.
+
+**Tab counts stay unfiltered, on purpose.** `list.cardCount` (from `work.lists.list`, its own
+separate, always-live read) answers "how close is this list to its WIP limit" — a question the
+TRUE count answers and a filtered one would misrepresent, showing a column that reads as nearly
+empty while it is actually near its limit. The card list itself narrows to matches; the tab strip's
+numbers do not.
+
+**Saved views are the one honest gap left, named rather than silently absent.** A filter selection
+lives in local component state and resets the moment this screen unmounts — no `work.views.*`
+persistence, no shared-vs-private distinction, no named-view picker. Real, separate follow-up work,
+not something this pass quietly rolled into "filters," matching the file's own updated header.
+
+Verified: typecheck clean on first pass, lint clean, 10 new tests in `board-filter.test.ts`
+(emptiness, AST shape for one field and for all four ANDed together, the `boardFilterKey`/`filter:
+null` pairing, and the assignee/label toggle helpers) alongside the existing 385 — 395 total —
+guardrail self-test clean (including a fresh check that `@taskflow/filter` imports cleanly from
+this app, the same category of proof `@taskflow/policy` needed), encoding check clean, and real
+`expo export` for both platforms bundle cleanly. **Not device-verified**: the chip-row layout at
+four groups deep in one sheet, and whether the empty-to-populated `capturedProjectId` transition
+reads smoothly the first time a board with cards actually loads on a real device.
