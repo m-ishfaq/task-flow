@@ -23,6 +23,7 @@
     "build": "expo export"
   },
   "dependencies": {
+    "@config-plugins/react-native-callkeep": "^14.0.2",
     "@config-plugins/react-native-webrtc": "^15.0.2",
     "@expensify/react-native-live-markdown": "^0.1.335",
     "@expo/vector-icons": "^15.0.2",
@@ -59,6 +60,7 @@
     "html-entities": "2.5.3",
     "react": "19.2.3",
     "react-native": "0.86.2",
+    "react-native-callkeep": "^4.3.16",
     "react-native-get-random-values": "^1.11.0",
     "react-native-incall-manager": "^4.2.2",
     "react-native-passkeys": "^0.4.2",

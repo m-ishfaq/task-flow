@@ -28,6 +28,7 @@ import {
   useCallStore,
   type AudioDevice,
 } from './use-call.js';
+import { useCallKeepBridge } from './call-keep.js';
 
 /**
  * Everything about a call that must outlive the screen it started on
@@ -85,6 +86,13 @@ import {
  * would be worse than not offering it.
  */
 export function CallSurface(): React.JSX.Element {
+  /* CallKit (iOS) / ConnectionService (Android) — see `call-keep.ts`'s own
+     header for the full design. Renders nothing; mounted here rather than
+     as its own sibling in `_layout.tsx` because this component is already
+     "everything about a call that must outlive the screen it started on,"
+     and native call-UI integration is exactly that. */
+  useCallKeepBridge();
+
   return (
     <View style={styles.overlay} pointerEvents="box-none">
       <IncomingCallBanner />

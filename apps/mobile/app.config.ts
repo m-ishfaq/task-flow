@@ -186,6 +186,19 @@ const config: ExpoConfig = {
         cameraPermission: 'TaskFlow will use your camera for video calls in a future update.',
       },
     ],
+    /* Native CallKit (iOS) / ConnectionService (Android) — `call-keep.ts`'s
+       own header explains the feature and its real scope (the app-process-
+       alive case; waking a killed app is separate, not-yet-built work).
+       This plugin does exactly three things, all inspectable in its own
+       source (`@config-plugins/react-native-callkeep`'s `withCallkeep.js`):
+       adds `voip` to iOS's `UIBackgroundModes` and links `CallKit`/`Intents`
+       .framework, and on Android adds the phone/call-management permissions
+       plus the two services (`VoiceConnectionService`, a background
+       messaging service) `react-native-callkeep`'s native module needs
+       registered in the manifest. It does NOT wire PushKit/VoIP-push
+       AppDelegate code — that is a real, separate, manual native step this
+       app does not need yet, since nothing sends a VoIP push. */
+    '@config-plugins/react-native-callkeep',
   ],
   extra: {
     apiBaseUrl: API_BASE_URL,

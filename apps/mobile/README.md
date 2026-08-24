@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed; the "needs a rich text editor" call on `@mention` composing turned out to be wrong for the mid-string case specifically (a plain `TextInput`'s own `onSelectionChange`/`selection` was enough) and is fixed too — see "`@mention` now works mid-string"; a real native (no WebView) rich text editor — bold, links, and lists — now composes on all four surfaces named for it (chat message composer, thread replies, card description, card comments), via `@expensify/react-native-live-markdown`'s `MarkdownTextInput` and a live/send-time split for the one thing it cannot highlight live (lists) — see "A real rich text editor..."; **in-app voice calling (Phase 13, Wave 5 here) now ships on mobile** — signaling (`react-native-webrtc`), ringing, ringtones, call history, and recording-consent participation, by explicit project-owner direction scoped to in-app ringing only (CallKit/ConnectionService lock-screen UI named as a real, separate follow-up rather than included) — see "In-app voice calling..."; the notification bell is now reachable from every tab and the org picker has a sign-out escape hatch — see "The notification bell was only reachable..."; **org settings (the member roster, invites, and role changes) now ships** — see "Org settings: the member roster..." — and **project settings (labels, statuses, custom fields, board rename/archive) now ships too** — see "Project settings: labels, statuses, and custom fields..." — and **Teams, ownership transfer, and billing now ship as well** — see "Teams, ownership transfer, and billing..." — closing every item the original "org settings and perms not wired yet" report named
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed; the "needs a rich text editor" call on `@mention` composing turned out to be wrong for the mid-string case specifically (a plain `TextInput`'s own `onSelectionChange`/`selection` was enough) and is fixed too — see "`@mention` now works mid-string"; a real native (no WebView) rich text editor — bold, links, and lists — now composes on all four surfaces named for it (chat message composer, thread replies, card description, card comments), via `@expensify/react-native-live-markdown`'s `MarkdownTextInput` and a live/send-time split for the one thing it cannot highlight live (lists) — see "A real rich text editor..."; **in-app voice calling (Phase 13, Wave 5 here) now ships on mobile** — signaling (`react-native-webrtc`), ringing, ringtones, call history, and recording-consent participation, by explicit project-owner direction scoped to in-app ringing only (CallKit/ConnectionService lock-screen UI named as a real, separate follow-up rather than included) — see "In-app voice calling..."; the notification bell is now reachable from every tab and the org picker has a sign-out escape hatch — see "The notification bell was only reachable..."; **org settings (the member roster, invites, and role changes) now ships** — see "Org settings: the member roster..." — and **project settings (labels, statuses, custom fields, board rename/archive) now ships too** — see "Project settings: labels, statuses, and custom fields..." — and **Teams, ownership transfer, and billing now ship as well** — see "Teams, ownership transfer, and billing..." — closing every item the original "org settings and perms not wired yet" report named; **native CallKit (iOS) / ConnectionService (Android) integration now covers the app-alive case** — a ringing call now registers with the OS the moment it enters the same `rtc.incoming` list `IncomingCallBanner` already polls, so it gets real audio-focus/Bluetooth/Do-Not-Disturb integration and, on iOS, the actual lock-screen call UI — see "Native CallKit / ConnectionService..." for exactly what this covers and what a killed app still needs, which is real, separate, not-yet-built work
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -5238,3 +5238,106 @@ this app, the same category of proof `@taskflow/policy` needed), encoding check 
 `expo export` for both platforms bundle cleanly. **Not device-verified**: the chip-row layout at
 four groups deep in one sheet, and whether the empty-to-populated `capturedProjectId` transition
 reads smoothly the first time a board with cards actually loads on a real device.
+
+## Native CallKit / ConnectionService — the app-alive half of a real reliability gap, in three passes
+
+The mobile-vs-web audit's own Tier 3 named this "the most consequential *reliability* gap in the
+whole app": a ringing call today reaches only `call-surface.tsx`'s in-app `IncomingCallBanner` — a
+component rendered inside this app's own React tree, so a backgrounded app, a locked phone, or a
+killed process all mean the same thing, a call that rings and nobody sees it. The scope is genuinely
+three separate problems, not one, and this pass is deliberately the first of them: `src/lib/call-keep.ts`
+(new) bridges the app's existing call state to native CallKit/ConnectionService for the case where the
+app PROCESS is alive — foreground or backgrounded with the socket still connected. Waking a fully
+killed app is Pass B (Android, via the push infrastructure this app already has) and Pass C (iOS, via
+VoIP push, which needs infrastructure this app does not have yet) — both named as follow-up work below,
+neither started.
+
+**`react-native-callkeep`, dynamically imported, matching this app's own established rule.** Its
+module degrades to `undefined` on import rather than throwing — so a static import would not
+immediately crash a build that predates this dependency, but calling a method on it would, the exact
+failure shape `use-call.ts`'s own header already documents for `react-native-webrtc` and
+`react-native-incall-manager`. `loadCallKeep()` is the same lazy, memoized, `.catch(() => null)`
+pattern this app now uses for every native module that isn't in every build (`expo-notifications`,
+`expo-local-authentication`, `react-native-qrcode-svg`, and now this).
+
+**iOS shows the real system call UI; Android does not, and that is the library's own documented
+behaviour, not a gap here.** CallKit's `displayIncomingCall` draws Apple's actual lock-screen/
+full-screen incoming-call surface unconditionally — every VoIP app on iOS is required to use it.
+Android's ConnectionService, in the self-managed mode this app uses (the only mode a non-carrier app
+can practically use — the library's own README explains why), hands audio focus, Bluetooth routing,
+and Do-Not-Disturb awareness to the OS but leaves the VISUAL surface to the app: "apps are able and
+required to provide their own UI," in the library's own words. This app already has one —
+`IncomingCallBanner`, reading the same `incomingCallsQueryKey` this bridge subscribes to — so on
+Android, `displayIncomingCall` registers the call for correct system integration; it does not replace
+the banner. A native, lock-screen-covering Android surface (a full-screen high-priority notification)
+is real, separate work tied to the same background-wake problem as VoIP push, not something this pass
+quietly rolled in.
+
+**State-driven, not event-driven, for which direction reports which.** Two independent facts drive the
+bridge: `incoming` (who is ringing this user — the exact `rtc.incoming` query the banner already
+polls, sharing its cache entry, no second poll added) and `callStore` (is this device actually in a
+call). A native call display is issued the moment a session enters `incoming`, and reported ended the
+moment it leaves without this device having joined; `answerIncomingCall` fires the moment `callStore`'s
+session matches one the bridge is displaying, whichever side caused it — the banner's own Answer
+button or CallKit's own UI; `endCall`/`reportEndCallWithUUID` fires the moment `callStore` returns to
+idle for a session the bridge was tracking. This is simpler and more robust than threading a new call
+into every place `use-call.ts` or the banner could end a call: state changing IS the fact, regardless
+of which control caused it. The reverse direction — CallKit's own `answerCall`/`endCall` events, fired
+when the lock screen (or whatever this app renders as its own Android surface) reports a user action —
+calls the identical `joinCall` the banner's own Answer button calls, using call info cached at
+`displayIncomingCall` time (the event payload carries only the UUID).
+
+**The plugin was verified against real generated native output, not read as source and trusted.**
+`@config-plugins/react-native-callkeep` mirrors the `@config-plugins/react-native-webrtc` pattern
+already in `app.config.ts`, and its own source (`withCallkeep.js`) was read in full before adding it —
+but a config plugin's actual correctness is what it writes into `Info.plist`/`AndroidManifest.xml`,
+which only a real `expo prebuild` shows. Both platforms were prebuilt locally (`--no-install`, output
+discarded after inspection — this project stays pure managed-workflow, no native folders checked in)
+and the generated files confirmed by hand: iOS gets `voip` in `UIBackgroundModes` plus `CallKit.framework`
+and `Intents.framework` linked; Android gets the phone/call-management permissions plus the
+`VoiceConnectionService` and background-messaging services the native module needs registered, found via
+`settings.gradle`'s own Gradle-time dynamic autolinking — no static reference needed, the same
+mechanism `react-native-webrtc` already relies on. The plugin does exactly this and nothing more: it
+does **not** wire PushKit/VoIP-push `AppDelegate` code, which is real, separate, manual native work
+this app does not need yet, since nothing sends a VoIP push (Pass C, below).
+
+**Mounted once, in `call-surface.tsx`, alongside the banner it feeds off of.** `useCallKeepBridge()` is
+a bare hook call at the top of `CallSurface` rather than its own sibling component in `_layout.tsx` —
+`CallSurface` is already "everything about a call that must outlive the screen it started on," and
+native call-UI integration is exactly that.
+
+Verified: typecheck clean, lint clean (one `no-unnecessary-condition` warning on a `cancelled` flag set
+from a later closure inside an async IIFE — the identical shape, and identical warning, already accepted
+at `push-notifications.ts:191`), all 395 tests still pass (this pass added no new pure logic worth unit
+testing — the whole file is a bridge between two systems, neither of which a unit test can stand in
+for), guardrail self-test clean, encoding check clean, and real `expo export` for both platforms bundle
+cleanly (2,556 modules). **Not device-verified, and cannot be from this sandboxed environment even in
+principle**: `react-native-callkeep`'s own README states CallKit/ConnectionService do not function in a
+simulator at all — there is no substitute for a real phone here. Specifically unverified: whether
+Android's one-time "register a phone account" system dialog (fired by `ensureSetup` on first real use)
+reads as expected, whether the lock-screen Answer/Decline buttons actually reach `joinCall`/`decline` on
+a real device, and Bluetooth/CarPlay audio routing during an active call.
+
+**Named as real, separate, not-yet-built follow-up — not silently deferred:**
+
+- **Pass B (Android background/killed-app wake).** Nothing today wakes this app once its process is
+  gone; `incoming`'s six-second poll only helps while the app is already running. The plan: a new,
+  lightweight, freely-named outbox consumer (`claimPending`'s consumer argument is a plain string —
+  confirmed via `packages/db/src/outbox.ts`, no migration needed to add one) reading `rtc_session.started`
+  events, which already carry `invitedUserIds` in their payload, wired into `apps/api/src/tenancy/relay.ts`'s
+  existing tick rather than a new worker process. It would send a data-only/silent Expo push to each
+  invited user's registered `expo_push_tokens` devices — `ExpoPushProvider.send` currently requires
+  `title`/`body`/`path` and would need a data-only variant — received by an `expo-notifications`
+  `TaskManager`-registered background task on the mobile side that calls `RNCallKeep.displayIncomingCall`
+  directly, without this app's JS ever coming to the foreground.
+- **Pass C (iOS true-kill-state wake).** iOS has no equivalent to Android's background task; a killed
+  app can only be woken by a real APNs VoIP-type push delivered through PushKit, which Expo's own push
+  service does not support and which requires hand-written native `AppDelegate.m` Objective-C
+  (`pushRegistry:didReceiveIncomingPushWithPayload:...` calling `RNVoipPushNotificationManager`) — not
+  something safe to blind-inject via a config plugin from this environment. The plan mirrors
+  `push-notifications.ts`'s own "code-complete, infrastructure pending" precedent: a new
+  `platform.voip_push_tokens` migration (mirroring 0082's `expo_push_tokens` shape), a real
+  `ApnsVoipProvider` (JWT-signed APNs HTTP/2 client, following `push-provider.ts`'s existing pattern),
+  the `react-native-voip-push-notification` dependency and its token-registration call — shipped as
+  genuinely complete, correct code that fails loudly with no APNs credentials configured, with the
+  actual ~15-line `AppDelegate` snippet documented rather than injected automatically.
