@@ -20,6 +20,8 @@ import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { useMembers, type Person } from '../../../src/lib/use-members.js';
+import { TelephonyCallButton } from '../../../src/lib/telephony-call-button.js';
+import { directoryMemberQueryKey } from '../../../src/lib/people.js';
 import {
   callHistoryQueryKey,
   formatCallDuration,
@@ -229,6 +231,7 @@ function DirectMessageIdentity({
   readonly personOf: (userId: string) => Person;
 }) {
   const others = channel.memberIds.filter((userId) => userId !== viewerId);
+  const only = others.length === 1 ? others[0] : undefined;
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>
@@ -237,6 +240,45 @@ function DirectMessageIdentity({
       {others.map((userId) => (
         <PersonLine key={userId} person={personOf(userId)} />
       ))}
+      {only !== undefined && <DirectCallAction userId={only} />}
+    </View>
+  );
+}
+
+/**
+ * Click-to-call the other side of a 1:1 DM — the mobile counterpart of
+ * `apps/web/src/features/chat/channel-details.tsx`'s `DirectCallAction`,
+ * ported here rather than left as a gap: `telephony-call-button.tsx`'s
+ * `TelephonyCallButton` and `people.ts`'s `directoryMemberQueryKey` already
+ * existed (built for `person/[userId].tsx`'s own "Job" section), so closing
+ * this was wiring two existing pieces together, not new work.
+ *
+ * Only for a two-person DM — a group conversation has no single callee, and
+ * picking one for the caller would dial someone they did not choose. The
+ * number comes from the directory (`people.directory.get`), the same
+ * org-scoped `workPhone` field `person/[userId].tsx` already reads, rather
+ * than `useMembers`, whose cache backs every avatar in this app and is
+ * deliberately narrow — widening it to carry a phone number would mean
+ * every board render holds one, for the benefit of one panel.
+ *
+ * Silent when there is no number: this is an affordance, not a permission
+ * boundary — there is simply nothing to dial, and an explanatory empty
+ * state here would be noise on every DM in an org that has not filled the
+ * directory in.
+ */
+function DirectCallAction({ userId }: { readonly userId: string }) {
+  const member = useQuery({
+    queryKey: directoryMemberQueryKey(userId),
+    queryFn: async () => wire(await apiClient.people.directory.get.query({ userId })),
+  });
+  const workPhone = member.data?.workPhone ?? null;
+
+  if (workPhone === null) return null;
+
+  return (
+    <View style={styles.directCallRow}>
+      <Text style={styles.directCallPhone}>{workPhone}</Text>
+      <TelephonyCallButton to={workPhone} />
     </View>
   );
 }
@@ -1062,6 +1104,17 @@ const styles = StyleSheet.create({
     color: colors.inkMuted.hex,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  directCallRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  directCallPhone: {
+    fontSize: 12,
+    color: colors.inkMuted.hex,
+    fontVariant: ['tabular-nums'],
   },
   sectionHint: {
     fontSize: 12,

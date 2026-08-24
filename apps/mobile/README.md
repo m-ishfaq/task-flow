@@ -5091,3 +5091,81 @@ against a real restore on a real device — in particular, whether the brief unm
 a flicker or a clean transition, and whether a second client (web, open on the same page) actually
 picks up the restored content on ITS next reconnect the way `page-version.service.ts`'s own header
 says it should.
+
+## Tier 2, three items: DM click-to-call, archived-cards restore, board sharing
+
+Three more items off the same audit, all self-contained, none needing a native module.
+
+**Click-to-call from a DM, wired rather than built** — `channel-details/[channelId].tsx`'s new
+`DirectCallAction`, ported from `apps/web/src/features/chat/channel-details.tsx`'s component of the
+same name. Both `TelephonyCallButton` and `people.ts`'s `directoryMemberQueryKey` already existed,
+built for `person/[userId].tsx`'s own "Job" section — this was two existing pieces called from a
+third place, not new capability. Only for a two-person DM (`others.length === 1`): a group
+conversation has no single callee, and picking one for the caller would dial someone they did not
+choose. Reads `people.directory.get`'s `workPhone`, not `useMembers`'s cache — that cache backs
+every avatar in this app and stays deliberately narrow; widening it to carry a phone number would
+mean every board render holds one, for the benefit of one panel. Silent when there is no number:
+an affordance, not a permission boundary, so no empty-state text clutters every DM in an org that
+has not filled the directory in.
+
+**Archived cards and archived lists, restorable — `board/[boardId].tsx`'s new "Archived" button**,
+ported from `apps/web/src/features/work/archived-cards-dialog.tsx`. Two sections in one sheet
+(`ArchivedCardsList`, `ArchivedListsList`), fetched only while the sheet is OPEN — the same
+"a rarely-visited list is not worth a query on every board mount" reasoning web's own header gives.
+`work.ts` gained `archivedCardsQueryKey`/`archivedListsQueryKey`, both nested UNDER the live query's
+own key (`['work.cards.list', boardId, 'archived']`), mirroring web's `archivedCardsQuery`/
+`archivedListsQuery` exactly — TanStack Query's default prefix matching means invalidating the live
+key already refreshes the archived one too, so archiving or restoring a card needs no second
+invalidation to remember. The two server calls are NOT parallel in shape: `cards.list`'s
+`includeArchived` WIDENS past the hardcoded live-only filter (so this file filters for
+`archivedAt !== null` client-side, same as web), while `lists.list`'s `archivedOnly` NARROWS
+directly server-side — `apps/api/src/work/router.ts`'s own comments on both routes are explicit
+about the asymmetry, and getting it backwards would either show nothing or show everything.
+Restoring a list is deliberately not gated on it being empty: the occupancy check exists to stop
+cards being STRANDED by an archive, and applying it in reverse would refuse exactly the columns
+worth restoring. This is also what closes the honest gap bulk actions' own header named when it
+shipped: "this app still has no archived-cards RESTORE view" — corrected in place there, per this
+file's own habit, rather than left to go stale.
+
+**Sharing a board — relationship tuples, the Zanzibar-lite half of the permission model, `src/lib/
+share-board-modal.tsx`**, ported from `apps/web/src/features/work/share-board.tsx`. A role says
+what a member may do ACROSS the org; a tuple says what one subject may do to ONE resource. Without
+this, a board could only ever be as private as the org itself. `@taskflow/policy` was already a
+declared dependency of this app (`package.json`) but had never actually been imported anywhere
+until now — `RELATIONS`, `isRelation`, `isRestrictive`, and `permissionsForRelation` are the
+package's own exported helpers, not role comparisons, so nothing here trips guardrail 2's
+`role === 'admin'` ban; confirmed by the guardrail self-test and by both platforms' `expo export`
+still bundling clean (the first real proof this package's dependency graph carries nothing
+RN-hostile). Restrictive relations are labelled FROM THE POLICY PACKAGE, not a list retyped here —
+a `viewer` tuple CAPS what an admin may do to a board, the opposite of what "share" usually
+implies, and a picker presenting every relation identically would let someone hand out a
+restriction believing they were granting access. The "confers: …" line under the relation picker
+exists for the identical reason: a relation name alone is not self-explanatory, and guessing wrong
+here hands out real access.
+
+**One modal, swapping its own body, rather than two stacked ones.** Web picks the person from a
+real `<select>`; this app has none, and has no precedent anywhere for nesting a second `<Modal>`
+inside one that is already open. So the person picker is not a second sheet — it is the SAME sheet
+with `mode` switched from `'form'` to `'pickPerson'`, the identical "swap this sheet's content by a
+local enum" shape `search-button.tsx`'s facet row and `board/[boardId].tsx`'s own bulk-action
+picker already established, reused rather than inventing a stacking pattern with no other example
+in this codebase to check against.
+
+**Step-up, the same gate web's write already requires.** `tenancy.grants.grant`/`.revoke` are
+`stepUp: true` server-side — writing a tuple changes who can reach data, exactly what a stolen
+session would be used for. `use-step-up.ts`'s `guard`/`pending`/`confirm`/`cancel` and
+`step-up-sheet.tsx`'s `<StepUpSheet>` already existed (built for `connected-accounts-section.tsx`'s
+OAuth linking and `totp-section.tsx`'s enrollment) and are reused verbatim, the same "no local
+parser copy to keep in sync" discipline `search-button.tsx`'s own header names for a different
+boundary.
+
+Verified: typecheck clean on first pass for all three, lint clean, guardrail self-test clean
+(including, for the first time, a real check that `@taskflow/policy` imports cleanly from this
+app), encoding check clean, and real `expo export` for both platforms bundle cleanly. No new test
+files: all three are `useQuery`/`useMutation` wiring and JSX with no pure logic worth extracting,
+the same reasoning `push-notifications-section.tsx` and `notification-prefs-section.tsx` already
+established for the identical shape. **Not device-verified**: none of the three — in particular,
+the share modal's mode-swap transition, the step-up re-authentication round trip for a tuple grant
+specifically (as opposed to the account-page flows it was built for), and whether restoring an
+archived list with cards still on the board's OTHER active lists reads correctly once the sheet
+closes.

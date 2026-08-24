@@ -117,6 +117,18 @@ export function listsQueryKey(boardId: string): readonly ['work.lists.list', str
 }
 
 /**
+ * Archived columns — nested UNDER `listsQueryKey`'s own key, mirroring
+ * `apps/web/src/features/work/api.ts`'s `archivedListsQuery`, so archiving
+ * or restoring a column (which already invalidates that family) refreshes
+ * this list too with no second invalidation to remember.
+ */
+export function archivedListsQueryKey(
+  boardId: string,
+): readonly ['work.lists.list', string, 'archived'] {
+  return ['work.lists.list', boardId, 'archived'];
+}
+
+/**
  * The board's own card read — `work.cards.list({ boardId })` — shares
  * `CardSummaryOutput` with `work.cards.mine` server-side (identical fields,
  * including `listId`, which is what lets a board group these by column), so
@@ -125,6 +137,21 @@ export function listsQueryKey(boardId: string): readonly ['work.lists.list', str
  */
 export function boardCardsQueryKey(boardId: string): readonly ['work.cards.list', string] {
   return ['work.cards.list', boardId];
+}
+
+/**
+ * Archived cards — nested UNDER `boardCardsQueryKey`'s own key, the
+ * identical convention `archivedListsQueryKey` uses just above, and for the
+ * same reason: `work.cards.list`'s `includeArchived` WIDENS past the
+ * hardcoded live-only filter rather than narrowing to archived-only
+ * (`apps/api/src/work/router.ts`'s own comment on `cards.list`), so the
+ * caller filters for `archivedAt !== null` client-side — mirroring web's
+ * `archivedCardsQuery` exactly.
+ */
+export function archivedCardsQueryKey(
+  boardId: string,
+): readonly ['work.cards.list', string, 'archived'] {
+  return ['work.cards.list', boardId, 'archived'];
 }
 
 /**

@@ -27,9 +27,12 @@ import { useMembers } from '../../../src/lib/use-members.js';
 import { CardRow } from '../../../src/lib/card-row.js';
 import { mergePatch } from '../../../src/lib/card-patch.js';
 import { describeOutcome, runBulk } from '../../../src/lib/work-bulk.js';
+import { ShareBoardButton } from '../../../src/lib/share-board-modal.js';
 import {
   MY_TASKS_QUERY_KEY,
   PRIORITY_LABEL,
+  archivedCardsQueryKey,
+  archivedListsQueryKey,
   boardCardsQueryKey,
   cardQueryKey,
   statusesQueryKey,
@@ -139,11 +142,10 @@ import {
  * file already uses for "Move"; priority alone needs a read-then-patch
  * (`bulkSetPriority`, mirroring `use-update-card.ts`'s `applyPatch`) because
  * `cards.update` is a full replace and `setStatus`/`assign` are not. Archive
- * is immediate, matching web's own ghost button with no confirmation — and,
- * same as web, this app still has no archived-cards RESTORE view, so an
- * archived card stays reachable only from `apps/web`'s own
- * `archived-cards-dialog.tsx` until that ships here too. A named gap, not a
- * silent one.
+ * is immediate, matching web's own ghost button with no confirmation. **This
+ * used to say there was no archived-cards RESTORE view on this app — closed
+ * in the same pass that added this note's correction, see the "Archived"
+ * button below and `ArchivedCardsList`/`ArchivedListsList`.**
  */
 export default function BoardScreen() {
   const params = useLocalSearchParams<{ boardId: string }>();
@@ -177,6 +179,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [bulkPicker, setBulkPicker] = useState<'status' | 'priority' | 'assignee' | null>(null);
   const [bulkRunning, setBulkRunning] = useState(false);
+  const [archivedOpen, setArchivedOpen] = useState(false);
   const { people, personOf } = useMembers();
   const [optionsError, setOptionsError] = useState<unknown>(null);
 
@@ -384,6 +387,17 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
     <View style={[styles.container, { paddingTop }]}>
       <View style={styles.header}>
         <BackButton />
+        <View style={styles.headerActions}>
+          <ShareBoardButton boardId={boardId} />
+          <Pressable
+            style={styles.archivedButton}
+            onPress={() => {
+              setArchivedOpen(true);
+            }}
+          >
+            <Text style={styles.archivedButtonText}>Archived</Text>
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView
@@ -884,6 +898,175 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
           </Pressable>
         </KeyboardAvoidingView>
       </Modal>
+
+      <Modal
+        visible={archivedOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setArchivedOpen(false);
+        }}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => {
+            setArchivedOpen(false);
+          }}
+        >
+          <Pressable style={styles.archivedModalCard} onPress={() => undefined}>
+            <Text style={styles.modalTitle}>Archived</Text>
+            <Text style={styles.archivedHint}>
+              Archiving hides something from the board without deleting it — a card keeps its
+              number, comments and history. Restore one to bring it back.
+            </Text>
+            {archivedOpen && (
+              <ScrollView style={styles.archivedScroll}>
+                <ArchivedCardsList boardId={boardId} />
+                <ArchivedListsList boardId={boardId} />
+              </ScrollView>
+            )}
+            <Pressable
+              style={styles.modalCancel}
+              onPress={() => {
+                setArchivedOpen(false);
+              }}
+            >
+              <Text style={styles.modalCancelText}>Done</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
+  );
+}
+
+/**
+ * Archived cards, and the way back — ported from
+ * `apps/web/src/features/work/archived-cards-dialog.tsx`'s
+ * `ArchivedCardsList`. Fetched only while `board/[boardId].tsx`'s Archived
+ * modal is OPEN (that file's own `{archivedOpen && (...)}` guard), the same
+ * reasoning web's own header gives: a rarely-visited list is not worth a
+ * query on every board mount.
+ */
+function ArchivedCardsList({ boardId }: { readonly boardId: string }) {
+  const queryClient = useQueryClient();
+  const archived = useQuery({
+    queryKey: archivedCardsQueryKey(boardId),
+    queryFn: async () => {
+      const rows = wire(await apiClient.work.cards.list.query({ boardId, includeArchived: true }));
+      return rows.filter((card) => card.archivedAt !== null);
+    },
+  });
+
+  const restore = useMutation({
+    mutationFn: (cardId: string) =>
+      apiClient.work.cards.archive.mutate({ cardId, archived: false }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: boardCardsQueryKey(boardId) }),
+        queryClient.invalidateQueries({ queryKey: MY_TASKS_QUERY_KEY }),
+      ]);
+    },
+  });
+
+  const rows = archived.data ?? [];
+
+  return (
+    <View style={styles.archivedSection}>
+      <Text style={styles.archivedSectionTitle}>Cards</Text>
+      {archived.isPending && <ActivityIndicator color={colors.accent.hex} />}
+      {archived.isError && (
+        <Text style={styles.modalError} accessibilityRole="alert">
+          {apiErrorOf(archived.error)?.error.message ?? 'Could not load archived cards.'}
+        </Text>
+      )}
+      {rows.length === 0 && !archived.isPending && (
+        <Text style={styles.sectionEmptyHint}>No archived cards.</Text>
+      )}
+      {rows.map((card) => (
+        <View key={card.cardId} style={styles.archivedRow}>
+          <View style={styles.archivedRowInfo}>
+            <Text style={styles.archivedRowTitle} numberOfLines={1}>
+              {card.title}
+            </Text>
+            <Text style={styles.archivedRowSubtitle}>{card.reference}</Text>
+          </View>
+          <Pressable
+            disabled={restore.isPending && restore.variables === card.cardId}
+            onPress={() => {
+              restore.mutate(card.cardId);
+            }}
+          >
+            <Text style={styles.archivedRestoreText}>Restore</Text>
+          </Pressable>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/**
+ * Archived columns, and the way back — ported from
+ * `archived-cards-dialog.tsx`'s `ArchivedListsList`. Restoring is
+ * deliberately not gated on the list being empty: the occupancy check
+ * exists to stop cards being STRANDED by an archive, and applying it in
+ * reverse would refuse exactly the columns worth restoring.
+ */
+function ArchivedListsList({ boardId }: { readonly boardId: string }) {
+  const queryClient = useQueryClient();
+  const archived = useQuery({
+    queryKey: archivedListsQueryKey(boardId),
+    queryFn: async () =>
+      wire(await apiClient.work.lists.list.query({ boardId, archivedOnly: true })),
+  });
+
+  const restore = useMutation({
+    mutationFn: (listId: string) =>
+      apiClient.work.lists.archive.mutate({ listId, archived: false }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: listsQueryKey(boardId) }),
+        queryClient.invalidateQueries({ queryKey: boardCardsQueryKey(boardId) }),
+      ]);
+    },
+  });
+
+  const rows = archived.data ?? [];
+
+  return (
+    <View style={styles.archivedSection}>
+      <Text style={styles.archivedSectionTitle}>Lists</Text>
+      {archived.isPending && <ActivityIndicator color={colors.accent.hex} />}
+      {archived.isError && (
+        <Text style={styles.modalError} accessibilityRole="alert">
+          {apiErrorOf(archived.error)?.error.message ?? 'Could not load archived lists.'}
+        </Text>
+      )}
+      {rows.length === 0 && !archived.isPending && (
+        <Text style={styles.sectionEmptyHint}>No archived lists.</Text>
+      )}
+      {rows.map((list) => (
+        <View key={list.listId} style={styles.archivedRow}>
+          <View style={styles.archivedRowInfo}>
+            <Text style={styles.archivedRowTitle} numberOfLines={1}>
+              {list.name}
+            </Text>
+            <Text style={styles.archivedRowSubtitle}>
+              {list.cardCount === 0
+                ? 'No cards'
+                : `${String(list.cardCount)} card${list.cardCount === 1 ? '' : 's'}`}
+            </Text>
+          </View>
+          <Pressable
+            disabled={restore.isPending && restore.variables === list.listId}
+            onPress={() => {
+              restore.mutate(list.listId);
+            }}
+          >
+            <Text style={styles.archivedRestoreText}>Restore</Text>
+          </Pressable>
+        </View>
+      ))}
     </View>
   );
 }
@@ -915,8 +1098,28 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface.hex,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 24,
     paddingBottom: 8,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  archivedButton: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: colors.line.hex + '80',
+  },
+  archivedButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.inkMuted.hex,
   },
   backButton: {
     alignSelf: 'flex-start',
@@ -1121,6 +1324,61 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.danger.hex,
     marginBottom: 8,
+  },
+  archivedModalCard: {
+    backgroundColor: colors.surfaceRaised.hex,
+    borderTopLeftRadius: radiusCard + 6,
+    borderTopRightRadius: radiusCard + 6,
+    padding: 20,
+    gap: 4,
+    height: '80%',
+  },
+  archivedHint: {
+    fontSize: 12,
+    color: colors.inkMuted.hex,
+    marginBottom: 8,
+  },
+  archivedScroll: {
+    flex: 1,
+  },
+  archivedSection: {
+    marginTop: 12,
+    gap: 4,
+  },
+  archivedSectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.ink.hex,
+  },
+  archivedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line.hex,
+  },
+  archivedRowInfo: {
+    flex: 1,
+  },
+  archivedRowTitle: {
+    fontSize: 14,
+    color: colors.ink.hex,
+  },
+  archivedRowSubtitle: {
+    fontSize: 11,
+    color: colors.inkFaint.hex,
+  },
+  archivedRestoreText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.accent.hex,
+  },
+  sectionEmptyHint: {
+    fontSize: 12,
+    color: colors.inkFaint.hex,
+    paddingVertical: 4,
   },
   modalRow: {
     paddingVertical: 12,
