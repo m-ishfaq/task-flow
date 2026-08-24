@@ -1,5 +1,5 @@
 diff --git a/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java b/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java
-index 025480ac97460cc45775ea11aa43af36522d5df6..cb6d8ca6b847a83cce4060c1175a1eca0d8d4a6c 100644
+index 025480ac97460cc45775ea11aa43af36522d5df6..bdab72a951ca659920e6ab51124660c32bf01555 100644
 --- a/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java
 +++ b/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java
 @@ -434,7 +434,13 @@ public class RNCallKeepModule extends ReactContextBaseJavaModule implements Life
@@ -16,4 +16,16 @@ index 025480ac97460cc45775ea11aa43af36522d5df6..cb6d8ca6b847a83cce4060c1175a1eca
 +    // anything in this library's own Java code that might still call it directly.
      public void displayIncomingCall(String uuid, String number, String callerName) {
          this.displayIncomingCall(uuid, number, callerName, false, null);
+     }
+@@ -483,7 +489,10 @@ public class RNCallKeepModule extends ReactContextBaseJavaModule implements Life
+         conn.onAnswer();
+     }
+ 
+-    @ReactMethod
++    // NOT @ReactMethod (taskflow patch — same reason as displayIncomingCall above): the JS
++    // bridge (index.js's Android branch) always calls the 4-arg overload below, and having
++    // two @ReactMethod-annotated methods named "startCall" trips the identical TurboModule
++    // parse failure.
+     public void startCall(String uuid, String number, String callerName) {
+         this.startCall(uuid, number, callerName, false, null);
      }

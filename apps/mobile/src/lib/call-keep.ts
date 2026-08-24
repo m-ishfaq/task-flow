@@ -20,29 +20,37 @@ import { incomingCallsQueryKey, invalidateCalls, type IncomingCall } from './rtc
  * Android) and is NOT this file's job — see the README's own section on
  * this pass for exactly what is and is not covered, and why.
  *
- * ## A real Android crash, found by an actual device build, and a real patch
+ * ## A real Android crash, found by an actual device build, and a real
+ * patch — applied TWICE, because the library has the same bug twice
  *
- * `react-native-callkeep@4.3.16`'s Android native module exports TWO
- * `@ReactMethod`-annotated Java methods both named `displayIncomingCall`
- * (overloaded by arity — the library's own upstream bug, open and unfixed
- * as of this dependency's version: react-native-webrtc/react-native-callkeep
- * issues #798, #857, #866). JS has no method overloading, and this app's
- * React Native version resolves native modules through the New
- * Architecture's TurboModule codegen, which refuses to parse a module with
- * two JS-exposed methods sharing one name — `NativeModules.RNCallKeep`
- * fails to initialize at all, and every call into it (`setup`,
- * `addEventListener`, …) throws or hits `undefined`. `patches/
+ * `react-native-callkeep@4.3.16`'s Android native module exports pairs of
+ * `@ReactMethod`-annotated Java methods sharing one name — first found in
+ * `displayIncomingCall`, then, on the very next real device build after
+ * that fix, the identical shape in `startCall` (the library's own upstream
+ * bug, open and unfixed as of this dependency's version:
+ * react-native-webrtc/react-native-callkeep issues #798, #857, #866). JS
+ * has no method overloading, and this app's React Native version resolves
+ * native modules through the New Architecture's TurboModule codegen, which
+ * refuses to parse a module with two JS-exposed methods sharing one name —
+ * `NativeModules.RNCallKeep` fails to initialize AT ALL, and every call
+ * into it (`setup`, `addEventListener`, …) throws or hits `undefined`, no
+ * matter which of the two duplicate pairs caused it. `patches/
  * react-native-callkeep@4.3.16.patch` (a real `pnpm patch`, wired through
  * `package.json`'s `pnpm.patchedDependencies` — this repo's existing
  * mechanism, already used for `html-entities`) removes the `@ReactMethod`
- * annotation from the 3-arg overload, which `index.js`'s own Android branch
- * never calls anyway (it always calls the 4-arg one) — confirmed by reading
- * the library's actual JS bridge source, not assumed. Verified against a
- * real `expo prebuild`: Android's Gradle autolinking compiles straight from
+ * annotation from whichever overload `index.js`'s own Android branch never
+ * calls (confirmed for each, by reading the library's actual JS bridge
+ * source, not assumed — it always calls the 4-arg version of both). A full
+ * scan of every remaining `@ReactMethod` in the file, run after the second
+ * fix, found no third duplicate — but the first fix's own reactive,
+ * one-method-at-a-time approach is exactly why that full scan was run
+ * rather than trusted to have been unnecessary. Verified against a real
+ * `expo prebuild`: Android's Gradle autolinking compiles straight from
  * `node_modules`, no copy step, so the patched source is what a real build
- * compiles. **Not yet confirmed on an actual device build** — that
- * confirmation is what surfaced this bug in the first place, and is real,
- * separate follow-up.
+ * compiles. **Not yet confirmed CLEAN against a real device build** — the
+ * first two "should be fixed now" beliefs were each disproven by the next
+ * real build, which is why this stays unverified until a run actually gets
+ * past it.
  *
  * ## `react-native-callkeep`, dynamically imported, matching this app's
  * own established rule
