@@ -15,7 +15,10 @@ export default defineConfig({
 
     // Argon2id is deliberately slow (19 MiB, t=2), and a login test pays that
     // cost twice. Applying migrations against a cold container is slower still.
-    hookTimeout: 30_000,
+    // 120s accommodates heavy parallel load during `pnpm verify` — 47 test files
+    // all running applyMigrations() against one Postgres instance, alongside
+    // collab and realtime doing the same from their own packages.
+    hookTimeout: 120_000,
     testTimeout: 20_000,
   },
 });
