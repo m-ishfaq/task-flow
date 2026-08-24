@@ -275,11 +275,15 @@ function PaletteDialog({
                   }}
                   className={cn(
                     'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
-                    index === active ? 'bg-accent/10 text-ink' : 'text-ink-muted hover:bg-surface-hover',
+                    index === active
+                      ? 'bg-accent/10 text-ink'
+                      : 'text-ink-muted hover:bg-surface-hover',
                   )}
                 >
                   <span className="truncate">{command.label}</span>
-                  <span className="shrink-0 rounded bg-surface-hover/80 px-1.5 py-0.5 text-[11px] font-medium text-ink-faint">{command.hint}</span>
+                  <span className="shrink-0 rounded bg-surface-hover/80 px-1.5 py-0.5 text-[11px] font-medium text-ink-faint">
+                    {command.hint}
+                  </span>
                 </button>
               </li>
             ))

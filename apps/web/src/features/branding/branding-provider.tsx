@@ -63,9 +63,8 @@ export function BrandingProvider({ children }: { readonly children: ReactNode })
     ctx.fillStyle = colors.base;
     const hex = ctx.fillStyle; // canvas always returns #rrggbb
 
-    const svgFavicon =
-      `data:image/svg+xml,${encodeURIComponent(
-        `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' fill='none'>` +
+    const svgFavicon = `data:image/svg+xml,${encodeURIComponent(
+      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' fill='none'>` +
         `<path d='M8 12C8 12 12 8 16 12C20 16 24 12 24 12' stroke='${hex}' stroke-width='2.5' stroke-linecap='round' opacity='0.5'/>` +
         `<path d='M8 20C8 20 12 16 16 20C20 24 24 20 24 20' stroke='${hex}' stroke-width='2.5' stroke-linecap='round' opacity='0.3'/>` +
         `<circle cx='8' cy='16' r='3.5' fill='${hex}' opacity='0.9'/>` +
@@ -73,7 +72,7 @@ export function BrandingProvider({ children }: { readonly children: ReactNode })
         `<circle cx='24' cy='16' r='5.5' fill='${hex}' opacity='0.85'/>` +
         `<circle cx='24' cy='16' r='5.5' fill='white' opacity='0.15'/>` +
         `</svg>`,
-      )}`;
+    )}`;
 
     const href = branding.faviconUrl ?? svgFavicon;
     const type = branding.faviconUrl !== null ? 'image/png' : 'image/svg+xml';

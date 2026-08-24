@@ -301,17 +301,41 @@ export function PlatformAdminPage() {
 
                 if (orgRows !== undefined && orgRows.length > 0) {
                   downloadCsv(`orgs-export-${date}.csv`, [
-                    ['Organization', 'Slug', 'Owner name', 'Owner email', 'Plan', 'Billing status', 'Trial ends', 'Grace ends', 'Renews', 'Last invoice status', 'Last invoice amount', 'Last invoice date', 'Status', 'Members', 'Created'],
+                    [
+                      'Organization',
+                      'Slug',
+                      'Owner name',
+                      'Owner email',
+                      'Plan',
+                      'Billing status',
+                      'Trial ends',
+                      'Grace ends',
+                      'Renews',
+                      'Last invoice status',
+                      'Last invoice amount',
+                      'Last invoice date',
+                      'Status',
+                      'Members',
+                      'Created',
+                    ],
                     ...orgRows.map((org) => [
-                      org.name, org.slug, org.ownerName ?? '', org.ownerEmail ?? '',
-                      org.planId ?? '', org.billingStatus,
+                      org.name,
+                      org.slug,
+                      org.ownerName ?? '',
+                      org.ownerEmail ?? '',
+                      org.planId ?? '',
+                      org.billingStatus,
                       org.trialEndsAt !== null ? formatDate(org.trialEndsAt) : '',
                       org.billingGraceEndsAt !== null ? formatDate(org.billingGraceEndsAt) : '',
                       org.currentPeriodEnd !== null ? formatDate(org.currentPeriodEnd) : '',
                       org.lastInvoice?.status ?? '',
-                      org.lastInvoice !== null ? money(org.lastInvoice.amountDueCents, org.lastInvoice.currency) : '',
+                      org.lastInvoice !== null
+                        ? money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)
+                        : '',
                       org.lastInvoice !== null ? formatDate(org.lastInvoice.issuedAt) : '',
-                      org.status, String(org.memberCount), formatDate(org.createdAt),
+                      org.status,
+                      String(org.memberCount),
+                      formatDate(org.createdAt),
                     ]),
                   ]);
                 }
@@ -320,28 +344,53 @@ export function PlatformAdminPage() {
                   downloadCsv(`users-export-${date}.csv`, [
                     ['User id', 'Name', 'Email', 'Email verified', 'Organizations', 'Created'],
                     ...userRows.map((user) => [
-                      user.userId, user.name ?? '', user.email,
+                      user.userId,
+                      user.name ?? '',
+                      user.email,
                       user.emailVerifiedAt !== null ? formatDate(user.emailVerifiedAt) : 'no',
-                      String(user.orgCount), formatDate(user.createdAt),
+                      String(user.orgCount),
+                      formatDate(user.createdAt),
                     ]),
                   ]);
                 }
 
                 if (billingRows !== undefined && billingRows.length > 0) {
                   downloadCsv(`billing-export-${date}.csv`, [
-                    ['Organization', 'Slug', 'Billing status', 'Plan', 'Plan name', 'Current price', 'Interval', 'Renews', 'Last invoice status', 'Last invoice amount', 'Last invoice date', 'Trial ends', 'Grace ends', 'Pending plan', 'Stripe customer'],
+                    [
+                      'Organization',
+                      'Slug',
+                      'Billing status',
+                      'Plan',
+                      'Plan name',
+                      'Current price',
+                      'Interval',
+                      'Renews',
+                      'Last invoice status',
+                      'Last invoice amount',
+                      'Last invoice date',
+                      'Trial ends',
+                      'Grace ends',
+                      'Pending plan',
+                      'Stripe customer',
+                    ],
                     ...billingRows.map((org) => [
-                      org.name, org.slug, org.billingStatus,
-                      org.planId ?? '', org.planName ?? '',
+                      org.name,
+                      org.slug,
+                      org.billingStatus,
+                      org.planId ?? '',
+                      org.planName ?? '',
                       org.currentPriceCents !== null ? money(org.currentPriceCents, 'usd') : '',
                       org.currentPriceInterval ?? '',
                       org.currentPeriodEnd !== null ? formatDate(org.currentPeriodEnd) : '',
                       org.lastInvoice?.status ?? '',
-                      org.lastInvoice !== null ? money(org.lastInvoice.amountDueCents, org.lastInvoice.currency) : '',
+                      org.lastInvoice !== null
+                        ? money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)
+                        : '',
                       org.lastInvoice !== null ? formatDate(org.lastInvoice.issuedAt) : '',
                       org.trialEndsAt !== null ? formatDate(org.trialEndsAt) : '',
                       org.billingGraceEndsAt !== null ? formatDate(org.billingGraceEndsAt) : '',
-                      org.pendingPlanId ?? '', org.stripeCustomerId ?? '',
+                      org.pendingPlanId ?? '',
+                      org.stripeCustomerId ?? '',
                     ]),
                   ]);
                 }
@@ -652,7 +701,9 @@ function OrgsTab({
                   org.billingGraceEndsAt !== null ? formatDate(org.billingGraceEndsAt) : '',
                   org.currentPeriodEnd !== null ? formatDate(org.currentPeriodEnd) : '',
                   org.lastInvoice?.status ?? '',
-                  org.lastInvoice !== null ? money(org.lastInvoice.amountDueCents, org.lastInvoice.currency) : '',
+                  org.lastInvoice !== null
+                    ? money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)
+                    : '',
                   org.lastInvoice !== null ? formatDate(org.lastInvoice.issuedAt) : '',
                   org.status,
                   String(org.memberCount),
@@ -1054,6 +1105,10 @@ function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
         <div className="mt-3 overflow-x-auto rounded-xl border border-line">
           <table className="w-full text-sm">
             <thead>
+              <tr className="border-b border-line bg-surface-sunken/60">
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  User
+                </th>
                 <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
                   Email verified
                 </th>
@@ -2637,7 +2692,8 @@ function RetirePlanDialog({
           <div>
             <ModalTitle>Retire {plan.name}?</ModalTitle>
             <ModalDescription>
-              This plan has {String(plan.orgCount)} active organization{plan.orgCount === 1 ? '' : 's'}.
+              This plan has {String(plan.orgCount)} active organization
+              {plan.orgCount === 1 ? '' : 's'}.
             </ModalDescription>
           </div>
         </div>
@@ -2645,18 +2701,19 @@ function RetirePlanDialog({
         <div className="space-y-3 text-sm text-ink">
           <p>
             Retiring a plan means <strong>no new organization can subscribe to it</strong>, but
-            existing tenants <strong>keep the plan and keep working</strong>. They are not
-            ejected or downgraded.
+            existing tenants <strong>keep the plan and keep working</strong>. They are not ejected
+            or downgraded.
           </p>
 
           {plan.orgCount > 0 && (
             <div className="rounded-lg border border-warning/30 bg-warning/5 p-3">
               <p className="text-xs font-medium text-warning">
-                {String(plan.orgCount)} organization{plan.orgCount === 1 ? '' : 's'} currently on this plan
+                {String(plan.orgCount)} organization{plan.orgCount === 1 ? '' : 's'} currently on
+                this plan
               </p>
               <p className="mt-0.5 text-[11px] text-ink-muted">
-                They will continue to have access to all features until their plan is
-                manually changed or they cancel.
+                They will continue to have access to all features until their plan is manually
+                changed or they cancel.
               </p>
             </div>
           )}
@@ -2869,7 +2926,11 @@ function EditLimitsDialog({
 
           <div className="flex justify-end gap-2">
             <Button onClick={onClose}>Cancel</Button>
-            {(cap !== null || runs !== null || turn !== null || included !== null || markup !== null) && (
+            {(cap !== null ||
+              runs !== null ||
+              turn !== null ||
+              included !== null ||
+              markup !== null) && (
               <Button
                 variant="ghost"
                 disabled={save.isPending}
@@ -3630,7 +3691,11 @@ function BillingBarChart({
   data,
   maxValue,
 }: {
-  readonly data: readonly { readonly label: string; readonly value: number; readonly color: string }[];
+  readonly data: readonly {
+    readonly label: string;
+    readonly value: number;
+    readonly color: string;
+  }[];
   readonly maxValue: number;
 }) {
   if (maxValue === 0) return null;
@@ -3674,7 +3739,8 @@ function BillingBarChart({
 function BillingSummary({ orgs }: { readonly orgs: readonly Record<string, unknown>[] }) {
   /* MRR — sum of currentPriceCents for active orgs only. */
   const mrr = orgs.reduce((sum, org) => {
-    const price = (org as { currentPriceCents?: number | null; billingStatus?: string }).currentPriceCents;
+    const price = (org as { currentPriceCents?: number | null; billingStatus?: string })
+      .currentPriceCents;
     const status = (org as { billingStatus?: string }).billingStatus;
     if (price !== null && price !== undefined && status === 'active') {
       return sum + price;
@@ -3719,7 +3785,12 @@ function BillingSummary({ orgs }: { readonly orgs: readonly Record<string, unkno
     { label: 'Canceled', value: statusCounts.canceled, color: 'var(--color-ink-faint)' },
   ];
 
-  const maxStatus = Math.max(statusCounts.active, statusCounts.trialing, statusCounts.past_due, statusCounts.canceled);
+  const maxStatus = Math.max(
+    statusCounts.active,
+    statusCounts.trialing,
+    statusCounts.past_due,
+    statusCounts.canceled,
+  );
   const maxPlan = planData.length > 0 ? Math.max(...planData.map((d) => d.value)) : 0;
 
   return (
@@ -3729,11 +3800,10 @@ function BillingSummary({ orgs }: { readonly orgs: readonly Record<string, unkno
         <p className="text-[11px] font-medium uppercase tracking-wider text-ink-faint">
           Monthly recurring revenue
         </p>
-        <p className="mt-1 text-2xl font-semibold tracking-tight text-ink">
-          {money(mrr, 'usd')}
-        </p>
+        <p className="mt-1 text-2xl font-semibold tracking-tight text-ink">{money(mrr, 'usd')}</p>
         <p className="mt-0.5 text-[11px] text-ink-faint">
-          from {String(statusCounts.active)} active organization{statusCounts.active === 1 ? '' : 's'}
+          from {String(statusCounts.active)} active organization
+          {statusCounts.active === 1 ? '' : 's'}
         </p>
       </div>
 
@@ -3855,7 +3925,9 @@ function BillingTab({
                   org.currentPriceInterval ?? '',
                   org.currentPeriodEnd !== null ? formatDate(org.currentPeriodEnd) : '',
                   org.lastInvoice?.status ?? '',
-                  org.lastInvoice !== null ? money(org.lastInvoice.amountDueCents, org.lastInvoice.currency) : '',
+                  org.lastInvoice !== null
+                    ? money(org.lastInvoice.amountDueCents, org.lastInvoice.currency)
+                    : '',
                   org.lastInvoice !== null ? formatDate(org.lastInvoice.issuedAt) : '',
                   org.trialEndsAt !== null ? formatDate(org.trialEndsAt) : '',
                   org.billingGraceEndsAt !== null ? formatDate(org.billingGraceEndsAt) : '',

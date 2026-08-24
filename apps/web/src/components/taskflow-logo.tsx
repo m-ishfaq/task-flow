@@ -11,7 +11,10 @@
  * the small node, flowing through the pipeline, and arriving at the
  * large node as completed work.
  */
-export function TaskFlowLogo({ size = 32, className }: {
+export function TaskFlowLogo({
+  size = 32,
+  className,
+}: {
   readonly size?: number;
   readonly className?: string;
 }) {
@@ -53,5 +56,3 @@ export function TaskFlowLogo({ size = 32, className }: {
     </svg>
   );
 }
-
-

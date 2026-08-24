@@ -359,7 +359,11 @@ function ViewToggle({
   readonly onChange: (value: 'board' | 'table' | 'list') => void;
 }) {
   return (
-    <div className="inline-flex rounded-lg border border-line/60 bg-surface-sunken/40 p-0.5" role="group" aria-label="View">
+    <div
+      className="inline-flex rounded-lg border border-line/60 bg-surface-sunken/40 p-0.5"
+      role="group"
+      aria-label="View"
+    >
       {(['board', 'list', 'table'] as const).map((mode) => (
         <button
           key={mode}
