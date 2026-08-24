@@ -1054,10 +1054,6 @@ function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
         <div className="mt-3 overflow-x-auto rounded-xl border border-line">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-line bg-surface-sunken/60">
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-                  User
-                </th>
                 <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
                   Email verified
                 </th>
@@ -2150,7 +2146,7 @@ function ChangeOrgPlanDialog({
           {plans.isError && <ErrorView error={plans.error} title="Could not load plans" />}
 
           {plans.data !== undefined && (
-            <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
+            <ul className="divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
               {selectable.map((plan) => (
                 <li key={plan.id} className="px-3 py-2">
                   <div className="flex items-start gap-2">
@@ -3026,7 +3022,7 @@ function EditFeaturesDialog({
           )}
 
           {registry.data !== undefined && (
-            <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
+            <ul className="divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
               {grantable.map((flag) => (
                 <li key={flag.flagName} className="px-3 py-2 hover:bg-surface-hover">
                   {/* htmlFor/id rather than nesting the text: the description

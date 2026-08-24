@@ -173,7 +173,7 @@ function SpaceTreePanel({
         hideWhenPageOpen ? 'hidden' : 'flex w-full',
       )}
     >
-      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line px-2">
+      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line/50 px-2">
         {spacesOpen && <h2 className="truncate px-1 text-sm font-semibold text-ink">Spaces</h2>}
         <div className={cn('flex items-center gap-1', spacesOpen ? 'ml-auto' : 'mx-auto')}>
           {spacesOpen && (
@@ -215,7 +215,7 @@ function SpaceTreePanel({
       </div>
 
       {spacesOpen && creatingSpace && (
-        <div className="border-b border-line p-2">
+        <div className="border-b border-line/50 p-2">
           <CreateSpaceForm
             orgId={orgId}
             onDone={() => {
@@ -412,7 +412,7 @@ function SpaceNode({
       </div>
 
       {!collapsed && (
-        <div className="mb-1 ml-5 border-l border-line pl-2">
+        <div className="mb-1 ml-5 border-l border-line/50 pl-2">
           {addingRootPage && (
             <div className="py-1">
               <CreatePageForm
@@ -558,7 +558,7 @@ function PageNode({
 
       {(addingChild || (!collapsed && children.length > 0)) && (
         <ul
-          className="border-l border-line"
+          className="border-l border-line/50/50"
           style={{
             /* BOTH the margin and the padding are the indent, and both must
                stop past the cap — a level that kept padding would quietly

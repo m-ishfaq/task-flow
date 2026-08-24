@@ -131,7 +131,7 @@ function ArchivedListsList({ orgId, boardId }: ArchivedCardsDialogProps) {
 
   return (
     <div className="mt-2">
-      <ul className="divide-y divide-line rounded border border-line">
+      <ul className="divide-y divide-line/40 rounded border border-line/50">
         {archived.data.map((list) => (
           <li key={list.listId} className="flex items-center gap-2 px-3 py-2">
             <div className="min-w-0 flex-1">
@@ -192,7 +192,7 @@ function ArchivedCardsList({ orgId, boardId }: ArchivedCardsDialogProps) {
 
   return (
     <div className="mt-4">
-      <ul className="divide-y divide-line rounded border border-line">
+      <ul className="divide-y divide-line/40 rounded border border-line/50">
         {archived.data.map((card) => (
           <li key={card.cardId} className="flex items-center gap-2 px-3 py-2">
             <div className="min-w-0 flex-1">

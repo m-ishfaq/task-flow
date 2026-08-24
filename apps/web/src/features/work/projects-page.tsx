@@ -54,7 +54,7 @@ export function ProjectsPage() {
 
   if (projects.isPending) {
     return (
-      <div className="mx-auto max-w-3xl p-6">
+      <div className="mx-auto max-w-5xl p-6">
         <SkeletonRows rows={4} className="*:h-24" />
       </div>
     );
@@ -62,7 +62,7 @@ export function ProjectsPage() {
 
   if (projects.isError) {
     return (
-      <div className="mx-auto max-w-3xl p-6">
+      <div className="mx-auto max-w-5xl p-6">
         <ErrorView error={projects.error} title="Could not load projects" />
       </div>
     );
@@ -73,7 +73,7 @@ export function ProjectsPage() {
   const shown = showArchived ? projects.data : live;
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6 p-8">
+    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-8">
       {/* Hidden rather than disabled: a create form nobody without
           project:create could submit is clutter, and the list below stays
           fully visible either way. */}
@@ -184,7 +184,7 @@ function ProjectCard({ orgId, project, showArchived, canDuplicate }: ProjectCard
               onClick={() => {
                 setDuplicating((open) => !open);
               }}
-              className="rounded border border-line px-2 py-0.5 text-[11px] text-ink-muted hover:bg-surface-hover hover:text-ink"
+              className="rounded-md border border-line/60 px-2 py-0.5 text-[11px] font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
             >
               Duplicate
             </button>
@@ -347,8 +347,8 @@ function DuplicateProjectForm({
 
 function cardClass(isArchived: boolean): string {
   return isArchived
-    ? 'rounded-lg border border-dashed border-line bg-surface-sunken/50 p-3'
-    : 'rounded-lg border border-line bg-surface-raised p-3 shadow-sm';
+    ? 'rounded-xl border border-dashed border-line/40 bg-surface-sunken/30 p-5'
+    : 'rounded-xl border border-line/50 bg-surface-raised p-5 transition-all duration-[var(--motion-base)] hover:border-line-strong hover:bg-surface-hover hover:shadow-sm';
 }
 
 function BoardList({
@@ -385,7 +385,7 @@ function BoardList({
   const live = boards.data.filter((board) => board.archivedAt === null);
 
   return (
-    <div className="mt-3 border-t border-line pt-2.5">
+    <div className="mt-3 border-t border-line/50 pt-2.5">
       <div className="flex flex-wrap items-center gap-1.5">
         {live.map((board) => (
           <Link
@@ -393,7 +393,7 @@ function BoardList({
             to="/boards/$boardId"
             params={{ boardId: board.boardId as BoardId }}
             search={{ view: 'board', project: projectId }}
-            className="rounded border border-line bg-surface px-2 py-1 text-xs text-ink transition-colors hover:border-accent/40 hover:bg-surface-hover"
+            className="rounded-lg border border-line/50 bg-surface px-2.5 py-1.5 text-xs font-medium text-ink transition-colors duration-[var(--motion-fast)] hover:border-accent/40 hover:bg-surface-hover"
           >
             {board.name}
           </Link>
@@ -454,7 +454,7 @@ function BoardList({
               onClick={() => {
                 setAdding(true);
               }}
-              className="rounded border border-dashed border-line px-2 py-1 text-xs text-ink-faint hover:border-line hover:bg-surface-hover hover:text-ink"
+              className="rounded-lg border border-dashed border-line/50 px-2.5 py-1 text-xs text-ink-faint hover:border-line hover:bg-surface-hover hover:text-ink"
             >
               + Board
             </button>

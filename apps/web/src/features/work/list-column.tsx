@@ -44,16 +44,16 @@ export function ListColumn({ orgId, boardId, list, count, siblings, children }: 
       ref={setNodeRef}
       aria-label={list.name}
       className={cn(
-        'flex max-h-full w-72 shrink-0 flex-col rounded-card bg-surface-sunken',
-        isOver && 'ring-1 ring-accent',
+        'column-container flex max-h-full w-72 shrink-0 flex-col',
+        isOver && 'ring-2 ring-accent/50 border-accent/30',
       )}
     >
-      <header className="flex items-center justify-between gap-1 px-3 py-2.5">
+      <header className="column-header justify-between">
         <h2 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{list.name}</h2>
         <span
           className={cn(
-            'font-mono text-xs text-ink-faint',
-            overLimit && 'font-semibold text-warning',
+            'rounded-full px-2 py-0.5 text-[11px] font-medium',
+            overLimit ? 'bg-warning/15 text-warning' : 'bg-surface-hover/80 text-ink-faint',
           )}
           title={
             list.wipLimit === null
@@ -67,7 +67,7 @@ export function ListColumn({ orgId, boardId, list, count, siblings, children }: 
         <ListMenu orgId={orgId} boardId={boardId} list={list} siblings={siblings} />
       </header>
 
-      <div className="flex min-h-16 flex-col gap-2 overflow-y-auto px-2 pb-2">{children}</div>
+      <div className="flex min-h-16 flex-col gap-1.5 overflow-y-auto px-2 pb-2 pt-0.5">{children}</div>
 
       <AddCard orgId={orgId} boardId={boardId} listId={list.listId as ListId} />
     </section>

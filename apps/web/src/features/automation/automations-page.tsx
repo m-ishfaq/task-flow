@@ -246,7 +246,7 @@ export function AutomationsPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="shrink-0 border-b border-line px-4 pt-4 pb-2 md:px-6">
+      <header className="shrink-0 border-b border-line/50 px-4 pt-4 pb-2 md:px-6">
         <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Automations</h1>
         <p className="mt-1 text-sm text-ink-muted">
           When something happens, check a condition, then act. Rules run with the permissions of
@@ -486,8 +486,8 @@ function RuleRow({
   return (
     <div
       className={cn(
-        'overflow-hidden rounded-lg border transition-colors',
-        rule.enabled ? 'border-line' : 'border-line/60',
+        'overflow-hidden rounded-xl border transition-colors',
+        rule.enabled ? 'border-line/50' : 'border-line/30',
       )}
     >
       {/* `flex-wrap` with the actions in their own non-shrinking group. The
@@ -590,7 +590,7 @@ function RuleRow({
 
       {expanded && <RunHistory orgId={orgId} automationId={rule.automationId} />}
       {(setEnabled.isError || remove.isError) && (
-        <div className="border-t border-line px-3 py-2">
+        <div className="border-t border-line/50 px-3 py-2">
           <ErrorText error={setEnabled.error ?? remove.error} />
         </div>
       )}
@@ -619,7 +619,7 @@ function RunHistory({
   if (runs.isError) return <ErrorText error={runs.error} />;
   if (runs.data.length === 0) {
     return (
-      <p className="border-t border-line px-3 py-2 text-[11px] text-ink-faint">
+      <p className="border-t border-line/50 px-3 py-2 text-[11px] text-ink-faint">
         This rule has not run yet. A run is recorded every time its trigger fires — including when
         the condition does not match.
       </p>
@@ -627,7 +627,7 @@ function RunHistory({
   }
 
   return (
-    <ul className="border-t border-line">
+    <ul className="border-t border-line/50/50">
       {runs.data.map((run) => (
         <li key={run.runId} className="px-3 py-1.5 text-[11px]">
           <div className="flex items-center gap-2">
@@ -945,7 +945,7 @@ function RuleEditor({
 
       {save.isError && <ErrorText error={save.error} />}
 
-      <div className="flex items-center gap-2 border-t border-line pt-3">
+      <div className="flex items-center gap-2 border-t border-line/50 pt-3">
         <Button
           type="submit"
           size="sm"
@@ -1305,7 +1305,7 @@ function WebhookRow({
   });
 
   return (
-    <div className="overflow-hidden rounded-lg border border-line">
+    <div className="overflow-hidden rounded-lg border border-line/50">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 bg-surface-raised px-3 py-2">
         <span
           aria-hidden="true"
@@ -1383,7 +1383,7 @@ function WebhookRow({
 
       {expanded && <WebhookDeliveries orgId={orgId} webhookId={webhook.webhookId} />}
       {(setEnabled.isError || remove.isError) && (
-        <div className="border-t border-line px-3 py-2">
+        <div className="border-t border-line/50 px-3 py-2">
           <ErrorText error={setEnabled.error ?? remove.error} />
         </div>
       )}
@@ -1408,14 +1408,14 @@ function WebhookDeliveries({
   if (deliveries.isError) return <ErrorText error={deliveries.error} />;
   if (deliveries.data.length === 0) {
     return (
-      <p className="border-t border-line px-3 py-2 text-[11px] text-ink-faint">
+      <p className="border-t border-line/50 px-3 py-2 text-[11px] text-ink-faint">
         No deliveries yet — this endpoint appears in no rule runs.
       </p>
     );
   }
 
   return (
-    <ul className="border-t border-line">
+    <ul className="border-t border-line/50/50">
       {deliveries.data.map((delivery) => (
         <li key={delivery.deliveryId} className="px-3 py-1.5 text-[11px]">
           <div className="flex items-center gap-2">

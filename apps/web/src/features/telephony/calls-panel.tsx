@@ -141,13 +141,13 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6">
       <section className="space-y-3">
         <div className="flex items-center gap-2">
           <h2 className="text-[13px] font-semibold text-ink">Place a call</h2>
         </div>
         <form
-          className="rounded-lg border border-line bg-surface-raised p-3"
+          className="rounded-xl border border-line/50 bg-surface-raised p-4"
           onSubmit={(event) => {
             event.preventDefault();
             place.mutate();
@@ -260,7 +260,7 @@ export function CallsPanel({ orgId }: { readonly orgId: string }) {
                   onClick={() => {
                     setExpanded((current) => (current === call.callId ? null : call.callId));
                   }}
-                  className="flex w-full items-center gap-2.5 bg-surface-raised px-3 py-2 text-left hover:bg-surface-hover"
+                  className="flex w-full items-center gap-2.5 bg-surface-raised px-3.5 py-2.5 text-left transition-colors duration-[var(--motion-fast)] hover:bg-surface-hover"
                 >
                   <span
                     aria-hidden="true"

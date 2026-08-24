@@ -189,7 +189,7 @@ function ChannelListPanel({
     <aside
       aria-label="Conversations"
       className={cn(
-        'shrink-0 flex-col overflow-y-auto border-r border-line bg-surface-raised md:flex md:w-64',
+        'shrink-0 flex-col overflow-y-auto border-r border-line/50 bg-surface-raised md:flex md:w-64',
         /* Below `md` this pane and the message pane can't both fit — `w-64`
            alone is already most of a phone's viewport. `hidden`/`flex`
            rather than `w-0`/`w-64`: a zero-width flex child with overflow
@@ -200,13 +200,13 @@ function ChannelListPanel({
         hideWhenChannelOpen ? 'hidden' : 'flex w-full',
       )}
     >
-      <div className="flex flex-col gap-0.5 border-b border-line px-1.5 py-1.5">
+      <div className="flex flex-col gap-0.5 border-b border-line/50 px-1.5 py-1.5">
         <PinnedMessagesButton orgId={orgId} onOpenChannel={onSelect} />
         <SavedMessagesButton orgId={orgId} onOpenChannel={onSelect} />
       </div>
 
-      <div className="flex items-center justify-between px-3 pt-3 pb-1">
-        <h2 className="text-[13px] font-semibold text-ink">Channels</h2>
+      <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Channels</h2>
         {canCreateChannel && <NewChannelPopover orgId={orgId} onCreated={onSelect} />}
       </div>
 
@@ -233,8 +233,8 @@ function ChannelListPanel({
         </ul>
       )}
 
-      <div className="flex items-center justify-between px-3 pt-3 pb-1">
-        <h2 className="text-[13px] font-semibold text-ink">Direct messages</h2>
+      <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Direct messages</h2>
         <NewDirectMessagePopover orgId={orgId} onOpened={onSelect} />
       </div>
 
@@ -307,9 +307,9 @@ function ChannelRow({
           onSelect(channel.channelId as ChannelId);
         }}
         className={cn(
-          'flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm',
+          'flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors duration-[var(--motion-fast)]',
           active
-            ? 'bg-accent text-accent-ink'
+            ? 'bg-accent/15 text-accent'
             : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
         )}
       >
@@ -1375,7 +1375,7 @@ function ChannelPanel({
           shrinks rather than either panel overflowing the page". `min-h-0`
           already carries the identical argument for the other axis. */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex h-13 shrink-0 items-center gap-2.5 border-b border-line px-3 sm:px-4">
+        <header className="flex h-13 shrink-0 items-center gap-2.5 border-b border-line/50 px-3 sm:px-4">
           {/* The whole header is the way back to the channel list below `md`
               (tap the name, not a tiny arrow) — see `ChatPage`'s comment on
               the list/detail split this belongs to. */}
@@ -1438,7 +1438,7 @@ function ChannelPanel({
             }}
             aria-label="Channel details"
             className={cn(
-              'flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors',
+              'flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors duration-[var(--motion-fast)]',
               detailsOpen
                 ? 'bg-accent/10 text-accent'
                 : 'text-ink-muted hover:bg-surface-hover hover:text-ink',

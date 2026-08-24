@@ -338,7 +338,7 @@ function TokenRow({ orgId, token }: { readonly orgId: string; readonly token: To
   const status = revoked ? 'Revoked' : expired ? 'Expired' : 'Active';
 
   return (
-    <div className="overflow-hidden rounded-lg border border-line">
+    <div className="overflow-hidden rounded-lg border border-line/50">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 bg-surface-raised px-3 py-2">
         <span
           aria-hidden="true"
@@ -406,7 +406,7 @@ function TokenRow({ orgId, token }: { readonly orgId: string; readonly token: To
         )}
       </div>
       {revoke.isError && (
-        <div className="border-t border-line px-3 py-2">
+        <div className="border-t border-line/50 px-3 py-2">
           <ErrorText error={revoke.error} />
         </div>
       )}

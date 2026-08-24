@@ -137,7 +137,7 @@ export function PasskeySection() {
       )}
 
       {passkeys.data !== undefined && passkeys.data.length > 0 && (
-        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
+        <ul className="divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
           {passkeys.data.map((passkey) => (
             <PasskeyRow
               key={passkey.id}

@@ -363,7 +363,7 @@ export function SprintsManagerDialog({
               Sprint field.
             </p>
           ) : (
-            <ul className="divide-y divide-line rounded border border-line">
+            <ul className="divide-y divide-line/40 rounded border border-line/50">
               {/* Each row is a BLOCK, not a flex row: its own contents are
                   flexed by the wrapper inside, so the close panel can sit
                   underneath at full width. As a direct child of a flex `li`

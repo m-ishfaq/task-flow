@@ -96,7 +96,7 @@ export function ConnectedAccountsSection() {
       )}
 
       {connected.data !== undefined && connected.data.length > 0 && (
-        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
+        <ul className="divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
           {connected.data.map((account) => (
             <li
               key={account.provider}

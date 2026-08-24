@@ -83,7 +83,7 @@ export function DocsEditor({
 
   if (provider === null) {
     return (
-      <div className="flex h-40 items-center justify-center rounded border border-dashed border-line">
+      <div className="flex h-40 items-center justify-center rounded border border-dashed border-line/50">
         <p className="text-xs text-ink-faint">Connecting…</p>
       </div>
     );
