@@ -11,6 +11,7 @@ import { PasskeySection } from '../../src/lib/passkey-section.js';
 import { TotpSection } from '../../src/lib/totp-section.js';
 import { ConnectedAccountsSection } from '../../src/lib/connected-accounts-section.js';
 import { SessionsSection } from '../../src/lib/sessions-section.js';
+import { NotificationPreferencesSection } from '../../src/lib/notification-prefs-section.js';
 import { PushNotificationsSection } from '../../src/lib/push-notifications-section.js';
 import { RingtoneSection } from '../../src/lib/ringtone-section.js';
 import { ExportDataSection } from '../../src/lib/export-data-section.js';
@@ -140,6 +141,7 @@ export default function Account() {
       <TotpSection />
       <ConnectedAccountsSection />
       <SessionsSection />
+      <NotificationPreferencesSection />
       <PushNotificationsSection />
       <RingtoneSection />
       <ExportDataSection />

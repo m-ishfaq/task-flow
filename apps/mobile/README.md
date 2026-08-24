@@ -5005,3 +5005,49 @@ dependency. **Not device-verified**: long-press-to-select is a real gesture with
 timing (`Pressable`'s default `delayLongPress`), and has not been checked against how it feels on
 a real device — in particular whether it reads as responsive or as an accidental double-trigger
 against a quick tap meant to open the card.
+
+## Account: the notification preference matrix — the gap the push section itself named
+
+`src/lib/notification-prefs-section.tsx`, ported from `apps/web/src/features/notifications/
+notification-prefs-section.tsx`, closing gap #2 off the same mobile-vs-web audit bulk actions came
+from. `push-notifications-section.tsx`'s own header said it plainly since the day it shipped: "the
+category/channel preference MATRIX... is a separate, real gap: no screen on native reads
+`notifications.prefs.*` at all yet." That sentence is now corrected in place rather than silently
+dropped — see that file's own header.
+
+**A new file, not folded into `push-notifications-section.tsx`, because the two are genuinely
+different questions.** That section is the device-REGISTRATION ceremony — getting an Expo push
+token onto this device in the first place. This one is "which categories reach me on which
+channel" — email, push, SMS, crossed with mentions/DMs/assignments and replies/comments/due-dates
+— a plain preference the server already stores (`identity.notification_prefs`, `selfRoute`, no org,
+the same "yours alone, the same wherever you sign in" shape `PasskeySection`'s own reasoning gives
+every other account-page control) whether or not this particular device has ever registered for
+push. `notifications.ts` gained the type and query key (`NotificationPrefEntry`,
+`NOTIFICATION_PREFS_QUERY_KEY`) rather than `push-notifications.ts`, for the identical reason.
+
+**Toggle chips instead of checkboxes.** Web renders a real `<input type="checkbox">` per cell; this
+app has no equivalent at a touch-target size worth tapping, so each cell is the same accent-when-
+active chip `search-button.tsx`'s facet row and `docs-space/[spaceId].tsx`'s template picker
+already established — tapped to flip, not checked.
+
+**Push's disabled reason is real and different from web's, because the ceremony lives somewhere
+else here.** Web's push column can be disabled for three separate reasons (no VAPID key configured,
+an unsupported browser, a blocked permission) because turning it ON there runs the WHOLE push
+ceremony inline, synchronously, before saving. On mobile the ceremony is `push-notifications-
+section.tsx`'s own "Enable on this device" button, a separate control — so this matrix only needs
+one fact: has that ceremony ever succeeded for this account. Zero registered devices
+(`expoPush.list`, the same query that section already reads) disables the push chip with a reason
+pointing at the section below it, rather than a checkbox that flips and silently saves a preference
+nothing can act on — the identical "no silent lie" argument web's own header makes, just resolved
+against a different signal because mobile's ceremony is not inline. SMS keeps web's own "Coming
+soon…" verbatim: no SMS provider carries notification delivery on either platform yet, Phase 7's
+telephony SMS threads notwithstanding — that is a different pipe end to end.
+
+Verified: typecheck clean (one `Record`-narrowing fix needed — a `.filter()` predicate had to be a
+real type guard for the disabled-reason list, since `no-unnecessary-condition`/strict null checks
+do not narrow through a plain boolean filter), lint clean, guardrail self-test clean, encoding
+check clean, and real `expo export` for both platforms bundle cleanly. No dedicated test file, same
+as `push-notifications-section.tsx`'s own precedent — the whole component is `useQuery`/
+`useMutation` wiring and JSX with no pure logic worth extracting, the same reasoning that file's
+absence of a test already establishes. **Not device-verified**: the toggle-chip interaction and the
+disabled-reason text have not been checked against a real screen size or a real registered device.

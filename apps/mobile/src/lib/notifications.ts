@@ -38,6 +38,23 @@ export type NotificationSummary = Wire<
 export const NOTIFICATIONS_QUERY_KEY = ['notifications.listMine'] as const;
 export const NOTIFICATION_COUNT_QUERY_KEY = ['notifications.unreadCount'] as const;
 
+/**
+ * The category × channel preference matrix — `notifications.prefs.*`, the
+ * same `selfRoute` (no org: `identity.notification_prefs` is global per
+ * user, the same "yours alone, the same wherever you sign in" shape
+ * `notification-prefs-section.tsx`'s own header gives it on web) ported
+ * here rather than added to `push-notifications.ts`, because that file is
+ * scoped to the device-REGISTRATION ceremony (getting an Expo push token
+ * onto this device in the first place) — a different, unrelated concern
+ * from "which categories should reach me on which channel", the gap that
+ * file's own header named and left open until now.
+ */
+export type NotificationPrefEntry = Wire<
+  Awaited<ReturnType<MobileTRPCClient['notifications']['prefs']['list']['query']>>
+>[number];
+
+export const NOTIFICATION_PREFS_QUERY_KEY = ['notifications.prefs.list'] as const;
+
 /** A glyph per kind — ported verbatim from `notification-bell.tsx`'s own `iconFor`. */
 export function notificationIcon(kind: string): string {
   if (
