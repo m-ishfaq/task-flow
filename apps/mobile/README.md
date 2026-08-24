@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed; the "needs a rich text editor" call on `@mention` composing turned out to be wrong for the mid-string case specifically (a plain `TextInput`'s own `onSelectionChange`/`selection` was enough) and is fixed too — see "`@mention` now works mid-string"; a real native (no WebView) rich text editor — bold, links, and lists — now composes on all four surfaces named for it (chat message composer, thread replies, card description, card comments), via `@expensify/react-native-live-markdown`'s `MarkdownTextInput` and a live/send-time split for the one thing it cannot highlight live (lists) — see "A real rich text editor..."; **in-app voice calling (Phase 13, Wave 5 here) now ships on mobile** — signaling (`react-native-webrtc`), ringing, ringtones, call history, and recording-consent participation, by explicit project-owner direction scoped to in-app ringing only (CallKit/ConnectionService lock-screen UI named as a real, separate follow-up rather than included) — see "In-app voice calling..."; the notification bell is now reachable from every tab and the org picker has a sign-out escape hatch — see "The notification bell was only reachable..."; **org settings (the member roster, invites, and role changes) now ships** — see "Org settings: the member roster..." — and **project settings (labels, statuses, custom fields, board rename/archive) now ships too** — see "Project settings: labels, statuses, and custom fields..." — and **Teams, ownership transfer, and billing now ship as well** — see "Teams, ownership transfer, and billing..." — closing every item the original "org settings and perms not wired yet" report named; **native CallKit (iOS) / ConnectionService (Android) integration now covers the app-alive case** — a ringing call now registers with the OS the moment it enters the same `rtc.incoming` list `IncomingCallBanner` already polls, so it gets real audio-focus/Bluetooth/Do-Not-Disturb integration and, on iOS, the actual lock-screen call UI — see "Native CallKit / ConnectionService..." for exactly what this covers and what a killed app still needs, which is real, separate, not-yet-built work
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed; the "needs a rich text editor" call on `@mention` composing turned out to be wrong for the mid-string case specifically (a plain `TextInput`'s own `onSelectionChange`/`selection` was enough) and is fixed too — see "`@mention` now works mid-string"; a real native (no WebView) rich text editor — bold, links, and lists — now composes on all four surfaces named for it (chat message composer, thread replies, card description, card comments), via `@expensify/react-native-live-markdown`'s `MarkdownTextInput` and a live/send-time split for the one thing it cannot highlight live (lists) — see "A real rich text editor..."; **in-app voice calling (Phase 13, Wave 5 here) now ships on mobile** — signaling (`react-native-webrtc`), ringing, ringtones, call history, and recording-consent participation, by explicit project-owner direction scoped to in-app ringing only (CallKit/ConnectionService lock-screen UI named as a real, separate follow-up rather than included) — see "In-app voice calling..."; the notification bell is now reachable from every tab and the org picker has a sign-out escape hatch — see "The notification bell was only reachable..."; **org settings (the member roster, invites, and role changes) now ships** — see "Org settings: the member roster..." — and **project settings (labels, statuses, custom fields, board rename/archive) now ships too** — see "Project settings: labels, statuses, and custom fields..." — and **Teams, ownership transfer, and billing now ship as well** — see "Teams, ownership transfer, and billing..." — closing every item the original "org settings and perms not wired yet" report named; **native CallKit (iOS) / ConnectionService (Android) integration now covers the app-alive case** — a ringing call now registers with the OS the moment it enters the same `rtc.incoming` list `IncomingCallBanner` already polls, so it gets real audio-focus/Bluetooth/Do-Not-Disturb integration and, on iOS, the actual lock-screen call UI — see "Native CallKit / ConnectionService..." for exactly what this covers; **and a backgrounded or killed phone now gets a real, tappable "Incoming call" push the moment someone rings it** — a new `apps/api/src/platform/call-wake.ts` outbox consumer, reusing the existing Expo push pipeline end to end with no new mobile code — see "Pass B: a real ring push..." for the design and the honest scope correction it made from the silent-wake plan originally named in the CallKit section; a true native Android lock-screen surface and real iOS VoIP push remain real, separate, not-yet-built work (Pass C)
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -5318,21 +5318,84 @@ Android's one-time "register a phone account" system dialog (fired by `ensureSet
 reads as expected, whether the lock-screen Answer/Decline buttons actually reach `joinCall`/`decline` on
 a real device, and Bluetooth/CarPlay audio routing during an active call.
 
+**Pass B (a real ring push, not a silent wake) has since shipped — see the next section for the design
+and the scope correction it made from the plan named here originally.**
+
 **Named as real, separate, not-yet-built follow-up — not silently deferred:**
 
-- **Pass B (Android background/killed-app wake).** Nothing today wakes this app once its process is
-  gone; `incoming`'s six-second poll only helps while the app is already running. The plan: a new,
-  lightweight, freely-named outbox consumer (`claimPending`'s consumer argument is a plain string —
-  confirmed via `packages/db/src/outbox.ts`, no migration needed to add one) reading `rtc_session.started`
-  events, which already carry `invitedUserIds` in their payload, wired into `apps/api/src/tenancy/relay.ts`'s
-  existing tick rather than a new worker process. It would send a data-only/silent Expo push to each
-  invited user's registered `expo_push_tokens` devices — `ExpoPushProvider.send` currently requires
-  `title`/`body`/`path` and would need a data-only variant — received by an `expo-notifications`
-  `TaskManager`-registered background task on the mobile side that calls `RNCallKeep.displayIncomingCall`
-  directly, without this app's JS ever coming to the foreground.
-- **Pass C (iOS true-kill-state wake).** iOS has no equivalent to Android's background task; a killed
-  app can only be woken by a real APNs VoIP-type push delivered through PushKit, which Expo's own push
-  service does not support and which requires hand-written native `AppDelegate.m` Objective-C
+## Pass B: a real ring push reaches a backgrounded or killed app — and a scope correction from the plan named above
+
+`apps/api/src/platform/call-wake.ts` (new). The plan this pass started from — named in this README's
+own CallKit section above before this file existed — was a DATA-ONLY push received by an
+`expo-notifications` background task that would call `RNCallKeep.displayIncomingCall` directly, the app
+process never coming to the foreground, mirroring true VoIP push. Building it surfaced that the plan
+rested on two claims this codebase could not actually stand behind: `push-provider.ts`'s own header
+already establishes that Expo's push relay exposes no `content-available`/silent-push knob to build a
+truly silent notification from, and a background task is not guaranteed to run at all once an Android
+process is fully killed — that is an OEM battery-management decision, not something a `TaskManager`
+registration controls. Shipping the original plan would have been code nobody, including this session,
+could verify does what its own name claims. **Named here as a real, explicit scope correction — the same
+"correct a wrong premise in place, do not silently rewrite it" habit CLAUDE.md's own status header
+documents for Phases 3.5, 5, 7 and 8 — rather than quietly shipping something narrower under the same
+description.**
+
+**What shipped instead: an ordinary, visible push notification, reusing 100% of the existing
+`ExpoPushProvider`/push pipeline.** The moment `rtc_session.started` fires, a new outbox consumer sends
+`expoPushProvider.send({ title: 'Incoming call', body: null, path: '/chat?channel=…' })` to every
+invited user's registered devices — the exact same call `notification-push.ts` already makes for every
+other push, with no new field, no new provider method, and no new mobile-side code at all. Tapping it
+routes through the pipeline that already exists end to end: `data.path` →
+`attachNotificationResponseListener` → `mobilePathFor` (`notification-path.ts` already translates
+`/chat?channel=X` to `/channel/X` — the exact shape `notificationPath`'s own `'call'` case in
+`notification-paths.ts` produces for `call.missed`, reused verbatim here) → the channel screen, where
+`CallSurface` is already mounted globally and picks the still-ringing call straight back up from
+`rtc.incoming`, feeding both `IncomingCallBanner` and `call-keep.ts`'s native bridge the moment the app
+is actually open. This does not put the call on the lock screen the way real VoIP push would — Pass C
+still names that gap — but it reaches a backgrounded or killed phone at all, which before this pass it
+did not.
+
+**A caller-name-free payload, on purpose — not an oversight.** `notification.projection.ts`'s own
+`planMissedCall` already established the rule this reuses: "the client resolves the caller from the
+channel," never a name minted server-side into a push payload a third-party relay (and a lock screen)
+also sees. The title is the fixed string `'Incoming call'`, matching that precedent exactly rather than
+inventing a new one.
+
+**A separate consumer, deliberately not a new `planNotifications` case.** `planMissedCall`'s own header
+already argues why a RINGING call cannot go through the persisted-notification pipeline: a notification
+row for a call that is currently ringing "would then be read minutes later as a row saying 'someone is
+calling' about a call that ended long ago." That pipeline always writes a durable `platform.notifications`
+row for every `push`-enabled recipient; `call-wake.ts` writes nothing there — it only sends. `call.missed`
+(already shipped, off `rtc_session.ended`) remains the one durable record, for the calls that were
+actually missed.
+
+**Costs nothing structurally.** `claimPending`'s consumer argument is a free-form string
+(`platform.outbox_dispatch`'s own shape) — the new `'rtc-call-wake'` name needed no migration, no new
+role, and no new grant: `taskflow_audit` already holds SELECT on `platform.expo_push_tokens` (migration
+0082's own `expo_push_tokens_audit_send` policy), the same role `notification-push.ts` already reads it
+as. Wired into `apps/api/src/tenancy/relay.ts`'s existing tick, gated on `expoPushProvider` alone (not
+`pushProvider`) — this is a mobile-only concern with no web-push equivalent, since a browser tab already
+gets the live ring over the socket the same way an alive mobile app does.
+
+**Best-effort, and deliberately NOT at-least-once the way every sibling consumer in this codebase is.**
+`notification-push.ts`'s own header treats a transient send failure as "leave it, the next tick retries
+it" — correct for a fact that stays true later. A ring is not that fact: this consumer marks the event
+dispatched regardless of send outcome, because a retry minutes after a call has already been answered,
+declined, or missed is not a useful retry.
+
+Verified: typecheck clean, lint clean, a new `call-wake.test.ts` (6 tests) covering the one pure piece —
+parsing `rtc_session.started`'s payload shape, including a missing `channelId`, a non-array/malformed
+`invitedUserIds`, and non-string entries filtered rather than rejecting the whole row — alongside the
+existing API suite, guardrail self-test clean, encoding check clean. `drainCallWake` itself needs a real
+Postgres connection to test (`withAuditScope`), which this sandbox does not have — the identical split
+`expo-push.test.ts`'s own header already explains for `ExpoPushProvider`'s registration half. **Not
+verified against a real device or a live relay tick**: whether the push actually arrives promptly through
+Expo's real infrastructure, and whether Android shows it correctly while the app is fully killed rather
+than merely backgrounded, which is the one distinction this sandbox has no way to exercise.
+
+- **Pass C (iOS true-kill-state wake, and a true native Android lock-screen surface).** iOS has no
+  equivalent to Android's background task; a killed app can only be woken by a real APNs VoIP-type
+  push delivered through PushKit, which Expo's own push service does not support and which requires
+  hand-written native `AppDelegate.m` Objective-C
   (`pushRegistry:didReceiveIncomingPushWithPayload:...` calling `RNVoipPushNotificationManager`) — not
   something safe to blind-inject via a config plugin from this environment. The plan mirrors
   `push-notifications.ts`'s own "code-complete, infrastructure pending" precedent: a new
