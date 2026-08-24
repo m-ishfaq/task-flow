@@ -70,7 +70,8 @@
       ]
     },
     "patchedDependencies": {
-      "html-entities@2.5.3": "patches/html-entities@2.5.3.patch"
+      "html-entities@2.5.3": "patches/html-entities@2.5.3.patch",
+      "react-native-callkeep@4.3.16": "patches/react-native-callkeep@4.3.16.patch"
     }
   }
 }

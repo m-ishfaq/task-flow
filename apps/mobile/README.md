@@ -5318,6 +5318,27 @@ Android's one-time "register a phone account" system dialog (fired by `ensureSet
 reads as expected, whether the lock-screen Answer/Decline buttons actually reach `joinCall`/`decline` on
 a real device, and Bluetooth/CarPlay audio routing during an active call.
 
+**A real Android crash, found on the first actual device build: `react-native-callkeep`'s own
+upstream bug, patched in this repo.** The library's Android native module exports two
+`@ReactMethod`-annotated Java methods both named `displayIncomingCall` — a real, open, unfixed bug in
+the library itself (react-native-webrtc/react-native-callkeep issues #798, #857, #866), not something
+introduced by this integration. This app's React Native version resolves native modules through the
+New Architecture's TurboModule codegen, which refuses to parse a module exposing two JS methods with
+one name (JS has no overloading to disambiguate them) — so `NativeModules.RNCallKeep` failed to
+initialize at all, and every call into it threw or hit `undefined`, crashing the whole app rather than
+degrading gracefully the way this file's own dynamic-import discipline is meant to guard against (the
+crash is a native TurboModule parse failure, not a JS import failure — the two are different failure
+classes, and only the second one `loadCallKeep`'s `.catch()` was ever positioned to catch). Fixed with a
+real `pnpm patch` (`patches/react-native-callkeep@4.3.16.patch`, wired through `package.json`'s
+`pnpm.patchedDependencies` — the same mechanism this repo already uses for `html-entities`), removing
+the `@ReactMethod` annotation from the 3-arg overload, which `index.js`'s own Android bridge code never
+calls anyway (confirmed by reading the actual JS source, not assumed — it always calls the 4-arg one).
+Verified against a real `expo prebuild`: Android's Gradle autolinking compiles straight from
+`node_modules` with no copy step, so the patched source is what a real build actually compiles from.
+**Not yet confirmed against a real device build** — that confirmation is what surfaced this bug, and
+is real, separate follow-up; if a _different_ duplicate-method or New Architecture incompatibility
+surfaces from the same library, the fix is the identical `pnpm patch` workflow, not a new mechanism.
+
 **Pass B (a real ring push, not a silent wake) has since shipped — see the next section for the design
 and the scope correction it made from the plan named here originally.**
 

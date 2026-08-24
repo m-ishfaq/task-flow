@@ -1,0 +1,19 @@
+diff --git a/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java b/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java
+index 025480ac97460cc45775ea11aa43af36522d5df6..cb6d8ca6b847a83cce4060c1175a1eca0d8d4a6c 100644
+--- a/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java
++++ b/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java
+@@ -434,7 +434,13 @@ public class RNCallKeepModule extends ReactContextBaseJavaModule implements Life
+         this.hasListeners = false;
+     }
+ 
+-    @ReactMethod
++    // NOT @ReactMethod (taskflow patch — see patches/react-native-callkeep@4.3.16.patch's
++    // own note): the JS bridge (index.js's Android branch) always calls the 4-arg overload
++    // below, and the New Architecture's TurboModule codegen refuses to parse a module
++    // exposing two @ReactMethod-annotated JS methods with the identical name
++    // "displayIncomingCall" — JS has no method overloading, so it cannot address one over
++    // the other. Kept as a plain (non-bridge) Java method for source compatibility with
++    // anything in this library's own Java code that might still call it directly.
+     public void displayIncomingCall(String uuid, String number, String callerName) {
+         this.displayIncomingCall(uuid, number, callerName, false, null);
+     }
