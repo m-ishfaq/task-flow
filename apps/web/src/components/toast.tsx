@@ -118,7 +118,10 @@ export function ToastProvider({ children }: { readonly children: ReactNode }) {
             onOpenChange={(open) => {
               if (!open) dismiss(toast.id);
             }}
-            className={cn('relative rounded-xl border px-3.5 py-2.5 pr-7 shadow-lg backdrop-blur-sm', TONES[toast.tone])}
+            className={cn(
+              'relative rounded-xl border px-3.5 py-2.5 pr-7 shadow-lg backdrop-blur-sm',
+              TONES[toast.tone],
+            )}
           >
             <RadixToast.Title className="text-sm font-medium text-ink">
               {toast.title}

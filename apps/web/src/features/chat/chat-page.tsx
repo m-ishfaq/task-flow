@@ -206,7 +206,9 @@ function ChannelListPanel({
       </div>
 
       <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Channels</h2>
+        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+          Channels
+        </h2>
         {canCreateChannel && <NewChannelPopover orgId={orgId} onCreated={onSelect} />}
       </div>
 
@@ -234,7 +236,9 @@ function ChannelListPanel({
       )}
 
       <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Direct messages</h2>
+        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+          Direct messages
+        </h2>
         <NewDirectMessagePopover orgId={orgId} onOpened={onSelect} />
       </div>
 

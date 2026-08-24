@@ -90,10 +90,7 @@ export function CardTile({
       {card.priority !== null && (
         <span
           aria-hidden="true"
-          className={cn(
-            'absolute inset-y-0 left-0 w-[3px]',
-            PRIORITY_SWATCH[card.priority],
-          )}
+          className={cn('absolute inset-y-0 left-0 w-[3px]', PRIORITY_SWATCH[card.priority])}
         />
       )}
 
@@ -113,9 +110,7 @@ export function CardTile({
           <span
             className={cn(
               'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
-              due.overdue
-                ? 'bg-danger/15 text-danger'
-                : 'bg-surface-hover text-ink-muted',
+              due.overdue ? 'bg-danger/15 text-danger' : 'bg-surface-hover text-ink-muted',
             )}
           >
             <Calendar aria-hidden="true" className="size-3" strokeWidth={2} />

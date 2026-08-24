@@ -1218,6 +1218,9 @@ function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
             <thead>
               <tr className="border-b border-line bg-surface-sunken/60">
                 <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  User
+                </th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
                   Email verified
                 </th>
                 <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-faint">

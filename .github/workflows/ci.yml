@@ -104,7 +104,13 @@ jobs:
     # that actually catches broken code, so it is never tiered away.
     if: vars.CI_ENABLED != 'false'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Was 15 until Phase 14 (apps/mobile) landed: 421 more tests, a mobile
+    # lint/typecheck pass, and an `expo export` build step pushed a run that
+    # used to finish in ~10-13 minutes total past the old budget — the job
+    # was killed mid-suite (packages/storage, then platform/tenancy fuzz
+    # tests still running), not hung. 30 leaves real headroom for growth
+    # rather than re-tuning this every time a new app/package joins verify.
+    timeout-minutes: 30
 
     services:
       postgres:
