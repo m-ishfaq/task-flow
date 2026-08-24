@@ -4856,3 +4856,83 @@ round trip is proven against real Yjs structures built by hand, not against a re
 a real TipTap editor and then opened here — that is the one gap no amount of unit testing in this
 environment can close, the same boundary `yjsFragmentToRichTextDocument`'s own header has named
 since the reader shipped.
+
+## Search (Phase 8) — a modal, not a screen, reached from `top-bar.tsx`
+
+`src/lib/search.ts` (pure logic) and `src/lib/search-button.tsx` (the trigger + sheet), wired into
+`top-bar.tsx`'s existing icon row right after Account. Ported from
+`apps/web/src/features/search`, with one structural difference from the start: web is a full
+`/search` route with a live per-token TQL error underline, type facets, and a saved-search CRUD
+list; this is a bottom sheet, following `notification-bell.tsx`'s own trigger-plus-sheet shape
+rather than a pushed route, because a search result is never somewhere to linger — it is always a
+jump to a card, a channel, or a page.
+
+**There is no separate "plain text" search mode, and none was needed.** Web has exactly one search
+surface — a TQL text box — not two. That reads as a bigger porting job than it is, until
+`packages/filter/src/tql/parse.ts`'s `freeText()` is read closely: a bare typed word is already
+COMPLETE, valid TQL (it desugars to `text contains "word"` at parse time), so a plain search box
+that forwards whatever the user typed straight through as `query` is not a reduced version of
+web's feature — it _is_ the same feature, minus the two pieces that need real UI a modal has no
+room for. `@taskflow/filter` is deliberately NOT a new dependency of this app: a user who types
+real TQL syntax and gets it wrong sees the server's own `VALIDATION` error, the same as any other
+tRPC failure this app already renders, rather than a local parser copy that could drift from the
+real one.
+
+**The facet chips are honest, same as web's.** `withFacet` appends `AND type = <kind>` to the
+typed text rather than filtering a client-side list — the query box IS the whole query, always;
+there is no hidden second filter layer. Transcripts get a chip like every other kind even though
+they are gated by role alone (`recording:read`, no target — Admin/Owner in practice): hiding the
+chip from a member would be this UI re-deriving an authorization decision the server already makes
+correctly, the same §8.2 argument every other screen in this app already follows. A member who
+taps it gets an honest empty result, not a missing option.
+
+**Every hit field the row renders is treated as nullable, because it is.** `title`, `snippet`, and
+`authorId` are all nullable on the wire; `hitTitle()` supplies the same `"<Kind> · <id>"` fallback
+web's own row does rather than assuming a title exists. There is no client-side authorization
+check anywhere in this file, on purpose: `apps/api/src/search/router.ts`'s own header is explicit
+that the index only answers WHICH ORG, and the route re-checks `can()` per hit, with the resource's
+own `Target`, before a hit is ever returned — this app renders what it is handed and does not
+re-derive that decision.
+
+**Navigating a hit is a straight `switch` on `hit.type`, narrowing `metadata` per case with the
+same `'x' in meta` checks web uses** — `HitMetadata` is a plain Zod union with no discriminant tag
+shared with `type`, so TypeScript cannot narrow `metadata` from `type` alone; each case re-checks
+the field it needs, exactly like `search-page.tsx`'s own `open()`. Four of five targets are a
+genuine simplification over web, not a reduced port: mobile's `/card/[cardId]` route takes only a
+card id (web's `/boards/$boardId` needs `board_id`/`project_id` too), so a `card` hit does not
+even need to inspect its metadata. `page` and page-`comment` hits push to `/docs-page/[pageId]`
+with `spaceId` as a second param, the same shape `docs-page/[pageId].tsx`'s own Backlinks section
+already uses. **`transcript` is the one real gap**: mobile has no per-call route at all (`calls.tsx`
+is a single tab screen with no `router.push` target for a specific call), unlike web's `?call=`
+auto-expand — a transcript hit opens the Calls tab generically rather than the specific recording.
+Named here rather than silently degraded; closing it needs a route param `calls.tsx` reads to
+auto-expand a row, which is its own follow-up, not urgent enough to block this pass.
+
+**Saved searches (`search.saved.*`) are not wired up at all — a deliberate, named gap, not an
+oversight.** Web's list is a real CRUD surface with a share-with-org toggle the server can reject
+and a `broken` flag re-computed on every `list` call (a stored query re-parsed against the live
+grammar can go stale). That is a management screen, not a "search cards, jump to one" sheet meant
+to be opened, typed in, and dismissed in a few seconds — the same reasoning that kept the page
+editor's mention list read-only rather than inventing a picker UI it didn't need. Worth its own
+pass later, the same way the page editor got one once reading was solid.
+
+**No pagination, matching the server exactly**: `search.query` has no cursor, a hard `limit` of at
+most 100 (this app asks for 50), and per-hit authorization can drop rows after the index's own
+limit — so a result count here is a floor, not a total. Nothing in this file tries to "load more"
+against an endpoint that has no `nextCursor` to give it.
+
+Verified: typecheck clean, lint clean, 7 new tests in `search.test.ts` (`withFacet`'s facet/empty-
+query/whitespace cases, `hitTitle`'s real-title and per-kind-fallback cases) alongside the existing
+369 — 376 total — guardrail self-test clean, prettier clean, encoding check clean, and real
+`expo export` for both `--platform android` and `--platform ios` bundle cleanly. No new native
+dependency, so no dev-client rebuild beyond what this app already needed.
+
+**The sheet is wrapped in `KeyboardAvoidingView` from the start, not after a live report.** An
+autofocused `TextInput` sitting above a facet-chip row above a scrolling result list, inside a
+bottom sheet, is exactly the shape this README's own "keyboard covers composer" bug class has hit
+four times before (`channel/[channelId].tsx`, `board/[boardId].tsx`'s two modals,
+`docs-page/[pageId].tsx`) — this would have been the fifth live report of the same thing, so it is
+fixed proactively instead: `KeyboardAvoidingView` (`'padding'` on iOS, `'height'` on Android)
+around the modal's backdrop, `board/[boardId].tsx`'s own established shape for a `Modal`-hosted
+sheet with a `TextInput` in it. **Not device-verified**: the fix follows an established, working
+pattern exactly, but has not itself been checked against a real keyboard on a real device.

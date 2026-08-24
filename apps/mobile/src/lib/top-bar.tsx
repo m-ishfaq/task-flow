@@ -4,12 +4,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '@taskflow/tokens';
 import { NotificationBell } from './notification-bell.js';
+import { SearchButton } from './search-button.js';
 
 /**
- * The top-right chrome cluster — Account, then the notification bell,
- * mounted once in `(app)/_layout.tsx` above every screen, the same
- * "one overlay, not four copies" pattern `call-surface.tsx` and
- * `notification-bell.tsx` already established for their own reasons.
+ * The top-right chrome cluster — Account, then Search, then the
+ * notification bell, mounted once in `(app)/_layout.tsx` above every
+ * screen, the same "one overlay, not four copies" pattern `call-surface.tsx`
+ * and `notification-bell.tsx` already established for their own reasons.
+ * `search-button.tsx`'s own header explains why Search is a sheet opened
+ * from this row rather than a pushed route — a result is always a jump
+ * elsewhere, never a place to linger.
  *
  * ## Why Account moved out of the tab bar
  *
@@ -36,10 +40,10 @@ import { NotificationBell } from './notification-bell.js';
  * offset would mean two components each guessing the other's width to
  * avoid overlapping — exactly the kind of drift that goes unnoticed until
  * a longer unread-count badge (`9+`) collides with its neighbour. This
- * component owns the ONE absolute position; `NotificationBell` now renders
- * a plain, unpositioned trigger sized to sit inside this row, so the two
- * icons are pixel-aligned by construction (same `top`, a fixed `gap`)
- * rather than by two numbers happening to agree.
+ * component owns the ONE absolute position; `NotificationBell` (and now
+ * `SearchButton`) renders a plain, unpositioned trigger sized to sit inside
+ * this row, so every icon is pixel-aligned by construction (same `top`, a
+ * fixed `gap`) rather than by several numbers happening to agree.
  */
 export function TopBar(): React.JSX.Element {
   const insets = useSafeAreaInsets();
@@ -61,6 +65,7 @@ export function TopBar(): React.JSX.Element {
           color={onAccountScreen ? colors.accent.hex : colors.ink.hex}
         />
       </Pressable>
+      <SearchButton />
       <NotificationBell />
     </View>
   );
