@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { liveFormatParser, parseFormattedText, serializeToText } from './rich-text-compose.js';
+import {
+  blockIndexForLine,
+  liveFormatParser,
+  parseBlocksWithLineRanges,
+  parseFormattedText,
+  serializeToText,
+} from './rich-text-compose.js';
 
 describe('parseFormattedText — plain text', () => {
   it('with no formatting, produces a single paragraph with one text run', () => {
@@ -467,6 +473,93 @@ describe('parseFormattedText — horizontal rule', () => {
 
   it('two dashes alone is NOT a rule — the pattern requires three or more', () => {
     expect(parseFormattedText('--').content[0]?.type).toBe('paragraph');
+  });
+});
+
+describe('parseBlocksWithLineRanges — the block/line-range pairing docs-collab.ts anchors against', () => {
+  it('one line, one block, same content parseFormattedText would produce', () => {
+    const { blocks, lineRanges } = parseBlocksWithLineRanges('hello');
+    expect(blocks).toEqual(parseFormattedText('hello').content);
+    expect(lineRanges).toEqual([[0, 1]]);
+  });
+
+  it('three plain-paragraph lines are three separate ranges, each one line wide', () => {
+    const { blocks, lineRanges } = parseBlocksWithLineRanges('first\nsecond\nthird');
+    expect(blocks).toHaveLength(3);
+    expect(lineRanges).toEqual([
+      [0, 1],
+      [1, 2],
+      [2, 3],
+    ]);
+  });
+
+  it('a run of consecutive bullet lines collapses into ONE range spanning all of them', () => {
+    const { blocks, lineRanges } = parseBlocksWithLineRanges('- a\n- b\n- c');
+    expect(blocks).toEqual(parseFormattedText('- a\n- b\n- c').content);
+    expect(blocks[0]?.type).toBe('bulletList');
+    expect(lineRanges).toEqual([[0, 3]]);
+  });
+
+  it('a fenced code block spans open fence through close fence inclusive', () => {
+    const { blocks, lineRanges } = parseBlocksWithLineRanges('before\n```js\ncode\n```\nafter');
+    expect(blocks.map((block) => block.type)).toEqual(['paragraph', 'codeBlock', 'paragraph']);
+    expect(lineRanges).toEqual([
+      [0, 1],
+      [1, 4],
+      [4, 5],
+    ]);
+  });
+
+  it('mixed content: paragraph, then a bullet run, then a heading — each range lines up with parseFormattedText’s own blocks', () => {
+    const text = 'intro\n- one\n- two\n## Heading';
+    const { blocks, lineRanges } = parseBlocksWithLineRanges(text);
+    expect(blocks).toEqual(parseFormattedText(text).content);
+    expect(lineRanges).toEqual([
+      [0, 1],
+      [1, 3],
+      [3, 4],
+    ]);
+  });
+
+  it('empty input still returns exactly one block and one range, matching parseFormattedText’s own output', () => {
+    const { blocks, lineRanges } = parseBlocksWithLineRanges('');
+    expect(blocks).toEqual(parseFormattedText('').content);
+    expect(lineRanges).toEqual([[0, 1]]);
+  });
+
+  it('ranges are contiguous and exhaustive — every line belongs to exactly one block', () => {
+    const text = '# Title\n\nsome text\n- a\n- b\n\n> quoted\nafter';
+    const { lineRanges } = parseBlocksWithLineRanges(text);
+    const totalLines = text.split('\n').length;
+    expect(lineRanges[0]?.[0]).toBe(0);
+    expect(lineRanges.at(-1)?.[1]).toBe(totalLines);
+    for (let i = 1; i < lineRanges.length; i += 1) {
+      expect(lineRanges[i]?.[0]).toBe(lineRanges[i - 1]?.[1]);
+    }
+  });
+});
+
+describe('blockIndexForLine', () => {
+  it('finds the block a line belongs to, across several one-line blocks', () => {
+    const { lineRanges } = parseBlocksWithLineRanges('first\nsecond\nthird');
+    expect(blockIndexForLine(lineRanges, 0)).toBe(0);
+    expect(blockIndexForLine(lineRanges, 1)).toBe(1);
+    expect(blockIndexForLine(lineRanges, 2)).toBe(2);
+  });
+
+  it('every line of a grouped block (a bullet run) maps to that SAME block index', () => {
+    const { lineRanges } = parseBlocksWithLineRanges('intro\n- a\n- b\n- c\noutro');
+    expect(blockIndexForLine(lineRanges, 1)).toBe(1);
+    expect(blockIndexForLine(lineRanges, 2)).toBe(1);
+    expect(blockIndexForLine(lineRanges, 3)).toBe(1);
+    expect(blockIndexForLine(lineRanges, 0)).toBe(0);
+    expect(blockIndexForLine(lineRanges, 4)).toBe(2);
+  });
+
+  it('returns null for a line outside every range', () => {
+    const { lineRanges } = parseBlocksWithLineRanges('only one line');
+    expect(blockIndexForLine(lineRanges, 5)).toBeNull();
+    expect(blockIndexForLine(lineRanges, -1)).toBeNull();
   });
 });
 

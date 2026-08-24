@@ -3,7 +3,9 @@ import * as Y from 'yjs';
 import { decodeBase64 } from './base64.js';
 import { parseFormattedText } from './rich-text-compose.js';
 import {
+  blockRangeAnchor,
   collabWebsocketUrl,
+  lineOfOffset,
   pageDocumentName,
   pageStartAnchor,
   writeRichTextDocumentToFragment,
@@ -229,6 +231,137 @@ describe('pageStartAnchor', () => {
     expect(absolute).not.toBeNull();
     expect(absolute?.type).toBe(content);
     expect(absolute?.index).toBe(0);
+  });
+});
+
+describe('blockRangeAnchor', () => {
+  function fragmentWithParagraphs(texts: readonly string[]): {
+    readonly doc: Y.Doc;
+    readonly content: Y.XmlFragment;
+  } {
+    const { doc, content } = docWithContent();
+    for (const text of texts) {
+      const paragraph = new Y.XmlElement('paragraph');
+      content.insert(content.length, [paragraph]);
+      const run = new Y.XmlText();
+      paragraph.insert(0, [run]);
+      run.insert(0, text);
+    }
+    return { doc, content };
+  }
+
+  it('produces a wire anchor apps/api/src/docs/anchor.ts would decode as valid', () => {
+    const { content } = fragmentWithParagraphs(['first', 'second']);
+    const anchor = blockRangeAnchor(content, 0, 1);
+    expect(anchor).not.toBeNull();
+    expect(() => Y.decodeRelativePosition(decodeBase64(anchor?.anchorFrom ?? ''))).not.toThrow();
+    expect(() => Y.decodeRelativePosition(decodeBase64(anchor?.anchorTo ?? ''))).not.toThrow();
+  });
+
+  it('is NOT collapsed for a real range — anchorFrom and anchorTo differ', () => {
+    const { content } = fragmentWithParagraphs(['first', 'second']);
+    const anchor = blockRangeAnchor(content, 0, 1);
+    expect(anchor?.anchorFrom).not.toBe(anchor?.anchorTo);
+  });
+
+  it('anchorFrom resolves to index 0 of the START block’s own element, not the fragment', () => {
+    const { doc, content } = fragmentWithParagraphs(['first', 'second', 'third']);
+    const secondParagraph = content.toArray()[1] as Y.XmlElement;
+
+    const anchor = blockRangeAnchor(content, 1, 1);
+    const relative = Y.decodeRelativePosition(decodeBase64(anchor?.anchorFrom ?? ''));
+    const absolute = Y.createAbsolutePositionFromRelativePosition(relative, doc);
+
+    expect(absolute?.type).toBe(secondParagraph);
+    expect(absolute?.index).toBe(0);
+  });
+
+  it('anchorTo resolves to the END block’s own length — right after its last child', () => {
+    const { doc, content } = fragmentWithParagraphs(['first', 'second']);
+    const secondParagraph = content.toArray()[1] as Y.XmlElement;
+
+    const anchor = blockRangeAnchor(content, 0, 1);
+    const relative = Y.decodeRelativePosition(decodeBase64(anchor?.anchorTo ?? ''));
+    const absolute = Y.createAbsolutePositionFromRelativePosition(relative, doc);
+
+    expect(absolute?.type).toBe(secondParagraph);
+    expect(absolute?.index).toBe(secondParagraph.length);
+  });
+
+  it('a single-block range (start === end) is still a real, resolvable anchor', () => {
+    const { doc, content } = fragmentWithParagraphs(['only one']);
+    const paragraph = content.toArray()[0] as Y.XmlElement;
+
+    const anchor = blockRangeAnchor(content, 0, 0);
+    expect(anchor).not.toBeNull();
+
+    const from = Y.createAbsolutePositionFromRelativePosition(
+      Y.decodeRelativePosition(decodeBase64(anchor?.anchorFrom ?? '')),
+      doc,
+    );
+    const to = Y.createAbsolutePositionFromRelativePosition(
+      Y.decodeRelativePosition(decodeBase64(anchor?.anchorTo ?? '')),
+      doc,
+    );
+    expect(from?.type).toBe(paragraph);
+    expect(from?.index).toBe(0);
+    expect(to?.type).toBe(paragraph);
+    expect(to?.index).toBe(paragraph.length);
+  });
+
+  it('returns null — never a wrong anchor — for a start or end index past the live fragment', () => {
+    const { content } = fragmentWithParagraphs(['only one']);
+    expect(blockRangeAnchor(content, 0, 5)).toBeNull();
+    expect(blockRangeAnchor(content, 5, 0)).toBeNull();
+    expect(blockRangeAnchor(content, -1, 0)).toBeNull();
+  });
+
+  it('returns null for an empty fragment — no block zero to anchor into', () => {
+    const { content } = docWithContent();
+    expect(blockRangeAnchor(content, 0, 0)).toBeNull();
+  });
+
+  it('returns null when a child is a bare Y.XmlText rather than an element (defensive — this app never writes one at the top level)', () => {
+    const { content } = docWithContent();
+    const bareText = new Y.XmlText();
+    content.insert(0, [bareText]);
+    bareText.insert(0, 'stray text');
+    expect(blockRangeAnchor(content, 0, 0)).toBeNull();
+  });
+});
+
+describe('lineOfOffset', () => {
+  it('offset 0 is always line 0', () => {
+    expect(lineOfOffset('one\ntwo\nthree', 0)).toBe(0);
+  });
+
+  it('an offset inside the first line is line 0', () => {
+    expect(lineOfOffset('one\ntwo\nthree', 2)).toBe(0);
+  });
+
+  it('an offset exactly at a newline is still the PRECEDING line — the newline has not been passed yet', () => {
+    expect(lineOfOffset('one\ntwo', 3)).toBe(0);
+  });
+
+  it('an offset just past a newline is the next line', () => {
+    expect(lineOfOffset('one\ntwo', 4)).toBe(1);
+  });
+
+  it('an offset at the very end of the text is the last line', () => {
+    expect(lineOfOffset('one\ntwo\nthree', 13)).toBe(2);
+  });
+
+  it('clamps an offset past the text’s own length to the last line, rather than throwing', () => {
+    expect(lineOfOffset('one\ntwo', 999)).toBe(1);
+  });
+
+  it('clamps a negative offset to line 0', () => {
+    expect(lineOfOffset('one\ntwo', -5)).toBe(0);
+  });
+
+  it('a single-line text is always line 0, at any in-bounds offset', () => {
+    expect(lineOfOffset('no newlines here', 0)).toBe(0);
+    expect(lineOfOffset('no newlines here', 10)).toBe(0);
   });
 });
 

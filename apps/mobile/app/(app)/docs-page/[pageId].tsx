@@ -26,13 +26,17 @@ import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { useMembers } from '../../../src/lib/use-members.js';
 import {
+  blockIndexForLine,
   liveFormatParser,
+  parseBlocksWithLineRanges,
   parseFormattedText,
   serializeToText,
   type SerializableNode,
 } from '../../../src/lib/rich-text-compose.js';
 import { useDocPage, type DocPageStatus } from '../../../src/lib/use-doc-page.js';
 import {
+  blockRangeAnchor,
+  lineOfOffset,
   pageStartAnchor,
   writeRichTextDocumentToFragment,
   yjsFragmentToRichTextDocument,
@@ -395,6 +399,8 @@ function DocsPageContent({
           </View>
         ) : doc === null ? null : editing ? (
           <PageEditor
+            pageId={pageId}
+            doc={doc}
             draft={draft}
             onDraftChange={setDraft}
             error={saveError}
@@ -481,25 +487,123 @@ function PageContent({ doc }: { readonly doc: Y.Doc }) {
  * and fenced code all stay plain text until Save (block structure has no
  * character-range representation `MarkdownTextInput` can highlight — that
  * file's own header explains why), but every inline mark highlights live.
+ *
+ * ## "Comment on selection" — Tier 3's phrase-anchoring item, at BLOCK
+ * granularity, and why that is the honest scope rather than a partial one
+ *
+ * Web builds a true character-precision anchor from a live ProseMirror
+ * selection via `@tiptap/y-tiptap`'s editor-state binding — a mapping this
+ * platform cannot have (no ProseMirror, no DOM). Selecting text HERE
+ * happens over `draft`, `serializeToText`'s markdown-SYNTAX string
+ * (`**bold**`, `# heading`, …), not the page's underlying plain content —
+ * so a `MarkdownTextInput` character OFFSET is not, by itself, a position
+ * in the live `Y.XmlFragment` tree. Rather than hand-build a second parser
+ * mapping markdown-syntax offsets back through every construct's wrapping
+ * rule (a real, substantial duplication of `rich-text-compose.ts`'s own
+ * serialization logic, and a likely source of subtle drift from it), this
+ * resolves the selection to whichever whole TOP-LEVEL BLOCK — paragraph,
+ * heading, list, quote, code fence — its start and end fall inside, via
+ * `parseBlocksWithLineRanges`' line-range pairing (the exact same parse
+ * `onSave` already runs) and `docs-collab.ts`'s `blockIndexForLine`/
+ * `lineOfOffset`. `blockRangeAnchor` then anchors to the START of the
+ * first block and the END of the last — a real, non-collapsed range,
+ * genuinely more precise than `pageStartAnchor`'s always-whole-page pair,
+ * just not character-precise. The same "the reduced surface IS the whole
+ * feature, not a partial one" call this codebase already made for
+ * `board-filter.ts`'s flat AND-of-four-fields against web's full filter
+ * tree.
+ *
+ * Falls back to `pageStartAnchor` — silently, not an error — whenever the
+ * block mapping cannot be trusted: the live fragment has fewer blocks than
+ * the draft's own parse implies (a concurrent edit landed while this
+ * screen was composing, the one case `saveEdit`'s own baseline check
+ * exists for and this smaller, mid-edit action does not duplicate). A
+ * page-level comment is always a valid answer; one silently attached to
+ * the WRONG paragraph is not — `blockRangeAnchor`'s own header makes the
+ * same call.
+ *
+ * Suggestions are NOT extended to "on selection" in this pass — a real
+ * block range makes `'replace'`/`'delete'` semantically meaningful for the
+ * first time (unlike the collapsed page-level anchor, which could only
+ * ever support `'insert'`), but adding a kind picker and a
+ * replacement-text box is real, separate UI work, left for a follow-up
+ * rather than folded in here.
  */
 function PageEditor({
+  pageId,
+  doc,
   draft,
   onDraftChange,
   error,
   onSave,
   onCancel,
 }: {
+  readonly pageId: string;
+  readonly doc: Y.Doc | null;
   readonly draft: string;
   readonly onDraftChange: (text: string) => void;
   readonly error: string | null;
   readonly onSave: () => void;
   readonly onCancel: () => void;
 }) {
+  const queryClient = useQueryClient();
+  const [selection, setSelection] = useState<{ start: number; end: number } | undefined>(undefined);
+  const [commenting, setCommenting] = useState(false);
+
+  const clampedSelection =
+    selection === undefined
+      ? undefined
+      : {
+          start: Math.min(selection.start, draft.length),
+          end: Math.min(selection.end, draft.length),
+        };
+  const hasSelection =
+    clampedSelection !== undefined && clampedSelection.start !== clampedSelection.end;
+
+  const commentOnSelection = useMutation({
+    mutationFn: async (body: string) => {
+      if (doc === null || clampedSelection === undefined) {
+        throw new Error('Not connected yet.');
+      }
+      const fragment = doc.getXmlFragment('content');
+      const { lineRanges } = parseBlocksWithLineRanges(draft);
+      const startLine = lineOfOffset(draft, clampedSelection.start);
+      const endLine = lineOfOffset(
+        draft,
+        Math.max(clampedSelection.start, clampedSelection.end - 1),
+      );
+      const startBlock = blockIndexForLine(lineRanges, startLine);
+      const endBlock = blockIndexForLine(lineRanges, endLine);
+
+      const anchor =
+        startBlock === null || endBlock === null
+          ? null
+          : blockRangeAnchor(fragment, startBlock, endBlock);
+      const { anchorFrom, anchorTo } = anchor ?? pageStartAnchor(fragment);
+
+      return apiClient.docs.comments.create.mutate({
+        pageId,
+        anchorFrom,
+        anchorTo,
+        body: parseFormattedText(body),
+      });
+    },
+    onSuccess: () => {
+      setCommenting(false);
+      setSelection(undefined);
+      void queryClient.invalidateQueries({ queryKey: commentsQueryKey(pageId) });
+    },
+  });
+
   return (
     <View style={styles.editorContainer}>
       <MarkdownTextInput
         value={draft}
         onChangeText={onDraftChange}
+        onSelectionChange={(event) => {
+          setSelection(event.nativeEvent.selection);
+        }}
+        selection={clampedSelection}
         placeholder="Write the page…"
         placeholderTextColor={colors.inkFaint.hex}
         style={styles.editorInput}
@@ -511,6 +615,16 @@ function PageEditor({
           link: { color: colors.accent.hex },
         }}
       />
+      {hasSelection && (
+        <Pressable
+          style={styles.actionButton}
+          onPress={() => {
+            setCommenting(true);
+          }}
+        >
+          <Text style={styles.actionButtonText}>Comment on selection</Text>
+        </Pressable>
+      )}
       {error !== null && (
         <Text style={styles.sectionError} accessibilityRole="alert">
           {error}
@@ -524,7 +638,101 @@ function PageEditor({
           <Text style={styles.editorSaveButtonText}>Save</Text>
         </Pressable>
       </View>
+
+      <CommentOnSelectionModal
+        visible={commenting}
+        pending={commentOnSelection.isPending}
+        error={
+          commentOnSelection.isError
+            ? (apiErrorOf(commentOnSelection.error)?.error.message ??
+              'This comment could not be posted.')
+            : null
+        }
+        onSubmit={(body) => {
+          commentOnSelection.mutate(body);
+        }}
+        onClose={() => {
+          setCommenting(false);
+        }}
+      />
     </View>
+  );
+}
+
+/** Mirrors `SaveTemplateModal`'s own shape — the established small "one
+ *  text field, Save/Cancel" modal pattern on this screen. */
+function CommentOnSelectionModal({
+  visible,
+  pending,
+  error,
+  onSubmit,
+  onClose,
+}: {
+  readonly visible: boolean;
+  readonly pending: boolean;
+  readonly error: string | null;
+  readonly onSubmit: (body: string) => void;
+  readonly onClose: () => void;
+}) {
+  const [body, setBody] = useState('');
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      onShow={() => {
+        setBody('');
+      }}
+    >
+      <KeyboardAvoidingView
+        style={styles.avoider}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={onClose}>
+          <Pressable style={styles.modalCard} onPress={() => undefined}>
+            <Text style={styles.modalTitle}>Comment on selection</Text>
+            <MarkdownTextInput
+              value={body}
+              onChangeText={setBody}
+              placeholder="Add a comment…"
+              placeholderTextColor={colors.inkFaint.hex}
+              style={styles.modalInput}
+              multiline
+              autoFocus
+              parser={liveFormatParser}
+              markdownStyle={{
+                syntax: { color: colors.inkFaint.hex },
+                link: { color: colors.accent.hex },
+              }}
+            />
+            {error !== null && (
+              <Text style={styles.sectionError} accessibilityRole="alert">
+                {error}
+              </Text>
+            )}
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[
+                  styles.modalPrimaryButton,
+                  (pending || body.trim() === '') && styles.buttonDisabled,
+                ]}
+                disabled={pending || body.trim() === ''}
+                onPress={() => {
+                  onSubmit(body.trim());
+                }}
+              >
+                <Text style={styles.modalPrimaryButtonText}>Post</Text>
+              </Pressable>
+              <Pressable style={styles.modalSecondaryButton} onPress={onClose}>
+                <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 

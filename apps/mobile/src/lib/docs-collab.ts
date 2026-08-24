@@ -125,6 +125,76 @@ export function pageStartAnchor(fragment: Y.XmlFragment): {
   return { anchorFrom: encoded, anchorTo: encoded };
 }
 
+/**
+ * A real, non-collapsed comment/suggestion anchor spanning one or more of a
+ * page's TOP-LEVEL blocks — the "anchor from Edit mode" upgrade over
+ * `pageStartAnchor`'s always-page-level, always-collapsed pair. Still not
+ * web's true CHARACTER-precision anchoring: web converts a ProseMirror
+ * selection through a live `@tiptap/y-tiptap` binding this app has no
+ * equivalent of (no ProseMirror, no DOM); this anchors to whichever whole
+ * PARAGRAPH/HEADING/LIST/etc. the selection's start and end fall inside,
+ * via `docs-page/[pageId].tsx`'s own line-to-block mapping
+ * (`parseBlocksWithLineRanges`'s `lineRanges`, applied to the SAME draft
+ * text Save will parse). A real, honest simplification — the same kind
+ * `board-filter.ts`'s flat AND-of-four-fields is for web's full filter
+ * tree — not a partial attempt at the harder version.
+ *
+ * `anchorFrom` is index 0 of the START block's own `Y.XmlElement` (right
+ * before its first child — typically the one `Y.XmlText` holding its
+ * inline runs, per `writeRichTextDocumentToFragment`'s own construction);
+ * `anchorTo` is the END block's own LENGTH (right after its last child).
+ * Both anchor to a POSITION INSIDE that specific block, not a position in
+ * the page-level fragment naming an array index — the same reason
+ * `pageStartAnchor`'s own header gives for anchoring INTO the fragment
+ * rather than at a raw offset: a `Y.RelativePosition` tracks the underlying
+ * Yjs Item, so it survives edits to every OTHER block and stays attached to
+ * this one even if the page is reordered around it.
+ *
+ * Returns `null` — never a wrong-but-plausible anchor — when either index
+ * is out of range for the fragment's CURRENT live child count, or names
+ * something that is not an element (Yjs's top level is always
+ * `Y.XmlElement`s per `writeRichTextDocumentToFragment`'s own writer, but a
+ * page never written by this app's Save path is not this function's to
+ * assume about). The caller falls back to `pageStartAnchor` — a
+ * page-level comment is always a valid, if less precise, answer; a comment
+ * silently attached to the WRONG paragraph is not.
+ */
+export function blockRangeAnchor(
+  fragment: Y.XmlFragment,
+  startBlockIndex: number,
+  endBlockIndex: number,
+): { readonly anchorFrom: string; readonly anchorTo: string } | null {
+  const children = fragment.toArray();
+  const start = children[startBlockIndex];
+  const end = children[endBlockIndex];
+  if (start === undefined || end === undefined) return null;
+  if (!(start instanceof Y.XmlElement) || !(end instanceof Y.XmlElement)) return null;
+
+  const from = Y.createRelativePositionFromTypeIndex(start, 0);
+  const to = Y.createRelativePositionFromTypeIndex(end, end.length);
+  return {
+    anchorFrom: encodeBase64(Y.encodeRelativePosition(from)),
+    anchorTo: encodeBase64(Y.encodeRelativePosition(to)),
+  };
+}
+
+/** The 0-based line `offset` falls on, counting `\n` characters in `text` up
+ *  to it — `parseBlocksWithLineRanges`' own `text.split('\n')` indexing,
+ *  restated here rather than imported so this file (Yjs-aware, no React)
+ *  stays independent of `rich-text-compose.ts`'s composer-specific exports.
+ *  Clamped to `[0, lines.length - 1]`: a `MarkdownTextInput` selection
+ *  offset is always within `draft.length` (`message-composer.tsx`'s own
+ *  established clamping convention), so this only guards the boundary case
+ *  of `offset === text.length` landing exactly on the last line. */
+export function lineOfOffset(text: string, offset: number): number {
+  let line = 0;
+  const bound = Math.max(0, Math.min(offset, text.length));
+  for (let index = 0; index < bound; index += 1) {
+    if (text[index] === '\n') line += 1;
+  }
+  return line;
+}
+
 export interface PlainNode {
   readonly type: string;
   readonly attrs?: Record<string, unknown>;

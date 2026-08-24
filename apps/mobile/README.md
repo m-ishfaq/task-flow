@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed; the "needs a rich text editor" call on `@mention` composing turned out to be wrong for the mid-string case specifically (a plain `TextInput`'s own `onSelectionChange`/`selection` was enough) and is fixed too — see "`@mention` now works mid-string"; a real native (no WebView) rich text editor — bold, links, and lists — now composes on all four surfaces named for it (chat message composer, thread replies, card description, card comments), via `@expensify/react-native-live-markdown`'s `MarkdownTextInput` and a live/send-time split for the one thing it cannot highlight live (lists) — see "A real rich text editor..."; **in-app voice calling (Phase 13, Wave 5 here) now ships on mobile** — signaling (`react-native-webrtc`), ringing, ringtones, call history, and recording-consent participation, by explicit project-owner direction scoped to in-app ringing only (CallKit/ConnectionService lock-screen UI named as a real, separate follow-up rather than included) — see "In-app voice calling..."; the notification bell is now reachable from every tab and the org picker has a sign-out escape hatch — see "The notification bell was only reachable..."; **org settings (the member roster, invites, and role changes) now ships** — see "Org settings: the member roster..." — and **project settings (labels, statuses, custom fields, board rename/archive) now ships too** — see "Project settings: labels, statuses, and custom fields..." — and **Teams, ownership transfer, and billing now ship as well** — see "Teams, ownership transfer, and billing..." — closing every item the original "org settings and perms not wired yet" report named; **native CallKit (iOS) / ConnectionService (Android) integration now covers the app-alive case** — a ringing call now registers with the OS the moment it enters the same `rtc.incoming` list `IncomingCallBanner` already polls, so it gets real audio-focus/Bluetooth/Do-Not-Disturb integration and, on iOS, the actual lock-screen call UI — see "Native CallKit / ConnectionService..." for exactly what this covers; **and a backgrounded or killed phone now gets a real, tappable "Incoming call" push the moment someone rings it** — a new `apps/api/src/platform/call-wake.ts` outbox consumer, reusing the existing Expo push pipeline end to end with no new mobile code — see "Pass B: a real ring push..." for the design and the honest scope correction it made from the silent-wake plan originally named in the CallKit section; a true native Android lock-screen surface and real iOS VoIP push remain real, separate, not-yet-built work (Pass C)
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed; the "needs a rich text editor" call on `@mention` composing turned out to be wrong for the mid-string case specifically (a plain `TextInput`'s own `onSelectionChange`/`selection` was enough) and is fixed too — see "`@mention` now works mid-string"; a real native (no WebView) rich text editor — bold, links, and lists — now composes on all four surfaces named for it (chat message composer, thread replies, card description, card comments), via `@expensify/react-native-live-markdown`'s `MarkdownTextInput` and a live/send-time split for the one thing it cannot highlight live (lists) — see "A real rich text editor..."; **in-app voice calling (Phase 13, Wave 5 here) now ships on mobile** — signaling (`react-native-webrtc`), ringing, ringtones, call history, and recording-consent participation, by explicit project-owner direction scoped to in-app ringing only (CallKit/ConnectionService lock-screen UI named as a real, separate follow-up rather than included) — see "In-app voice calling..."; the notification bell is now reachable from every tab and the org picker has a sign-out escape hatch — see "The notification bell was only reachable..."; **org settings (the member roster, invites, and role changes) now ships** — see "Org settings: the member roster..." — and **project settings (labels, statuses, custom fields, board rename/archive) now ships too** — see "Project settings: labels, statuses, and custom fields..." — and **Teams, ownership transfer, and billing now ship as well** — see "Teams, ownership transfer, and billing..." — closing every item the original "org settings and perms not wired yet" report named; **native CallKit (iOS) / ConnectionService (Android) integration now covers the app-alive case** — a ringing call now registers with the OS the moment it enters the same `rtc.incoming` list `IncomingCallBanner` already polls, so it gets real audio-focus/Bluetooth/Do-Not-Disturb integration and, on iOS, the actual lock-screen call UI — see "Native CallKit / ConnectionService..." for exactly what this covers; **and a backgrounded or killed phone now gets a real, tappable "Incoming call" push the moment someone rings it** — a new `apps/api/src/platform/call-wake.ts` outbox consumer, reusing the existing Expo push pipeline end to end with no new mobile code — see "Pass B: a real ring push..." for the design and the honest scope correction it made from the silent-wake plan originally named in the CallKit section; a true native Android lock-screen surface and real iOS VoIP push remain real, separate, not-yet-built work (Pass C); **Docs comments and suggestions can now anchor to a real, non-collapsed range — a specific paragraph/heading/list/etc., not just the whole page** — selecting text inside `PageEditor`'s Edit-mode draft and tapping "Comment on selection" anchors to the whole top-level block(s) spanned, block granularity rather than web's character precision, a real and named scope reduction — see "Docs comment/suggestion anchoring, from Edit mode..." for the full design and why suggestions were deliberately left at page-level for this pass
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -5404,3 +5404,89 @@ than merely backgrounded, which is the one distinction this sandbox has no way t
   the `react-native-voip-push-notification` dependency and its token-registration call — shipped as
   genuinely complete, correct code that fails loudly with no APNs credentials configured, with the
   actual ~15-line `AppDelegate` snippet documented rather than injected automatically.
+
+## Docs comment/suggestion anchoring, from Edit mode — Tier 3's other item, at block granularity
+
+The second Tier 3 item off the mobile-vs-web audit: every comment/suggestion created on this app has
+anchored to the whole PAGE, via `docs-collab.ts`'s `pageStartAnchor` — a real, valid anchor
+(`apps/api/src/docs/anchor.ts`'s `decodeAnchor` only checks that the bytes are a well-formed
+`Y.RelativePosition`, never what position they name), but a strictly coarser one than web's true
+character-precision text-range anchor. Approved via `AskUserQuestion` as "anchor from Edit mode" — a
+real UX difference from web, where selecting happens on the READ view: here it happens inside the
+existing whole-page compose-and-save `PageEditor`, over the same `MarkdownTextInput` draft Save
+already parses.
+
+**Block granularity, not character granularity — a real, named scope reduction, not a partial attempt
+at the harder version.** Web converts a live ProseMirror `{from, to}` selection to a `RelativePosition`
+via `@tiptap/y-tiptap`'s editor-state binding — a mapping this platform cannot have at all (no
+ProseMirror, no DOM). The selection this app CAN get is a `MarkdownTextInput` character offset into
+`draft`, which is `serializeToText`'s markdown-SYNTAX string (`**bold**`, `# heading`, list markers, …),
+not the page's underlying plain content — so a raw offset is not itself a Yjs position. Building a true
+character-level mapping would mean a second implementation of `rich-text-compose.ts`'s own
+serialization rules, instrumented to track offsets through every construct's wrapping — real, substantial
+duplication, and a likely source of drift from the one true serializer. Instead, a selection resolves to
+whichever whole TOP-LEVEL BLOCK — paragraph, heading, list, quote, code fence — its start and end fall
+inside, and the anchor spans from the start of the first block to the end of the last: a real,
+non-collapsed range, genuinely more precise than the old always-whole-page anchor, just not
+character-precise. The same call this session already made for `board-filter.ts`'s flat AND-of-four
+against web's full filter tree — the reduced surface IS the feature, not a partial one.
+
+**Three small, pure, fully-tested functions carry the whole mechanism, and none of them touch Yjs
+directly except the last.** `rich-text-compose.ts`'s `parseBlocksWithLineRanges` (refactored out of
+`parseFormattedText` itself, which is now a one-line wrapper around it — no behavior change, no second
+copy of the block-grouping rules) returns, alongside the parsed blocks, which `[startLine, endLine)`
+range of the raw draft each top-level block came from. `blockIndexForLine` finds which range a given
+line falls in. `docs-collab.ts`'s `lineOfOffset` counts newlines up to a character offset — the same
+`text.split('\n')` indexing `parseBlocksWithLineRanges` itself uses, restated here rather than imported
+so this Yjs-aware, React-free file stays independent of the composer-specific module. Only
+`blockRangeAnchor` touches live Yjs: given a start/end block index, it anchors `Y.
+createRelativePositionFromTypeIndex` at index 0 of the start block's own element and at the end block's
+own `.length` (right after its last child) — a position INSIDE that specific block, not a raw index in
+the page-level fragment, so the anchor survives edits to every OTHER block exactly the way
+`pageStartAnchor`'s own header already argues for anchoring into a type rather than at an offset.
+
+**Never a wrong-but-plausible anchor.** `blockRangeAnchor` returns `null` — not a best-guess — when
+either index falls outside the LIVE fragment's current child count, or names something that is not a
+`Y.XmlElement` (this app's own writer never puts a bare `Y.XmlText` at the top level, but a page this
+app never wrote is not this function's to assume about). `blockIndexForLine` returns `null` for a line
+outside every range, the same defensive shape. `PageEditor`'s own comment-on-selection mutation treats
+either `null` as "fall back to `pageStartAnchor`" — silently, not an error: a page-level comment is
+always a valid answer; one silently attached to the wrong paragraph is not. The one gap this does NOT
+close: if another client edits the page concurrently WHILE this screen is mid-compose (before Save), the
+computed block index could still name a block that now holds different content than what was on screen
+when the selection was made — `blockRangeAnchor`'s null-on-out-of-range check catches the case where the
+page got SHORTER, not the case where a block was reordered or rewritten in place. `saveEdit`'s own
+baseline-text conflict check exists for exactly this class of risk at Save time; this smaller,
+mid-edit action does not duplicate that check, and is documented as a known, accepted limitation rather
+than silently assumed away — the same honesty this app's Save flow already models.
+
+**"Comment on selection" only — not "Suggest on selection."** A real block range makes `'replace'`/
+`'delete'` suggestion kinds semantically meaningful for the first time (the previous page-level,
+always-collapsed anchor could only ever support `'insert'`) — but wiring a kind picker and a
+replacement-text box onto `SuggestionsSection` is real, separate UI work, left named rather than folded
+into this pass. Suggestions on this app still only ever propose `'insert'`, anchored page-level, exactly
+as before.
+
+**The affordance itself:** `PageEditor` tracks `MarkdownTextInput`'s `onSelectionChange`/`selection`,
+the identical clamped-to-`draft.length` pattern `message-composer.tsx` already established for
+`@mention` composing — no new selection-tracking approach invented. A non-collapsed selection shows a
+"Comment on selection" button; tapping it opens `CommentOnSelectionModal` (a new component mirroring
+`SaveTemplateModal`'s own established "one text field, Save/Cancel" shape exactly), and posting invalidates
+`commentsQueryKey(pageId)` so `CommentsSection` — rendered as a sibling below the editor, unchanged —
+picks up the new phrase-anchored comment through the same list it already renders.
+
+Verified: typecheck clean, lint clean, 26 new tests across `rich-text-compose.test.ts` (`
+parseBlocksWithLineRanges`'s block/line-range pairing across plain paragraphs, a grouped bullet run, a
+fenced code block, mixed content, and an exhaustiveness check that every line belongs to exactly one
+range; `blockIndexForLine` across the same shapes) and `docs-collab.test.ts` (`blockRangeAnchor` against
+REAL Yjs structures — built with Yjs's own mutation API, the same standing discipline this file's other
+tests already use — asserting the resolved anchor's `type`/`index` via `Y.
+createAbsolutePositionFromRelativePosition` against a real doc, a single-block range, and every
+out-of-range/wrong-type null case; `lineOfOffset`'s boundary and clamping behavior) alongside the
+existing 395 — 421 total — all passing; guardrail self-test clean; encoding check clean; `format:check`
+clean; real `expo export` for both platforms bundle cleanly. **Not device-verified**: whether the
+`MarkdownTextInput` selection UI (the button appearing/disappearing as a selection is made and cleared)
+reads clearly on a real keyboard, and — the one thing genuinely impossible to prove without a live
+`apps/collab` connection (this sandbox has no Docker) — whether a real synced document's top-level
+`Y.XmlFragment` children are laid out exactly as `parseBlocksWithLineRanges`/`writeRichTextDocumentToFragment`
+assume, the same boundary `docs-collab.ts`'s own file header already names for everything it does.

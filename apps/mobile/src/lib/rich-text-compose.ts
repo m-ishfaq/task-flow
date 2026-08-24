@@ -301,6 +301,20 @@ function listItem(line: string, mentions: readonly PendingMention[]): ListItemNo
 }
 
 /**
+ * `parseFormattedText`'s own block/line-range pairing — factored out so
+ * `docs-collab.ts`'s block-range anchor builder (comment/suggestion
+ * anchoring "from Edit mode," Tier 3 off the mobile-vs-web audit) can know
+ * which RAW draft lines became which top-level block, without a second
+ * implementation of the grouping rules above to drift from this one.
+ * `lineRanges[i]` is the `[startLine, endLine)` span of `text.split('\n')`
+ * that produced `blocks[i]` — same length and order as `blocks`.
+ */
+export interface ParsedBlocks {
+  readonly blocks: readonly BlockNode[];
+  readonly lineRanges: readonly (readonly [number, number])[];
+}
+
+/**
  * The composer's whole plain-text draft, converted to a real multi-block
  * TipTap document. `mentions` defaults to none: Work's card description
  * and comment editors call this with no second argument at all, since
@@ -320,15 +334,17 @@ function listItem(line: string, mentions: readonly PendingMention[]): ListItemNo
  * `TASK_LIST_LINE` is checked first; everything else is mutually
  * exclusive by its own leading character.
  */
-export function parseFormattedText(
+export function parseBlocksWithLineRanges(
   text: string,
   mentions: readonly PendingMention[] = [],
-): FormattedDoc {
+): ParsedBlocks {
   const lines = text.split('\n');
   const blocks: BlockNode[] = [];
+  const lineRanges: (readonly [number, number])[] = [];
   let index = 0;
 
   while (index < lines.length) {
+    const blockStart = index;
     const line = lines[index] ?? '';
 
     const fence = CODE_FENCE_LINE.exec(line);
@@ -346,12 +362,14 @@ export function parseFormattedText(
         attrs: { language },
         content: [{ type: 'text', text: codeLines.join('\n') }],
       });
+      lineRanges.push([blockStart, index]);
       continue;
     }
 
     if (HORIZONTAL_RULE_LINE.test(line)) {
       blocks.push({ type: 'horizontalRule' });
       index += 1;
+      lineRanges.push([blockStart, index]);
       continue;
     }
 
@@ -369,6 +387,7 @@ export function parseFormattedText(
         index += 1;
       }
       blocks.push({ type: 'taskList', content: items });
+      lineRanges.push([blockStart, index]);
       continue;
     }
 
@@ -382,6 +401,7 @@ export function parseFormattedText(
         index += 1;
       }
       blocks.push({ type: 'bulletList', content: items });
+      lineRanges.push([blockStart, index]);
       continue;
     }
 
@@ -395,6 +415,7 @@ export function parseFormattedText(
         index += 1;
       }
       blocks.push({ type: 'orderedList', content: items });
+      lineRanges.push([blockStart, index]);
       continue;
     }
 
@@ -406,6 +427,7 @@ export function parseFormattedText(
         content: parseInline(heading[2] ?? '', mentions),
       });
       index += 1;
+      lineRanges.push([blockStart, index]);
       continue;
     }
 
@@ -419,16 +441,49 @@ export function parseFormattedText(
         index += 1;
       }
       blocks.push({ type: 'blockquote', content: paragraphs });
+      lineRanges.push([blockStart, index]);
       continue;
     }
 
     blocks.push(paragraphOf(line, mentions));
     index += 1;
+    lineRanges.push([blockStart, index]);
   }
 
-  if (blocks.length === 0) blocks.push({ type: 'paragraph', content: [] });
+  if (blocks.length === 0) {
+    blocks.push({ type: 'paragraph', content: [] });
+    lineRanges.push([0, 0]);
+  }
 
-  return { type: 'doc', content: blocks };
+  return { blocks, lineRanges };
+}
+
+export function parseFormattedText(
+  text: string,
+  mentions: readonly PendingMention[] = [],
+): FormattedDoc {
+  return { type: 'doc', content: parseBlocksWithLineRanges(text, mentions).blocks };
+}
+
+/**
+ * Which top-level block's `lineRanges` entry `line` falls inside —
+ * `docs-page/[pageId].tsx`'s own bridge from a `MarkdownTextInput`
+ * selection (via `docs-collab.ts`'s `lineOfOffset`) to the block index
+ * `docs-collab.ts`'s `blockRangeAnchor` anchors against. `null` only for a
+ * `line` outside every range — should not happen for a line genuinely
+ * produced by splitting the SAME text `lineRanges` was built from, but the
+ * caller treats `null` as "fall back to a page-level anchor" rather than
+ * assuming it cannot occur.
+ */
+export function blockIndexForLine(
+  lineRanges: readonly (readonly [number, number])[],
+  line: number,
+): number | null {
+  for (let index = 0; index < lineRanges.length; index += 1) {
+    const range = lineRanges[index];
+    if (range !== undefined && line >= range[0] && line < range[1]) return index;
+  }
+  return null;
 }
 
 /**
