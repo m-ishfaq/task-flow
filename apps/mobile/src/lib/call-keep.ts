@@ -277,7 +277,7 @@ export function useCallKeepBridge(): void {
   useEffect(() => {
     let answerSubscription: { readonly remove: () => void } | null = null;
     let endSubscription: { readonly remove: () => void } | null = null;
-    let cancelled = false;
+    let cancelled = false as boolean;
 
     void (async () => {
       const module = await loadCallKeep();

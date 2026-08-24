@@ -13,6 +13,7 @@ import {
   ShieldAlert,
   Users,
   Zap,
+  MoreHorizontal,
   type LucideProps,
 } from 'lucide-react';
 import { TaskFlowLogo } from '../../components/taskflow-logo.js';
@@ -146,6 +147,92 @@ function Pagination({
 /**
  * The platform administration console (Phase 12 Wave 1, ai/phase-12-admin.md).
  *
+ * Relative time string — "in 12 days", "3 days ago", etc.
+ * Used to give renewal dates immediate context.
+ */
+function relativeTime(date: Date): string {
+  const now = Date.now();
+  const diffMs = date.getTime() - now;
+  const absDiff = Math.abs(diffMs);
+  const minutes = Math.round(absDiff / 60_000);
+  const hours = Math.round(absDiff / 3_600_000);
+  const days = Math.round(absDiff / 86_400_000);
+  const future = diffMs > 0;
+
+  if (minutes < 60) return future ? `in ${String(minutes)}m` : `${String(minutes)}m ago`;
+  if (hours < 24) return future ? `in ${String(hours)}h` : `${String(hours)}h ago`;
+  if (days < 30) return future ? `in ${String(days)}d` : `${String(days)}d ago`;
+  const months = Math.round(days / 30);
+  return future ? `in ${String(months)}mo` : `${String(months)}mo ago`;
+}
+
+/**
+ * A tiny inline bar showing how many seats an org uses relative to a cap.
+ * Gives immediate context to the member count number.
+ */
+function MemberBar({ count, cap = 50 }: { readonly count: number; readonly cap?: number }) {
+  const pct = Math.min((count / cap) * 100, 100);
+  return (
+    <div className="flex items-center gap-2">
+      <span className="tabular-nums text-ink-muted">{count}</span>
+      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-hover">
+        <div
+          className={cn('h-full rounded-full transition-all', pct > 80 ? 'bg-danger' : pct > 50 ? 'bg-warning' : 'bg-accent')}
+          style={{ width: `${String(pct)}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Dropdown menu for destructive row actions (Delete). Keeps them visually
+ * separated from safe actions (Plan, Suspend/Reactivate) so an operator
+ * does not misclick a destructive action.
+ */
+function RowActionsMenu({
+  children,
+}: {
+  readonly children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        aria-label="More actions"
+        onClick={() => {
+          setOpen(!open);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') setOpen(false);
+        }}
+        className="flex size-7 items-center justify-center rounded-lg border border-line text-ink-faint transition-colors hover:border-accent/30 hover:bg-surface-hover hover:text-ink"
+      >
+        <MoreHorizontal className="size-3.5" strokeWidth={2} />
+      </button>
+      {open && (
+        <>
+          <div
+            role="presentation"
+            className="fixed inset-0 z-20"
+            onClick={() => {
+              setOpen(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setOpen(false);
+            }}
+          />
+          <div className="absolute right-0 z-30 mt-1 min-w-[140px] rounded-xl border border-line bg-surface-raised p-1 shadow-lg">
+            {children}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
  * ## What this page is
  *
  * The ONE place in the app that is relative to no organization. Every query and
@@ -423,7 +510,7 @@ export function PlatformAdminPage() {
       <div
         role="tablist"
         aria-label="Platform administration sections"
-        className="flex gap-1 overflow-x-auto rounded-xl border border-line bg-surface-sunken/80 p-1"
+        className="sticky top-0 z-10 flex gap-1 overflow-x-auto rounded-xl border border-line bg-surface-sunken/80 p-1 shadow-sm"
       >
         {(
           [
@@ -755,17 +842,15 @@ function OrgsTab({
             </thead>
             <tbody className="divide-y divide-line/50">
               {(filteredOrgs ?? []).map((org) => (
-                <tr key={org.orgId} className="group transition-colors hover:bg-surface-hover/50">
+                <tr
+                  key={org.orgId}
+                  className="group cursor-pointer border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50"
+                  onClick={() => {
+                    setDetailOrgId(org.orgId);
+                  }}
+                >
                   <td className="px-3 py-2.5">
-                    <button
-                      type="button"
-                      className="text-left font-medium text-ink transition-colors hover:text-accent"
-                      onClick={() => {
-                        setDetailOrgId(org.orgId);
-                      }}
-                    >
-                      {org.name}
-                    </button>
+                    <p className="font-medium text-ink transition-colors group-hover:text-accent">{org.name}</p>
                     <p className="font-mono text-[11px] text-ink-faint">{org.slug}</p>
                   </td>
                   <td className="px-3 py-2.5">
@@ -792,8 +877,17 @@ function OrgsTab({
                         ` — grace ends ${formatDate(org.billingGraceEndsAt)}`}
                     </p>
                   </td>
-                  <td className="px-3 py-2.5 text-ink-muted">
-                    {org.currentPeriodEnd === null ? '—' : formatDate(org.currentPeriodEnd)}
+                  <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
+                    {org.currentPeriodEnd === null ? (
+                      <span className="text-ink-faint">—</span>
+                    ) : (
+                      <span>
+                        {formatDate(org.currentPeriodEnd)}
+                        <span className="ml-1.5 text-[10px] text-ink-faint">
+                          {relativeTime(new Date(org.currentPeriodEnd))}
+                        </span>
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5">
                     {org.lastInvoice === null ? (
@@ -817,7 +911,9 @@ function OrgsTab({
                   <td className="px-3 py-2.5">
                     <StatusBadge status={org.status} />
                   </td>
-                  <td className="px-3 py-2.5 text-ink-muted">{org.memberCount}</td>
+                  <td className="px-3 py-2.5">
+                    <MemberBar count={org.memberCount} />
+                  </td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
                     {formatDate(org.createdAt)}
                   </td>
@@ -836,29 +932,16 @@ function OrgsTab({
                         Plan
                       </Button>
                       {org.status === 'suspended' ? (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={reactivate.isPending}
-                            onClick={() => {
-                              reactivate.mutate(org.orgId as OrgId);
-                            }}
-                          >
-                            Reactivate
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="danger"
-                            disabled={remove.isPending}
-                            onClick={() => {
-                              setConfirmSlug('');
-                              setDeleteTarget({ orgId: org.orgId, name: org.name, slug: org.slug });
-                            }}
-                          >
-                            Delete
-                          </Button>
-                        </>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={reactivate.isPending}
+                          onClick={() => {
+                            reactivate.mutate(org.orgId as OrgId);
+                          }}
+                        >
+                          Reactivate
+                        </Button>
                       ) : (
                         <ConfirmButton
                           size="sm"
@@ -870,16 +953,44 @@ function OrgsTab({
                           }}
                         />
                       )}
+                      {org.status === 'suspended' && (
+                        <RowActionsMenu>
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs text-danger transition-colors hover:bg-danger/10"
+                            disabled={remove.isPending}
+                            onClick={() => {
+                              setConfirmSlug('');
+                              setDeleteTarget({ orgId: org.orgId, name: org.name, slug: org.slug });
+                            }}
+                          >
+                            <ShieldAlert className="size-3" strokeWidth={2.5} />
+                            Delete org
+                          </button>
+                        </RowActionsMenu>
+                      )}
                     </div>
                   </td>
                 </tr>
               ))}
               {(filteredOrgs ?? []).length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-3 py-8 text-center text-sm text-ink-faint">
-                    {search.trim() !== ''
-                      ? 'No organizations match your search.'
-                      : 'No organizations found.'}
+                  <td colSpan={9} className="px-3 py-12 text-center">
+                    {search.trim() !== '' ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <Search className="size-5 text-ink-faint" strokeWidth={1.5} />
+                        <p className="text-sm text-ink-faint">No organizations match your search.</p>
+                        <p className="text-xs text-ink-faint">Try a different name, slug, or owner email.</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-2">
+                        <Building2 className="size-8 text-ink-faint" strokeWidth={1.5} />
+                        <p className="text-sm font-medium text-ink">No organizations yet</p>
+                        <p className="max-w-xs text-xs text-ink-faint">
+                          Organizations are created when users sign up. Once the first user joins, their org will appear here.
+                        </p>
+                      </div>
+                    )}
                   </td>
                 </tr>
               )}
@@ -1014,7 +1125,7 @@ function OrgsTab({
 function StatusBadge({ status }: { readonly status: string }) {
   if (status === 'suspended') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">
+      <span className="inline-flex min-w-[88px] items-center justify-center gap-1 rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">
         <ShieldAlert className="size-3" strokeWidth={2.5} />
         suspended
       </span>
@@ -1022,13 +1133,13 @@ function StatusBadge({ status }: { readonly status: string }) {
   }
   if (status === 'deleted') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-faint">
+      <span className="inline-flex min-w-[88px] items-center justify-center gap-1 rounded-full border border-line bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-faint">
         deleted
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
+    <span className="inline-flex min-w-[88px] items-center justify-center gap-1 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
       <span className="size-1.5 rounded-full bg-success" />
       active
     </span>
@@ -1119,17 +1230,15 @@ function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
             </thead>
             <tbody className="divide-y divide-line/50">
               {(filteredUsers ?? []).map((user) => (
-                <tr key={user.userId} className="group transition-colors hover:bg-surface-hover/50">
+                <tr
+                  key={user.userId}
+                  className="group cursor-pointer border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50"
+                  onClick={() => {
+                    setDetailUserId(user.userId);
+                  }}
+                >
                   <td className="px-3 py-2.5">
-                    <button
-                      type="button"
-                      className="block max-w-full truncate text-left font-medium text-ink transition-colors hover:text-accent"
-                      onClick={() => {
-                        setDetailUserId(user.userId);
-                      }}
-                    >
-                      {user.name ?? user.email}
-                    </button>
+                    <p className="max-w-full truncate font-medium text-ink transition-colors group-hover:text-accent">{user.name ?? user.email}</p>
                     {user.name !== null && <p className="truncate text-ink-muted">{user.email}</p>}
                     <p className="font-mono text-[11px] text-ink-faint">
                       {user.userId.slice(0, 8)}
@@ -1150,8 +1259,22 @@ function UsersTab({ onStepUp }: { readonly onStepUp: () => void }) {
               ))}
               {(filteredUsers ?? []).length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-3 py-8 text-center text-sm text-ink-faint">
-                    {search.trim() !== '' ? 'No users match your search.' : 'No users found.'}
+                  <td colSpan={4} className="px-3 py-12 text-center">
+                    {search.trim() !== '' ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <Search className="size-5 text-ink-faint" strokeWidth={1.5} />
+                        <p className="text-sm text-ink-faint">No users match your search.</p>
+                        <p className="text-xs text-ink-faint">Try a different name or email.</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-2">
+                        <Users className="size-8 text-ink-faint" strokeWidth={1.5} />
+                        <p className="text-sm font-medium text-ink">No users yet</p>
+                        <p className="max-w-xs text-xs text-ink-faint">
+                          Users appear here once they create an account and verify their email.
+                        </p>
+                      </div>
+                    )}
                   </td>
                 </tr>
               )}
@@ -1482,7 +1605,7 @@ function BrandingTab({
       </p>
 
       {brandingQuery.isPending && <SkeletonRows rows={4} className="*:h-12" />}
-      {brandingQuery.isError && brandingQuery.error !== null && (
+      {brandingQuery.isError && (
         <ErrorView error={brandingQuery.error} title="Could not load branding" />
       )}
 
@@ -3420,10 +3543,13 @@ function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
 
       {entries.data !== undefined &&
         (entries.data.entries.length === 0 ? (
-          <Empty
-            title="Nothing recorded yet"
-            description="Operator actions will appear here once they are taken."
-          />
+          <div className="mt-6 flex flex-col items-center gap-2 py-8">
+            <Shield className="size-8 text-ink-faint" strokeWidth={1.5} />
+            <p className="text-sm font-medium text-ink">Nothing recorded yet</p>
+            <p className="max-w-xs text-center text-xs text-ink-faint">
+              Operator actions will appear here once they are taken. Every call — including reads — is recorded in the hash chain.
+            </p>
+          </div>
         ) : (
           <>
             <div className="mt-3 overflow-x-auto rounded-xl border border-line">
@@ -3449,7 +3575,7 @@ function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
                 </thead>
                 <tbody className="divide-y divide-line/50">
                   {(filteredEntries ?? []).map((entry) => (
-                    <tr key={entry.seq} className="transition-colors hover:bg-surface-hover/50">
+                    <tr key={entry.seq} className="border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50">
                       <td className="px-3 py-2.5 font-mono text-xs text-ink-faint">{entry.seq}</td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
                         {formatDateTime(entry.occurredAt)}
@@ -3471,10 +3597,12 @@ function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
                   ))}
                   {(filteredEntries ?? []).length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-3 py-8 text-center text-sm text-ink-faint">
-                        {search.trim() !== ''
-                          ? 'No entries match your search.'
-                          : 'No entries found.'}
+                      <td colSpan={5} className="px-3 py-12 text-center">
+                        <div className="flex flex-col items-center gap-2">
+                          <Search className="size-5 text-ink-faint" strokeWidth={1.5} />
+                          <p className="text-sm text-ink-faint">No entries match your search.</p>
+                          <p className="text-xs text-ink-faint">Try a different action, operator email, or target.</p>
+                        </div>
                       </td>
                     </tr>
                   )}
@@ -3580,10 +3708,13 @@ function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
 
       {events.data !== undefined &&
         (events.data.events.length === 0 ? (
-          <Empty
-            title="Nothing recorded yet"
-            description="Operational events will appear here as system actions occur."
-          />
+          <div className="mt-6 flex flex-col items-center gap-2 py-8">
+            <Zap className="size-8 text-ink-faint" strokeWidth={1.5} />
+            <p className="text-sm font-medium text-ink">Nothing recorded yet</p>
+            <p className="max-w-xs text-center text-xs text-ink-faint">
+              Operational events will appear here as system actions occur — mail delivery, billing webhooks, and sweep heartbeats.
+            </p>
+          </div>
         ) : (
           <>
             <div className="mt-3 overflow-x-auto rounded-xl border border-line">
@@ -3609,7 +3740,7 @@ function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
                 </thead>
                 <tbody className="divide-y divide-line/50">
                   {(filteredEvents ?? []).map((event) => (
-                    <tr key={event.id} className="transition-colors hover:bg-surface-hover/50">
+                    <tr key={event.id} className="border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50">
                       <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
                         {formatDateTime(event.occurredAt)}
                       </td>
@@ -3633,8 +3764,12 @@ function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
                   ))}
                   {(filteredEvents ?? []).length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-3 py-8 text-center text-sm text-ink-faint">
-                        {search.trim() !== '' ? 'No events match your search.' : 'No events found.'}
+                      <td colSpan={5} className="px-3 py-12 text-center">
+                        <div className="flex flex-col items-center gap-2">
+                          <Search className="size-5 text-ink-faint" strokeWidth={1.5} />
+                          <p className="text-sm text-ink-faint">No events match your search.</p>
+                          <p className="text-xs text-ink-faint">Try a different kind, outcome, or target.</p>
+                        </div>
                       </td>
                     </tr>
                   )}
@@ -3974,17 +4109,15 @@ function BillingTab({
             </thead>{' '}
             <tbody className="divide-y divide-line/50">
               {(filteredOrgs ?? []).map((org) => (
-                <tr key={org.orgId} className="group transition-colors hover:bg-surface-hover/50">
+                <tr
+                  key={org.orgId}
+                  className="group cursor-pointer border-l-2 border-l-transparent transition-all hover:border-l-accent hover:bg-surface-hover/50"
+                  onClick={() => {
+                    setBillingDetailOrgId(org.orgId);
+                  }}
+                >
                   <td className="px-3 py-2.5">
-                    <button
-                      type="button"
-                      className="text-left font-medium text-ink transition-colors hover:text-accent"
-                      onClick={() => {
-                        setBillingDetailOrgId(org.orgId);
-                      }}
-                    >
-                      {org.name}
-                    </button>
+                    <p className="font-medium text-ink transition-colors group-hover:text-accent">{org.name}</p>
                     <p className="font-mono text-[11px] text-ink-faint">{org.slug}</p>
                   </td>
                   <td className="px-3 py-2.5">
@@ -4003,8 +4136,17 @@ function BillingTab({
                       </p>
                     )}
                   </td>
-                  <td className="px-3 py-2.5 text-ink-muted">
-                    {org.currentPeriodEnd === null ? '—' : formatDate(org.currentPeriodEnd)}
+                  <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
+                    {org.currentPeriodEnd === null ? (
+                      <span className="text-ink-faint">—</span>
+                    ) : (
+                      <span>
+                        {formatDate(org.currentPeriodEnd)}
+                        <span className="ml-1.5 text-[10px] text-ink-faint">
+                          {relativeTime(new Date(org.currentPeriodEnd))}
+                        </span>
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5">
                     {org.lastInvoice === null ? (
@@ -4054,10 +4196,22 @@ function BillingTab({
               ))}
               {(filteredOrgs ?? []).length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-ink-faint">
-                    {search.trim() !== ''
-                      ? 'No organizations match your search.'
-                      : 'No billing entries found.'}
+                  <td colSpan={8} className="px-3 py-12 text-center">
+                    {search.trim() !== '' ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <Search className="size-5 text-ink-faint" strokeWidth={1.5} />
+                        <p className="text-sm text-ink-faint">No organizations match your search.</p>
+                        <p className="text-xs text-ink-faint">Try a different name, slug, plan, or Stripe ID.</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-2">
+                        <CreditCard className="size-8 text-ink-faint" strokeWidth={1.5} />
+                        <p className="text-sm font-medium text-ink">No billing entries yet</p>
+                        <p className="max-w-xs text-xs text-ink-faint">
+                          Billing data appears here once an organization subscribes to a plan through Stripe.
+                        </p>
+                      </div>
+                    )}
                   </td>
                 </tr>
               )}
@@ -4101,7 +4255,7 @@ function BillingTab({
               onSubmit={(event) => {
                 event.preventDefault();
                 const days = Number.parseInt(extendByDays, 10);
-                if (extendTarget !== null && Number.isInteger(days) && days > 0) {
+                if (Number.isInteger(days) && days > 0) {
                   extend.mutate({ orgId: extendTarget.orgId as OrgId, extendByDays: days });
                 }
               }}

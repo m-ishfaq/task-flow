@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Calendar, ChevronRight, MessageSquare, SquareCheck } from 'lucide-react';
-import { AvatarStack, Badge, Empty } from '../../components/primitives.js';
+import { AvatarStack, Empty } from '../../components/primitives.js';
 import { formatDueDate } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
 import { useMembers } from '../org/use-members.js';

@@ -27,10 +27,6 @@ import { cn } from './cn.js';
  * re-exported unchanged — there is nothing to style on a component that
  * renders nothing itself.
  */
-export const ModalRoot = Dialog.Root;
-export const ModalTrigger = Dialog.Trigger;
-export const ModalClose = Dialog.Close;
-
 const MODAL_SIZES = {
   /* step-up.tsx, view-tabs.tsx's SaveViewDialog */
   sm: 'max-w-sm',

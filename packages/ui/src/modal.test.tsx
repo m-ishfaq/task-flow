@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
-import { ModalClose, ModalContent, ModalRoot, ModalTitle, ModalTrigger } from './modal.js';
+import { ModalRoot, ModalTrigger, ModalClose } from './primitives.js';
+import { ModalContent, ModalTitle } from './modal.js';
 
 /**
  * The behaviour worth asserting is focus RETURN — the property Wave 1's

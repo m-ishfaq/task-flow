@@ -14,7 +14,7 @@ import type { BoardId, CardId, UserId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useOptimistic } from '../../lib/optimistic.js';
-import { Avatar, AvatarStack, Badge } from '../../components/primitives.js';
+import { Avatar, AvatarStack } from '../../components/primitives.js';
 import { formatDueDate } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
 import { useMembers } from '../org/use-members.js';
