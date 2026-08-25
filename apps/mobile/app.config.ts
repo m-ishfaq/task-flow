@@ -54,6 +54,19 @@ if (existsSync(envFile)) {
 
 const API_BASE_URL = process.env['MOBILE_API_BASE_URL'] ?? 'http://localhost:3000';
 
+/* Per-developer Firebase config for push (§9) — gitignored, never committed.
+   See the `android`/`ios` blocks below for why each is wired in only when
+   present, and push-notifications.ts's header for the service-account key
+   these are NOT (that one goes to `eas credentials`, never a file here). */
+const GOOGLE_SERVICES_JSON = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  'google-services.json',
+);
+const GOOGLE_SERVICE_INFO_PLIST = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  'GoogleService-Info.plist',
+);
+
 /* Optional, unlike API_BASE_URL above — no loopback default to fail loudly
    against, because "unset" is a legitimate, common state: apps/web's own
    `vite.config.ts` needs the identical split (`WEB_API_ORIGIN` /
@@ -120,9 +133,26 @@ const config: ExpoConfig = {
        ceremony just never completes, indistinguishable from "not
        configured yet"); this fails loudly the moment anyone tries it. */
     associatedDomains: ['webcredentials:SET-REAL-DOMAIN-BEFORE-PASSKEYS-WORK.invalid'],
+    ...(existsSync(GOOGLE_SERVICE_INFO_PLIST)
+      ? { googleServicesFile: './GoogleService-Info.plist' }
+      : {}),
   },
   android: {
     package: 'com.taskflow.app',
+    /* Push notifications (§9, push-notifications.ts's own header on "code
+       complete, infrastructure not"): `expo-notifications` needs this file
+       present for Expo's prebuild to apply the `google-services` Gradle
+       plugin FCM reads at runtime — without it, `getExpoPushTokenAsync`
+       fails on Android regardless of EAS credentials being configured.
+       Not committed (see .gitignore) — it is account-specific config, not
+       source, the same reasoning as `apps/mobile/android/` itself being
+       generated rather than checked in. Wired in ONLY when present so a
+       checkout with no Firebase project configured still builds; the file
+       comes from Firebase Console (Project settings -> your Android app),
+       never from `eas credentials` — that command is for the SEPARATE
+       service-account key, which is a real secret and never belongs in a
+       file this config references, committed or not. */
+    ...(existsSync(GOOGLE_SERVICES_JSON) ? { googleServicesFile: './google-services.json' } : {}),
   },
   /* Found live: on Android, this app's default TRANSLUCENT status bar let
      scrolled content render visibly underneath the clock/battery icons —
