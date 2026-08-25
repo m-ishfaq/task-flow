@@ -38,6 +38,15 @@ export function notificationPath(input: {
        describes is actually visible (migration 0071). */
     case 'membership':
       return '/settings';
+    /* An operator broadcast has no per-notification page — there is nothing
+       to open beyond "the app". `/home` is the closest existing equivalent
+       to `membership`'s `/settings` fallback: a real, always-reachable
+       route rather than a null that would silently refuse both push and
+       email (see notification-push.ts's `row.path === null` check, and
+       notification.projection.ts's own `path !== null` gate before an
+       email delivery row is even written). Migration 0083's own header. */
+    case 'operator_broadcast':
+      return '/home';
     default:
       return null;
   }

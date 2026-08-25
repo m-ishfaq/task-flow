@@ -35,6 +35,7 @@ import type { EventBus } from '@taskflow/events';
 import type { KeyProvider } from '@taskflow/contracts';
 import type { Mailer } from '@taskflow/mail';
 import type { DeliverableLink } from './identity/identity.service.js';
+import type { PendingEmailSend } from './platform/notification.projection.js';
 
 /**
  * HTTP surface.
@@ -77,6 +78,12 @@ export interface BuildOptions {
    * disabled is one deploy away from being disabled in production.
    */
   readonly rateLimitEnabled?: boolean;
+  /**
+   * `main.ts`'s `notificationMail.send` — threaded to `platformAdmin` for
+   * operator broadcasts (`AppRouterDeps.platform`'s own comment). Optional:
+   * a test that never calls a broadcast route need not construct a mailer.
+   */
+  readonly sendNotificationEmail?: (send: PendingEmailSend) => void;
 }
 
 export async function buildServer(options: BuildOptions): Promise<FastifyInstance> {
@@ -134,7 +141,12 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
     /* VAPID keys are optional (an instance without them is a valid deployment
        that simply does not send push); null is the honest answer the
        preferences page renders as "push unavailable on this server". */
-    platform: { vapidPublicKey: options.env.VAPID_PUBLIC_KEY ?? null },
+    platform: {
+      vapidPublicKey: options.env.VAPID_PUBLIC_KEY ?? null,
+      ...(options.sendNotificationEmail === undefined
+        ? {}
+        : { sendNotificationEmail: options.sendNotificationEmail }),
+    },
     /* Undefined when no carrier is configured. The routes exist either way and
        answer SERVICE_UNAVAILABLE — see telephony/router.ts. */
     telephony: telephonyDeps,

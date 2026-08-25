@@ -16,6 +16,7 @@ import * as detail from './org-detail.service.js';
 import * as branding from './branding.service.js';
 import * as audience from './broadcast-audience.service.js';
 import * as broadcast from './broadcast.service.js';
+import type { PendingEmailSend } from '../platform/notification.projection.js';
 import { readOperatorAudit, recordOperatorAction } from './audit.js';
 import type { PaymentProvider, StorageProvider } from '@taskflow/contracts';
 import type { ScannerConfig } from '@taskflow/security';
@@ -80,6 +81,17 @@ export interface PlatformAdminRouterDeps {
    */
   readonly storage: StorageProvider;
   readonly scanner: ScannerConfig;
+  /**
+   * Sends ONE decided notification email immediately — `main.ts`'s
+   * `notificationMail.send`, the SAME callback `tenancy/relay.ts` hands the
+   * notification projection's own decided sends. Threaded here because
+   * `broadcast.service.ts` bypasses that projection entirely (this role has
+   * no outbox grant) and so must send its own email deliveries rather than
+   * leaving a `pending` row nothing else will ever revisit — see that
+   * file's own header. Optional, like `mail` above: no mailer configured
+   * means email deliveries stay `pending` rather than throwing.
+   */
+  readonly sendNotificationEmail?: (send: PendingEmailSend) => void;
 }
 
 const ListInput = z
@@ -411,6 +423,13 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
     scanner: deps.scanner,
   });
 
+  const broadcastDeps = (): broadcast.BroadcastDeps => ({
+    events: deps.events,
+    ...(deps.sendNotificationEmail === undefined
+      ? {}
+      : { sendNotificationEmail: deps.sendNotificationEmail }),
+  });
+
   return router({
     self: router({
       check: selfRoute({
@@ -539,7 +558,7 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
             .strict(),
         )
         .mutation(({ input, ctx }) =>
-          broadcast.sendBroadcast(deps.events, operatorOf(ctx), {
+          broadcast.sendBroadcast(broadcastDeps(), operatorOf(ctx), {
             audience: toAudienceSpec(input.audience),
             subject: input.subject,
             body: input.body,
@@ -547,6 +566,26 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
             sendEmail: input.sendEmail,
             includeInOrgAudit: input.includeInOrgAudit,
           }),
+        ),
+
+      /**
+       * Sends a PAST broadcast again — its own subject, body, audience, and
+       * channels, read back off its tracking row rather than resupplied by
+       * the caller (`broadcast.service.ts`'s own header). A fresh send, not
+       * a retry: new broadcast id, new tracking row, current membership.
+       */
+      resend: platformRoute({
+        platformReason:
+          'Resending to another org’s members is the same cross-tenant send as the original.',
+      })
+        .input(z.object({ broadcastId: z.string() }).strict())
+        .output(
+          z
+            .object({ broadcastId: z.string(), recipientCount: z.number().int().nonnegative() })
+            .strict(),
+        )
+        .mutation(({ input, ctx }) =>
+          broadcast.resendBroadcast(broadcastDeps(), operatorOf(ctx), input.broadcastId),
         ),
 
       /** One org's own broadcast history — the ones sent with `includeInOrgAudit`. */

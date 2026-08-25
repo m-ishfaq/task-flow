@@ -812,6 +812,22 @@ function BroadcastTab({
     },
   });
 
+  /* Sends a PAST broadcast again — its own subject, body, audience and
+     channels, replayed server-side against the CURRENT membership (see
+     broadcast.service.ts's own header on why a resend is a fresh send, not
+     a retry of the original delivery rows). */
+  const resend = useMutation({
+    mutationFn: (broadcastId: string) => api.platformAdmin.broadcast.resend.mutate({ broadcastId }),
+    onSuccess: async () => {
+      await Promise.all([history.refetch(), preview.refetch()]);
+    },
+    onError: (error, broadcastId) => {
+      guard(error, () => {
+        resend.mutate(broadcastId);
+      });
+    },
+  });
+
   /* `stepUp: true` is baked into every `platformRoute` in this router — the
      same 5-minute freshness window every other tab on this page runs under
      (`apps/api/src/trpc/builder.ts`'s `STEP_UP_MAX_AGE_MS`). There is no
@@ -1127,14 +1143,30 @@ function BroadcastTab({
             {history.data !== undefined && history.data.length > 0 && (
               <ul className="space-y-1.5">
                 {history.data.map((entry) => (
-                  <li key={entry.id} className="flex items-center justify-between text-xs">
-                    <span className="truncate text-ink">{entry.subject}</span>
+                  <li key={entry.id} className="flex items-center justify-between gap-2 text-xs">
+                    <span className="min-w-0 flex-1 truncate text-ink">{entry.subject}</span>
                     <span className="shrink-0 text-ink-faint">
                       {entry.recipientCount} · {formatDateTime(entry.createdAt)}
                     </span>
+                    <ConfirmButton
+                      label="Resend"
+                      confirmLabel="Send again"
+                      size="sm"
+                      disabled={resend.isPending}
+                      onConfirm={() => {
+                        resend.mutate(entry.id);
+                      }}
+                    />
                   </li>
                 ))}
               </ul>
+            )}
+            {resend.isError && <ErrorView error={resend.error} title="Resend failed" />}
+            {resend.isSuccess && (
+              <p className="mt-1.5 text-xs text-success">
+                Resent to {resend.data.recipientCount}{' '}
+                {resend.data.recipientCount === 1 ? 'person' : 'people'}.
+              </p>
             )}
           </div>
         </div>
