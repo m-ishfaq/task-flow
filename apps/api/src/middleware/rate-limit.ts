@@ -136,6 +136,19 @@ const OPERATION_RULES: Readonly<Record<string, RateLimitRule>> = {
      tRPC path exactly as registered: the tenancy router nests `orgs.create`
      under `tenancy`, so `orgs.create` would silently never match. */
   'tenancy.orgs.create': { limit: 3, windowMs: 24 * 60 * 60_000 },
+
+  /* Operator broadcasts (Phase 12, platform-admin console): the telephony
+     spend-gate's own shape applied to a capability that reaches real people
+     rather than costs money — `platformRoute`'s unconditional step-up
+     already answers "is this really the operator", not "how often may they
+     do this". 20 sends per operator per day is generous for legitimate use
+     (an announcement, a policy notice) and cheap to raise later; the durable
+     control against genuine abuse is still the audit trail
+     (`platform.operator_broadcasts`, the global operator chain), this is
+     only the volumetric floor under it — the same relationship §8.9
+     describes between a per-IP limiter and an account lockout. Keyed per
+     CALLER, which an authenticated operator always has. */
+  'platformAdmin.broadcast.send': { limit: 20, windowMs: 24 * 60 * 60_000 },
 };
 
 export interface RateLimitOptions {

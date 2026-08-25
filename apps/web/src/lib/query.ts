@@ -377,6 +377,18 @@ export const keys = {
   /** One page of the operations dashboard, optionally filtered by kind. */
   platformOperations: (cursor: string | null, kind: string | null) =>
     ['platform', 'operations', kind ?? 'all', cursor ?? 'first'] as const,
+  /** The org lookup a broadcast's composer resolves before showing the form. */
+  platformOrgLookup: (orgId: string) => ['platform', 'org-lookup', orgId] as const,
+  /** The dry-run recipient count for the CURRENT audience selection. */
+  platformBroadcastPreview: (
+    orgId: string,
+    target: string,
+    membershipRole: string | null,
+    userId: string | null,
+  ) =>
+    ['platform', 'broadcast-preview', orgId, target, membershipRole ?? '', userId ?? ''] as const,
+  /** One org's own broadcast history. */
+  platformBroadcastHistory: (orgId: string) => ['platform', 'broadcast-history', orgId] as const,
   /**
    * The whole plan catalog (Phase 12 Wave 4 §3.2). Unpaginated on purpose —
    * a catalog with enough tiers to need a page is a pricing problem, not a

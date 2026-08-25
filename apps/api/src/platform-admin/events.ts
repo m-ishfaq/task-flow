@@ -296,3 +296,35 @@ export const planArchived = defineEvent(
     })
     .strict(),
 );
+
+/**
+ * An operator sent a broadcast notification to a specific member, a
+ * role-filtered subset, or every active member of one org.
+ *
+ * This is NOT what delivers the notification — `broadcast.service.ts` writes
+ * `platform.notifications`/`notification_deliveries` directly, reusing the
+ * existing push/email drains, for the same reason every other write in this
+ * file bypasses the outbox: `taskflow_platform_admin` holds no grant on it.
+ * This event is the guardrail-11 record of the ACTION, for a future
+ * subscriber (an analytics rollup, an abuse-pattern alert), not the delivery
+ * mechanism. It also means an operator broadcast does NOT get the instant
+ * `apps/realtime` live push ordinary notifications get — that fan-out is
+ * driven by the outbox consumer specifically (`notification.projection.ts`'s
+ * `notificationCreated`, appended via `outboxWriter` inside the SAME
+ * transaction as the insert), a path this role cannot reach either. The
+ * in-app row still appears on next load/poll, and push/email still deliver
+ * on their own schedule — only the sub-second live-tab update is the gap,
+ * accepted rather than routed around by widening this role's grants.
+ */
+export const operatorBroadcastSent = defineEvent(
+  'platform.operator_broadcast_sent',
+  z
+    .object({
+      broadcastId: z.string(),
+      orgId: z.string(),
+      audienceTarget: z.enum(['all', 'role', 'user']),
+      recipientCount: z.number().int().nonnegative(),
+      operatorUserId: z.string(),
+    })
+    .strict(),
+);

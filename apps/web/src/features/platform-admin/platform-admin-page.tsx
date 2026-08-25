@@ -7,6 +7,7 @@ import {
   CreditCard,
   Flag,
   LayoutGrid,
+  Megaphone,
   Palette,
   Search,
   Shield,
@@ -33,6 +34,7 @@ import {
   PageHeader,
   SkeletonRows,
   Spinner,
+  Textarea,
 } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { LIMIT_COPY, featureDescription, featureLabel } from '../../lib/feature-labels.js';
@@ -321,7 +323,15 @@ export function PlatformAdminPage() {
   const { guard, dialog } = useStepUp();
   const [gateOpen, setGateOpen] = useState(false);
   const [tab, setTab] = useState<
-    'orgs' | 'users' | 'plans' | 'billing' | 'flags' | 'branding' | 'audit' | 'operations'
+    | 'orgs'
+    | 'users'
+    | 'plans'
+    | 'billing'
+    | 'flags'
+    | 'branding'
+    | 'broadcast'
+    | 'audit'
+    | 'operations'
   >('orgs');
 
   /* The query-side step-up gate (see the header comment). Confirming runs the
@@ -519,6 +529,7 @@ export function PlatformAdminPage() {
             ['billing', 'Billing', CreditCard],
             ['flags', 'Feature flags', Flag],
             ['branding', 'Branding', Palette],
+            ['broadcast', 'Broadcast', Megaphone],
             ['audit', 'Operator audit', Shield],
             ['operations', 'Operations', Zap],
           ] as const
@@ -591,6 +602,14 @@ export function PlatformAdminPage() {
           }}
         />
       )}
+      {tab === 'broadcast' && (
+        <BroadcastTab
+          guard={guard}
+          onStepUp={() => {
+            setGateOpen(true);
+          }}
+        />
+      )}
       {tab === 'audit' && (
         <AuditTab
           onStepUp={() => {
@@ -645,6 +664,348 @@ function StepUpGate({ onStepUp }: { readonly onStepUp: () => void }) {
         Re-authenticate
       </Button>
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * Broadcast — a message to a specific member, a role-filtered subset, or
+ * every active member of one org (migration 0083). No "every org" audience
+ * exists anywhere in this form on purpose — see broadcast.service.ts's own
+ * header on why the blast radius stays capped at one tenant per send.
+ * -------------------------------------------------------------------------- */
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type AudienceTarget = 'all' | 'role' | 'user';
+type MembershipRole = 'owner' | 'admin' | 'member' | 'guest';
+
+function BroadcastTab({
+  guard,
+  onStepUp,
+}: {
+  readonly guard: (error: unknown, retry: () => void) => boolean;
+  readonly onStepUp: () => void;
+}) {
+  const [orgIdInput, setOrgIdInput] = useState('');
+  const [target, setTarget] = useState<AudienceTarget>('all');
+  const [membershipRole, setMembershipRole] = useState<MembershipRole>('member');
+  const [userIdInput, setUserIdInput] = useState('');
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState('');
+  const [sendPush, setSendPush] = useState(true);
+  const [sendEmail, setSendEmail] = useState(false);
+  const [includeInOrgAudit, setIncludeInOrgAudit] = useState(true);
+  const [sent, setSent] = useState<{ recipientCount: number } | null>(null);
+
+  const orgId = UUID_PATTERN.test(orgIdInput.trim()) ? orgIdInput.trim() : null;
+
+  /* Org resolution IS the org picker — see this file's header on why: `orgs.list`
+     has no server-side search, only a cursor, so filtering client-side would
+     only ever search whatever one page happened to load. Requiring the exact
+     id (copyable from the Organizations tab) is the honest version of that
+     limitation rather than a search box that quietly only searches 25 rows. */
+  const org = useQuery({
+    queryKey: keys.platformOrgLookup(orgId ?? ''),
+    queryFn: async () => {
+      if (orgId === null) throw new Error('No org id resolved.');
+      return wire(await api.platformAdmin.orgs.detail.query({ orgId }));
+    },
+    enabled: orgId !== null,
+    retry: false,
+  });
+
+  const membershipRoleForPreview = target === 'role' ? membershipRole : null;
+  const userIdForPreview = target === 'user' ? userIdInput.trim() : null;
+
+  const preview = useQuery({
+    queryKey: keys.platformBroadcastPreview(
+      orgId ?? '',
+      target,
+      membershipRoleForPreview,
+      userIdForPreview,
+    ),
+    queryFn: async () => {
+      if (orgId === null) throw new Error('No org id resolved.');
+      return wire(
+        await api.platformAdmin.broadcast.previewAudience.query({
+          orgId,
+          target,
+          ...(target === 'role' ? { membershipRole } : {}),
+          ...(target === 'user' && userIdInput.trim() !== '' ? { userId: userIdInput.trim() } : {}),
+        }),
+      );
+    },
+    enabled:
+      orgId !== null && org.data !== undefined && (target !== 'user' || userIdInput.trim() !== ''),
+    retry: false,
+  });
+
+  const history = useQuery({
+    queryKey: keys.platformBroadcastHistory(orgId ?? ''),
+    queryFn: async () => {
+      if (orgId === null) throw new Error('No org id resolved.');
+      return wire(await api.platformAdmin.broadcast.history.query({ orgId, limit: 10 }));
+    },
+    enabled: orgId !== null && org.data !== undefined,
+  });
+
+  const send = useMutation({
+    mutationFn: () => {
+      if (orgId === null) throw new Error('No org id resolved.');
+      return api.platformAdmin.broadcast.send.mutate({
+        audience: {
+          orgId,
+          target,
+          ...(target === 'role' ? { membershipRole } : {}),
+          ...(target === 'user' ? { userId: userIdInput.trim() } : {}),
+        },
+        subject: subject.trim(),
+        body: body.trim(),
+        sendPush,
+        sendEmail,
+        includeInOrgAudit,
+      });
+    },
+    onSuccess: async (result) => {
+      setSent({ recipientCount: result.recipientCount });
+      setSubject('');
+      setBody('');
+      await Promise.all([history.refetch(), preview.refetch()]);
+    },
+    onError: (error) => {
+      guard(error, () => {
+        send.mutate();
+      });
+    },
+  });
+
+  if (errorCodeOf(org.error) === 'STEP_UP_REQUIRED') return <StepUpGate onStepUp={onStepUp} />;
+
+  const canPreview = orgId !== null && (target !== 'user' || userIdInput.trim() !== '');
+  const canSend =
+    canPreview &&
+    preview.data !== undefined &&
+    !preview.isFetching &&
+    subject.trim().length > 0 &&
+    body.trim().length > 0 &&
+    (sendPush || sendEmail) &&
+    !send.isPending;
+
+  return (
+    <section aria-label="Broadcast">
+      <p className="mb-3 text-[13px] leading-relaxed text-ink-muted">
+        Send a message to a specific member, a role-filtered subset, or every active member of ONE
+        org — never across orgs in a single send. In-app delivery is always on; push and email are
+        each optional. This does not reach an open tab instantly the way an ordinary notification
+        does — it appears on next load or poll, and push/email deliver on their own schedule.
+      </p>
+
+      <Field label="Org ID" htmlFor="broadcast-org-id" hint="Copy this from the Organizations tab.">
+        <Input
+          id="broadcast-org-id"
+          value={orgIdInput}
+          onChange={(event) => {
+            setOrgIdInput(event.target.value);
+            setSent(null);
+          }}
+          placeholder="00000000-0000-0000-0000-000000000000"
+          className="font-mono text-xs"
+        />
+      </Field>
+
+      {orgIdInput.trim() !== '' && orgId === null && (
+        <p className="mt-1 text-xs text-danger">That doesn't look like a valid org id.</p>
+      )}
+      {org.isFetching && <p className="mt-1 text-xs text-ink-faint">Looking up org…</p>}
+      {org.isError && <ErrorView error={org.error} title="Could not find that org" />}
+
+      {org.data !== undefined && (
+        <div className="mt-4 space-y-4 rounded-xl border border-line p-4">
+          <p className="text-sm font-medium text-ink">
+            {org.data.name} <span className="text-ink-faint">({org.data.memberCount} members)</span>
+          </p>
+
+          <fieldset>
+            <legend className="mb-1.5 text-xs font-medium text-ink-muted">Audience</legend>
+            <div className="flex flex-wrap gap-3">
+              {(
+                [
+                  ['all', 'Every active member'],
+                  ['role', 'Members with a role'],
+                  ['user', 'One specific member'],
+                ] as const
+              ).map(([value, label]) => (
+                <label key={value} className="flex items-center gap-1.5 text-sm text-ink">
+                  <input
+                    type="radio"
+                    name="broadcast-target"
+                    checked={target === value}
+                    onChange={() => {
+                      setTarget(value);
+                    }}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          {target === 'role' && (
+            <Field label="Role" htmlFor="broadcast-role">
+              <select
+                id="broadcast-role"
+                value={membershipRole}
+                onChange={(event) => {
+                  setMembershipRole(event.target.value as MembershipRole);
+                }}
+                className="w-full rounded-lg border border-line/50 bg-surface-sunken px-3 py-2 text-sm text-ink"
+              >
+                <option value="owner">Owner</option>
+                <option value="admin">Admin</option>
+                <option value="member">Member</option>
+                <option value="guest">Guest</option>
+              </select>
+            </Field>
+          )}
+
+          {target === 'user' && (
+            <Field
+              label="Member's user ID"
+              htmlFor="broadcast-user-id"
+              hint="From the org's member list, or the Users tab."
+            >
+              <Input
+                id="broadcast-user-id"
+                value={userIdInput}
+                onChange={(event) => {
+                  setUserIdInput(event.target.value);
+                }}
+                placeholder="00000000-0000-0000-0000-000000000000"
+                className="font-mono text-xs"
+              />
+            </Field>
+          )}
+
+          <Field label="Subject" htmlFor="broadcast-subject">
+            <Input
+              id="broadcast-subject"
+              value={subject}
+              onChange={(event) => {
+                setSubject(event.target.value);
+              }}
+              maxLength={120}
+              placeholder="Scheduled maintenance this weekend"
+            />
+          </Field>
+
+          <Field label="Message" htmlFor="broadcast-body">
+            <Textarea
+              id="broadcast-body"
+              value={body}
+              onChange={(event) => {
+                setBody(event.target.value);
+              }}
+              maxLength={2000}
+              rows={4}
+              placeholder="Plain text only — this becomes a push notification and an email, neither of which renders rich text."
+            />
+          </Field>
+
+          <div className="flex flex-wrap gap-4 text-sm text-ink">
+            <label className="flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={sendPush}
+                onChange={(event) => {
+                  setSendPush(event.target.checked);
+                }}
+              />
+              Push notification
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={sendEmail}
+                onChange={(event) => {
+                  setSendEmail(event.target.checked);
+                }}
+              />
+              Email
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={includeInOrgAudit}
+                onChange={(event) => {
+                  setIncludeInOrgAudit(event.target.checked);
+                }}
+              />
+              Show in this org's own audit trail
+            </label>
+          </div>
+
+          <div className="flex items-center gap-3 border-t border-line pt-4">
+            <Button
+              variant="secondary"
+              disabled={!canPreview || preview.isFetching}
+              onClick={() => {
+                void preview.refetch();
+              }}
+            >
+              {preview.isFetching ? 'Counting…' : 'Preview audience'}
+            </Button>
+
+            {preview.isError && (
+              <ErrorView error={preview.error} title="Could not resolve audience" />
+            )}
+            {preview.data !== undefined && (
+              <p className="text-sm text-ink-muted">
+                Will reach <span className="font-medium text-ink">{preview.data.count}</span>{' '}
+                {preview.data.count === 1 ? 'person' : 'people'}.
+              </p>
+            )}
+          </div>
+
+          {preview.data !== undefined && (
+            <div>
+              <ConfirmButton
+                label={`Send to ${String(preview.data.count)} ${preview.data.count === 1 ? 'person' : 'people'}`}
+                confirmLabel="Confirm send"
+                disabled={!canSend}
+                onConfirm={() => {
+                  send.mutate();
+                }}
+              />
+              {send.isError && <ErrorView error={send.error} title="Send failed" />}
+            </div>
+          )}
+
+          {sent !== null && (
+            <p className="rounded-lg bg-success/10 px-3 py-2 text-sm text-success">
+              Sent to {sent.recipientCount} {sent.recipientCount === 1 ? 'person' : 'people'}.
+            </p>
+          )}
+
+          <div className="border-t border-line pt-4">
+            <p className="mb-2 text-xs font-medium text-ink-muted">Recent broadcasts to this org</p>
+            {history.isPending && <SkeletonRows rows={2} className="*:h-8" />}
+            {history.data?.length === 0 && <p className="text-xs text-ink-faint">None sent yet.</p>}
+            {history.data !== undefined && history.data.length > 0 && (
+              <ul className="space-y-1.5">
+                {history.data.map((entry) => (
+                  <li key={entry.id} className="flex items-center justify-between text-xs">
+                    <span className="truncate text-ink">{entry.subject}</span>
+                    <span className="shrink-0 text-ink-faint">
+                      {entry.recipientCount} · {formatDateTime(entry.createdAt)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 

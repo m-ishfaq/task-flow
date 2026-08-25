@@ -14,6 +14,8 @@ import * as operations from './operations.js';
 import * as plans from './plan-catalog.service.js';
 import * as detail from './org-detail.service.js';
 import * as branding from './branding.service.js';
+import * as audience from './broadcast-audience.service.js';
+import * as broadcast from './broadcast.service.js';
 import { readOperatorAudit, recordOperatorAction } from './audit.js';
 import type { PaymentProvider, StorageProvider } from '@taskflow/contracts';
 import type { ScannerConfig } from '@taskflow/security';
@@ -351,6 +353,24 @@ const ConfirmedAsset = z
   })
   .strict();
 
+/**
+ * `broadcast-audience.service.ts`'s `AudienceSpec`, restated as a wire
+ * schema. `membershipRole`/`userId` are both optional here — the SERVICE
+ * enforces "present iff target requires it" (the same job the migration's
+ * `operator_broadcasts_audience_consistent` CHECK does at the database
+ * layer), so this boundary only needs to validate SHAPE, not the
+ * cross-field rule, matching how every other route in this file leaves
+ * business validation to its service rather than duplicating it in Zod.
+ */
+const AudienceSpecInput = z
+  .object({
+    orgId: OrgIdSchema,
+    target: z.enum(['all', 'role', 'user']),
+    membershipRole: z.enum(['owner', 'admin', 'member', 'guest']).optional(),
+    userId: UserIdSchema.optional(),
+  })
+  .strict();
+
 export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
   const operatorOf = (ctx: {
     principal: { userId: string };
@@ -358,6 +378,19 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
   }): directory.PlatformOperator => ({
     userId: ctx.principal.userId as directory.PlatformOperator['userId'],
     requestId: ctx.requestId as directory.PlatformOperator['requestId'],
+  });
+
+  /* `exactOptionalPropertyTypes: true` refuses `membershipRole: undefined` as
+     an explicit value on a `membershipRole?:` field — the property must be
+     ABSENT, not present-and-undefined. Zod's `.optional()` produces
+     `X | undefined`, so the wire input can't be spread directly into
+     `AudienceSpec`; this is the one place that gap is bridged, reused by
+     both routes below rather than duplicated. */
+  const toAudienceSpec = (input: z.infer<typeof AudienceSpecInput>): audience.AudienceSpec => ({
+    orgId: input.orgId,
+    target: input.target,
+    ...(input.membershipRole !== undefined ? { membershipRole: input.membershipRole } : {}),
+    ...(input.userId !== undefined ? { userId: input.userId } : {}),
   });
 
   /* The catalog service takes the processor alongside the bus, because a plan
@@ -462,6 +495,80 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
             confirmSlug: input.confirmSlug,
           }),
         ),
+    }),
+
+    /**
+     * Operator broadcasts — a specific member, a role-filtered subset, or
+     * every active member of one org (migration 0083, broadcast.service.ts).
+     * No platform-wide "every org" audience — see that file's own header on
+     * why the blast radius is deliberately capped at one tenant per send.
+     */
+    broadcast: router({
+      /** The dry-run count the console's Send button requires before it enables. */
+      previewAudience: platformRoute({
+        platformReason: 'Counting another org’s members by role is cross-tenant by definition.',
+      })
+        .input(AudienceSpecInput)
+        .output(z.object({ count: z.number().int().nonnegative() }).strict())
+        .query(({ input }) => audience.previewAudience(toAudienceSpec(input))),
+
+      send: platformRoute({
+        platformReason:
+          'Sending a message to another org’s members is cross-tenant by definition — no org-scoped permission can authorize it.',
+      })
+        .input(
+          z
+            .object({
+              audience: AudienceSpecInput,
+              subject: z.string().min(1).max(120),
+              body: z.string().min(1).max(2000),
+              sendPush: z.boolean(),
+              sendEmail: z.boolean(),
+              includeInOrgAudit: z.boolean(),
+            })
+            .strict(),
+        )
+        .output(
+          z
+            .object({ broadcastId: z.string(), recipientCount: z.number().int().nonnegative() })
+            .strict(),
+        )
+        .mutation(({ input, ctx }) =>
+          broadcast.sendBroadcast(deps.events, operatorOf(ctx), {
+            audience: toAudienceSpec(input.audience),
+            subject: input.subject,
+            body: input.body,
+            sendPush: input.sendPush,
+            sendEmail: input.sendEmail,
+            includeInOrgAudit: input.includeInOrgAudit,
+          }),
+        ),
+
+      /** One org's own broadcast history — the ones sent with `includeInOrgAudit`. */
+      history: platformRoute({
+        platformReason: 'Another org’s broadcast history is cross-tenant by definition.',
+      })
+        .input(
+          z
+            .object({ orgId: OrgIdSchema, limit: z.number().int().min(1).max(100).default(25) })
+            .strict(),
+        )
+        .output(
+          z
+            .array(
+              z
+                .object({
+                  id: z.string(),
+                  subject: z.string(),
+                  audienceTarget: z.enum(['all', 'role', 'user']),
+                  recipientCount: z.number().int().nonnegative(),
+                  createdAt: z.date(),
+                })
+                .strict(),
+            )
+            .readonly(),
+        )
+        .query(({ input }) => broadcast.getBroadcastHistory(input.orgId, input.limit)),
     }),
 
     users: router({
