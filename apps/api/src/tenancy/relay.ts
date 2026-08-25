@@ -125,7 +125,7 @@ export function startAuditRelay(options: StartRelayOptions): RelayHandle {
          record and gets the database first if they contend. A notification
          arriving a tick late is not a defect; an audit entry doing so is the
          thing this relay exists to prevent. */
-      const notified = await drainNotificationsFully();
+      const notified = await drainNotificationsFully(100, 50, options.logger);
       if (notified.written > 0) {
         options.logger.debug({ written: notified.written }, 'notification projection wrote rows');
       }

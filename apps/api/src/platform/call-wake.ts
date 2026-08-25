@@ -211,6 +211,7 @@ export async function drainCallWake(
       const callerLabels = await resolveActorLabels(
         tx,
         calls.map((call) => call.callerId).filter((id): id is string => id !== null),
+        logger,
       );
 
       for (const call of calls) {

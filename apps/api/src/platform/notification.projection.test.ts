@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { OutboxRow } from '@taskflow/db';
+import type { Logger } from '@taskflow/observability';
 import {
   dueDateChanged,
   planChannelDeliveries,
   planNotifications,
+  resolveActorLabels,
 } from './notification.projection.js';
 
 /**
@@ -651,5 +653,43 @@ describe('dueDateChanged — the due-reminder refire trigger (§3.8)', () => {
       dueDateChanged(row('card.assigned', { cardId: CARD, before: [], after: [BOB] })),
     ).toBeNull();
     expect(dueDateChanged(row('card.updated', {}))).toBeNull();
+  });
+});
+
+describe('resolveActorLabels — fails OPEN, never closed (migration 0087 resilience)', () => {
+  /* A fake `tx` shaped like Drizzle's chainable query builder — the same
+     minimal subset `resolveActorLabels` actually calls — whose `.where()`
+     rejects, mirroring what a missing grant (0087 not yet applied) or a
+     transient database blip looks like from inside the try/catch. No real
+     Postgres involved: this is testing that the FUNCTION never lets that
+     rejection escape, not that Postgres refuses the query. */
+  function throwingTx(): Parameters<typeof resolveActorLabels>[0] {
+    const chain = {
+      from: () => chain,
+      where: () => Promise.reject(new Error('permission denied for table profiles')),
+    };
+    return { select: () => chain } as unknown as Parameters<typeof resolveActorLabels>[0];
+  }
+
+  it('returns an empty map instead of throwing when the underlying query rejects', async () => {
+    const labels = await resolveActorLabels(throwingTx(), [ALICE]);
+    expect(labels.size).toBe(0);
+  });
+
+  it('logs a warning through the optional logger, when one is given', async () => {
+    const warnings: unknown[] = [];
+    const logger = {
+      warn: (...args: unknown[]) => {
+        warnings.push(args);
+      },
+    } as unknown as Logger;
+
+    await resolveActorLabels(throwingTx(), [ALICE], logger);
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('never queries at all for an empty id list — the throwing tx would fail the test if it did', async () => {
+    const labels = await resolveActorLabels(throwingTx(), []);
+    expect(labels.size).toBe(0);
   });
 });

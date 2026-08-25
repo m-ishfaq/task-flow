@@ -13,6 +13,7 @@ import {
 import { newId } from '@taskflow/security';
 import { unsafeAsId } from '@taskflow/contracts';
 import { createEvent } from '@taskflow/events';
+import type { Logger } from '@taskflow/observability';
 import { notificationCreated } from './events.js';
 import { categoryOfKind, resolvePref, type ExplicitPref } from './notification-prefs.js';
 import { notificationPath } from './notification-paths.js';
@@ -715,7 +716,10 @@ function asIdList(value: unknown): readonly string[] {
  * narrow column set of `identity.users` — see that migration's header for
  * why the column list is deliberately short.
  */
-export async function drainNotifications(limit = 100): Promise<NotificationDrainResult> {
+export async function drainNotifications(
+  limit = 100,
+  logger?: Logger,
+): Promise<NotificationDrainResult> {
   return withAuditScope(async (tx) => {
     const pending = await claimPending(tx, NOTIFICATION_CONSUMER, limit);
     if (pending.length === 0)
@@ -738,6 +742,7 @@ export async function drainNotifications(limit = 100): Promise<NotificationDrain
     const actorLabels = await resolveActorLabels(
       tx,
       pending.map((row) => row.actorId).filter((id): id is string => id !== null),
+      logger,
     );
 
     let written = 0;
@@ -984,33 +989,57 @@ export async function drainNotifications(limit = 100): Promise<NotificationDrain
  * resolution, against the same `taskflow_audit` grants (0027, 0087), for the
  * one other push pathway that names a person without going through this
  * projection at all.
+ *
+ * ## Fails OPEN, never closed — this is cosmetic, not a security control
+ *
+ * `drainNotifications`/`drainCallWake` each run their whole batch inside ONE
+ * `withAuditScope` transaction, and `relay.ts`'s `tick()` wraps its entire
+ * sequence — audit, notifications, email, push, call-wake — in a SINGLE
+ * try/catch that logs and swallows. An unhandled error here (a migration not
+ * yet applied when new code ships, a stale connection pool, any transient
+ * blip) would therefore not just fail to resolve a name — it would throw out
+ * of the whole transaction, leave the claimed rows undispatched so the next
+ * tick reclaims and rethrows the identical failure, and skip every consumer
+ * scheduled after it in that same tick, FOREVER, until whatever broke this
+ * query is fixed. That is a total notification/push outage traded for a
+ * cosmetic name in a title — the wrong trade, so this catches everything and
+ * answers "nobody resolved" instead, the same as an empty batch.
  */
 export async function resolveActorLabels(
   tx: Parameters<Parameters<typeof withAuditScope>[0]>[0],
   actorIds: readonly string[],
+  logger?: Logger,
 ): Promise<Map<string, string>> {
   const ids = [...new Set(actorIds)];
   if (ids.length === 0) return new Map();
 
-  const [profileRows, userRows] = await Promise.all([
-    tx
-      .select({ userId: schema.profiles.userId, displayName: schema.profiles.displayName })
-      .from(schema.profiles)
-      .where(inArray(schema.profiles.userId, ids)),
-    tx
-      .select({ id: schema.users.id, email: schema.users.email })
-      .from(schema.users)
-      .where(inArray(schema.users.id, ids)),
-  ]);
+  try {
+    const [profileRows, userRows] = await Promise.all([
+      tx
+        .select({ userId: schema.profiles.userId, displayName: schema.profiles.displayName })
+        .from(schema.profiles)
+        .where(inArray(schema.profiles.userId, ids)),
+      tx
+        .select({ id: schema.users.id, email: schema.users.email })
+        .from(schema.users)
+        .where(inArray(schema.users.id, ids)),
+    ]);
 
-  const displayNameById = new Map(profileRows.map((row) => [row.userId, row.displayName]));
-  const emailById = new Map(userRows.map((user) => [user.id, user.email]));
-  const labels = new Map<string, string>();
-  for (const userId of ids) {
-    const label = displayNameById.get(userId) ?? emailById.get(userId) ?? null;
-    if (label !== null) labels.set(userId, label);
+    const displayNameById = new Map(profileRows.map((row) => [row.userId, row.displayName]));
+    const emailById = new Map(userRows.map((user) => [user.id, user.email]));
+    const labels = new Map<string, string>();
+    for (const userId of ids) {
+      const label = displayNameById.get(userId) ?? emailById.get(userId) ?? null;
+      if (label !== null) labels.set(userId, label);
+    }
+    return labels;
+  } catch (error) {
+    logger?.warn(
+      { err: error },
+      'resolveActorLabels failed — notification titles for this batch stay anonymous',
+    );
+    return new Map();
   }
-  return labels;
 }
 
 /**
@@ -1073,6 +1102,7 @@ async function resolveEmailAddresses(
 export async function drainNotificationsFully(
   batchSize = 100,
   maxBatches = 50,
+  logger?: Logger,
 ): Promise<NotificationDrainResult> {
   let processed = 0;
   let written = 0;
@@ -1080,7 +1110,7 @@ export async function drainNotificationsFully(
   const pendingPushes: PendingPushSend[] = [];
 
   for (let batch = 0; batch < maxBatches; batch += 1) {
-    const result = await drainNotifications(batchSize);
+    const result = await drainNotifications(batchSize, logger);
     processed += result.processed;
     written += result.written;
     pendingEmails.push(...result.pendingEmails);
