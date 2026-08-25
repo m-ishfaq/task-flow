@@ -107,6 +107,14 @@ const config: ExpoConfig = {
      changed after release breaks every previously-installed app's
      return-from-browser flow. */
   scheme: 'taskflow',
+  /* The TaskFlow flow-mark (`apps/web/src/components/taskflow-logo.tsx` /
+     `apps/web/public/favicon.svg`'s three-node design), rendered to a 1024x1024
+     PNG on the app's own dark surface color rather than left transparent —
+     iOS composites the app icon on an opaque backing regardless, so an
+     icon authored WITHOUT one gets an arbitrary black or white fill picked
+     for you, not transparency. `android.adaptiveIcon` below is the
+     Android-specific masked variant of the same mark. */
+  icon: './assets/icon.png',
   /* Android and iOS only, explicit rather than left to Expo's own default
      (`['ios', 'android', 'web']`). A `web` target left implicit is exactly
      the kind of gap this codebase argues against elsewhere — nothing in
@@ -139,6 +147,18 @@ const config: ExpoConfig = {
   },
   android: {
     package: 'com.taskflow.app',
+    /* The masked variant `icon` above needs on Android: a FOREGROUND layer
+       only, transparent background, scaled well inside the ~66% safe zone
+       the OS mask crops to (a full-bleed foreground gets clipped to a
+       circle/squircle/rounded-square depending on the launcher, cutting
+       off the outer nodes of the mark) — `backgroundColor` is a flat fill
+       behind it, the same dark surface color as `icon.png`'s own
+       background, so the two render identically wherever the OS shows one
+       or the other. */
+    adaptiveIcon: {
+      foregroundImage: './assets/adaptive-icon-foreground.png',
+      backgroundColor: STATUS_BAR_BACKGROUND,
+    },
     /* Push notifications (§9, push-notifications.ts's own header on "code
        complete, infrastructure not"): `expo-notifications` needs this file
        present for Expo's prebuild to apply the `google-services` Gradle
@@ -217,6 +237,19 @@ const config: ExpoConfig = {
           usesCleartextTraffic: API_BASE_URL.startsWith('http://'),
         },
       },
+    ],
+    /* Android's status bar renders a notification icon as a WHITE SILHOUETTE
+       on transparent, regardless of what color the source PNG actually is
+       (a full-color icon there just shows as a white blob) — this is a
+       SEPARATE asset from `icon`/`adaptiveIcon` above for exactly that
+       reason, not a duplicate. `color` is the background tint Android
+       applies behind it in the notification shade; matches this app's own
+       dark surface color rather than Android's default. iOS has no
+       equivalent concept (its notification icon is just the app icon), so
+       this plugin is a no-op there — nothing further to configure. */
+    [
+      'expo-notifications',
+      { icon: './assets/notification-icon.png', color: STATUS_BAR_BACKGROUND },
     ],
     /* iOS refuses Face ID outright with no NSFaceIDUsageDescription in
        Info.plist — not a soft failure, the ceremony never even starts
