@@ -2,11 +2,13 @@ import {
   claimPending,
   inArray,
   markDispatched,
+  recordOperationalEvent,
   schema,
   withAuditScope,
   type OutboxRow,
 } from '@taskflow/db';
 import type { Logger } from '@taskflow/observability';
+import { errorMessageOf } from './notification-push.js';
 import type { ExpoPushProvider } from './push-provider.js';
 
 /**
@@ -77,12 +79,27 @@ import type { ExpoPushProvider } from './push-provider.js';
  * event dispatched regardless of send outcome — a push that fails is a ring
  * this pass could not deliver, not a ring to attempt again after the call
  * has likely already ended one way or another.
+ *
+ * ## Every attempt is now a row an operator can actually see
+ *
+ * This drain had NO observability at all before this — not even the
+ * aggregate, tick-level `debug` log `notification-push.ts` had before ITS
+ * own gap was closed the same way. A ring push that never reached anyone
+ * looked identical to one that was never attempted; nothing distinguished
+ * "no token registered for this person" from "Expo rejected it" from "it
+ * was never even tried because the batch filtered the event out." Every
+ * terminal outcome below now writes one `platform.operational_events` row
+ * (`kind: 'push'`, matching `notification-push.ts`'s own kind — this is
+ * still fundamentally an Expo push send, just from a second writer), so
+ * the Operations tab is the answer to "did that call actually ring
+ * anyone", not a guess.
  */
 
 /** The consumer name this drain claims under. */
 export const CALL_WAKE_CONSUMER = 'rtc-call-wake';
 
 interface CallWakeEvent {
+  readonly sessionId: string;
   readonly channelId: string;
   readonly invitedUserIds: readonly string[];
 }
@@ -92,21 +109,52 @@ export function callWakeEvent(row: OutboxRow): CallWakeEvent | null {
   if (row.name !== 'rtc_session.started') return null;
   if (typeof row.payload !== 'object' || row.payload === null) return null;
 
-  const fields = row.payload as { readonly channelId?: unknown; readonly invitedUserIds?: unknown };
+  const fields = row.payload as {
+    readonly sessionId?: unknown;
+    readonly channelId?: unknown;
+    readonly invitedUserIds?: unknown;
+  };
+  const sessionId = typeof fields.sessionId === 'string' ? fields.sessionId : null;
   const channelId = typeof fields.channelId === 'string' ? fields.channelId : null;
-  if (channelId === null) return null;
+  if (sessionId === null || channelId === null) return null;
 
   const invitedUserIds = Array.isArray(fields.invitedUserIds)
     ? fields.invitedUserIds.filter((id): id is string => typeof id === 'string')
     : [];
 
-  return { channelId, invitedUserIds };
+  return { sessionId, channelId, invitedUserIds };
 }
 
 export interface CallWakeDrainResult {
   readonly processed: number;
   readonly attempted: number;
   readonly sent: number;
+}
+
+/**
+ * One `platform.operational_events` row per terminal outcome — see this
+ * file's own header. `target` is the RTC session id: this drain writes no
+ * delivery-row equivalent of its own (its header already explains why —
+ * "this consumer writes nothing to platform.notifications"), so the
+ * session id is the one real, already-internal identifier that ties a row
+ * here back to an actual call. Never the raw Expo token.
+ */
+function recordCallWakeOutcome(input: {
+  readonly sessionId: string;
+  readonly outcome: 'success' | 'failure';
+  readonly reason: string;
+  readonly error?: unknown;
+}): void {
+  void recordOperationalEvent({
+    kind: 'push',
+    outcome: input.outcome,
+    target: input.sessionId,
+    detail: {
+      pathway: 'call-wake',
+      reason: input.reason,
+      ...(input.error === undefined ? {} : { error: errorMessageOf(input.error) }),
+    },
+  });
 }
 
 /**
@@ -155,7 +203,19 @@ export async function drainCallWake(
       for (const call of calls) {
         const path = `/chat?channel=${call.channelId}`;
         for (const userId of call.invitedUserIds) {
-          for (const expoPushToken of tokensByUser.get(userId) ?? []) {
+          const deviceTokens = tokensByUser.get(userId) ?? [];
+          if (deviceTokens.length === 0) {
+            /* No expo_push_tokens row for this invitee at all — the exact
+               "why didn't my phone ring" answer that used to be silent. */
+            recordCallWakeOutcome({
+              sessionId: call.sessionId,
+              outcome: 'failure',
+              reason: 'no_device',
+            });
+            continue;
+          }
+
+          for (const expoPushToken of deviceTokens) {
             attempted += 1;
             try {
               const outcome = await expoPushProvider.send({
@@ -164,18 +224,40 @@ export async function drainCallWake(
                 body: null,
                 path,
               });
-              if (outcome === 'sent') sent += 1;
-              /* 'gone'/'failed' — a dead or refused token. Not pruned here:
-                 `notification-push.ts`'s own drain already deletes a token
-                 the moment Expo reports it gone on any OTHER notification,
-                 and duplicating that DELETE here for a row that may already
-                 not exist buys nothing a real notification wouldn't already
-                 have caught within the hour. */
+              if (outcome === 'sent') {
+                sent += 1;
+                recordCallWakeOutcome({
+                  sessionId: call.sessionId,
+                  outcome: 'success',
+                  reason: 'sent',
+                });
+              } else {
+                /* 'gone'/'failed' — a dead or refused token. Not pruned here:
+                   `notification-push.ts`'s own drain already deletes a token
+                   the moment Expo reports it gone on any OTHER notification,
+                   and duplicating that DELETE here for a row that may already
+                   not exist buys nothing a real notification wouldn't already
+                   have caught within the hour. `reason` uses the SAME
+                   vocabulary notification-push.ts's Operations rows do
+                   ('rejected', not the raw 'failed' outcome name) so the two
+                   pathways read as one system on that tab. */
+                recordCallWakeOutcome({
+                  sessionId: call.sessionId,
+                  outcome: 'failure',
+                  reason: outcome === 'gone' ? 'gone' : 'rejected',
+                });
+              }
             } catch (error) {
               /* See this file's own header on why a wake push does not get
                  the rest of this codebase's "leave it, retry next tick"
                  treatment — logged and left at that. */
               logger.warn({ err: error, channelId: call.channelId }, 'call-wake push failed');
+              recordCallWakeOutcome({
+                sessionId: call.sessionId,
+                outcome: 'failure',
+                reason: 'transient',
+                error,
+              });
             }
           }
         }

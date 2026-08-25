@@ -193,9 +193,10 @@ function recordPushOutcome(input: {
   });
 }
 
-const MAX_ERROR_MESSAGE_LENGTH = 300;
+/** Exported for `call-wake.ts`'s own operational-event recording — the identical capping rule, one definition. */
+export const MAX_ERROR_MESSAGE_LENGTH = 300;
 
-function errorMessageOf(error: unknown): string {
+export function errorMessageOf(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.length > MAX_ERROR_MESSAGE_LENGTH
     ? `${message.slice(0, MAX_ERROR_MESSAGE_LENGTH)}…`
