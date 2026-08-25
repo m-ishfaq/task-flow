@@ -63,10 +63,21 @@ import type { ExpoPushProvider } from './push-provider.js';
  * ## Consumer name, and why one more costs nothing
  *
  * `claimPending`'s consumer argument is a free-form string (`platform.
- * outbox_dispatch`'s own shape, migration 0015) — adding `'rtc-call-wake'`
- * here needs no migration, no new role, no new grant beyond what
- * `taskflow_audit` already holds on `platform.expo_push_tokens` (migration
- * 0082's own `expo_push_tokens_audit_send` policy). It drains the identical
+ * outbox_dispatch`'s own shape, migration 0015) — this was WRONG when
+ * written, not merely dated: it claimed adding `'rtc-call-wake'` needed no
+ * new grant beyond what `taskflow_audit` already holds on
+ * `platform.expo_push_tokens`, and in fact `taskflow_audit`'s three
+ * consumer-scoped `outbox_dispatch` policies (`_read`/`_insert`/`_update`,
+ * the shape every OTHER consumer here has — `notifications` in 0022,
+ * `search` in 0045, `automation` in 0047) were never written for this
+ * consumer at all until migration 0089. Without them, `claimPending`
+ * "succeeded" by accident (a `LEFT JOIN` against RLS-hidden dispatch rows
+ * reads identically to there being none yet), but `markDispatched`'s INSERT
+ * had no policy to satisfy and was refused every tick, forever — a real ring
+ * push sent on every single 5-second tick for the same undelivered event,
+ * with the database insisting none of them had happened. Left as written
+ * rather than silently corrected, per this file's own repo's habit of
+ * correcting a wrong claim in place. It drains the identical
  * `rtc_session.started` events `apps/realtime`'s socket fan-out already
  * reads, under its own consumer name, so a slow or erroring wake send can
  * never starve the live ring and vice versa.
