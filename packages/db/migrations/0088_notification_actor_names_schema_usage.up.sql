@@ -1,0 +1,32 @@
+-- 0088 — 0087 forgot the schema, not just the table.
+--
+-- The exact bug 0064's own header already documented, for a DIFFERENT role,
+-- against this SAME table: "USAGE grants no access to any object — it only
+-- allows names in that schema to RESOLVE — so it has to be paired with a
+-- table grant, and it has to be repeated for every schema a role's queries
+-- reach into." 0087 added `GRANT SELECT (user_id, display_name) ON
+-- people.profiles TO taskflow_audit` and stopped there — `taskflow_audit`
+-- had never held USAGE on schema `people` (only `taskflow_app`, since 0030,
+-- and `taskflow_platform_admin`, since 0064), so every query
+-- `resolveActorLabels` issued failed with `permission denied for schema
+-- people` before the table grant was ever consulted.
+--
+-- The blast radius was worse than a missing name: `resolveActorLabels`'s own
+-- try/catch (added the same day, anticipating exactly this class of failure)
+-- kept the notification WRITE alive, but the query still aborted the
+-- surrounding Postgres transaction — every statement after it in the same
+-- `withAuditScope` block, starting with the `identity.notification_prefs`
+-- read that decides push/email/in-app delivery, failed with "current
+-- transaction is aborted, commands ignored until end of transaction block".
+-- `drainNotifications` threw, the whole batch rolled back undispatched, and
+-- because `relay.ts`'s `tick()` wraps audit + notifications + email + push +
+-- call-wake in ONE try/catch, every consumer after the notification drain
+-- silently stopped running too — a schema-level typo taking down the entire
+-- push pipeline, not just personalization.
+--
+-- try/catch inside a query is not a substitute for the query being allowed
+-- to run at all; this migration is the actual fix, and the try/catch (kept)
+-- is what makes a mistake like this one degrade to anonymous titles the next
+-- time, rather than a silent, repeating outage.
+
+GRANT USAGE ON SCHEMA people TO taskflow_audit;
