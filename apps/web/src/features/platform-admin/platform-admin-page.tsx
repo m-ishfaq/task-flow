@@ -4095,7 +4095,7 @@ function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
                           {entry.action}
                         </span>
                       </td>
-                      <td className="max-w-50 px-3 py-2.5 font-mono text-[11px] text-ink-muted">
+                      <td className="max-w-50 px-3 py-2.5 font-mono text-[11px] text-ink-muted overflow-x-auto">
                         {entry.target === null ? '—' : JSON.stringify(entry.target)}
                       </td>
                       <td className="px-3 py-2.5 text-ink-muted">
@@ -4268,10 +4268,10 @@ function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {
                       <td className="px-3 py-2.5">
                         <OutcomeBadge outcome={event.outcome} />
                       </td>
-                      <td className="max-w-50 px-3 py-2.5 font-mono text-[11px] text-ink-muted">
+                      <td className="max-w-50 px-3 py-2.5 font-mono text-[11px] text-ink-muted overflow-x-auto">
                         {event.target ?? '—'}
                       </td>
-                      <td className="max-w-50 px-3 py-2.5 font-mono text-[11px] text-ink-muted">
+                      <td className="max-w-50 px-3 py-2.5 font-mono text-[11px] text-ink-muted overflow-x-auto">
                         {event.detail === null || event.detail === undefined
                           ? '—'
                           : JSON.stringify(event.detail)}
