@@ -8,10 +8,25 @@ import {
   initializePlatformAdminDatabase,
 } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
+import type { PendingEmailSend } from '../platform/notification.projection.js';
 import { TEST_ENV } from '../testing/fixtures.js';
 import { resolveAudience } from './broadcast-audience.service.js';
-import { getBroadcastHistory, sendBroadcast } from './broadcast.service.js';
+import {
+  getBroadcastHistory,
+  resendBroadcast,
+  sendBroadcast,
+  type BroadcastDeps,
+} from './broadcast.service.js';
 import type { PlatformOperator } from './org-directory.service.js';
+
+/** A `sendNotificationEmail` that just records what it was asked to send. */
+function fakeEmailSender(): {
+  readonly sent: PendingEmailSend[];
+  readonly send: NonNullable<BroadcastDeps['sendNotificationEmail']>;
+} {
+  const sent: PendingEmailSend[] = [];
+  return { sent, send: (send) => sent.push(send) };
+}
 
 /**
  * Operator broadcasts (migration 0083), against real Postgres.
@@ -177,7 +192,7 @@ describe('sendBroadcast', () => {
   it('writes a notification + a pending push delivery for every resolved member, and the tracking row', async () => {
     const events = new RecordingEventBus();
 
-    const result = await sendBroadcast(events, operator, {
+    const result = await sendBroadcast({ events }, operator, {
       audience: { orgId: ORG, target: 'all' },
       subject: 'Test announcement',
       body: 'This is a test broadcast body.',
@@ -190,7 +205,7 @@ describe('sendBroadcast', () => {
 
     await admin.setOrg(ORG);
     const notifications = await admin.query(
-      `SELECT user_id, kind, subject_type, subject_id, title FROM platform.notifications WHERE org_id = $1`,
+      `SELECT user_id, kind, subject_type, subject_id, title, actor_id FROM platform.notifications WHERE org_id = $1`,
       [ORG],
     );
     expect(notifications.rows).toHaveLength(2);
@@ -199,6 +214,12 @@ describe('sendBroadcast', () => {
       expect(row['subject_type']).toBe('operator_broadcast');
       expect(row['subject_id']).toBe(result.broadcastId);
       expect(row['title']).toBe('Test announcement');
+      /* Not the operator's own id — an operator is never guaranteed to be a
+         member of the org they broadcast to, and a client resolving an
+         actor label against the org's own roster (mobile's `personOf`,
+         ported identically to web) finds nothing and falls back to
+         printing the raw uuid. No actor is the honest shape here. */
+      expect(row['actor_id']).toBeNull();
     }
 
     const deliveries = await admin.query(
@@ -226,7 +247,7 @@ describe('sendBroadcast', () => {
   it("records the global operator chain always, and the org's own audit chain only when asked", async () => {
     const events = new RecordingEventBus();
 
-    await sendBroadcast(events, operator, {
+    await sendBroadcast({ events }, operator, {
       audience: { orgId: ORG, target: 'role', membershipRole: 'owner' },
       subject: 'Not visible to the org',
       body: 'This send opts out of the org audit trail.',
@@ -252,7 +273,7 @@ describe('sendBroadcast', () => {
   it('refuses a send with neither channel enabled', async () => {
     const events = new RecordingEventBus();
     await expect(
-      sendBroadcast(events, operator, {
+      sendBroadcast({ events }, operator, {
         audience: { orgId: ORG, target: 'all' },
         subject: 'x',
         body: 'y',
@@ -262,13 +283,123 @@ describe('sendBroadcast', () => {
       }),
     ).rejects.toThrow();
   });
+
+  it("actually hands each resolved member's email to sendNotificationEmail, and marks the delivery sent", async () => {
+    const events = new RecordingEventBus();
+    const emailSender = fakeEmailSender();
+
+    const result = await sendBroadcast(
+      { events, sendNotificationEmail: emailSender.send },
+      operator,
+      {
+        audience: { orgId: ORG, target: 'role', membershipRole: 'member' },
+        subject: 'Email test',
+        body: 'This should actually be handed to the mailer.',
+        sendPush: false,
+        sendEmail: true,
+        includeInOrgAudit: true,
+      },
+    );
+
+    expect(result.recipientCount).toBe(1);
+    expect(emailSender.sent).toHaveLength(1);
+    expect(emailSender.sent[0]).toMatchObject({
+      to: 'broadcast-member@platform.test',
+      title: 'Email test',
+      /* /home — notificationPath's operator_broadcast case, never null; a
+         null path is exactly what left email undelivered before this. */
+      path: '/home',
+    });
+
+    await admin.setOrg(ORG);
+    const deliveries = await admin.query(
+      `SELECT status FROM platform.notification_deliveries WHERE org_id = $1 AND channel = 'email'`,
+      [ORG],
+    );
+    expect(deliveries.rows).toHaveLength(1);
+    expect(deliveries.rows[0]?.['status']).toBe('sent');
+  });
+
+  it('leaves the email delivery pending when no sendNotificationEmail is configured', async () => {
+    const events = new RecordingEventBus();
+
+    await sendBroadcast({ events }, operator, {
+      audience: { orgId: ORG, target: 'role', membershipRole: 'member' },
+      subject: 'No mailer configured',
+      body: 'body',
+      sendPush: false,
+      sendEmail: true,
+      includeInOrgAudit: true,
+    });
+
+    await admin.setOrg(ORG);
+    const deliveries = await admin.query(
+      `SELECT status FROM platform.notification_deliveries WHERE org_id = $1 AND channel = 'email'`,
+      [ORG],
+    );
+    expect(deliveries.rows).toHaveLength(1);
+    expect(deliveries.rows[0]?.['status']).toBe('pending');
+  });
+});
+
+describe('resendBroadcast', () => {
+  it('replays the exact stored subject, body, audience and channels as a brand-new send', async () => {
+    const events = new RecordingEventBus();
+    const emailSender = fakeEmailSender();
+
+    const original = await sendBroadcast(
+      { events, sendNotificationEmail: emailSender.send },
+      operator,
+      {
+        audience: { orgId: ORG, target: 'users', userIds: [OWNER, MEMBER] },
+        subject: 'Original',
+        body: 'Original body.',
+        sendPush: true,
+        sendEmail: true,
+        includeInOrgAudit: true,
+      },
+    );
+
+    const resent = await resendBroadcast(
+      { events, sendNotificationEmail: emailSender.send },
+      operator,
+      original.broadcastId,
+    );
+
+    expect(resent.broadcastId).not.toBe(original.broadcastId);
+    expect(resent.recipientCount).toBe(2);
+
+    await admin.setOrg(null);
+    const tracking = await admin.query(
+      `SELECT subject, body, audience_target, send_push, send_email FROM platform.operator_broadcasts WHERE id = $1`,
+      [resent.broadcastId],
+    );
+    expect(tracking.rows[0]).toMatchObject({
+      subject: 'Original',
+      body: 'Original body.',
+      audience_target: 'users',
+      send_push: true,
+      send_email: true,
+    });
+
+    /* Two sends of two people each — the resend's own email hands, not the
+       original's, since each send hands its OWN deliveries. */
+    expect(emailSender.sent).toHaveLength(4);
+  });
+
+  it('refuses to resend a broadcast id that does not exist', async () => {
+    const events = new RecordingEventBus();
+    await expect(
+      resendBroadcast({ events }, operator, '00000000-0000-7000-8000-000000000000'),
+    ).rejects.toThrow();
+  });
 });
 
 describe('getBroadcastHistory', () => {
   it('returns only sends marked includedInOrgAudit', async () => {
     const events = new RecordingEventBus();
 
-    await sendBroadcast(events, operator, {
+    await sendBroadcast({ events }, operator, {
       audience: { orgId: ORG, target: 'all' },
       subject: 'Visible send',
       body: 'body',
@@ -276,7 +407,7 @@ describe('getBroadcastHistory', () => {
       sendEmail: false,
       includeInOrgAudit: true,
     });
-    await sendBroadcast(events, operator, {
+    await sendBroadcast({ events }, operator, {
       audience: { orgId: ORG, target: 'all' },
       subject: 'Hidden send',
       body: 'body',

@@ -149,6 +149,13 @@ const OPERATION_RULES: Readonly<Record<string, RateLimitRule>> = {
      describes between a per-IP limiter and an account lockout. Keyed per
      CALLER, which an authenticated operator always has. */
   'platformAdmin.broadcast.send': { limit: 20, windowMs: 24 * 60 * 60_000 },
+  /* A separate bucket from `send` above, not a shared one — this limiter's
+     key is `op:${procedure}:${scope}` (`proceduresOf`/the `preValidation`
+     hook below), so two different route paths can never share a count no
+     matter how their rules are written. Kept at the same 20/day rather than
+     redesigning the key scheme to combine them: still a real volumetric
+     floor per route, just not a single 20-total-actions cap across both. */
+  'platformAdmin.broadcast.resend': { limit: 20, windowMs: 24 * 60 * 60_000 },
 };
 
 export interface RateLimitOptions {

@@ -22,6 +22,7 @@ import { createAutomationRouter } from './automation/router.js';
 import { createApiTokenRouter } from './automation/api-token.router.js';
 import type { IntegrationDeps } from './automation/integration.service.js';
 import { PostgresSearchProvider } from './search/postgres-provider.js';
+import type { PendingEmailSend } from './platform/notification.projection.js';
 
 /**
  * The root router.
@@ -56,8 +57,16 @@ export interface AppRouterDeps extends IdentityRouterDeps {
    * map, without a container.
    */
   readonly work: WorkRouterDeps;
-  /** Notifications — the VAPID public key for the push ceremony (§3.7). */
-  readonly platform: { readonly vapidPublicKey: string | null };
+  /**
+   * Notifications — the VAPID public key for the push ceremony (§3.7), and
+   * `main.ts`'s `notificationMail.send`, reused below by `platformAdmin`
+   * for operator broadcasts (`PlatformAdminRouterDeps`'s own comment on why
+   * that module needs it directly rather than through the projection).
+   */
+  readonly platform: {
+    readonly vapidPublicKey: string | null;
+    readonly sendNotificationEmail?: (send: PendingEmailSend) => void;
+  };
   /**
    * Voice & Messaging (Phase 7 Wave 2).
    *
@@ -193,6 +202,11 @@ export function createAppRouter(deps: AppRouterDeps) {
       /* Reuses billing's own mail deps — see PlatformAdminRouterDeps's own
          comment on why a second queue is not worth opening for this. */
       ...(deps.billing.mail === undefined ? {} : { mail: deps.billing.mail }),
+      /* Operator broadcasts' own email send — see PlatformAdminRouterDeps's
+         `sendNotificationEmail` comment. */
+      ...(deps.platform.sendNotificationEmail === undefined
+        ? {}
+        : { sendNotificationEmail: deps.platform.sendNotificationEmail }),
       /* §9: suspend/reactivate also freeze or unfreeze the org's Twilio
          subaccount, when a carrier is configured. The narrowed dep keeps the
          platform-admin module from seeing the storage provider and spend
