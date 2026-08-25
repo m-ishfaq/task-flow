@@ -160,6 +160,34 @@ const config: ExpoConfig = {
   },
   plugins: [
     'expo-router',
+    /* Android refuses plaintext `http://` outright by default since API 28
+       (Network Security Config's base config has `cleartextTrafficPermitted
+       = false`) — a RESTRICTION, not an absence of one, so there is nothing
+       to opt into for HTTPS. The React Native template's own generated
+       manifest only sets `android:usesCleartextTraffic="true"` in the
+       DEBUG variant; a release build (`assembleRelease`, what an installed
+       APK actually runs) inherits the strict default and drops every
+       request at the OS layer before it reaches this app's own network
+       code — no exception thrown, nothing in `adb logcat` naming this app,
+       and correspondingly nothing in the API server's log, because the
+       request never leaves the device. Found exactly that way testing a
+       release build against a local API over `adb reverse`.
+
+       Gated on the URL actually being `http://`, not unconditionally
+       `true` — the one deployment shape that needs this is local/LAN
+       testing (`MOBILE_API_BASE_URL=http://localhost:3000` or a LAN IP);
+       `eas.json`'s `production` profile has no default and every real
+       value for it is an `https://` origin, which never sets this flag.
+       A blanket `usesCleartextTraffic: true` would permit plaintext to ANY
+       host from a shipped production build, not just this app's own API. */
+    [
+      'expo-build-properties',
+      {
+        android: {
+          usesCleartextTraffic: API_BASE_URL.startsWith('http://'),
+        },
+      },
+    ],
     /* iOS refuses Face ID outright with no NSFaceIDUsageDescription in
        Info.plist — not a soft failure, the ceremony never even starts
        (§4.4's biometric app-lock). Android has no equivalent string to set;
