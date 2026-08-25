@@ -231,3 +231,70 @@ describe('deliverPendingPushes — operational_events (migration 0085)', () => {
     expect(events.rows[0]?.['detail']).toMatchObject({ reason: 'no_device' });
   });
 });
+
+describe('deliverPendingPushes — the circuit breaker (migration 0086)', () => {
+  /* A transient failure leaves the delivery `pending` (this file's own
+     header) rather than resolving it, so the SAME REJECTED_DELIVERY row
+     — never re-seeded between calls — is exactly what gets retried on
+     each successive call, mirroring what a real relay tick does. */
+  const alwaysThrowsForRejected = fakeWebProvider({ [SENT_ENDPOINT]: 'sent' });
+
+  it('resets consecutive_failures to 0 the next time that subscription succeeds', async () => {
+    await deliverPendingPushes({ web: alwaysThrowsForRejected }, logger);
+    await deliverPendingPushes({ web: alwaysThrowsForRejected }, logger);
+
+    await admin.setOrg(null);
+    const midway = await admin.query(
+      `SELECT consecutive_failures FROM platform.push_subscriptions WHERE user_id = $1`,
+      [REJECTED_USER],
+    );
+    expect(midway.rows[0]?.['consecutive_failures']).toBe(2);
+
+    const nowSucceeds = fakeWebProvider({ [SENT_ENDPOINT]: 'sent', [REJECTED_ENDPOINT]: 'sent' });
+    await deliverPendingPushes({ web: nowSucceeds }, logger);
+
+    const after = await admin.query(
+      `SELECT consecutive_failures FROM platform.push_subscriptions WHERE user_id = $1`,
+      [REJECTED_USER],
+    );
+    expect(after.rows[0]?.['consecutive_failures']).toBe(0);
+  });
+
+  it('retires (deletes) a subscription once it crosses MAX_CONSECUTIVE_TRANSIENT_FAILURES, instead of retrying it forever', async () => {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await deliverPendingPushes({ web: alwaysThrowsForRejected }, logger);
+    }
+
+    await admin.setOrg(null);
+    const stillAlive = await admin.query(
+      `SELECT id FROM platform.push_subscriptions WHERE user_id = $1`,
+      [REJECTED_USER],
+    );
+    expect(stillAlive.rows).toHaveLength(1);
+
+    /* The 5th consecutive failure — this is the one that crosses the
+       threshold and must retire the subscription. The delivery itself is
+       still `pending` right after this call (this attempt's own outcome
+       was transient, same as any other), so retirement is asserted
+       first, on its own. */
+    await deliverPendingPushes({ web: alwaysThrowsForRejected }, logger);
+
+    const retired = await admin.query(
+      `SELECT id FROM platform.push_subscriptions WHERE user_id = $1`,
+      [REJECTED_USER],
+    );
+    expect(retired.rows).toHaveLength(0);
+
+    /* One call later, with the subscription already gone, the STILL-pending
+       delivery finally resolves via the ordinary `no_device` path instead
+       of being retried forever with nothing left to retry it against. */
+    await deliverPendingPushes({ web: alwaysThrowsForRejected }, logger);
+
+    await admin.setOrg(ORG);
+    const delivery = await admin.query(
+      `SELECT status FROM platform.notification_deliveries WHERE id = $1`,
+      [REJECTED_DELIVERY],
+    );
+    expect(delivery.rows[0]?.['status']).toBe('failed');
+  });
+});

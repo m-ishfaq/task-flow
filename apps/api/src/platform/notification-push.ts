@@ -1,4 +1,12 @@
-import { and, eq, inArray, recordOperationalEvent, schema, withAuditScope } from '@taskflow/db';
+import {
+  and,
+  eq,
+  inArray,
+  increment,
+  recordOperationalEvent,
+  schema,
+  withAuditScope,
+} from '@taskflow/db';
 import type { Logger } from '@taskflow/observability';
 import { notificationPath } from './notification-paths.js';
 import type { ExpoPushProvider, PushProvider, PushSendOutcome } from './push-provider.js';
@@ -60,6 +68,15 @@ import type { ExpoPushProvider, PushProvider, PushSendOutcome } from './push-pro
 
 const BATCH = 100;
 
+/**
+ * Consecutive transient failures before a subscription/token is retired
+ * like a 'gone' response — migration 0086's own header. Five ticks (~25s
+ * at the relay's 5-second interval) rides out a real blip without letting
+ * a permanently dead endpoint retry, and starve other pending deliveries
+ * for the same person, forever.
+ */
+const MAX_CONSECUTIVE_TRANSIENT_FAILURES = 5;
+
 export interface PendingPushRow {
   readonly deliveryId: string;
   readonly userId: string;
@@ -112,6 +129,14 @@ async function readPendingPushRows(): Promise<PendingPushRow[]> {
           eq(schema.notificationDeliveries.status, 'pending'),
         ),
       )
+      /* Oldest first. With none, a batch that fills entirely with rows
+         that never leave `pending` (this file's own header on why a
+         transient failure can do exactly that) has no reason to ever
+         advance past them — the same up-to-BATCH rows keep winning. FIFO
+         does not by itself fix an immortal row (the circuit breaker does),
+         but it is the correct default for a queue regardless, and it means
+         a genuinely temporary backlog drains in the order it arrived. */
+      .orderBy(schema.notificationDeliveries.createdAt)
       .limit(BATCH);
 
     return rows.map((row) => ({
@@ -242,6 +267,11 @@ export async function deliverPendingPushes(
   const failedIds: string[] = [];
   const deadSubscriptionIds: string[] = [];
   const deadExpoTokenIds: string[] = [];
+  /* Per-DEVICE, unlike the sent*UserIds above — incrementing must be
+     precise: a healthy device's count must never move because a
+     DIFFERENT device of the same user threw. See incrementTransientFailures. */
+  const transientWebSubscriptionIds: string[] = [];
+  const transientExpoTokenIds: string[] = [];
 
   for (const row of pending) {
     if (row.path === null) {
@@ -300,6 +330,7 @@ export async function deliverPendingPushes(
             channel: 'web',
             error,
           });
+          transientWebSubscriptionIds.push(subscription.id);
           rowHadTransientError = true;
           break;
         }
@@ -364,6 +395,7 @@ export async function deliverPendingPushes(
             channel: 'expo',
             error,
           });
+          transientExpoTokenIds.push(device.id);
           rowHadTransientError = true;
           break;
         }
@@ -421,6 +453,19 @@ export async function deliverPendingPushes(
     else if (!rowHadTransientError) failedIds.push(row.deliveryId);
   }
 
+  /* Retiring an exhausted subscription/token reuses the SAME deletion
+     arrays 'gone' already feeds — a circuit-open subscription is deleted
+     for the identical reason a confirmed-dead one is, so it goes through
+     the identical code path rather than a second one. Must run BEFORE
+     markOutcomes: the ids it returns need to already be in
+     deadSubscriptionIds/deadExpoTokenIds for that call to delete them. */
+  const exhausted = await incrementTransientFailures(
+    transientWebSubscriptionIds,
+    transientExpoTokenIds,
+  );
+  deadSubscriptionIds.push(...exhausted.exhaustedSubscriptionIds);
+  deadExpoTokenIds.push(...exhausted.exhaustedExpoTokenIds);
+
   await markOutcomes({
     sentIds,
     sentWebUserIds,
@@ -430,6 +475,61 @@ export async function deliverPendingPushes(
     deadExpoTokenIds,
   });
   return result;
+}
+
+/**
+ * Increments `consecutive_failures` for every subscription/token that hit
+ * a transient error THIS tick, and returns the ids that just crossed
+ * `MAX_CONSECUTIVE_TRANSIENT_FAILURES` — this file's own header on why
+ * that threshold exists at all.
+ */
+async function incrementTransientFailures(
+  webSubscriptionIds: readonly string[],
+  expoTokenIds: readonly string[],
+): Promise<{
+  readonly exhaustedSubscriptionIds: readonly string[];
+  readonly exhaustedExpoTokenIds: readonly string[];
+}> {
+  const exhaustedSubscriptionIds: string[] = [];
+  const exhaustedExpoTokenIds: string[] = [];
+
+  if (webSubscriptionIds.length > 0) {
+    const rows = await withAuditScope(async (tx) =>
+      tx
+        .update(schema.pushSubscriptions)
+        .set({ consecutiveFailures: increment(schema.pushSubscriptions.consecutiveFailures) })
+        .where(inArray(schema.pushSubscriptions.id, [...webSubscriptionIds]))
+        .returning({
+          id: schema.pushSubscriptions.id,
+          consecutiveFailures: schema.pushSubscriptions.consecutiveFailures,
+        }),
+    );
+    for (const row of rows) {
+      if (row.consecutiveFailures >= MAX_CONSECUTIVE_TRANSIENT_FAILURES) {
+        exhaustedSubscriptionIds.push(row.id);
+      }
+    }
+  }
+
+  if (expoTokenIds.length > 0) {
+    const rows = await withAuditScope(async (tx) =>
+      tx
+        .update(schema.expoPushTokens)
+        .set({ consecutiveFailures: increment(schema.expoPushTokens.consecutiveFailures) })
+        .where(inArray(schema.expoPushTokens.id, [...expoTokenIds]))
+        .returning({
+          id: schema.expoPushTokens.id,
+          consecutiveFailures: schema.expoPushTokens.consecutiveFailures,
+        }),
+    );
+    for (const row of rows) {
+      if (row.consecutiveFailures >= MAX_CONSECUTIVE_TRANSIENT_FAILURES) {
+        exhaustedExpoTokenIds.push(row.id);
+      }
+    }
+  }
+
+  return { exhaustedSubscriptionIds, exhaustedExpoTokenIds };
 }
 
 /** Marks outcomes in follow-up transactions — never inside a network call. */
@@ -470,12 +570,16 @@ async function markOutcomes(input: {
      question, answered by the relay that is already here. Keyed on the USER
      whose deliveries succeeded on THAT channel, not the delivery ids: the
      column is on the subscription/token rows, and every device of a user
-     who got one message on that channel is alive by definition. */
+     who got one message on that channel is alive by definition.
+     consecutive_failures resets the same way, for the same reason — the
+     circuit breaker's whole point is "stop retrying something that keeps
+     failing," and a channel that just worked is not that, even for a
+     sibling device of the same user this tick never touched. */
   if (input.sentWebUserIds.length > 0) {
     await withAuditScope(async (tx) => {
       await tx
         .update(schema.pushSubscriptions)
-        .set({ lastSeenAt: new Date() })
+        .set({ lastSeenAt: new Date(), consecutiveFailures: 0 })
         .where(inArray(schema.pushSubscriptions.userId, [...new Set(input.sentWebUserIds)]));
     });
   }
@@ -483,7 +587,7 @@ async function markOutcomes(input: {
     await withAuditScope(async (tx) => {
       await tx
         .update(schema.expoPushTokens)
-        .set({ lastSeenAt: new Date() })
+        .set({ lastSeenAt: new Date(), consecutiveFailures: 0 })
         .where(inArray(schema.expoPushTokens.userId, [...new Set(input.sentExpoUserIds)]));
     });
   }
