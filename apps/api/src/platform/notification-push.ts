@@ -146,6 +146,15 @@ function recordPushOutcome(input: {
   readonly outcome: 'success' | 'failure';
   readonly reason: string;
   readonly channel?: 'web' | 'expo';
+  /**
+   * A THROWN transport error's own message — the same text `logger.warn`
+   * already puts in the server log for a 'transient' outcome, now on the
+   * dashboard row too. Capped: a stack trace or a provider's raw HTTP body
+   * is not what an operator scanning a list of rows needs, and 0061's own
+   * redaction discipline is about identifiers and content, not length, but
+   * an unbounded string in a list view is its own kind of unreadable.
+   */
+  readonly error?: unknown;
 }): void {
   void recordOperationalEvent({
     kind: 'push',
@@ -154,8 +163,18 @@ function recordPushOutcome(input: {
     detail: {
       reason: input.reason,
       ...(input.channel === undefined ? {} : { channel: input.channel }),
+      ...(input.error === undefined ? {} : { error: errorMessageOf(input.error) }),
     },
   });
+}
+
+const MAX_ERROR_MESSAGE_LENGTH = 300;
+
+function errorMessageOf(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.length > MAX_ERROR_MESSAGE_LENGTH
+    ? `${message.slice(0, MAX_ERROR_MESSAGE_LENGTH)}…`
+    : message;
 }
 
 /** Sends one batch of pending pushes, to every configured channel a person has a device on. Returns how many went where, for logging. */
@@ -279,6 +298,7 @@ export async function deliverPendingPushes(
             outcome: 'failure',
             reason: 'transient',
             channel: 'web',
+            error,
           });
           rowHadTransientError = true;
           break;
@@ -342,6 +362,7 @@ export async function deliverPendingPushes(
             outcome: 'failure',
             reason: 'transient',
             channel: 'expo',
+            error,
           });
           rowHadTransientError = true;
           break;

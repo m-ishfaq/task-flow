@@ -183,6 +183,36 @@ describe('deliverPendingPushes — operational_events (migration 0085)', () => {
     expect(delivery.rows[0]?.['status']).toBe('failed');
   });
 
+  it("records the thrown error's own message for a transient (network) failure", async () => {
+    /* fakeWebProvider throws for any endpoint it has no configured outcome
+       for — reused here as the transient case, rather than a third helper. */
+    const web = fakeWebProvider({ [SENT_ENDPOINT]: 'sent' });
+
+    await deliverPendingPushes({ web }, logger);
+
+    await admin.setOrg(null);
+    const events = await admin.query(
+      `SELECT outcome, detail FROM platform.operational_events WHERE kind = 'push' AND target = $1`,
+      [REJECTED_DELIVERY],
+    );
+    expect(events.rows).toHaveLength(1);
+    expect(events.rows[0]?.['outcome']).toBe('failure');
+    expect(events.rows[0]?.['detail']).toMatchObject({
+      reason: 'transient',
+      channel: 'web',
+      error: `no fake outcome for ${REJECTED_ENDPOINT}`,
+    });
+
+    /* Transient means "try again next tick" — unlike a rejection, the
+       delivery must stay pending, not be marked failed. */
+    await admin.setOrg(ORG);
+    const delivery = await admin.query(
+      `SELECT status FROM platform.notification_deliveries WHERE id = $1`,
+      [REJECTED_DELIVERY],
+    );
+    expect(delivery.rows[0]?.['status']).toBe('pending');
+  });
+
   it('records a failure row for a delivery with no registered device at all', async () => {
     await admin.setOrg(null);
     await admin.query(`DELETE FROM platform.push_subscriptions WHERE user_id = $1`, [
