@@ -278,6 +278,7 @@ const OrgDetailRow = z
             role: z.string(),
             status: z.string(),
             joinedAt: z.date(),
+            hasPushDevice: z.boolean(),
           })
           .strict(),
       )
@@ -355,19 +356,23 @@ const ConfirmedAsset = z
 
 /**
  * `broadcast-audience.service.ts`'s `AudienceSpec`, restated as a wire
- * schema. `membershipRole`/`userId` are both optional here — the SERVICE
+ * schema. `membershipRole`/`userIds` are both optional here — the SERVICE
  * enforces "present iff target requires it" (the same job the migration's
  * `operator_broadcasts_audience_consistent` CHECK does at the database
  * layer), so this boundary only needs to validate SHAPE, not the
  * cross-field rule, matching how every other route in this file leaves
  * business validation to its service rather than duplicating it in Zod.
+ * `userIds` is still capped here at `MAX_AUDIENCE_USER_IDS` — an array size
+ * is a shape concern the Zod boundary is exactly the place for, the same
+ * way `subject`/`body` are length-capped here rather than left to the
+ * service alone.
  */
 const AudienceSpecInput = z
   .object({
     orgId: OrgIdSchema,
-    target: z.enum(['all', 'role', 'user']),
+    target: z.enum(['all', 'role', 'users']),
     membershipRole: z.enum(['owner', 'admin', 'member', 'guest']).optional(),
-    userId: UserIdSchema.optional(),
+    userIds: z.array(UserIdSchema).min(1).max(audience.MAX_AUDIENCE_USER_IDS).optional(),
   })
   .strict();
 
@@ -390,7 +395,7 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
     orgId: input.orgId,
     target: input.target,
     ...(input.membershipRole !== undefined ? { membershipRole: input.membershipRole } : {}),
-    ...(input.userId !== undefined ? { userId: input.userId } : {}),
+    ...(input.userIds !== undefined ? { userIds: input.userIds } : {}),
   });
 
   /* The catalog service takes the processor alongside the bus, because a plan
@@ -560,7 +565,7 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
                 .object({
                   id: z.string(),
                   subject: z.string(),
-                  audienceTarget: z.enum(['all', 'role', 'user']),
+                  audienceTarget: z.enum(['all', 'role', 'users']),
                   recipientCount: z.number().int().nonnegative(),
                   createdAt: z.date(),
                 })

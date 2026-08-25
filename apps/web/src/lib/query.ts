@@ -379,14 +379,27 @@ export const keys = {
     ['platform', 'operations', kind ?? 'all', cursor ?? 'first'] as const,
   /** The org lookup a broadcast's composer resolves before showing the form. */
   platformOrgLookup: (orgId: string) => ['platform', 'org-lookup', orgId] as const,
-  /** The dry-run recipient count for the CURRENT audience selection. */
+  /**
+   * The dry-run recipient count for the CURRENT audience selection.
+   * `userIds` is a SORTED, joined string — a query key must be a plain
+   * value React Query can compare/serialize, and sorting first means
+   * picking the same two people in a different order still hits the same
+   * cache entry instead of firing a redundant preview.
+   */
   platformBroadcastPreview: (
     orgId: string,
     target: string,
     membershipRole: string | null,
-    userId: string | null,
+    userIds: readonly string[],
   ) =>
-    ['platform', 'broadcast-preview', orgId, target, membershipRole ?? '', userId ?? ''] as const,
+    [
+      'platform',
+      'broadcast-preview',
+      orgId,
+      target,
+      membershipRole ?? '',
+      [...userIds].sort().join(','),
+    ] as const,
   /** One org's own broadcast history. */
   platformBroadcastHistory: (orgId: string) => ['platform', 'broadcast-history', orgId] as const,
   /**

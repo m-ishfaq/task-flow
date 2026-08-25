@@ -437,12 +437,12 @@ export const operatorBroadcasts = platform.table('operator_broadcasts', {
     .notNull()
     .references(() => orgs.id, { onDelete: 'cascade' }),
 
-  /** 'all' | 'role' | 'user' — a CHECK, not an enum. */
+  /** 'all' | 'role' | 'users' — a CHECK, not an enum. */
   audienceTarget: text('audience_target').notNull(),
   /** 'owner' | 'admin' | 'member' | 'guest'. Set iff audienceTarget === 'role'. */
   audienceRole: text('audience_role'),
-  /** Set iff audienceTarget === 'user'. */
-  audienceUserId: uuid('audience_user_id').references(() => users.id, { onDelete: 'set null' }),
+  /** Set iff audienceTarget === 'users' — a hand-picked, non-empty subset (migration 0084). */
+  audienceUserIds: uuid('audience_user_ids').array(),
 
   subject: text('subject').notNull(),
   body: text('body').notNull(),

@@ -674,7 +674,7 @@ function StepUpGate({ onStepUp }: { readonly onStepUp: () => void }) {
  * header on why the blast radius stays capped at one tenant per send.
  * -------------------------------------------------------------------------- */
 
-type AudienceTarget = 'all' | 'role' | 'user';
+type AudienceTarget = 'all' | 'role' | 'users';
 type MembershipRole = 'owner' | 'admin' | 'member' | 'guest';
 
 function BroadcastTab({
@@ -692,7 +692,7 @@ function BroadcastTab({
   } | null>(null);
   const [target, setTarget] = useState<AudienceTarget>('all');
   const [membershipRole, setMembershipRole] = useState<MembershipRole>('member');
-  const [selectedUserId, setSelectedUserId] = useState('');
+  const [selectedUserIds, setSelectedUserIds] = useState<readonly string[]>([]);
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [sendPush, setSendPush] = useState(true);
@@ -738,20 +738,20 @@ function BroadcastTab({
     retry: false,
   });
 
-  /* Only an ACTIVE member can be a 'user' target — `resolveAudience` on the
-     server refuses a suspended one, so filtering here is a UX courtesy, not
-     the real gate; the server still re-checks. */
+  /* Only an ACTIVE member can be a 'users' target — `resolveAudience` on the
+     server refuses one that resolves to nobody, so filtering here is a UX
+     courtesy, not the real gate; the server still re-checks. */
   const activeMembers = (org.data?.members ?? []).filter((member) => member.status === 'active');
 
   const membershipRoleForPreview = target === 'role' ? membershipRole : null;
-  const userIdForPreview = target === 'user' ? selectedUserId : null;
+  const userIdsForPreview = target === 'users' ? selectedUserIds : [];
 
   const preview = useQuery({
     queryKey: keys.platformBroadcastPreview(
       orgId ?? '',
       target,
       membershipRoleForPreview,
-      userIdForPreview,
+      userIdsForPreview,
     ),
     queryFn: async () => {
       if (orgId === null) throw new Error('No org selected.');
@@ -760,12 +760,16 @@ function BroadcastTab({
           orgId,
           target,
           ...(target === 'role' ? { membershipRole } : {}),
-          ...(target === 'user' && selectedUserId !== '' ? { userId: selectedUserId } : {}),
+          ...(target === 'users' && selectedUserIds.length > 0
+            ? { userIds: [...selectedUserIds] }
+            : {}),
         }),
       );
     },
     enabled:
-      orgId !== null && org.data !== undefined && (target !== 'user' || selectedUserId !== ''),
+      orgId !== null &&
+      org.data !== undefined &&
+      (target !== 'users' || selectedUserIds.length > 0),
     retry: false,
   });
 
@@ -786,7 +790,7 @@ function BroadcastTab({
           orgId,
           target,
           ...(target === 'role' ? { membershipRole } : {}),
-          ...(target === 'user' ? { userId: selectedUserId } : {}),
+          ...(target === 'users' ? { userIds: [...selectedUserIds] } : {}),
         },
         subject: subject.trim(),
         body: body.trim(),
@@ -821,7 +825,7 @@ function BroadcastTab({
     return <StepUpGate onStepUp={onStepUp} />;
   }
 
-  const canPreview = orgId !== null && (target !== 'user' || selectedUserId !== '');
+  const canPreview = orgId !== null && (target !== 'users' || selectedUserIds.length > 0);
   const canSend =
     canPreview &&
     preview.data !== undefined &&
@@ -878,7 +882,7 @@ function BroadcastTab({
                         });
                         setOrgQuery('');
                         setTarget('all');
-                        setSelectedUserId('');
+                        setSelectedUserIds([]);
                         setSent(null);
                       }}
                     >
@@ -905,7 +909,7 @@ function BroadcastTab({
               onClick={() => {
                 setSelectedOrg(null);
                 setTarget('all');
-                setSelectedUserId('');
+                setSelectedUserIds([]);
                 setSent(null);
               }}
             >
@@ -931,7 +935,7 @@ function BroadcastTab({
                 [
                   ['all', 'Every active member'],
                   ['role', 'Members with a role'],
-                  ['user', 'One specific member'],
+                  ['users', 'Specific members'],
                 ] as const
               ).map(([value, label]) => (
                 <label key={value} className="flex items-center gap-1.5 text-sm text-ink">
@@ -967,30 +971,53 @@ function BroadcastTab({
             </Field>
           )}
 
-          {target === 'user' && (
-            <Field
-              label="Member"
-              htmlFor="broadcast-user"
-              hint={
-                activeMembers.length === 0 ? 'This org has no active members to target.' : undefined
-              }
-            >
-              <select
-                id="broadcast-user"
-                value={selectedUserId}
-                onChange={(event) => {
-                  setSelectedUserId(event.target.value);
-                }}
-                className="w-full rounded-lg border border-line/50 bg-surface-sunken px-3 py-2 text-sm text-ink"
-              >
-                <option value="">Select a member…</option>
-                {activeMembers.map((member) => (
-                  <option key={member.userId} value={member.userId}>
-                    {member.name !== null ? `${member.name} — ${member.email}` : member.email}
-                  </option>
-                ))}
-              </select>
-            </Field>
+          {target === 'users' && (
+            <fieldset>
+              <legend className="mb-1.5 text-xs font-medium text-ink-muted">Members</legend>
+              {activeMembers.length === 0 ? (
+                <p className="text-xs text-ink-faint">This org has no active members to target.</p>
+              ) : (
+                <>
+                  <div className="max-h-56 divide-y divide-line overflow-y-auto rounded-lg border border-line/50">
+                    {activeMembers.map((member) => (
+                      <label
+                        key={member.userId}
+                        className={cn(
+                          'flex cursor-pointer items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-surface-hover/30',
+                          member.hasPushDevice ? 'text-ink' : 'text-ink-faint',
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedUserIds.includes(member.userId)}
+                          onChange={() => {
+                            setSelectedUserIds((prev) =>
+                              prev.includes(member.userId)
+                                ? prev.filter((id) => id !== member.userId)
+                                : [...prev, member.userId],
+                            );
+                          }}
+                        />
+                        <span className="min-w-0 flex-1 truncate">
+                          {member.name !== null ? `${member.name} — ${member.email}` : member.email}
+                        </span>
+                        {!member.hasPushDevice && (
+                          <Badge
+                            className="shrink-0"
+                            title="No push device is registered for this person — a push notification will not reach them, though in-app and email still will."
+                          >
+                            No push device
+                          </Badge>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="mt-1.5 text-xs text-ink-faint">
+                    {selectedUserIds.length} of {activeMembers.length} selected.
+                  </p>
+                </>
+              )}
+            </fieldset>
           )}
 
           <Field label="Subject" htmlFor="broadcast-subject">

@@ -133,21 +133,43 @@ describe('resolveAudience', () => {
     expect(members.map((m) => m.userId)).toEqual([OWNER]);
   });
 
-  it('returns exactly one row for target "user" naming an active member', async () => {
-    const members = await resolveAudience({ orgId: ORG, target: 'user', userId: MEMBER });
+  it('returns exactly one row for target "users" naming a single active member', async () => {
+    const members = await resolveAudience({ orgId: ORG, target: 'users', userIds: [MEMBER] });
     expect(members.map((m) => m.userId)).toEqual([MEMBER]);
   });
 
-  it('refuses target "user" naming someone who is not an active member of this org', async () => {
+  it('returns every named row for target "users" naming several active members', async () => {
+    const members = await resolveAudience({
+      orgId: ORG,
+      target: 'users',
+      userIds: [OWNER, MEMBER],
+    });
+    expect(members.map((m) => m.userId).sort()).toEqual([OWNER, MEMBER].sort());
+  });
+
+  it('resolves only the ACTIVE subset of a "users" request — a partial match is not an error', async () => {
+    const members = await resolveAudience({
+      orgId: ORG,
+      target: 'users',
+      userIds: [MEMBER, OUTSIDER],
+    });
+    expect(members.map((m) => m.userId)).toEqual([MEMBER]);
+  });
+
+  it('refuses target "users" naming nobody who is an active member of this org', async () => {
     await expect(
-      resolveAudience({ orgId: ORG, target: 'user', userId: OUTSIDER }),
+      resolveAudience({ orgId: ORG, target: 'users', userIds: [OUTSIDER] }),
     ).rejects.toThrow();
   });
 
-  it('refuses target "user" naming the SUSPENDED member — suspended is not active', async () => {
+  it('refuses target "users" naming only the SUSPENDED member — suspended is not active', async () => {
     await expect(
-      resolveAudience({ orgId: ORG, target: 'user', userId: SUSPENDED_MEMBER }),
+      resolveAudience({ orgId: ORG, target: 'users', userIds: [SUSPENDED_MEMBER] }),
     ).rejects.toThrow();
+  });
+
+  it('refuses target "users" with an empty list', async () => {
+    await expect(resolveAudience({ orgId: ORG, target: 'users', userIds: [] })).rejects.toThrow();
   });
 });
 

@@ -322,7 +322,7 @@ export const operatorBroadcastSent = defineEvent(
     .object({
       broadcastId: z.string(),
       orgId: z.string(),
-      audienceTarget: z.enum(['all', 'role', 'user']),
+      audienceTarget: z.enum(['all', 'role', 'users']),
       recipientCount: z.number().int().nonnegative(),
       operatorUserId: z.string(),
     })

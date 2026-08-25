@@ -92,7 +92,7 @@ export async function sendBroadcast(
       orgId: input.audience.orgId,
       audienceTarget: input.audience.target,
       audienceRole: input.audience.membershipRole ?? null,
-      audienceUserId: input.audience.userId ?? null,
+      audienceUserIds: input.audience.userIds !== undefined ? [...input.audience.userIds] : null,
       subject,
       body,
       sendPush: input.sendPush,
@@ -191,7 +191,7 @@ export async function sendBroadcast(
 export interface BroadcastHistoryRow {
   readonly id: string;
   readonly subject: string;
-  readonly audienceTarget: 'all' | 'role' | 'user';
+  readonly audienceTarget: 'all' | 'role' | 'users';
   readonly recipientCount: number;
   readonly createdAt: Date;
 }
@@ -233,6 +233,6 @@ export async function getBroadcastHistory(
      call site. */
   return rows.map((row) => ({
     ...row,
-    audienceTarget: row.audienceTarget as 'all' | 'role' | 'user',
+    audienceTarget: row.audienceTarget as 'all' | 'role' | 'users',
   }));
 }

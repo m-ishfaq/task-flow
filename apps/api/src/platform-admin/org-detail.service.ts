@@ -4,8 +4,10 @@ import {
   desc,
   eq,
   gte,
+  inArray,
   schema,
   sumWithFallback,
+  withAuditScope,
   withOrgScope,
   withPlatformAdminScope,
 } from '@taskflow/db';
@@ -48,6 +50,15 @@ export interface OrgMemberRow {
   readonly role: string;
   readonly status: string;
   readonly joinedAt: Date;
+  /**
+   * At least one row in `platform.push_subscriptions` (web) or
+   * `platform.expo_push_tokens` (native) — the same two tables
+   * `notification-push.ts`'s drain reads before it sends. NOT "push is
+   * turned on for them": there is no per-user opt-out here to read, only
+   * whether a device has ever registered. This is the console's answer to
+   * "would a push broadcast actually reach this person", nothing more.
+   */
+  readonly hasPushDevice: boolean;
 }
 
 export interface OrgFeatureRow {
@@ -214,11 +225,12 @@ export async function getOrgDetail(operator: PlatformOperator, orgId: OrgId): Pr
   });
 
   /* Tenant-owned reads, on the ordinary path. See the file header. */
-  const [entitlements, flags, override, spend] = await Promise.all([
+  const [entitlements, flags, override, spend, pushDeviceUserIds] = await Promise.all([
     getEntitlements(orgId),
     getFeatureFlags(),
     readOverride(orgId),
     readTelephonySpend(orgId),
+    readPushDeviceUserIds(base.members.map((member) => member.userId)),
   ]);
 
   const features: OrgFeatureRow[] = FLAG_NAMES.filter((name) => FLAGS[name].perOrg).map((name) => ({
@@ -242,9 +254,42 @@ export async function getOrgDetail(operator: PlatformOperator, orgId: OrgId): Pr
     },
     telephonySpendCents: spend,
     invoices: base.invoices,
-    members: base.members,
+    members: base.members.map((member) => ({
+      ...member,
+      hasPushDevice: pushDeviceUserIds.has(member.userId),
+    })),
     memberCount: base.members.filter((member) => member.status === 'active').length,
   };
+}
+
+/**
+ * Who, among these user ids, has at least one registered push device —
+ * web or native. Read as `taskflow_audit`, not `taskflow_platform_admin`:
+ * `platform.push_subscriptions`/`platform.expo_push_tokens` already grant
+ * that role SELECT for the notification drain (migrations 0029, 0082), and
+ * reusing it here is a narrower change than giving the operator role its
+ * own grant on two tables that otherwise hold device secrets
+ * (`p256dh`/`auth`, the raw Expo token) it has no other reason to reach —
+ * only `user_id` is selected, so this reuses the READ permission without
+ * touching anything the operator role could not already see reflected in
+ * "does a push arrive" if it tried one.
+ */
+async function readPushDeviceUserIds(userIds: readonly string[]): Promise<ReadonlySet<string>> {
+  if (userIds.length === 0) return new Set();
+
+  return withAuditScope(async (tx) => {
+    const [webRows, expoRows] = await Promise.all([
+      tx
+        .select({ userId: schema.pushSubscriptions.userId })
+        .from(schema.pushSubscriptions)
+        .where(inArray(schema.pushSubscriptions.userId, [...userIds])),
+      tx
+        .select({ userId: schema.expoPushTokens.userId })
+        .from(schema.expoPushTokens)
+        .where(inArray(schema.expoPushTokens.userId, [...userIds])),
+    ]);
+    return new Set([...webRows, ...expoRows].map((row) => row.userId));
+  });
 }
 
 /**

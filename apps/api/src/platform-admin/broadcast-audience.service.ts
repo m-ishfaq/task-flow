@@ -1,4 +1,4 @@
-import { and, coalesceColumns, eq, schema, withPlatformAdminScope } from '@taskflow/db';
+import { and, coalesceColumns, eq, inArray, schema, withPlatformAdminScope } from '@taskflow/db';
 import { errors, type OrgId, type UserId } from '@taskflow/contracts';
 
 /**
@@ -24,8 +24,13 @@ import { errors, type OrgId, type UserId } from '@taskflow/contracts';
  * member of the org; an operator is never that.
  */
 
-export type AudienceTarget = 'all' | 'role' | 'user';
+export type AudienceTarget = 'all' | 'role' | 'users';
 export type MembershipRole = 'owner' | 'admin' | 'member' | 'guest';
+
+/** A single send reaches at most this many hand-picked members — 'role' or
+ *  'all' is the right tool for anything larger; 'users' is for a short,
+ *  deliberately chosen list, not a bulk-select substitute for a role. */
+export const MAX_AUDIENCE_USER_IDS = 50;
 
 export interface AudienceSpec {
   readonly orgId: OrgId;
@@ -40,8 +45,8 @@ export interface AudienceSpec {
    * suppress it.
    */
   readonly membershipRole?: MembershipRole;
-  /** Required iff target === 'user'. */
-  readonly userId?: UserId;
+  /** Required iff target === 'users' — 1 to `MAX_AUDIENCE_USER_IDS` ids. */
+  readonly userIds?: readonly UserId[];
 }
 
 export interface AudienceMember {
@@ -64,8 +69,17 @@ export async function resolveAudience(spec: AudienceSpec): Promise<readonly Audi
   if (spec.target === 'role' && spec.membershipRole === undefined) {
     throw errors.validation({ target: spec.target }, 'An audience of "role" requires a role.');
   }
-  if (spec.target === 'user' && spec.userId === undefined) {
-    throw errors.validation({ target: spec.target }, 'An audience of "user" requires a userId.');
+  if (spec.target === 'users' && (spec.userIds === undefined || spec.userIds.length === 0)) {
+    throw errors.validation(
+      { target: spec.target },
+      'An audience of "users" requires at least one userId.',
+    );
+  }
+  if (spec.target === 'users' && (spec.userIds?.length ?? 0) > MAX_AUDIENCE_USER_IDS) {
+    throw errors.validation(
+      { target: spec.target },
+      `An audience of "users" cannot name more than ${String(MAX_AUDIENCE_USER_IDS)} people — use "role" or "all" for a larger send.`,
+    );
   }
 
   return withPlatformAdminScope(async (tx) => {
@@ -76,8 +90,8 @@ export async function resolveAudience(spec: AudienceSpec): Promise<readonly Audi
     if (spec.target === 'role' && spec.membershipRole !== undefined) {
       conditions.push(eq(schema.memberships.role, spec.membershipRole));
     }
-    if (spec.target === 'user' && spec.userId !== undefined) {
-      conditions.push(eq(schema.memberships.userId, spec.userId));
+    if (spec.target === 'users' && spec.userIds !== undefined) {
+      conditions.push(inArray(schema.memberships.userId, [...spec.userIds]));
     }
 
     const rows = await tx
@@ -96,13 +110,16 @@ export async function resolveAudience(spec: AudienceSpec): Promise<readonly Audi
       .where(and(...conditions))
       .orderBy(schema.memberships.role, schema.users.email);
 
-    /* A 'user' target naming someone who is not an active member of THIS org
-       is a caller error, not "zero recipients" — the operator console offers
-       a member picker scoped to the chosen org, so reaching this with zero
-       rows means the two selections (org, user) disagree, which is worth
-       surfacing rather than silently sending to nobody. */
-    if (spec.target === 'user' && rows.length === 0) {
-      throw errors.notFound('That user is not an active member of this org.');
+    /* A 'users' target naming nobody who is an active member of THIS org is
+       a caller error, not "zero recipients" — the operator console offers a
+       member picker scoped to the chosen org, so reaching this with zero
+       rows means the selections (org, member ids) disagree, which is worth
+       surfacing rather than silently sending to nobody. A PARTIAL match
+       (someone in the request is no longer active) is not an error — the
+       resolved set is exactly who gets notified, and the preview count
+       already reflects that before the operator confirms. */
+    if (spec.target === 'users' && rows.length === 0) {
+      throw errors.notFound('None of the selected users are active members of this org.');
     }
 
     return rows;
