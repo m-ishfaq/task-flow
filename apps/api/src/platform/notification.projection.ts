@@ -139,28 +139,52 @@ interface PlannedNotification {
  * Pure, and separated from the write so it can be tested without a database —
  * "who gets told about this" is the whole logic, and it is worth being able
  * to assert directly.
+ *
+ * `actorLabel` is the resolved DISPLAY NAME of `row.actorId` (migration
+ * 0087) — pass `null` when it could not be resolved (a deleted account, or a
+ * profile lookup that legitimately found nothing) rather than omit it; every
+ * title below falls back to the same anonymous phrasing this file always
+ * used. Kept optional, defaulting to `null`, so callers that only care about
+ * "who gets told" do not need a name to test that — the purity claim above
+ * still holds; the name is resolved by the CALLER, never looked up in here.
  */
-export function planNotifications(row: OutboxRow): readonly PlannedNotification[] {
+export function planNotifications(
+  row: OutboxRow,
+  actorLabel: string | null = null,
+): readonly PlannedNotification[] {
   switch (row.name) {
     case 'message.sent':
-      return planMessageSent(row);
+      return planMessageSent(row, actorLabel);
     case 'card.assigned':
-      return planCardAssigned(row);
+      return planCardAssigned(row, actorLabel);
     case 'comment.created':
-      return planCardCommentMention(row);
+      return planCardCommentMention(row, actorLabel);
     case 'page.comment_created':
-      return planPageCommentMention(row);
+      return planPageCommentMention(row, actorLabel);
     case 'rtc_session.ended':
-      return planMissedCall(row);
+      return planMissedCall(row, actorLabel);
     case 'member.added':
-      return planMemberAdded(row);
+      return planMemberAdded(row, actorLabel);
     case 'member.role_changed':
-      return planMemberRoleChanged(row);
+      return planMemberRoleChanged(row, actorLabel);
     case 'member.removed':
-      return planMemberRemoved(row);
+      return planMemberRemoved(row, actorLabel);
     default:
       return [];
   }
+}
+
+/**
+ * Weaves a resolved actor name into an otherwise anonymous title. `null`
+ * falls back to exactly the pre-0087 phrasing — the only way a title reads
+ * as "who could not be identified" rather than a broken interpolation.
+ */
+function withActor(
+  actorLabel: string | null,
+  personalized: (name: string) => string,
+  fallback: string,
+): string {
+  return actorLabel === null ? fallback : personalized(actorLabel);
 }
 
 /**
@@ -172,7 +196,10 @@ export function planNotifications(row: OutboxRow): readonly PlannedNotification[
  * themself (`addMember` already forbids adding yourself; RLS and the unique
  * membership index both make it structurally impossible regardless).
  */
-function planMemberAdded(row: OutboxRow): readonly PlannedNotification[] {
+function planMemberAdded(
+  row: OutboxRow,
+  actorLabel: string | null,
+): readonly PlannedNotification[] {
   const record = asRecord(row.payload);
   if (record === null) return [];
   const fields = record as {
@@ -194,7 +221,11 @@ function planMemberAdded(row: OutboxRow): readonly PlannedNotification[] {
       kind: 'member.added',
       subjectType: 'membership',
       subjectId: membershipId,
-      title: `You were added as ${roleLabel(roleName)}`,
+      title: withActor(
+        actorLabel,
+        (name) => `${name} added you as ${roleLabel(roleName)}`,
+        `You were added as ${roleLabel(roleName)}`,
+      ),
       excerpt: null,
       channelId: null,
       boardId: null,
@@ -209,7 +240,10 @@ function planMemberAdded(row: OutboxRow): readonly PlannedNotification[] {
  * promotion or demotion is theirs to know about, the same way `card.assigned`
  * tells the assignee and nobody else on the board.
  */
-function planMemberRoleChanged(row: OutboxRow): readonly PlannedNotification[] {
+function planMemberRoleChanged(
+  row: OutboxRow,
+  actorLabel: string | null,
+): readonly PlannedNotification[] {
   const record = asRecord(row.payload);
   if (record === null) return [];
   const fields = record as {
@@ -233,7 +267,11 @@ function planMemberRoleChanged(row: OutboxRow): readonly PlannedNotification[] {
       kind: 'member.role_changed',
       subjectType: 'membership',
       subjectId: membershipId,
-      title: `Your role changed to ${roleLabel(to)}`,
+      title: withActor(
+        actorLabel,
+        (name) => `${name} changed your role to ${roleLabel(to)}`,
+        `Your role changed to ${roleLabel(to)}`,
+      ),
       excerpt: null,
       channelId: null,
       boardId: null,
@@ -254,7 +292,10 @@ function planMemberRoleChanged(row: OutboxRow): readonly PlannedNotification[] {
  * actually matters, and `planChannelDeliveries` is what decides that, not
  * this function.
  */
-function planMemberRemoved(row: OutboxRow): readonly PlannedNotification[] {
+function planMemberRemoved(
+  row: OutboxRow,
+  actorLabel: string | null,
+): readonly PlannedNotification[] {
   const record = asRecord(row.payload);
   if (record === null) return [];
   const fields = record as { readonly membershipId?: unknown; readonly userId?: unknown };
@@ -270,7 +311,11 @@ function planMemberRemoved(row: OutboxRow): readonly PlannedNotification[] {
       kind: 'member.removed',
       subjectType: 'membership',
       subjectId: membershipId,
-      title: 'You were removed from this organization',
+      title: withActor(
+        actorLabel,
+        (name) => `${name} removed you from this organization`,
+        'You were removed from this organization',
+      ),
       excerpt: null,
       channelId: null,
       boardId: null,
@@ -310,7 +355,7 @@ function roleLabel(roleName: string): string {
  * participant has been settled into `missed` or `left`, and recomputing it
  * would tell everyone who was ON the call that they missed it.
  */
-function planMissedCall(row: OutboxRow): readonly PlannedNotification[] {
+function planMissedCall(row: OutboxRow, actorLabel: string | null): readonly PlannedNotification[] {
   const record = asRecord(row.payload);
   if (record === null) return [];
   const fields = record as {
@@ -335,12 +380,14 @@ function planMissedCall(row: OutboxRow): readonly PlannedNotification[] {
         kind: 'call.missed' as const,
         subjectType: 'call' as const,
         subjectId: sessionId,
-        title: 'Missed call',
-        /* No excerpt. There is nothing to quote from a call that never
-         connected, and an excerpt field is rendered in an email — inventing
-         "you missed a call from Alice" there would put a name into a message
-         whose recipient may not be entitled to know who else is in a private
-         conversation. The client resolves the caller from the channel. */
+        /* The caller's name is not new information to a `missedUserIds`
+         entry — they were invited into the SAME channel this call rang in,
+         so they already have the roster; 0087 corrected the earlier
+         reasoning here (a name in an email "may not be entitled" reader) to
+         the entitlement this recipient actually holds. */
+        title: withActor(actorLabel, (name) => `Missed call from ${name}`, 'Missed call'),
+        // No excerpt — there is nothing to quote from a call that never
+        // connected.
         excerpt: null,
         channelId,
         boardId: null,
@@ -348,7 +395,10 @@ function planMissedCall(row: OutboxRow): readonly PlannedNotification[] {
   );
 }
 
-function planMessageSent(row: OutboxRow): readonly PlannedNotification[] {
+function planMessageSent(
+  row: OutboxRow,
+  actorLabel: string | null,
+): readonly PlannedNotification[] {
   const record = asRecord(row.payload);
   if (record === null) return [];
   const fields = record as {
@@ -395,23 +445,45 @@ function planMessageSent(row: OutboxRow): readonly PlannedNotification[] {
     add(
       userId,
       'chat.mention',
-      channelName === null ? 'You were mentioned' : `Mentioned in #${channelName}`,
+      withActor(
+        actorLabel,
+        (name) =>
+          channelName === null
+            ? `${name} mentioned you`
+            : `${name} mentioned you in #${channelName}`,
+        channelName === null ? 'You were mentioned' : `Mentioned in #${channelName}`,
+      ),
     );
   }
 
   if (typeof fields.parentAuthorId === 'string') {
-    add(fields.parentAuthorId, 'chat.thread_reply', 'New reply to your message');
+    add(
+      fields.parentAuthorId,
+      'chat.thread_reply',
+      withActor(
+        actorLabel,
+        (name) => `${name} replied to your message`,
+        'New reply to your message',
+      ),
+    );
   }
 
   for (const userId of asIdList(fields.directRecipientIds)) {
-    add(userId, 'chat.direct', 'New direct message');
+    add(
+      userId,
+      'chat.direct',
+      withActor(actorLabel, (name) => `${name} sent you a message`, 'New direct message'),
+    );
   }
 
   return planned;
 }
 
 /** `card.assigned` carries `before`/`after` in full — "newly assigned" is `after` minus `before`. */
-function planCardAssigned(row: OutboxRow): readonly PlannedNotification[] {
+function planCardAssigned(
+  row: OutboxRow,
+  actorLabel: string | null,
+): readonly PlannedNotification[] {
   const record = asRecord(row.payload);
   if (record === null) return [];
   const fields = record as {
@@ -440,7 +512,11 @@ function planCardAssigned(row: OutboxRow): readonly PlannedNotification[] {
       kind: 'card.assigned',
       subjectType: 'card',
       subjectId: cardId,
-      title: 'You were assigned a card',
+      title: withActor(
+        actorLabel,
+        (name) => `${name} assigned you a card`,
+        'You were assigned a card',
+      ),
       excerpt: null,
       channelId: null,
       boardId,
@@ -532,7 +608,10 @@ export function dueDateChanged(
 }
 
 /** Work's `comment.created` — a card comment `@mention`. */
-function planCardCommentMention(row: OutboxRow): readonly PlannedNotification[] {
+function planCardCommentMention(
+  row: OutboxRow,
+  actorLabel: string | null,
+): readonly PlannedNotification[] {
   const record = asRecord(row.payload);
   if (record === null) return [];
   const fields = record as {
@@ -559,7 +638,11 @@ function planCardCommentMention(row: OutboxRow): readonly PlannedNotification[] 
       kind: 'card.comment_mention',
       subjectType: 'card',
       subjectId: cardId,
-      title: 'You were mentioned in a comment',
+      title: withActor(
+        actorLabel,
+        (name) => `${name} mentioned you in a comment`,
+        'You were mentioned in a comment',
+      ),
       excerpt,
       channelId: null,
       boardId,
@@ -569,7 +652,10 @@ function planCardCommentMention(row: OutboxRow): readonly PlannedNotification[] 
 }
 
 /** Docs' `page.comment_created` — a page comment `@mention`. */
-function planPageCommentMention(row: OutboxRow): readonly PlannedNotification[] {
+function planPageCommentMention(
+  row: OutboxRow,
+  actorLabel: string | null,
+): readonly PlannedNotification[] {
   const record = asRecord(row.payload);
   if (record === null) return [];
   const fields = record as {
@@ -594,7 +680,11 @@ function planPageCommentMention(row: OutboxRow): readonly PlannedNotification[] 
       kind: 'page.comment_mention',
       subjectType: 'page',
       subjectId: pageId,
-      title: 'You were mentioned in a comment',
+      title: withActor(
+        actorLabel,
+        (name) => `${name} mentioned you in a comment`,
+        'You were mentioned in a comment',
+      ),
       excerpt,
       channelId: null,
       boardId: null,
@@ -642,6 +732,14 @@ export async function drainNotifications(limit = 100): Promise<NotificationDrain
       pending.map((row) => row.orgId),
     );
 
+    /* One batched lookup for the whole tick, not one per row — see
+       `resolveActorLabels`'s own header on why `people.profiles` (never the
+       retired `identity.users.display_name`) is the source. */
+    const actorLabels = await resolveActorLabels(
+      tx,
+      pending.map((row) => row.actorId).filter((id): id is string => id !== null),
+    );
+
     let written = 0;
     /* Recipients whose preferences and idempotent delivery insert both said
        "email this person", keyed by userId — resolved to addresses and turned
@@ -666,7 +764,10 @@ export async function drainNotifications(limit = 100): Promise<NotificationDrain
          filters them out. */
       if (!activeOrgIds.has(row.orgId)) continue;
 
-      const plans = planNotifications(row);
+      const plans = planNotifications(
+        row,
+        row.actorId === null ? null : (actorLabels.get(row.actorId) ?? null),
+      );
 
       if (plans.length === 0) {
         /* Not every event produces a notification — but a `card.updated`
@@ -859,6 +960,57 @@ export async function drainNotifications(limit = 100): Promise<NotificationDrain
 
     return { processed: pending.length, written, pendingEmails, pendingPushes };
   });
+}
+
+/**
+ * Resolves a batch of user ids to a display label (migration 0087) — one
+ * pair of queries for the whole tick, never per row, the same shape
+ * `resolveEmailAddresses` below already uses for the identical reason.
+ * `displayName ?? email`, matching `apps/web/src/features/org/use-members.ts`'s
+ * `personOf` — the one other place this codebase turns a user id into
+ * something to show a person, so a push and the in-app bell agree on what
+ * "unnamed" falls back to.
+ *
+ * `people.profiles.display_name`, never `identity.users.display_name`:
+ * migration 0030 retired the latter — "on its way out and no longer
+ * written" per `tenancy/member.service.ts`'s own LEFT JOIN — so reading it
+ * here would resolve correctly for an old account and silently blank out
+ * for every one created since. A user id with no profile row, no display
+ * name, AND no resolvable email (deleted account) is simply absent from the
+ * returned map; callers fall back to the pre-0087 anonymous title, never to
+ * a raw id or an empty string.
+ *
+ * Exported for `call-wake.ts`'s own "Incoming call from …" — the identical
+ * resolution, against the same `taskflow_audit` grants (0027, 0087), for the
+ * one other push pathway that names a person without going through this
+ * projection at all.
+ */
+export async function resolveActorLabels(
+  tx: Parameters<Parameters<typeof withAuditScope>[0]>[0],
+  actorIds: readonly string[],
+): Promise<Map<string, string>> {
+  const ids = [...new Set(actorIds)];
+  if (ids.length === 0) return new Map();
+
+  const [profileRows, userRows] = await Promise.all([
+    tx
+      .select({ userId: schema.profiles.userId, displayName: schema.profiles.displayName })
+      .from(schema.profiles)
+      .where(inArray(schema.profiles.userId, ids)),
+    tx
+      .select({ id: schema.users.id, email: schema.users.email })
+      .from(schema.users)
+      .where(inArray(schema.users.id, ids)),
+  ]);
+
+  const displayNameById = new Map(profileRows.map((row) => [row.userId, row.displayName]));
+  const emailById = new Map(userRows.map((user) => [user.id, user.email]));
+  const labels = new Map<string, string>();
+  for (const userId of ids) {
+    const label = displayNameById.get(userId) ?? emailById.get(userId) ?? null;
+    if (label !== null) labels.set(userId, label);
+  }
+  return labels;
 }
 
 /**

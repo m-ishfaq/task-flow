@@ -9,6 +9,7 @@ import {
 } from '@taskflow/db';
 import type { Logger } from '@taskflow/observability';
 import { errorMessageOf } from './notification-push.js';
+import { resolveActorLabels } from './notification.projection.js';
 import type { ExpoPushProvider } from './push-provider.js';
 
 /**
@@ -101,10 +102,11 @@ export const CALL_WAKE_CONSUMER = 'rtc-call-wake';
 interface CallWakeEvent {
   readonly sessionId: string;
   readonly channelId: string;
+  readonly callerId: string | null;
   readonly invitedUserIds: readonly string[];
 }
 
-/** Reads `rtc_session.started`'s own shape (`session.service.ts`'s `startSession`) — `null` for anything else, or a row missing what this needs. Exported for `call-wake.test.ts`; the rest of this file needs a real Postgres connection to test, which this sandbox does not have — the same split `expo-push.test.ts`'s own header explains. */
+/** Reads `rtc_session.started`'s own shape (`session.service.ts`'s `startSession`) — `null` for anything else, or a row missing what this needs. `callerId` is `row.actorId` — every domain event carries one — not a payload field. Exported for `call-wake.test.ts`; the rest of this file needs a real Postgres connection to test, which this sandbox does not have — the same split `expo-push.test.ts`'s own header explains. */
 export function callWakeEvent(row: OutboxRow): CallWakeEvent | null {
   if (row.name !== 'rtc_session.started') return null;
   if (typeof row.payload !== 'object' || row.payload === null) return null;
@@ -122,7 +124,7 @@ export function callWakeEvent(row: OutboxRow): CallWakeEvent | null {
     ? fields.invitedUserIds.filter((id): id is string => typeof id === 'string')
     : [];
 
-  return { sessionId, channelId, invitedUserIds };
+  return { sessionId, channelId, callerId: row.actorId, invitedUserIds };
 }
 
 export interface CallWakeDrainResult {
@@ -158,11 +160,14 @@ function recordCallWakeOutcome(input: {
 }
 
 /**
- * One claim-and-send batch. `title`/`body` are the generic, caller-name-free
- * shape `notification.projection.ts`'s own `planMissedCall` already
- * establishes for this exact event class — "the client resolves the caller
- * from the channel," never a name minted server-side into a push payload a
- * third-party relay (and a lock screen) also sees. `path` reuses
+ * One claim-and-send batch. `title` names the caller when 0087 can resolve
+ * one ("Incoming call from Alice"), falling back to the older, generic
+ * "Incoming call" otherwise — a corrected reasoning, not a stale one: the
+ * name is not new information to anyone this rings (they are already a
+ * member of the same channel the call is in, same as `planMissedCall`'s own
+ * 0087 correction), Expo/APNs/FCM already see the far more sensitive
+ * excerpt of every DM push this codebase sends, and every mainstream calling
+ * app shows the caller's name on exactly this kind of banner. `path` reuses
  * `notification-paths.ts`'s own `'call'` case (`/chat?channel=…`) verbatim,
  * so it rides the SAME `mobilePathFor` translation every other call
  * notification already exercises, with no new mapping to maintain.
@@ -200,8 +205,19 @@ export async function drainCallWake(
         tokensByUser.set(token.userId, list);
       }
 
+      /* One batched lookup for the whole tick — see `resolveActorLabels`'s
+         own header on why `people.profiles` is the source and 0087 is the
+         grant that makes it readable here at all. */
+      const callerLabels = await resolveActorLabels(
+        tx,
+        calls.map((call) => call.callerId).filter((id): id is string => id !== null),
+      );
+
       for (const call of calls) {
         const path = `/chat?channel=${call.channelId}`;
+        const callerLabel =
+          call.callerId === null ? null : (callerLabels.get(call.callerId) ?? null);
+        const title = callerLabel === null ? 'Incoming call' : `Incoming call from ${callerLabel}`;
         for (const userId of call.invitedUserIds) {
           const deviceTokens = tokensByUser.get(userId) ?? [];
           if (deviceTokens.length === 0) {
@@ -220,7 +236,7 @@ export async function drainCallWake(
             try {
               const outcome = await expoPushProvider.send({
                 expoPushToken,
-                title: 'Incoming call',
+                title,
                 body: null,
                 path,
               });

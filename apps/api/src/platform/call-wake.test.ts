@@ -59,8 +59,16 @@ describe('callWakeEvent', () => {
     expect(event).toEqual({
       sessionId: '0195ee05-0000-7000-8000-000000000030',
       channelId: '0195ee05-0000-7000-8000-000000000020',
+      callerId: ALICE,
       invitedUserIds: [ALICE, BOB],
     });
+  });
+
+  it('reads callerId off row.actorId, not the payload — the row has no such field', () => {
+    const event = callWakeEvent(
+      row('rtc_session.started', { sessionId: 's', channelId: 'x', invitedUserIds: [BOB] }),
+    );
+    expect(event?.callerId).toBe(ALICE);
   });
 
   it('ignores every other event name', () => {
@@ -97,6 +105,7 @@ describe('callWakeEvent', () => {
     expect(callWakeEvent(row('rtc_session.started', { sessionId: 's', channelId: 'x' }))).toEqual({
       sessionId: 's',
       channelId: 'x',
+      callerId: ALICE,
       invitedUserIds: [],
     });
 
@@ -108,7 +117,7 @@ describe('callWakeEvent', () => {
           invitedUserIds: 'not-an-array',
         }),
       ),
-    ).toEqual({ sessionId: 's', channelId: 'x', invitedUserIds: [] });
+    ).toEqual({ sessionId: 's', channelId: 'x', callerId: ALICE, invitedUserIds: [] });
   });
 
   it('filters non-string entries out of invitedUserIds rather than rejecting the whole row', () => {
@@ -120,7 +129,7 @@ describe('callWakeEvent', () => {
           invitedUserIds: [ALICE, 42, null, BOB],
         }),
       ),
-    ).toEqual({ sessionId: 's', channelId: 'x', invitedUserIds: [ALICE, BOB] });
+    ).toEqual({ sessionId: 's', channelId: 'x', callerId: ALICE, invitedUserIds: [ALICE, BOB] });
   });
 });
 
@@ -160,6 +169,17 @@ function stubExpoFetch(outcomeByToken: Record<string, 'sent' | 'gone' | 'rejecte
   );
 }
 
+/** Every `title` this tick actually sent Expo, read back off the stubbed `fetch`'s own recorded calls — the only place the value the DEVICE would show is observable from this test. */
+function sentTitles(): readonly string[] {
+  const calls = vi.mocked(fetch).mock.calls;
+  return calls.map(([, init]) => {
+    const [message] = JSON.parse((init as { readonly body: string }).body) as [
+      { readonly title: string },
+    ];
+    return message.title;
+  });
+}
+
 describe('drainCallWake — operational_events', () => {
   let admin: AdminConnection;
 
@@ -184,6 +204,9 @@ describe('drainCallWake — operational_events', () => {
     ]);
     await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [ORG]);
     await admin.query(`DELETE FROM platform.expo_push_tokens WHERE user_id = ANY($1)`, [
+      [SENT_USER, REJECTED_USER, NO_DEVICE_USER],
+    ]);
+    await admin.query(`DELETE FROM people.profiles WHERE user_id = ANY($1)`, [
       [SENT_USER, REJECTED_USER, NO_DEVICE_USER],
     ]);
     await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [ORG]);
@@ -297,5 +320,62 @@ describe('drainCallWake — operational_events', () => {
     );
     expect(events.rows).toHaveLength(1);
     expect(events.rows[0]?.['outcome']).toBe('failure');
+  });
+
+  describe('the caller name in the title (migration 0087)', () => {
+    it('names the caller when people.profiles has a display name for them', async () => {
+      stubExpoFetch({ [SENT_TOKEN]: 'sent', [REJECTED_TOKEN]: 'sent' });
+      await admin.query(`INSERT INTO people.profiles (user_id, display_name) VALUES ($1, $2)`, [
+        SENT_USER,
+        'Alice Caller',
+      ]);
+      // seedRingingCallEvent's actor_id is always SENT_USER — see its own definition.
+      await seedRingingCallEvent();
+
+      await drainCallWake(new ExpoPushProvider(), logger);
+
+      expect(sentTitles().every((title) => title === 'Incoming call from Alice Caller')).toBe(true);
+    });
+
+    it('falls back to the caller email when they have no display name set', async () => {
+      stubExpoFetch({ [SENT_TOKEN]: 'sent', [REJECTED_TOKEN]: 'sent' });
+      // No people.profiles row for SENT_USER this time — only the identity.users
+      // row beforeEach already seeded, so resolveActorLabels' second tier answers.
+      await seedRingingCallEvent();
+
+      await drainCallWake(new ExpoPushProvider(), logger);
+
+      expect(
+        sentTitles().every((title) => title === 'Incoming call from call-wake-sent@platform.test'),
+      ).toBe(true);
+    });
+
+    it('falls back to the plain, name-free title when the caller cannot be resolved at all', async () => {
+      stubExpoFetch({ [SENT_TOKEN]: 'sent', [REJECTED_TOKEN]: 'sent' });
+      // A caller id with no identity.users row at all — a deleted account,
+      // the one case resolveActorLabels legitimately returns nothing for.
+      const ghostCallerId = crypto.randomUUID();
+      const sessionId = crypto.randomUUID();
+      await admin.query(
+        `INSERT INTO platform.outbox (id, org_id, name, version, actor_id, occurred_at, payload)
+         VALUES ($1, $2, 'rtc_session.started', 1, $3, now(), $4::jsonb)`,
+        [
+          crypto.randomUUID(),
+          ORG,
+          ghostCallerId,
+          JSON.stringify({
+            sessionId,
+            channelId: crypto.randomUUID(),
+            kind: 'audio',
+            invitedCount: 1,
+            invitedUserIds: [SENT_USER],
+          }),
+        ],
+      );
+
+      await drainCallWake(new ExpoPushProvider(), logger);
+
+      expect(sentTitles()).toEqual(['Incoming call']);
+    });
   });
 });
