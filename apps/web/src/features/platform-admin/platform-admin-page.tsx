@@ -4178,13 +4178,14 @@ function AuditTab({ onStepUp }: { readonly onStepUp: () => void }) {
  * human operator do". Read-only in this wave — no retry action yet.
  * -------------------------------------------------------------------------- */
 
-type OperationalEventKind = 'mail' | 'billing_webhook' | 'billing_sweep';
+type OperationalEventKind = 'mail' | 'billing_webhook' | 'billing_sweep' | 'push';
 
 const OPERATIONAL_EVENT_KINDS: readonly (readonly [OperationalEventKind | null, string])[] = [
   [null, 'All'],
   ['mail', 'Mail'],
   ['billing_webhook', 'Billing webhook'],
   ['billing_sweep', 'Billing sweep'],
+  ['push', 'Push'],
 ];
 
 function OperationsTab({ onStepUp }: { readonly onStepUp: () => void }) {

@@ -148,7 +148,7 @@ const UserRow = z
   .strict();
 
 /** Mirrors `platform.operational_events`' own CHECK constraint (migration 0061). */
-const OperationalEventKind = z.enum(['mail', 'billing_webhook', 'billing_sweep']);
+const OperationalEventKind = z.enum(['mail', 'billing_webhook', 'billing_sweep', 'push']);
 
 const OperationsListInput = z
   .object({

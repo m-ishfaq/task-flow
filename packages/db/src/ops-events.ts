@@ -19,7 +19,7 @@ import { operationalEvents } from './schema/platform.js';
  * alone, even though the table itself carries no security control.
  */
 export interface OperationalEventInput {
-  readonly kind: 'mail' | 'billing_webhook' | 'billing_sweep';
+  readonly kind: 'mail' | 'billing_webhook' | 'billing_sweep' | 'push';
   readonly outcome: 'success' | 'failure';
   readonly target?: string;
   readonly detail?: Record<string, unknown>;
