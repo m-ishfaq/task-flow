@@ -198,17 +198,30 @@ export interface OAuthStateClaims {
    * claim can only fall back to the cookie path, never forge native delivery.
    */
   readonly channel?: 'native';
+  /**
+   * S256 challenge for a verifier the CLIENT holds (ai/phase-14-mobile.md §4.4).
+   *
+   * Set by `auth.native.oauth.start`/`startLink` and required back at
+   * `auth.native.oauth.callback`. Distinct from `codeVerifier` above, which
+   * secures the server<->provider leg and never leaves this server — see
+   * `verifyPkceChallenge`'s own header for why that one cannot defend a
+   * custom-scheme redirect, and this one can. Not secret: a JWT payload is
+   * signed, not encrypted, so an interceptor reads this exactly as it reads
+   * the challenge in the authorization URL. Its preimage is the secret.
+   */
+  readonly clientChallenge?: string;
 }
 
 export async function signOAuthState(claims: OAuthStateClaims, config: JwtConfig): Promise<string> {
   assertSecret(config.secret);
 
-  const { linkUserId, channel } = claims;
+  const { linkUserId, channel, clientChallenge } = claims;
   return new SignJWT({
     provider: claims.provider,
     verifier: claims.codeVerifier,
     ...(linkUserId === undefined ? {} : { link: linkUserId }),
     ...(channel === undefined ? {} : { channel }),
+    ...(clientChallenge === undefined ? {} : { cc: clientChallenge }),
   })
     .setProtectedHeader({ alg: ALGORITHM, typ: 'JWT' })
     .setIssuer(ISSUER)
@@ -232,18 +245,20 @@ export async function verifyOAuthState(
       clockTolerance: 5,
     });
 
-    const { provider, verifier, link, channel } = payload;
+    const { provider, verifier, link, channel, cc } = payload;
     if (typeof provider !== 'string' || typeof verifier !== 'string') {
       throw new InvalidTokenError();
     }
     if (link !== undefined && typeof link !== 'string') throw new InvalidTokenError();
     if (channel !== undefined && channel !== 'native') throw new InvalidTokenError();
+    if (cc !== undefined && typeof cc !== 'string') throw new InvalidTokenError();
 
     return {
       provider,
       codeVerifier: verifier,
       ...(link === undefined ? {} : { linkUserId: link }),
       ...(channel === undefined ? {} : { channel }),
+      ...(cc === undefined ? {} : { clientChallenge: cc }),
     };
   } catch {
     throw new InvalidTokenError();

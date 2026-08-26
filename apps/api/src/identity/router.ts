@@ -344,23 +344,53 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
         start: publicRoute({
           publicReason: 'This is how a session is obtained — the same reason auth.login is public.',
         })
-          .input(z.object({ provider: OAuthProviderSchema }).strict())
+          .input(
+            z
+              .object({
+                provider: OAuthProviderSchema,
+                /**
+                 * S256 challenge for a verifier the APP holds and never sends
+                 * until `callback` (ai/phase-14-mobile.md §4.4). Required —
+                 * `oauth.start` refuses a native flow without it. This is what
+                 * makes an intercepted `taskflow://oauth-callback` redirect
+                 * unredeemable; see `verifyPkceChallenge`'s own header for why
+                 * the server-held RFC 7636 verifier cannot cover this leg.
+                 * Length-bounded here as shape, matching the 43-128 range RFC
+                 * 7636 defines for a base64url S256 value.
+                 */
+                clientChallenge: z.string().min(43).max(128),
+              })
+              .strict(),
+          )
           .output(z.object({ authorizationUrl: z.string() }))
           .mutation(({ input }) =>
-            oauth.start(oauthDeps, { provider: input.provider, channel: 'native' }),
+            oauth.start(oauthDeps, {
+              provider: input.provider,
+              channel: 'native',
+              clientChallenge: input.clientChallenge,
+            }),
           ),
 
         startLink: selfRoute({
           selfReason: 'Linking a new provider to your own account.',
           stepUp: true,
         })
-          .input(z.object({ provider: OAuthProviderSchema }).strict())
+          .input(
+            z
+              .object({
+                provider: OAuthProviderSchema,
+                /** Same client-held binding as `start` above, for the same reason. */
+                clientChallenge: z.string().min(43).max(128),
+              })
+              .strict(),
+          )
           .output(z.object({ authorizationUrl: z.string() }))
           .mutation(({ input, ctx }) =>
             oauth.start(oauthDeps, {
               provider: input.provider,
               linkUserId: ctx.principal.userId,
               channel: 'native',
+              clientChallenge: input.clientChallenge,
             }),
           ),
 
@@ -370,7 +400,18 @@ export function createIdentityRouter(deps: IdentityRouterDeps) {
         })
           .input(
             z
-              .object({ provider: OAuthProviderSchema, code: z.string(), state: z.string() })
+              .object({
+                provider: OAuthProviderSchema,
+                code: z.string(),
+                state: z.string(),
+                /**
+                 * Plaintext of the challenge sent to `start`. `oauth.callback`
+                 * refuses a native state without a matching one, so an app that
+                 * intercepted this redirect but never started the flow cannot
+                 * redeem it (ai/phase-14-mobile.md §4.4).
+                 */
+                clientVerifier: z.string().min(43).max(128),
+              })
               .strict(),
           )
           .output(
