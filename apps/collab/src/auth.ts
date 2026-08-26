@@ -166,8 +166,8 @@ export async function authenticateConnection(
     throw new CollabAuthError('forbidden_origin');
   }
   // else: no origin, but the caller identifies as native — see
-  // isNativeClient's own comment for what this interim allowance is, and
-  // is not, a substitute for.
+  // isNativeClient's own comment for what this bearer-token-authenticated
+  // allowance is, and is not, a substitute for.
 
   if (typeof input.token !== 'string' || input.token.length === 0) {
     throw new CollabAuthError('no_token');

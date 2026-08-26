@@ -419,4 +419,25 @@ describe('getBroadcastHistory', () => {
     const history = await getBroadcastHistory(ORG, 10);
     expect(history.map((h) => h.subject)).toEqual(['Visible send']);
   });
+
+  it('returns the NEWEST sends first, not the oldest, when limited', async () => {
+    /* Regression guard: the default ascending order plus `.limit()` returned
+       the FIRST N sends and hid recent ones. A history view wants the most
+       recent — send three, ask for two, expect the last two newest-first. */
+    const events = new RecordingEventBus();
+
+    for (const subject of ['Oldest', 'Middle', 'Newest']) {
+      await sendBroadcast({ events }, operator, {
+        audience: { orgId: ORG, target: 'all' },
+        subject,
+        body: 'body',
+        sendPush: true,
+        sendEmail: false,
+        includeInOrgAudit: true,
+      });
+    }
+
+    const history = await getBroadcastHistory(ORG, 2);
+    expect(history.map((h) => h.subject)).toEqual(['Newest', 'Middle']);
+  });
 });
