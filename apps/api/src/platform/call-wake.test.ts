@@ -210,6 +210,35 @@ function sentTitles(): readonly string[] {
 describe('drainCallWake — operational_events', () => {
   let admin: AdminConnection;
 
+  /**
+   * Reads this drain's `operational_events` rows, waiting for them to land.
+   *
+   * `recordCallWakeOutcome` is deliberately fire-and-forget, exactly as
+   * `notification-push.ts`'s `recordPushOutcome` is — the write goes out on
+   * `withOpsEventScope`'s OWN connection, outside the drain's transaction, so
+   * a blip on that table can never fail a ring. It therefore lands shortly
+   * AFTER `drainCallWake` resolves, and asserting the instant it returns
+   * races the write: two of these three assertions failed while the third
+   * passed on timing luck alone. Waiting for the row is what makes them
+   * deterministic.
+   */
+  async function opsEventsFor(
+    sessionId: string,
+    reason: string,
+  ): Promise<Record<string, unknown>[]> {
+    await admin.setOrg(null);
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const events = await admin.query(
+        `SELECT outcome, detail FROM platform.operational_events
+         WHERE kind = 'push' AND target = $1 AND detail->>'reason' = $2`,
+        [sessionId, reason],
+      );
+      if (events.rows.length >= 1) return events.rows;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    return [];
+  }
+
   beforeAll(async () => {
     await applyMigrations();
     admin = await connectAsMigrator();
@@ -336,15 +365,10 @@ describe('drainCallWake — operational_events', () => {
 
     await drainCallWake(new ExpoPushProvider(), logger);
 
-    await admin.setOrg(null);
-    const events = await admin.query(
-      `SELECT outcome, detail FROM platform.operational_events
-       WHERE kind = 'push' AND target = $1 AND detail->>'reason' = 'sent'`,
-      [sessionId],
-    );
-    expect(events.rows).toHaveLength(1);
-    expect(events.rows[0]?.['outcome']).toBe('success');
-    expect(events.rows[0]?.['detail']).toMatchObject({ pathway: 'call-wake' });
+    const events = await opsEventsFor(sessionId, 'sent');
+    expect(events).toHaveLength(1);
+    expect(events[0]?.['outcome']).toBe('success');
+    expect(events[0]?.['detail']).toMatchObject({ pathway: 'call-wake' });
   });
 
   it('records a "no_device" failure, with no send attempted, for an invitee with no expo token — the exact silent case this closes', async () => {
@@ -357,14 +381,9 @@ describe('drainCallWake — operational_events', () => {
        never reaches expoPushProvider.send at all. */
     expect(result.attempted).toBe(2);
 
-    await admin.setOrg(null);
-    const events = await admin.query(
-      `SELECT outcome, detail FROM platform.operational_events
-       WHERE kind = 'push' AND target = $1 AND detail->>'reason' = 'no_device'`,
-      [sessionId],
-    );
-    expect(events.rows).toHaveLength(1);
-    expect(events.rows[0]?.['outcome']).toBe('failure');
+    const events = await opsEventsFor(sessionId, 'no_device');
+    expect(events).toHaveLength(1);
+    expect(events[0]?.['outcome']).toBe('failure');
   });
 
   it('records a "rejected" failure for a ticket-level rejection, using the same vocabulary notification-push.ts uses', async () => {
@@ -373,14 +392,9 @@ describe('drainCallWake — operational_events', () => {
 
     await drainCallWake(new ExpoPushProvider(), logger);
 
-    await admin.setOrg(null);
-    const events = await admin.query(
-      `SELECT outcome, detail FROM platform.operational_events
-       WHERE kind = 'push' AND target = $1 AND detail->>'reason' = 'rejected'`,
-      [sessionId],
-    );
-    expect(events.rows).toHaveLength(1);
-    expect(events.rows[0]?.['outcome']).toBe('failure');
+    const events = await opsEventsFor(sessionId, 'rejected');
+    expect(events).toHaveLength(1);
+    expect(events[0]?.['outcome']).toBe('failure');
   });
 
   describe('the caller name in the title (migration 0087)', () => {
@@ -413,9 +427,13 @@ describe('drainCallWake — operational_events', () => {
 
     it('falls back to the plain, name-free title when the caller cannot be resolved at all', async () => {
       stubExpoFetch({ [SENT_TOKEN]: 'sent', [REJECTED_TOKEN]: 'sent' });
-      // A caller id with no identity.users row at all — a deleted account,
-      // the one case resolveActorLabels legitimately returns nothing for.
-      const ghostCallerId = crypto.randomUUID();
+      /* A deleted account — the one case resolveActorLabels legitimately
+         returns nothing for. Represented as a NULL actor_id, because that is
+         literally what a deleted account leaves behind: `platform.outbox`
+         declares `actor_id ... REFERENCES identity.users (id) ON DELETE SET
+         NULL` (0006). This originally used a random UUID standing in for a
+         "ghost" caller, which the FK refuses outright — the row could never
+         be inserted, so the test could never have run. */
       const sessionId = crypto.randomUUID();
       await admin.query(
         `INSERT INTO platform.outbox (id, org_id, name, version, actor_id, occurred_at, payload)
@@ -423,7 +441,7 @@ describe('drainCallWake — operational_events', () => {
         [
           crypto.randomUUID(),
           ORG,
-          ghostCallerId,
+          null,
           JSON.stringify({
             sessionId,
             channelId: crypto.randomUUID(),
