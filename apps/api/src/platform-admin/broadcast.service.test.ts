@@ -3,9 +3,12 @@ import { unsafeAsId } from '@taskflow/contracts';
 import { RecordingEventBus } from '@taskflow/events';
 import {
   closeDatabase,
+  eq,
   initializeAuditDatabase,
   initializeDatabase,
   initializePlatformAdminDatabase,
+  schema,
+  withPlatformAdminScope,
 } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import type { PendingEmailSend } from '../platform/notification.projection.js';
@@ -261,12 +264,21 @@ describe('sendBroadcast', () => {
       expect(row['status']).toBe('pending');
     }
 
-    await admin.setOrg(null);
-    const tracking = await admin.query(
-      `SELECT recipient_count, audience_target FROM platform.operator_broadcasts WHERE id = $1`,
-      [result.broadcastId],
+    /* Read through the OPERATOR role, not the migrator. `operator_broadcasts`
+       is operator-only: 0083 gives it exactly one policy, `TO
+       taskflow_platform_admin`. The migrator matches no policy under FORCE
+       RLS, so it sees zero rows and this assertion got `undefined` — the read
+       twin of the same fact that stops it deleting from this table. */
+    const tracking = await withPlatformAdminScope((tx) =>
+      tx
+        .select({
+          recipientCount: schema.operatorBroadcasts.recipientCount,
+          audienceTarget: schema.operatorBroadcasts.audienceTarget,
+        })
+        .from(schema.operatorBroadcasts)
+        .where(eq(schema.operatorBroadcasts.id, result.broadcastId)),
     );
-    expect(tracking.rows[0]).toMatchObject({ recipient_count: 2, audience_target: 'all' });
+    expect(tracking[0]).toMatchObject({ recipientCount: 2, audienceTarget: 'all' });
 
     /* Guardrail 11 — the typed event, published on the bus (this role holds
        no outbox grant), never silently skipped. */
@@ -398,17 +410,26 @@ describe('resendBroadcast', () => {
     expect(resent.broadcastId).not.toBe(original.broadcastId);
     expect(resent.recipientCount).toBe(2);
 
-    await admin.setOrg(null);
-    const tracking = await admin.query(
-      `SELECT subject, body, audience_target, send_push, send_email FROM platform.operator_broadcasts WHERE id = $1`,
-      [resent.broadcastId],
+    /* Operator role again — see the note in `sendBroadcast`'s own tracking
+       assertion above on why the migrator cannot see this table. */
+    const tracking = await withPlatformAdminScope((tx) =>
+      tx
+        .select({
+          subject: schema.operatorBroadcasts.subject,
+          body: schema.operatorBroadcasts.body,
+          audienceTarget: schema.operatorBroadcasts.audienceTarget,
+          sendPush: schema.operatorBroadcasts.sendPush,
+          sendEmail: schema.operatorBroadcasts.sendEmail,
+        })
+        .from(schema.operatorBroadcasts)
+        .where(eq(schema.operatorBroadcasts.id, resent.broadcastId)),
     );
-    expect(tracking.rows[0]).toMatchObject({
+    expect(tracking[0]).toMatchObject({
       subject: 'Original',
       body: 'Original body.',
-      audience_target: 'users',
-      send_push: true,
-      send_email: true,
+      audienceTarget: 'users',
+      sendPush: true,
+      sendEmail: true,
     });
 
     /* Two sends of two people each — the resend's own email hands, not the

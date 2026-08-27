@@ -413,9 +413,13 @@ describe('drainCallWake — operational_events', () => {
 
     it('falls back to the plain, name-free title when the caller cannot be resolved at all', async () => {
       stubExpoFetch({ [SENT_TOKEN]: 'sent', [REJECTED_TOKEN]: 'sent' });
-      // A caller id with no identity.users row at all — a deleted account,
-      // the one case resolveActorLabels legitimately returns nothing for.
-      const ghostCallerId = crypto.randomUUID();
+      /* A deleted account — the one case resolveActorLabels legitimately
+         returns nothing for. Represented as a NULL actor_id, because that is
+         literally what a deleted account leaves behind: `platform.outbox`
+         declares `actor_id ... REFERENCES identity.users (id) ON DELETE SET
+         NULL` (0006). This originally used a random UUID standing in for a
+         "ghost" caller, which the FK refuses outright — the row could never
+         be inserted, so the test could never have run. */
       const sessionId = crypto.randomUUID();
       await admin.query(
         `INSERT INTO platform.outbox (id, org_id, name, version, actor_id, occurred_at, payload)
@@ -423,7 +427,7 @@ describe('drainCallWake — operational_events', () => {
         [
           crypto.randomUUID(),
           ORG,
-          ghostCallerId,
+          null,
           JSON.stringify({
             sessionId,
             channelId: crypto.randomUUID(),
