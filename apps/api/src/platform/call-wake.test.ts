@@ -360,7 +360,18 @@ describe('drainCallWake — operational_events', () => {
   }
 
   it('records success for a token Expo accepts', async () => {
-    stubExpoFetch({ [SENT_TOKEN]: 'sent', [REJECTED_TOKEN]: 'sent' });
+    /* Only SENT_TOKEN succeeds. `recordCallWakeOutcome` writes ONE row per
+       (invited user, device token) pair keyed only by `sessionId` — `detail`
+       carries `pathway`/`reason`, nothing that identifies which user or
+       token it was. `seedRingingCallEvent` invites both SENT_USER and
+       REJECTED_USER, each seeded with one token, so stubbing both tokens
+       'sent' genuinely writes TWO reason='sent' rows for this session — this
+       assertion's whole premise was never satisfiable with that stub. Left
+       unstubbed, REJECTED_TOKEN falls through stubExpoFetch's own default
+       (an error ticket, not `outcomeByToken['gone']`), which the drain
+       records as reason='rejected' — a different reason, so it cannot be
+       mistaken for a second success. */
+    stubExpoFetch({ [SENT_TOKEN]: 'sent' });
     const sessionId = await seedRingingCallEvent();
 
     await drainCallWake(new ExpoPushProvider(), logger);
