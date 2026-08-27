@@ -177,19 +177,43 @@ afterAll(async () => {
   await closeDatabase();
 });
 
+/**
+ * Reads this suite's own `operational_events` rows, waiting for them to land.
+ *
+ * `recordPushOutcome` is deliberately FIRE-AND-FORGET — `notification-push.ts`
+ * calls `void recordOperationalEvent(...)` so a blip on that table degrades to
+ * "no dashboard row" rather than a lost push or a crashed tick. The row
+ * therefore lands shortly AFTER `deliverPendingPushes` resolves, and asserting
+ * the instant it returns races the write.
+ *
+ * That race is what produced BOTH shapes of failure here: the test that ran
+ * first saw zero rows, and the row it was waiting for then landed after the
+ * NEXT test's cleanup had already run, so that one saw two. Waiting until the
+ * row is actually present fixes both ends — the assertion sees it, and it is
+ * gone by the time the following test seeds.
+ */
+async function opsEventsFor(target: string, atLeast: number): Promise<Record<string, unknown>[]> {
+  await admin.setOrg(null);
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const events = await admin.query(
+      `SELECT outcome, detail FROM platform.operational_events WHERE kind = 'push' AND target = $1`,
+      [target],
+    );
+    if (events.rows.length >= atLeast) return events.rows;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return [];
+}
+
 describe('deliverPendingPushes — operational_events (migration 0085)', () => {
   it('records a success row for a delivery the provider accepts', async () => {
     const web = fakeWebProvider({ [SENT_ENDPOINT]: 'sent', [REJECTED_ENDPOINT]: 'sent' });
 
     await deliverPendingPushes({ web }, logger);
 
-    await admin.setOrg(null);
-    const events = await admin.query(
-      `SELECT outcome FROM platform.operational_events WHERE kind = 'push' AND target = $1`,
-      [SENT_DELIVERY],
-    );
-    expect(events.rows).toHaveLength(1);
-    expect(events.rows[0]?.['outcome']).toBe('success');
+    const events = await opsEventsFor(SENT_DELIVERY, 1);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.['outcome']).toBe('success');
   });
 
   it('records a failure row AND logs a warning for a ticket-level rejection — previously silent at every level', async () => {
@@ -197,14 +221,10 @@ describe('deliverPendingPushes — operational_events (migration 0085)', () => {
 
     await deliverPendingPushes({ web }, logger);
 
-    await admin.setOrg(null);
-    const events = await admin.query(
-      `SELECT outcome, detail FROM platform.operational_events WHERE kind = 'push' AND target = $1`,
-      [REJECTED_DELIVERY],
-    );
-    expect(events.rows).toHaveLength(1);
-    expect(events.rows[0]?.['outcome']).toBe('failure');
-    expect(events.rows[0]?.['detail']).toMatchObject({ reason: 'rejected', channel: 'web' });
+    const events = await opsEventsFor(REJECTED_DELIVERY, 1);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.['outcome']).toBe('failure');
+    expect(events[0]?.['detail']).toMatchObject({ reason: 'rejected', channel: 'web' });
 
     await admin.setOrg(ORG);
     const delivery = await admin.query(
@@ -245,7 +265,11 @@ describe('deliverPendingPushes — operational_events (migration 0085)', () => {
   });
 
   it('records a failure row for a delivery with no registered device at all', async () => {
-    await admin.setOrg(null);
+    /* Self-scoped on app.user_id (0029): under `setOrg(null)` this DELETE
+       matched zero rows, so the device was still registered and the outcome
+       came back 'transient' rather than 'no_device' — the test's whole
+       premise silently absent. */
+    await admin.setUser(REJECTED_USER);
     await admin.query(`DELETE FROM platform.push_subscriptions WHERE user_id = $1`, [
       REJECTED_USER,
     ]);
@@ -253,13 +277,10 @@ describe('deliverPendingPushes — operational_events (migration 0085)', () => {
     const web = fakeWebProvider({ [SENT_ENDPOINT]: 'sent' });
     await deliverPendingPushes({ web }, logger);
 
-    const events = await admin.query(
-      `SELECT outcome, detail FROM platform.operational_events WHERE kind = 'push' AND target = $1`,
-      [REJECTED_DELIVERY],
-    );
-    expect(events.rows).toHaveLength(1);
-    expect(events.rows[0]?.['outcome']).toBe('failure');
-    expect(events.rows[0]?.['detail']).toMatchObject({ reason: 'no_device' });
+    const events = await opsEventsFor(REJECTED_DELIVERY, 1);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.['outcome']).toBe('failure');
+    expect(events[0]?.['detail']).toMatchObject({ reason: 'no_device' });
   });
 });
 
@@ -274,7 +295,10 @@ describe('deliverPendingPushes — the circuit breaker (migration 0086)', () => 
     await deliverPendingPushes({ web: alwaysThrowsForRejected }, logger);
     await deliverPendingPushes({ web: alwaysThrowsForRejected }, logger);
 
-    await admin.setOrg(null);
+    /* push_subscriptions is self-scoped on app.user_id (0029), and `setOrg`
+       CLEARS app.user_id — so reading it under `setOrg(null)` matched zero
+       rows and this assertion saw `undefined` rather than a count. */
+    await admin.setUser(REJECTED_USER);
     const midway = await admin.query(
       `SELECT consecutive_failures FROM platform.push_subscriptions WHERE user_id = $1`,
       [REJECTED_USER],
@@ -296,7 +320,8 @@ describe('deliverPendingPushes — the circuit breaker (migration 0086)', () => 
       await deliverPendingPushes({ web: alwaysThrowsForRejected }, logger);
     }
 
-    await admin.setOrg(null);
+    /* Same self-scoped read as the test above — see its note. */
+    await admin.setUser(REJECTED_USER);
     const stillAlive = await admin.query(
       `SELECT id FROM platform.push_subscriptions WHERE user_id = $1`,
       [REJECTED_USER],
