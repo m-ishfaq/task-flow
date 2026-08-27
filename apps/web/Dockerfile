@@ -32,6 +32,13 @@ COPY packages/storage/package.json packages/storage/package.json
 COPY packages/telephony/package.json packages/telephony/package.json
 COPY packages/ui/package.json packages/ui/package.json
 
+# pnpm.patchedDependencies (package.json) names patch files by path, and
+# --frozen-lockfile reads every one of them to verify the lockfile against
+# the manifest — even for a patched package this image never installs (e.g.
+# apps/mobile's react-native-callkeep). Missing this COPY fails the install
+# with ENOENT on the patch file, not a message naming this layer.
+COPY patches patches
+
 RUN pnpm install --frozen-lockfile
 
 # apps/api's source too — it is a type-only dependency of apps/web (the
