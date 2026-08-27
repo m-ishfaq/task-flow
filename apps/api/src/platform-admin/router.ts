@@ -14,6 +14,9 @@ import * as operations from './operations.js';
 import * as plans from './plan-catalog.service.js';
 import * as detail from './org-detail.service.js';
 import * as branding from './branding.service.js';
+import * as audience from './broadcast-audience.service.js';
+import * as broadcast from './broadcast.service.js';
+import type { PendingEmailSend } from '../platform/notification.projection.js';
 import { readOperatorAudit, recordOperatorAction } from './audit.js';
 import type { PaymentProvider, StorageProvider } from '@taskflow/contracts';
 import type { ScannerConfig } from '@taskflow/security';
@@ -78,6 +81,17 @@ export interface PlatformAdminRouterDeps {
    */
   readonly storage: StorageProvider;
   readonly scanner: ScannerConfig;
+  /**
+   * Sends ONE decided notification email immediately — `main.ts`'s
+   * `notificationMail.send`, the SAME callback `tenancy/relay.ts` hands the
+   * notification projection's own decided sends. Threaded here because
+   * `broadcast.service.ts` bypasses that projection entirely (this role has
+   * no outbox grant) and so must send its own email deliveries rather than
+   * leaving a `pending` row nothing else will ever revisit — see that
+   * file's own header. Optional, like `mail` above: no mailer configured
+   * means email deliveries stay `pending` rather than throwing.
+   */
+  readonly sendNotificationEmail?: (send: PendingEmailSend) => void;
 }
 
 const ListInput = z
@@ -134,7 +148,7 @@ const UserRow = z
   .strict();
 
 /** Mirrors `platform.operational_events`' own CHECK constraint (migration 0061). */
-const OperationalEventKind = z.enum(['mail', 'billing_webhook', 'billing_sweep']);
+const OperationalEventKind = z.enum(['mail', 'billing_webhook', 'billing_sweep', 'push']);
 
 const OperationsListInput = z
   .object({
@@ -276,6 +290,7 @@ const OrgDetailRow = z
             role: z.string(),
             status: z.string(),
             joinedAt: z.date(),
+            hasPushDevice: z.boolean(),
           })
           .strict(),
       )
@@ -351,6 +366,28 @@ const ConfirmedAsset = z
   })
   .strict();
 
+/**
+ * `broadcast-audience.service.ts`'s `AudienceSpec`, restated as a wire
+ * schema. `membershipRole`/`userIds` are both optional here — the SERVICE
+ * enforces "present iff target requires it" (the same job the migration's
+ * `operator_broadcasts_audience_consistent` CHECK does at the database
+ * layer), so this boundary only needs to validate SHAPE, not the
+ * cross-field rule, matching how every other route in this file leaves
+ * business validation to its service rather than duplicating it in Zod.
+ * `userIds` is still capped here at `MAX_AUDIENCE_USER_IDS` — an array size
+ * is a shape concern the Zod boundary is exactly the place for, the same
+ * way `subject`/`body` are length-capped here rather than left to the
+ * service alone.
+ */
+const AudienceSpecInput = z
+  .object({
+    orgId: OrgIdSchema,
+    target: z.enum(['all', 'role', 'users']),
+    membershipRole: z.enum(['owner', 'admin', 'member', 'guest']).optional(),
+    userIds: z.array(UserIdSchema).min(1).max(audience.MAX_AUDIENCE_USER_IDS).optional(),
+  })
+  .strict();
+
 export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
   const operatorOf = (ctx: {
     principal: { userId: string };
@@ -358,6 +395,19 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
   }): directory.PlatformOperator => ({
     userId: ctx.principal.userId as directory.PlatformOperator['userId'],
     requestId: ctx.requestId as directory.PlatformOperator['requestId'],
+  });
+
+  /* `exactOptionalPropertyTypes: true` refuses `membershipRole: undefined` as
+     an explicit value on a `membershipRole?:` field — the property must be
+     ABSENT, not present-and-undefined. Zod's `.optional()` produces
+     `X | undefined`, so the wire input can't be spread directly into
+     `AudienceSpec`; this is the one place that gap is bridged, reused by
+     both routes below rather than duplicated. */
+  const toAudienceSpec = (input: z.infer<typeof AudienceSpecInput>): audience.AudienceSpec => ({
+    orgId: input.orgId,
+    target: input.target,
+    ...(input.membershipRole !== undefined ? { membershipRole: input.membershipRole } : {}),
+    ...(input.userIds !== undefined ? { userIds: input.userIds } : {}),
   });
 
   /* The catalog service takes the processor alongside the bus, because a plan
@@ -371,6 +421,13 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
     events: deps.events,
     storage: deps.storage,
     scanner: deps.scanner,
+  });
+
+  const broadcastDeps = (): broadcast.BroadcastDeps => ({
+    events: deps.events,
+    ...(deps.sendNotificationEmail === undefined
+      ? {}
+      : { sendNotificationEmail: deps.sendNotificationEmail }),
   });
 
   return router({
@@ -462,6 +519,100 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
             confirmSlug: input.confirmSlug,
           }),
         ),
+    }),
+
+    /**
+     * Operator broadcasts — a specific member, a role-filtered subset, or
+     * every active member of one org (migration 0083, broadcast.service.ts).
+     * No platform-wide "every org" audience — see that file's own header on
+     * why the blast radius is deliberately capped at one tenant per send.
+     */
+    broadcast: router({
+      /** The dry-run count the console's Send button requires before it enables. */
+      previewAudience: platformRoute({
+        platformReason: 'Counting another org’s members by role is cross-tenant by definition.',
+      })
+        .input(AudienceSpecInput)
+        .output(z.object({ count: z.number().int().nonnegative() }).strict())
+        .query(({ input }) => audience.previewAudience(toAudienceSpec(input))),
+
+      send: platformRoute({
+        platformReason:
+          'Sending a message to another org’s members is cross-tenant by definition — no org-scoped permission can authorize it.',
+      })
+        .input(
+          z
+            .object({
+              audience: AudienceSpecInput,
+              subject: z.string().min(1).max(120),
+              body: z.string().min(1).max(2000),
+              sendPush: z.boolean(),
+              sendEmail: z.boolean(),
+              includeInOrgAudit: z.boolean(),
+            })
+            .strict(),
+        )
+        .output(
+          z
+            .object({ broadcastId: z.string(), recipientCount: z.number().int().nonnegative() })
+            .strict(),
+        )
+        .mutation(({ input, ctx }) =>
+          broadcast.sendBroadcast(broadcastDeps(), operatorOf(ctx), {
+            audience: toAudienceSpec(input.audience),
+            subject: input.subject,
+            body: input.body,
+            sendPush: input.sendPush,
+            sendEmail: input.sendEmail,
+            includeInOrgAudit: input.includeInOrgAudit,
+          }),
+        ),
+
+      /**
+       * Sends a PAST broadcast again — its own subject, body, audience, and
+       * channels, read back off its tracking row rather than resupplied by
+       * the caller (`broadcast.service.ts`'s own header). A fresh send, not
+       * a retry: new broadcast id, new tracking row, current membership.
+       */
+      resend: platformRoute({
+        platformReason:
+          'Resending to another org’s members is the same cross-tenant send as the original.',
+      })
+        .input(z.object({ broadcastId: z.string() }).strict())
+        .output(
+          z
+            .object({ broadcastId: z.string(), recipientCount: z.number().int().nonnegative() })
+            .strict(),
+        )
+        .mutation(({ input, ctx }) =>
+          broadcast.resendBroadcast(broadcastDeps(), operatorOf(ctx), input.broadcastId),
+        ),
+
+      /** One org's own broadcast history — the ones sent with `includeInOrgAudit`. */
+      history: platformRoute({
+        platformReason: 'Another org’s broadcast history is cross-tenant by definition.',
+      })
+        .input(
+          z
+            .object({ orgId: OrgIdSchema, limit: z.number().int().min(1).max(100).default(25) })
+            .strict(),
+        )
+        .output(
+          z
+            .array(
+              z
+                .object({
+                  id: z.string(),
+                  subject: z.string(),
+                  audienceTarget: z.enum(['all', 'role', 'users']),
+                  recipientCount: z.number().int().nonnegative(),
+                  createdAt: z.date(),
+                })
+                .strict(),
+            )
+            .readonly(),
+        )
+        .query(({ input }) => broadcast.getBroadcastHistory(input.orgId, input.limit)),
     }),
 
     users: router({

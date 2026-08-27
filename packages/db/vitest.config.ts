@@ -9,7 +9,8 @@ export default defineConfig({
     fileParallelism: false,
 
     // Applying migrations against a cold container is slower than the default.
-    hookTimeout: 30_000,
+    // 120s accommodates heavy parallel load during `pnpm verify`.
+    hookTimeout: 120_000,
     testTimeout: 15_000,
   },
 });

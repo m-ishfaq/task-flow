@@ -13,6 +13,7 @@ import {
   parseOAuthRedirect,
   type OAuthProvider,
 } from '../../src/lib/oauth.js';
+import { createPkceChallenge } from '../../src/lib/oauth-pkce.native.js';
 
 /**
  * Password sign-in, with the TOTP second-factor challenge inline, OAuth, and
@@ -112,7 +113,15 @@ export default function SignIn() {
    */
   const oauth = useMutation({
     mutationFn: async (provider: OAuthProvider) => {
-      const { authorizationUrl } = await apiClient.auth.native.oauth.start.mutate({ provider });
+      /* The client-held binding (`oauth.ts`'s own section header): only the
+         challenge crosses to `start`, and `verifier` never leaves this closure
+         until `callback`. An app that intercepted the custom-scheme redirect
+         holds `(code, state)` and still cannot redeem them without it. */
+      const { verifier, challenge } = await createPkceChallenge();
+      const { authorizationUrl } = await apiClient.auth.native.oauth.start.mutate({
+        provider,
+        clientChallenge: challenge,
+      });
       const result = await WebBrowser.openAuthSessionAsync(authorizationUrl, OAUTH_REDIRECT_URL);
       if (result.type !== 'success') return null;
 
@@ -120,7 +129,11 @@ export default function SignIn() {
       if (parsed === null) {
         throw new Error('The sign-in provider did not return a valid response.');
       }
-      return apiClient.auth.native.oauth.callback.mutate({ provider, ...parsed });
+      return apiClient.auth.native.oauth.callback.mutate({
+        provider,
+        ...parsed,
+        clientVerifier: verifier,
+      });
     },
     onSuccess: async (result) => {
       if (result?.kind === 'session') await session.adopt(result);
@@ -326,14 +339,15 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 24,
-    gap: 12,
+    gap: 14,
     backgroundColor: colors.surface.hex,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '600',
+    fontSize: 26,
+    fontWeight: '700',
     marginBottom: 4,
     color: colors.ink.hex,
+    letterSpacing: -0.3,
   },
   subtitle: {
     fontSize: 14,
@@ -342,20 +356,20 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
-    borderRadius: radiusCard,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard + 2,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 16,
     color: colors.ink.hex,
     backgroundColor: colors.surfaceSunken.hex,
   },
   button: {
     backgroundColor: colors.accent.hex,
-    borderRadius: radiusCard,
-    paddingVertical: 12,
+    borderRadius: radiusCard + 2,
+    paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 4,
   },
   buttonText: {
     color: colors.accentInk.hex,
@@ -364,28 +378,29 @@ const styles = StyleSheet.create({
   },
   oauthButton: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
-    borderRadius: radiusCard,
-    paddingVertical: 12,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard + 2,
+    paddingVertical: 14,
     alignItems: 'center',
     marginTop: 4,
+    backgroundColor: colors.surfaceRaised.hex,
   },
   oauthButtonText: {
     color: colors.ink.hex,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
   },
   error: {
     color: colors.danger.hex,
-    fontSize: 14,
+    fontSize: 13,
   },
   notice: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.warning.hex + '30',
     borderRadius: radiusCard,
-    backgroundColor: colors.surfaceSunken.hex,
-    padding: 12,
-    gap: 6,
+    backgroundColor: colors.warning.hex + '10',
+    padding: 14,
+    gap: 8,
   },
   noticeText: {
     color: colors.ink.hex,
@@ -397,9 +412,9 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
-    paddingVertical: 8,
+    paddingVertical: 10,
     alignItems: 'center',
   },
   secondaryButtonText: {
@@ -415,5 +430,6 @@ const styles = StyleSheet.create({
   link: {
     color: colors.accent.hex,
     fontSize: 14,
+    fontWeight: '500',
   },
 });

@@ -60,3 +60,11 @@ apps/mobile/android/
 apps/mobile/dist/
 apps/mobile/web-build/
 apps/mobile/.kotlin/
+
+# Per-developer Firebase config (push notifications, §9) — not a secret in
+# the same sense as a service-account key (that goes to `eas credentials`,
+# never the repo), but still account-specific and not something every
+# checkout should inherit. See app.config.ts's own comment on how this is
+# wired in only when present.
+apps/mobile/google-services.json
+apps/mobile/GoogleService-Info.plist

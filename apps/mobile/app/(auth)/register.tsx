@@ -126,14 +126,15 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 24,
-    gap: 12,
+    gap: 14,
     backgroundColor: colors.surface.hex,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '600',
+    fontSize: 26,
+    fontWeight: '700',
     marginBottom: 4,
     color: colors.ink.hex,
+    letterSpacing: -0.3,
   },
   subtitle: {
     fontSize: 14,
@@ -141,10 +142,10 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
-    borderRadius: radiusCard,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard + 2,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 16,
     color: colors.ink.hex,
     backgroundColor: colors.surfaceSunken.hex,
@@ -156,10 +157,10 @@ const styles = StyleSheet.create({
   },
   button: {
     backgroundColor: colors.accent.hex,
-    borderRadius: radiusCard,
-    paddingVertical: 12,
+    borderRadius: radiusCard + 2,
+    paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 4,
   },
   buttonText: {
     color: colors.accentInk.hex,
@@ -169,11 +170,12 @@ const styles = StyleSheet.create({
   link: {
     color: colors.accent.hex,
     fontSize: 14,
+    fontWeight: '500',
     textAlign: 'center',
     marginTop: 8,
   },
   error: {
     color: colors.danger.hex,
-    fontSize: 14,
+    fontSize: 13,
   },
 });

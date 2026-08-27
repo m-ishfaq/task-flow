@@ -425,6 +425,38 @@ export const operatorAuditLog = platform.table('operator_audit_log', {
   occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * One row per operator broadcast send (migration 0083) — the tracking record
+ * `broadcast.service.ts` writes alongside the `notifications`/
+ * `notificationDeliveries` rows it fans out to the resolved audience.
+ */
+export const operatorBroadcasts = platform.table('operator_broadcasts', {
+  id: uuid('id').primaryKey(),
+  operatorId: uuid('operator_id').references(() => users.id, { onDelete: 'set null' }),
+  orgId: uuid('org_id')
+    .notNull()
+    .references(() => orgs.id, { onDelete: 'cascade' }),
+
+  /** 'all' | 'role' | 'users' — a CHECK, not an enum. */
+  audienceTarget: text('audience_target').notNull(),
+  /** 'owner' | 'admin' | 'member' | 'guest'. Set iff audienceTarget === 'role'. */
+  audienceRole: text('audience_role'),
+  /** Set iff audienceTarget === 'users' — a hand-picked, non-empty subset (migration 0084). */
+  audienceUserIds: uuid('audience_user_ids').array(),
+
+  subject: text('subject').notNull(),
+  body: text('body').notNull(),
+
+  sendPush: boolean('send_push').notNull().default(true),
+  sendEmail: boolean('send_email').notNull().default(false),
+  includedInOrgAudit: boolean('included_in_org_audit').notNull().default(true),
+
+  /** The dry-run count, persisted rather than re-derived — see migration 0083. */
+  recipientCount: integer('recipient_count').notNull(),
+
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const pushSubscriptions = platform.table(
   'push_subscriptions',
   {
@@ -446,6 +478,8 @@ export const pushSubscriptions = platform.table(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     /** Touched on every successful push — Phase 12's "is this device alive" answer. */
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    /** The circuit breaker (migration 0086) — see notification-push.ts's own header. */
+    consecutiveFailures: integer('consecutive_failures').notNull().default(0),
   },
   (table) => [uniqueIndex('push_subscriptions_user_endpoint_key').on(table.userId, table.endpoint)],
 );
@@ -475,6 +509,8 @@ export const expoPushTokens = platform.table(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     /** Touched on every successful push — Phase 12's "is this device alive" answer. */
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    /** The circuit breaker (migration 0086) — see notification-push.ts's own header. */
+    consecutiveFailures: integer('consecutive_failures').notNull().default(0),
   },
   (table) => [uniqueIndex('expo_push_tokens_user_token_key').on(table.userId, table.expoPushToken)],
 );

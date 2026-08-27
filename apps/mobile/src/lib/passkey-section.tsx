@@ -236,10 +236,11 @@ const styles = StyleSheet.create({
     paddingTop: 14,
   },
   sectionTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: colors.inkMuted.hex,
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   sectionHint: {
     fontSize: 12,
@@ -254,7 +255,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
   },
   enrollButtonText: {
     color: colors.ink.hex,
@@ -302,8 +303,8 @@ const styles = StyleSheet.create({
   editInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: colors.line.hex,
-    borderRadius: radiusCard,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard + 2,
     paddingHorizontal: 10,
     paddingVertical: 6,
     fontSize: 13,

@@ -117,6 +117,18 @@ export function listsQueryKey(boardId: string): readonly ['work.lists.list', str
 }
 
 /**
+ * Archived columns — nested UNDER `listsQueryKey`'s own key, mirroring
+ * `apps/web/src/features/work/api.ts`'s `archivedListsQuery`, so archiving
+ * or restoring a column (which already invalidates that family) refreshes
+ * this list too with no second invalidation to remember.
+ */
+export function archivedListsQueryKey(
+  boardId: string,
+): readonly ['work.lists.list', string, 'archived'] {
+  return ['work.lists.list', boardId, 'archived'];
+}
+
+/**
  * The board's own card read — `work.cards.list({ boardId })` — shares
  * `CardSummaryOutput` with `work.cards.mine` server-side (identical fields,
  * including `listId`, which is what lets a board group these by column), so
@@ -125,6 +137,39 @@ export function listsQueryKey(boardId: string): readonly ['work.lists.list', str
  */
 export function boardCardsQueryKey(boardId: string): readonly ['work.cards.list', string] {
   return ['work.cards.list', boardId];
+}
+
+/**
+ * Archived cards — nested UNDER `boardCardsQueryKey`'s own key, the
+ * identical convention `archivedListsQueryKey` uses just above, and for the
+ * same reason: `work.cards.list`'s `includeArchived` WIDENS past the
+ * hardcoded live-only filter rather than narrowing to archived-only
+ * (`apps/api/src/work/router.ts`'s own comment on `cards.list`), so the
+ * caller filters for `archivedAt !== null` client-side — mirroring web's
+ * `archivedCardsQuery` exactly.
+ */
+export function archivedCardsQueryKey(
+  boardId: string,
+): readonly ['work.cards.list', string, 'archived'] {
+  return ['work.cards.list', boardId, 'archived'];
+}
+
+/**
+ * The board's card read, filter-aware — nested UNDER `boardCardsQueryKey`'s
+ * own key, the same convention `archivedCardsQueryKey` uses, so every
+ * mutation that already invalidates the unfiltered key (create, move,
+ * archive, bulk actions) refreshes whatever filtered view is on screen too,
+ * with no second invalidation to remember. `filterKey` is a caller-computed
+ * fragment (`board-filter.ts`'s own `boardFilterKey`, mirroring web's
+ * `filterKey` in `apps/web/src/features/work/api.ts`) rather than the raw
+ * `FilterNode` itself, so two structurally-equal filters built at different
+ * times share one cache entry instead of comparing objects by reference.
+ */
+export function filteredBoardCardsQueryKey(
+  boardId: string,
+  filterKey: string,
+): readonly ['work.cards.list', string, string] {
+  return ['work.cards.list', boardId, filterKey];
 }
 
 /**
@@ -233,14 +278,28 @@ export function cardLabelsQueryKey(cardId: string): readonly ['work.labels.onCar
 }
 
 /**
- * A color for a newly-created label, cycled from a fixed palette — ported
- * verbatim from `apps/web/src/features/work/detail/label-section.tsx`'s
- * own `nextColor`. Deterministic rather than randomized (`Math.random()`
- * is banned workspace-wide, and a crypto RNG for a swatch pick would be
+ * A fixed swatch set, cycled rather than picked freely — ported verbatim
+ * from `apps/web/src/features/work/detail/label-section.tsx`'s own
+ * `nextColor`. Deterministic rather than randomized (`Math.random()` is
+ * banned workspace-wide, and a crypto RNG for a swatch pick would be
  * absurd) — two labels created in a row read as visibly different rather
  * than occasionally identical.
+ *
+ * Web's project-settings-page.tsx recolors a label or a status with an
+ * `<input type="color">`, which has no RN equivalent; `project-
+ * settings.tsx` reuses this same palette as a row of tappable swatches for
+ * both, rather than introducing a second one or a native color-picker
+ * dependency this app carries nowhere else.
  */
-const LABEL_PALETTE = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#6366f1', '#d946ef'];
+export const LABEL_PALETTE = [
+  '#ef4444',
+  '#f97316',
+  '#eab308',
+  '#22c55e',
+  '#06b6d4',
+  '#6366f1',
+  '#d946ef',
+];
 
 export function nextLabelColor(existing: number): string {
   return LABEL_PALETTE[existing % LABEL_PALETTE.length] ?? '#6366f1';
@@ -288,6 +347,20 @@ export type CustomField = Wire<
 
 export function fieldsQueryKey(projectId: string): readonly ['work.fields.list', string] {
   return ['work.fields.list', projectId];
+}
+
+/**
+ * Every field, including archived ones — `work.fields.list` with
+ * `includeArchived: true`. A card panel only ever wants the live set
+ * (`fieldsQueryKey` above); `project-settings.tsx` is the one place an
+ * archived field can be found again and restored, so it needs the wider
+ * read under its own cache entry — nested under `fieldsQueryKey`'s own key
+ * family (mirroring `archivedListsQuery`'s own precedent on web) so
+ * archiving or restoring a field, which already invalidates that family,
+ * refreshes this one too with no second invalidation to remember.
+ */
+export function allFieldsQueryKey(projectId: string): readonly ['work.fields.list', string, 'all'] {
+  return ['work.fields.list', projectId, 'all'];
 }
 
 export type CardFieldValue = Wire<

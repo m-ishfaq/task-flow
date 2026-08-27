@@ -105,8 +105,8 @@ const styles = StyleSheet.create({
   },
   chip: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
-    borderRadius: radiusCard,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard + 2,
     paddingHorizontal: 12,
     paddingVertical: 7,
     backgroundColor: colors.surfaceRaised.hex,

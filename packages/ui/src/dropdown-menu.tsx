@@ -11,9 +11,6 @@ import { cn } from './cn.js';
  * threshold PLAN.md §6 sets for extracting a component rather than living with
  * a fourth copy the next menu would have added.
  */
-export const DropdownMenuRoot = DropdownMenuPrimitive.Root;
-export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
-
 export interface DropdownMenuContentProps extends Omit<
   ComponentProps<typeof DropdownMenuPrimitive.Content>,
   'className'

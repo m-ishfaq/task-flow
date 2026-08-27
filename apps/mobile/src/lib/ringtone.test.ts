@@ -69,11 +69,15 @@ describe('synthesizeToneSamples', () => {
   it('never clips beyond the 16-bit signed range at full volume', () => {
     const tone = RINGTONES.digital;
     const samples = synthesizeToneSamples(tone, 1);
-    for (const sample of samples) {
-      expect(sample).toBeGreaterThanOrEqual(-32_768);
-      expect(sample).toBeLessThanOrEqual(32_767);
+    let max = -Infinity;
+    let min = Infinity;
+    for (const s of samples) {
+      if (s > max) max = s;
+      if (s < min) min = s;
     }
-  });
+    expect(max).toBeLessThanOrEqual(32_767);
+    expect(min).toBeGreaterThanOrEqual(-32_768);
+  }, 10_000);
 
   it('scales down with volume', () => {
     const tone = RINGTONES.marimba;

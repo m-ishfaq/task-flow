@@ -17,10 +17,6 @@ import { cn } from './cn.js';
  * shared shell rather than giving the shared component a variant to carry
  * that difference forward.
  */
-export const PopoverRoot = PopoverPrimitive.Root;
-export const PopoverTrigger = PopoverPrimitive.Trigger;
-export const PopoverClose = PopoverPrimitive.Close;
-
 export interface PopoverContentProps extends Omit<
   ComponentProps<typeof PopoverPrimitive.Content>,
   'className'

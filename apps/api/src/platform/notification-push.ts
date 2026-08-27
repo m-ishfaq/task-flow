@@ -1,4 +1,12 @@
-import { and, eq, inArray, schema, withAuditScope } from '@taskflow/db';
+import {
+  and,
+  eq,
+  inArray,
+  increment,
+  recordOperationalEvent,
+  schema,
+  withAuditScope,
+} from '@taskflow/db';
 import type { Logger } from '@taskflow/observability';
 import { notificationPath } from './notification-paths.js';
 import type { ExpoPushProvider, PushProvider, PushSendOutcome } from './push-provider.js';
@@ -41,9 +49,33 @@ import type { ExpoPushProvider, PushProvider, PushSendOutcome } from './push-pro
  * a row that is silently never sent. The mark itself is conditional on
  * `status = 'pending'`, so two ticks that both sent cannot both claim the
  * same delivery; the second UPDATE matches nothing.
+ *
+ * ## Every terminal outcome is now a row an operator can actually see
+ *
+ * Every send outcome used to fold into an in-process counter, logged once
+ * per TICK at `debug` — invisible unless `LOG_LEVEL=debug` — with no record
+ * of WHICH delivery failed or why. A ticket-level rejection from Expo (not
+ * a thrown transport error, a real "no" in the response body) had no log
+ * line at all, at any level. `recordPushOutcome` below writes one
+ * `platform.operational_events` row (migration 0085; `kind: 'push'`) per
+ * terminal outcome — sent, rejected, gone, or nothing-to-send-to — the same
+ * per-item granularity `notification-mail.ts`'s `onSuccess`/`onFailure`
+ * already gives mail, read back by the SAME Operations tab. Fire-and-forget
+ * (`recordOperationalEvent` never throws into its caller, by its own
+ * header), so a database blip on this table degrades to "no dashboard row"
+ * rather than a lost push or a crashed tick.
  */
 
 const BATCH = 100;
+
+/**
+ * Consecutive transient failures before a subscription/token is retired
+ * like a 'gone' response — migration 0086's own header. Five ticks (~25s
+ * at the relay's 5-second interval) rides out a real blip without letting
+ * a permanently dead endpoint retry, and starve other pending deliveries
+ * for the same person, forever.
+ */
+const MAX_CONSECUTIVE_TRANSIENT_FAILURES = 5;
 
 export interface PendingPushRow {
   readonly deliveryId: string;
@@ -97,6 +129,14 @@ async function readPendingPushRows(): Promise<PendingPushRow[]> {
           eq(schema.notificationDeliveries.status, 'pending'),
         ),
       )
+      /* Oldest first. With none, a batch that fills entirely with rows
+         that never leave `pending` (this file's own header on why a
+         transient failure can do exactly that) has no reason to ever
+         advance past them — the same up-to-BATCH rows keep winning. FIFO
+         does not by itself fix an immortal row (the circuit breaker does),
+         but it is the correct default for a queue regardless, and it means
+         a genuinely temporary backlog drains in the order it arrived. */
+      .orderBy(schema.notificationDeliveries.createdAt)
       .limit(BATCH);
 
     return rows.map((row) => ({
@@ -117,6 +157,50 @@ async function readPendingPushRows(): Promise<PendingPushRow[]> {
 export interface PushProviders {
   readonly web?: PushProvider;
   readonly expo?: ExpoPushProvider;
+}
+
+/**
+ * One `platform.operational_events` row per terminal push outcome — see
+ * this file's own header. `target` is the delivery id: an internal
+ * identifier already visible only to operators, never the raw endpoint or
+ * Expo token those tables hold (`ops-events.ts`'s own redaction discipline
+ * for `target` — an id to trace, never a secret or a contact address).
+ */
+function recordPushOutcome(input: {
+  readonly deliveryId: string;
+  readonly outcome: 'success' | 'failure';
+  readonly reason: string;
+  readonly channel?: 'web' | 'expo';
+  /**
+   * A THROWN transport error's own message — the same text `logger.warn`
+   * already puts in the server log for a 'transient' outcome, now on the
+   * dashboard row too. Capped: a stack trace or a provider's raw HTTP body
+   * is not what an operator scanning a list of rows needs, and 0061's own
+   * redaction discipline is about identifiers and content, not length, but
+   * an unbounded string in a list view is its own kind of unreadable.
+   */
+  readonly error?: unknown;
+}): void {
+  void recordOperationalEvent({
+    kind: 'push',
+    outcome: input.outcome,
+    target: input.deliveryId,
+    detail: {
+      reason: input.reason,
+      ...(input.channel === undefined ? {} : { channel: input.channel }),
+      ...(input.error === undefined ? {} : { error: errorMessageOf(input.error) }),
+    },
+  });
+}
+
+/** Exported for `call-wake.ts`'s own operational-event recording — the identical capping rule, one definition. */
+export const MAX_ERROR_MESSAGE_LENGTH = 300;
+
+export function errorMessageOf(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.length > MAX_ERROR_MESSAGE_LENGTH
+    ? `${message.slice(0, MAX_ERROR_MESSAGE_LENGTH)}…`
+    : message;
 }
 
 /** Sends one batch of pending pushes, to every configured channel a person has a device on. Returns how many went where, for logging. */
@@ -184,6 +268,11 @@ export async function deliverPendingPushes(
   const failedIds: string[] = [];
   const deadSubscriptionIds: string[] = [];
   const deadExpoTokenIds: string[] = [];
+  /* Per-DEVICE, unlike the sent*UserIds above — incrementing must be
+     precise: a healthy device's count must never move because a
+     DIFFERENT device of the same user threw. See incrementTransientFailures. */
+  const transientWebSubscriptionIds: string[] = [];
+  const transientExpoTokenIds: string[] = [];
 
   for (const row of pending) {
     if (row.path === null) {
@@ -191,6 +280,7 @@ export async function deliverPendingPushes(
          a push that cannot open anywhere would be worse than none. Marked
          failed so it does not sit pending forever. */
       failedIds.push(row.deliveryId);
+      recordPushOutcome({ deliveryId: row.deliveryId, outcome: 'failure', reason: 'no_path' });
       continue;
     }
 
@@ -203,6 +293,7 @@ export async function deliverPendingPushes(
          loop, so it is marked failed with this comment instead. The pref
          page's state is the thing to fix, not this row. */
       failedIds.push(row.deliveryId);
+      recordPushOutcome({ deliveryId: row.deliveryId, outcome: 'failure', reason: 'no_device' });
       continue;
     }
 
@@ -233,6 +324,14 @@ export async function deliverPendingPushes(
           // this row; the row itself stays pending unless another channel
           // below succeeds.
           logger.warn({ err: error, deliveryId: row.deliveryId }, 'push send failed (transient)');
+          recordPushOutcome({
+            deliveryId: row.deliveryId,
+            outcome: 'failure',
+            reason: 'transient',
+            channel: 'web',
+            error,
+          });
+          transientWebSubscriptionIds.push(subscription.id);
           rowHadTransientError = true;
           break;
         }
@@ -241,12 +340,35 @@ export async function deliverPendingPushes(
           result.sent += 1;
           rowSent = true;
           sentWebUserIds.push(row.userId);
+          recordPushOutcome({
+            deliveryId: row.deliveryId,
+            outcome: 'success',
+            reason: 'sent',
+            channel: 'web',
+          });
         } else if (outcome === 'gone') {
           // 404/410 — the browser will never use this endpoint again.
           result.gone += 1;
           deadSubscriptionIds.push(subscription.id);
+          recordPushOutcome({
+            deliveryId: row.deliveryId,
+            outcome: 'failure',
+            reason: 'gone',
+            channel: 'web',
+          });
         } else {
+          // A real rejection from the push service — not a transport
+          // error (that throws, above), a "no" in a successful response.
+          // This branch had NO log line at all before this — a silent
+          // failure with nothing to grep for even at debug level.
+          logger.warn({ deliveryId: row.deliveryId }, 'push send rejected');
           result.failed += 1;
+          recordPushOutcome({
+            deliveryId: row.deliveryId,
+            outcome: 'failure',
+            reason: 'rejected',
+            channel: 'web',
+          });
         }
       }
     }
@@ -267,6 +389,14 @@ export async function deliverPendingPushes(
             { err: error, deliveryId: row.deliveryId },
             'expo push send failed (transient)',
           );
+          recordPushOutcome({
+            deliveryId: row.deliveryId,
+            outcome: 'failure',
+            reason: 'transient',
+            channel: 'expo',
+            error,
+          });
+          transientExpoTokenIds.push(device.id);
           rowHadTransientError = true;
           break;
         }
@@ -275,13 +405,37 @@ export async function deliverPendingPushes(
           result.sent += 1;
           rowSent = true;
           sentExpoUserIds.push(row.userId);
+          recordPushOutcome({
+            deliveryId: row.deliveryId,
+            outcome: 'success',
+            reason: 'sent',
+            channel: 'expo',
+          });
         } else if (outcome === 'gone') {
           // Expo's "DeviceNotRegistered" — the app was uninstalled, or the
           // token rotated past what this row remembers.
           result.gone += 1;
           deadExpoTokenIds.push(device.id);
+          recordPushOutcome({
+            deliveryId: row.deliveryId,
+            outcome: 'failure',
+            reason: 'gone',
+            channel: 'expo',
+          });
         } else {
+          // Expo accepted the REQUEST and answered with a ticket that is
+          // neither 'ok' nor DeviceNotRegistered — e.g. bad credentials, a
+          // malformed message, a rate limit. Silent before this: no log
+          // line at any level, and the row was simply marked failed with
+          // nothing anywhere explaining why.
+          logger.warn({ deliveryId: row.deliveryId }, 'expo push send rejected');
           result.failed += 1;
+          recordPushOutcome({
+            deliveryId: row.deliveryId,
+            outcome: 'failure',
+            reason: 'rejected',
+            channel: 'expo',
+          });
         }
       }
     }
@@ -300,6 +454,19 @@ export async function deliverPendingPushes(
     else if (!rowHadTransientError) failedIds.push(row.deliveryId);
   }
 
+  /* Retiring an exhausted subscription/token reuses the SAME deletion
+     arrays 'gone' already feeds — a circuit-open subscription is deleted
+     for the identical reason a confirmed-dead one is, so it goes through
+     the identical code path rather than a second one. Must run BEFORE
+     markOutcomes: the ids it returns need to already be in
+     deadSubscriptionIds/deadExpoTokenIds for that call to delete them. */
+  const exhausted = await incrementTransientFailures(
+    transientWebSubscriptionIds,
+    transientExpoTokenIds,
+  );
+  deadSubscriptionIds.push(...exhausted.exhaustedSubscriptionIds);
+  deadExpoTokenIds.push(...exhausted.exhaustedExpoTokenIds);
+
   await markOutcomes({
     sentIds,
     sentWebUserIds,
@@ -309,6 +476,61 @@ export async function deliverPendingPushes(
     deadExpoTokenIds,
   });
   return result;
+}
+
+/**
+ * Increments `consecutive_failures` for every subscription/token that hit
+ * a transient error THIS tick, and returns the ids that just crossed
+ * `MAX_CONSECUTIVE_TRANSIENT_FAILURES` — this file's own header on why
+ * that threshold exists at all.
+ */
+async function incrementTransientFailures(
+  webSubscriptionIds: readonly string[],
+  expoTokenIds: readonly string[],
+): Promise<{
+  readonly exhaustedSubscriptionIds: readonly string[];
+  readonly exhaustedExpoTokenIds: readonly string[];
+}> {
+  const exhaustedSubscriptionIds: string[] = [];
+  const exhaustedExpoTokenIds: string[] = [];
+
+  if (webSubscriptionIds.length > 0) {
+    const rows = await withAuditScope(async (tx) =>
+      tx
+        .update(schema.pushSubscriptions)
+        .set({ consecutiveFailures: increment(schema.pushSubscriptions.consecutiveFailures) })
+        .where(inArray(schema.pushSubscriptions.id, [...webSubscriptionIds]))
+        .returning({
+          id: schema.pushSubscriptions.id,
+          consecutiveFailures: schema.pushSubscriptions.consecutiveFailures,
+        }),
+    );
+    for (const row of rows) {
+      if (row.consecutiveFailures >= MAX_CONSECUTIVE_TRANSIENT_FAILURES) {
+        exhaustedSubscriptionIds.push(row.id);
+      }
+    }
+  }
+
+  if (expoTokenIds.length > 0) {
+    const rows = await withAuditScope(async (tx) =>
+      tx
+        .update(schema.expoPushTokens)
+        .set({ consecutiveFailures: increment(schema.expoPushTokens.consecutiveFailures) })
+        .where(inArray(schema.expoPushTokens.id, [...expoTokenIds]))
+        .returning({
+          id: schema.expoPushTokens.id,
+          consecutiveFailures: schema.expoPushTokens.consecutiveFailures,
+        }),
+    );
+    for (const row of rows) {
+      if (row.consecutiveFailures >= MAX_CONSECUTIVE_TRANSIENT_FAILURES) {
+        exhaustedExpoTokenIds.push(row.id);
+      }
+    }
+  }
+
+  return { exhaustedSubscriptionIds, exhaustedExpoTokenIds };
 }
 
 /** Marks outcomes in follow-up transactions — never inside a network call. */
@@ -349,12 +571,16 @@ async function markOutcomes(input: {
      question, answered by the relay that is already here. Keyed on the USER
      whose deliveries succeeded on THAT channel, not the delivery ids: the
      column is on the subscription/token rows, and every device of a user
-     who got one message on that channel is alive by definition. */
+     who got one message on that channel is alive by definition.
+     consecutive_failures resets the same way, for the same reason — the
+     circuit breaker's whole point is "stop retrying something that keeps
+     failing," and a channel that just worked is not that, even for a
+     sibling device of the same user this tick never touched. */
   if (input.sentWebUserIds.length > 0) {
     await withAuditScope(async (tx) => {
       await tx
         .update(schema.pushSubscriptions)
-        .set({ lastSeenAt: new Date() })
+        .set({ lastSeenAt: new Date(), consecutiveFailures: 0 })
         .where(inArray(schema.pushSubscriptions.userId, [...new Set(input.sentWebUserIds)]));
     });
   }
@@ -362,7 +588,7 @@ async function markOutcomes(input: {
     await withAuditScope(async (tx) => {
       await tx
         .update(schema.expoPushTokens)
-        .set({ lastSeenAt: new Date() })
+        .set({ lastSeenAt: new Date(), consecutiveFailures: 0 })
         .where(inArray(schema.expoPushTokens.userId, [...new Set(input.sentExpoUserIds)]));
     });
   }

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { formatDistanceToNow } from 'date-fns';
 import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from './app-session.js';
@@ -18,40 +18,31 @@ import {
 /**
  * The bell — mentions, direct messages, thread replies, card assignments,
  * missed calls, ORG-WIDE and across every product surface. Ported from
- * `apps/web/src/features/chat/notification-bell.tsx`; the UI itself
- * (`NotificationsModal`/`NotificationRow` below) is unchanged from where it
- * first landed on this platform — `(tabs)/chat.tsx`'s own title row — only
- * WHERE it is mounted moved.
+ * `apps/web/src/features/chat/notification-bell.tsx`.
  *
- * ## Reachable from every tab now, not just Chat
+ * ## Reachable from every screen, not just Chat
  *
  * `notifications.ts`'s own header used to name this as "the one real,
  * stated divergence from web": web mounts its bell once in `shell.tsx`,
  * visible on every route, while this app had "no single shared chrome to
  * mount an equivalent in without touching all four tab screens" — true when
  * written, and now stale, corrected in place per this repo's own habit
- * rather than silently rewritten: `call-surface.tsx` has since proven that
- * chrome exists. `(app)/_layout.tsx` already mounts it once, above the
- * `<Stack>`, specifically so a ringing call is answerable regardless of
- * which tab is open — this component rides the identical pattern, a
- * SECOND absolutely-positioned overlay a real device report found the
- * first one still didn't cover ("notification is on chat layout, can't get
- * to it").
+ * rather than silently rewritten: `call-surface.tsx` proved that chrome
+ * exists, and `top-bar.tsx` is now the thing that mounts this, once, above
+ * the `<Stack>` — the same reason a ringing call is answerable from
+ * anywhere.
  *
- * ## Positioned inside the safe-area gap, not fighting each screen's own header
+ * ## No longer owns its own screen position
  *
- * Every tab screen already draws its own title row starting at
- * `useTopInset()` — the safe-area top inset PLUS 24px of deliberate
- * breathing room (`use-top-inset.ts`'s own header). That 24px band is
- * reserved whitespace by construction, not un-owned space to guess at: a
- * small icon-only button anchored at the raw safe-area edge (no `+ 24`)
- * sits entirely within it, above every screen's actual content, on every
- * tab, without touching any of the four screens that already render there.
- * `zIndex`/`elevation` keep it above content that might otherwise scroll
- * beneath the safe-area padding.
+ * This used to be the one thing anchored at the safe-area edge, with its
+ * own `position: 'absolute'`. `top-bar.tsx`'s own header explains why that
+ * moved up a level once a second icon (Account) needed to sit beside it:
+ * two independently-positioned overlays is how two icons quietly drift out
+ * of alignment; one row owning the one position is how they can't. The
+ * `trigger` style below is now just a 36×36 button sized to sit inside
+ * that row — same visual button as before, no longer floating on its own.
  */
 export function NotificationBell(): React.JSX.Element {
-  const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
   const { personOf } = useMembers();
 
@@ -72,7 +63,7 @@ export function NotificationBell(): React.JSX.Element {
   return (
     <>
       <Pressable
-        style={[styles.trigger, { top: insets.top + 4 }]}
+        style={styles.trigger}
         accessibilityLabel={
           unread > 0 ? `Notifications, ${String(unread)} unread` : 'Notifications'
         }
@@ -149,10 +140,19 @@ function NotificationsModal({
     <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
         <Pressable style={styles.modalCard} onPress={() => undefined}>
+          <View style={styles.modalHandle} />
           <View style={styles.notificationsHeader}>
-            <Text style={styles.modalTitle}>Notifications</Text>
+            <View style={styles.notificationsHeaderTitle}>
+              <Text style={styles.modalTitle}>Notifications</Text>
+              {unread > 0 && (
+                <View style={styles.unreadCountPill}>
+                  <Text style={styles.unreadCountPillText}>{unread > 99 ? '99+' : unread}</Text>
+                </View>
+              )}
+            </View>
             {unread > 0 && (
               <Pressable
+                style={styles.markAllReadButton}
                 disabled={markAllRead.isPending}
                 onPress={() => {
                   markAllRead.mutate();
@@ -164,7 +164,13 @@ function NotificationsModal({
           </View>
           <ScrollView>
             {rows.length === 0 ? (
-              <Text style={styles.label}>Mentions and direct messages show up here.</Text>
+              <View style={styles.empty}>
+                <Text style={styles.emptyIcon}>🔔</Text>
+                <Text style={styles.emptyTitle}>You&apos;re all caught up</Text>
+                <Text style={styles.emptyHint}>
+                  Mentions, direct messages, and assignments show up here.
+                </Text>
+              </View>
             ) : (
               rows.map((notification) => (
                 <NotificationRow
@@ -198,45 +204,50 @@ function NotificationRow({
   readonly actorLabel: string | null;
   readonly onOpen: () => void;
 }) {
+  const unread = notification.readAt === null;
+
   return (
-    <Pressable
-      style={[styles.row, notification.readAt === null && styles.rowUnread]}
-      onPress={onOpen}
-    >
-      <View style={styles.rowTop}>
+    <Pressable style={[styles.row, unread && styles.rowUnread]} onPress={onOpen}>
+      <View style={styles.rowIconBadge}>
         <Text style={styles.rowIcon}>{notificationIcon(notification.kind)}</Text>
-        <Text style={styles.rowTitle} numberOfLines={1}>
-          {notification.title}
-        </Text>
       </View>
-      {actorLabel !== null && (
-        <Text style={styles.rowTime} numberOfLines={1}>
-          {actorLabel}
-        </Text>
-      )}
-      {notification.excerpt !== null && (
-        <Text style={styles.rowExcerpt} numberOfLines={2}>
-          {notification.excerpt}
-        </Text>
-      )}
+      <View style={styles.rowBody}>
+        <View style={styles.rowTop}>
+          <Text style={styles.rowTitle} numberOfLines={1}>
+            {notification.title}
+          </Text>
+          <Text style={styles.rowTime} numberOfLines={1}>
+            {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
+          </Text>
+        </View>
+        {actorLabel !== null && (
+          <Text style={styles.rowActor} numberOfLines={1}>
+            {actorLabel}
+          </Text>
+        )}
+        {notification.excerpt !== null && (
+          <Text style={styles.rowExcerpt} numberOfLines={2}>
+            {notification.excerpt}
+          </Text>
+        )}
+      </View>
+      {unread && <View style={styles.rowUnreadDot} />}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
+  /* Sized to sit inside `top-bar.tsx`'s row — no `position`/`right`/`top`
+     of its own any more; see this file's own header for why that moved. */
   trigger: {
-    position: 'absolute',
-    right: 16,
-    height: 32,
-    width: 32,
-    borderRadius: 16,
+    height: 36,
+    width: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surfaceRaised.hex,
     borderWidth: 1,
-    borderColor: colors.line.hex,
-    zIndex: 20,
-    elevation: 20,
+    borderColor: colors.line.hex + '80',
   },
   triggerText: {
     fontSize: 15,
@@ -265,16 +276,31 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     backgroundColor: colors.surfaceRaised.hex,
-    borderTopLeftRadius: radiusCard,
-    borderTopRightRadius: radiusCard,
-    padding: 20,
+    borderTopLeftRadius: radiusCard + 6,
+    borderTopRightRadius: radiusCard + 6,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    paddingTop: 10,
     maxHeight: '75%',
   },
+  /* A drag-handle affordance, not an actual drag gesture — this sheet only
+     ever closes via the backdrop or "Close", but the small centered bar is
+     the one glance-able signal on both platforms that this is a sheet
+     rather than a dead-end popup, matching the shape every native
+     bottom-sheet uses even where the gesture itself isn't wired up. */
+  modalHandle: {
+    alignSelf: 'center',
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.line.hex,
+    marginBottom: 14,
+  },
   modalTitle: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
     color: colors.ink.hex,
-    marginBottom: 8,
+    letterSpacing: -0.2,
   },
   modalCancel: {
     paddingVertical: 14,
@@ -285,48 +311,120 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.danger.hex,
   },
-  label: {
-    fontSize: 14,
-    color: colors.inkMuted.hex,
-    textAlign: 'center',
-  },
   notificationsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  notificationsHeaderTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  unreadCountPill: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent.hex,
+  },
+  unreadCountPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  markAllReadButton: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: colors.line.hex + '80',
   },
   markAllReadText: {
     fontSize: 11,
-    color: colors.inkFaint.hex,
+    fontWeight: '600',
+    color: colors.inkMuted.hex,
+  },
+  empty: {
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 32,
+  },
+  emptyIcon: {
+    fontSize: 28,
+    marginBottom: 4,
+  },
+  emptyTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.ink.hex,
+  },
+  emptyHint: {
+    fontSize: 13,
+    color: colors.inkMuted.hex,
+    textAlign: 'center',
+    maxWidth: 220,
   },
   row: {
-    gap: 4,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
     paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: radiusCard,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.line.hex,
   },
   rowUnread: {
     backgroundColor: colors.surfaceHover.hex,
   },
-  rowTop: {
-    flexDirection: 'row',
+  rowIconBadge: {
+    height: 28,
+    width: 28,
+    borderRadius: 14,
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceSunken.hex,
+    marginTop: 1,
   },
   rowIcon: {
     fontSize: 13,
   },
+  rowBody: {
+    flex: 1,
+    gap: 2,
+  },
+  rowTop: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+  },
   rowTitle: {
+    flex: 1,
     fontSize: 13,
     fontWeight: '600',
     color: colors.ink.hex,
   },
   rowTime: {
+    fontSize: 10,
+    color: colors.inkFaint.hex,
+  },
+  rowActor: {
     fontSize: 11,
     color: colors.inkFaint.hex,
   },
   rowExcerpt: {
     fontSize: 13,
     color: colors.inkMuted.hex,
+  },
+  rowUnreadDot: {
+    height: 7,
+    width: 7,
+    borderRadius: 3.5,
+    backgroundColor: colors.accent.hex,
+    marginTop: 5,
   },
 });

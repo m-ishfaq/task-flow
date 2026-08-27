@@ -3,6 +3,7 @@ import { Link, useSearch } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../../lib/trpc.js';
 import { Button, Field, Input } from '../../components/primitives.js';
+import { BrandMark } from '../../components/brand-mark.js';
 import { ErrorView } from '../../components/error-view.js';
 import { fieldError, fieldErrors } from '../../lib/field-errors.js';
 
@@ -35,6 +36,7 @@ export function ResetPasswordPage() {
   if (token === undefined) {
     return (
       <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-4 p-6">
+        <BrandMark size={36} className="text-accent" />
         <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
           Reset your password
         </h1>
@@ -52,6 +54,7 @@ export function ResetPasswordPage() {
   if (reset.isSuccess) {
     return (
       <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-4 p-6">
+        <BrandMark size={36} className="text-accent" />
         <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
           Password changed
         </h1>
@@ -67,6 +70,7 @@ export function ResetPasswordPage() {
 
   return (
     <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-6 p-6">
+      <BrandMark size={36} className="text-accent" />
       <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
         Choose a new password
       </h1>

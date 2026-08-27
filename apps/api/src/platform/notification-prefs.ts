@@ -47,6 +47,10 @@ const CATEGORY_OF_KIND: Readonly<Record<string, NotificationCategory>> = {
   'member.added': 'direct',
   'member.role_changed': 'direct',
   'member.removed': 'direct',
+  /* A platform operator addressed you (or your org) directly — the same
+     "about YOU, not ambient activity" reasoning as member.role_changed, and
+     a day-late digest is the wrong latency for an announcement. */
+  operator_broadcast: 'direct',
 };
 
 export function categoryOfKind(kind: string): NotificationCategory {

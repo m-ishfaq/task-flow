@@ -169,13 +169,16 @@ if (env.DATABASE_OPS_EVENTS_URL !== undefined) {
 
 const telephonyDeps = buildTelephonyDeps(env);
 
-const app = await buildServer({ env });
-
 /* The notification email queue (Phase 9, ai/phase-9-notifications.md §3.6) —
    its own MailQueue instance, own connection to MAIL_HOST, separate from
    identity's so a notification backlog never contends with a password-reset
    email. Constructed unconditionally: it costs nothing idle, and the relay
-   below only ever calls `send` when there is something to send. */
+   below only ever calls `send` when there is something to send.
+   Built BEFORE `buildServer` (moved from after it) so `notificationMail.send`
+   can be threaded into the router as `platform.sendNotificationEmail` —
+   `platformAdmin`'s operator broadcasts need it directly, the same reason
+   `tenancy/relay.ts` already takes it (see PlatformAdminRouterDeps's own
+   comment on why that module bypasses the notification projection). */
 const notificationMailLogger = createLogger({ name: 'notification-mail', level: env.LOG_LEVEL });
 const notificationMail = createNotificationMailDelivery({
   env,
@@ -210,6 +213,8 @@ const notificationMail = createNotificationMailDelivery({
     });
   },
 });
+
+const app = await buildServer({ env, sendNotificationEmail: notificationMail.send });
 
 /* The Web Push provider (§3.7). VAPID keys are OPTIONAL in the env schema:
    an instance without them is a valid deployment that simply does not send

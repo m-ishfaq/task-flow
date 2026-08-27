@@ -1,19 +1,11 @@
-import { useId } from 'react';
 import { useBranding } from '../lib/branding-context.js';
 import { cn } from '../lib/cn.js';
 
 /**
- * The product's mark — a rounded square filled with the accent-flow gradient
- * (the same `from-accent to-accent/0` motif as the sidebar's active bar and a
- * card's priority stripe) with a single light bar cut through it: "a task on
- * the flow". One geometric shape, no clipart, and it follows the deployment's
- * branding palette because the gradient stops are `var(--color-accent)` CSS
- * custom properties, which the `BrandingProvider` overrides live.
- *
- * When an operator uploads a logo through the platform console (migration
- * 0073), the uploaded logo replaces this mark wherever it appears — the
- * favicon included, since `branding-provider.tsx` swaps the icon link the
- * same way.
+ * The product's mark — three connected nodes representing tasks flowing
+ * through a pipeline. Uses `currentColor` so it inherits the accent palette
+ * via CSS. When an operator uploads a custom logo, that image replaces this
+ * mark wherever it appears.
  */
 export function BrandMark({
   size = 40,
@@ -23,11 +15,6 @@ export function BrandMark({
   readonly className?: string;
 }) {
   const { logoUrl, productName } = useBranding();
-  /* The gradient's id must be unique per instance — two marks on one page
-     (the favicon is a separate document, but the login and register pages
-     could both mount one in tests) would otherwise reference the first
-     instance's defs and break when it unmounts. */
-  const gradientId = useId();
 
   if (logoUrl !== null) {
     return (
@@ -44,27 +31,34 @@ export function BrandMark({
     <svg
       width={size}
       height={size}
-      viewBox="0 0 40 40"
+      viewBox="0 0 32 32"
+      fill="none"
       role="img"
       aria-label={productName}
       className={className}
     >
-      <defs>
-        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="var(--color-accent)" />
-          <stop offset="1" stopColor="var(--color-accent-hover)" />
-        </linearGradient>
-      </defs>
-      <rect width="40" height="40" rx="10" fill={`url(#${gradientId})`} />
-      <rect
-        x="10"
-        y="17.5"
-        width="20"
-        height="5"
-        rx="2.5"
-        fill="oklch(98% 0.01 285)"
-        opacity="0.92"
+      {/* Flowing paths connecting the three nodes */}
+      <path
+        d="M8 12C8 12 12 8 16 12C20 16 24 12 24 12"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        opacity="0.5"
       />
+      <path
+        d="M8 20C8 20 12 16 16 20C20 24 24 20 24 20"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        opacity="0.3"
+      />
+      {/* Node 1 — entry point (small) */}
+      <circle cx="8" cy="16" r="3.5" fill="currentColor" opacity="0.9" />
+      {/* Node 2 — in-progress (medium) */}
+      <circle cx="16" cy="16" r="4.5" fill="currentColor" />
+      {/* Node 3 — completion (large, with subtle highlight) */}
+      <circle cx="24" cy="16" r="5.5" fill="currentColor" opacity="0.85" />
+      <circle cx="24" cy="16" r="5.5" fill="white" opacity="0.15" />
     </svg>
   );
 }

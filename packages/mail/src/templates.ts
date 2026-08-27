@@ -108,9 +108,32 @@ function textDocument(lines: readonly string[], productName = 'TaskFlow'): strin
  * nothing and the alternative is one more value in this file that is
  * "probably fine" instead of provably safe.
  */
+/**
+ * The flow-mark logo as an inline SVG data URI. Used in email headers where
+ * CSS custom properties and external image hosting are unavailable.
+ * Hardcoded to the default accent (#9333ea) since email clients do not
+ * support OKLCH or CSS variables.
+ */
+const FLOW_MARK_SVG = `data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' fill='none'>` +
+    `<path d='M8 12C8 12 12 8 16 12C20 16 24 12 24 12' stroke='#9333ea' stroke-width='2.5' stroke-linecap='round' opacity='0.5'/>` +
+    `<path d='M8 20C8 20 12 16 16 20C20 24 24 20 24 20' stroke='#9333ea' stroke-width='2.5' stroke-linecap='round' opacity='0.3'/>` +
+    `<circle cx='8' cy='16' r='3.5' fill='#9333ea' opacity='0.9'/>` +
+    `<circle cx='16' cy='16' r='4.5' fill='#9333ea'/>` +
+    `<circle cx='24' cy='16' r='5.5' fill='#9333ea' opacity='0.85'/>` +
+    `<circle cx='24' cy='16' r='5.5' fill='white' opacity='0.15'/>` +
+    `</svg>`,
+)}`;
+
 function htmlDocument(bodyHtml: string, productName = 'TaskFlow'): string {
   return [
     '<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:15px;line-height:1.6;color:#1a1a1a;max-width:520px">',
+    /* Logo header — the flow-mark plus the product name, matching the
+       login page's own BrandMark + heading layout. */
+    `<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">`,
+    `<img src="${FLOW_MARK_SVG}" width="28" height="28" alt="" style="border-radius:6px" />`,
+    `<span style="font-size:18px;font-weight:600;color:#1a1a1a">${escapeHtml(productName)}</span>`,
+    '</div>',
     bodyHtml,
     '<hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0">',
     `<p style="font-size:13px;color:#666">${escapeHtml(productName)} — this is an automated message; replies are not read.</p>`,

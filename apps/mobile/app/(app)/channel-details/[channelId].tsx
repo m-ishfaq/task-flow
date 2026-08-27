@@ -20,6 +20,8 @@ import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { useMembers, type Person } from '../../../src/lib/use-members.js';
+import { TelephonyCallButton } from '../../../src/lib/telephony-call-button.js';
+import { directoryMemberQueryKey } from '../../../src/lib/people.js';
 import {
   callHistoryQueryKey,
   formatCallDuration,
@@ -66,12 +68,17 @@ import {
  *
  * **Still genuinely excluded: `DirectCallAction`**, web's click-to-call
  * button for a two-person DM's counterparty WORK PHONE — a Phase 7
- * (Twilio/PSTN) telephony affordance, not Phase 13's in-app WebRTC calling,
- * and Phase 7's telephony client has never been ported to `apps/mobile` at
- * all. The two are easy to conflate because both put a phone icon near a
- * DM's header; they dial through entirely different systems (a real PSTN
- * number vs. this app's own signaling gateway), and only the second one
- * exists here.
+ * (Twilio/PSTN) telephony affordance, not Phase 13's in-app WebRTC calling.
+ * "Phase 7's telephony client has never been ported to `apps/mobile` at
+ * all" was true when this paragraph was written; `(tabs)/calls.tsx` is that
+ * port now, and `telephony-call-button.tsx`'s `TelephonyCallButton` is the
+ * exact component `DirectCallAction` would reuse. Still not wired in HERE,
+ * though — adding it to this screen is its own small follow-up, not
+ * something the telephony port did on its way past. The two are easy to
+ * conflate because both put a phone icon near a DM's header; they dial
+ * through entirely different systems (a real PSTN number vs. this app's own
+ * signaling gateway), and only the second one exists on this specific
+ * screen today.
  *
  * **Every control here is shown; the server decides** — the same rule
  * `channel-details.tsx`'s own header states for web, restated because this
@@ -224,6 +231,7 @@ function DirectMessageIdentity({
   readonly personOf: (userId: string) => Person;
 }) {
   const others = channel.memberIds.filter((userId) => userId !== viewerId);
+  const only = others.length === 1 ? others[0] : undefined;
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>
@@ -232,6 +240,45 @@ function DirectMessageIdentity({
       {others.map((userId) => (
         <PersonLine key={userId} person={personOf(userId)} />
       ))}
+      {only !== undefined && <DirectCallAction userId={only} />}
+    </View>
+  );
+}
+
+/**
+ * Click-to-call the other side of a 1:1 DM — the mobile counterpart of
+ * `apps/web/src/features/chat/channel-details.tsx`'s `DirectCallAction`,
+ * ported here rather than left as a gap: `telephony-call-button.tsx`'s
+ * `TelephonyCallButton` and `people.ts`'s `directoryMemberQueryKey` already
+ * existed (built for `person/[userId].tsx`'s own "Job" section), so closing
+ * this was wiring two existing pieces together, not new work.
+ *
+ * Only for a two-person DM — a group conversation has no single callee, and
+ * picking one for the caller would dial someone they did not choose. The
+ * number comes from the directory (`people.directory.get`), the same
+ * org-scoped `workPhone` field `person/[userId].tsx` already reads, rather
+ * than `useMembers`, whose cache backs every avatar in this app and is
+ * deliberately narrow — widening it to carry a phone number would mean
+ * every board render holds one, for the benefit of one panel.
+ *
+ * Silent when there is no number: this is an affordance, not a permission
+ * boundary — there is simply nothing to dial, and an explanatory empty
+ * state here would be noise on every DM in an org that has not filled the
+ * directory in.
+ */
+function DirectCallAction({ userId }: { readonly userId: string }) {
+  const member = useQuery({
+    queryKey: directoryMemberQueryKey(userId),
+    queryFn: async () => wire(await apiClient.people.directory.get.query({ userId })),
+  });
+  const workPhone = member.data?.workPhone ?? null;
+
+  if (workPhone === null) return null;
+
+  return (
+    <View style={styles.directCallRow}>
+      <Text style={styles.directCallPhone}>{workPhone}</Text>
+      <TelephonyCallButton to={workPhone} />
     </View>
   );
 }
@@ -1038,23 +1085,36 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   screenTitle: {
-    fontSize: 22,
-    fontWeight: '600',
+    fontSize: 24,
+    fontWeight: '700',
     color: colors.ink.hex,
+    letterSpacing: -0.3,
     marginBottom: 8,
   },
   section: {
     gap: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.line.hex,
+    borderTopColor: colors.line.hex + '60',
     paddingTop: 14,
     paddingBottom: 4,
   },
   sectionTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: colors.inkMuted.hex,
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  directCallRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  directCallPhone: {
+    fontSize: 12,
+    color: colors.inkMuted.hex,
+    fontVariant: ['tabular-nums'],
   },
   sectionHint: {
     fontSize: 12,
@@ -1139,10 +1199,10 @@ const styles = StyleSheet.create({
   },
   formInput: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
-    borderRadius: radiusCard,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard + 2,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     fontSize: 14,
     color: colors.ink.hex,
     backgroundColor: colors.surfaceSunken.hex,
@@ -1181,9 +1241,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 8,
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
-    padding: 8,
+    padding: 10,
+    backgroundColor: colors.surfaceRaised.hex,
   },
   excerptBody: {
     flex: 1,

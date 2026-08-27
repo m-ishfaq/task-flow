@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
   mentionList: {
     maxHeight: 180,
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     backgroundColor: colors.surfaceRaised.hex,
     marginBottom: 6,
@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.line.hex,
+    borderBottomColor: colors.line.hex + '60',
   },
   mentionRowText: {
     fontSize: 14,
@@ -261,6 +261,8 @@ const styles = StyleSheet.create({
   composerInput: {
     flex: 1,
     borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.line.hex + '60',
     paddingHorizontal: 16,
     paddingVertical: 10,
     fontSize: 14,
@@ -279,7 +281,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent.hex,
   },
   sendButtonDisabled: {
-    backgroundColor: colors.surfaceSunken.hex,
+    backgroundColor: colors.surfaceSunken.hex + '80',
   },
   error: {
     color: colors.danger.hex,

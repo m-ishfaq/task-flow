@@ -20,6 +20,8 @@ import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { CardRow } from '../../../src/lib/card-row.js';
+import { DatePickerField } from '../../../src/lib/date-picker-field.js';
+import { dateToPlainDay, plainDayToDate } from '../../../src/lib/date-picker.js';
 import {
   MY_TASKS_QUERY_KEY,
   PROJECTS_QUERY_KEY,
@@ -584,8 +586,12 @@ function SprintForm({
   const queryClient = useQueryClient();
   const [name, setName] = useState(sprint?.name ?? '');
   const [goal, setGoal] = useState(sprint?.goal ?? '');
-  const [startsOn, setStartsOn] = useState(sprint?.startsOn ?? '');
-  const [endsOn, setEndsOn] = useState(sprint?.endsOn ?? '');
+  const [startsOnDate, setStartsOnDate] = useState<Date | null>(
+    sprint === undefined ? null : plainDayToDate(sprint.startsOn),
+  );
+  const [endsOnDate, setEndsOnDate] = useState<Date | null>(
+    sprint === undefined ? null : plainDayToDate(sprint.endsOn),
+  );
   const locked = sprint?.status === 'active';
 
   const save = useMutation({
@@ -595,11 +601,16 @@ function SprintForm({
     // `Promise<void>` rather than forcing one `MutationFunction` type to
     // cover both outputs.
     mutationFn: async (): Promise<void> => {
+      // Guarded by the Save button's own `disabled` below — both dates are
+      // required for a sprint (`startsOn`/`endsOn`'s `Day` schema takes no
+      // null), the same invariant the button already enforces before this
+      // ever runs.
+      if (startsOnDate === null || endsOnDate === null) return;
       const input = {
         name: name.trim(),
         goal: goal.trim() === '' ? null : goal.trim(),
-        startsOn,
-        endsOn,
+        startsOn: dateToPlainDay(startsOnDate),
+        endsOn: dateToPlainDay(endsOnDate),
       };
       if (sprint === undefined) {
         await apiClient.work.sprints.create.mutate({ projectId, ...input });
@@ -632,22 +643,17 @@ function SprintForm({
         style={styles.formInput}
       />
       <View style={styles.formDatesRow}>
-        <TextInput
-          value={startsOn}
-          onChangeText={setStartsOn}
-          placeholder="Starts YYYY-MM-DD"
-          placeholderTextColor={colors.inkFaint.hex}
-          style={[styles.formInput, styles.formDateInput]}
-          editable={!locked}
-        />
-        <TextInput
-          value={endsOn}
-          onChangeText={setEndsOn}
-          placeholder="Ends YYYY-MM-DD"
-          placeholderTextColor={colors.inkFaint.hex}
-          style={[styles.formInput, styles.formDateInput]}
-          editable={!locked}
-        />
+        <View style={styles.formDateInput}>
+          <DatePickerField
+            value={startsOnDate}
+            onChange={setStartsOnDate}
+            placeholder="Starts"
+            disabled={locked}
+          />
+        </View>
+        <View style={styles.formDateInput}>
+          <DatePickerField value={endsOnDate} onChange={setEndsOnDate} placeholder="Ends" />
+        </View>
       </View>
       {save.isError && (
         <Text style={styles.modalError} accessibilityRole="alert">
@@ -658,10 +664,15 @@ function SprintForm({
         <Pressable
           style={[
             styles.formSubmit,
-            (save.isPending || name.trim() === '' || startsOn === '' || endsOn === '') &&
+            (save.isPending ||
+              name.trim() === '' ||
+              startsOnDate === null ||
+              endsOnDate === null) &&
               styles.formSubmitDisabled,
           ]}
-          disabled={save.isPending || name.trim() === '' || startsOn === '' || endsOn === ''}
+          disabled={
+            save.isPending || name.trim() === '' || startsOnDate === null || endsOnDate === null
+          }
           onPress={() => {
             save.mutate();
           }}
@@ -731,9 +742,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   screenTitle: {
-    fontSize: 22,
-    fontWeight: '600',
+    fontSize: 24,
+    fontWeight: '700',
     color: colors.ink.hex,
+    letterSpacing: -0.3,
   },
   headerActions: {
     flexDirection: 'row',
@@ -756,16 +768,16 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 8,
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     backgroundColor: colors.surfaceSunken.hex,
   },
   formInput: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
-    borderRadius: radiusCard,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard + 2,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     fontSize: 14,
     color: colors.ink.hex,
     backgroundColor: colors.surface.hex,
@@ -809,10 +821,10 @@ const styles = StyleSheet.create({
   },
   boardChip: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   boardChipActive: {
     backgroundColor: colors.surfaceHover.hex,
@@ -843,9 +855,9 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     gap: 6,
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: 999,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 8,
     backgroundColor: colors.surfaceRaised.hex,
     maxWidth: 200,
@@ -887,10 +899,10 @@ const styles = StyleSheet.create({
   sprintInfo: {
     marginHorizontal: 24,
     marginBottom: 12,
-    padding: 12,
+    padding: 14,
     gap: 6,
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     backgroundColor: colors.surfaceRaised.hex,
   },
@@ -935,7 +947,7 @@ const styles = StyleSheet.create({
   cardList: {
     paddingHorizontal: 24,
     paddingBottom: 40,
-    gap: 8,
+    gap: 10,
   },
   modalBackdrop: {
     flex: 1,
@@ -944,16 +956,16 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     backgroundColor: colors.surfaceRaised.hex,
-    borderTopLeftRadius: radiusCard,
-    borderTopRightRadius: radiusCard,
+    borderTopLeftRadius: radiusCard + 6,
+    borderTopRightRadius: radiusCard + 6,
     padding: 20,
     gap: 4,
   },
   modalTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
     color: colors.ink.hex,
-    marginBottom: 8,
+    marginBottom: 12,
   },
   modalError: {
     fontSize: 13,

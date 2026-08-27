@@ -589,9 +589,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   title: {
-    fontSize: 22,
-    fontWeight: '600',
+    fontSize: 24,
+    fontWeight: '700',
     color: colors.ink.hex,
+    letterSpacing: -0.3,
   },
   titleActions: {
     flexDirection: 'row',
@@ -613,16 +614,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   list: {
-    gap: 8,
-    paddingBottom: 8,
+    gap: 10,
+    paddingBottom: 16,
   },
   row: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     backgroundColor: colors.surfaceRaised.hex,
     padding: 14,
-    gap: 2,
+    gap: 4,
   },
   rowMain: {
     flexDirection: 'row',
@@ -631,17 +632,18 @@ const styles = StyleSheet.create({
   },
   rowTitle: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 14,
+    fontWeight: '500',
     color: colors.ink.hex,
   },
   rowTitleUnjoined: {
     color: colors.inkMuted.hex,
   },
   unreadBadge: {
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    paddingHorizontal: 5,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.accent.hex,
@@ -670,16 +672,16 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     backgroundColor: colors.surfaceRaised.hex,
-    borderTopLeftRadius: radiusCard,
-    borderTopRightRadius: radiusCard,
+    borderTopLeftRadius: radiusCard + 6,
+    borderTopRightRadius: radiusCard + 6,
     padding: 20,
     maxHeight: '75%',
   },
   modalTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
     color: colors.ink.hex,
-    marginBottom: 8,
+    marginBottom: 12,
   },
   menu: {
     gap: 4,
@@ -733,7 +735,7 @@ const styles = StyleSheet.create({
   },
   formInput: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -747,7 +749,7 @@ const styles = StyleSheet.create({
   },
   typeChip: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 6,

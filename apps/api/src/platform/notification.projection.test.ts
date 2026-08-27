@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { OutboxRow } from '@taskflow/db';
+import type { Logger } from '@taskflow/observability';
 import {
   dueDateChanged,
   planChannelDeliveries,
   planNotifications,
+  resolveActorLabels,
 } from './notification.projection.js';
 
 /**
@@ -383,6 +385,166 @@ describe('member.removed — tenancy (migration 0072)', () => {
   });
 });
 
+describe('rtc_session.ended — missed call (Phase 13, §7)', () => {
+  const SESSION = '0195ee05-0000-7000-8000-000000000070';
+  const CHANNEL = '0195ee05-0000-7000-8000-000000000071';
+  const base = { sessionId: SESSION, channelId: CHANNEL, missedUserIds: [BOB, CAROL] };
+
+  it('tells everyone who missed it, anonymously by default', () => {
+    const planned = planNotifications(row('rtc_session.ended', base, ALICE));
+    expect(planned).toEqual([
+      {
+        userId: BOB,
+        kind: 'call.missed',
+        subjectType: 'call',
+        subjectId: SESSION,
+        title: 'Missed call',
+        excerpt: null,
+        channelId: CHANNEL,
+        boardId: null,
+      },
+      {
+        userId: CAROL,
+        kind: 'call.missed',
+        subjectType: 'call',
+        subjectId: SESSION,
+        title: 'Missed call',
+        excerpt: null,
+        channelId: CHANNEL,
+        boardId: null,
+      },
+    ]);
+  });
+
+  it('never tells the caller they missed their own call', () => {
+    expect(
+      planNotifications(row('rtc_session.ended', { ...base, missedUserIds: [ALICE] }, ALICE)),
+    ).toEqual([]);
+  });
+
+  it('survives a payload missing sessionId', () => {
+    expect(planNotifications(row('rtc_session.ended', { missedUserIds: [BOB] }))).toEqual([]);
+  });
+});
+
+describe('actorLabel — personalized titles (migration 0087)', () => {
+  it('names the caller in a missed-call title', () => {
+    const planned = planNotifications(
+      row('rtc_session.ended', { sessionId: '1', channelId: '2', missedUserIds: [BOB] }, ALICE),
+      'Alice Example',
+    );
+    expect(planned[0]?.title).toBe('Missed call from Alice Example');
+  });
+
+  it('names the mentioner, with and without a channel name', () => {
+    const withChannel = planNotifications(
+      row(
+        'message.sent',
+        {
+          messageId: '1',
+          channelId: '2',
+          excerpt: 'hi',
+          channelName: 'general',
+          mentionedUserIds: [BOB],
+        },
+        ALICE,
+      ),
+      'Alice Example',
+    );
+    expect(withChannel[0]?.title).toBe('Alice Example mentioned you in #general');
+
+    const dm = planNotifications(
+      row(
+        'message.sent',
+        {
+          messageId: '1',
+          channelId: '2',
+          excerpt: 'hi',
+          channelName: null,
+          mentionedUserIds: [BOB],
+        },
+        ALICE,
+      ),
+      'Alice Example',
+    );
+    expect(dm[0]?.title).toBe('Alice Example mentioned you');
+  });
+
+  it('names the sender of a thread reply and a direct message', () => {
+    const reply = planNotifications(
+      row(
+        'message.sent',
+        { messageId: '1', channelId: '2', excerpt: 'hi', parentAuthorId: BOB },
+        ALICE,
+      ),
+      'Alice Example',
+    );
+    expect(reply[0]?.title).toBe('Alice Example replied to your message');
+
+    const direct = planNotifications(
+      row(
+        'message.sent',
+        { messageId: '1', channelId: '2', excerpt: 'hi', directRecipientIds: [BOB] },
+        ALICE,
+      ),
+      'Alice Example',
+    );
+    expect(direct[0]?.title).toBe('Alice Example sent you a message');
+  });
+
+  it('names who assigned a card and who mentioned in a comment', () => {
+    const assigned = planNotifications(
+      row('card.assigned', { cardId: '1', boardId: '2', before: [], after: [BOB] }, ALICE),
+      'Alice Example',
+    );
+    expect(assigned[0]?.title).toBe('Alice Example assigned you a card');
+
+    const cardComment = planNotifications(
+      row(
+        'comment.created',
+        { commentId: '1', cardId: '2', boardId: '3', excerpt: 'ping', mentionedUserIds: [BOB] },
+        ALICE,
+      ),
+      'Alice Example',
+    );
+    expect(cardComment[0]?.title).toBe('Alice Example mentioned you in a comment');
+
+    const pageComment = planNotifications(
+      row('page.comment_created', { pageId: '1', excerpt: 'ping', mentionedUserIds: [BOB] }, ALICE),
+      'Alice Example',
+    );
+    expect(pageComment[0]?.title).toBe('Alice Example mentioned you in a comment');
+  });
+
+  it('names who changed a membership', () => {
+    const added = planNotifications(
+      row('member.added', { membershipId: '1', userId: BOB, role: 'member' }, ALICE),
+      'Alice Example',
+    );
+    expect(added[0]?.title).toBe('Alice Example added you as a Member');
+
+    const roleChanged = planNotifications(
+      row('member.role_changed', { membershipId: '1', userId: BOB, to: 'admin' }, ALICE),
+      'Alice Example',
+    );
+    expect(roleChanged[0]?.title).toBe('Alice Example changed your role to an Admin');
+
+    const removed = planNotifications(
+      row('member.removed', { membershipId: '1', userId: BOB }, ALICE),
+      'Alice Example',
+    );
+    expect(removed[0]?.title).toBe('Alice Example removed you from this organization');
+  });
+
+  it('falls back to the pre-0087 anonymous phrasing when the actor cannot be resolved', () => {
+    const planned = planNotifications(
+      row('card.assigned', { cardId: '1', boardId: '2', before: [], after: [BOB] }, ALICE),
+      null,
+    );
+    expect(planned[0]?.title).toBe('You were assigned a card');
+  });
+});
+
 describe('unrelated event names', () => {
   it('ignores events this projection does not consume', () => {
     expect(planNotifications(row('card.updated', { cardId: '1' }))).toEqual([]);
@@ -491,5 +653,43 @@ describe('dueDateChanged — the due-reminder refire trigger (§3.8)', () => {
       dueDateChanged(row('card.assigned', { cardId: CARD, before: [], after: [BOB] })),
     ).toBeNull();
     expect(dueDateChanged(row('card.updated', {}))).toBeNull();
+  });
+});
+
+describe('resolveActorLabels — fails OPEN, never closed (migration 0087 resilience)', () => {
+  /* A fake `tx` shaped like Drizzle's chainable query builder — the same
+     minimal subset `resolveActorLabels` actually calls — whose `.where()`
+     rejects, mirroring what a missing grant (0087 not yet applied) or a
+     transient database blip looks like from inside the try/catch. No real
+     Postgres involved: this is testing that the FUNCTION never lets that
+     rejection escape, not that Postgres refuses the query. */
+  function throwingTx(): Parameters<typeof resolveActorLabels>[0] {
+    const chain = {
+      from: () => chain,
+      where: () => Promise.reject(new Error('permission denied for table profiles')),
+    };
+    return { select: () => chain } as unknown as Parameters<typeof resolveActorLabels>[0];
+  }
+
+  it('returns an empty map instead of throwing when the underlying query rejects', async () => {
+    const labels = await resolveActorLabels(throwingTx(), [ALICE]);
+    expect(labels.size).toBe(0);
+  });
+
+  it('logs a warning through the optional logger, when one is given', async () => {
+    const warnings: unknown[] = [];
+    const logger = {
+      warn: (...args: unknown[]) => {
+        warnings.push(args);
+      },
+    } as unknown as Logger;
+
+    await resolveActorLabels(throwingTx(), [ALICE], logger);
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('never queries at all for an empty id list — the throwing tx would fail the test if it did', async () => {
+    const labels = await resolveActorLabels(throwingTx(), []);
+    expect(labels.size).toBe(0);
   });
 });

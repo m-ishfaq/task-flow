@@ -10,8 +10,8 @@
  * unchanged default 16px root) does — no unit conversion either.
  */
 
-/** `--radius-card: 0.5rem` at the standard 16px root. */
-export const radiusCard = 8;
+/** `--radius-card: 0.625rem` at the standard 16px root. */
+export const radiusCard = 10;
 
 export const motion = {
   /** `--motion-fast`, in ms. */

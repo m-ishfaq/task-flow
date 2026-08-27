@@ -166,10 +166,11 @@ const styles = StyleSheet.create({
     paddingTop: 14,
   },
   sectionTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: colors.inkMuted.hex,
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   sectionHint: {
     fontSize: 12,
@@ -201,7 +202,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   currentBadge: {
-    backgroundColor: colors.surfaceHover.hex,
+    backgroundColor: colors.accent.hex + '15',
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 2,
@@ -209,7 +210,7 @@ const styles = StyleSheet.create({
   currentBadgeText: {
     fontSize: 11,
     fontWeight: '600',
-    color: colors.inkMuted.hex,
+    color: colors.accent.hex,
   },
   rowMeta: {
     fontSize: 12,
@@ -227,11 +228,12 @@ const styles = StyleSheet.create({
   },
   logoutEverywhereButton: {
     borderWidth: 1,
-    borderColor: colors.danger.hex,
+    borderColor: colors.danger.hex + '40',
     borderRadius: radiusCard,
     paddingVertical: 10,
     alignItems: 'center',
     marginTop: 4,
+    backgroundColor: colors.danger.hex + '08',
   },
   logoutEverywhereText: {
     fontSize: 14,

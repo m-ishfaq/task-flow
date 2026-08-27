@@ -2,7 +2,7 @@
 
 The Android & iOS app (Expo / React Native). Full plan: [ai/phase-14-mobile.md](../../ai/phase-14-mobile.md).
 
-## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed; the "needs a rich text editor" call on `@mention` composing turned out to be wrong for the mid-string case specifically (a plain `TextInput`'s own `onSelectionChange`/`selection` was enough) and is fixed too — see "`@mention` now works mid-string"; a real native (no WebView) rich text editor — bold, links, and lists — now composes on all four surfaces named for it (chat message composer, thread replies, card description, card comments), via `@expensify/react-native-live-markdown`'s `MarkdownTextInput` and a live/send-time split for the one thing it cannot highlight live (lists) — see "A real rich text editor..."; **in-app voice calling (Phase 13, Wave 5 here) now ships on mobile** — signaling (`react-native-webrtc`), ringing, ringtones, call history, and recording-consent participation, by explicit project-owner direction scoped to in-app ringing only (CallKit/ConnectionService lock-screen UI named as a real, separate follow-up rather than included) — see "In-app voice calling..."
+## Status — Wave 1 complete, Wave 1b complete (passkeys infra-blocked), Wave 2 (Work) complete, Wave 3 (Chat + push) complete and now at full web parity, Account parity complete, Sprints complete — Work now at full parity with web: My Tasks, Boards, and all card-detail fields (status/assignees/labels/checklists/custom fields/attachments/comments/description/dates all editable); card detail also had a visual redesign (bordered card sections, horizontal-scroll chip rows, an avatar and background bubbles on comments) after real-device feedback called the screen too messy to read; card drag-and-drop and list reordering remain deliberately deferred (see "Not here yet"); a follow-up audit against web's actual chat source (not this file's own prior claim of parity) found and closed channel-type glyphs, a read-only/archived composer notice, slash commands, an org-wide Saved Messages view, an org-wide notification center, a long-press "who reacted" view, and the "new messages" divider (see the "Chat, a real audit..." / "Chat, closing the last two named gaps" / "Chat, the last two" sections) — every gap that audit found and could be closed without a rich text editor or a WebRTC port is now closed; the "needs a rich text editor" call on `@mention` composing turned out to be wrong for the mid-string case specifically (a plain `TextInput`'s own `onSelectionChange`/`selection` was enough) and is fixed too — see "`@mention` now works mid-string"; a real native (no WebView) rich text editor — bold, links, and lists — now composes on all four surfaces named for it (chat message composer, thread replies, card description, card comments), via `@expensify/react-native-live-markdown`'s `MarkdownTextInput` and a live/send-time split for the one thing it cannot highlight live (lists) — see "A real rich text editor..."; **in-app voice calling (Phase 13, Wave 5 here) now ships on mobile** — signaling (`react-native-webrtc`), ringing, ringtones, call history, and recording-consent participation, by explicit project-owner direction scoped to in-app ringing only (CallKit/ConnectionService lock-screen UI named as a real, separate follow-up rather than included) — see "In-app voice calling..."; the notification bell is now reachable from every tab and the org picker has a sign-out escape hatch — see "The notification bell was only reachable..."; **org settings (the member roster, invites, and role changes) now ships** — see "Org settings: the member roster..." — and **project settings (labels, statuses, custom fields, board rename/archive) now ships too** — see "Project settings: labels, statuses, and custom fields..." — and **Teams, ownership transfer, and billing now ship as well** — see "Teams, ownership transfer, and billing..." — closing every item the original "org settings and perms not wired yet" report named; **native CallKit (iOS) / ConnectionService (Android) integration now covers the app-alive case** — a ringing call now registers with the OS the moment it enters the same `rtc.incoming` list `IncomingCallBanner` already polls, so it gets real audio-focus/Bluetooth/Do-Not-Disturb integration and, on iOS, the actual lock-screen call UI — see "Native CallKit / ConnectionService..." for exactly what this covers; **and a backgrounded or killed phone now gets a real, tappable "Incoming call" push the moment someone rings it** — a new `apps/api/src/platform/call-wake.ts` outbox consumer, reusing the existing Expo push pipeline end to end with no new mobile code — see "Pass B: a real ring push..." for the design and the honest scope correction it made from the silent-wake plan originally named in the CallKit section; a true native Android lock-screen surface and real iOS VoIP push remain real, separate, not-yet-built work (Pass C); **Docs comments and suggestions can now anchor to a real, non-collapsed range — a specific paragraph/heading/list/etc., not just the whole page** — selecting text inside `PageEditor`'s Edit-mode draft and tapping "Comment on selection" anchors to the whole top-level block(s) spanned, block granularity rather than web's character precision, a real and named scope reduction — see "Docs comment/suggestion anchoring, from Edit mode..." for the full design and why suggestions were deliberately left at page-level for this pass
 
 Wave 1's acceptance bar (§7: the three gates and one authenticated tRPC
 read, on a real device, against the real API) has everything CI can prove
@@ -1299,6 +1299,17 @@ button; a "past calls" list with no query layer behind it is the same
 mistake this app's own history already warns against — a control that
 reads correctly and does nothing real. Real, separate work, named here
 rather than quietly missing.
+_(True when written — both have since shipped: Phase 13's WebRTC calling
+got `call-surface.tsx`/`use-call.ts` (see "In-app voice calling" below),
+and Phase 7's telephony client got its own "Calls" tab (see "Voice &
+Messaging: Phase 7's telephony client, ported" further down). The
+in-channel RTC call history this section's own `CallHistorySection`
+already shows is that first half; a DM's click-to-call against the
+counterparty's work phone specifically is not yet wired into THIS
+screen — `TelephonyCallButton` exists and could be reused here, but that
+is its own small follow-up, not done as part of either port. Left as
+written rather than silently edited, per this file's own rule about
+correcting a stale claim in place.)_
 
 ## Account screen parity with web — complete
 
@@ -3185,6 +3196,88 @@ address is exactly the SSRF risk the control exists for. Verified the same way a
 change above (`docker compose config` resolves the new flags correctly, valid YAML, prettier and
 encoding checks pass) — no Docker daemon here to boot the container itself.
 
+### The port-mapping fix had regressed silently — the real, final root cause was Windows Docker Desktop's UDP port-publishing itself
+
+Reopened by a live report: mobile still could not hear voice, and — a second symptom that turned out
+to be the SAME bug — a call showed every other participant as having left after roughly 20 seconds,
+even though nobody had. The second symptom traced straight to `peer-mesh.ts`'s own
+`onconnectionstatechange` handler: `if (state === 'failed' || state === 'closed')
+this.#options.onPeerGone(userId)`. A connection that never finishes ICE eventually gets declared
+`failed` by the browser/native stack itself, and this app reports that as the peer having gone —
+correct behaviour for a genuinely dropped peer, indistinguishable from "never connected" without
+looking at what came before it.
+
+What came before it, in the real device log: mobile gathered exactly four local candidates, all
+`typ=host` — zero `srflx`, zero `relay`, for two separate call attempts six minutes apart. Coturn's
+own logs, spanning two full container restarts, showed nothing after the boot sequence — no STUN
+binding, no auth attempt, no denied-peer line, nothing. That combination means the "port-mapping fix
+worked" finding two sections up had stopped holding: STUN requests from the phone were no longer
+reaching the container at all, silently.
+
+Two hypotheses were tested against real evidence before touching anything, in order, because this
+file's own standing lesson is to diagnose from logs rather than guess:
+
+1. **A missing Windows Firewall inbound rule for UDP 3478/49160-49200.** Plausible — the port-mapping
+   era publishes to the host, and Windows blocks unsolicited inbound traffic from other LAN devices by
+   default. Added `New-NetFirewallRule -Direction Inbound -Protocol UDP -LocalPort
+3478,49160-49200 -Action Allow` and retried. **Ruled out**: identical failure, byte-for-byte the
+   same shape, on the very next call attempt.
+2. **Docker Desktop never actually bound UDP 3478 on the host's real interface at all.** `netstat -ano
+| findstr :3478` on the Windows host showed three TCP listeners (`0.0.0.0:3478`, `[::]:3478`,
+   `[::1]:3478`) and **no UDP line whatsoever**. Windows `netstat` with no `-p` filter lists both
+   protocols, so a total absence means Docker Desktop's UDP port-publishing proxy silently failed to
+   bind — coturn's own UDP listener was running correctly _inside_ the container the entire time,
+   reachable by nothing outside it. **Confirmed**: this is a known Docker Desktop for Windows weak
+   spot (TCP port publishing is solid, UDP has real reliability issues), and it explains every
+   symptom — the vanished STUN requests, the host-only candidates, the eventual `failed` state, and
+   through that, "everyone left."
+
+Fixed at the source rather than worked around a third time: Docker Desktop's **"Enable host
+networking"** setting (Settings → Resources → Network) makes `network_mode: host` bind to the REAL
+Windows network stack instead of the Desktop VM's own internal loopback/bridge — the original bug
+that motivated moving to the `ports:` list in the first place. With that setting on, host networking
+finally means what it says, and bypasses the broken UDP-publishing proxy entirely instead of routing
+around it. `compose.yaml`'s coturn service is back to `network_mode: host`, `--external-ip` stays
+explicit (a dev machine can have more than one active interface, and auto-discovery has no way to
+know which one a phone can reach), and the file's own header now documents all three configurations
+this block has been through and why, so a future contributor hitting "calls don't connect from a
+phone" again checks the Docker Desktop setting before re-diagnosing from scratch.
+
+**Requires that Docker Desktop setting to be turned on manually — it is not automatic, and there is
+no way for this repo to detect or enforce it.** A contributor on a fresh machine, or one who never
+enabled it, is back to the very first bug in this whole saga (loopback-only binding). Documented
+prominently in the compose.yaml header rather than assumed obvious, per this file's own repeated
+lesson that a status claim needs to say what it depends on.
+
+Verified so far: `docker compose config --quiet` resolves the file with no errors, valid YAML,
+prettier and encoding checks pass — the same config-only verification the two earlier coturn fixes
+in this file used, since there is no Docker daemon in this environment to boot the container itself.
+**Not yet verified against a real device call** — that requires restarting Docker Desktop with the
+new setting and retrying from a phone, which only the project owner's own machine can do.
+
+**Corrected in place, per this file's own habit of recording a wrong premise rather than silently
+rewriting it: the `network_mode: host` fix above was disproven by the very next real device round.**
+Coturn's own listener-discovery log — ground truth for what network namespace the container actually
+sits in, not an inference — enumerated `192.168.65.6`, `192.168.65.3`, `172.18.0.1`, `172.17.0.1`,
+`172.19.0.1`: the exact Docker-internal address pattern (`192.168.65.x`, `172.1x.0.1`) the FIRST
+diagnosis in this whole saga already named as "the Desktop VM's own loopback/bridge, never the real
+machine's LAN interface." Not one of the seven discovered addresses was a real LAN IP. "Enable host
+networking" turned on had made no difference to what `network_mode: host` actually binds to — because
+Docker Desktop always runs a VM in between on Windows/Mac, with or without that setting, and a
+`network_mode: host` container shares THAT VM's namespace, never Windows' own.
+
+What the setting actually fixes, per Docker's own documentation, is narrower and different: **published
+ports** binding directly to the host machine instead of routing through the userland proxy — which is
+exactly the mechanism the `netstat` evidence upstream in this section caught silently dropping UDP.
+So the real fix is a combination nothing had tried yet: the `ports:` list (reverted back to, undoing
+the `network_mode: host` change one section up) WITH "Enable host networking" actually turned on.
+`compose.yaml`'s own header now records both configurations tried, in order, with the evidence that
+disproved the first — a reader hitting this bug a third time should not have to re-run the same dead
+end.
+
+Verified the same way as the fix it corrects: `docker compose config --quiet`, valid YAML, prettier
+and encoding checks pass. Still not verified against a real device call with this exact combination.
+
 ### The notification bell was only reachable from the Chat tab, and a stuck org picker had no way out
 
 Two real gaps from live testing, both about getting somewhere this app already has, not missing
@@ -3220,6 +3313,309 @@ real `expo export` for Android bundles cleanly. Not verified: exact pixel placem
 against a real status bar/notch — reasoned from `use-top-inset.ts`'s own documented inset math, not
 confirmed on-device yet.
 
+### Org settings: the member roster and role changes — the first slice of "org settings and perms not wired yet"
+
+A live report named four gaps in one message; two were fixed above (the bell, the org picker). This
+is the third: `apps/mobile/app/`'s own route list confirmed directly (not assumed) that nothing on
+this platform let anyone see who else is in the org, invite someone, change a role, or remove a
+member — `(tabs)/account.tsx` covers the SIGNED-IN PERSON's own settings only. `org-settings.tsx`
+(reached from a new "Manage organization" link on the Account tab, right below "Switch
+organization") ports `apps/web/src/features/admin/settings-page.tsx`'s org-rename and member-roster
+surfaces onto the same `tenancy.orgs.get`/`.update` and `tenancy.members.list`/`.add`/`.changeRole`/
+`.remove` routes web already uses — no new API surface.
+
+**The roster is `member:read` (every role sees it); each control above it gates on its own
+capability.** `tenancy.orgs.get`'s `capabilities` object (`updateOrg`, `inviteMember`,
+`manageMembers`, `removeMembers`) is what the screen reads, never a role comparison — the same
+"UI never re-derives authorization" argument CLAUDE.md §8.2 makes everywhere else, and the same
+shape `channel-details/[channelId].tsx`'s own roster already uses. A member who cannot invite
+anyone still sees the full roster; the invite form itself just never renders for them, matching
+that file's own "hidden rather than shown-and-refused" precedent for a control nobody could submit.
+
+**Change role and Remove both go through `useStepUp`, and this is not optional plumbing.**
+`tenancy.members.changeRole`/`.remove` are `stepUp: true` server-side — role changes are what an
+attacker holding a stolen session reaches for first — so both mutations wrap their `.mutate` call in
+the identical `guard(error, retry)` pattern `sessions-section.tsx` and `connected-accounts-
+section.tsx` already established: a `STEP_UP_REQUIRED` error opens `StepUpSheet`, confirming it
+retries the exact same call. `Add` carries no such guard, matching the server route it calls, which
+has none.
+
+**A genuine guardrail-2 false positive, fixed by renaming, not by touching the rule.** The invite
+form's own local UI state — which role chip is currently selected, before the user taps "Add
+member" — was named `role`, and the deliberately blunt, name-based `roleIdentifier` ESLint rule
+(`Identifier[name='role']` in a `===`/`!==` comparison) fired on it twice, even though nothing about
+it is an authorization decision. CLAUDE.md is explicit that this guardrail is blunt ON PURPOSE and
+must never be disabled or modified for a case like this — the fix is always to change the code, so
+the state (and its two comparison sites) is now `inviteRole`/`setInviteRole`.
+
+**What this deliberately does NOT port.** Teams (`TeamSection`), billing (`BillingSection`), and
+ownership transfer (`transferOwnership`'s own dialog) are all real, separate surfaces on web with no
+comparable urgency behind them — the roster and role changes are what "org settings and perms" was
+actually asking for. Project-level settings (labels, statuses, custom fields —
+`apps/web/src/features/work/project-settings-page.tsx`) is a second, larger, and separate gap the
+same report named and is still open; see "Not here yet" below.
+
+Verified: typecheck clean, lint clean (the guardrail fix above, and the one pre-existing unrelated
+`push-notifications.ts` warning untouched), all 218 tests pass unchanged (this screen has no
+standalone logic module the way e.g. `peer-mesh.ts` does — it is UI wiring over already-tested
+routes, the same shape as `channel-details/[channelId].tsx` itself), guardrail self-test clean,
+encoding check clean, prettier clean, and a real `expo export --platform android` bundles cleanly
+(2439 modules, no errors).
+
+### Project settings: labels, statuses, and custom fields — the second half of "project, org settings and perms not wired yet"
+
+The remaining piece from the same live report, once org settings shipped: `project-
+settings/[projectId].tsx` ports `apps/web/src/features/work/project-settings-page.tsx`'s vocabulary
+management onto the same `work.projects.update/archive`, `work.labels.update/delete`,
+`work.statuses.create/update/delete`, and `work.fields.update/archive` routes web already uses.
+Reached from a new "Settings" button next to "Sprints" on `project/[projectId].tsx`, always visible
+— the same "the UI never re-derives authorization" argument `org-settings.tsx` already documents,
+since every control on the page individually gates on `project:update` via each resource's own
+`capabilities`/response shape rather than a role check.
+
+**Boards are deliberately NOT a section here, unlike web's single page.** `project/[projectId].tsx`
+is already this app's "browse and create boards" screen; building a second Boards list inside
+project-settings would read the same data under a different query and invite the two going stale
+against each other. Instead, that existing screen gained the Rename and Archive controls it was
+missing, right on each board's own row, gated on that board's own `capabilities.update`/`.delete`
+— per-board, not inherited from the project, since a board can carry its own share grant
+independent of project-level access. No confirm on archive: it is reversible and the board's cards
+are untouched, the same call web makes for the identical control.
+
+**No create form for labels or custom fields, matching web exactly.** Both are already minted from
+a card's detail panel the first time one is needed — confirmed directly against
+`card/[cardId].tsx`, which already has both flows — so a project-level "new label" box here would
+invite naming vocabulary nobody has a card for yet; this screen only edits what that use already
+produced. Statuses are the one exception, with a genuine create form above the list: a board
+grouped by status needs the columns to exist before a card can be dragged into one, and there is no
+other entry point for minting one.
+
+**Labels and statuses are deleted for real; custom fields are archived — matching each resource's
+own service, not a UI choice.** A label or status holds no content of its own, so deleting one only
+un-tags or un-classifies cards; a field can hold real values someone entered, so it is archived
+instead, and archived fields stay listed here (the only place they can be restored).
+
+**`Alert.alert` confirms the three genuinely irreversible or high-consequence actions** — archiving
+the project (it also navigates back to the Projects tab), and deleting a label or status, with the
+affected card count in the message, mirroring web's own `ConfirmButton` reasoning that the count
+_is_ the decision. Renaming, recoloring, archiving/restoring a field, and archiving a board are left
+unconfirmed, matching this app's own established convention elsewhere (`card/[cardId].tsx`'s
+checklist and item deletes, `org-settings.tsx`'s member removal) for actions that are either
+reversible or genuinely small — a deliberate per-action split, not a blanket "always confirm" or
+"never confirm" rule, and the first place on mobile `Alert.alert` is used as a real confirm dialog
+rather than the one unrelated prior use in `call-button.tsx`.
+
+**No manual color picker — RN has no `<input type="color">`.** Recoloring a label and picking a
+status's color both reuse `work.ts`'s existing `LABEL_PALETTE` (previously scoped to "next color
+for a new label," now exported generically) as a row of tappable swatches, rather than adding a
+native color-picker dependency this app carries nowhere else.
+
+Verified: typecheck clean, lint clean, all 218 tests pass unchanged (no new logic module — this is
+UI wiring over already-tested routes, the same shape as `org-settings.tsx`), guardrail self-test
+clean, encoding check clean, prettier clean, and a real `expo export --platform android` bundles
+cleanly with the new route included.
+
+### Teams, ownership transfer, and billing — the three surfaces this file had named as deferred
+
+Closes the three items `org-settings.tsx`'s own header used to list as deliberately not ported.
+Teams and ownership transfer extend that same screen (`tenancy.teams.list/create/addMember/
+removeMember`, `tenancy.members.transferOwnership`); billing is `billing.tsx`, a new screen of its
+own, on the seven `billing.*` routes web's `billing-section.tsx` already uses.
+
+**Billing is its own screen, not a third section on `org-settings.tsx` — a deliberate divergence
+from web's single page.** `org:billing` answers "what does this org pay," a different question
+from "who is in it and what can they do," and web only bundles both because a wide layout has the
+room; a phone does not, and they were already two separate `Section`s there. A "Billing" link sits
+at the top of `org-settings.tsx`, always visible for the identical §8.2 reason every other control
+on that screen is — `org:billing` is Owner-only and satisfiable by no tuple, so a non-owner reaching
+it sees the same honest error every other permission-gated read on this app renders, not a hidden
+button.
+
+**"Transfer ownership…" is gated on `capabilities.manageMembers`, the same flag that gates changing
+a role — not a separate capability.** Ownership has exactly one holder, so the button is never
+usable by anyone but the current Owner, not "usually not." The candidate list is every member
+except the caller, deliberately unfiltered by role: filtering it here would be the UI re-deriving
+authorization (§8.2's own rule), and the server already refuses a guest jumping straight to Owner
+regardless of what this screen offers. Like `changeRole`/`remove`, `transferOwnership` is
+`stepUp: true` server-side, so it goes through the same `useStepUp` `guard`/retry pattern.
+
+**Team member removal has no confirm, matching this screen's own existing "Remove member"
+control** — not a two-tap chip confirm the way web's `TeamCard` does it. Both are the same class of
+action (an immediate authorization change with no server-side step-up), and this app's own
+established convention elsewhere (`project-settings.tsx`'s header lists it) is that `Alert.alert`
+is reserved for the FEW genuinely irreversible or high-consequence actions — introducing a THIRD
+confirmation style on one screen, alongside the member roster's own unconfirmed "Remove" a few rows
+above, would be inconsistent rather than careful.
+
+**Checkout and the customer portal are processor-hosted redirects here too, but the return signal
+is not web's.** Web navigates the whole page to the processor's URL and detects a completed
+checkout from `?checkout=success` reappearing in the address bar on return — a phone has no address
+bar to carry that. `WebBrowser.openBrowserAsync` (the same `expo-web-browser` module `oauth.ts`
+already uses for sign-in, here in its plain non-auth-session form, since a Stripe-hosted page has
+no `taskflow://` scheme to intercept) opens the URL and its promise resolves the moment the person
+dismisses that browser view — success, cancellation, or a portal-side change, all the same signal.
+Calling `reconcile` unconditionally on that resolution is actually a STRONGER guarantee than web's
+query parameter, since it fires on every kind of return rather than only the one URL shape checkout
+happens to redirect to, and `reconcile` is idempotent either way — the webhook stays the primary
+path, this only makes the screen correct immediately without waiting on one.
+
+**The plan-switch confirmation is `Alert.alert`, not a rebuilt `SwitchPlanDialog`.** The web dialog
+exists because "Switch" hides two genuinely different outcomes — an upgrade charges today, a
+downgrade waits until the period ends — and a two-button alert carrying the identical wording says
+exactly as much, matching this app's established use of `Alert.alert` for a real confirm decision.
+
+**One real type fight, not a shortcut.** RN's `DimensionValue` wants a computed usage-bar width as
+the literal shape `` `${number}%` ``, but this repo's `restrict-template-expressions` lint config
+disallows a bare number inside a template literal's `${...}`. `usagePercentWidth` in `billing.tsx`
+resolves it with plain string concatenation (outside that rule's scope) and a narrow cast back to
+`DimensionValue` — honest, since the computed percentage is always a finite 0–100 number, not a
+workaround for something the type system was right to catch.
+
+**`formatMoney`/`daysUntil` are the one pure logic this slice adds**, ported verbatim from
+`billing-section.tsx`'s own `money`/`daysUntil` — `billing.test.ts` is new because, unlike
+`org-settings.tsx`/`project-settings.tsx`, this file actually has something worth unit-testing:
+currency formatting (including the lowercase-to-uppercase currency-code step the wire value needs,
+since `Intl.NumberFormat` requires an uppercase ISO code) and the day-rounding/past-deadline edge
+cases, with the clock pinned via `vi.setSystemTime` the same way `work.test.ts` already does for
+`formatDueDate`.
+
+Verified: typecheck clean, lint clean (including the `restrict-template-expressions` fix above),
+226 tests pass (218 existing + 8 new in `billing.test.ts`, confirming `Intl.NumberFormat` works in
+this runtime), guardrail self-test clean, encoding check clean, prettier clean, and a real
+`expo export --platform android` bundles cleanly with both routes included.
+
+### The coturn saga's actual ending — a phone hosting its own hotspot cannot hairpin back to itself
+
+The `network_mode: host` fix two sections up was disproven live, and the chain that followed —
+reverted to the `ports:` list, `-v` added to coturn temporarily as a diagnostic, a temporary
+`[rtc] ice servers: [...]` log added to `use-call.ts` — is carried in full in `compose.yaml`'s own
+header and this branch's commit history rather than restated here. The short version: every one of
+those rounds confirmed the Docker/coturn/Windows-Firewall stack was, by that point, genuinely
+correct — a full TURN allocation succeeded, mobile's own ICE server URLs were confirmed to be the
+right LAN address, not stale — and mobile STILL never produced anything past `typ=host`.
+
+The actual root cause was never in this repo at all: **the phone running the app was also hosting
+the Wi-Fi hotspot the dev machine was connected through.** A phone serving its own hotspot does not
+generally loop its own apps' outbound traffic back through that hotspot's own subnet to reach a
+service on a device it is itself serving — a hairpin-NAT limitation most phones simply don't
+support for their own traffic, and it isn't visible in any log this repo can produce because the
+packet is never sent, not dropped. Confirmed via the coturn session logs recording the ONLY two
+successful TURN allocations as originating from `172.19.0.1` — Docker's own bridge gateway, i.e.
+traffic from the SAME machine (almost certainly the web participant), never from the phone's own
+address. Fixed by moving the dev machine and phone onto a THIRD network — neither device hosting
+it — with no further compose.yaml or app change needed, since every layer this repo controls was
+already correct by that point.
+
+**This is dev-topology-specific and cannot recur in production.** `compose.prod.yaml`'s coturn sits
+on a real server with a public IP; a phone reaching a public address is ordinary internet routing
+regardless of what network it's on, hotspot included — the hairpin case only exists when the
+destination is a private address that only exists inside a network the SAME client is hosting.
+Confirmed against `.env.prod.example`, which documents a real public STUN/TURN address (even naming
+`stun:stun.l.google.com:19302` as an example), and against `compose.prod.yaml`'s own coturn block,
+which still carries the FULL RFC1918 deny list with no allow-list exception — the dev-only carve-out
+this saga added was never applied there.
+
+### Bluetooth routing, and the speaker/mute buttons that looked broken — a real, confirmed bug, found the moment audio finally worked
+
+The very next real-device round, once the network fix above landed, surfaced a genuine code bug that
+had been unreachable until audio worked at all: a connected Bluetooth headset was ignored (audio
+stayed on the phone's own speaker), and the on-screen speaker toggle looked like it did nothing.
+
+Root cause, confirmed against `react-native-incall-manager`'s own README rather than assumed:
+`setForceSpeakerphoneOn` takes THREE meaningful states, not two — `true` forces speaker, `false`
+forces the EARPIECE, and only `null` means "use default behaviour according to media type," the one
+value that lets the library's own documented automatic, device-aware routing (Bluetooth or wired,
+preferred over speaker or earpiece) actually run. `joinCall` called
+`setForceSpeakerphoneOn(true)` unconditionally at the start of every call — overriding an
+already-connected Bluetooth headset before the call even began — and the on-screen toggle's "off"
+state called `setForceSpeakerphoneOn(false)`, which routes to the EARPIECE, never to Bluetooth. Both
+looked identical from a user holding a phone with headphones on: audio stayed on the device either
+way.
+
+Fixed in `use-call.ts`: `setSpeakerphone(false)` now passes `null`, not `false` — turning the toggle
+"off" hands the decision back to automatic routing instead of forcing a second, still-wrong
+destination. At join, `getIsWiredHeadsetPluggedIn()` is checked first, and a wired headset already
+connected skips the force-speaker default entirely; there is no equivalent query for Bluetooth in
+this library's JS surface, so a Bluetooth device connected BEFORE a call still gets forced to
+speaker at join — but the toggle, tapped once, now correctly reaches it, where before it silently
+did not.
+
+**A real third-party typing gap, fixed honestly rather than cast around.** The package's shipped
+`.d.ts` types `setForceSpeakerphoneOn` as `(flag: boolean) => void`, with no `null` — incomplete
+against its own README. A bare `null as boolean` cast at each call site would have been a lie about
+what actually crosses the native boundary; instead a single local `setForceSpeakerphoneOn` wrapper
+in `use-call.ts` corrects the one signature that's wrong, in one place, with a comment explaining
+why, rather than suppressing type-checking per call site.
+
+**Named as future work below, and since done**: `InCallManager.chooseAudioRoute(route: string)` is
+the library's real answer to letting someone pick a SPECIFIC device instead of the two-state
+force/auto toggle above — see "A real device picker, not a two-state toggle" further down, which
+replaces the `setForceSpeakerphoneOn`-based toggle described in this section entirely. The reported
+"mic button not working" is still open: `setMuted`'s implementation (`track.enabled = false` on the
+local audio track) is structurally the same well-established pattern web's own mute uses, and only
+affects what OTHER participants hear — a solo test with nobody confirming they'd stopped hearing you
+would look identical to a broken button. Revisit with a two-participant test before assuming there's
+a second bug here.
+
+Verified: typecheck clean (including the local type-signature fix), lint clean, all 226 tests pass
+unchanged (no new logic module — a real device audio-routing fix has no meaningful unit-testable
+surface), guardrail self-test clean, prettier clean, and a real `expo export --platform android`
+bundles cleanly. Not yet reverified against a real Bluetooth headset — that requires the project
+owner's own device.
+
+### A real device picker, not a two-state toggle — the third and final shape of this fix
+
+The section above shipped a two-state force/auto toggle as an interim fix — real, but crude: "auto"
+hands routing to the OS, with no way to choose a SPECIFIC device when more than one is available (a
+Bluetooth headset AND a wired headset both connected, say). Requested explicitly as the next
+shippable, credential-free call improvement once voice itself worked, this replaces that toggle with
+`InCallManager.chooseAudioRoute`, the call named but deliberately deferred above.
+
+Confirmed against the library's native Android source
+(`InCallManagerModule.java`), not assumed from the `.d.ts` alone: `chooseAudioRoute` accepts exactly
+one of `'EARPIECE' | 'SPEAKER_PHONE' | 'WIRED_HEADSET' | 'BLUETOOTH'` (the Java
+`enum AudioDevice`), and resolves to `{ availableAudioDeviceList: <JSON-string>,
+selectedAudioDevice: <string> }`. There is no passive getter for "what's available right now" — the
+only way to learn it is the `onAudioDeviceChanged` `DeviceEventEmitter` event, which fires with that
+same status shape whenever availability changes (a Bluetooth headset connecting or disconnecting
+mid-call, a wired plug pulled out) as well as in response to `chooseAudioRoute` itself.
+
+`use-call.ts`'s `CallState` now carries `availableAudioDevices` and `selectedAudioDevice` instead of
+the old `speakerOn` boolean, kept current by an `onAudioDeviceChanged` subscription started
+alongside `InCallManager.start()` in `joinCall` and torn down alongside it in `hangUp` — paired
+1:1, the same lifecycle discipline the module itself already followed. The "loud by default" join
+behaviour from the section above is preserved, but now correctly scoped: it seeds speaker only on
+the FIRST event, and only when neither `BLUETOOTH` nor `WIRED_HEADSET` is in the available list —
+so a headset already connected at join is never overridden, closing the gap the interim fix
+explicitly left open ("a Bluetooth device connected BEFORE a call still gets forced to speaker at
+join").
+
+**`DeviceEventEmitter` needed the same deferred-import treatment as `react-native-webrtc` and
+`react-native-incall-manager` — and for a different reason.** Both native modules throw
+synchronously if unlinked, which is reason enough on its own. But `react-native` itself turns out to
+need it here too: its own source fails to even parse under Vitest (Flow syntax) — confirmed by the
+fact that `push-notifications.ts`, the one other file in this codebase that statically imports
+`{ Platform }` from `'react-native'`, has no test file exercising it, deliberately. So
+`const { DeviceEventEmitter } = await import('react-native');` runs inside `joinCall`, never as a
+top-level import — keeping `use-call.ts` unit-testable with no React renderer, its own stated design
+goal.
+
+The old `setForceSpeakerphoneOn` local wrapper (the previous section's own fix for the package's
+incomplete `.d.ts`) is gone entirely — `chooseAudioRoute`'s real signature has no such gap, so there
+is nothing left to correct.
+
+`call-surface.tsx`'s speaker-toggle button is replaced with a picker trigger (hidden when
+`availableAudioDevices` is empty, matching this app's existing "hidden rather than shown-and-refused"
+convention) opening a bottom-sheet `AudioRoutePicker` — one row per available device, mirroring
+`org-settings.tsx`'s own `RolePickerModal` shape rather than inventing a new one, so the pattern a
+user already learned there is the same one here.
+
+Verified: typecheck clean, lint clean (one pre-existing, unrelated warning in
+`push-notifications.ts`), all 226 tests pass unchanged (no new logic module — same reasoning as the
+section above), guardrail self-test clean, prettier clean, encoding check clean, and a real
+`expo export --platform android` bundles cleanly. Not yet reverified against a real device with
+multiple simultaneous audio devices connected — that requires the project owner's own hardware.
+
 ## Not here yet
 
 - **CallKit (iOS) / ConnectionService (Android) — a real lock-screen "incoming call" UI.** Named
@@ -3234,13 +3630,13 @@ confirmed on-device yet.
 - **Video and screen share.** Wave 3 on web too — this phase never claimed either.
 - **Reconnect-and-resume of a live peer connection.** A dropped socket ends that leg; rejoining is
   the recovery, matching web's own stated limit exactly.
-- **Org settings, project settings, and permissions/roles management — no screens at all yet.**
-  Confirmed directly against `apps/mobile/app/`'s own route list, not assumed: `(tabs)/account.tsx`
-  covers the SIGNED-IN PERSON's own settings (profile, passkeys, sessions, push, export); nothing
-  covers the ORG's or a PROJECT's — member roster and role changes, invites, project-level
-  configuration. `project/[projectId].tsx` exists and is an overview, not a settings screen. This
-  app never re-derives authorization (CLAUDE.md §8.2's own argument, ported unchanged) so building
-  any of this is real, separate work, not a config flag — genuinely not started.
+- **Both named gaps from the "project, org settings and perms not wired yet" live report are now
+  closed.** Org-level settings (name, member roster, invites, role changes) and project-level
+  settings (labels, statuses, custom fields, plus board rename/archive) both shipped — see "Org
+  settings: the member roster..." and "Project settings: labels, statuses, and custom fields..."
+  above.
+- **Teams, ownership transfer, and billing all shipped** — see "Teams, ownership transfer, and
+  billing..." above. Nothing from the original "org settings and perms" report remains deferred.
 - **Confirming this on a simulator or physical device beyond what has
   already run.** The app has now actually been installed and driven on a
   real development build — sign-in, the org picker, "My Tasks", and card
@@ -3248,8 +3644,10 @@ confirmed on-device yet.
   found the navigation-shell gap this file's newest section fixes. What is
   still unconfirmed: `isNativeClient`'s own header names what a real-device
   run would need to confirm about `Origin` on RN's WebSocket transport (see
-  `apps/realtime/src/auth.ts`) — nothing has joined a socket room yet, since
-  nothing on native calls `joinBoardRoom`.
+  `apps/realtime/src/auth.ts`). _(True when written — `board/[boardId].tsx`'s
+  `useBoardRoom` is now a real caller of `joinBoardRoom`, see "Work boards go
+  live" below; the `isNativeClient` real-device confirmation itself is still
+  open.)_
 
   **The public Expo Go app cannot open this project on SDK 57 today.** Expo
   Go's per-SDK build has a review-queue lag behind each SDK release, and the
@@ -3294,26 +3692,1828 @@ confirmed on-device yet.
 - Work is now at full parity with web (My Tasks, Boards, all card-detail
   sections, and a card's own dates and description — see "Work, closing
   the gap" and "Card detail, closing the last two card-specific gaps"
-  above for the full account). Still genuinely open across the app: a
-  native rich text EDITOR (description/comment/message composers all
-  flatten to plain text on save, rather than preserving or composing rich
-  formatting, until one exists), `@mention` composing in Work comments
-  specifically (Chat's own composer has it; Work comments deliberately do
-  not yet — see "comment edit/delete/replies" above), a real DATE PICKER
-  (every date field on this app — a card's own dates, a custom field of
-  type `date` — is typed by hand as `YYYY-MM-DD` rather than picked, no
-  date-picker dependency added), card drag-and-drop, and list reordering
-  (both boards' own sections above have the full reasoning). The rest of
-  Chat (attachments
-  from the
-  composer — reactions, mentions composing, thread replies,
-  edit/delete/"remove for me", read receipts, link unfurls, push, typing
-  indicators and broadcast-driven live refresh have all shipped, see "Chat,
-  reworked", "Chat, closer to complete", "Push notifications", and "Chat,
-  live" above) and the other product waves (Docs, RTC). Chat now joins a
-  room (`chat-socket.ts`, `use-chat-room.ts`) and stays live while a
-  channel screen is open; Work's `gatewaySocket` still has no caller —
-  nothing calls `joinBoardRoom` yet — so every board/card screen remains a
-  plain `useQuery`: fresh on navigation and on app-foreground (see
-  `_layout.tsx`'s `AppState` wiring, below), not live while the screen
-  stays open and nobody moves.
+  above for the full account). `@mention` composing in Work comments and
+  live socket updates on boards have SINCE shipped — see "Work boards go
+  live, and `@mention` reaches comments" below; left as written above
+  rather than silently edited, per this file's own rule about correcting a
+  stale claim in place. Still genuinely open across the app: a native rich
+  text EDITOR (description/comment/message composers all flatten to plain
+  text on save, rather than preserving or composing rich formatting, until
+  one exists), a real DATE PICKER (every date field on this app — a card's
+  own dates, a custom field of type `date` — is typed by hand as
+  `YYYY-MM-DD` rather than picked, no date-picker dependency added), card
+  drag-and-drop, and list reordering (both boards' own sections above have
+  the full reasoning). The rest of Chat (attachments from the composer —
+  reactions, mentions composing, thread replies, edit/delete/"remove for
+  me", read receipts, link unfurls, push, typing indicators and
+  broadcast-driven live refresh have all shipped, see "Chat, reworked",
+  "Chat, closer to complete", "Push notifications", and "Chat, live"
+  above) and the other product waves (Docs, RTC). Chat now joins a room
+  (`chat-socket.ts`, `use-chat-room.ts`) and stays live while a channel
+  screen is open; Work's board screen does too now (`use-board-room.ts`) —
+  see below for exactly what that does and does not cover.
+
+## Work boards go live, and `@mention` reaches comments
+
+Two gaps this file itself had named as open: `gatewaySocket` had no caller at all on this app
+(every board and card screen was a plain `useQuery`, fresh only on navigation or app-foreground),
+and `@mention` composing existed in Chat's composer but never reached a Work comment.
+
+### `use-board-room.ts` — `board/[boardId].tsx`'s first live room
+
+Ported from `apps/web/src/features/work/use-board-room.ts`, joining `board:{boardId}` on the same
+`gatewaySocket` singleton `call-surface.tsx` already forces open for incoming calls. A card someone
+else moves, edits, assigns, or comments on, or a list someone renames, now appears on an open board
+without leaving and reopening it.
+
+**Invalidates, never patches — the same call `use-chat-room.ts` already made for Chat.** Web's own
+hook patches `CardSummary` fields directly and adjusts counters by an exact delta, because it
+already has `patchBoardCards`/`patchChecklistCounters` from its optimistic-mutation layer. Mobile
+has no equivalent cache-patch helpers for board cards, so every broadcast here invalidates the
+query the event touched instead of hand-splicing the payload into it — one extra round trip per
+live event is a smaller ongoing cost than a second, independently-maintained patch implementation
+that could drift from web's.
+
+**Board-scoped only, and `card/[cardId].tsx` is a deliberate non-caller — not an oversight.** Web's
+card detail is a modal INSIDE `board-page.tsx`, sharing that one page's single `useBoardRoom` call.
+Mobile's card detail is its own ROUTE, reached both from a board (which stays mounted underneath it
+in the native-stack navigator when a card is pushed on top — confirmed against this app's own
+navigation config, which sets no `unmountOnBlur`) and from places that never opened a board at all
+(My Tasks, a notification). `joinBoardRoom`/`leaveBoardRoom` in `socket.ts` are keyed by boardId
+alone with no per-caller reference count, ported straight from web where only one caller per board
+ever exists. Giving the card screen its own `useBoardRoom` call would mean ITS OWN unmount (going
+back to the board) calls `leaveBoardRoom` and severs the board screen's still-open membership in
+the same room, since both calls share one underlying socket connection — a real bug, not a
+hypothetical one, caught by reasoning through the navigator's actual mount lifecycle before writing
+the hook rather than after. So a card opened directly, outside a board, still has no live updates;
+giving rooms a genuine reference count in `socket.ts` is the real fix, and is separate work.
+_(True when written — `socket.ts`'s rooms are reference-counted now and `card/[cardId].tsx` has its
+own `useCardRoom`, see "Board rooms get a reference count" below; left as written rather than
+silently edited, per this file's own rule about correcting a stale claim in place.)_
+
+### `@mention` composing reaches Work comments
+
+`message-compose.ts`'s `activeMentionQuery`/`insertMention` were already chat-agnostic pure
+text/cursor functions — built for `message-composer.tsx`, reused here VERBATIM, not reimplemented.
+A new `CommentComposer` in `card/[cardId].tsx` wraps them for Work's two comment composers (a new
+top-level comment, and whichever reply box is open), which had the identical input+dropdown logic
+duplicated between them already, with neither getting mentions.
+
+**Not the shared `<MessageComposer />`.** That component also owns an icon-styled send button and
+an optional attach affordance shaped for Chat's one-row WhatsApp layout (ai/"Chat, reworked"
+above). Work's comment composer keeps its own existing look — a bordered input with a text "Send"
+button beside it for a new comment, Reply/Cancel buttons BELOW the input for a reply — two
+different button arrangements the shared component cannot express. `CommentComposer` accepts an
+optional `trailing` node rendered inside its own row instead: supplied for the top-level composer
+(the Send button), absent for a reply (whose Reply/Cancel row is a sibling the caller still renders
+itself, unchanged from before this component existed).
+
+The server derives `mentionedUserIds` from the TipTap document itself (`work/richtext.ts`, at
+comment-creation time) rather than a separate field, so the client's only job is producing a
+document with real `mention` nodes — `parseFormattedText(text, mentions)`, already built for Chat,
+already defaulting its second argument to `[]` for every OTHER caller in this codebase (edits, and
+every other `parseFormattedText` call site) that does not need it.
+
+Out of scope, deliberately: mention support on comment EDITING (only create and reply), matching
+this component's narrow brief — Chat itself does not offer it on edit either.
+
+Verified: typecheck clean, lint clean (one pre-existing, unrelated warning in
+`push-notifications.ts`), all 226 tests pass unchanged (both changes reuse already-tested pure
+logic — `message-compose.test.ts` for the mention functions, `use-chat-room.ts`'s own precedent for
+why a room-join hook gets no dedicated test of its own — rather than adding new logic that would
+need one), guardrail self-test clean, prettier clean, encoding check clean, and a real
+`expo export --platform android` bundles cleanly.
+
+## A channel opening at the top, and a `scrollToIndex`-based fix that could not have worked
+
+A real device report: opening a channel showed the TOP of the conversation, needing a manual scroll
+down to reach anything current — and a first attempt at fixing it (scrolling straight to the first
+unread message via `FlatList.scrollToIndex`, added directly to the branch) still did not visibly
+work.
+
+**Both halves trace to the same file, and the second one explains why the fix "did nothing."**
+`scrollToIndex` can only reliably reach a row already inside `FlatList`'s own MEASURED render
+window — RN's own documented limitation without a `getItemLayout`, and one cannot be given here:
+message groups are variable height (reactions, attachments, reply counts all change a bubble's
+height), so there is no formula to precompute row offsets from. For a channel with any real
+history, the first unread message sits well outside that initial window, `scrollToIndex` failed,
+and the `onScrollToIndexFailed` handler's own fallback silently converted every failure into
+"scroll to the very bottom" — indistinguishable from the fix never having run, which is exactly
+what "not working" looked like from a real device.
+
+**The actual fix does not try to scroll to the unread message's position at all — because web
+doesn't either.** Checked directly against `apps/web/src/features/chat/chat-page.tsx` before
+writing anything: its own `useLayoutEffect` scrolls to the BOTTOM on the first render
+(`firstAnchor`) and stays there while a reader is near it (`atBottom`, a 160px threshold — "a
+bottom-anchored reader does not sit at exactly `scrollHeight` because of the list's own bottom
+padding," per that file's own comment). The "New messages" divider — which this app's own code
+already rendered correctly, inline above the right message group — is a passive marker a reader
+finds by scrolling UP, never a scroll target. So the honest answer to "does web scroll to where
+the unread starts, like a proper indicator" is: no — it shows the same divider line this app
+already had, and always opens at the bottom, exactly like every other message list.
+
+`channel/[channelId].tsx` now does the same thing, `FlatList`'s way: `onContentSizeChange` (fires
+whenever the rendered content's own height changes — the first page landing, a new message
+arriving, a reaction row changing a bubble's height) is the equivalent of web's DOM `scrollHeight`
+growing, `onScroll` tracks whether the reader is still within that same 160px of the bottom, and
+`hasAnchoredRef`/`nearBottomRef` mirror web's `firstAnchor`/`atBottom` exactly, threshold included.
+No `getItemLayout`, no `scrollToIndex`, no failure path to mask — this is why it is more reliable
+than the previous attempt, not merely different from it.
+
+**The call button now also hides once a DM or private channel's roster exceeds the mesh cap** —
+requested alongside the scroll fix, and the same reasoning the user's own already-shipped
+public-channel hide used: `session.service.ts`'s `startSession` refuses the WHOLE conversation
+once `roster.length > MESH_PARTICIPANT_CAP` (`apps/api/src/rtc/shared.ts`, four) rather than ringing
+only the first four, so a button that can only ever fail is worse than no button —
+`ai/phase-13-webrtc.md`'s own §3.5 argument for why the cap exists at all. `MESH_PARTICIPANT_CAP`
+is NOT imported from `apps/api/src/rtc/shared.ts` — that module pulls in `@taskflow/db` (Drizzle,
+the Postgres driver) at module scope, which this app must never bundle (CLAUDE.md guardrail 1) — so
+`channel/[channelId].tsx` carries its own copy of the constant, with a comment naming exactly what
+it mirrors and why a stale copy is harmless (the server's own check is what actually enforces the
+cap; this only decides whether to show a button that would otherwise be guaranteed to fail).
+`channel.data.memberIds` — already fetched by this screen's own `chat.channels.get` query, already
+used elsewhere on this same screen — is the identical roster `channelMemberIds` computes
+server-side, so no new query was needed.
+
+Verified: typecheck clean, lint clean (the one pre-existing `push-notifications.ts` warning), all
+226 tests pass unchanged (no new unit-testable logic — both changes are `FlatList` prop wiring and
+a query-derived boolean, not new pure functions), guardrail self-test clean, prettier clean,
+encoding check clean, and a real `expo export --platform android` bundles cleanly. Not yet
+reconfirmed against a real device — that is the one thing only the project owner's own hardware can
+settle, and is worth doing before calling either half closed.
+
+## A real date picker, app-wide
+
+Closes the gap this file named in three separate places: a card's own start/due dates
+(`DateSection`), a `date`-type custom field (`FieldInput`), and a sprint's `startsOn`/`endsOn` —
+three independent `YYYY-MM-DD` text boxes, each "typed by hand rather than picked... this app has
+no date-picker dependency, deliberately." `@react-native-community/datetimepicker` is that
+dependency now, `^9.1.0` — the only version `pnpm add` resolved against this project's `expo@57.0.15`
+pin, and its own `peerDependencies` name `"expo": ">=52.0.0"` explicitly. `npx expo install` itself
+could not be used to add it: its own compatibility check reaches `reactnative.directory`, which this
+environment's proxy denies (confirmed via `$HTTPS_PROXY/__agentproxy/status`'s own recent-failures
+log) — `registry.npmjs.org` itself is proxy-EXEMPT (in `noProxy`), so a plain `pnpm add` reached it
+directly and installed cleanly. `expo-doctor` afterward reported four failures, and reading each one
+against `git diff package.json` (a single added line) is what confirmed none of them are this
+dependency's doing: two are the same `reactnative.directory`/config-schema network calls the proxy
+already denies, and the `expo-modules-core`/duplicate-`react` warnings both name packages
+(`expensify-common`, `packages/client`) that predate this change entirely.
+
+**Pure `Date` <-> wire-string conversions live in their own plain `date-picker.ts`, separate from
+the `date-picker-field.tsx` component that renders anything** — the same split
+`message-compose.ts`/`message-composer.tsx` already established, for the identical reason:
+`date-picker-field.tsx` statically imports `react-native` and the native picker module, and
+`use-call.ts`'s own header already proved `react-native`'s source fails to even PARSE under
+Vitest. A test file importing the pure conversions must never drag the component in with it, so
+`date-picker.test.ts` imports only `date-picker.ts` — 7 tests, all passing, none of them requiring
+a React renderer.
+
+**Two wire shapes, because the server has two, and the picker itself knows about neither.** A
+card's `dueDate`/`startDate` and a `date`-type custom field are `z.date()` — a full INSTANT — while
+a sprint's `startsOn`/`endsOn` are the `Day` contract type: a plain `YYYY-MM-DD` string with no time
+or zone component (`apps/api/src/work/router.ts`). The native picker hands back the same kind of
+value either way — a `Date` at LOCAL midnight for the picked day — so `DatePickerField` itself works
+in `Date | null` only, and each CALLER converts with whichever of `date-picker.ts`'s
+`dateToIsoInstant`/`dateToPlainDay` its own field needs. `dateToPlainDay` is built from the LOCAL
+calendar fields (`getFullYear`/`getMonth`/`getDate`), never `.toISOString().slice(0, 10)` — that
+reads the UTC day, which names the WRONG calendar day for anyone west of UTC picking a date near
+local midnight, the same class of bug this app's existing `${trimmed}T00:00:00}` parse pattern
+already worked around by hand for the card/custom-field case; `dateToPlainDay`/`plainDayToDate`
+extend that same care to the sprint's plain-day format instead of reintroducing the UTC-slice bug
+fresh.
+
+**Two genuinely different platform UIs, not one component pretending otherwise.** Android has no
+inline picker in this library at all — `DateTimePickerAndroid.open()` is imperative, showing the
+OS's own native dialog and returning through a callback with nothing mounted in this component's
+own tree. iOS has no equivalent imperative call, so a `<DateTimePicker>` renders inside a
+bottom-sheet `Modal` matching this app's own established pattern (`board/[boardId].tsx`'s
+`modalBackdrop`/`modalCard`/`modalPrimaryButton` shapes, restated here since this is a standalone
+shared component with no caller's `styles` to borrow) — picking a day on iOS is a DRAFT, committed
+only on "Done," since the wheel fires continuously while spinning and calling the real `onChange`
+on every tick would write a mutation, and the audit entry that comes with it, once per frame of
+scrolling.
+
+**`onChange` is deprecated in this library version — caught by lint, not by reading past it.**
+`@typescript-eslint/no-deprecated` flagged the first draft's `<DateTimePicker onChange={...}>` and
+`DateTimePickerAndroid.open({ onChange })` calls; both now use `onValueChange` instead, which fires
+only when a value was actually picked, with a guaranteed non-optional `Date` — simpler than
+`onChange`'s `(event, date?: Date)`, since there is no `event.type === 'set'` left to check.
+
+`sprints/[projectId].tsx`'s own `locked` rule (an ACTIVE sprint's start date cannot change, its end
+date can) is preserved via a new `disabled` prop on `DatePickerField` — the same rule the `TextInput`
+it replaces enforced with `editable={!locked}`, restated rather than dropped in the swap.
+
+Verified: typecheck clean, lint clean (the one pre-existing `push-notifications.ts` warning; the
+`onChange`-deprecation error above was found and fixed before this line was written, not left for
+someone else), all 233 tests pass (226 existing plus 7 new for `date-picker.ts`'s pure
+conversions), guardrail self-test clean, prettier clean, encoding check clean, and a real
+`expo export --platform android` bundles cleanly with the new native module linked. Not yet
+confirmed against a real device — the native picker's actual on-screen behavior (the Android
+dialog's look, the iOS spinner sheet) is something only the project owner's own hardware can settle.
+
+## Board rooms get a reference count, and `card/[cardId].tsx` gets its own live room
+
+Closes the gap the previous section named and left open: a card opened OUTSIDE a board (My Tasks, a
+notification) had no live updates at all, because giving it its own `useBoardRoom` call would have
+let its own unmount sever a board screen's still-open room membership underneath it in the
+navigator stack — the exact bug that section's own header describes catching before it shipped.
+
+**`socket.ts`'s `joinedBoards` now tracks a REFCOUNT per `boardId`, not a single owner.** `Map<BoardId,
+string>` (boardId -> orgId) became `Map<BoardId, { orgId, refCount, granted }>`. `joinBoardRoom` on a
+board already joined bumps `refCount` and hands back the FIRST call's own `granted` promise rather
+than emitting a second `board:join` — not just an optimization: `apps/realtime/src/gateway.ts`'s
+`joinsPerSocket` is a real, finite rate limit per SOCKET CONNECTION
+(`REALTIME_MAX_JOINS_PER_MINUTE`), shared across every room kind a socket joins, and spending a slot
+of it on a room this connection is already in brings a genuinely new join closer to being refused
+for no reason. `leaveBoardRoom` decrements instead of deleting outright, and only emits `board:leave`
+— and drops the room from `joinedBoards`, which is what the reconnect-replay loop reads — once the
+LAST caller lets go. Five new tests in `socket.test.ts` cover this directly: one join emitted for two
+callers, the same grant handed to both, the first caller's room surviving the second's own leave, and
+`board:leave` firing only once the count reaches zero.
+
+**`use-board-room.ts` gains `useCardRoom`, mounted from `card/[cardId].tsx`.** Joins the SAME
+`board:{boardId}` room `useBoardRoom` joins — there is no separate `card:{cardId}` room anywhere in
+this system, since a card's authorization is its board's, one tier up (CLAUDE.md's "there is no
+`list` resource type" reasoning, restated at the next level). `boardId` is only known once
+`card.data` has loaded (it is a field on the card's own detail response, not a route param), so the
+hook simply does not join until then; `BoardIdSchema.parse` at the actual `joinBoardRoom`/
+`leaveBoardRoom` call sites is what produces the branded value those signatures require, kept as a
+real parse rather than a bare cast even though the value already arrived pre-validated on a typed
+tRPC response — guardrail 1's "a brand means a parser checked this," applied even where the parse is
+expected to always succeed.
+
+**A separate broadcast filter and query-key set from `useBoardRoom`'s, because a card screen and a
+board screen render different things from the same room's events.** `applyCardBroadcast` first
+checks the payload actually NAMES this card (`cardIdOf`, a plain-string read — never parsed into the
+branded type, since it is only ever compared, not constructed from) before invalidating anything;
+`message.boardId === boardId` alone would fire for every card on the board, over-invalidating the
+same way an unfiltered channel broadcast would for chat. Comments, checklists, labels, custom field
+values, and attachments — the fields `card/[cardId].tsx` renders that `CardRow`/the board tab strip
+never do — each map to their own query key; card-level fields (title, status, assignees, dates)
+invalidate `cardQueryKey` the same way `useBoardRoom` invalidates `boardCardsQueryKey` for the
+identical events.
+
+**No `onRoomClosed` handler on `useCardRoom`, unlike `useBoardRoom`.** A revoked board tuple would
+only invalidate `cardQueryKey`, re-running the exact `card.get` query that ALREADY answers FORBIDDEN
+on its own and renders through this screen's existing error branch — a second handler doing the same
+invalidation `onReconnect` already does on this hook would be a distinction with no different
+outcome.
+
+Verified: typecheck clean, lint clean (the one pre-existing `push-notifications.ts` warning), all
+238 tests pass (233 existing plus 5 new for the reference-counting behavior in `socket.test.ts`),
+guardrail self-test clean, prettier clean, encoding check clean, and a real
+`expo export --platform android` bundles cleanly. Not yet confirmed against a real device with both
+screens actually open at once — that specific interleaving (open a board, push into a card, back out)
+is the one thing only the project owner's own hardware can settle.
+
+## Voice & Messaging: Phase 7's telephony client, ported
+
+Closes a gap this file named twice as never-started: "Phase 7's telephony client has never been
+ported to `apps/mobile` at all." A 5th bottom tab, "Calls" — the same tier as Chat, not a link
+buried in a settings screen, matching web's own `/calls` sidebar item and `(tabs)/_layout.tsx`'s
+own stated growth pattern ("Docs/People join this bar as their own waves ship real screens").
+
+**PSTN telephony (Twilio, real phone numbers, real carrier calls and SMS), not this app's own
+in-app calling — two systems that share the word "call" and nothing else.** `telephony.*`
+(Phase 7) and `rtc.*` (Phase 13, already built — `call-surface.tsx`, `use-call.ts`) are separate
+tRPC namespaces with separate authorization, separate spend, separate everything. Web keeps the
+two apart with a directory boundary (`features/rtc/call-button.tsx` vs `features/telephony/
+call-button.tsx`, same component name, different modules); this app is flat under `src/lib/`, so
+the name itself has to do that job — `telephony-call-button.tsx`'s `TelephonyCallButton`, never
+just `CallButton` (already taken by Phase 13's own in-app `call-button.tsx`).
+
+**Four tabs, a pill strip instead of nested routes.** Web uses a search param so the open tab is
+a shareable link (`telephony-page.tsx`'s own `settings-page.tsx`-derived pattern); this app has no
+URL to carry that, so it is local `useState<TabId>` instead — the same simplification
+`org-settings.tsx` already makes for its own sections. Nothing here re-derives authorization
+(CLAUDE.md §8.2): every control renders unconditionally, and `phoneNumber:read`/`call:read`/
+`sms:read` cover Member for three tabs while Spend's itemized report needs `recording:read`
+(Admin) — a Member sees "current spend" and a real FORBIDDEN on the report below it, exactly as
+the server's own tiering intends, never a hidden section.
+
+**`telephony.ts` holds only types, query keys, and pure formatters — no `react-native` import
+anywhere in it**, the same split `work.ts`/`billing.ts`/`sprints.ts` already establish, so
+`durationLabel`/`callStatusLabel` get real Vitest coverage (`telephony.test.ts`, 6 tests) without
+dragging in anything that fails to parse under it. No `orgId` in any query key
+(`PHONE_NUMBERS_QUERY_KEY`, `CALLS_QUERY_KEY`, and the rest) — matching `MY_TASKS_QUERY_KEY`'s own
+convention: switching orgs on this app remounts the whole screen tree via `OrgGate`, so these keys
+never need to disambiguate two orgs' data coexisting in one cache the way a persistent web SPA's
+might.
+
+**A real, caught-before-shipping type error, not a guess: several telephony fields are BRANDED
+opaque strings, not plain `string`.** `call.counterparty`, `number.e164`, `available.phoneNumber`,
+`thread.counterparty` all failed to typecheck as JSX children, template-literal interpolations, or
+`Alert.alert` arguments on first pass — the exact same pattern web's own panels already work
+around with `String(available.phoneNumber)`, `String(number.e164)`, etc., confirmed by reading
+those call sites rather than assumed. Every one of this screen's own equivalents does the same
+explicit `String(...)` — `tsc` caught all of them; none were found by inspection.
+
+**`TelephonyContactPicker`, the "To" field's person search, wraps a free-text `TextInput` rather
+than replacing it with a picker-only control** — a destination is an E.164 string and always has
+been (`calls.place`/`messages.send` both take `to`, never a user id), so picking a colleague FILLS
+the field and typing a number nobody in the org owns stays equally valid. The picker button opens
+a bottom-sheet `Modal` (`org-settings.tsx`'s `RolePickerModal` shape, since this app has no
+anchored-popover primitive), listing `people.directory.list` filtered to members with a work
+phone, walked page-by-page client-side exactly as web's own `phoneContactsQuery` does — there is
+no "directory of people with phones" route, only a directory. Hidden rather than shown-and-empty
+when nobody qualifies, matching this app's own established convention.
+
+**Recording download and number purchase/release reuse `use-step-up.ts`/`step-up-sheet.tsx`
+unchanged** — both already existed for `org-settings.tsx`'s own step-up-gated mutations
+(transferring ownership, removing a passkey), and both routes here are genuinely the same shape:
+a mutation the server refuses with `STEP_UP_REQUIRED` until a fresh password/TOTP proof arrives.
+No new step-up plumbing was written for this feature; `guard`/`pending`/`confirm`/`cancel` and a
+single `<StepUpSheet>` per screen were enough.
+
+**A recording's transcript renders nothing on error or while pending**, matching
+`calls-panel.tsx`'s own `Transcript` exactly and for the same reason: most calls are never
+transcribed, NOT_FOUND is the overwhelmingly common answer, and a red box on every un-transcribed
+recording would train people to ignore the one that matters. A caller without `recording:read`
+lands in the identical branch — the server's decision, never re-derived or explained here.
+
+**Not ported, named rather than left implicit:** the channel-details screen's own click-to-call
+against a DM counterparty's work phone (`DirectCallAction` on web) — see that screen's own header,
+corrected in place, for exactly what would be needed to add it (`TelephonyCallButton`, already
+built, already exported). `telephony.cards.recordings` (attaching a call recording to a Work
+card, web's `recording-section.tsx`) also has no mobile screen yet. Both are real, separate,
+credential-free follow-ups, not gaps this pass silently left open.
+
+Verified: typecheck clean (including the branded-string fixes above), lint clean (the one
+pre-existing `push-notifications.ts` warning), all 244 tests pass (238 existing plus 6 new for
+`telephony.ts`'s pure formatters), guardrail self-test clean, prettier clean, encoding check
+clean, and a real `expo export --platform android` bundles cleanly with the new tab wired in.
+**Not yet confirmed against a real Twilio-backed environment** — every route here answers
+`SERVICE_UNAVAILABLE` on an instance with no `TelephonyDeps` configured (`apps/api/src/telephony`'s
+own boot check), so the UI's correctness against a live carrier is unverified by construction
+until it runs somewhere Twilio is actually wired up; this is the same gap Phase 7's own web build
+had until it was tested against a real carrier for the first time (CLAUDE.md's own "four defects a
+green suite could not see" account) — worth reading before assuming this port is carrier-correct
+just because it typechecks and bundles.
+
+## People: the org directory, ported
+
+Closes the other gap `(tabs)/_layout.tsx`'s own header named alongside Docs: "People join this
+bar as their own waves ship real screens." A 6th bottom tab, "People" — `apps/web/src/features/
+people/people-page.tsx` and `person-page.tsx`'s counterpart.
+
+**`people.profile.*` (the caller's OWN profile) was NOT missing — it shipped as sections on the
+Account tab (`profile-section.tsx`, `working-hours-section.tsx`, `export-data-section.tsx`) well
+before this pass, and this file's own conventions section already documents why: those are
+`selfRoute`s, answering with no org selected, which is a different question from `people.
+directory.*` (`member:read`) and the admin-edit routes (`member:manage`), both of which need an
+org and neither of which had ANY mobile screen at all. `people.ts`'s own header states this split
+explicitly so the next reader does not go looking for profile editing in the directory files.
+
+**The org directory (`(tabs)/people.tsx`) is this app's first `useInfiniteQuery`.** Every other
+list on this app either fetches everything in one shot (`work.cards.list`) or walks every page
+eagerly client-side up to a cap (`telephony-contact-picker.tsx`, 1,000 rows for a dropdown nobody
+reads past). A directory a person actually SCROLLS is the first place an unbounded org genuinely
+needs real pagination instead of either shortcut — the cursor is a user id (`directory.list`'s own
+doc: creation-ordered, a total order with no ties), and "Load more" is a button, not an
+`onEndReached` auto-load, matching web's own choice not to spend network on a scroll nobody asked
+for.
+
+**The person detail screen (`person/[userId].tsx`) is a sibling of `card/[cardId].tsx` under
+`(app)/`, not nested in `(tabs)` — no layout change was needed to add it.** `(app)/_layout.tsx`'s
+own `<Stack screenOptions={{ headerShown: false }} />` with no explicit `<Stack.Screen>` children
+auto-registers every route under `(app)/`, exactly the mechanism that file's own header documents
+for why `card/[cardId].tsx` gets real `router.back()` history; a new file was the entire
+integration cost.
+
+**The org chart, job facts, OOO state, and — only when viewing someone ELSE — an admin-edit form**
+(job title/department/work phone, a manager picker) are all one screen, matching web's single-page
+layout rather than splitting into tabs the way Calls' four genuinely-separate concerns did. Editing
+your OWN job title still happens on the Account tab through `people.profile.update` — this screen
+hides its own edit controls for yourself for the identical reason web's `AdminSection` does: a
+second path to the same field would drift from the first. The manager picker reuses this app's own
+bottom-sheet `Modal` pattern (`org-settings.tsx`'s `RolePickerModal` shape) rather than a native
+`<select>`, wrapped in a `ScrollView` this time — up to 100 candidates, unlike a short fixed role
+list, genuinely needs to scroll rather than just fit.
+
+**`oooStatus` is ported verbatim from `apps/web/src/lib/format.ts`, not reimplemented from
+memory** — same `date-fns` calls (`isAfter`/`isPast`), same two-step reasoning (a return date
+already past is not an active OOO; a start date not yet begun is a FUTURE one), and now has its
+own test coverage this app never had before (`people.test.ts`, 6 cases covering both edges plus
+the exact-instant boundary). `TelephonyCallButton` — already built for the Calls tab — is reused
+unchanged for a person's work-phone click-to-call, the same component `person-page.tsx` itself
+reuses from its own telephony feature on web.
+
+**Not ported, named rather than left implicit:** nothing — Wave 1 (directory) and Wave 2 (person
+detail, admin edit, reporting line) of `ai/phase-11.5-people.md` are both here in full. The one
+thing worth flagging is scale: `AdminSection`'s manager picker loads 100 directory rows per screen
+open, matching web's own "orgs are small, by this app's own convention" acceptance — a genuinely
+large org would want a searchable picker here the way `telephony-contact-picker.tsx` has one, not
+built now since nothing this pass touched needed it.
+
+Verified: typecheck clean, lint clean (the one pre-existing `push-notifications.ts` warning), all
+252 tests pass (244 existing plus 8 new for `people.ts`'s `oooStatus`/`directoryLabel`), guardrail
+self-test clean, prettier clean, encoding check clean, and a real `expo export --platform android`
+bundles cleanly with the new tab and route wired in. Not yet confirmed against a real device — the
+`useInfiniteQuery` "Load more" behavior and the manager-picker `Modal`'s scroll are both new
+patterns on this app and worth a real scroll before calling this device-verified.
+
+## Account moves off the tab bar, and the notification bell gets a real redesign
+
+Two more real destinations were named for this bar — Docs and Automations — and `Tabs` has no
+scroll behaviour when it overflows a phone's width. Five tabs plus two more was never going to fit
+six- or seven-wide the way this platform's own primary-nav idiom expects, so before either of those
+ships, one existing tab had to stop being one.
+
+**Account was the correct tab to remove, not an arbitrary one.** Every other tab is a place someone
+actually browses or gets routed to mid-task — a card assignment opens Boards, a mention opens Chat,
+a missed call opens Calls. Nothing routes to Account mid-task, and nobody swipes to it between other
+work; it is a destination you deliberately go to and then leave. That is the one property that makes
+a tab safe to demote to a single tap from a fixed icon instead: `account.tsx` itself did not change
+shape at all, only its address — from `(tabs)/account.tsx` to a pushed sibling of `org-settings.tsx`
+under `(app)/`, gaining only the "← Back" row every other pushed screen already draws, since it is no
+longer a tab root with nowhere to return to. `(tabs)/_layout.tsx` is down to five screens.
+
+**`top-bar.tsx` is new — one absolutely-positioned row, not two.** `notification-bell.tsx` used to
+own the only thing anchored at the safe-area edge, with its own `position: 'absolute'` and its own
+guess at `right`. Bolting a second icon on next to it by giving IT an independent position is exactly
+how two icons drift out of alignment the day one badge renders one digit wider than the other — the
+actual "set the alignment" ask. So the position moved up one level: `TopBar` owns the one absolute
+row (`right: 16`, `flexDirection: 'row'`, a fixed `gap`), and `NotificationBell`'s own trigger is now
+a plain 36×36 button sized to sit inside it, with no positioning opinion of its own. The Account
+button reuses the same `person-circle`/`person-circle-outline` glyph pair the tab bar used, so
+tapping it does not read as a new feature — it is the same destination in a different place, and the
+glyph is what tells a reader that.
+
+**The notifications modal was genuinely bare — no timestamp, no unread signal beyond a
+background tint, an emoji floating with nothing around it.** `NotificationSummary.createdAt` was
+already on the wire and simply never rendered (the row's `rowTime` slot showed the ACTOR's name, not
+a time, which is its own small bug this pass fixes as a side effect). Now ported in, matching
+`chat.tsx`'s and `channel/[channelId].tsx`'s own established `formatDistanceToNow(date, { addSuffix:
+true })` call rather than inventing a second relative-time convention. Each row's icon sits in a
+small circular badge instead of bare text: still the same `notificationIcon()` glyph table, just with
+somewhere to sit. Unread state is now two signals instead of one — the existing background tint,
+plus a small accent dot at the row's trailing edge, matching web's own `NotificationRow`'s unread
+dot rather than inventing a third. The header gained an unread-count pill next to the title (the
+badge already shown on the bell's own trigger, restated where it is actually being read) and "Mark
+all read" moved from a bare text link to a bordered pill button — a properly-sized tap target rather
+than a line of text doubling as one. The empty state gained a real two-line message in place of one
+sentence of grey text, and the sheet gained a drag-handle bar at its top — no gesture wired to it
+(this sheet only ever closes via the backdrop or "Close"), but the same glance-able "this is a sheet"
+signal every native bottom-sheet carries even where the drag itself isn't implemented.
+
+Verified: typecheck clean, lint clean (the one pre-existing `push-notifications.ts` warning), all
+252 tests pass unchanged (no new logic module — this pass is navigation and presentation only, and
+`notifications.ts`'s own `oooStatus`-style pure functions did not need one), guardrail self-test
+clean, prettier clean, encoding check clean, and a real `expo export --platform android` bundles
+cleanly with `/account` resolving as a top-level route. Not yet confirmed on a real device — the
+`TopBar` row's alignment against a genuinely long unread count (`99+` next to a `9+` badge) and the
+modal's new layout are both worth a real screen before calling this device-verified.
+
+## Automations: read, toggle, delete, and run history — deliberately not the builder
+
+`automation.ts`/`automations.tsx`, reached from `account.tsx`'s new "Automations" link (a sibling
+of "Manage organization" — both org-level configuration links shown unconditionally, per §8.2, not
+tab-bar destinations someone browses between other work; the same reasoning that moved Account off
+the tab bar in the pass above applies to this screen from day one instead of needing a later move).
+
+**What this deliberately does NOT port: creating or editing a rule.** Web's builder
+(`RuleEditor` + `action-pickers.tsx`, 973 lines together) exists to fill in a `FilterTree`
+condition and one of ten action-type-specific argument forms — a card's target list, a chat
+channel, a webhook, an org member, a label, a Slack/GitHub connector. Every one of those needs a
+picker this app either does not have (a webhook registry, a connector picker, a condition builder
+— Phase 8's TQL/filter UI has never touched native at all) or would need building fresh for this
+one screen. That is real, dedicated work, not a corner cut to hit a deadline — naming it here
+rather than a silent gap is this file's own standing habit. What ships instead is a complete,
+honest slice on its own terms: see what rules exist, see WHY one did or did not fire, kill a
+misbehaving one, delete one outright — the things someone actually reaches for from a phone, as
+opposed to composing a new rule through a ten-field form on a 6-inch screen. Webhooks, Slack/GitHub
+connectors, and API tokens (the other three tabs on web's `/automations`) are separate,
+developer-facing surfaces on the same web page and are not touched here either.
+
+**The condition itself is never rendered, on web or here — that is not a mobile shortcut.**
+`RuleRow` shows "and a condition matches" when one is set, never the tree; the builder is the only
+place a condition's actual shape renders, because it is the only place with the field/operator
+vocabulary loaded to render it meaningfully. `describeAction`, `triggerLabel`, `explainReason`, and
+`REASON_TEXT`/`STATUS_COLOR`'s mobile equivalents are ported near-verbatim from `vocabulary.ts` and
+`automations-page.tsx`'s own `RuleRow`/`RunHistory` — same words, so a rule built on web reads
+identically once opened on a phone, right down to ids staying truncated rather than resolved to
+names (resolving would mean a lookup per action per rule; a deleted target would render as a blank
+or a spinner, worse than a visible id someone can match by eye elsewhere).
+
+**Run history answers "why didn't my rule fire", which a list of successes alone cannot.**
+Skipped and refused runs render alongside successful ones, each with the engine's own reason code
+translated to a sentence (`condition_not_met` → "the condition did not match, so nothing ran") and,
+per action, what actually happened — the engine stops at the first failure, so "action 2 failed"
+also means action 3 never ran, and a bare count would hide both facts. The list uses this app's
+established `useInfiniteQuery` (from the People pass) for the rule list itself, and the same
+single-expand accordion `calls.tsx`'s `CallRow` already established for run history per rule, so
+neither pattern is new to this codebase — only the screen is.
+
+Verified: typecheck clean, lint clean (the one pre-existing `push-notifications.ts` warning), 268
+tests pass (252 existing plus 16 new for `automation.ts`'s `describeAction`/`explainReason`/
+`explainStatus`/`actionOutcomeOf`/`triggerLabel`/`statusColor`), guardrail self-test clean, prettier
+clean, encoding check clean, and a real `expo export --platform android` bundles cleanly with
+`/automations` resolving as a top-level route. Not yet confirmed against a real org with rules that
+have actually run — the run-history accordion and its per-action outcome list are worth a real
+screen before calling this device-verified.
+
+## Two bugs from the Calls/Messages pass, reported live
+
+### The "Choose a person" picker wasn't a scroll view — it only looked like one
+
+**Calls tab → place a call → the contact picker modal: past the first handful of names, nothing
+below the fold was reachable.** `telephony-contact-picker.tsx`'s own `ScrollableList` helper was
+named for what it was supposed to be, not what it was — a plain `View` with `maxHeight: 320`, which
+CLIPS content past that height rather than letting it scroll. A `View` with a capped height and a
+`ScrollView` with the identical style look pixel-identical until a list long enough to actually
+overflow it is on screen, which is exactly the gap between "typechecks and renders in a short test
+org" and a real roster. Fixed by making it a real `ScrollView` (`nestedScrollEnabled`, since it sits
+inside a `Modal`'s own backdrop `Pressable`). One side effect worth naming: `gap: 2` had been sitting
+on what is now the `ScrollView`'s outer `style`, which sizes the non-scrolling box — only
+`contentContainerStyle` reaches the inner view that actually lays out the rows, so the spacing moved
+to a new `modalListContent` style rather than silently disappearing. `person/[userId].tsx`'s own
+manager-picker modal was checked against the same bug and was already a real `ScrollView` — this was
+a one-off miss in the telephony picker specifically, not a pattern repeated elsewhere.
+
+### The message composer, behind the keyboard, a third time
+
+**Messages tab → open any thread → typing showed nothing, the input was rendering behind the open
+keyboard.** This exact bug already has its own section above ("The composer hidden behind the
+keyboard, in two places" — `card/[cardId].tsx`'s comment box and `channel/[channelId].tsx`'s message
+box), and the fix there was `KeyboardAvoidingView` with an Android `behavior` of `'height'` rather
+than relying on `windowSoftInputMode`. `calls.tsx`'s `ThreadView` and `ComposeView` were built in a
+later pass and never got that treatment — a plain `View` wrapping a message `ScrollView` plus a
+composer row pinned below it, with nothing to shrink the screen when the keyboard opens. Fixed
+identically in both: `KeyboardAvoidingView` (`'padding'` on iOS, `'height'` on Android) replacing the
+outer `View`. Third occurrence of the same class of bug in this codebase — worth naming as a pattern
+rather than three unrelated fixes: any new screen with a composer needs this, and nothing currently
+catches a missing `KeyboardAvoidingView` except someone actually typing on a device.
+
+Verified: typecheck clean, lint clean, all 268 tests pass unchanged (both are UI/layout fixes, no
+logic changed), guardrail self-test clean, prettier clean, encoding check clean, and a real
+`expo export --platform android` bundles cleanly. Not yet confirmed against a real device — a
+`ScrollView`'s scroll behavior and a `KeyboardAvoidingView`'s keyboard response are exactly the two
+things a simulator and a static bundle export cannot prove.
+
+## Org picker: a real redesign, and creating an organization from a phone
+
+`org-picker.tsx` had no way to CREATE an organization at all — the screen someone with zero
+memberships lands on, unable to escape it except by signing out. Ported from
+`apps/web/src/features/org/org-picker-page.tsx`, which is a genuinely different screen depending on
+whether the caller belongs to any org yet: `CreateOrgPanel` collapses behind a dashed
+"+ New organization" button when orgs exist and expands with no cancel option when the list is
+empty — a first organization is not optional, so there is nothing to cancel back to.
+`tenancy.orgs.create` is a `selfRoute` for the reason its own header states: a caller in no
+organization has no role, so no org permission can describe what a first org's creation would need.
+`org-picker.ts`'s own `slugify` is ported from web's identical helper, with its own test coverage
+this screen never had before.
+
+**The org rows themselves gained the visual hierarchy the old version never had** — a bare
+`<Text>` name and role with no separation, no slug, nothing suggesting the row was tappable. `OrgMark`
+(a square initial, deliberately NOT `Avatar` — that component hues from a USER id, and an
+organization is not a person) plus the slug and a trailing chevron now match this app's other
+list-row convention (`people.tsx`'s `PersonRow`).
+
+**Sign out was a full-width, danger-red bordered button sitting directly under the org list — the
+same visual weight as a warning, for an action nobody reaches for by mistake and everybody reaches
+for rarely.** It exists at all because this screen has no shell to fall back on (it lives outside
+`(app)/`, so `top-bar.tsx`'s Account icon is not mounted here) — someone belonging to zero
+organizations used to land with nothing else to press. Kept for the identical reason, restyled to
+match its actual priority: a small, quiet text link below everything else.
+
+Verified: typecheck clean, lint clean, all 273 tests pass (268 existing plus 5 new for `slugify`),
+guardrail self-test clean, prettier clean, encoding check clean, and a real
+`expo export --platform android` bundles cleanly. Not yet confirmed on a real device.
+
+## Automations: rule creation and editing, narrower than web on two stated axes
+
+`automation-editor.tsx` closes the gap the Automations pass named explicitly as deferred — "creating
+or editing a rule" — and does it by reusing queries this app already had rather than inventing new
+API surface. `MemberField` reads the same `tenancy.members.list` `org-settings.tsx` renders as a
+roster; `ChannelField` the same `chat.channels.list` the Chat tab lists; `PhoneNumberField` the same
+numbers `(tabs)/calls.tsx` already shows owned; the `to` field of `call.place`/`sms.send` reuses
+`TelephonyContactPicker` UNCHANGED — the identical component the Calls tab's dial pad uses. `List`/
+`Status`/`Label` needed one genuinely new query shape (`work.boards.list` + `work.lists.list`
+cascaded, `work.statuses.list`, `work.labels.list`), because nothing before this queried them
+OUTSIDE a single project's own screens — `ListField` flattens the board→list cascade into ONE
+board-prefixed picker rather than web's stacked per-board `<select>`s, a real improvement this
+platform's own bottom-sheet shape makes possible instead of a corner cut.
+
+**Two real boundaries, stated rather than silently missing.** No condition: this editor never
+writes one, full stop — every rule it creates has `condition: null`, and `canEditOnMobile`
+(`automation.ts`) refuses to offer "Edit" at all for an existing rule that already has one, because
+saving it back would silently CLEAR it. No webhook or connector actions: `call_webhook`,
+`slack.post_message` and `github.create_issue` have no picker on this platform (no webhook registry,
+no Slack/GitHub connector list), so they are absent from `ARGUMENTS` entirely — a rule using one
+still shows correctly in the read-only list (`describeAction` still knows their labels), but "Edit"
+is hidden for it the same way it is hidden for a rule with a condition. A rule failing either check
+still gets Enable/Disable/Delete; only Edit is gated, and the gate is a pure function
+(`canEditOnMobile`) with its own test coverage, not a judgment call made once in the UI.
+
+Verified: typecheck clean, lint clean, all 291 tests pass (273 existing plus 18 new for
+`offeredActions`/`needsProject`/`blankAction`/`actionsComplete`/`draftsFrom`/`canEditOnMobile`),
+guardrail self-test clean, prettier clean, encoding check clean, and a real
+`expo export --platform android` bundles cleanly with `/automation-editor` resolving as a top-level
+route. Not yet confirmed against a real org on a real device — every picker here reads live data
+this app has never queried in quite this combination before (an org-wide rule pulling project-scoped
+vocabulary), and that is exactly the kind of thing a bundle export cannot prove.
+
+## The fourth occurrence of the composer-behind-the-keyboard bug — a real sweep this time
+
+**Reported live: the search box in the Calls tab's "Choose a person" picker looked broken — typing
+into it appeared to do nothing.** It was not the search logic; it was the same "composer hidden
+behind the keyboard" shape this file already has its own named section for, a third time. The
+picker's `Modal` is anchored to the bottom of the screen (`justifyContent: 'flex-end'`) with no
+`KeyboardAvoidingView` around it, so opening the keyboard rose up OVER the sheet instead of the sheet
+moving out of its way — the search results sitting below the input landed behind the keyboard,
+invisible, which reads exactly like "nothing happens when I type" even though the filter itself was
+working the whole time. `telephony-contact-picker.tsx` gained the identical fix `step-up-sheet.tsx`
+and `channel/[channelId].tsx` already carry: `KeyboardAvoidingView` (`'padding'` on iOS, `'height'`
+on Android) wrapping the modal's backdrop.
+
+**This time, rather than fixing only the reported instance, every `Modal` in the app containing a
+`TextInput` was checked.** Two more were found broken the identical way and had never been reported:
+`board/[boardId].tsx`'s "Add a list" sheet (whose name field is `autoFocus`ed, so the keyboard opens
+the INSTANT the sheet does — this one was guaranteed to break on first use) and its "List options"
+sheet (name + WIP limit). Both fixed identically. Checked and confirmed NOT affected, because their
+modals hold no `TextInput` at all: `person/[userId].tsx`'s manager picker, `org-settings.tsx`'s role
+and transfer-ownership pickers, `sprints/[projectId].tsx`'s move/complete pickers, and
+`automation-editor.tsx`'s own `SelectModal`.
+
+Four real occurrences of one root cause is a pattern, not four coincidences: any new `Modal` that
+opens a `TextInput` needs `KeyboardAvoidingView` from the moment it is written, not discovered by a
+report after the fact. Nothing currently enforces this at review or lint time — it is a real gap this
+file can only keep naming, not close by itself.
+
+Verified: typecheck clean, lint clean, all 291 tests pass unchanged (UI/layout only, no logic
+touched), guardrail self-test clean, prettier clean, encoding check clean, and a real
+`expo export --platform android` bundles cleanly. Not yet confirmed on a real device — exactly the
+kind of thing a bundle export cannot prove, which is how three of these four shipped in the first
+place.
+
+## Docs ships as structure only, People trades tab slots with it, and the org switcher gets a real look
+
+Three changes from the same pass, causally linked: Docs needed a tab slot, People was the tab that
+gave it up, and the Account screen it moved to is where the org switcher's own redesign landed too.
+
+### Docs: spaces and the page tree — no content, named as the reason why
+
+`docs.ts`/`docs.tsx`/`docs-space/[spaceId].tsx` — the 6th... really the same 5th slot again: a real
+tab, not an Account-screen link, because a Docs space is something people browse and drill into the
+way a board or a chat inbox is, not an occasional config screen the way Automations is. Ships create
+space, create page, rename, move (to a different parent, append-only — the identical "no
+client-computed position" call `board/[boardId].tsx`'s own card Move already makes), and
+archive/restore. `buildPageTree` flattens `docs.pages.list`'s flat, parent-pointer rows into one
+indented list ordered by the same base62 `rank` scheme Work cards use — no collapse/expand state,
+every page always visible, the simpler choice for a first pass.
+
+**What does not ship, and why it genuinely cannot yet: reading or writing a page's actual content.**
+`pages.list` returns tree metadata only (`pageId`, `parentPageId`, `title`, `rank`, `archivedAt`,
+`publishedAt`); `pageVersions.list` returns version METADATA only. Neither carries the document body
+— there is no `pages.getContent`-style route to fall back on, because the real content only exists
+as a live Yjs document synced over `apps/collab`'s Hocuspocus WebSocket protocol. Building that
+client for React Native (the `yjs` package itself is pure JS and would run; the handshake, snapshot
+replay, and turning a `Y.XmlFragment` into something this app can render are the real work) is a
+separate undertaking on the scale of Phase 8's TQL/filter builder, not a corner cut from this pass.
+Publish/unpublish is left out for a related reason, even though it is a pure metadata flip with no
+content dependency: publishing something nobody can read on this device to check first is the wrong
+order to ship those two capabilities in. Comments, suggestions, backlinks, templates, and PDF export
+all sit on the same content dependency and are not touched either.
+
+### People trades its tab slot for Docs, and gets an Account-screen link like Automations
+
+`(tabs)/_layout.tsx` was already full at five when Docs needed a slot — `Tabs` has no scroll
+behaviour when it overflows a phone's width, so something had to give one up. People was the correct
+one to move: you go to the org directory to look someone up, not to browse it between other work the
+way a board or an inbox gets browsed, the same "who reaches for this mid-task" test that already
+moved Account off this bar. `people.tsx` itself is unchanged in shape, just relocated from
+`(tabs)/people.tsx` to a pushed sibling of `automations.tsx` under `(app)/`, reached from a new
+"People" link on the Account screen. The tab bar's remaining five now read in the SAME order
+CLAUDE.md's own opening line names the product's modules — Work (My Tasks, Boards), Chat, Docs,
+Voice & Messaging (Calls) — rather than an arbitrary order, which is what "what comes first" settled
+into once there was a real reference to check against instead of a guess.
+
+### The org switcher: raised live — should it be red, at the bottom right?
+
+**No to red.** Red is reserved on this screen for Sign out, the one action here that actually ends
+the session; switching organizations is a normal, frequent, non-destructive action for anyone
+belonging to more than one, and coloring it like a warning would misstate what it does. What
+genuinely needed to change was prominence, and the fix was not a new color — it was making the
+current org's own display THE switcher: the name/role card that used to just show state is now the
+tappable element itself, in the app's accent color, first in the Organization section, opening
+`/org-picker` on tap rather than requiring a separate "Switch organization" button below it. That is
+the more effective answer to "easier to reach" than a corner-anchored button would have been: the
+thing people already look at to check which org they are in is now also the thing that switches it.
+
+Verified: typecheck clean, lint clean, all 299 tests pass (291 existing plus 8 new for `docs.ts`'s
+`buildPageTree`/`descendantIdsOf`), guardrail self-test clean, prettier clean, encoding check clean,
+and a real `expo export --platform android` bundles cleanly with `/docs`, `/docs-space/[spaceId]`,
+and `/people` all resolving. Not yet confirmed on a real device — the page tree's indentation at real
+depth and the org-switch card's tap target are both worth a real screen before calling this
+device-verified.
+
+## Docs gets a live reader — the content dependency the previous pass named, closed halfway
+
+The previous section's own "what does not ship, and why" named the whole reason this pass exists:
+there is no `pages.getContent` route, so reading a page's real body means being a genuine client of
+`apps/collab`'s live Yjs/Hocuspocus protocol — the same one `apps/web`'s editor speaks. This pass
+builds that connection and a read-only renderer on top of it. **It does not build the editor.**
+ProseMirror — what `apps/web`'s `DocsEditor` is built on — needs a DOM: `contenteditable`, DOM
+Selection/Range, `document.createElement`. React Native has none of that, by construction, not by
+this app's own choice. Writing from a phone needs a from-scratch rich-text input component with no
+ProseMirror underneath it at all, which is real, separate work — deliberately not attempted here.
+
+### `use-doc-page.ts` — one `HocuspocusProvider` per open page, the native counterpart of `use-collab-provider.ts`
+
+`docs-collab.ts` (pure — names the wire format, converts Yjs to plain JSON, no `react-native` or
+`@hocuspocus/provider` import) and `use-doc-page.ts` (the React half, mirrors
+`apps/web/src/features/docs/editor/use-collab-provider.ts`'s `useSyncExternalStore` shape exactly,
+for the identical reason: a `HocuspocusProvider` opens a WebSocket, so it can only be constructed in
+an effect, and the effect body cannot call `setState` synchronously). `useDocPage(orgId, pageId)`
+returns `{ doc, status, synced }` — `doc` is `null` for the render between mount and the effect
+running, same as web's `provider` starts `null`.
+
+**The one real difference from web is the WebSocket itself, and it is a two-layer problem.** A
+browser cannot set custom headers on a `WebSocket`, which is why web's own connection leans on the
+browser attaching a real `Origin` automatically. React Native's `WebSocket` is not that constructor
+— it is RN's own implementation, and its third constructor argument accepts `{ headers }`, threaded
+to the native networking layer. `NativeCollabSocket` in `use-doc-page.ts` is a thin subclass that
+always sends `CLIENT_HEADER: MOBILE_CLIENT` — the identical marker `socket.ts`'s Socket.IO
+connections already send — handed to `HocuspocusProvider` as `WebSocketPolyfill`. Two narrow type
+gaps came with it, both documented in that file's own header rather than suppressed: TypeScript's
+only `WebSocket` ambient type in scope is `lib.dom`'s 2-argument browser one (RN ships its real
+implementation as untyped Flow), so the subclass needs a restated constructor type, not a
+`@ts-expect-error`; and `HocuspocusProviderConfiguration`'s `url`-branch omits `WebSocketPolyfill`
+from its own published type even though the library reads it off the identical object at runtime
+(it forwards the same config straight into `new HocuspocusProviderWebsocket(...)` when no
+`websocketProvider` is supplied) — restating the field was chosen over switching to the
+`websocketProvider` branch, which skips the constructor's own `attach()` wiring and would need
+reimplementing by hand for no benefit.
+
+**The other half of "the WebSocket is different" lives on the server, and it is a ⚠ human-review
+surface.** `apps/collab/src/auth.ts` had no accommodation for a non-browser client at all — every
+connection with no `Origin` header (which is what a native client sends, since RN's `WebSocket` does
+not synthesize one) was refused outright. `apps/realtime/src/auth.ts` solved this identical problem
+for the Socket.IO gateway already, with a real device confirming it: `isNativeClient`/`isSelfOrigin`
+are ported VERBATIM from there rather than inventing a second mechanism, and `gateway.ts`'s
+`onAuthenticate` now passes `nativeClientHeader`/`host` the same way `realtime`'s own handshake does.
+**This is unverified in this environment** — there is no Docker here, so `authorize.test.ts`'s
+DB-backed suites and `gateway.integration.test.ts` (which boots a real gateway and a real
+`@hocuspocus/provider` client) could not be run; only `auth.test.ts`'s 17 non-DB tests (extended with
+an `isSelfOrigin`/`isNativeClient` suite mirroring realtime's own, plus an origin-gate isolation
+test using a wrong-secret-token trick to assert the refusal reason without touching Postgres) ran
+here. The author should run the full suite against real Postgres and confirm against a real device
+before merging this file's change, the same bar every other change to this file carries.
+
+### `yjsFragmentToRichTextDocument` — reusing Work's renderer, with zero new rendering code
+
+Docs' content schema is the SAME shared `@taskflow/api/richtext` schema Work's rich text already
+uses — `apps/collab/src/content-guard.ts`'s `enforceContentWhitelist` enforces it — and this app's
+existing `rich-text-view.tsx` already handles the Docs-specific `mention`/`pageLink` node types.
+So the only new piece needed was a converter: `docs-collab.ts`'s `yjsFragmentToRichTextDocument`
+walks a synced `Y.XmlFragment` into the same plain-JSON shape TipTap's own `getJSON()` produces
+(`Y.XmlElement.nodeName` is the node type, `getAttributes()` is `attrs`, `Y.XmlText.toDelta()` is
+Quill-delta runs whose `attributes` keys are mark type names), and `RichTextView` renders it with no
+changes of its own. `docs-page/[pageId].tsx` re-derives that JSON on every `observeDeep` firing —
+not just once on sync — so a page open while someone else edits it shows their changes live.
+
+**Verified against real Yjs structures, not against a real synced document.** `yjs` is pure JS with
+no DOM or native dependency, so `docs-collab.test.ts`'s 12 tests build genuine CRDT trees with Yjs's
+own mutation API (`new Y.XmlElement(...)`, `fragment.insert(...)`, `text.insert(..., marks)`) and
+assert the conversion against them — real confidence that the walk itself is correct. What none of
+that proves is that TipTap's live Yjs binding shapes a real document exactly this way; that needs a
+real page saved from a real editor and read back here, which is separate, real-device confirmation
+work, same caveat as the collab auth change above.
+
+### The bundler did not know `yjs` needs a random-number source on this platform, and neither did this app until `expo export` said so
+
+`yjs`'s own `lib0` dependency resolves `lib0/webcrypto` through its package `exports` map, and on
+`react-native` that map points at a file which unconditionally `require`s
+`isomorphic-webcrypto/src/react-native` — a package this app does not install, because its own
+react-native path depends on the retired `@unimodules/*`/`expo-random` packages and cannot cleanly
+install on a modern Expo SDK. `expo export --platform android` failed outright with an unresolved
+module error the moment `use-doc-page.ts` pulled `yjs` into the bundle; `tsc` and `eslint` had
+nothing to say about it, because neither one bundles. Fixed with a real native random source rather
+than a stub: `react-native-get-random-values` (a genuine CSPRNG — `SecRandomCopyBytes` on iOS,
+`SecureRandom` on Android) is imported for its side effect of polyfilling `global.crypto
+.getRandomValues`, and `metro.config.js`'s existing custom resolver (already used to pin `react`/
+`@tanstack/react-query` to one physical copy) gained one more redirect: the exact specifier
+`isomorphic-webcrypto/src/react-native` now resolves straight to `webcrypto-shim.ts`, which restates
+the three-property object shape that file is contractually required to export (`ensureSecure`,
+`getRandomValues`, `subtle`) backed by the real polyfill. Confirmed by re-running
+`expo export --platform android` AND `--platform ios` after the fix — both bundle clean.
+
+### Wiring: a page row now opens the reader, options move to a long press
+
+`docs-space/[spaceId].tsx`'s row tap used to open `PageOptionsModal` directly, because there was
+nowhere else for a tap to go. It now opens `docs-page/[pageId].tsx`; options (rename, add-child,
+move, archive/restore) moved to `onLongPress` on the same row — the identical split
+`board/[boardId].tsx`'s own list-tab row already uses for "one primary destination, one secondary
+action sheet," chosen over a nested second `Pressable` for the `⋯` icon once it was clear the
+established pattern already existed elsewhere.
+
+Verified: typecheck clean, lint clean, all 314 tests pass (299 existing plus 12 new for
+`docs-collab.ts` and 3 new for `config.ts`'s `collabBaseUrl` fallback), guardrail self-test clean,
+prettier clean, encoding check clean, and real `expo export --platform android`/`--platform ios`
+both bundle cleanly with `/docs-page/[pageId]` resolving. **Not device-verified** — this environment
+has no Docker and no physical device, so the collab auth change, the live WebSocket handshake, and
+whether TipTap's real Yjs output matches what `yjsFragmentToRichTextDocument` assumes are all
+reasoned from source and tested against real Yjs data structures, not confirmed end-to-end against a
+running `apps/collab` and a real page. The author should treat `apps/collab/src/auth.ts`'s change
+with the same review weight as any other change to that file before merging, and confirm the reader
+against a real page opened on both a device and web at once.
+
+### A native dependency, and the dev client that predates it
+
+Found live, on the author's own dev client, the day this shipped: opening `/docs-page/[pageId]`
+crashed with a bare `Native module not found` thrown from inside
+`react-native-get-random-values`'s `getRandomBase64`, called from `Y.Doc`'s own constructor
+(`lib0/random`'s `uuidv4` → `uint32` → `getRandomValues`). `expo export` cannot catch this — it
+proves the bundle RESOLVES, never that a native module the bundle references is actually LINKED
+into whatever binary is currently installed. This is the identical failure class `use-call.ts`'s
+own header already documents for `react-native-webrtc`: adding any native dependency (this one
+included) requires the dev client itself to be rebuilt — Metro's Fast Refresh reloads JavaScript
+into an already-built binary, and cannot link new native code into it. A dev client built before
+`react-native-get-random-values` existed in `package.json` genuinely does not have it, and no
+amount of restarting `expo start` changes that.
+
+The fix is not a code change; it is the rebuild this project already required for
+`react-native-webrtc`, `expo-local-authentication`, and `modules/device-key` before this:
+
+```bash
+npx eas-cli build --profile development --platform android   # or --platform ios
+# install the resulting build on-device, then:
+pnpm --filter @taskflow/mobile start --dev-client
+```
+
+(Or `npx expo run:android` / `npx expo run:ios` for a local toolchain build instead of EAS's cloud
+one, if Android Studio/Xcode is already set up.) `webcrypto-shim.ts`'s `getRandomValues` now catches
+the underlying native throw and rethrows it naming this section directly, since the library's own
+`Error('Native module not found')` gives no hint that a rebuild — not a code fix — is what it
+needs; that is the only code change this gap warranted. **The public Expo Go app was already ruled
+out for this project** (see "confirming this on a simulator..." above, for the OAuth deep-link
+reason) — this is one more native dependency Expo Go could never carry regardless, since it ships a
+fixed SDK build with no way to add a project-specific native module at all.
+
+## The reader's header collided with the global chrome, and rendered nothing while unsynced
+
+Two real bugs, both found live on a rebuilt dev client, once a Docs page actually opened for the
+first time: a permanently blank body, and the connection pill cycling red → orange → red without
+ever settling. Neither one needed the collab auth change (still unverified, per this file's own
+note above) to be the explanation — both had ordinary causes.
+
+**The pill was never invisible — it was covered.** `top-bar.tsx` mounts Account and the
+notification bell once, above every screen under `(app)/`, at `position: 'absolute', top: insets
+.top + 4, right: 16, zIndex: 20`. Every existing screen's header keeps its own right-aligned
+content — `automations.tsx`'s "+ New rule", `org-settings.tsx`'s "Billing" link,
+`docs-space/[spaceId].tsx`'s own "+ New page" — on a row BELOW its back button, never beside it,
+which is what keeps it clear of that fixed overlay's band. `docs-page/[pageId].tsx` put the
+connection pill beside the back button on the same row instead, landing it directly under
+`TopBar`'s two icons — which draw on top, since they render outside the `<Stack>` with a higher
+`zIndex`/`elevation`. The pill was there the whole time, genuinely cycling status; it was just
+never on screen. Fixed by matching the pattern every other screen already uses: back button alone
+on the first row, a second `titleRow` below it for the page label and the pill. **This was scoped
+to the one new screen** — every other screen in the app already followed the back-button-own-row
+convention (checked directly: `board`, `project`, `card`, `thread`, `channel-details`, `person`,
+`automation-editor`, `billing`, `project-settings` all keep the same shape), so this is not a
+second, wider layout bug, just the one new screen that skipped the convention it should have
+copied.
+
+**The blank body was a real gap in the loading state, not the network problem underneath it.**
+`useDocPage`'s `doc` goes non-null the moment `HocuspocusProvider` is CONSTRUCTED, which happens
+before the WebSocket has synced anything — so `doc === null` is true for exactly one render, and
+every render after that handed a freshly-constructed, genuinely empty `Y.Doc` to `RichTextView`,
+which returns `null` for an empty document (the correct behaviour for Work, where an empty
+description is unremarkable and this component has other siblings on the screen). On a screen
+whose entire body IS this component, "empty" and "still loading" rendered identically: nothing.
+Fixed with a sticky `hasEverSynced` flag — gates the FIRST render of content on `synced`, not on
+`doc !== null`, and once first sync has happened does not re-hide already-loaded content on a
+later reconnect (a network blip should make the pill go stale, not yank the page the user is
+reading). A genuinely empty page — `hasEverSynced` true, zero content nodes — now says "This page
+has no content yet." instead of rendering nothing, so the two states stay visually distinct.
+
+**The reconnect loop itself is very likely a missing `.env` var, found while investigating.**
+`MOBILE_COLLAB_BASE_URL` was added to `config.ts`/`app.config.ts` in the previous pass but never
+added to `.env.example` — the one thing that actually tells a developer it needs setting.
+Unset, it falls back to `MOBILE_API_BASE_URL` (apps/api, port 3000) rather than dialing
+apps/collab (port 3002), the identical trap `MOBILE_REALTIME_BASE_URL`'s own `.env.example` entry
+already documents for chat/calls, just one port over — a connection to the wrong server cycling
+Connecting → Offline → Connecting forever is exactly the reported symptom. `.env.example` now has
+the matching entry. If setting it to the LAN IP/port apps/collab actually listens on does not
+resolve the loop, the next thing to check is apps/collab's own server log for the actual refusal
+reason on that connection attempt (`forbidden_origin` would point at the still-unverified
+`isNativeClient` change; anything else points elsewhere) — that diagnosis needs a real server this
+environment does not have.
+
+**The gear-shaped circle below the bell is very likely not this app's own UI at all.** No
+component anywhere in this codebase renders a settings/gear icon as a floating overlay — `TopBar`
+mounts exactly two buttons (Account, notifications), and nothing else in `(app)/_layout.tsx` adds
+a third. A circular button with a gear/menu glyph, positioned independent of any screen, appearing
+right after a fresh dev-client rebuild, matches `expo-dev-client`'s own floating dev-menu launcher
+— a NATIVE overlay the dev client itself draws, unrelated to anything in `app/` or `src/lib/`. It
+cannot be moved or removed from application code; it is a dev-client-only affordance (absent from
+a release/production build) for opening the dev menu without a shake gesture.
+
+Verified: typecheck clean, lint clean, all 314 tests pass, guardrail self-test clean, prettier
+clean, encoding check clean, and `expo export --platform android` bundles cleanly. **Not
+device-verified** — the actual on-device rendering (whether the pill truly clears `TopBar` now,
+whether the reconnect loop resolves once `MOBILE_COLLAB_BASE_URL` is set) needs the same real
+device that found the original two bugs.
+
+## Everything web's Docs feature has that does not need an editor
+
+Comments, suggestions, backlinks, publish/unpublish, PDF export, and page templates — the rest of
+Phase 6 Waves 3–4, once the reader above proved the live connection works. **The editor itself is
+still not here, and cannot be**: ProseMirror needs a DOM, React Native has none, and that is the one
+constraint every decision below works around rather than tries to route past.
+
+### Which of the six were actually blocked, and which just looked like they were
+
+Investigated web's implementation of all six before writing any mobile code, rather than assuming
+"no editor" meant "no Docs Wave 3/4 at all." Four turned out to need nothing this app lacks:
+
+- **Backlinks** (`docs.backlinks.list`) — a plain read, computed entirely server-side by
+  `apps/api`'s own relay. No anchor, no rich text, no client-side Yjs at all.
+- **Publish/unpublish** — one-shot `{ pageId }` mutations; the server materializes the version to
+  publish, the client never sends content.
+- **PDF export** (`docs.pages.exportPdf`) — returns whole base64 PDF bytes generated by `pdf-lib`
+  (pure JS, not a headless browser) from the server's own last saved version.
+- **Page templates** — `docs.templates.createPage` copies a stored Yjs snapshot entirely
+  server-side; a mobile caller only ever sends a `templateId` string, exactly like web's own
+  `<select>` picker never reads or renders the template's content either.
+
+**Comments and suggestions split down the middle.** `apps/api/src/docs/suggestion.service.ts`'s own
+header says accepting a suggestion is a pure server-side status flip that never touches the live
+document, on web either — so listing, and a suggestion's accept/reject/withdraw ("decide"), needed
+nothing this app lacks. What DOES need something this app lacks is anchoring — a comment or a new
+suggestion is anchored to a Yjs `RelativePosition`, and web builds one from a live ProseMirror text
+selection (`editor/anchor.ts`'s `absolutePositionToRelativePosition`, reading `@tiptap/y-tiptap`'s
+binding off `editor.state`). This app has no selection to convert.
+
+### `pageStartAnchor` — the same wire format, a fixed point instead of a selection
+
+`apps/api/src/docs/anchor.ts`'s own header is explicit that the server never builds or resolves an
+anchor itself — `decodeAnchor` only checks the bytes are a well-formed `Y.RelativePosition`
+(`Y.decodeRelativePosition` either parses or throws), never what position they name. That is what
+makes a workaround possible at all: `docs-collab.ts`'s new `pageStartAnchor` builds the identical
+wire shape with pure Yjs — `Y.createRelativePositionFromTypeIndex(fragment, 0)`, anchored at index 0
+of the content fragment itself, not inside any one paragraph's text — so every comment and every
+suggestion created on this platform is anchored to the PAGE as a whole rather than to a phrase in
+it. The server cannot tell the difference and was never asked to. Tested against real Yjs, not just
+reasoned about: `docs-collab.test.ts` round-trips the encoded bytes through the actual
+`Y.decodeRelativePosition`/`Y.createAbsolutePositionFromRelativePosition` functions
+`apps/api`/`apps/web` themselves call, confirming it resolves to index 0 of the real fragment, empty
+or not.
+
+One more consequence, named rather than hidden: a suggestion's `kind` is restricted to `'insert'`
+on this screen. `delete`/`replace` need a real range to mean anything — "remove THIS phrase" has no
+expression against a page-level anchor. Listing still shows every kind a suggestion might have,
+including `delete`/`replace` ones created on web; only creation here is narrowed.
+
+### `base64.ts` — a dependency-free codec, not a trust in `btoa`
+
+Building an anchor needs to base64-encode the relative-position bytes for the wire; saving a
+downloaded PDF needs to decode the server's base64 back to raw bytes. `session.ts`'s JWT decode
+already leans on a global `atob` and it works — but nothing in this codebase had ever needed to
+ENCODE base64 on-device before, and after this session's own `react-native-get-random-values`
+lesson (a runtime assumption about what's globally available that turned out to need a native
+module after all), trusting an unverified `btoa` was not worth the risk of a second surprise for one
+function. `base64.ts` is the standard algorithm written out instead — tested against known vectors
+(`'foo'` → `'Zm9v'`, the textbook RFC 4648 examples) and round-tripped against arbitrary byte
+sequences, including the all-zero/all-0xFF edges a `noUncheckedIndexedAccess`-shaped bug (`CHARS
+.indexOf('')` returning `0` instead of `-1` for a missing character, not caught until the first test
+run) would otherwise hide.
+
+### PDF export — a second native dependency, and the same rebuild this session already paid for once
+
+`docs.pages.exportPdf` hands back whole PDF bytes inline; `pdf-save.ts` writes them to this app's
+cache directory (`expo-file-system`'s `File`/`Paths`, the same API `ringtone-player.ts` already
+uses) and opens the OS share sheet on the result (`expo-sharing`, newly added). Both native packages
+are imported dynamically, inside `savePdfAndShare` — never at module scope — mirroring
+`ringtone-player.ts`'s own established rule and for the identical reason `use-call.ts`'s header
+documents for `react-native-webrtc`: a package that calls `requireNativeModule(...)` at import time
+throws synchronously on any build where it is not yet linked.
+
+**`expo-sharing` is a genuinely new native dependency, exactly like `react-native-get-random-values`
+was earlier this session — it needs the SAME dev-client rebuild** (`npx eas-cli build --profile
+development --platform android` or `ios`, reinstall, then `pnpm --filter @taskflow/mobile start
+--dev-client`) before "Export PDF" will work, for the identical reason: Fast Refresh cannot link new
+native code into an already-built binary. Named here, before it is hit live, rather than found the
+same way the last one was.
+
+**That prediction was half right — a rebuild was needed — and named the wrong cause.** The version
+pinned, `"expo-sharing": "^14.0.0"`, was a real, installable npm package, and every other check
+(`tsc`, `eslint`, `vitest`, `expo export` for both platforms) passed against it, because none of
+them touch native Android bytecode. What shipped anyway crashed on a real device at native-module
+registration, before any screen rendered:
+`NoClassDefFoundError: Lexpo/modules/kotlin/types/AnyTypeProvider`, thrown from inside
+`SharingModule.definition()`. Every other Expo-authored dependency in `package.json` is pinned to
+this project's SDK line (`~57.0.x` / `^57.0.x`) — `expo-sharing` was the one exception, and `14.0.0`
+turned out to be a real release, just not this SDK's: SDK 57's own `bundledNativeModules.json` names
+`expo-sharing@~57.0.14`, and `14.0.8`'s Kotlin was compiled against a newer `expo-modules-core` Kotlin
+API than the `~57.0.12` actually in this tree — `AnyTypeProvider` exists in neither this project's
+`expo-modules-core` package nor anywhere in `expo-sharing@14.0.8`'s own sources; it is generated by
+`@expo/expo-modules-macros-plugin` against whatever `expo-modules-core` the _macro plugin_ resolves,
+and that resolution silently drifted from the one actually linked into the app. `pnpm typecheck`,
+`eslint`, and `vitest` cannot see any of this — none of them build or run a single line of Kotlin.
+Fixed by re-pinning to `~57.0.14`, matching the sibling packages' own convention (a convention this
+line should have followed the first time); `pnpm install` resolved it, and the two call sites
+`pdf-save.ts` uses (`isAvailableAsync`, `shareAsync`) are unchanged in the corrected version. The
+rebuild this section already told you to do is still the right instruction — it was just going to
+rebuild the wrong binary.
+
+### Wiring: `docs-page/[pageId].tsx` gained a second route param, and a URL is still a trust boundary
+
+Showing a page's real title and `publishedAt` state (there is no `pages.get` single-page route —
+only `docs.pages.list` by space) and knowing which space a saved template belongs to both need
+`spaceId`, which a `pageId` alone cannot answer. It now arrives as a second route param
+(`router.push({ pathname, params })`, the same shape `thread/[messageId].tsx` already uses for
+`channelId`) — every navigation to this screen (`docs-space/[spaceId].tsx`'s row press, a backlink
+row) supplies it.
+
+This also closed a real gap the screen had from its first version: `useLocalSearchParams`'s generic
+type PROMISES `pageId`/`spaceId` are always strings, but nothing enforced that at the actual trust
+boundary — a malformed or missing param would have reached `apiClient` calls unvalidated. CLAUDE.md
+§8.2's "the URL is a trust boundary" is why `thread/[messageId].tsx` runs `MessageIdSchema
+.safeParse`/`ChannelIdSchema.safeParse` before rendering anything; this screen now does the
+identical `PageIdSchema.safeParse`/`SpaceIdSchema.safeParse`, with the same "this link isn't valid"
+fallback view on failure, rather than trusting the type-level promise the way the first version did.
+
+### Verified, and what still needs a real device
+
+Typecheck clean, lint clean, all 321 tests pass (314 existing plus 4 for `base64.ts`, 3 more for
+`docs-collab.ts`'s `pageStartAnchor` — round-tripped through real Yjs, not mocked), guardrail
+self-test clean, prettier clean, encoding check clean, and real `expo export` for both
+`--platform android` and `--platform ios` bundle cleanly with the new native dependency resolved.
+**Not device-verified**, on top of the live collab connection's own existing caveat: comment/
+suggestion creation (a real anchor reaching the server and round-tripping through `docs.comments
+.list`), publish/unpublish's UI state actually flipping, and PDF export's save-and-share flow all
+need a real dev-client rebuild and a real page to open before any of this is confirmed working
+end-to-end rather than merely type-correct and unit-tested in isolation.
+
+## Writing a page — a whole-page compose-and-save editor, not live collaboration
+
+The one piece explicitly out of reach in every earlier Docs pass: a way to actually change a
+page's content from a phone. Still cannot be "the same as web" — ProseMirror needs a DOM, React
+Native has none, and that is a permanent platform wall, not a scope choice deferred for later.
+What shipped instead is real, honest writing within that wall: open a page, tap Edit, the page's
+current content appears as editable markdown-style text in the same kind of native text box
+already used for comments, edit it, tap Save, and the result becomes the page's new content —
+synced to every other connected client, web included, the instant it lands. No live cursor, no
+per-keystroke sync while composing, no true operational merge with a concurrent edit; Save checks
+for one before committing (below).
+
+### The markdown syntax got a lot bigger, on purpose — "as much feature as possible"
+
+`rich-text-compose.ts`'s `parseFormattedText` (shared with Work comments, Chat messages, and the
+Docs comments/suggestions composers from the previous pass) went from four constructs — bold,
+links, bullet/ordered lists, mentions — to the full node/mark vocabulary `apps/api/src/work
+/richtext.ts` actually whitelists, everything short of `mention`/`pageLink` composing UI (mentions
+already worked; page links are the one deliberate gap, below): headings (`#` through `######`),
+blockquotes (`> `), fenced code blocks (` ``` `, with an optional language on the opening fence),
+task lists (`- [ ] `/`- [x] `), horizontal rules (`---`), and four more inline marks — italic
+(`*text*`), strikethrough (`~~text~~`), inline code (`` `text` ``), underline (`__text__`). Every
+addition is backward compatible: the 24 tests already covering bold/links/lists/mentions still
+pass unchanged, confirming Work's and Chat's existing composers only gained capability, nothing
+about their existing behavior moved. `liveFormatParser` (the live syntax-highlighting half, for
+`MarkdownTextInput`'s `parser` prop) grew alongside it — every new inline mark highlights live,
+using `MarkdownType` members the library itself defines (`italic`, `code`, `strikethrough`); block
+constructs (headings, lists, quotes, fences) still cannot be represented as a character range
+within one line, so — matching how a `- ` list marker already worked — they stay plain text until
+save, the identical LIVE-vs-SAVE-TIME split this file already drew for lists.
+
+### `serializeToText` — the inverse, so "Edit" opens with real content, not a blank box
+
+Pre-filling the edit box with a page's EXISTING content (rather than starting blank, which would
+read as "this page is empty" even when it is not) needed the reverse direction: rich-JSON back to
+the same plain-text syntax `parseFormattedText` reads. Verified as an actual round trip, not two
+independently-plausible halves: `rich-text-compose.test.ts`'s new suite asserts
+`parseFormattedText(serializeToText(doc))` reproduces `doc` for every node and mark type, including
+headings at all six levels, nested lists, and mixed inline marks. A run carrying more than one mark
+(never produced by this file's own parser, but real TipTap content can) keeps only the
+highest-priority one on serialize — link beats the purely visual marks, since a dropped link
+destination is unrecoverable prose and a dropped bold is not — documented as a real, deliberate
+loss rather than an attempt at fidelity `parseFormattedText` could not consume back anyway.
+
+### `writeRichTextDocumentToFragment` — the write side, and the bug its own round-trip test caught
+
+`docs-collab.ts` gained the inverse of `yjsFragmentToRichTextDocument`: replace a page's entire
+`content` fragment with a tree built from plain JSON, in one `doc.transact(...)` (so a connected
+viewer — including this same client's own reader — sees the final state once, never a flash of
+"content cleared" mid-rebuild). Two real, non-obvious things had to be gotten right, both found by
+testing against real Yjs rather than trusted from the type signature:
+
+- **Attach-then-fill, not build-then-attach.** `Y.XmlText.insert()` needs the text to already be
+  reachable from the document root before it accepts content (confirmed by `docs-collab.test.ts`'s
+  own existing fixtures, which always attach an empty child before inserting into it) — the writer
+  constructs and attaches each element top-down, only recursing into its children once it is
+  already wired to an attached parent.
+- **A missing `attributes` argument means "inherit," not "clear."** `Y.XmlText.insert(index, text,
+attributes)` — when `attributes` is left `undefined` for an unmarked run sitting between two
+  marked ones, Yjs does not treat that as "no formatting here"; it inherits the PRECEDING run's
+  attributes. `**bold**, *italic*` written with `undefined` for the plain `, ` in between came back
+  from a real Yjs round trip as `**bold, **` — the comma and space silently bolded. Confirmed with
+  a throwaway isolated reproduction against real Yjs before touching the real function, not assumed
+  from the `attributes?: Object | undefined` signature reading like "optional means none." Fixed by
+  always passing a real object (`{}` for "no marks"), never `undefined` — `attributesFromMarks`'s
+  own header names this as the reason it changed. This is the kind of bug a round-trip test finds
+  and a shape-only unit test cannot: `docs-collab.test.ts`'s new end-to-end suite (compose text →
+  `parseFormattedText` → write → read back via the existing reader) is what caught it, exercising
+  every node and mark type from the previous section in one document.
+
+### `docs-page-editor.ts` — deciding whether it is safe to enter Edit at all
+
+Two small, pure functions gate what "Edit" actually does, given the writer replaces a page's WHOLE
+content: `hasPageLink` walks a page's current content for a `pageLink` node — the one node type
+`serializeToText` cannot round-trip (its own header: a page link degrades to its plain `label` text
+with no way back) — and warns before entering edit mode on one, rather than losing a page's
+internal links silently the next time someone saves. `extractMentions` collects every existing
+`mention` node's `userId`/`label` pair into the list `parseFormattedText` needs to turn a RETYPED
+`@Label` marker back into a real mention on save — an existing mention round-trips as long as its
+exact label text survives editing; there is no mention-picker UI on this screen (matching the
+previous pass's Comments composer), so a NEW mention cannot be created here, only an existing one
+preserved.
+
+### The conflict check — Save compares against a captured baseline, not against nothing
+
+This screen has no live sync while composing, so "did the page change while I was editing" is a
+real question with a real answer needed before overwriting it. `docs-page/[pageId].tsx` captures
+`serializeToText` of the page's content the MOMENT Edit is pressed; at Save, it re-reads the
+page's CURRENT live content and compares. A match saves normally; a mismatch means someone else's
+edit landed in between, and the screen asks — overwrite their change, or go back — rather than
+silently discarding it. Not a true CRDT merge (there is no way to merge two divergent whole-page
+markdown edits without an editor tracking both), but a real, honest guard against the most common
+failure mode of a whole-document overwrite model.
+
+### Verified, and what still needs a real device
+
+Typecheck clean, lint clean, all 369 tests pass (321 existing, plus 31 for `rich-text-compose
+.ts`'s expanded parser/serializer, 9 for `docs-collab.ts`'s new writer, and 8 new for
+`docs-page-editor.ts`), guardrail self-test clean, prettier clean, encoding check clean, and real
+`expo export`
+for both `--platform android` and `--platform ios` bundle cleanly — no new native dependency this
+pass, so no additional dev-client rebuild beyond the one `expo-sharing` already required. The whole
+screen is now wrapped in `KeyboardAvoidingView` (`channel/[channelId].tsx`'s own established
+pattern) — with three composers on one screen now (Comments, Suggestions, the page editor), this
+was the moment to apply it proactively rather than wait for a fifth live report of the same bug
+class this README already has four of. **Not device-verified**: the parser/serializer/writer
+round trip is proven against real Yjs structures built by hand, not against a real page saved from
+a real TipTap editor and then opened here — that is the one gap no amount of unit testing in this
+environment can close, the same boundary `yjsFragmentToRichTextDocument`'s own header has named
+since the reader shipped.
+
+## Search (Phase 8) — a modal, not a screen, reached from `top-bar.tsx`
+
+`src/lib/search.ts` (pure logic) and `src/lib/search-button.tsx` (the trigger + sheet), wired into
+`top-bar.tsx`'s existing icon row right after Account. Ported from
+`apps/web/src/features/search`, with one structural difference from the start: web is a full
+`/search` route with a live per-token TQL error underline, type facets, and a saved-search CRUD
+list; this is a bottom sheet, following `notification-bell.tsx`'s own trigger-plus-sheet shape
+rather than a pushed route, because a search result is never somewhere to linger — it is always a
+jump to a card, a channel, or a page.
+
+**There is no separate "plain text" search mode, and none was needed.** Web has exactly one search
+surface — a TQL text box — not two. That reads as a bigger porting job than it is, until
+`packages/filter/src/tql/parse.ts`'s `freeText()` is read closely: a bare typed word is already
+COMPLETE, valid TQL (it desugars to `text contains "word"` at parse time), so a plain search box
+that forwards whatever the user typed straight through as `query` is not a reduced version of
+web's feature — it _is_ the same feature, minus the two pieces that need real UI a modal has no
+room for. `@taskflow/filter` is deliberately NOT a new dependency of this app: a user who types
+real TQL syntax and gets it wrong sees the server's own `VALIDATION` error, the same as any other
+tRPC failure this app already renders, rather than a local parser copy that could drift from the
+real one.
+
+**The facet chips are honest, same as web's.** `withFacet` appends `AND type = <kind>` to the
+typed text rather than filtering a client-side list — the query box IS the whole query, always;
+there is no hidden second filter layer. Transcripts get a chip like every other kind even though
+they are gated by role alone (`recording:read`, no target — Admin/Owner in practice): hiding the
+chip from a member would be this UI re-deriving an authorization decision the server already makes
+correctly, the same §8.2 argument every other screen in this app already follows. A member who
+taps it gets an honest empty result, not a missing option.
+
+**Every hit field the row renders is treated as nullable, because it is.** `title`, `snippet`, and
+`authorId` are all nullable on the wire; `hitTitle()` supplies the same `"<Kind> · <id>"` fallback
+web's own row does rather than assuming a title exists. There is no client-side authorization
+check anywhere in this file, on purpose: `apps/api/src/search/router.ts`'s own header is explicit
+that the index only answers WHICH ORG, and the route re-checks `can()` per hit, with the resource's
+own `Target`, before a hit is ever returned — this app renders what it is handed and does not
+re-derive that decision.
+
+**Navigating a hit is a straight `switch` on `hit.type`, narrowing `metadata` per case with the
+same `'x' in meta` checks web uses** — `HitMetadata` is a plain Zod union with no discriminant tag
+shared with `type`, so TypeScript cannot narrow `metadata` from `type` alone; each case re-checks
+the field it needs, exactly like `search-page.tsx`'s own `open()`. Four of five targets are a
+genuine simplification over web, not a reduced port: mobile's `/card/[cardId]` route takes only a
+card id (web's `/boards/$boardId` needs `board_id`/`project_id` too), so a `card` hit does not
+even need to inspect its metadata. `page` and page-`comment` hits push to `/docs-page/[pageId]`
+with `spaceId` as a second param, the same shape `docs-page/[pageId].tsx`'s own Backlinks section
+already uses. **`transcript` is the one real gap**: mobile has no per-call route at all (`calls.tsx`
+is a single tab screen with no `router.push` target for a specific call), unlike web's `?call=`
+auto-expand — a transcript hit opens the Calls tab generically rather than the specific recording.
+Named here rather than silently degraded; closing it needs a route param `calls.tsx` reads to
+auto-expand a row, which is its own follow-up, not urgent enough to block this pass.
+
+**Saved searches (`search.saved.*`) are not wired up at all — a deliberate, named gap, not an
+oversight.** Web's list is a real CRUD surface with a share-with-org toggle the server can reject
+and a `broken` flag re-computed on every `list` call (a stored query re-parsed against the live
+grammar can go stale). That is a management screen, not a "search cards, jump to one" sheet meant
+to be opened, typed in, and dismissed in a few seconds — the same reasoning that kept the page
+editor's mention list read-only rather than inventing a picker UI it didn't need. Worth its own
+pass later, the same way the page editor got one once reading was solid.
+
+**No pagination, matching the server exactly**: `search.query` has no cursor, a hard `limit` of at
+most 100 (this app asks for 50), and per-hit authorization can drop rows after the index's own
+limit — so a result count here is a floor, not a total. Nothing in this file tries to "load more"
+against an endpoint that has no `nextCursor` to give it.
+
+Verified: typecheck clean, lint clean, 7 new tests in `search.test.ts` (`withFacet`'s facet/empty-
+query/whitespace cases, `hitTitle`'s real-title and per-kind-fallback cases) alongside the existing
+369 — 376 total — guardrail self-test clean, prettier clean, encoding check clean, and real
+`expo export` for both `--platform android` and `--platform ios` bundle cleanly. No new native
+dependency, so no dev-client rebuild beyond what this app already needed.
+
+**The sheet is wrapped in `KeyboardAvoidingView` from the start, not after a live report.** An
+autofocused `TextInput` sitting above a facet-chip row above a scrolling result list, inside a
+bottom sheet, is exactly the shape this README's own "keyboard covers composer" bug class has hit
+four times before (`channel/[channelId].tsx`, `board/[boardId].tsx`'s two modals,
+`docs-page/[pageId].tsx`) — this would have been the fifth live report of the same thing, so it is
+fixed proactively instead: `KeyboardAvoidingView` (`'padding'` on iOS, `'height'` on Android)
+around the modal's backdrop, `board/[boardId].tsx`'s own established shape for a `Modal`-hosted
+sheet with a `TextInput` in it. **Not device-verified**: the fix follows an established, working
+pattern exactly, but has not itself been checked against a real keyboard on a real device.
+
+## Work: bulk actions on the board — long-press to select, ported from `bulk-bar.tsx`
+
+`src/lib/work-bulk.ts` (pure — `runBulk`, `describeOutcome`, ported verbatim from
+`apps/web/src/features/work/bulk.ts`) and `board/[boardId].tsx`'s own new selection state, gap #1
+off a fresh mobile-vs-web audit that named Work as the module furthest behind (bulk actions,
+filters/saved views, table view, board sharing, archived-cards restore — all real, all currently
+absent). Bulk actions was the one worth building first: the highest daily-use friction point,
+self-contained, and needing no native module.
+
+**There is no bulk endpoint, on mobile any more than on web, and for the same reason.**
+`ai/phase-3.5-work-ux.md` §6: "server side these are loops over existing routes — resist inventing
+a bulk endpoint that bypasses per-card authorization." `runBulk` calls the exact same
+`work.cards.setStatus`/`assign`/`update`/`archive` routes the single-card UI already calls,
+concurrency-4, and reports BOTH halves of the outcome rather than throwing — selecting cards
+across two boards and archiving them SHOULD archive the ones the caller may edit and refuse the
+rest, and `Promise.all` would discard the successes it already had the moment the first refusal
+landed. `describeOutcome` is the wording that keeps that honest ("8 cards archived. 2 could not be
+changed." — never "8 cards archived" alone, which reads like a clean run of ten).
+
+**No optimistic patch, matching web's bar exactly.** Every single-card mutation in this app
+(`use-update-card.ts`) patches its cache optimistically; the bulk bar invalidates and refetches
+instead. Optimism is a bet the write succeeds, and it is a good bet for the one card someone just
+edited — across a selection the bet is wrong BY CONSTRUCTION, since per-card authorization means a
+partial outcome is the designed behavior, not a rare failure. An optimistic patch would show every
+selected card changing and then roll some back, which reads as the board glitching rather than as
+a permission boundary holding.
+
+**Entering selection mode is a long-press on any card; once inside it, a plain tap toggles.**
+`card-row.tsx` gained three additive props — `selected`, `onPress`, `onLongPress` — all optional
+and all `undefined` in every existing caller (`home.tsx` passes none of them, so "My Tasks" is
+pixel-identical to before). `selected` being _present at all_ (even `false`) is what switches the
+row from "tap navigates" to "tap toggles, checkbox shows" — the caller decides which mode a row is
+in by whether it supplies the prop, not by a second boolean. Selection lives in `selectedIds`, a
+plain `Set`, not in anything keyed by the active list tab — switching tabs mid-selection keeps what
+was already picked, the same as web's bar being rendered once for the whole board rather than once
+per column.
+
+**Status, Priority, and Assign each open the same small bottom-sheet picker `board/[boardId].tsx`
+already had for "Move"** — no new modal pattern, just a third caller of one. Priority is the one
+action that needs a read-then-patch (`bulkSetPriority`, mirroring `use-update-card.ts`'s
+`applyPatch` and web's own inline version in `bulk-bar.tsx`): `cards.update` is a full replace
+whose Zod schema defaults every field it is not given to `null`, so writing only `priority` would
+silently erase every selected card's description and both dates. `setStatus` and `assign` have
+dedicated routes and need no such read.
+
+**Archive is immediate, matching web's own ghost button — no confirmation dialog.** That is a
+real, honest trade: this app still has no archived-cards RESTORE view (a separate, still-open gap
+from the same audit), so a card archived here in bulk is reachable again only from `apps/web`'s
+`archived-cards-dialog.tsx` until that view ships on mobile too. Worth naming plainly rather than
+adding a confirmation dialog web itself does not have, which would just be a workaround for a
+different, still-missing feature.
+
+**The result message uses `Alert.alert`, this app's established no-toast substitute** (the same
+one `person/[userId].tsx`'s "Profile updated" and every other one-shot result in this app already
+uses) — `use-update-card.ts`'s own header is explicit that this app has no toast system and would
+not share web's even if it did.
+
+Verified: typecheck clean, lint clean (`cardId as CardId` casts came out unnecessary at every new
+call site — tRPC's own inferred input types accept a plain `string` directly; only the pre-existing
+`moving.cardId as CardId` cast, going through a locally-typed mutation wrapper, still needs one),
+9 new tests in `work-bulk.test.ts` ported line-for-line from `bulk.test.ts` (concurrency bound,
+partial-failure reporting, empty-selection handling, outcome wording including the singular/plural
+and partial-failure cases) alongside the existing 376 — 385 total — guardrail self-test clean,
+encoding check clean, and real `expo export` for both platforms bundle cleanly. No new native
+dependency. **Not device-verified**: long-press-to-select is a real gesture with real platform
+timing (`Pressable`'s default `delayLongPress`), and has not been checked against how it feels on
+a real device — in particular whether it reads as responsive or as an accidental double-trigger
+against a quick tap meant to open the card.
+
+## Account: the notification preference matrix — the gap the push section itself named
+
+`src/lib/notification-prefs-section.tsx`, ported from `apps/web/src/features/notifications/
+notification-prefs-section.tsx`, closing gap #2 off the same mobile-vs-web audit bulk actions came
+from. `push-notifications-section.tsx`'s own header said it plainly since the day it shipped: "the
+category/channel preference MATRIX... is a separate, real gap: no screen on native reads
+`notifications.prefs.*` at all yet." That sentence is now corrected in place rather than silently
+dropped — see that file's own header.
+
+**A new file, not folded into `push-notifications-section.tsx`, because the two are genuinely
+different questions.** That section is the device-REGISTRATION ceremony — getting an Expo push
+token onto this device in the first place. This one is "which categories reach me on which
+channel" — email, push, SMS, crossed with mentions/DMs/assignments and replies/comments/due-dates
+— a plain preference the server already stores (`identity.notification_prefs`, `selfRoute`, no org,
+the same "yours alone, the same wherever you sign in" shape `PasskeySection`'s own reasoning gives
+every other account-page control) whether or not this particular device has ever registered for
+push. `notifications.ts` gained the type and query key (`NotificationPrefEntry`,
+`NOTIFICATION_PREFS_QUERY_KEY`) rather than `push-notifications.ts`, for the identical reason.
+
+**Toggle chips instead of checkboxes.** Web renders a real `<input type="checkbox">` per cell; this
+app has no equivalent at a touch-target size worth tapping, so each cell is the same accent-when-
+active chip `search-button.tsx`'s facet row and `docs-space/[spaceId].tsx`'s template picker
+already established — tapped to flip, not checked.
+
+**Push's disabled reason is real and different from web's, because the ceremony lives somewhere
+else here.** Web's push column can be disabled for three separate reasons (no VAPID key configured,
+an unsupported browser, a blocked permission) because turning it ON there runs the WHOLE push
+ceremony inline, synchronously, before saving. On mobile the ceremony is `push-notifications-
+section.tsx`'s own "Enable on this device" button, a separate control — so this matrix only needs
+one fact: has that ceremony ever succeeded for this account. Zero registered devices
+(`expoPush.list`, the same query that section already reads) disables the push chip with a reason
+pointing at the section below it, rather than a checkbox that flips and silently saves a preference
+nothing can act on — the identical "no silent lie" argument web's own header makes, just resolved
+against a different signal because mobile's ceremony is not inline. SMS keeps web's own "Coming
+soon…" verbatim: no SMS provider carries notification delivery on either platform yet, Phase 7's
+telephony SMS threads notwithstanding — that is a different pipe end to end.
+
+Verified: typecheck clean (one `Record`-narrowing fix needed — a `.filter()` predicate had to be a
+real type guard for the disabled-reason list, since `no-unnecessary-condition`/strict null checks
+do not narrow through a plain boolean filter), lint clean, guardrail self-test clean, encoding
+check clean, and real `expo export` for both platforms bundle cleanly. No dedicated test file, same
+as `push-notifications-section.tsx`'s own precedent — the whole component is `useQuery`/
+`useMutation` wiring and JSX with no pure logic worth extracting, the same reasoning that file's
+absence of a test already establishes. **Not device-verified**: the toggle-chip interaction and the
+disabled-reason text have not been checked against a real screen size or a real registered device.
+
+## Docs: version history — save and restore, gap #3 off the same audit
+
+`src/lib/docs-versions.ts` (types + query key) and `docs-page/[pageId].tsx`'s new
+`VersionHistorySection`, ported from `apps/web/src/features/docs/version-history.tsx`. The last of
+the three Tier-1 items the fresh mobile-vs-web audit named (bulk actions, the notification-prefs
+matrix, this) — chosen third for the same reason web's own file was easy to port: `save`/`restore`
+never send or receive rich text, exactly like backlinks/publish/PDF export/templates before them.
+`save` snapshots whatever the server's live Yjs document currently holds; `restore` copies a stored
+snapshot back over it — both entirely server-side, so a mobile caller only ever sends a `pageId` or
+a `pageId` + `versionId`, never document content.
+
+**Restoring does not touch an already-open live connection, on mobile any more than on web, and
+this app needed its own fix for it.** `page-version.service.ts`'s own header is explicit: restore
+writes a fresh snapshot without notifying a currently-connected `apps/collab` session, which only
+picks it up on its NEXT connect. Web's answer is `onRestored` remounting `DocsEditor` with a fresh
+`key`; this screen's answer is the same shape, one level up — `DocsPageScreen` now renders through
+a new `DocsPageScreenBody`, which owns a `reconnectKey` state and keys `DocsPageContent` on it.
+`useDocPage`'s effect only re-runs when `orgId`/`pageId` change, neither of which a restore
+touches, so bumping that key is what forces a full unmount/remount — a fresh `Y.Doc`, a fresh
+`HocuspocusProvider` — after a successful restore. Skipping this would make "Restore" appear to do
+nothing until the page is left and reopened, indistinguishable from having failed; that gap did not
+exist before this pass because nothing on this screen previously needed to force a reconnect.
+
+**`kind` is not filtered, matching web's own reasoning**: someone restoring to "right before I
+broke it" may well want to reach for an autosave point, not just a manual save, so every version
+kind (`manual`/`autosave`/`publish`) is listed and only shown as a small pill, never hidden.
+Restoring asks first — an `Alert.alert` confirm ("Restore this version? The page will be replaced
+with this version's content.") — the native equivalent of web's `ConfirmButton`, since this app has
+no two-step hover-then-click affordance to borrow.
+
+Verified: typecheck clean on first pass, lint clean, guardrail self-test clean, encoding check
+clean, and real `expo export` for both platforms bundle cleanly. No new test file: `save`/`restore`
+are one-shot mutations with no pure logic to extract, the same shape publish/unpublish and template
+creation already established with no dedicated tests of their own. **Not device-verified**: the
+`reconnectKey` remount is the one genuinely new mechanism in this pass and has not been checked
+against a real restore on a real device — in particular, whether the brief unmount/remount reads as
+a flicker or a clean transition, and whether a second client (web, open on the same page) actually
+picks up the restored content on ITS next reconnect the way `page-version.service.ts`'s own header
+says it should.
+
+## Tier 2, three items: DM click-to-call, archived-cards restore, board sharing
+
+Three more items off the same audit, all self-contained, none needing a native module.
+
+**Click-to-call from a DM, wired rather than built** — `channel-details/[channelId].tsx`'s new
+`DirectCallAction`, ported from `apps/web/src/features/chat/channel-details.tsx`'s component of the
+same name. Both `TelephonyCallButton` and `people.ts`'s `directoryMemberQueryKey` already existed,
+built for `person/[userId].tsx`'s own "Job" section — this was two existing pieces called from a
+third place, not new capability. Only for a two-person DM (`others.length === 1`): a group
+conversation has no single callee, and picking one for the caller would dial someone they did not
+choose. Reads `people.directory.get`'s `workPhone`, not `useMembers`'s cache — that cache backs
+every avatar in this app and stays deliberately narrow; widening it to carry a phone number would
+mean every board render holds one, for the benefit of one panel. Silent when there is no number:
+an affordance, not a permission boundary, so no empty-state text clutters every DM in an org that
+has not filled the directory in.
+
+**Archived cards and archived lists, restorable — `board/[boardId].tsx`'s new "Archived" button**,
+ported from `apps/web/src/features/work/archived-cards-dialog.tsx`. Two sections in one sheet
+(`ArchivedCardsList`, `ArchivedListsList`), fetched only while the sheet is OPEN — the same
+"a rarely-visited list is not worth a query on every board mount" reasoning web's own header gives.
+`work.ts` gained `archivedCardsQueryKey`/`archivedListsQueryKey`, both nested UNDER the live query's
+own key (`['work.cards.list', boardId, 'archived']`), mirroring web's `archivedCardsQuery`/
+`archivedListsQuery` exactly — TanStack Query's default prefix matching means invalidating the live
+key already refreshes the archived one too, so archiving or restoring a card needs no second
+invalidation to remember. The two server calls are NOT parallel in shape: `cards.list`'s
+`includeArchived` WIDENS past the hardcoded live-only filter (so this file filters for
+`archivedAt !== null` client-side, same as web), while `lists.list`'s `archivedOnly` NARROWS
+directly server-side — `apps/api/src/work/router.ts`'s own comments on both routes are explicit
+about the asymmetry, and getting it backwards would either show nothing or show everything.
+Restoring a list is deliberately not gated on it being empty: the occupancy check exists to stop
+cards being STRANDED by an archive, and applying it in reverse would refuse exactly the columns
+worth restoring. This is also what closes the honest gap bulk actions' own header named when it
+shipped: "this app still has no archived-cards RESTORE view" — corrected in place there, per this
+file's own habit, rather than left to go stale.
+
+**Sharing a board — relationship tuples, the Zanzibar-lite half of the permission model, `src/lib/
+share-board-modal.tsx`**, ported from `apps/web/src/features/work/share-board.tsx`. A role says
+what a member may do ACROSS the org; a tuple says what one subject may do to ONE resource. Without
+this, a board could only ever be as private as the org itself. `@taskflow/policy` was already a
+declared dependency of this app (`package.json`) but had never actually been imported anywhere
+until now — `RELATIONS`, `isRelation`, `isRestrictive`, and `permissionsForRelation` are the
+package's own exported helpers, not role comparisons, so nothing here trips guardrail 2's
+`role === 'admin'` ban; confirmed by the guardrail self-test and by both platforms' `expo export`
+still bundling clean (the first real proof this package's dependency graph carries nothing
+RN-hostile). Restrictive relations are labelled FROM THE POLICY PACKAGE, not a list retyped here —
+a `viewer` tuple CAPS what an admin may do to a board, the opposite of what "share" usually
+implies, and a picker presenting every relation identically would let someone hand out a
+restriction believing they were granting access. The "confers: …" line under the relation picker
+exists for the identical reason: a relation name alone is not self-explanatory, and guessing wrong
+here hands out real access.
+
+**One modal, swapping its own body, rather than two stacked ones.** Web picks the person from a
+real `<select>`; this app has none, and has no precedent anywhere for nesting a second `<Modal>`
+inside one that is already open. So the person picker is not a second sheet — it is the SAME sheet
+with `mode` switched from `'form'` to `'pickPerson'`, the identical "swap this sheet's content by a
+local enum" shape `search-button.tsx`'s facet row and `board/[boardId].tsx`'s own bulk-action
+picker already established, reused rather than inventing a stacking pattern with no other example
+in this codebase to check against.
+
+**Step-up, the same gate web's write already requires.** `tenancy.grants.grant`/`.revoke` are
+`stepUp: true` server-side — writing a tuple changes who can reach data, exactly what a stolen
+session would be used for. `use-step-up.ts`'s `guard`/`pending`/`confirm`/`cancel` and
+`step-up-sheet.tsx`'s `<StepUpSheet>` already existed (built for `connected-accounts-section.tsx`'s
+OAuth linking and `totp-section.tsx`'s enrollment) and are reused verbatim, the same "no local
+parser copy to keep in sync" discipline `search-button.tsx`'s own header names for a different
+boundary.
+
+Verified: typecheck clean on first pass for all three, lint clean, guardrail self-test clean
+(including, for the first time, a real check that `@taskflow/policy` imports cleanly from this
+app), encoding check clean, and real `expo export` for both platforms bundle cleanly. No new test
+files: all three are `useQuery`/`useMutation` wiring and JSX with no pure logic worth extracting,
+the same reasoning `push-notifications-section.tsx` and `notification-prefs-section.tsx` already
+established for the identical shape. **Not device-verified**: none of the three — in particular,
+the share modal's mode-swap transition, the step-up re-authentication round trip for a tuple grant
+specifically (as opposed to the account-page flows it was built for), and whether restoring an
+archived list with cards still on the board's OTHER active lists reads correctly once the sheet
+closes.
+
+## The last Tier-2 item: a simplified board filter, not a reduced port of the tree editor
+
+`src/lib/board-filter.ts` (pure AST construction) and `board-filter-sheet.tsx` (the trigger +
+sheet), wired into `board/[boardId].tsx`'s header row. Web's own filter is a full, arbitrarily
+nested AND/OR tree editor over every field `packages/filter/src/fields.ts` whitelists —
+`filter-builder.tsx` plus its value editor and TQL-draft round trip come to 1,353 lines. This is
+not a cut-down port of that: it is a flat AND of the four fields people actually reach for while
+scanning a board on a phone — status, priority, assignee, label — the same "the reduced surface IS
+the whole feature, not a partial one" call `search-button.tsx`'s own header made for TQL text.
+
+**`@taskflow/filter` is a real new dependency of this app — the first genuinely new workspace
+package since `@taskflow/policy` landed for board sharing, and the same category of addition: pure
+`zod`, no native code, no dev-client rebuild.** `compare`/`and` are `packages/filter/src/ast.ts`'s
+own constructors — the SAME ones web's visual builder and Phase 8's TQL parser both call — so a
+node built here is guaranteed shape-correct rather than a hand-typed object that compiles today and
+silently stops matching the real type after a server-side rename. The server still re-validates
+every field name and operator against the real whitelist regardless
+(`packages/filter/src/fields.ts`'s own header, "no user string ever reaches the database as a field
+name or operator") — this file only has to build something well-formed, not something trustworthy
+on its own. Confirmed clean via the guardrail self-test and both platforms' `expo export`, the same
+verification `@taskflow/policy`'s own addition needed.
+
+**A `null` filter is `work.cards.list`'s own default, sent as `null` rather than an empty AND
+group** — an unfiltered board sends exactly what it always has, byte for byte. A single populated
+field is still wrapped in `and(...)` rather than sent as a bare comparison: one shape to reason
+about instead of two, and the server treats a one-child group identically to the clause alone.
+
+**The query key nests the filter fragment UNDER the board's own unfiltered key**
+(`filteredBoardCardsQueryKey`, mirroring `archivedCardsQueryKey`'s own convention two sections up),
+using a stable JSON-string fragment (`boardFilterKey`, mirroring web's identically-named
+`filterKey` in `apps/web/src/features/work/api.ts`) rather than the raw `FilterNode` object, so two
+structurally-equal filters built at different moments share one cache entry instead of comparing by
+reference. Every existing mutation that already invalidates the plain `boardCardsQueryKey(boardId)`
+— create, move, archive, bulk actions — refreshes whatever filtered view happens to be on screen
+too, via TanStack Query's own prefix matching, with no invalidation call site touched.
+
+**A real bug this pass introduced and then fixed before it shipped: the status/label picker used to
+lose its own data source the moment its filter actually filtered.** `board/[boardId].tsx` already
+derived a "some card's `project_id`" value for the bulk-action status picker
+(`cards.data?.[0]?.projectId`) — safe when `cards` was always unfiltered, since any card at all
+answered it. Making `cards` filter-aware breaks that the instant a filter narrows the board to zero
+matching cards: `cards.data` becomes `[]`, the derived project id goes back to `null`, and the
+filter sheet's own status/label rows — which need that same id — would render "Add a card to this
+board first" on a board that plainly has cards, just not ones matching the current filter. Fixed by
+capturing the id ONCE, into real state, the first time any response has one, using the identical
+compare-and-`setState`-during-render pattern `use-doc-page.tsx`'s own `connectionKey` already
+established in this codebase — not a new pattern, the existing one applied where a second caller
+now needed the same guarantee.
+
+**Tab counts stay unfiltered, on purpose.** `list.cardCount` (from `work.lists.list`, its own
+separate, always-live read) answers "how close is this list to its WIP limit" — a question the
+TRUE count answers and a filtered one would misrepresent, showing a column that reads as nearly
+empty while it is actually near its limit. The card list itself narrows to matches; the tab strip's
+numbers do not.
+
+**Saved views are the one honest gap left, named rather than silently absent.** A filter selection
+lives in local component state and resets the moment this screen unmounts — no `work.views.*`
+persistence, no shared-vs-private distinction, no named-view picker. Real, separate follow-up work,
+not something this pass quietly rolled into "filters," matching the file's own updated header.
+
+Verified: typecheck clean on first pass, lint clean, 10 new tests in `board-filter.test.ts`
+(emptiness, AST shape for one field and for all four ANDed together, the `boardFilterKey`/`filter:
+null` pairing, and the assignee/label toggle helpers) alongside the existing 385 — 395 total —
+guardrail self-test clean (including a fresh check that `@taskflow/filter` imports cleanly from
+this app, the same category of proof `@taskflow/policy` needed), encoding check clean, and real
+`expo export` for both platforms bundle cleanly. **Not device-verified**: the chip-row layout at
+four groups deep in one sheet, and whether the empty-to-populated `capturedProjectId` transition
+reads smoothly the first time a board with cards actually loads on a real device.
+
+## Native CallKit / ConnectionService — the app-alive half of a real reliability gap, in three passes
+
+The mobile-vs-web audit's own Tier 3 named this "the most consequential _reliability_ gap in the
+whole app": a ringing call today reaches only `call-surface.tsx`'s in-app `IncomingCallBanner` — a
+component rendered inside this app's own React tree, so a backgrounded app, a locked phone, or a
+killed process all mean the same thing, a call that rings and nobody sees it. The scope is genuinely
+three separate problems, not one, and this pass is deliberately the first of them: `src/lib/call-keep.ts`
+(new) bridges the app's existing call state to native CallKit/ConnectionService for the case where the
+app PROCESS is alive — foreground or backgrounded with the socket still connected. Waking a fully
+killed app is Pass B (Android, via the push infrastructure this app already has) and Pass C (iOS, via
+VoIP push, which needs infrastructure this app does not have yet) — both named as follow-up work below,
+neither started.
+
+**`react-native-callkeep`, dynamically imported, matching this app's own established rule.** Its
+module degrades to `undefined` on import rather than throwing — so a static import would not
+immediately crash a build that predates this dependency, but calling a method on it would, the exact
+failure shape `use-call.ts`'s own header already documents for `react-native-webrtc` and
+`react-native-incall-manager`. `loadCallKeep()` is the same lazy, memoized, `.catch(() => null)`
+pattern this app now uses for every native module that isn't in every build (`expo-notifications`,
+`expo-local-authentication`, `react-native-qrcode-svg`, and now this).
+
+**iOS shows the real system call UI; Android does not, and that is the library's own documented
+behaviour, not a gap here.** CallKit's `displayIncomingCall` draws Apple's actual lock-screen/
+full-screen incoming-call surface unconditionally — every VoIP app on iOS is required to use it.
+Android's ConnectionService, in the self-managed mode this app uses (the only mode a non-carrier app
+can practically use — the library's own README explains why), hands audio focus, Bluetooth routing,
+and Do-Not-Disturb awareness to the OS but leaves the VISUAL surface to the app: "apps are able and
+required to provide their own UI," in the library's own words. This app already has one —
+`IncomingCallBanner`, reading the same `incomingCallsQueryKey` this bridge subscribes to — so on
+Android, `displayIncomingCall` registers the call for correct system integration; it does not replace
+the banner. A native, lock-screen-covering Android surface (a full-screen high-priority notification)
+is real, separate work tied to the same background-wake problem as VoIP push, not something this pass
+quietly rolled in.
+
+**State-driven, not event-driven, for which direction reports which.** Two independent facts drive the
+bridge: `incoming` (who is ringing this user — the exact `rtc.incoming` query the banner already
+polls, sharing its cache entry, no second poll added) and `callStore` (is this device actually in a
+call). A native call display is issued the moment a session enters `incoming`, and reported ended the
+moment it leaves without this device having joined; `answerIncomingCall` fires the moment `callStore`'s
+session matches one the bridge is displaying, whichever side caused it — the banner's own Answer
+button or CallKit's own UI; `endCall`/`reportEndCallWithUUID` fires the moment `callStore` returns to
+idle for a session the bridge was tracking. This is simpler and more robust than threading a new call
+into every place `use-call.ts` or the banner could end a call: state changing IS the fact, regardless
+of which control caused it. The reverse direction — CallKit's own `answerCall`/`endCall` events, fired
+when the lock screen (or whatever this app renders as its own Android surface) reports a user action —
+calls the identical `joinCall` the banner's own Answer button calls, using call info cached at
+`displayIncomingCall` time (the event payload carries only the UUID).
+
+**The plugin was verified against real generated native output, not read as source and trusted.**
+`@config-plugins/react-native-callkeep` mirrors the `@config-plugins/react-native-webrtc` pattern
+already in `app.config.ts`, and its own source (`withCallkeep.js`) was read in full before adding it —
+but a config plugin's actual correctness is what it writes into `Info.plist`/`AndroidManifest.xml`,
+which only a real `expo prebuild` shows. Both platforms were prebuilt locally (`--no-install`, output
+discarded after inspection — this project stays pure managed-workflow, no native folders checked in)
+and the generated files confirmed by hand: iOS gets `voip` in `UIBackgroundModes` plus `CallKit.framework`
+and `Intents.framework` linked; Android gets the phone/call-management permissions plus the
+`VoiceConnectionService` and background-messaging services the native module needs registered, found via
+`settings.gradle`'s own Gradle-time dynamic autolinking — no static reference needed, the same
+mechanism `react-native-webrtc` already relies on. The plugin does exactly this and nothing more: it
+does **not** wire PushKit/VoIP-push `AppDelegate` code, which is real, separate, manual native work
+this app does not need yet, since nothing sends a VoIP push (Pass C, below).
+
+**Mounted once, in `call-surface.tsx`, alongside the banner it feeds off of.** `useCallKeepBridge()` is
+a bare hook call at the top of `CallSurface` rather than its own sibling component in `_layout.tsx` —
+`CallSurface` is already "everything about a call that must outlive the screen it started on," and
+native call-UI integration is exactly that.
+
+Verified: typecheck clean, lint clean (one `no-unnecessary-condition` warning on a `cancelled` flag set
+from a later closure inside an async IIFE — the identical shape, and identical warning, already accepted
+at `push-notifications.ts:191`), all 395 tests still pass (this pass added no new pure logic worth unit
+testing — the whole file is a bridge between two systems, neither of which a unit test can stand in
+for), guardrail self-test clean, encoding check clean, and real `expo export` for both platforms bundle
+cleanly (2,556 modules). **Not device-verified, and cannot be from this sandboxed environment even in
+principle**: `react-native-callkeep`'s own README states CallKit/ConnectionService do not function in a
+simulator at all — there is no substitute for a real phone here. Specifically unverified: whether
+Android's one-time "register a phone account" system dialog (fired by `ensureSetup` on first real use)
+reads as expected, whether the lock-screen Answer/Decline buttons actually reach `joinCall`/`decline` on
+a real device, and Bluetooth/CarPlay audio routing during an active call.
+
+**A real Android crash, found on the first actual device build: `react-native-callkeep`'s own
+upstream bug, patched in this repo — TWICE, because the library has the identical bug in two
+different places.** The library's Android native module exports pairs of `@ReactMethod`-annotated
+Java methods sharing one name — first found in `displayIncomingCall`, then, on the very next device
+build (after that first fix), the identical shape in `startCall` — a real, open, unfixed bug in the
+library itself (react-native-webrtc/react-native-callkeep issues #798, #857, #866), not something
+introduced by this integration. This app's React Native version resolves native modules through the
+New Architecture's TurboModule codegen, which refuses to parse a module exposing two JS methods with
+one name (JS has no overloading to disambiguate them) — so `NativeModules.RNCallKeep` failed to
+initialize AT ALL, and every call into it threw or hit `undefined`, crashing the whole app rather than
+degrading gracefully the way this file's own dynamic-import discipline is meant to guard against (the
+crash is a native TurboModule parse failure, not a JS import failure — the two are different failure
+classes, and only the second one `loadCallKeep`'s `.catch()` was ever positioned to catch). Both fixed
+with the same real `pnpm patch` (`patches/react-native-callkeep@4.3.16.patch`, wired through
+`package.json`'s `pnpm.patchedDependencies` — the same mechanism this repo already uses for
+`html-entities`), removing the `@ReactMethod` annotation from whichever overload `index.js`'s own
+Android bridge code never calls (confirmed by reading the actual JS source for each, not assumed — it
+always calls the 4-arg version of both). A full, deliberate re-scan of every `@ReactMethod` in the
+file after the second fix found no third instance — but the fact that the first pass's OWN scan missed
+`startCall` (it was fixed reactively, method-by-method, only after each one crashed a real build) is
+the reason a full scan was run the second time rather than trusting "found one, must be the only one."
+Verified against a real `expo prebuild`: Android's Gradle autolinking compiles straight from
+`node_modules` with no copy step, so the patched source is what a real build actually compiles from.
+**Not yet confirmed clean against a real device build** — the first two rounds of "should be fixed
+now" were each disproven by the next real build, which is exactly why this stays marked unverified
+until a real run actually gets past it, not just until the known duplicates are gone.
+
+**Pass B (a real ring push, not a silent wake) has since shipped — see the next section for the design
+and the scope correction it made from the plan named here originally.**
+
+**Named as real, separate, not-yet-built follow-up — not silently deferred:**
+
+## Pass B: a real ring push reaches a backgrounded or killed app — and a scope correction from the plan named above
+
+`apps/api/src/platform/call-wake.ts` (new). The plan this pass started from — named in this README's
+own CallKit section above before this file existed — was a DATA-ONLY push received by an
+`expo-notifications` background task that would call `RNCallKeep.displayIncomingCall` directly, the app
+process never coming to the foreground, mirroring true VoIP push. Building it surfaced that the plan
+rested on two claims this codebase could not actually stand behind: `push-provider.ts`'s own header
+already establishes that Expo's push relay exposes no `content-available`/silent-push knob to build a
+truly silent notification from, and a background task is not guaranteed to run at all once an Android
+process is fully killed — that is an OEM battery-management decision, not something a `TaskManager`
+registration controls. Shipping the original plan would have been code nobody, including this session,
+could verify does what its own name claims. **Named here as a real, explicit scope correction — the same
+"correct a wrong premise in place, do not silently rewrite it" habit CLAUDE.md's own status header
+documents for Phases 3.5, 5, 7 and 8 — rather than quietly shipping something narrower under the same
+description.**
+
+**What shipped instead: an ordinary, visible push notification, reusing 100% of the existing
+`ExpoPushProvider`/push pipeline.** The moment `rtc_session.started` fires, a new outbox consumer sends
+`expoPushProvider.send({ title: 'Incoming call', body: null, path: '/chat?channel=…' })` to every
+invited user's registered devices — the exact same call `notification-push.ts` already makes for every
+other push, with no new field, no new provider method, and no new mobile-side code at all. Tapping it
+routes through the pipeline that already exists end to end: `data.path` →
+`attachNotificationResponseListener` → `mobilePathFor` (`notification-path.ts` already translates
+`/chat?channel=X` to `/channel/X` — the exact shape `notificationPath`'s own `'call'` case in
+`notification-paths.ts` produces for `call.missed`, reused verbatim here) → the channel screen, where
+`CallSurface` is already mounted globally and picks the still-ringing call straight back up from
+`rtc.incoming`, feeding both `IncomingCallBanner` and `call-keep.ts`'s native bridge the moment the app
+is actually open. This does not put the call on the lock screen the way real VoIP push would — Pass C
+still names that gap — but it reaches a backgrounded or killed phone at all, which before this pass it
+did not.
+
+**A caller-name-free payload, on purpose — not an oversight.** `notification.projection.ts`'s own
+`planMissedCall` already established the rule this reuses: "the client resolves the caller from the
+channel," never a name minted server-side into a push payload a third-party relay (and a lock screen)
+also sees. The title is the fixed string `'Incoming call'`, matching that precedent exactly rather than
+inventing a new one.
+
+**A separate consumer, deliberately not a new `planNotifications` case.** `planMissedCall`'s own header
+already argues why a RINGING call cannot go through the persisted-notification pipeline: a notification
+row for a call that is currently ringing "would then be read minutes later as a row saying 'someone is
+calling' about a call that ended long ago." That pipeline always writes a durable `platform.notifications`
+row for every `push`-enabled recipient; `call-wake.ts` writes nothing there — it only sends. `call.missed`
+(already shipped, off `rtc_session.ended`) remains the one durable record, for the calls that were
+actually missed.
+
+**Costs nothing structurally.** `claimPending`'s consumer argument is a free-form string
+(`platform.outbox_dispatch`'s own shape) — the new `'rtc-call-wake'` name needed no migration, no new
+role, and no new grant: `taskflow_audit` already holds SELECT on `platform.expo_push_tokens` (migration
+0082's own `expo_push_tokens_audit_send` policy), the same role `notification-push.ts` already reads it
+as. Wired into `apps/api/src/tenancy/relay.ts`'s existing tick, gated on `expoPushProvider` alone (not
+`pushProvider`) — this is a mobile-only concern with no web-push equivalent, since a browser tab already
+gets the live ring over the socket the same way an alive mobile app does.
+
+**Best-effort, and deliberately NOT at-least-once the way every sibling consumer in this codebase is.**
+`notification-push.ts`'s own header treats a transient send failure as "leave it, the next tick retries
+it" — correct for a fact that stays true later. A ring is not that fact: this consumer marks the event
+dispatched regardless of send outcome, because a retry minutes after a call has already been answered,
+declined, or missed is not a useful retry.
+
+Verified: typecheck clean, lint clean, a new `call-wake.test.ts` (6 tests) covering the one pure piece —
+parsing `rtc_session.started`'s payload shape, including a missing `channelId`, a non-array/malformed
+`invitedUserIds`, and non-string entries filtered rather than rejecting the whole row — alongside the
+existing API suite, guardrail self-test clean, encoding check clean. `drainCallWake` itself needs a real
+Postgres connection to test (`withAuditScope`), which this sandbox does not have — the identical split
+`expo-push.test.ts`'s own header already explains for `ExpoPushProvider`'s registration half. **Not
+verified against a real device or a live relay tick**: whether the push actually arrives promptly through
+Expo's real infrastructure, and whether Android shows it correctly while the app is fully killed rather
+than merely backgrounded, which is the one distinction this sandbox has no way to exercise.
+
+- **Pass C (iOS true-kill-state wake, and a true native Android lock-screen surface).** iOS has no
+  equivalent to Android's background task; a killed app can only be woken by a real APNs VoIP-type
+  push delivered through PushKit, which Expo's own push service does not support and which requires
+  hand-written native `AppDelegate.m` Objective-C
+  (`pushRegistry:didReceiveIncomingPushWithPayload:...` calling `RNVoipPushNotificationManager`) — not
+  something safe to blind-inject via a config plugin from this environment. The plan mirrors
+  `push-notifications.ts`'s own "code-complete, infrastructure pending" precedent: a new
+  `platform.voip_push_tokens` migration (mirroring 0082's `expo_push_tokens` shape), a real
+  `ApnsVoipProvider` (JWT-signed APNs HTTP/2 client, following `push-provider.ts`'s existing pattern),
+  the `react-native-voip-push-notification` dependency and its token-registration call — shipped as
+  genuinely complete, correct code that fails loudly with no APNs credentials configured, with the
+  actual ~15-line `AppDelegate` snippet documented rather than injected automatically.
+
+## Docs comment/suggestion anchoring, from Edit mode — Tier 3's other item, at block granularity
+
+The second Tier 3 item off the mobile-vs-web audit: every comment/suggestion created on this app has
+anchored to the whole PAGE, via `docs-collab.ts`'s `pageStartAnchor` — a real, valid anchor
+(`apps/api/src/docs/anchor.ts`'s `decodeAnchor` only checks that the bytes are a well-formed
+`Y.RelativePosition`, never what position they name), but a strictly coarser one than web's true
+character-precision text-range anchor. Approved via `AskUserQuestion` as "anchor from Edit mode" — a
+real UX difference from web, where selecting happens on the READ view: here it happens inside the
+existing whole-page compose-and-save `PageEditor`, over the same `MarkdownTextInput` draft Save
+already parses.
+
+**Block granularity, not character granularity — a real, named scope reduction, not a partial attempt
+at the harder version.** Web converts a live ProseMirror `{from, to}` selection to a `RelativePosition`
+via `@tiptap/y-tiptap`'s editor-state binding — a mapping this platform cannot have at all (no
+ProseMirror, no DOM). The selection this app CAN get is a `MarkdownTextInput` character offset into
+`draft`, which is `serializeToText`'s markdown-SYNTAX string (`**bold**`, `# heading`, list markers, …),
+not the page's underlying plain content — so a raw offset is not itself a Yjs position. Building a true
+character-level mapping would mean a second implementation of `rich-text-compose.ts`'s own
+serialization rules, instrumented to track offsets through every construct's wrapping — real, substantial
+duplication, and a likely source of drift from the one true serializer. Instead, a selection resolves to
+whichever whole TOP-LEVEL BLOCK — paragraph, heading, list, quote, code fence — its start and end fall
+inside, and the anchor spans from the start of the first block to the end of the last: a real,
+non-collapsed range, genuinely more precise than the old always-whole-page anchor, just not
+character-precise. The same call this session already made for `board-filter.ts`'s flat AND-of-four
+against web's full filter tree — the reduced surface IS the feature, not a partial one.
+
+**Three small, pure, fully-tested functions carry the whole mechanism, and none of them touch Yjs
+directly except the last.** `rich-text-compose.ts`'s `parseBlocksWithLineRanges` (refactored out of
+`parseFormattedText` itself, which is now a one-line wrapper around it — no behavior change, no second
+copy of the block-grouping rules) returns, alongside the parsed blocks, which `[startLine, endLine)`
+range of the raw draft each top-level block came from. `blockIndexForLine` finds which range a given
+line falls in. `docs-collab.ts`'s `lineOfOffset` counts newlines up to a character offset — the same
+`text.split('\n')` indexing `parseBlocksWithLineRanges` itself uses, restated here rather than imported
+so this Yjs-aware, React-free file stays independent of the composer-specific module. Only
+`blockRangeAnchor` touches live Yjs: given a start/end block index, it anchors `Y.
+createRelativePositionFromTypeIndex` at index 0 of the start block's own element and at the end block's
+own `.length` (right after its last child) — a position INSIDE that specific block, not a raw index in
+the page-level fragment, so the anchor survives edits to every OTHER block exactly the way
+`pageStartAnchor`'s own header already argues for anchoring into a type rather than at an offset.
+
+**Never a wrong-but-plausible anchor.** `blockRangeAnchor` returns `null` — not a best-guess — when
+either index falls outside the LIVE fragment's current child count, or names something that is not a
+`Y.XmlElement` (this app's own writer never puts a bare `Y.XmlText` at the top level, but a page this
+app never wrote is not this function's to assume about). `blockIndexForLine` returns `null` for a line
+outside every range, the same defensive shape. `PageEditor`'s own comment-on-selection mutation treats
+either `null` as "fall back to `pageStartAnchor`" — silently, not an error: a page-level comment is
+always a valid answer; one silently attached to the wrong paragraph is not. The one gap this does NOT
+close: if another client edits the page concurrently WHILE this screen is mid-compose (before Save), the
+computed block index could still name a block that now holds different content than what was on screen
+when the selection was made — `blockRangeAnchor`'s null-on-out-of-range check catches the case where the
+page got SHORTER, not the case where a block was reordered or rewritten in place. `saveEdit`'s own
+baseline-text conflict check exists for exactly this class of risk at Save time; this smaller,
+mid-edit action does not duplicate that check, and is documented as a known, accepted limitation rather
+than silently assumed away — the same honesty this app's Save flow already models.
+
+**"Comment on selection" only — not "Suggest on selection."** A real block range makes `'replace'`/
+`'delete'` suggestion kinds semantically meaningful for the first time (the previous page-level,
+always-collapsed anchor could only ever support `'insert'`) — but wiring a kind picker and a
+replacement-text box onto `SuggestionsSection` is real, separate UI work, left named rather than folded
+into this pass. Suggestions on this app still only ever propose `'insert'`, anchored page-level, exactly
+as before.
+
+**The affordance itself:** `PageEditor` tracks `MarkdownTextInput`'s `onSelectionChange`/`selection`,
+the identical clamped-to-`draft.length` pattern `message-composer.tsx` already established for
+`@mention` composing — no new selection-tracking approach invented. A non-collapsed selection shows a
+"Comment on selection" button; tapping it opens `CommentOnSelectionModal` (a new component mirroring
+`SaveTemplateModal`'s own established "one text field, Save/Cancel" shape exactly), and posting invalidates
+`commentsQueryKey(pageId)` so `CommentsSection` — rendered as a sibling below the editor, unchanged —
+picks up the new phrase-anchored comment through the same list it already renders.
+
+Verified: typecheck clean, lint clean, 26 new tests across `rich-text-compose.test.ts` (`
+parseBlocksWithLineRanges`'s block/line-range pairing across plain paragraphs, a grouped bullet run, a
+fenced code block, mixed content, and an exhaustiveness check that every line belongs to exactly one
+range; `blockIndexForLine` across the same shapes) and `docs-collab.test.ts` (`blockRangeAnchor` against
+REAL Yjs structures — built with Yjs's own mutation API, the same standing discipline this file's other
+tests already use — asserting the resolved anchor's `type`/`index` via `Y.
+createAbsolutePositionFromRelativePosition` against a real doc, a single-block range, and every
+out-of-range/wrong-type null case; `lineOfOffset`'s boundary and clamping behavior) alongside the
+existing 395 — 421 total — all passing; guardrail self-test clean; encoding check clean; `format:check`
+clean; real `expo export` for both platforms bundle cleanly. **Not device-verified**: whether the
+`MarkdownTextInput` selection UI (the button appearing/disappearing as a selection is made and cleared)
+reads clearly on a real keyboard, and — the one thing genuinely impossible to prove without a live
+`apps/collab` connection (this sandbox has no Docker) — whether a real synced document's top-level
+`Y.XmlFragment` children are laid out exactly as `parseBlocksWithLineRanges`/`writeRichTextDocumentToFragment`
+assume, the same boundary `docs-collab.ts`'s own file header already names for everything it does.

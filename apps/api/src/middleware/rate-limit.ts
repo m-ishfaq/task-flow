@@ -94,6 +94,32 @@ const OPERATION_RULES: Readonly<Record<string, RateLimitRule>> = {
   'auth.passkeys.finishAuthentication': { limit: 30, windowMs: 15 * 60_000 },
   'auth.oauth.callback': { limit: 30, windowMs: 15 * 60_000 },
 
+  /* The NATIVE (phone) auth surface (ai/phase-14-mobile.md §4.3). These are
+     separate tRPC paths from the browser routes above, and the key is the
+     full path exactly as registered (`tenancy.orgs.create`'s own note) — so
+     without an entry here `auth.native.login` matched NO per-operation rule
+     and fell through to the 300/min volumetric tier alone, silently dropping
+     the per-account/per-address budget its browser twin has. The durable,
+     DB-backed controls (the login lockout, the TOTP lockout, refresh-token
+     reuse detection) are shared by both channels because both call the same
+     services, so this was never a full bypass — but it removed the exact
+     volumetric layer the TOTP comment above calls the primary bound on a
+     guessing loop, on a client anyone can pose as by setting one header.
+
+     Mirrors each browser rule one-for-one. A SEPARATE bucket per path, not a
+     shared one, for the same reason `broadcast.send`/`broadcast.resend` are
+     separate below: the key is `op:${path}:${scope}`, so two paths cannot
+     share a count, and matching the browser limit per path is the parity that
+     matters here rather than a single cross-channel total. `native.login`
+     carries an email in its body, so it keys per-account exactly as
+     `auth.login`; the rest name no account and key per-address, exactly as
+     their browser twins. */
+  'auth.native.login': { limit: 5, windowMs: 15 * 60_000 },
+  'auth.native.refresh': { limit: 240, windowMs: 60 * 60_000 },
+  'auth.native.totp.verifyLogin': { limit: 10, windowMs: 15 * 60_000 },
+  'auth.native.passkeys.finishAuthentication': { limit: 30, windowMs: 15 * 60_000 },
+  'auth.native.oauth.callback': { limit: 30, windowMs: 15 * 60_000 },
+
   /* The only anonymous route in the product that does real work: a
      transaction, a Yjs state decode and a render pass, for a caller with no
      session. Generous enough for a linked page doing the rounds, bounded
@@ -136,6 +162,26 @@ const OPERATION_RULES: Readonly<Record<string, RateLimitRule>> = {
      tRPC path exactly as registered: the tenancy router nests `orgs.create`
      under `tenancy`, so `orgs.create` would silently never match. */
   'tenancy.orgs.create': { limit: 3, windowMs: 24 * 60 * 60_000 },
+
+  /* Operator broadcasts (Phase 12, platform-admin console): the telephony
+     spend-gate's own shape applied to a capability that reaches real people
+     rather than costs money — `platformRoute`'s unconditional step-up
+     already answers "is this really the operator", not "how often may they
+     do this". 20 sends per operator per day is generous for legitimate use
+     (an announcement, a policy notice) and cheap to raise later; the durable
+     control against genuine abuse is still the audit trail
+     (`platform.operator_broadcasts`, the global operator chain), this is
+     only the volumetric floor under it — the same relationship §8.9
+     describes between a per-IP limiter and an account lockout. Keyed per
+     CALLER, which an authenticated operator always has. */
+  'platformAdmin.broadcast.send': { limit: 20, windowMs: 24 * 60 * 60_000 },
+  /* A separate bucket from `send` above, not a shared one — this limiter's
+     key is `op:${procedure}:${scope}` (`proceduresOf`/the `preValidation`
+     hook below), so two different route paths can never share a count no
+     matter how their rules are written. Kept at the same 20/day rather than
+     redesigning the key scheme to combine them: still a real volumetric
+     floor per route, just not a single 20-total-actions cap across both. */
+  'platformAdmin.broadcast.resend': { limit: 20, windowMs: 24 * 60 * 60_000 },
 };
 
 export interface RateLimitOptions {

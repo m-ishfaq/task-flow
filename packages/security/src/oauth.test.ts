@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { SignJWT, exportJWK, generateKeyPair, createLocalJWKSet } from 'jose';
-import { generatePkcePair, verifyGoogleIdToken } from './oauth.js';
+import { generatePkcePair, verifyPkceChallenge, verifyGoogleIdToken } from './oauth.js';
 
 describe('generatePkcePair', () => {
   it('produces a verifier and its S256 challenge', () => {
@@ -96,5 +96,34 @@ describe('verifyGoogleIdToken', () => {
       .sign(otherKey);
 
     await expect(verifyGoogleIdToken(forged, CLIENT_ID, jwks)).rejects.toThrow();
+  });
+});
+
+describe('verifyPkceChallenge', () => {
+  it('accepts the verifier that produced the challenge', () => {
+    const { verifier, challenge } = generatePkcePair();
+    expect(verifyPkceChallenge(verifier, challenge)).toBe(true);
+  });
+
+  it('rejects any other verifier — the whole point of the native binding', () => {
+    /* An interceptor holding a redirect can READ the challenge off the signed
+       state's JWT payload, exactly as it is readable in the authorization URL.
+       What it cannot do is invert SHA-256 to produce this input. */
+    const { challenge } = generatePkcePair();
+    const other = generatePkcePair();
+    expect(verifyPkceChallenge(other.verifier, challenge)).toBe(false);
+  });
+
+  it('rejects empty input on either side rather than treating it as a match', () => {
+    const { verifier, challenge } = generatePkcePair();
+    expect(verifyPkceChallenge('', challenge)).toBe(false);
+    expect(verifyPkceChallenge(verifier, '')).toBe(false);
+  });
+
+  it('returns false rather than throwing when the lengths differ', () => {
+    // `timingSafeEqual` throws on unequal lengths; the guard is what keeps a
+    // malformed challenge a refusal instead of a 500.
+    const { verifier } = generatePkcePair();
+    expect(verifyPkceChallenge(verifier, 'too-short')).toBe(false);
   });
 });

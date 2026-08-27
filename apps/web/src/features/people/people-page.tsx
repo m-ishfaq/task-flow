@@ -92,7 +92,10 @@ function DirectoryRows({ rows }: { readonly rows: readonly DirectoryMember[] }) 
       {rows.map((member) => {
         const label = displayName({ name: member.displayName, email: member.email });
         return (
-          <li key={member.userId} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover/50">
+          <li
+            key={member.userId}
+            className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover/50"
+          >
             <Avatar userId={member.userId} label={label} />
 
             <div className="min-w-0 flex-1">

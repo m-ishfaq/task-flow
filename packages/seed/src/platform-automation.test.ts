@@ -419,10 +419,11 @@ describe('platform.automations', () => {
 
     // The triage rule's condition references the seeded label id.
     const triage = rules.find((r) => String(r['name']).includes('triage'));
-    const condition = triage?.['condition'] as { kind?: string; field?: string; value?: unknown[] };
-    expect(condition?.kind).toBe('comparison');
-    expect(condition?.field).toBe('label');
-    expect(condition?.value).toEqual([id('c1', 1)]);
+    expect(triage).toBeDefined();
+    const condition = triage!['condition'] as { kind?: string; field?: string; value?: unknown[] };
+    expect(condition.kind).toBe('comparison');
+    expect(condition.field).toBe('label');
+    expect(condition.value).toEqual([id('c1', 1)]);
 
     expect(output.ruleCount).toBe(rules.length);
   });

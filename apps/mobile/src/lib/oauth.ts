@@ -54,3 +54,51 @@ export function parseOAuthRedirect(url: string): { code: string; state: string }
   const state = params.get('state');
   return code === undefined || state === undefined ? null : { code, state };
 }
+
+/* -------------------------------------------------------------------------- *
+ * The client-held PKCE binding (ai/phase-14-mobile.md §4.4, RFC 8252 §8.1)
+ *
+ * `OAUTH_REDIRECT_URL` above is a plain custom scheme, and on Android any
+ * installed app may register an intent filter for it. `auth.native.oauth.
+ * callback` is necessarily public — there is no session yet — so without a
+ * secret only the real app holds, whoever received that redirect could redeem
+ * `(code, state)` for a full session. RFC 7636's own verifier cannot help: the
+ * SERVER holds it (it rides inside the signed state), so an interceptor never
+ * needs it.
+ *
+ * So the app mints a second verifier, sends only its S256 challenge to
+ * `start`, and presents the plaintext at `callback`. S256 and never `plain`:
+ * the challenge is bound into a JWT whose payload is SIGNED, not encrypted, so
+ * `plain` would ship the secret to the very interceptor this defends against.
+ *
+ * These two helpers are pure so they stay unit-testable with no Expo runtime
+ * (this file's own header); the hashing and randomness live in
+ * `oauth-pkce.native.ts`, the same split `secure-store.ts`/`device-secure-
+ * store.ts` and `device-key.ts`/`device-key.native.ts` already use.
+ * -------------------------------------------------------------------------- */
+
+/**
+ * Lowercase hex for `bytes`.
+ *
+ * Hex rather than base64: every hex character is already inside RFC 7636's
+ * unreserved set (and base64url's alphabet), so the verifier needs no
+ * re-encoding and no `Buffer`/`btoa` — neither of which React Native provides
+ * dependably. 32 bytes give 64 characters, inside the spec's 43-128 range.
+ */
+export function bytesToHex(bytes: Uint8Array): string {
+  let out = '';
+  for (const byte of bytes) out += byte.toString(16).padStart(2, '0');
+  return out;
+}
+
+/**
+ * Standard base64 to base64url, unpadded.
+ *
+ * `expo-crypto` emits only HEX or standard BASE64; the server compares against
+ * Node's `digest('base64url')`. This is that conversion, and it must stay
+ * exact — a stray `=` or `+` makes every native sign-in fail the binding check
+ * with an error that names the state, not the encoding.
+ */
+export function base64ToBase64Url(value: string): string {
+  return value.replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+}

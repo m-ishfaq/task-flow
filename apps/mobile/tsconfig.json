@@ -12,14 +12,8 @@
     "allowUnreachableCode": false,
     "allowUnusedLabels": false,
     "forceConsistentCasingInFileNames": true,
-    "types": [
-      "node"
-    ],
+    "types": ["node"],
     "noEmit": true
   },
-  "include": [
-    "app/**/*",
-    "src/**/*",
-    "app.config.ts"
-  ]
+  "include": ["app/**/*", "src/**/*", "app.config.ts"]
 }

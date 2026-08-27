@@ -34,6 +34,7 @@ import { api } from '../lib/trpc.js';
 import { keys } from '../lib/query.js';
 import { useBranding } from '../lib/branding-context.js';
 import { FocusOnMountInput, Skeleton } from './primitives.js';
+import { TaskFlowLogo } from './taskflow-logo.js';
 
 /**
  * The navigation tree (Phase 3.5 Wave 1, ai/phase-3.5-work-ux.md §4.1).
@@ -257,8 +258,10 @@ export function Sidebar() {
             to="/projects"
             className="flex min-w-0 items-center gap-2.5 truncate px-1 text-[14px] font-semibold text-ink transition-colors hover:text-accent"
           >
-            {logoUrl !== null && (
+            {logoUrl !== null ? (
               <img src={logoUrl} alt="" className="size-5 shrink-0 rounded object-contain" />
+            ) : (
+              <TaskFlowLogo size={20} className="shrink-0 text-accent" />
             )}
             {/* `font-display` (Geist Sans) — the wordmark is the other headline
                 use of the display face alongside the login page's heading. */}

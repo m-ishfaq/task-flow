@@ -178,7 +178,7 @@ function readEasProjectId(): string | null {
  * cannot await an async cleanup function.
  */
 export function attachNotificationResponseListener(onNavigate: (path: string) => void): () => void {
-  let cancelled = false;
+  let cancelled = false as boolean;
   let subscription: { readonly remove: () => void } | undefined;
 
   void (async () => {

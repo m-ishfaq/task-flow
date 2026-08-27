@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import { colors } from '@taskflow/tokens';
@@ -13,13 +14,38 @@ import { colors } from '@taskflow/tokens';
  * equivalent for a phone-width screen is the platform's own primary-nav
  * idiom (iOS's tab bar, Android's bottom navigation), which `expo-router`'s
  * `Tabs` renders as the native component on each platform rather than a
- * hand-built approximation. Four tabs today — "My Tasks", "Boards" (Wave
- * 2's remaining item — projects/boards/lists, `boards.tsx`), "Chat" (Wave
- * 3, read + send only — see `chat.ts`'s own header) and "Account" (org
- * switching, passkeys, sign-out) — because those are the destinations that
- * exist; Docs/People join this bar as their own waves ship real screens,
- * the same way `apps/web`'s `Sidebar` grew its nav rail one item per phase
- * rather than all at once.
+ * hand-built approximation. Five tabs today, in the same order CLAUDE.md's
+ * own top line names the product's modules ("Work, Chat, Docs, Voice &
+ * Messaging, People, Platform") — "My Tasks" and "Boards" both being Work,
+ * then "Chat", then "Docs" (`docs.tsx` — spaces and the page tree; see
+ * `docs.ts`'s own header for what does and does not ship yet), then "Calls"
+ * (Voice & Messaging — Phase 7's telephony client, real, separate from
+ * Phase 13's in-app WebRTC calling, which has no tab of its own and instead
+ * rings from whatever screen is open, `call-surface.tsx`). People and
+ * Platform are the two modules with no tab: People because nobody browses
+ * the org directory BETWEEN other work the way they browse boards or chat
+ * (see below), and Platform because this app has no operator console at
+ * all.
+ *
+ * **People traded places with Docs, rather than Docs taking a sixth
+ * slot.** `Tabs` has no scroll behaviour when it overflows a phone's
+ * width, so this bar was already full at five before Docs existed —
+ * something had to give up its slot. People was the one tab where "browse
+ * it between other work" was the weaker fit of the five: you go to the
+ * directory to LOOK SOMEONE UP, not to scroll it the way a board or an
+ * inbox gets scrolled, which is the same "who reaches for this mid-task"
+ * test that kept Account off this bar in the first place. `people.tsx`
+ * itself is unchanged in shape, just moved from `(tabs)/people.tsx` to a
+ * pushed sibling of `automations.tsx` under `(app)/`, reached from
+ * `account.tsx`'s new "People" link — the identical move Automations and
+ * Account made before it, for the identical reason.
+ *
+ * **Account is NOT a tab any more either — it moved to a top-right icon,
+ * `top-bar.tsx`, next to the notification bell.** Account was the one
+ * existing tab nothing routes to mid-task the way a card or a channel
+ * does — nobody swipes to it between other work — so it is the screen
+ * that loses nothing by becoming a single tap from a fixed icon instead
+ * of a tab. `top-bar.tsx`'s own header has the full argument.
  *
  * **`@expo/vector-icons` (`Ionicons`), not "no icon set" as originally
  * shipped.** That original call was "nothing else in this app uses one
@@ -28,9 +54,9 @@ import { colors } from '@taskflow/tokens';
  * broken glyph box on every tab, on every screen, permanently on-screen
  * chrome rather than a one-off cosmetic gap. `Ionicons` ships bundled with
  * every Expo SDK template specifically for this — `checkmark-circle` (My
- * Tasks), `grid` (Boards), `chatbubbles` (Chat), `person-circle` (Account),
- * each with a matching `-outline` variant for the inactive state, which is
- * what `focused` below switches between.
+ * Tasks), `grid` (Boards), `chatbubbles` (Chat), `document-text` (Docs),
+ * `call` (Calls), each with a matching `-outline` variant for the inactive
+ * state, which is what `focused` below switches between.
  *
  * `card/[cardId].tsx` stays a SIBLING of this `(tabs)` group, not nested
  * inside it — `(app)/_layout.tsx` now composes both into one real
@@ -50,7 +76,22 @@ export default function TabsLayout() {
         tabBarInactiveTintColor: colors.inkMuted.hex,
         tabBarStyle: {
           backgroundColor: colors.surfaceRaised.hex,
-          borderTopColor: colors.line.hex,
+          borderTopWidth: 0,
+          ...Platform.select({
+            ios: {
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: -2 },
+              shadowOpacity: 0.15,
+              shadowRadius: 8,
+            },
+            android: {
+              elevation: 8,
+            },
+          }),
+        },
+        tabBarLabelStyle: {
+          fontSize: 10,
+          fontWeight: '600',
         },
       }}
     >
@@ -90,15 +131,24 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="account"
+        name="docs"
         options={{
-          title: 'Account',
+          title: 'Docs',
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
-              name={focused ? 'person-circle' : 'person-circle-outline'}
+              name={focused ? 'document-text' : 'document-text-outline'}
               color={color}
               size={size}
             />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="calls"
+        options={{
+          title: 'Calls',
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'call' : 'call-outline'} color={color} size={size} />
           ),
         }}
       />

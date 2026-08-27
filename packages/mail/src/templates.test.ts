@@ -346,4 +346,43 @@ describe('the branded footer', () => {
     expect(mail.subject).toBe('Confirm your TaskFlow email address');
     expect(mail.text).toMatch(/finish setting up your TaskFlow account/);
   });
+
+  it('includes the flow-mark logo SVG in the HTML header', () => {
+    const mail = renderVerifyEmail({ ...CONTEXT, expiresInHours: 24 });
+    /* The flow-mark is three connected nodes — two bezier paths and three
+       circles. The data URI contains the SVG URL-encoded. Verify key
+       fragments that prove the right design is embedded. */
+    expect(mail.html).toContain('data:image/svg+xml');
+    expect(mail.html).toContain('9333ea'); // accent hex color
+    expect(mail.html).toContain('viewBox'); // valid SVG
+    expect(mail.html).toContain('circle'); // the three nodes
+  });
+
+  it('shows the product name next to the logo in the HTML header', () => {
+    const mail = renderVerifyEmail({ ...CONTEXT, expiresInHours: 24, productName: 'Acme Flow' });
+    /* The header is a flex row with the logo image followed by the product
+       name in a styled span. */
+    expect(mail.html).toContain('data:image/svg+xml');
+    expect(mail.html).toContain('>Acme Flow<');
+  });
+
+  it('escapes productName in the HTML header next to the logo', () => {
+    const mail = renderVerifyEmail({
+      ...CONTEXT,
+      expiresInHours: 24,
+      productName: '<img src=x onerror=alert(1)>',
+    });
+    expect(mail.html).not.toContain('<img src=x');
+    expect(mail.html).toContain('&lt;img');
+  });
+
+  it('includes the logo in all email types, not just verification', () => {
+    /* Every render function calls htmlDocument, which adds the logo header.
+       Spot-check the three distinct context shapes. */
+    expect(renderPasswordChanged().html).toContain('data:image/svg+xml');
+    expect(renderOrgSuspended({ orgName: 'Acme' }).html).toContain('data:image/svg+xml');
+    expect(renderVerifyEmail({ ...CONTEXT, expiresInHours: 24 }).html).toContain(
+      'data:image/svg+xml',
+    );
+  });
 });

@@ -644,7 +644,9 @@
     border-radius: calc(var(--radius-card) + 0.25rem);
     padding: 0.75rem 0.875rem;
     transition: all var(--motion-base) var(--motion-ease);
-    box-shadow: 0 1px 3px oklch(0% 0 0 / 12%), 0 1px 2px oklch(0% 0 0 / 8%);
+    box-shadow:
+      0 1px 3px oklch(0% 0 0 / 12%),
+      0 1px 2px oklch(0% 0 0 / 8%);
   }
 
   .card-tile:hover {
@@ -698,7 +700,9 @@
     );
     border: 1px solid color-mix(in oklab, var(--color-line) 40%, transparent);
     border-radius: calc(var(--radius-card) + 0.375rem);
-    box-shadow: 0 1px 4px oklch(0% 0 0 / 8%), inset 0 1px 0 oklch(100% 0 0 / 3%);
+    box-shadow:
+      0 1px 4px oklch(0% 0 0 / 8%),
+      inset 0 1px 0 oklch(100% 0 0 / 3%);
   }
 
   /* Status dot indicator in column header */

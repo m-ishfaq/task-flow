@@ -1,5 +1,5 @@
 import { Server } from '@hocuspocus/server';
-import type { OrgId, PageId, UserId } from '@taskflow/contracts';
+import { CLIENT_HEADER, type OrgId, type PageId, type UserId } from '@taskflow/contracts';
 import type { Logger } from '@taskflow/observability';
 import { CollabAuthError, authenticateConnection } from './auth.js';
 import { compactPage } from './compaction.js';
@@ -59,6 +59,11 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
             documentName: data.documentName,
             origin: data.requestHeaders.get('origin'),
             orgIdParam: data.requestParameters.get('orgId'),
+            // See auth.ts's own header on why these two exist — the
+            // apps/mobile Docs reader's native-client accommodation,
+            // ported verbatim from apps/realtime/src/auth.ts.
+            nativeClientHeader: data.requestHeaders.get(CLIENT_HEADER),
+            host: data.requestHeaders.get('host'),
           },
           { jwtSecret, allowedOrigins: origins },
         );

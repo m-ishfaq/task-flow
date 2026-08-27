@@ -30,8 +30,11 @@ export default defineConfig({
     fileParallelism: false,
 
     /* Applying migrations against a cold container, plus booting a real gateway
-       and waiting on real socket round-trips, both exceed the 5s default. */
-    hookTimeout: 60_000,
+       and waiting on real socket round-trips, both exceed the 5s default. 120s
+       accommodates heavy parallel load during `pnpm verify` (48 tasks hitting the
+       same Postgres) where the 60s default occasionally was not enough — the same
+       flake apps/collab hit. */
+    hookTimeout: 120_000,
     testTimeout: 30_000,
   },
 });

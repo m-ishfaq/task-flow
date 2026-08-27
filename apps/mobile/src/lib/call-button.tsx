@@ -117,7 +117,7 @@ const styles = StyleSheet.create({
   },
   buttonGhost: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
   },
   buttonGhostText: {
     fontSize: 13,

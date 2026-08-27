@@ -67,7 +67,9 @@ export function ListColumn({ orgId, boardId, list, count, siblings, children }: 
         <ListMenu orgId={orgId} boardId={boardId} list={list} siblings={siblings} />
       </header>
 
-      <div className="flex min-h-16 flex-col gap-1.5 overflow-y-auto px-2 pb-2 pt-0.5">{children}</div>
+      <div className="flex min-h-16 flex-col gap-1.5 overflow-y-auto px-2 pb-2 pt-0.5">
+        {children}
+      </div>
 
       <AddCard orgId={orgId} boardId={boardId} listId={list.listId as ListId} />
     </section>

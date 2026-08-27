@@ -143,13 +143,22 @@ export function originAllowed(origin: string | undefined, allowed: readonly stri
  * token, which cannot be forged regardless of what any header claims. What the
  * origin check additionally buys a BROWSER — refusing a legitimate token
  * silently replayed from an unexpected web origin — has no equivalent native
- * threat today, because nothing on a phone ambiently attaches a stored
- * credential to an unrelated caller the way a cookie does; reaching a native
- * refresh token at all requires extracting it off the device. That is a
- * materially harder, different problem, and it is Wave 1b's device-bound
- * keypair (ai/phase-14-mobile.md §4.5) — not this header — that will make a
- * stolen native token provably inert elsewhere. Until that lands, this branch
- * is a deliberate, named INTERIM gap: revisit it once device binding ships.
+ * threat, because nothing on a phone ambiently attaches a stored credential to
+ * an unrelated caller the way a cookie does; reaching a native token at all
+ * requires extracting it off the device.
+ *
+ * This paragraph originally called that a temporary state pending "Wave 1b's
+ * device-bound keypair" — corrected in place, per this repo's own "a status
+ * marker is a claim, not a fact" discipline, rather than silently rewritten.
+ * Device binding HAS shipped (migration 0081, ai/phase-14-mobile.md §4.5), and
+ * it does NOT close this particular allowance and was never going to: it binds
+ * the REFRESH token (`identity.refresh` requires a signature over the presented
+ * token), while this handshake authenticates with a short-lived ACCESS token
+ * that device binding does not touch. So this is not an interim gap waiting on
+ * a feature that arrived — it is the permanent, correct shape for a socket
+ * authenticated by a bearer token: the token verification below is the whole
+ * control, and the marker/self-origin relaxation grants nothing an attacker
+ * could not already do by omitting `Origin` and setting a forgeable header.
  *
  * ## Why this never weakens the browser path
  *
@@ -248,8 +257,8 @@ export async function verifyHandshake(
     throw new HandshakeError('forbidden_origin');
   }
   // else: no origin, but the caller identifies as native — see
-  // isNativeClient's own comment for what this interim allowance is, and is
-  // not, a substitute for.
+  // isNativeClient's own comment for what this bearer-token-authenticated
+  // allowance is, and is not, a substitute for.
 
   /* Read from the `auth` payload, never the query string: query strings end up
      in proxy and server access logs, and an access token in a log file outlives

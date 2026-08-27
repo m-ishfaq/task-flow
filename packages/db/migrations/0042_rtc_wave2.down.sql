@@ -4,6 +4,20 @@
 -- than dropped: a widened constraint left behind by a down migration is the
 -- kind of drift that makes the next `migrate:verify` pass while the database
 -- accepts a value nothing should write.
+--
+-- A row this migration's own feature wrote (kind = 'call.missed', subject_type
+-- = 'call' — notification.projection.ts's own pairing) has no narrower value
+-- to demote to once the CHECKs below are restored — see 0083's down.sql for
+-- why this needs NO FORCE/FORCE bracketing rather than a plain DELETE:
+-- platform.notifications is FORCE ROW LEVEL SECURITY (0022), which applies
+-- row security to the table OWNER too, and the only policy admitting
+-- taskflow_migrator here is scoped by app.org_id — unset during a migration,
+-- so an unbracketed DELETE silently matches zero rows.
+ALTER TABLE platform.notifications NO FORCE ROW LEVEL SECURITY;
+
+DELETE FROM platform.notifications WHERE kind = 'call.missed';
+
+ALTER TABLE platform.notifications FORCE ROW LEVEL SECURITY;
 
 ALTER TABLE platform.notifications
   DROP CONSTRAINT notifications_subject_type_valid;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
   ActivityIndicator,
@@ -13,6 +13,8 @@ import {
   Text,
   TextInput,
   View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
@@ -198,6 +200,18 @@ import {
  * fully behind the open keyboard); see the mobile README's own bug-fix
  * section for the full account.
  */
+
+/**
+ * Mirrors `apps/api/src/rtc/shared.ts`'s `MESH_PARTICIPANT_CAP` — not
+ * imported from there, since that module pulls in `@taskflow/db` (Drizzle,
+ * the Postgres driver) at module scope, which this app must never bundle
+ * (CLAUDE.md guardrail 1). The value only decides whether to SHOW the Call
+ * button; `session.service.ts`'s own check is what actually enforces it —
+ * a stale copy here would only make the button appear one call too early or
+ * late, never let anyone past the real cap, the same courtesy-only relationship
+ * the public-channel hide below already has to `startSession`'s own refusal.
+ */
+const MESH_PARTICIPANT_CAP = 4;
 
 /** One row in the merged list — a group of messages or a call event, ordered
  *  by `at` — mirrors `apps/web/src/features/chat/chat-page.tsx`'s identical
@@ -395,6 +409,61 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
      your own message is not that. */
   const firstUnreadAuthorId =
     topLevel.find((message) => message.messageId === firstUnreadId)?.authorId ?? null;
+
+  /**
+   * Bottom-anchored on open, and follows a new message down while the reader
+   * is still near the bottom — the mobile counterpart of `apps/web/src/
+   * features/chat/chat-page.tsx`'s own `useLayoutEffect`/`atBottom` pair,
+   * including WHY: a reader who has scrolled up into history must not be
+   * yanked back down by a message arriving while they read.
+   *
+   * This does NOT try to scroll straight to the first-UNREAD message's own
+   * position. Neither does web — `firstUnreadId`'s own comment above and web's
+   * identical one both describe the divider rendered below as a passive
+   * marker a reader finds by scrolling up, never a scroll TARGET. The
+   * previous version of this effect tried to be cleverer than web here,
+   * scrolling to `timeline.findIndex(...)` via `FlatList.scrollToIndex` —
+   * which RN can only do reliably for a row already inside the list's
+   * measured render window. Message groups are variable height (reactions,
+   * attachments, reply counts), so there is no `getItemLayout` to give it,
+   * and for any channel with real history the first unread message sits well
+   * outside that window. `scrollToIndex` failed there, and
+   * `onScrollToIndexFailed`'s fallback silently turned every failure into
+   * "scroll to the very bottom" — indistinguishable from this effect never
+   * having run at all, which is exactly the "the fix doesn't do anything"
+   * symptom this replaces.
+   *
+   * `onContentSizeChange` is `FlatList`'s equivalent of web's DOM
+   * `scrollHeight` growing — it fires whenever the rendered content's own
+   * height changes (the first page landing, a new message, a reaction row
+   * changing a bubble's height), which is web's own trigger for "maybe
+   * follow." `hasAnchoredRef` mirrors web's `firstAnchor`: the very first
+   * change scrolls unconditionally (mounting this channel), every
+   * subsequent one only scrolls if `nearBottomRef` — tracked from `onScroll`
+   * the same way web reads `scrollTop`/`scrollHeight`/`clientHeight`, with
+   * the identical 160px threshold and the identical reasoning for it
+   * (`chat-page.tsx`'s own comment: a bottom-anchored reader does not sit at
+   * exactly `scrollHeight` because of the list's own bottom padding).
+   */
+  const flatListRef = useRef<FlatList<TimelineItem>>(null);
+  const hasAnchoredRef = useRef(false);
+  const nearBottomRef = useRef(true);
+
+  const onContentSizeChange = useCallback(() => {
+    if (!hasAnchoredRef.current) {
+      hasAnchoredRef.current = true;
+      flatListRef.current?.scrollToEnd({ animated: false });
+      return;
+    }
+    if (nearBottomRef.current) {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }
+  }, []);
+
+  const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    nearBottomRef.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 160;
+  }, []);
 
   const reactions = useQuery({
     queryKey: reactionsQueryKey(channelId),
@@ -699,13 +768,28 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
               <Text style={styles.headerSubtitle}>Details</Text>
             )}
           </Pressable>
-          {orgId !== null && <CallButton orgId={orgId} channelId={channelId} />}
+          {/* Hide the call button on public channels — calls are only supported
+              on DMs and private channels (server refuses with a clear error, but
+              showing the button at all is confusing UX) — and on a DM/private
+              channel whose roster already exceeds the mesh cap, for the same
+              reason: `startSession` refuses the whole conversation rather than
+              ringing only the first four, so a button that can only ever fail
+              is worse than no button. */}
+          {orgId !== null &&
+            channel.data?.type !== 'public' &&
+            (channel.data?.memberIds.length ?? 0) <= MESH_PARTICIPANT_CAP && (
+              <CallButton orgId={orgId} channelId={channelId} />
+            )}
         </View>
       </View>
 
       <FlatList<TimelineItem>
+        ref={flatListRef}
         data={timeline}
         keyExtractor={(item) => item.key}
+        onContentSizeChange={onContentSizeChange}
+        onScroll={onScroll}
+        scrollEventThrottle={200}
         renderItem={({ item }) =>
           item.kind === 'call' ? (
             <CallTimelineCard entry={item.entry} viewerId={userId} personOf={personOf} />
@@ -1350,9 +1434,10 @@ const styles = StyleSheet.create({
     gap: 1,
   },
   headerTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     color: colors.ink.hex,
+    letterSpacing: -0.2,
   },
   headerSubtitle: {
     fontSize: 12,
@@ -1404,15 +1489,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: 999,
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 3,
     backgroundColor: colors.surfaceRaised.hex,
   },
   reactionPillMine: {
-    borderColor: colors.accent.hex,
-    backgroundColor: colors.accent.hex + '22',
+    borderColor: colors.accent.hex + '60',
+    backgroundColor: colors.accent.hex + '15',
   },
   reactionPillText: {
     fontSize: 12,
@@ -1429,9 +1514,9 @@ const styles = StyleSheet.create({
   editInput: {
     borderWidth: 1,
     borderColor: colors.accent.hex,
-    borderRadius: radiusCard,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderRadius: radiusCard + 2,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontSize: 14,
     color: colors.ink.hex,
     backgroundColor: colors.surfaceSunken.hex,
@@ -1531,7 +1616,7 @@ const styles = StyleSheet.create({
   slashMenu: {
     marginBottom: 4,
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     backgroundColor: colors.surfaceRaised.hex,
     overflow: 'hidden',
@@ -1559,8 +1644,8 @@ const styles = StyleSheet.create({
   },
   reactionSheetCard: {
     backgroundColor: colors.surfaceRaised.hex,
-    borderTopLeftRadius: radiusCard,
-    borderTopRightRadius: radiusCard,
+    borderTopLeftRadius: radiusCard + 6,
+    borderTopRightRadius: radiusCard + 6,
     paddingTop: 20,
   },
   reactionSheet: {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Calendar, ChevronRight, MessageSquare, SquareCheck } from 'lucide-react';
-import { AvatarStack, Badge, Empty } from '../../components/primitives.js';
+import { AvatarStack, Empty } from '../../components/primitives.js';
 import { formatDueDate } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
 import { useMembers } from '../org/use-members.js';
@@ -144,10 +144,12 @@ export function ListView({
                           </span>
 
                           {card.priority !== null && (
-                            <span className={cn(
-                              'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
-                              'bg-surface-hover text-ink-muted',
-                            )}>
+                            <span
+                              className={cn(
+                                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+                                'bg-surface-hover text-ink-muted',
+                              )}
+                            >
                               <span
                                 aria-hidden="true"
                                 className={cn(
@@ -160,20 +162,28 @@ export function ListView({
                           )}
 
                           {due !== null && (
-                            <span className={cn(
-                              'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
-                              due.overdue ? 'bg-danger/15 text-danger' : 'bg-surface-hover text-ink-muted',
-                            )}>
+                            <span
+                              className={cn(
+                                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+                                due.overdue
+                                  ? 'bg-danger/15 text-danger'
+                                  : 'bg-surface-hover text-ink-muted',
+                              )}
+                            >
                               <Calendar aria-hidden="true" className="size-3" strokeWidth={2} />
                               {due.label}
                             </span>
                           )}
 
                           {card.checklistTotal > 0 && (
-                            <span className={cn(
-                              'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
-                              card.checklistDone === card.checklistTotal ? 'bg-success/10 text-success' : 'bg-surface-hover text-ink-muted',
-                            )}>
+                            <span
+                              className={cn(
+                                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+                                card.checklistDone === card.checklistTotal
+                                  ? 'bg-success/10 text-success'
+                                  : 'bg-surface-hover text-ink-muted',
+                              )}
+                            >
                               <SquareCheck aria-hidden="true" className="size-3" strokeWidth={2} />
                               {card.checklistDone}/{card.checklistTotal}
                             </span>

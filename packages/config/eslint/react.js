@@ -55,6 +55,13 @@ export const react = [
          module remounts wholesale, so in-flight drag state and open dialogs are
          lost on every save. A warning — development ergonomics, not correctness. */
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+
+      /* The React Compiler is not enabled on this project. This rule flags
+         third-party hooks (@tanstack/react-virtual, react-hook-form, etc.)
+         that use interior mutability patterns the compiler cannot optimize —
+         but the compiler does not run, so the warning is noise today. Re-enable
+         when the compiler is adopted. */
+      'react-hooks/incompatible-library': 'off',
     },
   },
 

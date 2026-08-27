@@ -86,15 +86,90 @@ import { PeerMesh, type RtcConfiguration } from './peer-mesh.js';
  * `react-native-webrtc` — the identical "lower-risk than hand-rolling
  * native audio-manager code" reasoning `@config-plugins/react-native-webrtc`
  * was chosen for earlier in this phase). `start()` puts Android into
- * `MODE_IN_COMMUNICATION` for the call's duration; `setForceSpeakerphoneOn`
- * is the actual fix — loudspeaker by default, since this app is used
- * looking at a screen, not held to an ear like a phone call. `stop()` on
- * `hangUp()` hands audio routing back to whatever else wants it (the
- * ringtone/ringback tones already use `expo-audio`, and never overlap this:
- * ringing stops before a call is joined, `InCallManager` starts only once
- * it is). Best-effort — a build without the native module linked yet must
- * still let the call itself proceed, only without the routing fix.
+ * `MODE_IN_COMMUNICATION` for the call's duration. `stop()` on `hangUp()`
+ * hands audio routing back to whatever else wants it (the ringtone/ringback
+ * tones already use `expo-audio`, and never overlap this: ringing stops
+ * before a call is joined, `InCallManager` starts only once it is).
+ * Best-effort — a build without the native module linked yet must still let
+ * the call itself proceed, only without the routing fix.
+ *
+ * ## A real device picker, not a two-state toggle — the third and final
+ * shape of this fix, found live against an actual Bluetooth headset
+ *
+ * Two earlier, narrower fixes both shipped and both proved wrong once a
+ * Bluetooth headset was actually in the room. The first forced loudspeaker
+ * unconditionally at join (`setForceSpeakerphoneOn(true)`), which overrides
+ * an already-connected Bluetooth device before the call even starts. The
+ * second tried fixing the on-screen toggle's "off" state by passing `null`
+ * instead of `false` (`false` forces the EARPIECE, never Bluetooth — the
+ * library's own README states `setForceSpeakerphoneOn`'s three states
+ * plainly: `true`/`false`/`null`, only the last of which hands routing back
+ * to automatic device detection). `null` was real and correct, but a plain
+ * on/off toggle still cannot express "go to my headphones specifically" as
+ * a first-class choice — it can only force speaker or hand the decision
+ * back to automatic routing and hope.
+ *
+ * `InCallManager.chooseAudioRoute(route)` — confirmed against the native
+ * Android source (`InCallManagerModule.java`), not assumed from the `.d.ts`
+ * alone, which only types it as `(route: string) => Promise<any>` with no
+ * enum — is the library's real, complete answer: it accepts exactly
+ * `'EARPIECE' | 'SPEAKER_PHONE' | 'WIRED_HEADSET' | 'BLUETOOTH'`, and its
+ * own `onAudioDeviceChanged` event reports which of those are ACTUALLY
+ * available right now, live, as Bluetooth connects and disconnects mid-call
+ * — `availableAudioDeviceList`, a JSON-encoded array inside a STRING, not a
+ * real array (the native side builds that string by hand); `parseAudioDeviceList`
+ * below is the one place that un-stringifies it. This store now tracks
+ * `availableAudioDevices`/`selectedAudioDevice` instead of a boolean
+ * `speakerOn`, and `call-surface.tsx` renders them as a real picker.
+ *
+ * The "loud by default" intent from the very first fix is preserved, but
+ * now correctly SCOPED to "only when nothing better is available": the
+ * FIRST `onAudioDeviceChanged` event after `start()` is what decides
+ * whether to call `chooseAudioRoute('SPEAKER_PHONE')` — only when neither
+ * `BLUETOOTH` nor `WIRED_HEADSET` is in that event's own available list. An
+ * already-connected Bluetooth headset is left exactly as the library's own
+ * automatic routing already chose it, never overridden — the gap the
+ * second fix could not close (no synchronous "is Bluetooth connected"
+ * query exists in this library's JS surface) is closed by waiting for the
+ * library to report it, rather than guessing at join time.
+ *
+ * `DeviceEventEmitter` — like `react-native-webrtc` and
+ * `react-native-incall-manager` themselves — is obtained via a dynamic
+ * `import('react-native')` inside `joinCall`, never a top-level import:
+ * `react-native`'s own source fails to even PARSE under Vitest (Flow
+ * syntax; see `notification-path.ts`'s own header for where this was first
+ * found), and a static import here would poison this file's stated
+ * Vitest-safety the same way a top-level `react-native-webrtc` import
+ * would have (see above).
  */
+
+/** The four routes `InCallManager.chooseAudioRoute` accepts — see the module header. */
+export type AudioDevice = 'EARPIECE' | 'SPEAKER_PHONE' | 'WIRED_HEADSET' | 'BLUETOOTH';
+
+export const AUDIO_DEVICE_LABEL: Readonly<Record<AudioDevice, string>> = {
+  EARPIECE: 'Phone earpiece',
+  SPEAKER_PHONE: 'Speaker',
+  WIRED_HEADSET: 'Wired headset',
+  BLUETOOTH: 'Bluetooth',
+};
+
+/**
+ * `availableAudioDeviceList` arrives as a hand-built JSON string
+ * (`InCallManagerModule.java`'s `getAudioDeviceStatusMap` concatenates it
+ * with string ops, not a real serializer), so this both parses it and
+ * drops anything outside the known `AudioDevice` union rather than trusting
+ * the native side never sends a surprise value.
+ */
+function parseAudioDeviceList(raw: string): readonly AudioDevice[] {
+  const known: readonly AudioDevice[] = ['EARPIECE', 'SPEAKER_PHONE', 'WIRED_HEADSET', 'BLUETOOTH'];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is AudioDevice => known.includes(entry as AudioDevice));
+  } catch {
+    return [];
+  }
+}
 
 export interface CallPeer {
   readonly userId: string;
@@ -107,12 +182,10 @@ export interface CallState {
   readonly orgId: string | null;
   readonly status: 'idle' | 'connecting' | 'in_call';
   readonly muted: boolean;
-  /**
-   * Loudspeaker vs earpiece — see the module header on why this defaults to
-   * `true` and why it exists at all. Mirrors `muted`: real state a control
-   * reads and writes, not a derived value.
-   */
-  readonly speakerOn: boolean;
+  /** What `chooseAudioRoute` can actually be called with right now — empty until the first `onAudioDeviceChanged` event, or forever on a build without the native module linked. */
+  readonly availableAudioDevices: readonly AudioDevice[];
+  /** The library's own current pick, or null before the first event arrives. */
+  readonly selectedAudioDevice: AudioDevice | null;
   /** Remote audio, keyed by peer. */
   readonly peers: readonly CallPeer[];
   /** Set when the gateway evicted this app mid-call (a grant changed). */
@@ -132,7 +205,8 @@ const IDLE: CallState = {
   orgId: null,
   status: 'idle',
   muted: false,
-  speakerOn: true,
+  availableAudioDevices: [],
+  selectedAudioDevice: null,
   peers: [],
   evicted: false,
   connectedAt: null,
@@ -156,6 +230,8 @@ let unsubscribers: (() => void)[] = [];
  *  and whenever the native module failed to load, so `hangUp` knows whether
  *  there is anything to stop. */
 let inCallManager: typeof InCallManagerInstance | null = null;
+/** The `onAudioDeviceChanged` listener paired 1:1 with `inCallManager` above — same lifecycle, torn down alongside it in `hangUp`. */
+let audioDeviceSubscription: { remove(): void } | null = null;
 
 function setPeer(userId: string, stream: MediaStream): void {
   callStore.setState((state) => ({
@@ -274,11 +350,39 @@ export async function joinCall(input: {
        than fail the whole join over an audio-routing improvement. */
     try {
       const InCallManager = (await import('react-native-incall-manager')).default;
+      /* See the module header on why this is a dynamic import, same as
+         `react-native-webrtc`/`react-native-incall-manager` themselves. */
+      const { DeviceEventEmitter } = await import('react-native');
       InCallManager.start({ media: 'audio' });
-      InCallManager.setForceSpeakerphoneOn(callStore.getState().speakerOn);
+
+      let seeded = false;
+      const subscription = DeviceEventEmitter.addListener(
+        'onAudioDeviceChanged',
+        (data: { availableAudioDeviceList?: string; selectedAudioDevice?: string }) => {
+          const available = parseAudioDeviceList(data.availableAudioDeviceList ?? '[]');
+          const selected = data.selectedAudioDevice;
+          callStore.setState({
+            availableAudioDevices: available,
+            selectedAudioDevice:
+              selected !== undefined && selected !== '' ? (selected as AudioDevice) : null,
+          });
+          /* Only the FIRST event after start() decides the default — see
+             the module header on why this is scoped to "nothing better is
+             available" rather than an unconditional force. Every event
+             after this one is purely informational for the picker UI. */
+          if (!seeded) {
+            seeded = true;
+            if (!available.includes('BLUETOOTH') && !available.includes('WIRED_HEADSET')) {
+              void InCallManager.chooseAudioRoute('SPEAKER_PHONE');
+            }
+          }
+        },
+      );
+      audioDeviceSubscription = subscription;
       inCallManager = InCallManager;
     } catch {
       inCallManager = null;
+      audioDeviceSubscription = null;
     }
 
     const configuration: RtcConfiguration = {
@@ -369,6 +473,8 @@ export async function hangUp(options: { readonly silent?: boolean } = {}): Promi
      `MODE_IN_COMMUNICATION` the moment the microphone opened). */
   inCallManager?.stop();
   inCallManager = null;
+  audioDeviceSubscription?.remove();
+  audioDeviceSubscription = null;
 
   if (sessionId !== null) {
     rtcSocket.leaveCallRoom(sessionId);
@@ -399,12 +505,23 @@ export function setMuted(muted: boolean): void {
 }
 
 /**
- * Toggles loudspeaker vs earpiece — see the module header on why this
- * exists and defaults on. A no-op on a build without the native module
- * linked (`inCallManager` stays `null`); the stored `speakerOn` still
- * updates so the button reflects what was asked for.
+ * Picks a specific audio output — see the module header on why this is a
+ * real device picker rather than a force/auto toggle. A no-op on a build
+ * without the native module linked (`inCallManager` stays `null`); the
+ * `.d.ts` types the resolved value as `any`, so it is validated the same
+ * defensive way the `onAudioDeviceChanged` event handler in `joinCall` is,
+ * rather than trusted blindly.
  */
-export function setSpeakerphone(speakerOn: boolean): void {
-  inCallManager?.setForceSpeakerphoneOn(speakerOn);
-  callStore.setState({ speakerOn });
+export function chooseAudioRoute(route: AudioDevice): void {
+  if (inCallManager === null) return;
+  void inCallManager
+    .chooseAudioRoute(route)
+    .then((status: { availableAudioDeviceList?: string; selectedAudioDevice?: string }) => {
+      const selected = status.selectedAudioDevice;
+      callStore.setState({
+        availableAudioDevices: parseAudioDeviceList(status.availableAudioDeviceList ?? '[]'),
+        selectedAudioDevice:
+          selected !== undefined && selected !== '' ? (selected as AudioDevice) : null,
+      });
+    });
 }

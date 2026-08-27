@@ -46,6 +46,13 @@ export const MobileConfigSchema = z.object({
    * why it has no loopback default to guess from the way `apiBaseUrl` does.
    */
   realtimeBaseUrl: z.string().url().optional(),
+  /**
+   * Same fallback shape as `realtimeBaseUrl` above, for `apps/collab` — a
+   * THIRD separate process/port in local dev (`ai/phase-6-docs.md`'s own
+   * `COLLAB_PORT`), fronted by the same one public origin in a real
+   * deployment. `use-doc-page.ts` is the one reader.
+   */
+  collabBaseUrl: z.string().url().optional(),
 });
 
 export interface MobileConfig {
@@ -64,6 +71,8 @@ export interface MobileConfig {
    * correct fallback for a real deployment.
    */
   readonly realtimeBaseUrl: string;
+  /** Origin `use-doc-page.ts`'s Hocuspocus connection dials. Defaults to `apiBaseUrl` — same reasoning as `realtimeBaseUrl` above. */
+  readonly collabBaseUrl: string;
 }
 
 /** Parse and normalize raw configuration. Throws on anything invalid. */
@@ -71,5 +80,11 @@ export function parseConfig(raw: unknown): MobileConfig {
   const parsed = MobileConfigSchema.parse(raw);
   const base = parsed.apiBaseUrl.replace(/\/+$/, '');
   const realtimeBase = (parsed.realtimeBaseUrl ?? parsed.apiBaseUrl).replace(/\/+$/, '');
-  return { apiBaseUrl: base, trpcUrl: `${base}/trpc`, realtimeBaseUrl: realtimeBase };
+  const collabBase = (parsed.collabBaseUrl ?? parsed.apiBaseUrl).replace(/\/+$/, '');
+  return {
+    apiBaseUrl: base,
+    trpcUrl: `${base}/trpc`,
+    realtimeBaseUrl: realtimeBase,
+    collabBaseUrl: collabBase,
+  };
 }

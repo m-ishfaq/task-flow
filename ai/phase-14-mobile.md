@@ -197,6 +197,22 @@ it is the part of the phase the author reads every line of before merge.
   or sees one). Never an embedded WebView (§3). The provider secrets stay server-side exactly as
   they are, and the app holds no client id at all — `start` returns a fully-assembled authorization
   URL.
+
+  **Corrected after a second review pass: the parenthetical above ("the app never generates or
+  sees one") described a real gap, not just a design choice.** A server-held verifier secures the
+  server<->provider leg and proves nothing about WHICH CLIENT redeems the callback. The redirect
+  lands on a plain custom scheme (`taskflow://oauth-callback`) that any Android app may register an
+  intent filter for, and `auth.native.oauth.callback` is public by necessity — so an app that
+  intercepted the redirect could exchange `(code, state)` for a full session, with RFC 7636 unable
+  to stop it precisely because the app never held the verifier. The native flow now carries a
+  SECOND, client-held PKCE pair (RFC 8252 §8.1): the app mints a verifier, sends only its S256
+  challenge to `start`/`startLink`, and must present the plaintext at `callback`. S256 and never
+  `plain` — the challenge rides in a state JWT that is signed, not encrypted, so `plain` would ship
+  the secret to the interceptor. A native state carrying no challenge is refused outright rather
+  than falling back, so the control cannot be downgraded by omission. The browser flow is
+  unchanged: its redirect is an https origin no other app can claim. Left as a correction in place
+  rather than a silent rewrite, per this repo's own habit.
+
 - **Passkeys (Wave 1b):** native platform authenticators — `ASAuthorization` passkeys on iOS,
   Credential Manager on Android — over the same server ceremony endpoints. This is genuinely
   _better_ than the web, where the browser ceremony is still deferred (`ai/passkey-browser-

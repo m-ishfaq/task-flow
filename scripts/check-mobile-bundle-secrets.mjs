@@ -52,9 +52,16 @@ const ALLOWED_EXTRA_KEYS = new Set([
   // Origin the app's Socket.IO connections dial (config.ts's own header) —
   // same public/private status as apiBaseUrl: an origin, never a credential.
   'realtimeBaseUrl',
+  // Origin the app's Hocuspocus (Docs) connection dials — same public/private
+  // status as the two above: an origin, never a credential. Added to the
+  // allowlist when `collabBaseUrl` entered `extra`; it had been slipping past
+  // unlisted because it is written inside a `...(cond ? {} : { ... })` spread,
+  // which the extractor now reads (see extractTopLevelKeys).
+  'collabBaseUrl',
   // The EAS project linkage (app.config.ts's own comment) — a public project
-  // id, not a credential; `eas.projectId` is nested, so only the `eas` key
-  // itself is in scope here (extractTopLevelKeys never descends).
+  // id, not a credential; `eas.projectId` is a NAMED nested object, so only
+  // the `eas` key itself is in scope here (extractTopLevelKeys treats a named
+  // object's interior as opaque).
   'eas',
 ]);
 
@@ -65,11 +72,53 @@ const ALLOWED_EAS_ENV_KEYS = new Set(['MOBILE_API_BASE_URL', 'MOBILE_REALTIME_BA
 const failures = [];
 
 /**
- * Finds `label:` followed by a `{`, then returns every key written at that
- * object's OWN depth — never a key belonging to something nested inside it.
- * A naive `/extra:\s*\{([^}]*)\}/` stops at the first `}`, which is wrong the
- * moment `extra` holds a nested object: it would either truncate the match or
- * silently report a nested object's own keys as if they were top-level.
+ * Is the `{` at `braceIdx` a NAMED nested object (`key: { ... }`, whose
+ * interior keys are that object's own business) or a TRANSPARENT one (an
+ * empty `{}` or a `{ ... }` appearing inside a `...(cond ? {} : { ... })`
+ * spread, whose keys land in the PARENT object and therefore count)?
+ *
+ * The distinction is the whole reason a spread-nested key was slipping
+ * through: `...(X ? {} : { collabBaseUrl: X })` puts `collabBaseUrl` into
+ * `extra`, but that key lives one brace deep, so a plain depth===1 test never
+ * saw it. The rule: a `{` is named ONLY when a bare identifier immediately
+ * precedes its colon (`eas:`). A `{` preceded by `?`, `:` after a `}`/`)`, or
+ * anything that is not `identifier:` is transparent.
+ *
+ * @param {string} text
+ * @param {number} braceIdx
+ * @returns {boolean} true when keys inside this brace count as the parent's.
+ */
+function isTransparentBrace(text, braceIdx) {
+  let j = braceIdx - 1;
+  while (j >= 0 && /\s/.test(text[j])) j -= 1;
+  // Not `... : {` at all (e.g. `? {`, `=> {`, `({`) → transparent.
+  if (j < 0 || text[j] !== ':') return true;
+  // It is `... : {`. Named only if a bare identifier precedes the colon;
+  // a ternary colon is preceded by `}`/`)`/an identifier that is not a key.
+  j -= 1;
+  while (j >= 0 && /\s/.test(text[j])) j -= 1;
+  return !(j >= 0 && /[A-Za-z0-9_$]/.test(text[j]));
+}
+
+/**
+ * Finds `label:` followed by a `{`, then returns every key that lands in that
+ * object — its own direct keys AND keys contributed by a conditional spread
+ * (`...(cond ? {} : { key: val })`), but never a key belonging to a NAMED
+ * nested object (`eas: { projectId }`), whose interior is that object's
+ * business, not `extra`'s.
+ *
+ * A naive `/extra:\s*\{([^}]*)\}/` stops at the first `}`; a plain depth===1
+ * test descends correctly but misses the spread case above — a key added as
+ * `...(X ? {} : { newKey: X })` sits one brace deep and sailed past the
+ * allowlist unchecked. `isTransparentBrace` is what tells the two shapes of
+ * `{` apart so a spread-contributed key is treated as top-level and a truly
+ * nested object's keys are not.
+ *
+ * Scope limit unchanged: this counts braces, not string literals — a `{`,
+ * `}`, or `:` inside a quoted value would still miscount. Every value in
+ * `extra` today is a plain identifier reference or a `...(ternary)`, never a
+ * string containing braces; extend this rather than trust it silently if that
+ * changes.
  *
  * @param {string} text
  * @param {string} label
@@ -84,24 +133,26 @@ function extractTopLevelKeys(text, label) {
 
   /** @type {string[]} */
   const keys = [];
-  let depth = 0;
+  /* One boolean per open brace: does a key at this level count as `extra`'s?
+     The root brace (`extra`'s own) does; a named nested object's does not; a
+     spread's transparent `{}` does. */
+  /** @type {boolean[]} */
+  const transparent = [];
   let i = braceIndex;
 
   for (; i < text.length; i += 1) {
     const char = text[i];
     if (char === '{') {
-      depth += 1;
+      transparent.push(transparent.length === 0 ? true : isTransparentBrace(text, i));
       continue;
     }
     if (char === '}') {
-      depth -= 1;
-      if (depth === 0) break;
+      transparent.pop();
+      if (transparent.length === 0) break;
       continue;
     }
-    // A key at this object's own depth: an identifier immediately followed
-    // (past whitespace) by a colon, checked only when depth === 1 so a key
-    // belonging to a NESTED object (depth 2+) is never picked up.
-    if (depth === 1) {
+    // A key counts only when the innermost enclosing brace is transparent.
+    if (transparent[transparent.length - 1] === true) {
       const match = /^[A-Za-z_$][A-Za-z0-9_$]*/.exec(text.slice(i));
       if (match !== null) {
         const rest = text.slice(i + match[0].length);
@@ -111,7 +162,7 @@ function extractTopLevelKeys(text, label) {
     }
   }
 
-  return depth === 0 ? keys : null;
+  return transparent.length === 0 ? keys : null;
 }
 
 function checkAppConfig() {

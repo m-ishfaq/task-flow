@@ -437,7 +437,11 @@ function Breadcrumbs() {
      label. This is the one-line fix for a bug that only shows up once the
      header actually gets tight, which the desktop-only build before this wave
      never exercised. */
-  return <h1 className="min-w-0 truncate font-display text-[15px] font-semibold tracking-tight text-ink">{label}</h1>;
+  return (
+    <h1 className="min-w-0 truncate font-display text-[15px] font-semibold tracking-tight text-ink">
+      {label}
+    </h1>
+  );
 }
 
 /** A `lucide-react` icon component — matches sidebar.tsx's own alias. */

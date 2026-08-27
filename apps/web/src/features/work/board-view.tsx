@@ -493,7 +493,9 @@ function DroppableColumn({
       )}
     >
       <ColumnHeader group={group} />
-      <div className="flex min-h-16 flex-col gap-1.5 overflow-y-auto px-2 pb-2 pt-0.5">{children}</div>
+      <div className="flex min-h-16 flex-col gap-1.5 overflow-y-auto px-2 pb-2 pt-0.5">
+        {children}
+      </div>
     </section>
   );
 }
@@ -512,7 +514,9 @@ function StaticColumn({
       className="column-container flex max-h-full w-72 shrink-0 flex-col"
     >
       <ColumnHeader group={group} />
-      <div className="flex min-h-16 flex-col gap-1.5 overflow-y-auto px-2 pb-2 pt-0.5">{children}</div>
+      <div className="flex min-h-16 flex-col gap-1.5 overflow-y-auto px-2 pb-2 pt-0.5">
+        {children}
+      </div>
     </section>
   );
 }

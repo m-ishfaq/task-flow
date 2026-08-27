@@ -9,12 +9,16 @@ import { EXPO_PUSH_TOKENS_QUERY_KEY, registerForPushNotifications } from './push
 
 /**
  * Native push, on the account screen — `apps/web`'s push half of
- * `NotificationPreferencesSection`, ported (the category/channel
- * preference MATRIX that section also renders is a separate, real gap: no
- * screen on native reads `notifications.prefs.*` at all yet, and this
- * increment is scoped to the ceremony that gets a device REGISTERED in the
- * first place — `direct.push` already defaults to enabled server-side, so
- * registering here starts real delivery with no preference edit needed).
+ * `NotificationPreferencesSection`, ported (this increment is scoped to the
+ * ceremony that gets a device REGISTERED in the first place —
+ * `direct.push` already defaults to enabled server-side, so registering
+ * here starts real delivery with no preference edit needed). **The
+ * category/channel preference MATRIX that section also renders used to be
+ * named here as a separate, real gap — closed in
+ * `notification-prefs-section.tsx`, its own file rather than folded into
+ * this one, since "which categories reach me on which channel" and "is a
+ * device registered at all" are genuinely different concerns; that file's
+ * own header explains the split.**
  *
  * **"Enable on this device" is the whole ceremony in one button** —
  * `registerForPushNotifications` (`push-notifications.ts`) never throws,
@@ -124,10 +128,11 @@ const styles = StyleSheet.create({
     paddingTop: 14,
   },
   sectionTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: colors.inkMuted.hex,
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   sectionHint: {
     fontSize: 12,

@@ -7,6 +7,7 @@ import {
   type PendingEmailSend,
 } from '../platform/notification.projection.js';
 import { deliverPendingPushes } from '../platform/notification-push.js';
+import { drainCallWakeFully } from '../platform/call-wake.js';
 import type { ExpoPushProvider, PushProvider } from '../platform/push-provider.js';
 
 /**
@@ -124,7 +125,7 @@ export function startAuditRelay(options: StartRelayOptions): RelayHandle {
          record and gets the database first if they contend. A notification
          arriving a tick late is not a defect; an audit entry doing so is the
          thing this relay exists to prevent. */
-      const notified = await drainNotificationsFully();
+      const notified = await drainNotificationsFully(100, 50, options.logger);
       if (notified.written > 0) {
         options.logger.debug({ written: notified.written }, 'notification projection wrote rows');
       }
@@ -173,6 +174,24 @@ export function startAuditRelay(options: StartRelayOptions): RelayHandle {
               gone: pushed.gone,
             },
             'push relay delivered notifications',
+          );
+        }
+      }
+
+      /* Rings a phone that is backgrounded or fully killed (Phase 14, Tier 3
+         Pass B — see call-wake.ts's own header). Drains `rtc_session.started`
+         under its OWN consumer name, same tick, same reasoning as every other
+         consumer here: one falling behind or erroring never starves another.
+         Gated on `expoPushProvider` alone, not `pushProvider` — this is a
+         mobile-only concern with no web-push equivalent (a browser tab
+         already gets the live ring over the socket, same as an alive mobile
+         app does). */
+      if (options.expoPushProvider) {
+        const woken = await drainCallWakeFully(options.expoPushProvider, options.logger);
+        if (woken.attempted > 0) {
+          options.logger.debug(
+            { attempted: woken.attempted, sent: woken.sent },
+            'call-wake relay sent ring pushes',
           );
         }
       }

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
-import { PopoverContent, PopoverRoot, PopoverTrigger } from './popover.js';
+import { PopoverRoot, PopoverTrigger } from './primitives.js';
+import { PopoverContent } from './popover.js';
 
 function TestPopover() {
   return (

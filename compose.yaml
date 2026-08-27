@@ -144,21 +144,39 @@ services:
 
   # TURN/STUN for in-app voice (Phase 13, ai/phase-13-webrtc.md §5).
   #
-  # An explicit `ports:` list, NOT `network_mode: host` — compose.prod.yaml's
-  # own coturn block still uses host networking, for the reason its comment
-  # gives (TURN allocates a fresh UDP port per relayed stream out of a wide
-  # range; a Docker port mapping publishing that whole range costs a userland
-  # proxy process per port, and takes noticeably longer to start). That
-  # reasoning holds on a real Linux host, which is what production is. It does
-  # NOT hold here: confirmed live, against a real phone, that under Docker
-  # Desktop (Windows/Mac) `network_mode: host` binds coturn to the DESKTOP
-  # VM's own loopback/bridge addresses — `127.0.0.1`, `192.168.65.x`,
-  # `172.1x.0.1` — never the actual machine's LAN interface, so nothing
-  # outside the machine itself, a real phone included, can ever reach it. The
-  # slower startup this trades for is a one-time `docker compose up` cost, not
-  # a per-call one; the alternative (host networking, silently unreachable
-  # from any other device) is not an alternative at all for testing this
-  # feature against a real phone rather than two browser tabs.
+  # An explicit `ports:` list, NOT `network_mode: host` — the second time this
+  # block has landed on that answer, for two DIFFERENT reasons, both confirmed
+  # live rather than assumed:
+  #
+  #   1. `network_mode: host` alone binds coturn to the DESKTOP VM's own
+  #      loopback/bridge addresses under Docker Desktop (Windows/Mac) — never
+  #      the real machine's LAN interface — so a real phone can never reach
+  #      it. This is true regardless of any Docker Desktop setting, because
+  #      Docker Desktop always runs a VM in between on these platforms; a
+  #      `network_mode: host` container shares THAT VM's network namespace,
+  #      not Windows' own. Tried switching Docker Desktop's own "Enable host
+  #      networking" setting on to see if it changed this — it did not:
+  #      coturn's own listener-discovery log still enumerated nothing but
+  #      Docker-internal addresses (`192.168.65.x`, `172.1x.0.1`, the exact
+  #      pattern from the first time this bug was found), even with the
+  #      setting on. That setting does NOT make `network_mode: host` mean
+  #      what it says here — see point 2 for what it actually does.
+  #   2. An explicit `ports:` list is what actually reaches Windows' real
+  #      network stack — except Windows Docker Desktop's UDP port-publishing
+  #      has its own, separate reliability problem: `netstat -ano | findstr
+  #      :3478` on the host showed TCP:3478 LISTENING and NO UDP:3478 line at
+  #      all, meaning coturn's own UDP listener, running fine inside the
+  #      container, was reachable by nothing outside it. THIS is what "Enable
+  #      host networking" actually fixes, per Docker's own documentation:
+  #      published ports bind directly to the host machine rather than
+  #      routing through the userland proxy that was silently dropping UDP.
+  #      So the fix is this combination — the `ports:` list below, WITH that
+  #      Docker Desktop setting turned on — not `network_mode: host` at all.
+  #
+  # Not yet reverified against a real device with this exact combination; see
+  # `apps/mobile/README.md`'s own account of this whole chain for the full
+  # evidence trail, including the corrected-in-place record of trying
+  # `network_mode: host` first and disproving it.
   #
   # `--external-ip` is the other half, and skipping it just moves the same
   # bug: without it, coturn advertises the CONTAINER's own bridge-network
@@ -194,6 +212,15 @@ services:
       - --listening-port=3478
       - --fingerprint
       - --use-auth-secret
+      # TEMPORARY diagnostic, not a permanent setting — coturn's default log
+      # level is too quiet to show individual STUN/TURN messages, which is
+      # exactly what's needed to tell "the phone's retry never arrived" apart
+      # from "coturn answered and the reply never made it back" after a real
+      # phone request was confirmed reaching the container (`stateless-nonce:
+      # listener fast-path challenge active`) with no completed exchange
+      # following it. Remove once that's answered — verbose logging is not
+      # something to ship even to a dev compose file long-term.
+      - -v
       # DEV ONLY, and public on purpose like every other credential in this
       # file. Must match RTC_TURN_SECRET in .env.
       - --static-auth-secret=coturn-dev-secret

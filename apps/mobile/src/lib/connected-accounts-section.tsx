@@ -13,6 +13,7 @@ import {
   parseOAuthRedirect,
   type OAuthProvider,
 } from './oauth.js';
+import { createPkceChallenge } from './oauth-pkce.native.js';
 
 const CONNECTED_QUERY_KEY = ['auth.oauth.listConnected'] as const;
 
@@ -57,8 +58,13 @@ export function ConnectedAccountsSection() {
 
   const link = useMutation({
     mutationFn: async (provider: OAuthProvider) => {
+      /* Same client-held binding as sign-in, for the same reason — linking a
+         provider to an existing account is a new way INTO that account, so an
+         intercepted redirect here is worth no less to an attacker. */
+      const { verifier, challenge } = await createPkceChallenge();
       const { authorizationUrl } = await apiClient.auth.native.oauth.startLink.mutate({
         provider,
+        clientChallenge: challenge,
       });
       const result = await WebBrowser.openAuthSessionAsync(authorizationUrl, OAUTH_REDIRECT_URL);
       if (result.type !== 'success') return null;
@@ -67,7 +73,11 @@ export function ConnectedAccountsSection() {
       if (parsed === null) {
         throw new Error('The provider did not return a valid response.');
       }
-      return apiClient.auth.native.oauth.callback.mutate({ provider, ...parsed });
+      return apiClient.auth.native.oauth.callback.mutate({
+        provider,
+        ...parsed,
+        clientVerifier: verifier,
+      });
     },
     onSuccess: refresh,
   });
@@ -166,10 +176,11 @@ const styles = StyleSheet.create({
     paddingTop: 14,
   },
   sectionTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: colors.inkMuted.hex,
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   row: {
     flexDirection: 'row',
@@ -192,8 +203,8 @@ const styles = StyleSheet.create({
   },
   linkButton: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
-    borderRadius: radiusCard,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard + 2,
     paddingVertical: 10,
     alignItems: 'center',
   },

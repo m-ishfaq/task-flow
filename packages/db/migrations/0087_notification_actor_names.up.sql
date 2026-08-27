@@ -1,0 +1,31 @@
+-- 0087 — a name for the person a notification is about.
+--
+-- Every push, email, and in-app title this codebase has ever written has been
+-- anonymous by construction: "Missed call", "New direct message", "You were
+-- mentioned" — never who. `platform.notifications.actor_id` has been stored
+-- since 0022 and simply never read back into a title. The in-app bell hides
+-- this: `apps/mobile/src/lib/notification-bell.tsx` (and its web counterpart)
+-- resolve `actorId` client-side against the org's already-fetched member
+-- roster and render a second "who" line under the title. A PUSH banner has no
+-- such second line and no client-side roster to resolve against — the OS
+-- shows exactly the `title`/`body` strings this server sent, and nothing
+-- else. So the one channel with no fallback was the one left blank.
+--
+-- `people.profiles` (migration 0030) is the fix's whole ingredient: GLOBAL,
+-- no org_id, and — per that migration's own header — "NO RLS... nothing about
+-- a display name... is secret from other people in a shared org." The
+-- notification projection and the call-wake drain both already run as
+-- `taskflow_audit` (0022, 0028) with an existing column-limited read of
+-- `identity.users (id, email, display_name)` (0027) for the RECIPIENT's email
+-- address; this grants the identical shape for the ACTOR's current display
+-- name, so a title can say "Alice mentioned you" instead of leaving the
+-- reader to guess. `identity.users.display_name` is deliberately NOT reused
+-- for this — 0030's own header retired it in favor of this table, and
+-- `tenancy/member.service.ts` already treats it as "on its way out and no
+-- longer written"; a title built from a column nothing writes anymore would
+-- silently blank out for every account created after that migration.
+--
+-- No RLS policy needed, unlike every other grant in this file's neighbours —
+-- `people.profiles` never had one to begin with (0030 §2).
+
+GRANT SELECT (user_id, display_name) ON people.profiles TO taskflow_audit;

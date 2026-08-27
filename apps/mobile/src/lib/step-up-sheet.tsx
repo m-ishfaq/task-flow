@@ -212,8 +212,8 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: colors.surfaceRaised.hex,
-    borderTopLeftRadius: radiusCard,
-    borderTopRightRadius: radiusCard,
+    borderTopLeftRadius: radiusCard + 6,
+    borderTopRightRadius: radiusCard + 6,
     padding: 20,
     gap: 10,
   },
@@ -228,8 +228,8 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
-    borderRadius: radiusCard,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard + 2,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
   },
   submit: {
     backgroundColor: colors.accent.hex,
-    borderRadius: radiusCard,
+    borderRadius: radiusCard + 2,
     paddingVertical: 12,
     alignItems: 'center',
   },

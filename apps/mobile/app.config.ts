@@ -54,6 +54,19 @@ if (existsSync(envFile)) {
 
 const API_BASE_URL = process.env['MOBILE_API_BASE_URL'] ?? 'http://localhost:3000';
 
+/* Per-developer Firebase config for push (§9) — gitignored, never committed.
+   See the `android`/`ios` blocks below for why each is wired in only when
+   present, and push-notifications.ts's header for the service-account key
+   these are NOT (that one goes to `eas credentials`, never a file here). */
+const GOOGLE_SERVICES_JSON = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  'google-services.json',
+);
+const GOOGLE_SERVICE_INFO_PLIST = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  'GoogleService-Info.plist',
+);
+
 /* Optional, unlike API_BASE_URL above — no loopback default to fail loudly
    against, because "unset" is a legitimate, common state: apps/web's own
    `vite.config.ts` needs the identical split (`WEB_API_ORIGIN` /
@@ -70,6 +83,12 @@ const API_BASE_URL = process.env['MOBILE_API_BASE_URL'] ?? 'http://localhost:300
    slow") exactly the failure mode this file's own comment on
    `MOBILE_API_BASE_URL` for preview/production already argues against. */
 const REALTIME_BASE_URL = process.env['MOBILE_REALTIME_BASE_URL'];
+
+/* Same shape and reasoning as REALTIME_BASE_URL above — `apps/collab` is a
+   THIRD separate local-dev process/port (`COLLAB_PORT`), fronted by the
+   same one public origin in a real deployment. Backs `use-doc-page.ts`'s
+   one Hocuspocus connection. */
+const COLLAB_BASE_URL = process.env['MOBILE_COLLAB_BASE_URL'];
 
 const config: ExpoConfig = {
   name: 'TaskFlow',
@@ -88,6 +107,14 @@ const config: ExpoConfig = {
      changed after release breaks every previously-installed app's
      return-from-browser flow. */
   scheme: 'taskflow',
+  /* The TaskFlow flow-mark (`apps/web/src/components/taskflow-logo.tsx` /
+     `apps/web/public/favicon.svg`'s three-node design), rendered to a 1024x1024
+     PNG on the app's own dark surface color rather than left transparent —
+     iOS composites the app icon on an opaque backing regardless, so an
+     icon authored WITHOUT one gets an arbitrary black or white fill picked
+     for you, not transparency. `android.adaptiveIcon` below is the
+     Android-specific masked variant of the same mark. */
+  icon: './assets/icon.png',
   /* Android and iOS only, explicit rather than left to Expo's own default
      (`['ios', 'android', 'web']`). A `web` target left implicit is exactly
      the kind of gap this codebase argues against elsewhere — nothing in
@@ -114,9 +141,38 @@ const config: ExpoConfig = {
        ceremony just never completes, indistinguishable from "not
        configured yet"); this fails loudly the moment anyone tries it. */
     associatedDomains: ['webcredentials:SET-REAL-DOMAIN-BEFORE-PASSKEYS-WORK.invalid'],
+    ...(existsSync(GOOGLE_SERVICE_INFO_PLIST)
+      ? { googleServicesFile: './GoogleService-Info.plist' }
+      : {}),
   },
   android: {
     package: 'com.taskflow.app',
+    /* The masked variant `icon` above needs on Android: a FOREGROUND layer
+       only, transparent background, scaled well inside the ~66% safe zone
+       the OS mask crops to (a full-bleed foreground gets clipped to a
+       circle/squircle/rounded-square depending on the launcher, cutting
+       off the outer nodes of the mark) — `backgroundColor` is a flat fill
+       behind it, the same dark surface color as `icon.png`'s own
+       background, so the two render identically wherever the OS shows one
+       or the other. */
+    adaptiveIcon: {
+      foregroundImage: './assets/adaptive-icon-foreground.png',
+      backgroundColor: STATUS_BAR_BACKGROUND,
+    },
+    /* Push notifications (§9, push-notifications.ts's own header on "code
+       complete, infrastructure not"): `expo-notifications` needs this file
+       present for Expo's prebuild to apply the `google-services` Gradle
+       plugin FCM reads at runtime — without it, `getExpoPushTokenAsync`
+       fails on Android regardless of EAS credentials being configured.
+       Not committed (see .gitignore) — it is account-specific config, not
+       source, the same reasoning as `apps/mobile/android/` itself being
+       generated rather than checked in. Wired in ONLY when present so a
+       checkout with no Firebase project configured still builds; the file
+       comes from Firebase Console (Project settings -> your Android app),
+       never from `eas credentials` — that command is for the SEPARATE
+       service-account key, which is a real secret and never belongs in a
+       file this config references, committed or not. */
+    ...(existsSync(GOOGLE_SERVICES_JSON) ? { googleServicesFile: './google-services.json' } : {}),
   },
   /* Found live: on Android, this app's default TRANSLUCENT status bar let
      scrolled content render visibly underneath the clock/battery icons —
@@ -154,6 +210,47 @@ const config: ExpoConfig = {
   },
   plugins: [
     'expo-router',
+    /* Android refuses plaintext `http://` outright by default since API 28
+       (Network Security Config's base config has `cleartextTrafficPermitted
+       = false`) — a RESTRICTION, not an absence of one, so there is nothing
+       to opt into for HTTPS. The React Native template's own generated
+       manifest only sets `android:usesCleartextTraffic="true"` in the
+       DEBUG variant; a release build (`assembleRelease`, what an installed
+       APK actually runs) inherits the strict default and drops every
+       request at the OS layer before it reaches this app's own network
+       code — no exception thrown, nothing in `adb logcat` naming this app,
+       and correspondingly nothing in the API server's log, because the
+       request never leaves the device. Found exactly that way testing a
+       release build against a local API over `adb reverse`.
+
+       Gated on the URL actually being `http://`, not unconditionally
+       `true` — the one deployment shape that needs this is local/LAN
+       testing (`MOBILE_API_BASE_URL=http://localhost:3000` or a LAN IP);
+       `eas.json`'s `production` profile has no default and every real
+       value for it is an `https://` origin, which never sets this flag.
+       A blanket `usesCleartextTraffic: true` would permit plaintext to ANY
+       host from a shipped production build, not just this app's own API. */
+    [
+      'expo-build-properties',
+      {
+        android: {
+          usesCleartextTraffic: API_BASE_URL.startsWith('http://'),
+        },
+      },
+    ],
+    /* Android's status bar renders a notification icon as a WHITE SILHOUETTE
+       on transparent, regardless of what color the source PNG actually is
+       (a full-color icon there just shows as a white blob) — this is a
+       SEPARATE asset from `icon`/`adaptiveIcon` above for exactly that
+       reason, not a duplicate. `color` is the background tint Android
+       applies behind it in the notification shade; matches this app's own
+       dark surface color rather than Android's default. iOS has no
+       equivalent concept (its notification icon is just the app icon), so
+       this plugin is a no-op there — nothing further to configure. */
+    [
+      'expo-notifications',
+      { icon: './assets/notification-icon.png', color: STATUS_BAR_BACKGROUND },
+    ],
     /* iOS refuses Face ID outright with no NSFaceIDUsageDescription in
        Info.plist — not a soft failure, the ceremony never even starts
        (§4.4's biometric app-lock). Android has no equivalent string to set;
@@ -180,10 +277,24 @@ const config: ExpoConfig = {
         cameraPermission: 'TaskFlow will use your camera for video calls in a future update.',
       },
     ],
+    /* Native CallKit (iOS) / ConnectionService (Android) — `call-keep.ts`'s
+       own header explains the feature and its real scope (the app-process-
+       alive case; waking a killed app is separate, not-yet-built work).
+       This plugin does exactly three things, all inspectable in its own
+       source (`@config-plugins/react-native-callkeep`'s `withCallkeep.js`):
+       adds `voip` to iOS's `UIBackgroundModes` and links `CallKit`/`Intents`
+       .framework, and on Android adds the phone/call-management permissions
+       plus the two services (`VoiceConnectionService`, a background
+       messaging service) `react-native-callkeep`'s native module needs
+       registered in the manifest. It does NOT wire PushKit/VoIP-push
+       AppDelegate code — that is a real, separate, manual native step this
+       app does not need yet, since nothing sends a VoIP push. */
+    '@config-plugins/react-native-callkeep',
   ],
   extra: {
     apiBaseUrl: API_BASE_URL,
     ...(REALTIME_BASE_URL === undefined ? {} : { realtimeBaseUrl: REALTIME_BASE_URL }),
+    ...(COLLAB_BASE_URL === undefined ? {} : { collabBaseUrl: COLLAB_BASE_URL }),
     /* EAS project linkage — not a secret per §10's own public/private test.
        A project id identifies which EAS project a build belongs to, nothing
        more, and is already visible in the Expo dashboard's URL for anyone

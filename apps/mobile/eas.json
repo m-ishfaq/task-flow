@@ -13,7 +13,7 @@
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "MOBILE_API_BASE_URL": "SET-MOBILE_API_BASE_URL-BEFORE-BUILDING-PREVIEW"
+        "MOBILE_API_BASE_URL": "http://localhost:3000"
       }
     },
     "production": {

@@ -17,7 +17,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
 import { CardIdSchema, type CardId } from '@taskflow/contracts';
-import { wire } from '@taskflow/client';
+import { parseNullableInstant, wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
@@ -26,7 +26,15 @@ import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { RichTextView } from '../../../src/lib/rich-text-view.js';
 import { flattenText, sanitizeRichText } from '../../../src/lib/rich-text.js';
 import { liveFormatParser, parseFormattedText } from '../../../src/lib/rich-text-compose.js';
+import {
+  activeMentionQuery,
+  insertMention,
+  type PendingMention,
+} from '../../../src/lib/message-compose.js';
 import { Avatar } from '../../../src/lib/avatar.js';
+import { DatePickerField } from '../../../src/lib/date-picker-field.js';
+import { dateToIsoInstant } from '../../../src/lib/date-picker.js';
+import { useCardRoom } from '../../../src/lib/use-board-room.js';
 import { useUpdateCard } from '../../../src/lib/use-update-card.js';
 import { useMembers, type Member } from '../../../src/lib/use-members.js';
 import { pickAttachment } from '../../../src/lib/pick-attachment.js';
@@ -169,10 +177,17 @@ export default function CardDetail() {
 }
 
 function CardDetailContent({ cardId }: { cardId: CardId }) {
+  const orgId = useSession((state) => state.orgId);
   const card = useQuery({
     queryKey: cardQueryKey(cardId),
     queryFn: async () => wire(await apiClient.work.cards.get.query({ cardId })),
   });
+  // `boardId` is only known once `card.data` has loaded — `useCardRoom`
+  // itself does not join until it is. See that hook's own header on why
+  // this is safe now (reference-counted board rooms) where it was not
+  // before: this screen can be open at the same time as `board/[boardId]
+  // .tsx`, unpopped underneath it in the navigator stack.
+  useCardRoom(orgId, card.data?.boardId ?? null, cardId);
 
   const [saveError, setSaveError] = useState<unknown>(null);
   const update = useUpdateCard(cardId, (_title, error) => {
@@ -621,12 +636,14 @@ function ChecklistSection({
 function CommentsSection({ cardId }: { readonly cardId: CardId }) {
   const queryClient = useQueryClient();
   const userId = useSession((state) => state.userId);
-  const { personOf } = useMembers();
+  const { personOf, people } = useMembers();
   const [draft, setDraft] = useState('');
+  const [pendingMentions, setPendingMentions] = useState<readonly PendingMention[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyDraft, setReplyDraft] = useState('');
+  const [replyMentions, setReplyMentions] = useState<readonly PendingMention[]>([]);
 
   const comments = useQuery({
     queryKey: commentsQueryKey(cardId),
@@ -640,16 +657,23 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
     ]);
 
   const post = useMutation({
-    mutationFn: (input: { body: string; parentCommentId: string | null }) =>
+    mutationFn: (input: {
+      body: string;
+      parentCommentId: string | null;
+      mentions: readonly PendingMention[];
+    }) =>
       apiClient.work.comments.create.mutate({
         cardId,
-        body: parseFormattedText(input.body),
+        body: parseFormattedText(input.body, input.mentions),
         parentCommentId: input.parentCommentId,
       }),
     onSuccess: (_result, input) => {
-      if (input.parentCommentId === null) setDraft('');
-      else {
+      if (input.parentCommentId === null) {
+        setDraft('');
+        setPendingMentions([]);
+      } else {
         setReplyDraft('');
+        setReplyMentions([]);
         setReplyingTo(null);
       }
     },
@@ -745,26 +769,27 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
 
           {replyingTo === comment.commentId && (
             <View style={styles.commentReply}>
-              <MarkdownTextInput
-                value={replyDraft}
-                onChangeText={setReplyDraft}
-                placeholder="Write a reply…"
-                placeholderTextColor={colors.inkFaint.hex}
-                style={styles.composerInput}
-                multiline
-                autoFocus
-                parser={liveFormatParser}
-                markdownStyle={{
-                  syntax: { color: colors.inkFaint.hex },
-                  link: { color: colors.accent.hex },
+              <CommentComposer
+                draft={replyDraft}
+                onDraftChange={setReplyDraft}
+                onMentionRecorded={(mention) => {
+                  setReplyMentions((current) => [...current, mention]);
                 }}
+                people={people}
+                viewerId={userId}
+                placeholder="Write a reply…"
+                autoFocus
               />
               <View style={styles.modalActions}>
                 <Pressable
                   style={styles.modalPrimaryButton}
                   disabled={replyDraft.trim().length === 0 || post.isPending}
                   onPress={() => {
-                    post.mutate({ body: replyDraft.trim(), parentCommentId: comment.commentId });
+                    post.mutate({
+                      body: replyDraft.trim(),
+                      parentCommentId: comment.commentId,
+                      mentions: replyMentions,
+                    });
                   }}
                 >
                   <Text style={styles.modalPrimaryButtonText}>Reply</Text>
@@ -786,34 +811,31 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
         <Text style={styles.label}>No comments yet.</Text>
       )}
 
-      <View style={styles.composerRow}>
-        <MarkdownTextInput
-          value={draft}
-          onChangeText={setDraft}
-          placeholder="Add a comment…"
-          placeholderTextColor={colors.inkFaint.hex}
-          style={styles.composerInput}
-          multiline
-          parser={liveFormatParser}
-          markdownStyle={{
-            syntax: { color: colors.inkFaint.hex },
-            link: { color: colors.accent.hex },
-          }}
-        />
-        <Pressable
-          style={styles.sendButton}
-          disabled={draft.trim().length === 0 || post.isPending}
-          onPress={() => {
-            post.mutate({ body: draft.trim(), parentCommentId: null });
-          }}
-        >
-          {post.isPending ? (
-            <ActivityIndicator color={colors.accentInk.hex} />
-          ) : (
-            <Text style={styles.sendButtonText}>Send</Text>
-          )}
-        </Pressable>
-      </View>
+      <CommentComposer
+        draft={draft}
+        onDraftChange={setDraft}
+        onMentionRecorded={(mention) => {
+          setPendingMentions((current) => [...current, mention]);
+        }}
+        people={people}
+        viewerId={userId}
+        placeholder="Add a comment…"
+        trailing={
+          <Pressable
+            style={styles.sendButton}
+            disabled={draft.trim().length === 0 || post.isPending}
+            onPress={() => {
+              post.mutate({ body: draft.trim(), parentCommentId: null, mentions: pendingMentions });
+            }}
+          >
+            {post.isPending ? (
+              <ActivityIndicator color={colors.accentInk.hex} />
+            ) : (
+              <Text style={styles.sendButtonText}>Send</Text>
+            )}
+          </Pressable>
+        }
+      />
       {(post.isError || edit.isError || remove.isError) && (
         <Text style={styles.error} accessibilityRole="alert">
           {apiErrorOf(post.error ?? edit.error ?? remove.error)?.error.message ??
@@ -821,6 +843,125 @@ function CommentsSection({ cardId }: { readonly cardId: CardId }) {
         </Text>
       )}
     </Section>
+  );
+}
+
+/**
+ * `@mention` composing for a card comment — the gap named in `apps/mobile/
+ * README.md`: Chat's own composer (`message-composer.tsx`) has had this
+ * since the rich-text-editor pass; Work's comment composer never did.
+ * Reuses `message-compose.ts`'s cursor logic verbatim (`activeMentionQuery`/
+ * `insertMention` are chat-agnostic pure text/cursor functions, not
+ * duplicated here), but is its OWN small component rather than the shared
+ * `<MessageComposer />` — that component also owns an icon-styled send
+ * button and an optional attach affordance shaped for Chat's one-row
+ * WhatsApp layout, and `CommentsSection` below needs two different button
+ * arrangements the shared component cannot express: the top-level composer
+ * wants a button BESIDE the input, and a reply wants Reply/Cancel BELOW it,
+ * entirely outside this component. `trailing` is that seam — rendered
+ * inside this component's own row when supplied (the top-level composer),
+ * left absent otherwise (a reply, whose Reply/Cancel row is a sibling the
+ * caller renders itself, exactly as it already did before this component
+ * existed).
+ *
+ * `CommentsSection` had this exact input+dropdown logic duplicated once
+ * already (a plain composer for a new top-level comment, a second copy for
+ * whichever reply box is open) with neither getting mentions — extracting
+ * it here means the two call sites share one implementation instead of one
+ * gaining mentions and the other silently not.
+ */
+function CommentComposer({
+  draft,
+  onDraftChange,
+  onMentionRecorded,
+  people,
+  viewerId,
+  placeholder,
+  autoFocus,
+  trailing,
+}: {
+  readonly draft: string;
+  readonly onDraftChange: (text: string) => void;
+  readonly onMentionRecorded: (mention: PendingMention) => void;
+  readonly people: readonly Member[];
+  readonly viewerId: string | null;
+  readonly placeholder: string;
+  readonly autoFocus?: boolean;
+  /** Rendered inside this component's own row, after the input — see this
+   *  component's own header for why only the top-level composer supplies one. */
+  readonly trailing?: ReactNode;
+}) {
+  // `undefined` until the first `onSelectionChange` event, matching
+  // `message-composer.tsx`'s identical reasoning: the very first render
+  // leaves the input's cursor fully native rather than forcing a guess.
+  const [selection, setSelection] = useState<{ start: number; end: number } | undefined>(undefined);
+  const clampedSelection =
+    selection === undefined
+      ? undefined
+      : {
+          start: Math.min(selection.start, draft.length),
+          end: Math.min(selection.end, draft.length),
+        };
+
+  const active = activeMentionQuery(draft, clampedSelection?.end ?? draft.length);
+  const mentionCandidates =
+    active === null
+      ? []
+      : people
+          .filter((member) => member.userId !== viewerId)
+          .filter((member) =>
+            (member.displayName ?? member.email).toLowerCase().includes(active.query.toLowerCase()),
+          )
+          .slice(0, 6);
+
+  const pickMention = (member: Member): void => {
+    if (active === null) return;
+    const label = member.displayName ?? member.email;
+    const result = insertMention(draft, active, { userId: member.userId, label });
+    onDraftChange(result.draft);
+    onMentionRecorded(result.mention);
+    setSelection({ start: result.cursor, end: result.cursor });
+  };
+
+  return (
+    <>
+      {active !== null && mentionCandidates.length > 0 && (
+        <ScrollView style={styles.mentionList} keyboardShouldPersistTaps="handled">
+          {mentionCandidates.map((member) => (
+            <Pressable
+              key={member.userId}
+              style={styles.mentionRow}
+              onPress={() => {
+                pickMention(member);
+              }}
+            >
+              <Text style={styles.mentionRowText}>{member.displayName ?? member.email}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
+      <View style={styles.composerRow}>
+        <MarkdownTextInput
+          value={draft}
+          onChangeText={onDraftChange}
+          onSelectionChange={(event) => {
+            setSelection(event.nativeEvent.selection);
+          }}
+          selection={clampedSelection}
+          placeholder={placeholder}
+          placeholderTextColor={colors.inkFaint.hex}
+          style={styles.composerInput}
+          multiline
+          autoFocus={autoFocus}
+          parser={liveFormatParser}
+          markdownStyle={{
+            syntax: { color: colors.inkFaint.hex },
+            link: { color: colors.accent.hex },
+          }}
+        />
+        {trailing}
+      </View>
+    </>
   );
 }
 
@@ -964,19 +1105,17 @@ function TitleField({
 }
 
 /**
- * A card's own start/due dates — `apps/web`'s `DatesSection`, two
- * `YYYY-MM-DD` text entries rather than web's native `<input type="date">`.
- * The same "typed by hand rather than picked" trade this app already
- * makes for a custom field of type `date` (`FieldInput`'s own header),
- * applied here to the card's own dates for the first time — this app has
- * no date-picker dependency, deliberately, and the alternative to typing
- * one by hand was leaving these two fields uneditable entirely.
+ * A card's own start/due dates — `apps/web`'s `DatesSection`, now a real
+ * native calendar picker (`date-picker-field.tsx`) rather than the
+ * `YYYY-MM-DD` text box this section shipped with — see that component's
+ * own header for the platform split, and `FieldInput` below for the
+ * identical swap on a `date`-type custom field.
  *
  * Rides `cards.update`'s full replace via `useUpdateCard`, exactly like
  * priority — `dueDate`/`startDate` were already carried on `CardPatch`
  * (`card-patch.ts`'s own header: "kept... so a future date-editing screen
  * is 'add a UI control'"), so this is that UI control, not new plumbing.
- * An empty box clears the date (`null`), matching web's identical
+ * Clearing the picker clears the date (`null`), matching web's identical
  * `day === '' ? null : ...` branch.
  */
 function DateSection({
@@ -1009,20 +1148,13 @@ function DateField({
   readonly value: string | null;
   readonly onChange: (iso: string | null) => void;
 }) {
-  const [draft, setDraft] = useState(value?.slice(0, 10) ?? '');
-
   return (
     <View style={styles.dateField}>
       <Text style={styles.dateLabel}>{label}</Text>
-      <TextInput
-        style={styles.addCardInput}
-        value={draft}
-        placeholder="YYYY-MM-DD"
-        placeholderTextColor={colors.inkFaint.hex}
-        onChangeText={setDraft}
-        onEndEditing={() => {
-          const trimmed = draft.trim();
-          onChange(trimmed === '' ? null : new Date(`${trimmed}T00:00:00`).toISOString());
+      <DatePickerField
+        value={parseNullableInstant(value)}
+        onChange={(picked) => {
+          onChange(picked === null ? null : dateToIsoInstant(picked));
         }}
       />
     </View>
@@ -1811,9 +1943,8 @@ function AddFieldForm({ projectId }: { readonly projectId: string }) {
  * implementation, per that file's own field-type list), and this mirrors
  * web's ACTUAL behavior rather than quietly building a nicer one that
  * would leave the two platforms disagreeing on what a `user` field looks
- * like. `date` is a plain `YYYY-MM-DD` text entry rather than a native
- * calendar picker — the same "no date-picker dependency added yet" stance
- * this app already takes for a card's own due/start dates.
+ * like. `date` gets the same native `DatePickerField` `DateSection` above
+ * uses, in place of the `YYYY-MM-DD` text entry this used to be.
  */
 function FieldInput({
   type,
@@ -1888,15 +2019,25 @@ function FieldInput({
     );
   }
 
-  // text, number, date, and user (see this function's own header) all
-  // commit on blur, not on every keystroke — each commit is a mutation
-  // that emits a domain event and an audit entry, so one per character
-  // would make the audit log unreadable.
+  if (type === 'date') {
+    return (
+      <DatePickerField
+        value={typeof value === 'string' ? parseNullableInstant(value) : null}
+        onChange={(picked) => {
+          onCommit(picked === null ? null : dateToIsoInstant(picked));
+        }}
+      />
+    );
+  }
+
+  // text, number, and user (see this function's own header) all commit on
+  // blur, not on every keystroke — each commit is a mutation that emits a
+  // domain event and an audit entry, so one per character would make the
+  // audit log unreadable.
   return (
     <TextInput
       style={styles.addCardInput}
       value={draft}
-      placeholder={type === 'date' ? 'YYYY-MM-DD' : undefined}
       placeholderTextColor={colors.inkFaint.hex}
       keyboardType={type === 'number' ? 'numeric' : 'default'}
       onChangeText={setDraft}
@@ -1913,7 +2054,6 @@ function isChoiceString(value: unknown): value is string {
 
 function textValueOf(type: string, value: unknown): string {
   if (type === 'number') return typeof value === 'number' ? String(value) : '';
-  if (type === 'date') return typeof value === 'string' ? value.slice(0, 10) : '';
   return typeof value === 'string' ? value : '';
 }
 
@@ -1927,11 +2067,6 @@ function commitTextValue(type: string, raw: string, onCommit: (value: unknown) =
     }
     const parsed = Number(trimmed);
     if (Number.isFinite(parsed)) onCommit(parsed);
-    return;
-  }
-
-  if (type === 'date') {
-    onCommit(trimmed === '' ? null : new Date(`${trimmed}T00:00:00`).toISOString());
     return;
   }
 
@@ -2142,9 +2277,9 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   commentBubble: {
-    backgroundColor: colors.surfaceHover.hex,
+    backgroundColor: colors.surfaceHover.hex + '60',
     borderRadius: radiusCard,
-    padding: 10,
+    padding: 12,
   },
   commentMeta: {
     flexDirection: 'row',
@@ -2175,14 +2310,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingRight: 8,
     borderLeftWidth: 2,
-    // Accent, not `line` — a reply's left border was the one visual cue
-    // separating it from a top-level comment, and at 1px in `line`'s low-
-    // contrast gray it read as almost nothing next to several threads of
-    // replies in a row (2026-08-22 device feedback). `surfaceSunken`
-    // below is what actually carries the "tucked inside its parent" read;
-    // the border is now just reinforcement, not the whole signal.
-    borderLeftColor: colors.accent.hex,
-    backgroundColor: colors.surfaceSunken.hex,
+    borderLeftColor: colors.accent.hex + '60',
+    backgroundColor: colors.surfaceSunken.hex + '80',
     borderRadius: radiusCard,
   },
   commentActions: {
@@ -2200,9 +2329,9 @@ const styles = StyleSheet.create({
   editInput: {
     borderWidth: 1,
     borderColor: colors.accent.hex,
-    borderRadius: radiusCard,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderRadius: radiusCard + 2,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontSize: 14,
     color: colors.ink.hex,
     backgroundColor: colors.surfaceSunken.hex,
@@ -2228,6 +2357,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  mentionList: {
+    maxHeight: 180,
+    borderWidth: 1,
+    borderColor: colors.line.hex,
+    borderRadius: radiusCard,
+    backgroundColor: colors.surfaceRaised.hex,
+    marginTop: 4,
+  },
+  mentionRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line.hex,
+  },
+  mentionRowText: {
+    fontSize: 14,
+    color: colors.ink.hex,
+  },
   composerRow: {
     flexDirection: 'row',
     gap: 8,
@@ -2237,8 +2384,8 @@ const styles = StyleSheet.create({
   composerInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: colors.line.hex,
-    borderRadius: radiusCard,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard + 2,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
@@ -2343,14 +2490,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     borderRadius: 999,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
   },
   priorityChipActive: {
-    borderColor: colors.accent.hex,
-    backgroundColor: colors.surfaceHover.hex,
+    borderColor: colors.accent.hex + '60',
+    backgroundColor: colors.accent.hex + '10',
   },
   priorityChipText: {
     fontSize: 13,
@@ -2367,18 +2514,18 @@ const styles = StyleSheet.create({
   // "we cannot distinguish what is what" (2026-08-22 device feedback).
   section: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     backgroundColor: colors.surfaceRaised.hex,
-    padding: 12,
+    padding: 14,
     gap: 8,
   },
   sectionLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: colors.inkMuted.hex,
+    color: colors.inkFaint.hex,
     textTransform: 'uppercase',
-    letterSpacing: 0.4,
+    letterSpacing: 0.5,
   },
   badgeRow: {
     flexDirection: 'row',
@@ -2390,13 +2537,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    borderRadius: 999,
+    borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    backgroundColor: colors.surfaceHover.hex,
+    backgroundColor: colors.surfaceHover.hex + '80',
   },
   badgeOverdue: {
-    backgroundColor: colors.danger.hex + '33',
+    backgroundColor: colors.danger.hex + '20',
+    borderWidth: 1,
+    borderColor: colors.danger.hex + '30',
   },
   swatch: {
     width: 6,
@@ -2404,7 +2553,8 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   badgeText: {
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: '500',
     color: colors.inkMuted.hex,
   },
   badgeOverdueText: {
@@ -2464,7 +2614,7 @@ const styles = StyleSheet.create({
     height: 18,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surfaceSunken.hex,
@@ -2552,7 +2702,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
   },
   addChipButtonText: {
     fontSize: 14,
@@ -2582,7 +2732,7 @@ const styles = StyleSheet.create({
   addCardInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -2622,7 +2772,7 @@ const styles = StyleSheet.create({
   },
   modalInput: {
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -2701,7 +2851,7 @@ const styles = StyleSheet.create({
   addFieldForm: {
     gap: 8,
     borderWidth: 1,
-    borderColor: colors.line.hex,
+    borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     padding: 10,
   },
