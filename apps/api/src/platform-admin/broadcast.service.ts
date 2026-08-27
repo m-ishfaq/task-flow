@@ -1,5 +1,6 @@
 import {
   and,
+  desc,
   eq,
   insertAuditEntry,
   schema,
@@ -326,7 +327,13 @@ export async function getBroadcastHistory(
           eq(schema.operatorBroadcasts.includedInOrgAudit, true),
         ),
       )
-      .orderBy(schema.operatorBroadcasts.createdAt)
+      /* NEWEST first — a history view read with a `limit` wants the most
+         recent sends, not the oldest. The default ascending order combined
+         with `.limit()` returned the FIRST N ever sent and hid recent ones,
+         the exact opposite of what the org index (created_at DESC) is shaped
+         for. `id` (a time-ordered UUIDv7) is a deterministic tiebreaker so
+         two sends in the same instant still order stably. */
+      .orderBy(desc(schema.operatorBroadcasts.createdAt), desc(schema.operatorBroadcasts.id))
       .limit(limit),
   );
 

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose';
 import { secureToken } from './random.js';
 
@@ -36,6 +36,48 @@ export function generatePkcePair(): PkcePair {
   const verifier = secureToken(32);
   const challenge = createHash('sha256').update(verifier).digest('base64url');
   return { verifier, challenge };
+}
+
+/**
+ * Verifies a caller-supplied `verifier` against a previously recorded S256
+ * `challenge` — the same transform `generatePkcePair` applies, checked rather
+ * than generated.
+ *
+ * ## What this is for, and why it is not the PKCE above
+ *
+ * `generatePkcePair`'s pair secures the leg between this SERVER and the
+ * identity provider: the verifier never leaves the server (it rides inside
+ * the signed OAuth state), so it proves nothing about WHICH CLIENT is
+ * redeeming a callback. On the native channel that gap is exploitable
+ * (ai/phase-14-mobile.md §4.4): the redirect lands on a plain custom scheme
+ * (`taskflow://oauth-callback`), which on Android any installed app may also
+ * register an intent filter for, and `auth.native.oauth.callback` is a public
+ * route that mints a full session for whoever presents a valid `(code,
+ * state)`. An interceptor needs no verifier, because the server already holds
+ * it — so RFC 7636's protection, present and correct, cannot defend this leg.
+ *
+ * This is the second, CLIENT-held half that closes it, exactly as RFC 8252
+ * §8.1 prescribes for a native app on a custom scheme: the app generates a
+ * verifier, sends only its S256 challenge to `start` (which the server binds
+ * into the signed state), and must present the plaintext at `callback`. An
+ * intercepted `(code, state)` is then inert — the challenge is readable off
+ * the state's own JWT payload, as it is in the authorization URL, and
+ * inverting SHA-256 is the work it is meant to be.
+ *
+ * Constant-time despite the challenge not being secret: the comparison costs
+ * the same either way, and a future caller passing something that IS secret
+ * should not have to notice this distinction to stay safe. Lengths are
+ * compared first because `timingSafeEqual` throws on a mismatch — the same
+ * guard `blind-index.ts` documents for its own equality check.
+ */
+export function verifyPkceChallenge(verifier: string, challenge: string): boolean {
+  if (verifier.length === 0 || challenge.length === 0) return false;
+
+  const computed = Buffer.from(createHash('sha256').update(verifier).digest('base64url'), 'utf8');
+  const expected = Buffer.from(challenge, 'utf8');
+  if (computed.length !== expected.length) return false;
+
+  return timingSafeEqual(computed, expected);
 }
 
 /* -------------------------------------------------------------------------- *

@@ -5,7 +5,7 @@ import { closeDatabase, initializeDatabase, sql, withGlobalScope } from '@taskfl
 import { up } from '@taskflow/db/migrate';
 import { RecordingEventBus } from '@taskflow/events';
 import { errors, isAppError } from '@taskflow/contracts';
-import { signOAuthState } from '@taskflow/security';
+import { generatePkcePair, signOAuthState } from '@taskflow/security';
 import * as identity from './identity.service.js';
 import * as repo from './repository.js';
 import * as oauth from './oauth.service.js';
@@ -403,18 +403,131 @@ describe('start', () => {
   });
 });
 
+describe('native channel — the client-held PKCE binding (§4.4)', () => {
+  /* The native redirect lands on a plain custom scheme that, on Android, any
+     installed app may also register an intent filter for, and
+     `auth.native.oauth.callback` is public by necessity — there is no session
+     yet. These prove that holding a genuine `(code, state)` is NOT enough. */
+
+  /** Deps whose fetch fails the test if the provider is reached at all. */
+  function unreachableProviderDeps(): OAuthDeps {
+    return {
+      identity: identityDeps(),
+      providers: { google: { clientId: 'google-client', clientSecret: 'google-secret' } },
+      nativeProviders: { google: { clientId: 'google-native-client' } },
+      redirectUri: () => 'taskflow://oauth-callback',
+      fetchImpl: (): Promise<Response> => {
+        throw new Error('the provider must never be reached on a refused binding');
+      },
+      verifyGoogleIdToken: fakeVerifyGoogleIdToken,
+    };
+  }
+
+  it('refuses an intercepted (code, state) presented with NO verifier', async () => {
+    /* The attack in full: another app received the redirect, so it holds
+       everything that crossed the wire. It still cannot redeem it.
+
+       The assertion that matters most is not the refusal — it is that the
+       code was never exchanged. A refusal issued AFTER burning the victim's
+       code would read correctly in a diff and still have sent a token request
+       to the provider on an attacker's behalf; `unreachableProviderDeps`
+       throws if that happens, the same shape `spend-gate.test.ts` uses to
+       prove its own gate runs before the provider is reached. */
+    const { challenge } = generatePkcePair();
+    const state = await signOAuthState(
+      { provider: 'google', codeVerifier: 'v', channel: 'native', clientChallenge: challenge },
+      { secret: JWT_SECRET },
+    );
+
+    expect(
+      await codeOfRejection(
+        oauth.callback(
+          unreachableProviderDeps(),
+          { provider: 'google', code: 'stolen', state },
+          meta,
+        ),
+      ),
+    ).toBe('VALIDATION_FAILED');
+  });
+
+  it('refuses a verifier that does not match the challenge', async () => {
+    const { challenge } = generatePkcePair();
+    const other = generatePkcePair();
+    const state = await signOAuthState(
+      { provider: 'google', codeVerifier: 'v', channel: 'native', clientChallenge: challenge },
+      { secret: JWT_SECRET },
+    );
+
+    expect(
+      await codeOfRejection(
+        oauth.callback(
+          unreachableProviderDeps(),
+          { provider: 'google', code: 'stolen', state, clientVerifier: other.verifier },
+          meta,
+        ),
+      ),
+    ).toBe('VALIDATION_FAILED');
+  });
+
+  it('refuses a NATIVE state carrying no challenge at all — the downgrade path', async () => {
+    /* Without this branch the control is opt-out: strip the claim and the old
+       unbound behaviour comes back. A native state with no binding is refused
+       outright rather than falling through to it. */
+    const state = await signOAuthState(
+      { provider: 'google', codeVerifier: 'v', channel: 'native' },
+      { secret: JWT_SECRET },
+    );
+
+    expect(
+      await codeOfRejection(
+        oauth.callback(unreachableProviderDeps(), { provider: 'google', code: 'c', state }, meta),
+      ),
+    ).toBe('VALIDATION_FAILED');
+  });
+
+  it('refuses to START a native flow with no challenge, so an unbound state cannot be minted', async () => {
+    const deps = googleDeps(
+      { subject: 'unused', email: 'unused@example.test' },
+      { google: { clientId: 'google-native-client' } },
+    );
+
+    expect(
+      await codeOfRejection(oauth.start(deps, { provider: 'google', channel: 'native' })),
+    ).toBe('VALIDATION_FAILED');
+  });
+
+  it('leaves the BROWSER flow unbound — its redirect is an https origin no app can claim', async () => {
+    const deps = googleDeps({
+      subject: 'google-sub-browser-unbound',
+      email: 'oauth-browser-unbound@example.test',
+    });
+    const state = await signOAuthState(
+      { provider: 'google', codeVerifier: 'v' },
+      { secret: JWT_SECRET },
+    );
+
+    const result = await oauth.callback(deps, { provider: 'google', code: 'c', state }, meta);
+    expect(result.kind).toBe('session');
+  });
+});
+
 describe('native channel', () => {
   it('mints a session bound to the native channel, not the browser one', async () => {
     const deps = googleDeps(
       { subject: 'google-sub-native-1', email: 'oauth-native-1@example.test' },
       { google: { clientId: 'google-native-client' } },
     );
+    const { verifier, challenge } = generatePkcePair();
     const state = await signOAuthState(
-      { provider: 'google', codeVerifier: 'v', channel: 'native' },
+      { provider: 'google', codeVerifier: 'v', channel: 'native', clientChallenge: challenge },
       { secret: JWT_SECRET },
     );
 
-    const result = await oauth.callback(deps, { provider: 'google', code: 'c', state }, meta);
+    const result = await oauth.callback(
+      deps,
+      { provider: 'google', code: 'c', state, clientVerifier: verifier },
+      meta,
+    );
     if (result.kind !== 'session') throw new Error('expected a session, got a link result');
 
     // Bound to 'native' (migration 0080): refused on the browser refresh
@@ -467,12 +580,17 @@ describe('native channel', () => {
       fetchImpl,
       verifyGoogleIdToken: fakeVerifyGoogleIdToken,
     };
+    const { verifier, challenge } = generatePkcePair();
     const state = await signOAuthState(
-      { provider: 'google', codeVerifier: 'v', channel: 'native' },
+      { provider: 'google', codeVerifier: 'v', channel: 'native', clientChallenge: challenge },
       { secret: JWT_SECRET },
     );
 
-    const result = await oauth.callback(deps, { provider: 'google', code: 'c', state }, meta);
+    const result = await oauth.callback(
+      deps,
+      { provider: 'google', code: 'c', state, clientVerifier: verifier },
+      meta,
+    );
     expect(result.kind).toBe('session');
     expect(sawSecret).toBe(false);
   });
@@ -495,13 +613,18 @@ describe('native channel', () => {
       { id: 999, email: 'oauth-native-gh@example.test' },
       { github: { clientId: 'github-native-client-no-secret' } },
     );
+    const { verifier, challenge } = generatePkcePair();
     const state = await signOAuthState(
-      { provider: 'github', codeVerifier: 'v', channel: 'native' },
+      { provider: 'github', codeVerifier: 'v', channel: 'native', clientChallenge: challenge },
       { secret: JWT_SECRET },
     );
 
     const errorCode = await codeOfRejection(
-      oauth.callback(deps, { provider: 'github', code: 'c', state }, meta),
+      oauth.callback(
+        deps,
+        { provider: 'github', code: 'c', state, clientVerifier: verifier },
+        meta,
+      ),
     );
     expect(errorCode).toBe('NOT_FOUND');
   });
@@ -515,6 +638,7 @@ describe('native channel', () => {
     const { authorizationUrl } = await oauth.start(deps, {
       provider: 'google',
       channel: 'native',
+      clientChallenge: generatePkcePair().challenge,
     });
     const url = new URL(authorizationUrl);
     expect(url.searchParams.get('client_id')).toBe('google-native-client');
@@ -557,10 +681,12 @@ describe('linking to an existing session', () => {
       { google: { clientId: 'google-native-client' } },
     );
 
+    const { verifier, challenge } = generatePkcePair();
     const { authorizationUrl } = await oauth.start(deps, {
       provider: 'google',
       linkUserId: userId,
       channel: 'native',
+      clientChallenge: challenge,
     });
     const url = new URL(authorizationUrl);
     expect(url.searchParams.get('client_id')).toBe('google-native-client');
@@ -568,7 +694,11 @@ describe('linking to an existing session', () => {
     const state = url.searchParams.get('state');
     if (state === null) throw new Error('expected a state param');
 
-    const result = await oauth.callback(deps, { provider: 'google', code: 'c', state }, meta);
+    const result = await oauth.callback(
+      deps,
+      { provider: 'google', code: 'c', state, clientVerifier: verifier },
+      meta,
+    );
 
     expect(result).toEqual({ kind: 'linked', provider: 'google' });
     expect(await repo.listOAuthIdentities(userId)).toHaveLength(1);

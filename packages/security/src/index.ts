@@ -163,6 +163,7 @@ export {
 /** OAuth sign-in (Phase 12 Wave 2 §3.3). */
 export {
   generatePkcePair,
+  verifyPkceChallenge,
   verifyGoogleIdToken,
   type PkcePair,
   type GoogleIdentity,

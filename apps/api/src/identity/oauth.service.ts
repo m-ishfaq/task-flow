@@ -7,6 +7,7 @@ import {
   signOAuthState,
   verifyGoogleIdToken as verifyGoogleIdTokenReal,
   verifyOAuthState,
+  verifyPkceChallenge,
   type OAuthStateClaims,
 } from '@taskflow/security';
 import type { SessionChannel } from '@taskflow/db';
@@ -137,10 +138,33 @@ export interface StartResult {
 
 export async function start(
   deps: OAuthDeps,
-  input: { provider: OAuthProvider; linkUserId?: string; channel?: SessionChannel },
+  input: {
+    provider: OAuthProvider;
+    linkUserId?: string;
+    channel?: SessionChannel;
+    /**
+     * S256 challenge for a verifier the CLIENT holds — REQUIRED on the native
+     * channel, meaningless on the browser one (ai/phase-14-mobile.md §4.4).
+     * Bound into the signed state here and demanded back at `callback`, which
+     * is what makes an intercepted custom-scheme redirect inert. See
+     * `verifyPkceChallenge`'s header for why RFC 7636's own pair, present and
+     * correct below, cannot cover that leg.
+     */
+    clientChallenge?: string;
+  },
 ): Promise<StartResult> {
   const channel = input.channel ?? 'browser';
   const credentials = credentialsFor(deps, input.provider, channel);
+
+  /* Refused here rather than defaulted: a native flow with no client binding
+     is precisely the shape this control exists to prevent, so it must be
+     impossible to reach by omission — never a silently weaker round trip. */
+  if (channel === 'native' && input.clientChallenge === undefined) {
+    throw errors.validation({
+      clientChallenge: 'Native OAuth requires a client-held PKCE challenge.',
+    });
+  }
+
   const { verifier, challenge } = generatePkcePair();
 
   const state = await signOAuthState(
@@ -149,6 +173,7 @@ export async function start(
       codeVerifier: verifier,
       ...(input.linkUserId === undefined ? {} : { linkUserId: input.linkUserId }),
       ...(channel === 'native' ? { channel } : {}),
+      ...(input.clientChallenge === undefined ? {} : { clientChallenge: input.clientChallenge }),
     },
     { secret: deps.identity.config.jwtSecret },
   );
@@ -201,12 +226,46 @@ export type OAuthCallbackResult =
 
 export async function callback(
   deps: OAuthDeps,
-  input: { provider: OAuthProvider; code: string; state: string },
+  input: {
+    provider: OAuthProvider;
+    code: string;
+    state: string;
+    /** Plaintext of the challenge `start` bound into the state — see below. */
+    clientVerifier?: string;
+  },
   meta: { ip: string | null; userAgent: string | null },
 ): Promise<OAuthCallbackResult> {
   const state = await verifyState(input.state, deps.identity.config.jwtSecret);
   const channel: SessionChannel = state.channel === 'native' ? 'native' : 'browser';
   const credentials = credentialsFor(deps, input.provider, channel);
+
+  /* The client-held binding (ai/phase-14-mobile.md §4.4, RFC 8252 §8.1).
+     Checked BEFORE the code is exchanged, so a caller that cannot prove it
+     started this flow never causes a token request to the provider at all.
+
+     Why this exists: the native redirect lands on a plain custom scheme
+     (`taskflow://oauth-callback`), which on Android any installed app may
+     also claim, and this route is public by necessity — there is no session
+     yet. Without this check, whoever presented a valid `(code, state)` got a
+     full native session, and RFC 7636's own verifier could not stop them
+     because the SERVER holds it (`verifyPkceChallenge`'s own header).
+
+     Both directions are refusals, deliberately: a state carrying a challenge
+     demands a matching verifier, and a NATIVE state carrying none is refused
+     outright rather than falling back to the old unbound behaviour — a
+     downgrade left reachable is the control not existing. Browser states
+     carry no challenge and are unaffected; their redirect is an https origin
+     no other app can claim. */
+  if (state.clientChallenge !== undefined) {
+    if (
+      input.clientVerifier === undefined ||
+      !verifyPkceChallenge(input.clientVerifier, state.clientChallenge)
+    ) {
+      throw errors.validation({ state: 'This sign-in attempt could not be verified.' });
+    }
+  } else if (channel === 'native') {
+    throw errors.validation({ state: 'This sign-in attempt could not be verified.' });
+  }
 
   if (state.provider !== input.provider) {
     // The `state` was minted for a different provider than the callback URL

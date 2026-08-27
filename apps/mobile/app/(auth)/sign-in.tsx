@@ -13,6 +13,7 @@ import {
   parseOAuthRedirect,
   type OAuthProvider,
 } from '../../src/lib/oauth.js';
+import { createPkceChallenge } from '../../src/lib/oauth-pkce.native.js';
 
 /**
  * Password sign-in, with the TOTP second-factor challenge inline, OAuth, and
@@ -112,7 +113,15 @@ export default function SignIn() {
    */
   const oauth = useMutation({
     mutationFn: async (provider: OAuthProvider) => {
-      const { authorizationUrl } = await apiClient.auth.native.oauth.start.mutate({ provider });
+      /* The client-held binding (`oauth.ts`'s own section header): only the
+         challenge crosses to `start`, and `verifier` never leaves this closure
+         until `callback`. An app that intercepted the custom-scheme redirect
+         holds `(code, state)` and still cannot redeem them without it. */
+      const { verifier, challenge } = await createPkceChallenge();
+      const { authorizationUrl } = await apiClient.auth.native.oauth.start.mutate({
+        provider,
+        clientChallenge: challenge,
+      });
       const result = await WebBrowser.openAuthSessionAsync(authorizationUrl, OAUTH_REDIRECT_URL);
       if (result.type !== 'success') return null;
 
@@ -120,7 +129,11 @@ export default function SignIn() {
       if (parsed === null) {
         throw new Error('The sign-in provider did not return a valid response.');
       }
-      return apiClient.auth.native.oauth.callback.mutate({ provider, ...parsed });
+      return apiClient.auth.native.oauth.callback.mutate({
+        provider,
+        ...parsed,
+        clientVerifier: verifier,
+      });
     },
     onSuccess: async (result) => {
       if (result?.kind === 'session') await session.adopt(result);

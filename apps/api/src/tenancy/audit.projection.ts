@@ -400,6 +400,16 @@ export const NEVER_AUDITED: ReadonlySet<string> = new Set([
      whose chain this could belong to instead. The durable record is
      platform.operator_audit_log via recordOperatorAction. */
   'platform.branding_updated',
+  /* Operator broadcasts (migration 0083). Same structural reason as every
+     platform event above — emitted by `taskflow_platform_admin`, which holds
+     no grant on `platform.outbox`, so it never reaches THIS consumer. Unlike
+     most of them it DOES have a target org, and `broadcast.service.ts` writes
+     that org's own audit.audit_log chain directly (its `includeInOrgAudit`
+     flag), exactly as `org-directory.service.ts` does for suspend/reactivate;
+     the global `platform.operator_audit_log` records it unconditionally. So
+     mapping it in RESOURCE_OF would not add a record, it would claim a
+     projection path this event does not travel. */
+  'platform.operator_broadcast_sent',
   /* The plan catalog (Phase 12 Wave 4). Same structural reason as every
      platform event above: they are emitted by `taskflow_platform_admin`,
      which holds no grant on `platform.outbox`, and they run with no org scope

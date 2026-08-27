@@ -87,6 +87,12 @@ beforeEach(async () => {
     );
   }
 
+  /* orgs RLS keys on app.org_id (migration 0004) and the migrator does NOT
+     bypass it, so an org row can only be inserted under a scope naming its own
+     id — the pattern `wave2.sweep.test.ts` already documents and follows.
+     Without this the INSERT is refused and every test in this file fails in
+     setup. */
+  await admin.setOrg(ORG);
   await admin.query(
     `INSERT INTO identity.orgs (id, name, slug, status) VALUES ($1, 'Org Detail Test Org', 'org-detail-test-org', 'active')`,
     [ORG],

@@ -27,12 +27,16 @@ import { callWakeEvent, drainCallWake } from './call-wake.js';
 
 const ALICE = '0195ee05-0000-7000-8000-000000000001';
 const BOB = '0195ee05-0000-7000-8000-000000000002';
+/** The org every `row()` below belongs to — `callWakeEvent` carries it through so
+ *  `drainCallWake` can drop a suspended org's rings (Phase 12 Wave 1 §3.9).
+ *  Named apart from the DB-backed `ORG` further down, which is a different org. */
+const ROW_ORG = '0195ee05-0000-7000-8000-00000000000a';
 
 /** An outbox row shaped like the relay produces, with an overridable payload — mirrors `notification.projection.test.ts`'s own `row()`. */
 function row(name: string, payload: unknown): OutboxRow {
   return {
     id: '0195ee05-0000-7000-8000-0000000000ff',
-    orgId: '0195ee05-0000-7000-8000-00000000000a',
+    orgId: ROW_ORG,
     name,
     version: 1,
     actorId: ALICE,
@@ -58,10 +62,20 @@ describe('callWakeEvent', () => {
 
     expect(event).toEqual({
       sessionId: '0195ee05-0000-7000-8000-000000000030',
+      orgId: ROW_ORG,
       channelId: '0195ee05-0000-7000-8000-000000000020',
       callerId: ALICE,
       invitedUserIds: [ALICE, BOB],
     });
+  });
+
+  it('carries the row orgId through — the suspension filter in drainCallWake keys on it', () => {
+    /* §3.9: a ring for a suspended org must not leave the system. `drainCallWake`
+       filters on this field, so losing it here would silently disable that. */
+    const event = callWakeEvent(
+      row('rtc_session.started', { sessionId: 's', channelId: 'x', invitedUserIds: [BOB] }),
+    );
+    expect(event?.orgId).toBe(ROW_ORG);
   });
 
   it('reads callerId off row.actorId, not the payload — the row has no such field', () => {
@@ -104,6 +118,7 @@ describe('callWakeEvent', () => {
   it('defaults invitedUserIds to empty when absent or malformed, rather than throwing', () => {
     expect(callWakeEvent(row('rtc_session.started', { sessionId: 's', channelId: 'x' }))).toEqual({
       sessionId: 's',
+      orgId: ROW_ORG,
       channelId: 'x',
       callerId: ALICE,
       invitedUserIds: [],
@@ -117,7 +132,13 @@ describe('callWakeEvent', () => {
           invitedUserIds: 'not-an-array',
         }),
       ),
-    ).toEqual({ sessionId: 's', channelId: 'x', callerId: ALICE, invitedUserIds: [] });
+    ).toEqual({
+      sessionId: 's',
+      orgId: ROW_ORG,
+      channelId: 'x',
+      callerId: ALICE,
+      invitedUserIds: [],
+    });
   });
 
   it('filters non-string entries out of invitedUserIds rather than rejecting the whole row', () => {
@@ -129,7 +150,13 @@ describe('callWakeEvent', () => {
           invitedUserIds: [ALICE, 42, null, BOB],
         }),
       ),
-    ).toEqual({ sessionId: 's', channelId: 'x', callerId: ALICE, invitedUserIds: [ALICE, BOB] });
+    ).toEqual({
+      sessionId: 's',
+      orgId: ROW_ORG,
+      channelId: 'x',
+      callerId: ALICE,
+      invitedUserIds: [ALICE, BOB],
+    });
   });
 });
 
@@ -225,6 +252,12 @@ describe('drainCallWake — operational_events', () => {
         [id, email],
       );
     }
+    /* orgs RLS keys on app.org_id (migration 0004) and the migrator does NOT
+       bypass it, so an org row can only be inserted under a scope naming its own
+       id — the pattern `wave2.sweep.test.ts` already documents and follows.
+       Without this the INSERT is refused and every test in this file fails in
+       setup. */
+    await admin.setOrg(ORG);
     await admin.query(
       `INSERT INTO identity.orgs (id, name, slug, status) VALUES ($1, 'Call Wake Test Org', 'call-wake-test-org', 'active')`,
       [ORG],

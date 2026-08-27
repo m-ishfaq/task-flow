@@ -127,6 +127,29 @@ describe('enforcement', () => {
     expect(await login('someone-else@example.test')).toBe(401);
   });
 
+  it('throttles the NATIVE login path per account, exactly as the browser one', async () => {
+    /* Regression guard for the gap where `auth.native.login` was a distinct
+       tRPC path with no OPERATION_RULES entry, so it fell through to the
+       300/min volumetric tier and skipped the per-account 5/15min budget its
+       browser twin has (ai/phase-14-mobile.md §4.3). Same 401-then-429 shape,
+       a different path — the point being that the native surface is covered. */
+    const email = 'native-throttle-me@example.test';
+
+    async function nativeLogin(): Promise<number> {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/trpc/auth.native.login',
+        payload: { email, password: 'whatever it does not matter' },
+      });
+      return response.statusCode;
+    }
+
+    for (let i = 0; i < 5; i += 1) {
+      expect(await nativeLogin(), `attempt ${String(i + 1)}`).toBe(401);
+    }
+    expect(await nativeLogin()).toBe(429);
+  });
+
   it('answers a /trpc route in the envelope a tRPC client can read', async () => {
     /**
      * This hook runs before tRPC, so it has to emit the shape belonging to the

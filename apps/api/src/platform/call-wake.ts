@@ -1,5 +1,7 @@
 import {
+  and,
   claimPending,
+  eq,
   inArray,
   markDispatched,
   recordOperationalEvent,
@@ -112,6 +114,8 @@ export const CALL_WAKE_CONSUMER = 'rtc-call-wake';
 
 interface CallWakeEvent {
   readonly sessionId: string;
+  /** The org the call belongs to — the suspension filter in `drainCallWake` keys on it. */
+  readonly orgId: string;
   readonly channelId: string;
   readonly callerId: string | null;
   readonly invitedUserIds: readonly string[];
@@ -135,7 +139,7 @@ export function callWakeEvent(row: OutboxRow): CallWakeEvent | null {
     ? fields.invitedUserIds.filter((id): id is string => typeof id === 'string')
     : [];
 
-  return { sessionId, channelId, callerId: row.actorId, invitedUserIds };
+  return { sessionId, orgId: row.orgId, channelId, callerId: row.actorId, invitedUserIds };
 }
 
 export interface CallWakeDrainResult {
@@ -192,9 +196,40 @@ export async function drainCallWake(
     const pending = await claimPending(tx, CALL_WAKE_CONSUMER, limit);
     if (pending.length === 0) return { processed: 0, attempted: 0, sent: 0 };
 
-    const calls = pending
+    const parsed = pending
       .map((row) => callWakeEvent(row))
       .filter((event): event is CallWakeEvent => event !== null && event.invitedUserIds.length > 0);
+
+    /* Phase 12 Wave 1 §3.9 — the same suspension filter `notification-push.ts`
+       applies to its own drain, which this consumer does NOT inherit because it
+       deliberately bypasses the notification projection (this file's own header).
+       Without it, a call already sitting in the outbox when an operator suspends
+       the org still rings every invitee's phone, and a backlog accumulated while
+       the relay was stalled (exactly the failure migration 0089 fixed) rings the
+       whole lot on the next tick — the operator kill switch not reaching the one
+       notification path that bypassed the pipeline enforcing it.
+
+       Unlike its sibling, a suspended org's events are DROPPED rather than left
+       pending to resume on reactivation: `markDispatched` below still covers
+       every claimed row. That is this file's own best-effort rule, not an
+       oversight — a ring is not a fact that stays true later, so replaying it
+       when the org comes back would ring phones about calls long over, the same
+       reasoning 0089's backfill applies to its own backlog.
+
+       Runs as taskflow_audit against the column-limited (id, status) orgs read
+       migration 0037 grants — `id` is the only column projected. */
+    const orgIds = [...new Set(parsed.map((call) => call.orgId))];
+    const activeOrgIds = new Set(
+      orgIds.length === 0
+        ? []
+        : (
+            await tx
+              .select({ id: schema.orgs.id })
+              .from(schema.orgs)
+              .where(and(inArray(schema.orgs.id, orgIds), eq(schema.orgs.status, 'active')))
+          ).map((row) => row.id),
+    );
+    const calls = parsed.filter((call) => activeOrgIds.has(call.orgId));
 
     let attempted = 0;
     let sent = 0;
