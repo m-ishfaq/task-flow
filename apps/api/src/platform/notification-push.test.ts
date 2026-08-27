@@ -86,16 +86,31 @@ beforeEach(async () => {
   await admin.setOrg(null);
 
   /* Children before parents, and `operational_events` scoped to OUR
-     delivery ids only — see this file's own header. */
+     delivery ids only — see this file's own header.
+
+     Every DELETE runs under the scope its table's RLS keys on, for exactly
+     the reason the INSERTs below do: the migrator does not bypass RLS, so a
+     delete issued under the wrong scope matches ZERO rows and removes
+     nothing — silently, with no error to notice. That is what left the org
+     row behind between tests and collided the next insert on `orgs_pkey`. */
   await admin.query(`DELETE FROM platform.operational_events WHERE target = ANY($1)`, [
     [SENT_DELIVERY, REJECTED_DELIVERY],
   ]);
+
+  await admin.setOrg(ORG);
   await admin.query(`DELETE FROM platform.notification_deliveries WHERE org_id = $1`, [ORG]);
   await admin.query(`DELETE FROM platform.notifications WHERE org_id = $1`, [ORG]);
-  await admin.query(`DELETE FROM platform.push_subscriptions WHERE user_id = ANY($1)`, [
-    [SENT_USER, REJECTED_USER],
-  ]);
+
+  /* Self-scoped on app.user_id (migration 0029), so one scope per owner. */
+  for (const userId of [SENT_USER, REJECTED_USER]) {
+    await admin.setUser(userId);
+    await admin.query(`DELETE FROM platform.push_subscriptions WHERE user_id = $1`, [userId]);
+  }
+
+  await admin.setOrg(ORG);
   await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [ORG]);
+
+  await admin.setOrg(null);
   await admin.query(`DELETE FROM identity.users WHERE id = ANY($1)`, [[SENT_USER, REJECTED_USER]]);
 
   for (const [id, email] of [
@@ -118,13 +133,23 @@ beforeEach(async () => {
     `INSERT INTO identity.orgs (id, name, slug, status) VALUES ($1, 'Push Drain Test Org', 'push-drain-test-org', 'active')`,
     [ORG],
   );
-  await admin.query(
-    `INSERT INTO platform.push_subscriptions (id, user_id, endpoint, p256dh, auth)
-     VALUES
-       (gen_random_uuid(), $1, $3, 'p256dh-key', 'auth-secret'),
-       (gen_random_uuid(), $2, $4, 'p256dh-key', 'auth-secret')`,
-    [SENT_USER, REJECTED_USER, SENT_ENDPOINT, REJECTED_ENDPOINT],
-  );
+  /* One statement per owner: push_subscriptions' RLS gates INSERT on
+     `user_id = app.user_id` (0029), which a single two-row VALUES list can
+     never satisfy for two different users. */
+  for (const [userId, endpoint] of [
+    [SENT_USER, SENT_ENDPOINT],
+    [REJECTED_USER, REJECTED_ENDPOINT],
+  ] as const) {
+    await admin.setUser(userId);
+    await admin.query(
+      `INSERT INTO platform.push_subscriptions (id, user_id, endpoint, p256dh, auth)
+       VALUES (gen_random_uuid(), $1, $2, 'p256dh-key', 'auth-secret')`,
+      [userId, endpoint],
+    );
+  }
+
+  /* Back to the org scope for the notification/delivery rows below. */
+  await admin.setOrg(ORG);
 
   /* subject_type 'membership' resolves to a real, non-null path (/settings)
      with no channel_id/board_id required — the shortest route to a row

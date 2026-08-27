@@ -229,14 +229,29 @@ describe('drainCallWake — operational_events', () => {
     await admin.query(`DELETE FROM platform.outbox_dispatch WHERE consumer = $1`, [
       'rtc-call-wake',
     ]);
+    /* Each DELETE runs under the scope its table's RLS keys on — the migrator
+       does not bypass RLS, so one issued under the wrong scope matches ZERO
+       rows and removes nothing, silently. That is what left the org row in
+       place between tests and collided the next insert on `orgs_pkey`. */
+    await admin.setOrg(ORG);
     await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [ORG]);
-    await admin.query(`DELETE FROM platform.expo_push_tokens WHERE user_id = ANY($1)`, [
-      [SENT_USER, REJECTED_USER, NO_DEVICE_USER],
-    ]);
+
+    /* Self-scoped on app.user_id (migration 0082) — one scope per owner. */
+    for (const userId of [SENT_USER, REJECTED_USER, NO_DEVICE_USER]) {
+      await admin.setUser(userId);
+      await admin.query(`DELETE FROM platform.expo_push_tokens WHERE user_id = $1`, [userId]);
+    }
+
+    /* people.profiles has no RLS at all (migration 0030 §2). */
+    await admin.setOrg(null);
     await admin.query(`DELETE FROM people.profiles WHERE user_id = ANY($1)`, [
       [SENT_USER, REJECTED_USER, NO_DEVICE_USER],
     ]);
+
+    await admin.setOrg(ORG);
     await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [ORG]);
+
+    await admin.setOrg(null);
     await admin.query(`DELETE FROM identity.users WHERE id = ANY($1)`, [
       [SENT_USER, REJECTED_USER, NO_DEVICE_USER],
     ]);
@@ -262,13 +277,26 @@ describe('drainCallWake — operational_events', () => {
       `INSERT INTO identity.orgs (id, name, slug, status) VALUES ($1, 'Call Wake Test Org', 'call-wake-test-org', 'active')`,
       [ORG],
     );
-    await admin.query(
-      `INSERT INTO platform.expo_push_tokens (id, user_id, expo_push_token)
-       VALUES
-         (gen_random_uuid(), $1, $3),
-         (gen_random_uuid(), $2, $4)`,
-      [SENT_USER, REJECTED_USER, SENT_TOKEN, REJECTED_TOKEN],
-    );
+    /* One statement per owner: expo_push_tokens' RLS gates INSERT on
+       `user_id = app.user_id` (0082), which a single two-row VALUES list can
+       never satisfy for two different users. NO_DEVICE_USER deliberately gets
+       none — that is this suite's negative case. */
+    for (const [userId, token] of [
+      [SENT_USER, SENT_TOKEN],
+      [REJECTED_USER, REJECTED_TOKEN],
+    ] as const) {
+      await admin.setUser(userId);
+      await admin.query(
+        `INSERT INTO platform.expo_push_tokens (id, user_id, expo_push_token)
+         VALUES (gen_random_uuid(), $1, $2)`,
+        [userId, token],
+      );
+    }
+
+    /* Leave the connection in the ORG scope: `seedRingingCallEvent` writes an
+       org-scoped `platform.outbox` row from inside each test and inherits
+       whatever scope this hook ends on. */
+    await admin.setOrg(ORG);
   });
 
   afterEach(() => {

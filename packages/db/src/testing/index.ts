@@ -69,8 +69,22 @@ export interface AdminConnection {
     text: string,
     values?: readonly unknown[],
   ): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }>;
-  /** Sets `app.org_id` for subsequent statements. Pass null to clear it. */
+  /** Sets `app.org_id` for subsequent statements (clearing `app.user_id`). Pass null to clear it. */
   setOrg(orgId: string | null): Promise<void>;
+  /**
+   * Sets `app.user_id` for subsequent statements, clearing `app.org_id` —
+   * the mirror of `setOrg`, and the same shape `withUserScope` has in
+   * production (each sets both variables, one of them empty, so neither can
+   * be inherited across a pooled connection).
+   *
+   * Required to seed the SELF-scoped tables: `platform.push_subscriptions`
+   * (0029) and `platform.expo_push_tokens` (0082) gate INSERT on
+   * `user_id = current_setting('app.user_id')`, and the migrator does not
+   * bypass RLS. Without this there is no way to write those rows at all from
+   * a test — `setOrg` actively clears `app.user_id`, so seeding a device row
+   * was impossible rather than merely awkward.
+   */
+  setUser(userId: string | null): Promise<void>;
   end(): Promise<void>;
 }
 
@@ -92,6 +106,10 @@ export async function connectAsMigrator(options: AdminOptions = {}): Promise<Adm
     setOrg: async (orgId) => {
       await client.query(`SELECT set_config('app.org_id', $1, false)`, [orgId ?? '']);
       await client.query(`SELECT set_config('app.user_id', '', false)`);
+    },
+    setUser: async (userId) => {
+      await client.query(`SELECT set_config('app.user_id', $1, false)`, [userId ?? '']);
+      await client.query(`SELECT set_config('app.org_id', '', false)`);
     },
     end: () => client.end(),
   };
