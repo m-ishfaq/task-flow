@@ -23,6 +23,7 @@ COPY apps/api/package.json apps/api/package.json
 COPY apps/realtime/package.json apps/realtime/package.json
 COPY apps/collab/package.json apps/collab/package.json
 COPY apps/web/package.json apps/web/package.json
+COPY packages/client/package.json packages/client/package.json
 COPY packages/config/package.json packages/config/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/db/package.json packages/db/package.json
@@ -38,6 +39,7 @@ COPY packages/security/package.json packages/security/package.json
 COPY packages/seed/package.json packages/seed/package.json
 COPY packages/storage/package.json packages/storage/package.json
 COPY packages/telephony/package.json packages/telephony/package.json
+COPY packages/tokens/package.json packages/tokens/package.json
 COPY packages/ui/package.json packages/ui/package.json
 
 # pnpm.patchedDependencies (package.json) names patch files by path, and
