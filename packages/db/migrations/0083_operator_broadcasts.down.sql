@@ -20,10 +20,25 @@ REVOKE SELECT, INSERT ON platform.notifications FROM taskflow_platform_admin;
 -- this reachable at all, where every earlier run of this migration's own
 -- verify step had nothing in the table to violate it with.
 --
+-- platform.notifications is FORCE ROW LEVEL SECURITY (0022), which — per
+-- 0015's own note on this identical point — applies row security to the
+-- table OWNER too. taskflow_migrator owns it and is NOBYPASSRLS, and the
+-- only policy that applies to it here, notifications_tenant_isolation, is
+-- scoped by app.org_id — unset during a migration. Left as FORCE, this
+-- DELETE would silently match zero rows against a database that genuinely
+-- has operator_broadcast rows across several orgs — not an error, just
+-- quietly wrong, which is worse, and exactly what let this ship once
+-- already. Lifted for this one statement and restored immediately after,
+-- mirroring 0015's own bracketing on platform.outbox.
+--
 -- notification_deliveries needs no matching DELETE: its
 -- notification_id ... REFERENCES platform.notifications (id) ON DELETE
 -- CASCADE (0027) removes the matching delivery rows for free.
+ALTER TABLE platform.notifications NO FORCE ROW LEVEL SECURITY;
+
 DELETE FROM platform.notifications WHERE kind = 'operator_broadcast';
+
+ALTER TABLE platform.notifications FORCE ROW LEVEL SECURITY;
 
 ALTER TABLE platform.notifications
   DROP CONSTRAINT notifications_subject_type_valid;
