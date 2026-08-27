@@ -87,14 +87,37 @@ beforeEach(async () => {
   await admin.setOrg(null);
 
   /* Children before parents — this suite's own previous run, or a
-     neighbour's, may leave rows referencing these ids. */
-  await admin.query(`DELETE FROM platform.notification_deliveries WHERE org_id = $1`, [ORG]);
-  await admin.query(`DELETE FROM platform.notifications WHERE org_id = $1`, [ORG]);
-  await admin.query(`DELETE FROM platform.operator_broadcasts WHERE org_id = $1`, [ORG]);
+     neighbour's, may leave rows referencing these ids.
+
+     Each DELETE runs under the scope its table's RLS keys on: the migrator
+     does not bypass RLS, so one issued under the wrong scope matches ZERO
+     rows and removes nothing, silently. Under `setOrg(null)` the org delete
+     removed nothing, so the next insert collided on `orgs_pkey` — the
+     signature being that only the FIRST test in this file passed.
+
+     Dropping the org is also what clears the three tables this connection
+     could never delete from directly. `platform.notifications` (0022),
+     `platform.notification_deliveries` (0027) and
+     `platform.operator_broadcasts` (0083) all declare
+     `org_id ... REFERENCES identity.orgs (id) ON DELETE CASCADE`, and
+     Postgres performs a referential CASCADE as the system rather than as the
+     current role — so it is not filtered by RLS the way a direct DELETE is.
+     That matters most for `operator_broadcasts`, which is operator-only by
+     design: 0083 gives it exactly one policy (`TO taskflow_platform_admin`)
+     and grants that role only SELECT and INSERT, so NEITHER this connection
+     nor the operator role can delete a row from it. Letting the cascade do it
+     keeps that table's teardown working without granting anyone a DELETE it
+     should not have, and without a blanket TRUNCATE — which this repo already
+     rejects for shared tables, since it would take fixtures belonging to
+     suites this file knows nothing about (CLAUDE.md, Phase 4). */
   await admin.query(`DELETE FROM platform.operator_audit_log WHERE operator_id = $1`, [OPERATOR]);
+
+  await admin.setOrg(ORG);
   await admin.query(`DELETE FROM audit.audit_log WHERE org_id = $1`, [ORG]);
   await admin.query(`DELETE FROM identity.memberships WHERE org_id = $1`, [ORG]);
   await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [ORG]);
+
+  await admin.setOrg(null);
   await admin.query(`DELETE FROM identity.users WHERE id = ANY($1)`, [
     [OPERATOR, OWNER, MEMBER, SUSPENDED_MEMBER, OUTSIDER],
   ]);

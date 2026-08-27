@@ -60,16 +60,26 @@ beforeEach(async () => {
   await admin.setOrg(null);
 
   /* Children before parents — this suite's own previous run, or a
-     neighbour's, may leave rows referencing these ids. */
-  await admin.query(`DELETE FROM platform.push_subscriptions WHERE user_id = ANY($1)`, [
-    [WEB_MEMBER, EXPO_MEMBER, NO_DEVICE_MEMBER],
-  ]);
-  await admin.query(`DELETE FROM platform.expo_push_tokens WHERE user_id = ANY($1)`, [
-    [WEB_MEMBER, EXPO_MEMBER, NO_DEVICE_MEMBER],
-  ]);
+     neighbour's, may leave rows referencing these ids.
+
+     Each DELETE runs under the scope its table's RLS keys on. The migrator
+     does not bypass RLS, so a delete under the wrong scope matches ZERO rows
+     and removes nothing, silently — which is what left the org behind and
+     collided the next insert on `orgs_pkey`. */
+  for (const userId of [WEB_MEMBER, EXPO_MEMBER, NO_DEVICE_MEMBER]) {
+    await admin.setUser(userId);
+    await admin.query(`DELETE FROM platform.push_subscriptions WHERE user_id = $1`, [userId]);
+    await admin.query(`DELETE FROM platform.expo_push_tokens WHERE user_id = $1`, [userId]);
+  }
+
+  await admin.setOrg(null);
   await admin.query(`DELETE FROM platform.operator_audit_log WHERE operator_id = $1`, [OPERATOR]);
+
+  await admin.setOrg(ORG);
   await admin.query(`DELETE FROM identity.memberships WHERE org_id = $1`, [ORG]);
   await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [ORG]);
+
+  await admin.setOrg(null);
   await admin.query(`DELETE FROM identity.users WHERE id = ANY($1)`, [
     [OPERATOR, WEB_MEMBER, EXPO_MEMBER, NO_DEVICE_MEMBER],
   ]);
@@ -110,11 +120,15 @@ beforeEach(async () => {
     );
   }
 
+  /* Both tables are self-scoped on app.user_id (0029, 0082), so each row is
+     written under its own owner's scope — the migrator does not bypass it. */
+  await admin.setUser(WEB_MEMBER);
   await admin.query(
     `INSERT INTO platform.push_subscriptions (id, user_id, endpoint, p256dh, auth)
      VALUES (gen_random_uuid(), $1, 'https://push.example/endpoint', 'p256dh-key', 'auth-secret')`,
     [WEB_MEMBER],
   );
+  await admin.setUser(EXPO_MEMBER);
   await admin.query(
     `INSERT INTO platform.expo_push_tokens (id, user_id, expo_push_token)
      VALUES (gen_random_uuid(), $1, 'ExponentPushToken[test-token]')`,
