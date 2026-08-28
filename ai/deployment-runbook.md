@@ -230,16 +230,24 @@ the `web` service: a managed load balancer, or another reverse proxy doing ACME
 - Put TLS in front of MinIO's port 9000 too (or point `STORAGE_ENDPOINT` at a
   real S3/R2 endpoint) before real users upload anything — an attachment upload
   over plain HTTP is not something to ship.
-- Set `WEB_HOST_BIND=127.0.0.1` in `.env.prod` before starting the reverse
-  proxy. `web`'s own port mapping defaults to every interface (`0.0.0.0`) so
-  the runbook's plain-HTTP first-deploy smoke test works with nothing else
-  running — but that means it is still holding host `:80` when a
-  freshly-installed Caddy/nginx tries to bind the same port for ACME, and one
-  of the two fails with "address already in use" depending on start order.
-  Binding `web` to loopback only frees the public port for the proxy while
-  keeping `web` reachable through it (`reverse_proxy localhost:80` in a
-  Caddyfile still resolves). `docker compose up -d --force-recreate web`
-  applies the change to an already-running stack.
+- Set **both** `WEB_HOST_BIND=127.0.0.1` **and** `WEB_HOST_PORT` to something
+  other than `80` (e.g. `8080`, matching the container's own internal port)
+  in `.env.prod` before starting the reverse proxy. `web`'s own port mapping
+  defaults to every interface on port 80 (`0.0.0.0:80`) so the runbook's
+  plain-HTTP first-deploy smoke test works with nothing else running — but
+  once Caddy/nginx is doing ACME, it binds `*:80` (every interface, for the
+  HTTP→HTTPS redirect and the ACME challenge), and a wildcard bind on a port
+  already covers `127.0.0.1` on that same port. **Binding `web` to loopback
+  alone is not enough — it is still asking for port 80, which the proxy's
+  own wildcard bind already owns, and the container fails to start with
+  `address already in use`.** This was written down wrong here for a while
+  and only caught by a real deploy: `WEB_HOST_PORT` has to move off 80 too,
+  and the Caddyfile's `reverse_proxy` target must point at that SAME port
+  (`reverse_proxy localhost:8080`, not `reverse_proxy localhost:80` — the
+  latter can never resolve once Caddy itself holds port 80).
+  `docker compose up -d --force-recreate web` applies the change to an
+  already-running stack, after reloading Caddy with the matching Caddyfile
+  change.
 
 ## Log visibility (Dozzle)
 
@@ -263,7 +271,7 @@ Caddyfile addition (adjust the domain to match `web`'s existing block):
 
 ```
 taskflow-demo.duckdns.org {
-	# ... existing reverse_proxy for / -> localhost:80 (web) stays as-is ...
+	# ... existing reverse_proxy for / -> localhost:8080 (web, per WEB_HOST_PORT above) stays as-is ...
 
 	handle /logs* {
 		basicauth {

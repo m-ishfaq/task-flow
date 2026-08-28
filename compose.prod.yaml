@@ -632,15 +632,21 @@ services:
       # balancer, or another reverse proxy doing ACME) — see this file's own
       # header and ai/deployment-runbook.md.
       #
-      # WEB_HOST_BIND defaults to every interface, matching the runbook's
-      # documented first-deploy flow (curl the bare host on :80 before TLS
-      # exists at all). Once a reverse proxy owns the public :80/:443 — Caddy,
-      # another nginx doing ACME — set WEB_HOST_BIND=127.0.0.1 so this
-      # container stops competing for the same host port and is reachable
-      # only through the proxy. Found live: a fresh `apt install caddy` and
-      # this container both trying to bind host :80 fails with "address
-      # already in use", and the loser depends on start order rather than on
-      # either config being wrong.
+      # WEB_HOST_BIND/WEB_HOST_PORT default to every interface on port 80,
+      # matching the runbook's documented first-deploy flow (curl the bare
+      # host on :80 before TLS exists at all). Once a reverse proxy owns the
+      # public :80/:443 — Caddy, another nginx doing ACME — BOTH must change:
+      # WEB_HOST_BIND=127.0.0.1 *and* WEB_HOST_PORT to something other than
+      # 80 (e.g. 8080). Binding to loopback alone is not enough and is not a
+      # race condition either, despite reading like one: Caddy's own ACME
+      # setup binds *:80 (every interface — including 127.0.0.1), a wildcard
+      # that already covers whatever WEB_HOST_BIND says, so this container
+      # deterministically fails with "address already in use" every time,
+      # regardless of start order, for as long as it also asks for port 80.
+      # Found live, on a real deploy, after `ai/deployment-runbook.md`'s own
+      # TLS section said the opposite for a while — the Caddyfile's
+      # `reverse_proxy` target must point at the SAME non-80 port this line
+      # ends up bound to.
       - '${WEB_HOST_BIND:-0.0.0.0}:${WEB_HOST_PORT:-80}:8080'
     depends_on:
       - api
