@@ -55,38 +55,12 @@ fi
 COMPOSE=(docker compose --env-file .env.prod -f compose.prod.yaml)
 
 echo "== [1/7] gate: full .env.prod audit =="
+# check-env-prod.sh also warns here if WEB_ORIGIN is https:// while
+# WEB_HOST_BIND is still 0.0.0.0 — the web container silently staying
+# reachable over plain HTTP alongside a TLS-terminating reverse proxy. That
+# check lives there, not here, so it fires whether this script or
+# check-env-prod.sh is run directly.
 "$(dirname "$0")/check-env-prod.sh" compose.prod.yaml .env.prod
-
-# -----------------------------------------------------------------------------
-# check-env-prod.sh audits each variable independently; this is a RELATIONSHIP
-# between two of them that no per-variable scan catches. Added alongside
-# PR #108's fix, which found a real deploy's WEB_HOST_BIND=127.0.0.1 colliding
-# with a reverse proxy's own wildcard :80 bind — that failure is LOUD and
-# blocks the deploy outright. This check is for the opposite, quieter mistake
-# it surfaced by contrast: WEB_ORIGIN=https://... (TLS expected, via a proxy —
-# see ai/deployment-runbook.md's TLS section) while WEB_HOST_BIND is left at
-# its 0.0.0.0 default. Nothing about that fails, or even shows up in
-# `docker compose ps` — the `web` container just stays directly reachable
-# over plain HTTP on every interface, right alongside the encrypted origin.
-# A warning, not an exit, for the same reason the log-viewer check below is a
-# warning: this script cannot know whether that is deliberate (a migration
-# window, a health-check LB that only speaks HTTP) — but silence here would
-# be the same class of gap PR #108 found, left unchecked in the other
-# direction.
-# -----------------------------------------------------------------------------
-WEB_ORIGIN_VAL=$(grep -E '^WEB_ORIGIN=' .env.prod | tail -1 | sed -E 's/^WEB_ORIGIN=//' | tr -d "\"'")
-WEB_HOST_BIND_VAL=$(grep -E '^WEB_HOST_BIND=' .env.prod | tail -1 | sed -E 's/^WEB_HOST_BIND=//' | tr -d "\"'" || true)
-if [[ "$WEB_ORIGIN_VAL" == https://* ]] && [ "${WEB_HOST_BIND_VAL:-0.0.0.0}" = "0.0.0.0" ]; then
-  echo "" >&2
-  echo "WARNING: WEB_ORIGIN is $WEB_ORIGIN_VAL (TLS expected) but WEB_HOST_BIND" >&2
-  echo "is still 0.0.0.0 (or unset) in .env.prod — the web container stays" >&2
-  echo "directly reachable over plain HTTP on every interface, bypassing" >&2
-  echo "whatever reverse proxy is terminating TLS. Set WEB_HOST_BIND=127.0.0.1" >&2
-  echo "(and WEB_HOST_PORT to something other than 80 if the proxy also binds" >&2
-  echo "host :80 — see ai/deployment-runbook.md's TLS section) before treating" >&2
-  echo "this deploy as secure." >&2
-  echo "" >&2
-fi
 
 echo "== [2/7] gate: compose config resolves (belt-and-suspenders on the check above) =="
 "${COMPOSE[@]}" config --quiet

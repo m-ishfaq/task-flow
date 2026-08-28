@@ -148,6 +148,36 @@ for var in "${DEFAULTED_VARS[@]}"; do
   fi
 done
 
+# -----------------------------------------------------------------------------
+# Everything above audits ONE variable at a time. This is a RELATIONSHIP
+# between two of them that no per-variable classification can express.
+# Added alongside a real deploy that had WEB_HOST_BIND colliding with a
+# reverse proxy's own wildcard :80 bind (fixed in PR #108) — that failure is
+# loud and blocks the deploy outright. This checks for the opposite, quieter
+# mistake it surfaced by contrast: WEB_ORIGIN=https://... (TLS expected, via
+# a proxy — see ai/deployment-runbook.md's TLS section) while WEB_HOST_BIND
+# is left at its 0.0.0.0 default. Nothing about that fails, or even shows up
+# in `docker compose ps` — the web container just stays directly reachable
+# over plain HTTP on every interface, right alongside the encrypted origin.
+# A warning, never counted toward `failed`, for the same reason nothing else
+# here is a hard requirement without a `:?` behind it: this script cannot
+# know whether that is deliberate (a migration window, a health-check LB
+# that only speaks HTTP) — but silence would be the same class of gap
+# PR #108 found, left unchecked in the other direction.
+# -----------------------------------------------------------------------------
+web_origin_val=$(get_value WEB_ORIGIN || true)
+web_host_bind_val=$(get_value WEB_HOST_BIND || true)
+if [[ "$web_origin_val" == https://* ]] && [ "${web_host_bind_val:-0.0.0.0}" = "0.0.0.0" ]; then
+  echo "WARNING: WEB_ORIGIN is $web_origin_val (TLS expected) but WEB_HOST_BIND"
+  echo "is still 0.0.0.0 (or unset) in $ENV_FILE — the web container stays"
+  echo "directly reachable over plain HTTP on every interface, bypassing"
+  echo "whatever reverse proxy is terminating TLS. Set WEB_HOST_BIND=127.0.0.1"
+  echo "(and WEB_HOST_PORT to something other than 80 if the proxy also binds"
+  echo "host :80 — see ai/deployment-runbook.md's TLS section) before treating"
+  echo "this deploy as secure."
+  echo ""
+fi
+
 print_section() {
   local label="$1"
   shift
