@@ -69,7 +69,24 @@ COPY apps/api apps/api
 COPY packages packages
 
 FROM node:22-alpine AS runtime
-RUN corepack enable && corepack prepare pnpm@10.34.5 --activate
+
+# No corepack/pnpm here on purpose — pnpm's own CLI is a build-time tool
+# (installing dependencies, resolving the workspace) and this stage never
+# calls it. Found live: Trivy's node-pkg scan kept flagging fresh CVEs in
+# pnpm's own VENDORED runtime deps (pacote, sigstore, tar, brace-expansion,
+# picomatch, ip-address) — packages this workspace never depends on and
+# `pnpm.overrides` can never reach, since overrides only steer our own
+# dependency graph. Bumping pnpm's version (round 4) just re-armed the same
+# trap: those internals are pinned at pnpm's own release time, so any pnpm
+# release accumulates new CVEs as time passes, and 10.34.5 is already the
+# newest 10.x build. The only fix that isn't a treadmill is to not carry
+# pnpm's CLI in the image Trivy scans — its bundled deps can't be flagged
+# in a layer that was never installed. CMD below invokes tsx straight from
+# apps/api's own node_modules/.bin instead of through `pnpm --filter ...
+# start`; loadEnv() resolves `.env` from the file's own import.meta.url, not
+# process.cwd(), so nothing depends on the cwd pnpm's script runner used to
+# set (confirmed by running this exact invocation locally: it walks the full
+# module graph and fails only on missing env vars, identically to before).
 RUN addgroup -S taskflow && adduser -S taskflow -G taskflow
 WORKDIR /app
 ENV NODE_ENV=production
@@ -91,4 +108,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD wget -q -O- http://127.0.0.1:3000/health/live || exit 1
 
-CMD ["pnpm", "--filter", "@taskflow/api", "start"]
+CMD ["apps/api/node_modules/.bin/tsx", "apps/api/src/main.ts"]
