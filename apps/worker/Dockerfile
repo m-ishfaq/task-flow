@@ -71,11 +71,19 @@ FROM node:22-alpine AS runtime
 # stage for the full version-match evidence.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
+# Alpine OS-package CVEs — see apps/api/Dockerfile's runtime stage for why.
+RUN apk update && apk upgrade --no-cache
+
 RUN addgroup -S taskflow && adduser -S taskflow -G taskflow
 WORKDIR /app
 ENV NODE_ENV=production
 
 COPY --from=base --chown=taskflow:taskflow /app /app
+
+# Unused esbuild platform binary (vite@6.4.3's, not tsx's -- see
+# apps/api/Dockerfile's runtime stage for why the version must be pinned
+# exactly rather than wildcarded). This service never imports vite/esbuild.
+RUN rm -rf "/app/node_modules/.pnpm/@esbuild+linux-x64@0.25.12"
 USER taskflow
 
 EXPOSE 3003
