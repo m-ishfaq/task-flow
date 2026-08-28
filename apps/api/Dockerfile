@@ -98,6 +98,12 @@ FROM node:22-alpine AS runtime
 # npm ever getting patched upstream.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
+# Alpine OS-package CVEs (libcrypto3/libssl3 and whatever else has a fixed
+# version in the 3.24 apk repo by build time) — same fix apps/web/Dockerfile
+# already carries for its nginx base, applied here for the same reason: this
+# runtime stage is still root at this point, before USER taskflow below.
+RUN apk update && apk upgrade --no-cache
+
 RUN addgroup -S taskflow && adduser -S taskflow -G taskflow
 WORKDIR /app
 ENV NODE_ENV=production

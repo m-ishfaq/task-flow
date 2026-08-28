@@ -71,6 +71,9 @@ FROM node:22-alpine AS runtime
 # stage for the full version-match evidence.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
+# Alpine OS-package CVEs — see apps/api/Dockerfile's runtime stage for why.
+RUN apk update && apk upgrade --no-cache
+
 RUN addgroup -S taskflow && adduser -S taskflow -G taskflow
 WORKDIR /app
 ENV NODE_ENV=production
