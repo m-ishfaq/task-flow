@@ -51,6 +51,22 @@ COPY patches patches
 
 RUN pnpm install --frozen-lockfile
 
+# See apps/api/Dockerfile's build stage for the full explanation: pnpm's own
+# install run leaves orphaned copies of its internal tooling deps (pacote,
+# sigstore, plus stale brace-expansion/ip-address/picomatch/tar versions
+# this lockfile doesn't actually resolve) in node_modules/.pnpm, and Trivy
+# flags them regardless of whether anything imports them.
+RUN find /app/node_modules/.pnpm -maxdepth 1 -type d \( \
+      -name 'pacote@*' -o \
+      -name 'sigstore@*' -o \
+      -name 'brace-expansion@2.0.1' -o \
+      -name 'brace-expansion@2.0.2' -o \
+      -name 'ip-address@10.1.0' -o \
+      -name 'ip-address@10.2.0' -o \
+      -name 'picomatch@4.0.3' -o \
+      -name 'tar@7.5.11' \
+    \) -print -exec rm -rf {} +
+
 COPY apps/collab apps/collab
 # apps/api — the gateway imports @taskflow/api source at runtime (see the
 # file header); without it the process dies on the first import.
