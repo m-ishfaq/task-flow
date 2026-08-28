@@ -1,6 +1,6 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient, session } from '../../src/lib/app-session.js';
 import { useSession } from '../../src/lib/use-session.js';
@@ -56,6 +56,7 @@ import { ExportDataSection } from '../../src/lib/export-data-section.js';
  */
 export default function Account() {
   const orgId = useSession((state) => state.orgId);
+  const queryClient = useQueryClient();
 
   const orgs = useQuery({
     queryKey: ['tenancy.orgs.list'],
@@ -146,10 +147,20 @@ export default function Account() {
       <RingtoneSection />
       <ExportDataSection />
 
+      {/* queryClient.clear() after signOut() — session.signOut() only resets
+          the session store (tokens, orgId); the QueryClient is a
+          module-level singleton that outlives it. Without this, a second
+          person signing in on the same device sees the FIRST person's cached
+          query results (MY_TASKS_QUERY_KEY has no user/org scoping, and it
+          is not the only such key) rendered instantly on mount, before any
+          request the new session's auth would actually refuse ever fires —
+          found live, testing account switching. */}
       <Pressable
         style={styles.button}
         onPress={() => {
-          void session.signOut();
+          void session.signOut().then(() => {
+            queryClient.clear();
+          });
         }}
       >
         <Text style={[styles.buttonText, { marginBottom: 12 }]}>Sign out</Text>

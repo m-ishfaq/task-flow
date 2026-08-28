@@ -307,12 +307,16 @@ function CreateOrgForm({
   );
 }
 
+/** queryClient.clear() after signOut() — see account.tsx's own comment on this same pattern for why. */
 function SignOutLink() {
+  const queryClient = useQueryClient();
   return (
     <Pressable
       style={styles.signOutLink}
       onPress={() => {
-        void session.signOut();
+        void session.signOut().then(() => {
+          queryClient.clear();
+        });
       }}
     >
       <Text style={styles.signOutLinkText}>Sign out</Text>
