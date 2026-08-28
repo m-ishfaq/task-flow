@@ -51,68 +51,6 @@ COPY patches patches
 
 RUN pnpm install --frozen-lockfile
 
-# TEMPORARY DIAGNOSTIC -- not a fix. See apps/api/Dockerfile's build stage
-# for the full explanation: two prior removal attempts both silently found
-# nothing, this environment has no way to inspect the real built image
-# directly, and a deliberately-failed step's own output is the one channel
-# that reliably survives back to this session. This round is expected to
-# leave CD red on purpose.
-RUN node <<'EOF'
-const fs = require("fs");
-const path = require("path");
-
-const needles = ["pacote", "sigstore"];
-const found = [];
-let filesScanned = 0;
-
-function walk(dir) {
-  let entries;
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    const full = path.join(dir, entry.name);
-    if (entry.name === "package.json") {
-      filesScanned++;
-      try {
-        const raw = fs.readFileSync(full, "utf8");
-        for (const needle of needles) {
-          if (raw.includes(`"${needle}"`)) {
-            found.push(full);
-            break;
-          }
-        }
-      } catch {
-        // unreadable/invalid -- not what we're looking for
-      }
-      continue;
-    }
-    let isDir = false;
-    try {
-      isDir = fs.statSync(full).isDirectory(); // follows symlinks, unlike Dirent.isDirectory()
-    } catch {
-      isDir = false;
-    }
-    if (isDir) walk(full);
-  }
-}
-
-walk("/app");
-
-console.error("DIAGNOSTIC: scanned", filesScanned, "package.json files under /app");
-console.error("DIAGNOSTIC: found", found.length, "matches for pacote/sigstore");
-for (const f of found) {
-  console.error("DIAGNOSTIC MATCH:", f);
-}
-if (found.length === 0) {
-  console.error("DIAGNOSTIC: NOTHING FOUND ANYWHERE UNDER /app");
-}
-
-process.exit(1);
-EOF
-
 COPY apps/realtime apps/realtime
 # apps/api — the gateway imports @taskflow/api source at runtime (see the
 # file header); without it the process dies on the first import.
@@ -122,10 +60,17 @@ COPY packages packages
 FROM node:22-alpine AS runtime
 
 # No corepack/pnpm here — see apps/api/Dockerfile's runtime stage for why:
-# pnpm's own vendored deps (pacote, sigstore, tar, ...) keep re-triggering
-# Trivy's node-pkg scan no matter how current the pinned pnpm version is,
-# and the only durable fix is to not carry pnpm's CLI in a scanned layer
-# that never needs it. CMD below runs tsx directly.
+# CMD below runs tsx directly and never invokes pnpm.
+#
+# The node-pkg CVE cluster (pacote, sigstore, tar, brace-expansion,
+# picomatch, ip-address, minimatch) that kept re-triggering Trivy's scan
+# across every previous round was never pnpm at all — it's node:22-alpine's
+# own bundled npm CLI at /usr/local/lib/node_modules/npm, present
+# unconditionally regardless of whether this image ever calls npm/npx (it
+# doesn't: pnpm builds it, tsx runs it). See apps/api/Dockerfile's runtime
+# stage for the full version-match evidence.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
 RUN addgroup -S taskflow && adduser -S taskflow -G taskflow
 WORKDIR /app
 ENV NODE_ENV=production
