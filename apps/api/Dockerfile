@@ -112,6 +112,30 @@ ENV NODE_ENV=production
 # layer is written rather than doubling the image with a second full-tree
 # copy.
 COPY --from=base --chown=taskflow:taskflow /app /app
+
+# esbuild's platform binary (a Go program, not JS) ships into node_modules
+# as a transitive dependency of apps/web's own build tooling (vite@6.4.3,
+# pinned to esbuild@0.25.12) -- pulled in because this image installs the
+# full workspace, not just apps/api's own deps (see this file's header).
+# This service never imports vite or esbuild, so that binary is pure dead
+# weight here -- and it is the one thing in this image Trivy's gobinary
+# scanner can reach: a fixed Go-stdlib version at build time means every
+# CVE patched since then shows up against a binary nothing here ever runs.
+# PR #98 flagged this rather than bumping esbuild everywhere, because a
+# newer esbuild breaks apps/web's actual production build against its
+# current legacy browser target -- that tradeoff is real for apps/web, but
+# doesn't apply to this image, so removing the binary is the fix here.
+#
+# The version pin below is deliberate, not a shortcut: tsx (this image's
+# own CMD, below) depends on a DIFFERENT esbuild -- 0.28.1, resolved from
+# tsx's own "esbuild": "~0.28.0" -- which is what actually transpiles
+# TypeScript at container startup. A wildcard delete here would remove
+# that version too and take down every request with it, silently, since
+# nothing in CI actually boots the container and hits an endpoint. Only
+# the exact vulnerable version Trivy names is safe to delete; if the
+# lockfile later bumps vite/esbuild past 0.25.12, this line simply stops
+# matching anything, rather than deleting whatever version replaced it.
+RUN rm -rf "/app/node_modules/.pnpm/@esbuild+linux-x64@0.25.12"
 USER taskflow
 
 EXPOSE 3000
