@@ -58,7 +58,12 @@ COPY apps/api apps/api
 COPY packages packages
 
 FROM node:22-alpine AS runtime
-RUN corepack enable && corepack prepare pnpm@10.34.5 --activate
+
+# No corepack/pnpm here — see apps/api/Dockerfile's runtime stage for why:
+# pnpm's own vendored deps (pacote, sigstore, tar, ...) keep re-triggering
+# Trivy's node-pkg scan no matter how current the pinned pnpm version is,
+# and the only durable fix is to not carry pnpm's CLI in a scanned layer
+# that never needs it. CMD below runs tsx directly.
 RUN addgroup -S taskflow && adduser -S taskflow -G taskflow
 WORKDIR /app
 ENV NODE_ENV=production
@@ -81,4 +86,4 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD wget -q -O- http://127.0.0.1:3001/health/live || exit 1
 
-CMD ["pnpm", "--filter", "@taskflow/realtime", "start"]
+CMD ["apps/realtime/node_modules/.bin/tsx", "apps/realtime/src/main.ts"]
