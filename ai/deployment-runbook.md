@@ -189,10 +189,18 @@ IMAGE_TAG=<previous-sha> docker compose --env-file .env.prod -f compose.prod.yam
 ```
 
 Rolls the app containers back to the previous images. **A migration is NOT
-automatically reversed by this.** `pnpm --filter @taskflow/db migrate:down` is a
-separate, manual step, and rolling back past a migration that dropped or renamed
-a column is a data-loss risk — read that migration's own `.down.sql` first and
-decide deliberately.
+automatically reversed by this.** Running the down migration is a separate,
+manual step — the `migrate` service's own `command:` runs `up` only, so a
+down migration needs the command overridden explicitly:
+
+```bash
+docker compose --env-file .env.prod -f compose.prod.yaml --profile tools run --rm \
+  migrate packages/db/node_modules/.bin/tsx packages/db/src/migrate/cli.ts down
+```
+
+Rolling back past a migration that dropped or renamed a column is a
+data-loss risk — read that migration's own `.down.sql` first and decide
+deliberately.
 
 ## Secrets rotation
 
@@ -306,11 +314,14 @@ and Postgres refused the connection with `SASL: ... client password must be a
 string`. Compose's own `${VAR}` substitution against `--env-file .env.prod`
 has no such gap.
 
-`entrypoint: ['pnpm', '--filter', '@taskflow/seed', 'seed']` rather than
-`command:` is what lets `docker compose run seed <flags>` hand those flags
-straight to the seed CLI — `docker compose run SERVICE <args>` only replaces
-the COMMAND half of `entrypoint + command`, so nothing about the entrypoint
-needs restating on every invocation.
+`entrypoint: ['packages/seed/node_modules/.bin/tsx', 'packages/seed/src/cli.ts']`
+(tsx directly — the api image has carried no pnpm binary since
+apps/api/Dockerfile's runtime stage dropped corepack/pnpm; see the `migrate`
+service's own comment in compose.prod.yaml) rather than `command:` is what
+lets `docker compose run seed <flags>` hand those flags straight to the
+seed CLI — `docker compose run SERVICE <args>` only replaces the COMMAND
+half of `entrypoint + command`, so nothing about the entrypoint needs
+restating on every invocation.
 
 `NODE_ENV: development` is hardcoded in this service's own environment block
 (not inherited from the shared `x-app-env` anchor, which sets

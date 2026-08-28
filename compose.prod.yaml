@@ -268,13 +268,27 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ['pnpm', '--filter', '@taskflow/db', 'migrate:up']
+    # tsx directly, not `pnpm --filter @taskflow/db migrate:up` -- the api
+    # image has carried no pnpm binary since apps/api/Dockerfile's runtime
+    # stage dropped corepack/pnpm entirely (round 6 of the CD CVE fixes,
+    # commit e9757ca), and this service was never updated to match. Nothing
+    # caught it because Deploy only runs after build-push + Trivy both pass,
+    # and Trivy stayed red on every push in between -- so this line ran for
+    # the first time only once the image scan was actually clean, and it
+    # failed immediately: node:22-alpine's own entrypoint script silently
+    # prepends `node` to an unrecognized command, so `pnpm ...` became
+    # `node pnpm ...` and Node tried to load a module literally named
+    # `/app/pnpm`, which never existed. Same fix apps/api/Dockerfile's own
+    # CMD already uses for the same reason.
+    command: ['packages/db/node_modules/.bin/tsx', 'packages/db/src/migrate/cli.ts', 'up']
 
   # One-shot, manual only — never part of `up -d`, matching `migrate`'s own
-  # profile gating. Reuses the api image (full monorepo source + pnpm via
-  # corepack, same as `migrate`) with its OWN environment block instead of
-  # inheriting api's, so `pnpm --filter @taskflow/seed seed <flags>` reads
-  # every secret straight from THIS FILE's own `${VAR}` substitution against
+  # profile gating. Reuses the api image (full monorepo source, tsx runs
+  # directly -- see `migrate`'s own comment above for why there is no pnpm
+  # in this image) with its OWN environment block instead of inheriting
+  # api's, so the seed CLI (invoked via `entrypoint` below, plus whatever
+  # flags the caller types) reads every secret straight from THIS FILE's
+  # own `${VAR}` substitution against
   # .env.prod — never a hand-typed `-e VAR=$SHELL_VAR`, which is exactly how
   # a SASL "password must be a string" failure happened twice in a row: a
   # shell variable that only ever existed inside .env.prod, not the calling
@@ -348,7 +362,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    entrypoint: ['pnpm', '--filter', '@taskflow/seed', 'seed']
+    # tsx directly, not `pnpm --filter @taskflow/seed seed` -- see
+    # `migrate`'s own comment above for why there is no pnpm in this image.
+    entrypoint: ['packages/seed/node_modules/.bin/tsx', 'packages/seed/src/cli.ts']
 
   api:
     image: ${REGISTRY:-ghcr.io/m-ishfaq}/task-flow-api:${IMAGE_TAG:-local}
