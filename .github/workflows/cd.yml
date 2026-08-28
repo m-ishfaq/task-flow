@@ -47,6 +47,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
+      # fail-fast: false — the five images have independent base images and
+      # independent Trivy findings (found live: web's nginx-unprivileged
+      # base carries Alpine OS-package CVEs the node:22-alpine-based images
+      # never see). The default fail-fast cancels every sibling the instant
+      # one fails, which reads as "4 unknown" rather than "4 clean" and
+      # hides a real finding on any image but whichever fails first.
+      fail-fast: false
       matrix:
         # Five images, not four: compose.prod.yaml's `worker` service has its
         # own dedicated task-flow-worker image (apps/worker/Dockerfile) —

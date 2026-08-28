@@ -79,11 +79,24 @@ RUN pnpm --filter @taskflow/web build
 # at build time (nginx refusing to bind/write as `nginx`) instead of
 # silently regressing.
 FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
+
+# The base image's Alpine packages drift out of date between its own
+# rebuilds — found live: Trivy's OS-package scan (not node-pkg/gobinary,
+# which this nginx-only runtime has none of) flagged 33 HIGH/CRITICAL CVEs
+# in c-ares, openssl (libcrypto3/libssl3), libexpat, libpng, libxml2, musl,
+# nghttp2-libs and zlib, all with fixed versions already in the 3.21 apk
+# repo. `apk upgrade` pulls those in at build time instead of waiting on
+# nginxinc to cut a new base tag. Must run as root, so it is scoped tightly:
+# `USER root` just for the upgrade, then straight back to the explicit
+# `USER nginx` the comment above already calls for — which now also covers
+# the COPY steps below, exactly as it did before this block existed.
+USER root
+RUN apk update && apk upgrade --no-cache
+USER nginx
+
 COPY apps/web/nginx.conf /etc/nginx/nginx.conf
 COPY apps/web/security-headers.conf /etc/nginx/security-headers.conf
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
-
-USER nginx
 
 EXPOSE 8080
 
