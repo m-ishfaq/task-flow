@@ -81,6 +81,19 @@ export class S3StorageProvider implements StorageProvider {
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,
       },
+      /* Since @aws-sdk/client-s3's flexible-checksums feature, the SDK
+         defaults to `WHEN_SUPPORTED`: every PutObjectCommand gets an
+         `x-amz-checksum-crc32` (+ `x-amz-sdk-checksum-algorithm`) query
+         parameter, computed from... nothing, because `presignUpload` signs a
+         URL before any file is chosen — there is no body yet to checksum.
+         The SDK bakes in a zero-byte placeholder. MinIO computes the REAL
+         checksum from what the browser actually PUTs, finds it does not
+         match the placeholder baked into the URL, and answers 403 — a
+         perfectly good upload rejected because of a checksum nothing could
+         have computed correctly at sign time. `WHEN_REQUIRED` is the
+         pre-flexible-checksums behavior: only add one when the caller asks
+         via `ChecksumAlgorithm`, which `presignUpload` never does. */
+      requestChecksumCalculation: 'WHEN_REQUIRED',
     });
   }
 
