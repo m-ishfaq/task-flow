@@ -5,6 +5,7 @@ import { useMutation } from '@tanstack/react-query';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../src/lib/app-session.js';
 import { apiErrorOf } from '../../src/lib/trpc-client.js';
+import { BrandMark } from '../../src/lib/brand-mark.js';
 
 /**
  * Requesting a password-reset link — the native counterpart of `apps/web`'s
@@ -51,6 +52,9 @@ export default function ForgotPassword() {
 
   return (
     <View style={styles.container}>
+      <View style={styles.brandMark}>
+        <BrandMark size={48} />
+      </View>
       <Text style={styles.title}>Reset your password</Text>
       <Text style={styles.subtitle}>We will email you a link to choose a new one.</Text>
       <TextInput
@@ -99,6 +103,9 @@ const styles = StyleSheet.create({
     padding: 24,
     gap: 14,
     backgroundColor: colors.surface.hex,
+  },
+  brandMark: {
+    marginBottom: 4,
   },
   title: {
     fontSize: 26,
