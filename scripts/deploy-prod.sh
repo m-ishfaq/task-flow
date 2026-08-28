@@ -55,6 +55,11 @@ fi
 COMPOSE=(docker compose --env-file .env.prod -f compose.prod.yaml)
 
 echo "== [1/7] gate: full .env.prod audit =="
+# check-env-prod.sh also warns here if WEB_ORIGIN is https:// while
+# WEB_HOST_BIND is still 0.0.0.0 — the web container silently staying
+# reachable over plain HTTP alongside a TLS-terminating reverse proxy. That
+# check lives there, not here, so it fires whether this script or
+# check-env-prod.sh is run directly.
 "$(dirname "$0")/check-env-prod.sh" compose.prod.yaml .env.prod
 
 echo "== [2/7] gate: compose config resolves (belt-and-suspenders on the check above) =="
