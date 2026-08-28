@@ -66,7 +66,15 @@ const ALLOWED_EXTRA_KEYS = new Set([
 ]);
 
 /** Every env key any `eas.json` build profile may set. Same discipline. */
-const ALLOWED_EAS_ENV_KEYS = new Set(['MOBILE_API_BASE_URL', 'MOBILE_REALTIME_BASE_URL']);
+const ALLOWED_EAS_ENV_KEYS = new Set([
+  'MOBILE_API_BASE_URL',
+  'MOBILE_REALTIME_BASE_URL',
+  // Same public/private status as the other two: an origin app.config.ts
+  // reads into extra.collabBaseUrl (already on ALLOWED_EXTRA_KEYS above),
+  // never a credential. Missing here was a gap, not a deliberate omission —
+  // this list gates the exact same value one config surface earlier.
+  'MOBILE_COLLAB_BASE_URL',
+]);
 
 /** @type {string[]} */
 const failures = [];
