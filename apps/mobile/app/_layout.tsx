@@ -17,6 +17,8 @@ import { errorCodeOf, isUnauthenticated } from '../src/lib/trpc-client.js';
 import { biometricGate, session } from '../src/lib/app-session.js';
 import { useSession } from '../src/lib/use-session.js';
 import { attachNotificationResponseListener } from '../src/lib/push-notifications.js';
+import { BrandingProvider } from '../src/lib/branding-provider.js';
+import { useBranding } from '../src/lib/branding-context.js';
 
 /**
  * The root layout — the outermost thing on screen, ever (ai/phase-14-mobile.md
@@ -140,9 +142,11 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
-        {unlockState === 'checking' && <Splash />}
-        {unlockState === 'locked' && <LockScreen onRetry={attemptUnlock} />}
-        {unlockState === 'unlocked' && (status === 'restoring' ? <Splash /> : <Slot />)}
+        <BrandingProvider>
+          {unlockState === 'checking' && <Splash />}
+          {unlockState === 'locked' && <LockScreen onRetry={attemptUnlock} />}
+          {unlockState === 'unlocked' && (status === 'restoring' ? <Splash /> : <Slot />)}
+        </BrandingProvider>
       </QueryClientProvider>
     </SafeAreaProvider>
   );
@@ -157,9 +161,10 @@ function Splash() {
 }
 
 function LockScreen({ onRetry }: { onRetry: () => void }) {
+  const { productName } = useBranding();
   return (
     <View style={styles.splash}>
-      <Text style={styles.lockTitle}>TaskFlow is locked</Text>
+      <Text style={styles.lockTitle}>{productName} is locked</Text>
       <Text style={styles.lockSubtitle}>Unlock with Face ID, fingerprint, or your passcode.</Text>
       <Pressable style={styles.button} onPress={onRetry}>
         <Text style={styles.buttonText}>Unlock</Text>

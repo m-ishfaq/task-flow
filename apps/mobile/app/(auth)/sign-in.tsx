@@ -14,6 +14,8 @@ import {
   type OAuthProvider,
 } from '../../src/lib/oauth.js';
 import { createPkceChallenge } from '../../src/lib/oauth-pkce.native.js';
+import { useBranding } from '../../src/lib/branding-context.js';
+import { BrandMark } from '../../src/lib/brand-mark.js';
 
 /**
  * Password sign-in, with the TOTP second-factor challenge inline, OAuth, and
@@ -35,6 +37,7 @@ import { createPkceChallenge } from '../../src/lib/oauth-pkce.native.js';
  * login attempt).
  */
 export default function SignIn() {
+  const { productName } = useBranding();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
@@ -203,7 +206,10 @@ export default function SignIn() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Sign in to TaskFlow</Text>
+      <View style={styles.brandMark}>
+        <BrandMark size={48} />
+      </View>
+      <Text style={styles.title}>Sign in to {productName}</Text>
       <TextInput
         value={email}
         onChangeText={setEmail}
@@ -341,6 +347,9 @@ const styles = StyleSheet.create({
     padding: 24,
     gap: 14,
     backgroundColor: colors.surface.hex,
+  },
+  brandMark: {
+    marginBottom: 4,
   },
   title: {
     fontSize: 26,

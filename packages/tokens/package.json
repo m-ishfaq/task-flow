@@ -11,6 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
+  "dependencies": {
+    "@taskflow/contracts": "workspace:*"
+  },
   "devDependencies": {
     "@csstools/color-helpers": "^6.1.0",
     "@taskflow/config": "workspace:*",

@@ -13,14 +13,18 @@
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "MOBILE_API_BASE_URL": "http://localhost:3000"
+        "MOBILE_API_BASE_URL": "https://taskflow-demo.duckdns.org",
+        "MOBILE_REALTIME_BASE_URL": "https://taskflow-demo.duckdns.org",
+        "MOBILE_COLLAB_BASE_URL": "https://taskflow-demo.duckdns.org"
       }
     },
     "production": {
       "autoIncrement": true,
       "channel": "production",
       "env": {
-        "MOBILE_API_BASE_URL": "SET-MOBILE_API_BASE_URL-BEFORE-BUILDING-PRODUCTION"
+        "MOBILE_API_BASE_URL": "https://taskflow-demo.duckdns.org",
+        "MOBILE_REALTIME_BASE_URL": "https://taskflow-demo.duckdns.org",
+        "MOBILE_COLLAB_BASE_URL": "https://taskflow-demo.duckdns.org"
       }
     }
   },
