@@ -22,7 +22,7 @@ FROM node:22-alpine AS base
 # Pinned to match package.json's own "packageManager" field and .npmrc's
 # engine-strict requirement — a drift here is exactly the class of bug
 # CLAUDE.md's tsbuildinfo/engine notes warn about elsewhere in this repo.
-RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+RUN corepack enable && corepack prepare pnpm@10.34.5 --activate
 WORKDIR /app
 
 # Manifests first, and nothing else — so an application-code-only change
@@ -69,7 +69,7 @@ COPY apps/api apps/api
 COPY packages packages
 
 FROM node:22-alpine AS runtime
-RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+RUN corepack enable && corepack prepare pnpm@10.34.5 --activate
 RUN addgroup -S taskflow && adduser -S taskflow -G taskflow
 WORKDIR /app
 ENV NODE_ENV=production
