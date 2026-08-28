@@ -55,7 +55,11 @@ export interface PaletteColors {
 /** Every palette's oklch triple AND derived hex — `palettes.test.ts` asserts the two agree. */
 export const PALETTE_TOKENS: Record<
   PaletteId,
-  { readonly base: PaletteColorToken; readonly hover: PaletteColorToken; readonly ink: PaletteColorToken }
+  {
+    readonly base: PaletteColorToken;
+    readonly hover: PaletteColorToken;
+    readonly ink: PaletteColorToken;
+  }
 > = {
   default: {
     base: { oklch: { l: 55, c: 0.17, h: 285 }, hex: '#6b5dcf' },
