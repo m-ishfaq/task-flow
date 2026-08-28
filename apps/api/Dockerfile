@@ -66,27 +66,69 @@ RUN pnpm install --frozen-lockfile
 # pnpm's own install run leaves orphaned copies of ITS internal tooling deps
 # (pacote, sigstore -- used for registry fetches and provenance verification;
 # older brace-expansion/ip-address/picomatch/tar than this lockfile actually
-# resolves) sitting in node_modules/.pnpm alongside the real dependency tree.
-# None of these are reachable from pnpm-lock.yaml at these versions --
-# confirmed by grepping it directly, and by the fact this app's real
-# transitive deps resolve to different, already-patched versions (see
-# pnpm.overrides in package.json for brace-expansion/tar specifically).
-# Trivy's node-pkg scan flags them anyway because it scans every
-# package.json it finds on disk, not just what an app actually imports.
-# Removing them here, once, in a layer this build cache invalidates whenever
-# the lockfile changes, is more durable than chasing pnpm's own version --
-# round 4 (#99) proved that treadmill: 10.34.5 is already pnpm's newest
-# 10.x build and still ships this exact cluster.
-RUN find /app/node_modules/.pnpm -maxdepth 1 -type d \( \
-      -name 'pacote@*' -o \
-      -name 'sigstore@*' -o \
-      -name 'brace-expansion@2.0.1' -o \
-      -name 'brace-expansion@2.0.2' -o \
-      -name 'ip-address@10.1.0' -o \
-      -name 'ip-address@10.2.0' -o \
-      -name 'picomatch@4.0.3' -o \
-      -name 'tar@7.5.11' \
-    \) -print -exec rm -rf {} +
+# resolves) sitting in node_modules alongside the real dependency tree. None
+# of these are reachable from pnpm-lock.yaml at these versions -- confirmed
+# by grepping it directly, and by the fact this app's real transitive deps
+# resolve to different, already-patched versions (see pnpm.overrides in
+# package.json for brace-expansion/tar specifically). Trivy's node-pkg scan
+# flags them anyway because it scans every package.json it finds on disk,
+# not just what an app actually imports.
+#
+# A first attempt at this (matching by exact node_modules/.pnpm/<name>@<ver>
+# directory name) silently matched nothing -- Trivy kept reporting the same
+# packages on the very next build. Rather than guess a second directory-name
+# pattern blind, this walks every package.json under node_modules and reads
+# its OWN name/version fields, so it works regardless of how pnpm names or
+# nests the containing directory (proved necessary locally: a synthetic
+# orphan 3 directories deep inside another package's own node_modules was
+# invisible to a maxdepth-1 directory-name search but is caught here). Node
+# itself does the walking -- not python3, which this alpine image never
+# installs and which no prior step in this Dockerfile provides either.
+RUN node <<'EOF'
+const fs = require("fs");
+const path = require("path");
+
+const anyVersion = new Set(["pacote", "sigstore"]);
+const exact = new Set([
+  "brace-expansion@2.0.1",
+  "brace-expansion@2.0.2",
+  "ip-address@10.1.0",
+  "ip-address@10.2.0",
+  "picomatch@4.0.3",
+  "tar@7.5.11",
+]);
+
+const toRemove = [];
+function walk(dir) {
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  const pkgJson = path.join(dir, "package.json");
+  if (fs.existsSync(pkgJson)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(pkgJson, "utf8"));
+      if (anyVersion.has(data.name) || exact.has(`${data.name}@${data.version}`)) {
+        toRemove.push(dir);
+        return;
+      }
+    } catch {
+      // not valid JSON -- leave it alone, not what we're looking for
+    }
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory()) walk(path.join(dir, entry.name));
+  }
+}
+
+walk("/app/node_modules");
+for (const dir of toRemove) {
+  console.log("removing", dir);
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+EOF
 
 # Only this service's own source plus every workspace package's source — not
 # the other three apps, which apps/api never imports from.

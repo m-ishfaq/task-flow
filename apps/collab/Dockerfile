@@ -54,18 +54,56 @@ RUN pnpm install --frozen-lockfile
 # See apps/api/Dockerfile's build stage for the full explanation: pnpm's own
 # install run leaves orphaned copies of its internal tooling deps (pacote,
 # sigstore, plus stale brace-expansion/ip-address/picomatch/tar versions
-# this lockfile doesn't actually resolve) in node_modules/.pnpm, and Trivy
-# flags them regardless of whether anything imports them.
-RUN find /app/node_modules/.pnpm -maxdepth 1 -type d \( \
-      -name 'pacote@*' -o \
-      -name 'sigstore@*' -o \
-      -name 'brace-expansion@2.0.1' -o \
-      -name 'brace-expansion@2.0.2' -o \
-      -name 'ip-address@10.1.0' -o \
-      -name 'ip-address@10.2.0' -o \
-      -name 'picomatch@4.0.3' -o \
-      -name 'tar@7.5.11' \
-    \) -print -exec rm -rf {} +
+# this lockfile doesn't actually resolve) in node_modules, and Trivy flags
+# them regardless of whether anything imports them. This walks every
+# package.json by its own name/version fields rather than guessing pnpm's
+# directory-naming convention -- a directory-name-based attempt at this
+# silently matched nothing.
+RUN node <<'EOF'
+const fs = require("fs");
+const path = require("path");
+
+const anyVersion = new Set(["pacote", "sigstore"]);
+const exact = new Set([
+  "brace-expansion@2.0.1",
+  "brace-expansion@2.0.2",
+  "ip-address@10.1.0",
+  "ip-address@10.2.0",
+  "picomatch@4.0.3",
+  "tar@7.5.11",
+]);
+
+const toRemove = [];
+function walk(dir) {
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  const pkgJson = path.join(dir, "package.json");
+  if (fs.existsSync(pkgJson)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(pkgJson, "utf8"));
+      if (anyVersion.has(data.name) || exact.has(`${data.name}@${data.version}`)) {
+        toRemove.push(dir);
+        return;
+      }
+    } catch {
+      // not valid JSON -- leave it alone, not what we're looking for
+    }
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory()) walk(path.join(dir, entry.name));
+  }
+}
+
+walk("/app/node_modules");
+for (const dir of toRemove) {
+  console.log("removing", dir);
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+EOF
 
 COPY apps/collab apps/collab
 # apps/api — the gateway imports @taskflow/api source at runtime (see the
