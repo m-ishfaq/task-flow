@@ -51,29 +51,20 @@ COPY patches patches
 
 RUN pnpm install --frozen-lockfile
 
-# See apps/api/Dockerfile's build stage for the full explanation: pnpm's own
-# install run leaves orphaned copies of its internal tooling deps (pacote,
-# sigstore, plus stale brace-expansion/ip-address/picomatch/tar versions
-# this lockfile doesn't actually resolve) in node_modules, and Trivy flags
-# them regardless of whether anything imports them. This walks every
-# package.json by its own name/version fields rather than guessing pnpm's
-# directory-naming convention -- a directory-name-based attempt at this
-# silently matched nothing.
+# TEMPORARY DIAGNOSTIC -- not a fix. See apps/api/Dockerfile's build stage
+# for the full explanation: two prior removal attempts both silently found
+# nothing, this environment has no way to inspect the real built image
+# directly, and a deliberately-failed step's own output is the one channel
+# that reliably survives back to this session. This round is expected to
+# leave CD red on purpose.
 RUN node <<'EOF'
 const fs = require("fs");
 const path = require("path");
 
-const anyVersion = new Set(["pacote", "sigstore"]);
-const exact = new Set([
-  "brace-expansion@2.0.1",
-  "brace-expansion@2.0.2",
-  "ip-address@10.1.0",
-  "ip-address@10.2.0",
-  "picomatch@4.0.3",
-  "tar@7.5.11",
-]);
+const needles = ["pacote", "sigstore"];
+const found = [];
+let filesScanned = 0;
 
-const toRemove = [];
 function walk(dir) {
   let entries;
   try {
@@ -81,28 +72,45 @@ function walk(dir) {
   } catch {
     return;
   }
-  const pkgJson = path.join(dir, "package.json");
-  if (fs.existsSync(pkgJson)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(pkgJson, "utf8"));
-      if (anyVersion.has(data.name) || exact.has(`${data.name}@${data.version}`)) {
-        toRemove.push(dir);
-        return;
-      }
-    } catch {
-      // not valid JSON -- leave it alone, not what we're looking for
-    }
-  }
   for (const entry of entries) {
-    if (entry.isDirectory()) walk(path.join(dir, entry.name));
+    const full = path.join(dir, entry.name);
+    if (entry.name === "package.json") {
+      filesScanned++;
+      try {
+        const raw = fs.readFileSync(full, "utf8");
+        for (const needle of needles) {
+          if (raw.includes(`"${needle}"`)) {
+            found.push(full);
+            break;
+          }
+        }
+      } catch {
+        // unreadable/invalid -- not what we're looking for
+      }
+      continue;
+    }
+    let isDir = false;
+    try {
+      isDir = fs.statSync(full).isDirectory(); // follows symlinks, unlike Dirent.isDirectory()
+    } catch {
+      isDir = false;
+    }
+    if (isDir) walk(full);
   }
 }
 
-walk("/app/node_modules");
-for (const dir of toRemove) {
-  console.log("removing", dir);
-  fs.rmSync(dir, { recursive: true, force: true });
+walk("/app");
+
+console.error("DIAGNOSTIC: scanned", filesScanned, "package.json files under /app");
+console.error("DIAGNOSTIC: found", found.length, "matches for pacote/sigstore");
+for (const f of found) {
+  console.error("DIAGNOSTIC MATCH:", f);
 }
+if (found.length === 0) {
+  console.error("DIAGNOSTIC: NOTHING FOUND ANYWHERE UNDER /app");
+}
+
+process.exit(1);
 EOF
 
 COPY apps/worker apps/worker

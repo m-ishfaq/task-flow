@@ -74,31 +74,33 @@ RUN pnpm install --frozen-lockfile
 # flags them anyway because it scans every package.json it finds on disk,
 # not just what an app actually imports.
 #
-# A first attempt at this (matching by exact node_modules/.pnpm/<name>@<ver>
-# directory name) silently matched nothing -- Trivy kept reporting the same
-# packages on the very next build. Rather than guess a second directory-name
-# pattern blind, this walks every package.json under node_modules and reads
-# its OWN name/version fields, so it works regardless of how pnpm names or
-# nests the containing directory (proved necessary locally: a synthetic
-# orphan 3 directories deep inside another package's own node_modules was
-# invisible to a maxdepth-1 directory-name search but is caught here). Node
-# itself does the walking -- not python3, which this alpine image never
-# installs and which no prior step in this Dockerfile provides either.
+# TEMPORARY DIAGNOSTIC -- not a fix. Two prior attempts both silently found
+# nothing: exact node_modules/.pnpm/<name>@<ver> directory-name matching,
+# then walking every package.json for its own name/version fields (verified
+# correct locally against synthetic orphans at multiple depths, including
+# through a top-level symlink matching pnpm's real layout -- still found
+# nothing in the real build). There is no way to inspect the real built
+# image from this environment: no Docker daemon, no access to build trivy
+# from source (too heavy), and the registry's blob storage and this job's
+# own full log are both unreachable through the outbound proxy policy here.
+# The one channel that reliably survives is a FAILED step's own output, so
+# this deliberately fails the build and prints every package.json path
+# under /app whose content mentions "pacote" or "sigstore" -- broadened
+# from node_modules to all of /app in case that root assumption itself was
+# wrong, and following symlinks via fs.statSync this time (the prior walk
+# used Dirent.isDirectory(), which does NOT follow a symlink, even though a
+# side-by-side local test showed pnpm's canonical .pnpm/<name>@<ver> copy is
+# real and reachable independent of that gap). This round is expected to
+# leave CD red; the payoff is the path this prints, which the next round
+# fixes for real.
 RUN node <<'EOF'
 const fs = require("fs");
 const path = require("path");
 
-const anyVersion = new Set(["pacote", "sigstore"]);
-const exact = new Set([
-  "brace-expansion@2.0.1",
-  "brace-expansion@2.0.2",
-  "ip-address@10.1.0",
-  "ip-address@10.2.0",
-  "picomatch@4.0.3",
-  "tar@7.5.11",
-]);
+const needles = ["pacote", "sigstore"];
+const found = [];
+let filesScanned = 0;
 
-const toRemove = [];
 function walk(dir) {
   let entries;
   try {
@@ -106,28 +108,45 @@ function walk(dir) {
   } catch {
     return;
   }
-  const pkgJson = path.join(dir, "package.json");
-  if (fs.existsSync(pkgJson)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(pkgJson, "utf8"));
-      if (anyVersion.has(data.name) || exact.has(`${data.name}@${data.version}`)) {
-        toRemove.push(dir);
-        return;
-      }
-    } catch {
-      // not valid JSON -- leave it alone, not what we're looking for
-    }
-  }
   for (const entry of entries) {
-    if (entry.isDirectory()) walk(path.join(dir, entry.name));
+    const full = path.join(dir, entry.name);
+    if (entry.name === "package.json") {
+      filesScanned++;
+      try {
+        const raw = fs.readFileSync(full, "utf8");
+        for (const needle of needles) {
+          if (raw.includes(`"${needle}"`)) {
+            found.push(full);
+            break;
+          }
+        }
+      } catch {
+        // unreadable/invalid -- not what we're looking for
+      }
+      continue;
+    }
+    let isDir = false;
+    try {
+      isDir = fs.statSync(full).isDirectory(); // follows symlinks, unlike Dirent.isDirectory()
+    } catch {
+      isDir = false;
+    }
+    if (isDir) walk(full);
   }
 }
 
-walk("/app/node_modules");
-for (const dir of toRemove) {
-  console.log("removing", dir);
-  fs.rmSync(dir, { recursive: true, force: true });
+walk("/app");
+
+console.error("DIAGNOSTIC: scanned", filesScanned, "package.json files under /app");
+console.error("DIAGNOSTIC: found", found.length, "matches for pacote/sigstore");
+for (const f of found) {
+  console.error("DIAGNOSTIC MATCH:", f);
 }
+if (found.length === 0) {
+  console.error("DIAGNOSTIC: NOTHING FOUND ANYWHERE UNDER /app");
+}
+
+process.exit(1);
 EOF
 
 # Only this service's own source plus every workspace package's source — not
