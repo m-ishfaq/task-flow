@@ -43,20 +43,32 @@ env:
   IMAGE_OWNER: ${{ github.repository_owner }}
 
 jobs:
-  # None of the five images this workflow builds are built from apps/mobile —
-  # that ships through EAS, not GHCR — so a push that only touches it has
-  # nothing here to rebuild. Skipping is an optimization only: a mobile-only
-  # push still passes CI and would produce byte-identical images to the ones
-  # already published for the previous main tip, at the cost of ~4 minutes and
-  # a needless registry write per service. `git diff HEAD~1 HEAD` is exactly
-  # the set of files this push introduced to main — `actions/checkout`'s
-  # `fetch-depth: 2` is what makes `HEAD~1` resolvable at all, since a default
-  # checkout is a single-commit shallow clone. `workflow_dispatch` (a manual,
-  # deliberate "build everything" run) and CI_ENABLED's own kill switch both
-  # bypass the diff entirely rather than trying to reason about which commit
-  # a manual trigger should compare against.
+  # A POSITIVE allowlist, not a blacklist of things that don't matter — the
+  # inverse is unmaintainable, since every doc, workflow, or config file
+  # anyone ever adds would need to join it by hand or silently start
+  # triggering rebuilds again. The allowlist instead names exactly what
+  # `build-push` and `deploy` below actually consume, confirmed against
+  # every apps/*/Dockerfile's own COPY list: the root manifests
+  # (package.json, pnpm-lock.yaml, pnpm-workspace.yaml, .npmrc), patches/,
+  # packages/ (every image carries the full workspace source), each of the
+  # five apps/{api,realtime,collab,web,worker} directories, and the two
+  # things `deploy` copies to the server (compose.prod.yaml,
+  # docker/postgres/). apps/mobile ships through EAS, not GHCR, so it was
+  # never in that set — it just no longer needs its own special case to say
+  # so, and neither does the next file that isn't image-relevant either.
+  #
+  # Skipping is an optimization only: a push outside this set still passes
+  # CI and would produce byte-identical images to the ones already published
+  # for the previous main tip, at the cost of ~4 minutes and a needless
+  # registry write per service. `git diff HEAD~1 HEAD` is exactly the set of
+  # files this push introduced to main — `actions/checkout`'s
+  # `fetch-depth: 2` is what makes `HEAD~1` resolvable at all, since a
+  # default checkout is a single-commit shallow clone. `workflow_dispatch`
+  # (a manual, deliberate "build everything" run) and CI_ENABLED's own kill
+  # switch both bypass the diff entirely rather than trying to reason about
+  # which commit a manual trigger should compare against.
   changes:
-    name: Detect changes outside apps/mobile
+    name: Detect changes relevant to a build or deploy
     runs-on: ubuntu-latest
     if: >-
       vars.CI_ENABLED != 'false' &&
@@ -78,7 +90,8 @@ jobs:
           fi
           changed="$(git diff --name-only HEAD~1 HEAD)"
           echo "$changed"
-          if echo "$changed" | grep -qv '^apps/mobile/'; then
+          relevant='^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc|patches/|compose\.prod\.yaml|docker/postgres/|packages/|apps/(api|realtime|collab|web|worker)/)'
+          if echo "$changed" | grep -qE "$relevant"; then
             echo "backend=true" >> "$GITHUB_OUTPUT"
           else
             echo "backend=false" >> "$GITHUB_OUTPUT"
