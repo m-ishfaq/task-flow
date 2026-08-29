@@ -3,6 +3,7 @@ import { parseConfig } from './config.js';
 import { createSecureStore } from './device-secure-store.js';
 import { createDeviceKey } from './device-key.native.js';
 import { createBiometricGate } from './biometric-gate.native.js';
+import { createNetworkStatus, type NetworkStatus } from './network-status.js';
 import { createPreferences } from './preferences.js';
 import { createMobileSession, SessionExpiredError, type MobileSession } from './session.js';
 import { createMobileSocket, type MobileSocket } from './socket.js';
@@ -64,6 +65,13 @@ export const prefs = createPreferences();
  * lives outside `session.ts` entirely rather than as one of its deps.
  */
 export const biometricGate: BiometricGate = createBiometricGate();
+
+/**
+ * Tracks device connectivity for `use-network-status.ts`'s `useIsOffline()`
+ * — see `network-status.ts`'s own header for why this defaults to, and
+ * silently stays at, "connected" if the native module never loads.
+ */
+export const networkStatus: NetworkStatus = createNetworkStatus();
 
 export const session: MobileSession = createMobileSession({
   secureStore: createSecureStore(),

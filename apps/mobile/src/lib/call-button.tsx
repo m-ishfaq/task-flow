@@ -5,7 +5,8 @@ import type { ChannelId } from '@taskflow/contracts';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from './app-session.js';
 import { useSession } from './use-session.js';
-import { apiErrorOf } from './trpc-client.js';
+import { errorMessageOf } from './trpc-client.js';
+import { useIsOffline } from './use-network-status.js';
 import { activeCallQueryKey, invalidateCalls } from './rtc.js';
 import { joinCall, useCallStore } from './use-call.js';
 
@@ -54,6 +55,7 @@ export function CallButton({
 }): React.JSX.Element {
   const queryClient = useQueryClient();
   const selfId = useSession((state) => state.userId);
+  const isOffline = useIsOffline();
   const active = useQuery({
     queryKey: activeCallQueryKey(orgId, channelId),
     queryFn: async () => wire(await apiClient.rtc.active.query({ channelId })),
@@ -79,10 +81,7 @@ export function CallButton({
       await invalidateCalls(queryClient, orgId, channelId);
     },
     onError: (error) => {
-      Alert.alert(
-        'Call not started',
-        apiErrorOf(error)?.error.message ?? 'Something went wrong. Please try again.',
-      );
+      Alert.alert('Call not started', errorMessageOf(error, isOffline));
     },
   });
 

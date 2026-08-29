@@ -108,6 +108,27 @@ export function errorCodeOf(error: unknown): ErrorCode | null {
 }
 
 /**
+ * The message a screen should show for a failed mutation/query: the
+ * server's own explanation when it gave one, an offline-specific message
+ * when it did not AND the device is confirmed offline, or the generic
+ * fallback otherwise (a failure `apiErrorOf` cannot parse for some other
+ * reason — a 500, a malformed response, anything short of "no
+ * connection").
+ *
+ * Takes `isOffline` as a parameter rather than importing `network-
+ * status.ts` directly — this module has no React Native dependency today
+ * and stays that way, the same reason `apiErrorOf` above takes a plain
+ * `unknown` rather than importing a specific error class. Every call site
+ * is a component, which already has `useIsOffline()` available.
+ */
+export function errorMessageOf(error: unknown, isOffline: boolean): string {
+  const serverMessage = apiErrorOf(error)?.error.message;
+  if (serverMessage !== undefined) return serverMessage;
+  if (isOffline) return 'No internet connection. Check your connection and try again.';
+  return 'Something went wrong. Please try again.';
+}
+
+/**
  * Whether a failure means "this refresh token is no good" — the classification
  * `session.ts`'s `SessionApi` adapter uses to decide `SessionExpiredError`
  * (which clears the stored token) from every other failure (which must not:

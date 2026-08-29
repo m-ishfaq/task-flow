@@ -4,7 +4,8 @@ import { router } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../src/lib/app-session.js';
-import { apiErrorOf } from '../../src/lib/trpc-client.js';
+import { errorMessageOf } from '../../src/lib/trpc-client.js';
+import { useIsOffline } from '../../src/lib/use-network-status.js';
 import { BrandMark } from '../../src/lib/brand-mark.js';
 
 /**
@@ -36,6 +37,7 @@ export default function Register() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const isOffline = useIsOffline();
 
   const create = useMutation({
     mutationFn: () => apiClient.auth.register.mutate({ name: name.trim(), email, password }),
@@ -96,7 +98,7 @@ export default function Register() {
       <Text style={styles.hint}>At least 12 characters. Checked against known breach corpora.</Text>
       {create.isError && (
         <Text style={styles.error} accessibilityRole="alert">
-          {apiErrorOf(create.error)?.error.message ?? 'Something went wrong. Please try again.'}
+          {errorMessageOf(create.error, isOffline)}
         </Text>
       )}
       <Pressable
