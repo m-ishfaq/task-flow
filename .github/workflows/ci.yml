@@ -54,18 +54,12 @@ on:
   push:
     branches: [main]
     # Documentation-only commits cannot break the build; skip them entirely.
-    # .gitignore joins this list for the same reason, not because it's docs:
-    # it has zero effect on anything a built image contains, and CD only
-    # runs after CI completes on main (workflow_run) — so skipping CI here
-    # is what stops a .gitignore-only push from triggering a pointless
-    # rebuild-and-push of all 5 images downstream.
     paths-ignore:
       - '**.md'
       - 'ai/**'
       - 'docs/**'
       - '.vscode/**'
       - 'LICENSE'
-      - '.gitignore'
   pull_request:
     branches: [main]
   # Weekly security sweep. Catches newly-published advisories against code that
