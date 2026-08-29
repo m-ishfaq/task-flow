@@ -5,7 +5,8 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import * as WebBrowser from 'expo-web-browser';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient, session } from '../../src/lib/app-session.js';
-import { apiErrorOf, errorCodeOf } from '../../src/lib/trpc-client.js';
+import { apiErrorOf, errorCodeOf, errorMessageOf } from '../../src/lib/trpc-client.js';
+import { useIsOffline } from '../../src/lib/use-network-status.js';
 import { loadPasskeys } from '../../src/lib/passkeys.js';
 import {
   OAUTH_PROVIDER_LABEL,
@@ -332,7 +333,8 @@ export default function SignIn() {
 
 /** The server's own explanation of a failure, when it gave one — apps/web's `ErrorView`, minimal. */
 function FormError({ error }: { readonly error: unknown }) {
-  const message = apiErrorOf(error)?.error.message ?? 'Something went wrong. Please try again.';
+  const isOffline = useIsOffline();
+  const message = errorMessageOf(error, isOffline);
   return (
     <Text style={styles.error} accessibilityRole="alert">
       {message}

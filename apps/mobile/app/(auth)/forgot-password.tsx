@@ -4,7 +4,8 @@ import { router } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../src/lib/app-session.js';
-import { apiErrorOf } from '../../src/lib/trpc-client.js';
+import { errorMessageOf } from '../../src/lib/trpc-client.js';
+import { useIsOffline } from '../../src/lib/use-network-status.js';
 import { BrandMark } from '../../src/lib/brand-mark.js';
 
 /**
@@ -26,6 +27,7 @@ import { BrandMark } from '../../src/lib/brand-mark.js';
  */
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');
+  const isOffline = useIsOffline();
 
   const request = useMutation({
     mutationFn: () => apiClient.auth.requestPasswordReset.mutate({ email }),
@@ -69,7 +71,7 @@ export default function ForgotPassword() {
       />
       {request.isError && (
         <Text style={styles.error} accessibilityRole="alert">
-          {apiErrorOf(request.error)?.error.message ?? 'Something went wrong. Please try again.'}
+          {errorMessageOf(request.error, isOffline)}
         </Text>
       )}
       <Pressable
