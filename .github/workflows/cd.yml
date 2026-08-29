@@ -6,13 +6,17 @@
 ## not pass, and a separate `push`-triggered workflow racing CI would make
 ## that guarantee accidental instead of structural.
 ##
-## Two jobs. `build-push` always runs (subject to the same CI_ENABLED kill
-## switch every workflow in this repo respects) and publishes four images to
+## Three jobs. `changes` decides whether this push touched anything the other
+## two jobs care about (see its own header below — apps/mobile ships through
+## EAS, never through this workflow). `build-push` publishes five images to
 ## GHCR, tagged with the commit SHA and `latest`. `deploy` runs after it and
 ## is a NO-OP — not a failure — when DEPLOY_HOST/DEPLOY_SSH_KEY/DEPLOY_USER
 ## repo secrets are unset, which is the expected state until a target host
 ## exists (ai/pre-launch-hardening.md Priority 1 is explicit that pointing
 ## the mechanism at a real host is a config exercise, not part of this wave).
+## Both `build-push` and `deploy` are skipped together when `changes` finds
+## nothing to build — GitHub's default `needs` semantics do that for `deploy`
+## automatically, since a skipped `build-push` is not a `success()`.
 
 name: CD
 
@@ -39,11 +43,51 @@ env:
   IMAGE_OWNER: ${{ github.repository_owner }}
 
 jobs:
-  build-push:
-    name: Build & push (${{ matrix.service }})
+  # None of the five images this workflow builds are built from apps/mobile —
+  # that ships through EAS, not GHCR — so a push that only touches it has
+  # nothing here to rebuild. Skipping is an optimization only: a mobile-only
+  # push still passes CI and would produce byte-identical images to the ones
+  # already published for the previous main tip, at the cost of ~4 minutes and
+  # a needless registry write per service. `git diff HEAD~1 HEAD` is exactly
+  # the set of files this push introduced to main — `actions/checkout`'s
+  # `fetch-depth: 2` is what makes `HEAD~1` resolvable at all, since a default
+  # checkout is a single-commit shallow clone. `workflow_dispatch` (a manual,
+  # deliberate "build everything" run) and CI_ENABLED's own kill switch both
+  # bypass the diff entirely rather than trying to reason about which commit
+  # a manual trigger should compare against.
+  changes:
+    name: Detect changes outside apps/mobile
+    runs-on: ubuntu-latest
     if: >-
       vars.CI_ENABLED != 'false' &&
       (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 2
+
+      - name: Diff this push against the previous main tip
+        id: filter
+        run: |
+          if [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only HEAD~1 HEAD)"
+          echo "$changed"
+          if echo "$changed" | grep -qv '^apps/mobile/'; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-push:
+    name: Build & push (${{ matrix.service }})
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
