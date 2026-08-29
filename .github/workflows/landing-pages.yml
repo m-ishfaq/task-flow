@@ -1,0 +1,48 @@
+## Deploys the public marketing landing page (`landing/index.html`) to GitHub
+## Pages. Entirely separate from `cd.yml`: this publishes one static file,
+## not the app itself, and has no CI_ENABLED gate — a landing page has no
+## security surface to freeze alongside an org suspension the way telephony
+## or the app images do.
+##
+## One-time setup this workflow cannot do for you (a repo Settings change,
+## not something the workflow's own permissions can flip): in this repo's
+## Settings -> Pages, set "Source" to "GitHub Actions". Until that's set,
+## this workflow runs and uploads the artifact but the `deploy` job has
+## nowhere to publish it, and errors saying so.
+
+name: Deploy landing page
+
+on:
+  push:
+    branches: [main]
+    paths: ['landing/**', '.github/workflows/landing-pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: landing
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
