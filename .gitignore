@@ -68,3 +68,11 @@ apps/mobile/.kotlin/
 # wired in only when present.
 apps/mobile/google-services.json
 apps/mobile/GoogleService-Info.plist
+
+# Android app signing — the keystore and its EAS credentials manifest.
+# Unlike google-services.json this IS a secret in the full sense: whoever
+# holds the keystore can publish updates that Android accepts as coming
+# from this app. Never belongs in the repo, on this machine or any other.
+apps/mobile/*.jks
+apps/mobile/credentials.json
+apps/mobile/credentials/

@@ -6,17 +6,21 @@
 ## not pass, and a separate `push`-triggered workflow racing CI would make
 ## that guarantee accidental instead of structural.
 ##
-## Three jobs. `changes` decides whether this push touched anything the other
-## two jobs care about (see its own header below — apps/mobile ships through
-## EAS, never through this workflow). `build-push` publishes five images to
-## GHCR, tagged with the commit SHA and `latest`. `deploy` runs after it and
-## is a NO-OP — not a failure — when DEPLOY_HOST/DEPLOY_SSH_KEY/DEPLOY_USER
-## repo secrets are unset, which is the expected state until a target host
-## exists (ai/pre-launch-hardening.md Priority 1 is explicit that pointing
-## the mechanism at a real host is a config exercise, not part of this wave).
-## Both `build-push` and `deploy` are skipped together when `changes` finds
-## nothing to build — GitHub's default `needs` semantics do that for `deploy`
-## automatically, since a skipped `build-push` is not a `success()`.
+## Three jobs, gated by TWO independent signals from `changes` (see its own
+## header below) rather than one: `images` (does anything need rebuilding)
+## and `deploy` (does the server need updating). They are not the same
+## question — compose.prod.yaml and docker/postgres/ are real deploy-time
+## inputs (`deploy` copies them to the server) but never reach a built image,
+## so a change to only those should update the server without rebuilding and
+## pushing five images that would come out byte-identical.
+##
+## `build-push` runs when `images` is true and publishes five images to GHCR,
+## tagged with the commit SHA and `latest`. `deploy` runs when `deploy` is
+## true, whether or not `build-push` ran alongside it — when it did not (a
+## compose/docker-postgres-only push), there is no fresh SHA-tagged image for
+## this commit to pull, so it deploys `latest` instead; see its own IMAGE_TAG
+## comment. `deploy` is a NO-OP — not a failure — when
+## DEPLOY_HOST/DEPLOY_SSH_KEY/DEPLOY_USER repo secrets are unset.
 
 name: CD
 
@@ -43,51 +47,89 @@ env:
   IMAGE_OWNER: ${{ github.repository_owner }}
 
 jobs:
-  # None of the five images this workflow builds are built from apps/mobile —
-  # that ships through EAS, not GHCR — so a push that only touches it has
-  # nothing here to rebuild. Skipping is an optimization only: a mobile-only
-  # push still passes CI and would produce byte-identical images to the ones
-  # already published for the previous main tip, at the cost of ~4 minutes and
-  # a needless registry write per service. `git diff HEAD~1 HEAD` is exactly
-  # the set of files this push introduced to main — `actions/checkout`'s
-  # `fetch-depth: 2` is what makes `HEAD~1` resolvable at all, since a default
-  # checkout is a single-commit shallow clone. `workflow_dispatch` (a manual,
-  # deliberate "build everything" run) and CI_ENABLED's own kill switch both
-  # bypass the diff entirely rather than trying to reason about which commit
-  # a manual trigger should compare against.
+  # Two POSITIVE allowlists, not a blacklist of things that don't matter —
+  # the inverse is unmaintainable, since every doc, workflow, or config file
+  # anyone ever adds would need to join it by hand or silently start
+  # triggering rebuilds again. `images` names exactly what `build-push`
+  # consumes, confirmed against every apps/*/Dockerfile's own COPY list: the
+  # root manifests (package.json, pnpm-lock.yaml, pnpm-workspace.yaml,
+  # .npmrc), patches/, packages/ (every image carries the full workspace
+  # source), and each of the five apps/{api,realtime,collab,web,worker}
+  # directories. `deploy` is that same set PLUS compose.prod.yaml and
+  # docker/postgres/ — real inputs to the `deploy` job's server sync, but
+  # never copied into an image, so they belong in the wider set and not the
+  # narrower one. apps/mobile ships through EAS, not GHCR, so it was never in
+  # either set — it just no longer needs its own special case to say so, and
+  # neither does the next file that isn't relevant to either job.
+  #
+  # Skipping build-push is an optimization only: a push outside `images`
+  # still passes CI and would produce byte-identical images to the ones
+  # already published for the previous main tip, at the cost of ~4 minutes
+  # and a needless registry write per service. `git diff HEAD~1 HEAD` is
+  # exactly the set of files this push introduced to main —
+  # `actions/checkout`'s `fetch-depth: 2` is what makes `HEAD~1` resolvable
+  # at all, since a default checkout is a single-commit shallow clone.
+  # `workflow_dispatch` (a manual, deliberate "build everything" run) and
+  # CI_ENABLED's own kill switch both bypass the diff entirely rather than
+  # trying to reason about which commit a manual trigger should compare
+  # against.
+  #
+  # `sha` is resolved once here — "the commit CI actually verified" — rather
+  # than separately inside build-push, because `deploy` needs it too and
+  # cannot always get it from build-push's own output: build-push may be
+  # skipped entirely (a compose/docker-postgres-only push), in which case it
+  # has no output to read at all.
   changes:
-    name: Detect changes outside apps/mobile
+    name: Detect changes relevant to a build or deploy
     runs-on: ubuntu-latest
     if: >-
       vars.CI_ENABLED != 'false' &&
       (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
+      images: ${{ steps.filter.outputs.images }}
+      deploy: ${{ steps.filter.outputs.deploy }}
+      sha: ${{ steps.resolve-ref.outputs.sha }}
     steps:
+      - name: Resolve the commit CI actually verified
+        id: resolve-ref
+        run: echo "sha=${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ steps.resolve-ref.outputs.sha }}
           fetch-depth: 2
 
       - name: Diff this push against the previous main tip
         id: filter
         run: |
           if [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
-            echo "backend=true" >> "$GITHUB_OUTPUT"
+            echo "images=true" >> "$GITHUB_OUTPUT"
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           changed="$(git diff --name-only HEAD~1 HEAD)"
           echo "$changed"
-          if echo "$changed" | grep -qv '^apps/mobile/'; then
-            echo "backend=true" >> "$GITHUB_OUTPUT"
+          # deploy_pattern is images_pattern's alternatives plus the two
+          # deploy-only paths, spelled out in full rather than derived by
+          # string surgery on images_pattern — a later edit to one is
+          # visible in a diff of both, not a break in whichever is derived.
+          images_pattern='^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc|patches/|packages/|apps/(api|realtime|collab|web|worker)/)'
+          deploy_pattern='^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc|patches/|packages/|apps/(api|realtime|collab|web|worker)/|compose\.prod\.yaml|docker/postgres/)'
+          if echo "$changed" | grep -qE "$images_pattern"; then
+            echo "images=true" >> "$GITHUB_OUTPUT"
           else
-            echo "backend=false" >> "$GITHUB_OUTPUT"
+            echo "images=false" >> "$GITHUB_OUTPUT"
+          fi
+          if echo "$changed" | grep -qE "$deploy_pattern"; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
           fi
 
   build-push:
     name: Build & push (${{ matrix.service }})
     needs: changes
-    if: needs.changes.outputs.backend == 'true'
+    if: needs.changes.outputs.images == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -108,16 +150,10 @@ jobs:
         # `docker compose config`/build never catch a tag that simply
         # doesn't exist in the registry yet.
         service: [api, realtime, collab, web, worker]
-    outputs:
-      sha: ${{ steps.resolve-ref.outputs.sha }}
     steps:
-      - name: Resolve the commit CI actually verified
-        id: resolve-ref
-        run: echo "sha=${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_OUTPUT"
-
       - uses: actions/checkout@v4
         with:
-          ref: ${{ steps.resolve-ref.outputs.sha }}
+          ref: ${{ needs.changes.outputs.sha }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -133,7 +169,7 @@ jobs:
           file: apps/${{ matrix.service }}/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ env.IMAGE_OWNER }}/task-flow-${{ matrix.service }}:${{ steps.resolve-ref.outputs.sha }}
+            ghcr.io/${{ env.IMAGE_OWNER }}/task-flow-${{ matrix.service }}:${{ needs.changes.outputs.sha }}
             ghcr.io/${{ env.IMAGE_OWNER }}/task-flow-${{ matrix.service }}:latest
           # Scoped per service — a shared cache key across four independent
           # Dockerfiles would mean api's cache entries evicting web's.
@@ -168,11 +204,22 @@ jobs:
         env:
           IMAGE_OWNER: ${{ env.IMAGE_OWNER }}
           SERVICE: ${{ matrix.service }}
-          IMAGE_SHA: ${{ steps.resolve-ref.outputs.sha }}
+          IMAGE_SHA: ${{ needs.changes.outputs.sha }}
 
   deploy:
     name: Deploy
-    needs: build-push
+    needs: [changes, build-push]
+    # Runs whenever `changes` says the server needs updating — NOT gated on
+    # build-push's default success() the way a plain `needs: build-push`
+    # would be, because build-push is legitimately skipped on a
+    # compose/docker-postgres-only push. Writing an explicit `if` opts out of
+    # that default entirely, so `build-push.result == 'skipped'` has to be
+    # allowed back in by hand alongside `success()` — and a real build-push
+    # FAILURE must still block deploy, which is why `skipped` is the only
+    # non-success result let through here.
+    if: >-
+      needs.changes.outputs.deploy == 'true' &&
+      (needs.build-push.result == 'success' || needs.build-push.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -196,7 +243,7 @@ jobs:
       - uses: actions/checkout@v4
         if: steps.gate.outputs.configured == 'true'
         with:
-          ref: ${{ needs.build-push.outputs.sha }}
+          ref: ${{ needs.changes.outputs.sha }}
 
       - uses: webfactory/ssh-agent@v0.9.0
         if: steps.gate.outputs.configured == 'true'
@@ -256,13 +303,21 @@ jobs:
       # docker/postgres/ensure-roles.sh's own header for why that can't be
       # migrate's job (taskflow_migrator is deliberately NOCREATEROLE) or
       # 02-roles.sql's (it only runs once, against an empty data directory).
+      # When build-push ran, this commit has a real SHA-tagged image to
+      # deploy. When it was SKIPPED (a compose/docker-postgres-only push),
+      # no image was ever published under this commit's SHA — pinning
+      # IMAGE_TAG to it anyway would make the `pull` below fail on a
+      # manifest that doesn't exist. `latest` is always the most recently
+      # published image in that case, which is also the only image this
+      # push could possibly have meant to run: nothing about the images
+      # changed, only what the server is running them WITH.
       - name: Ensure roles, migrate, then deploy over SSH
         if: steps.gate.outputs.configured == 'true'
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/taskflow' }}
-          IMAGE_TAG: ${{ needs.build-push.outputs.sha }}
+          IMAGE_TAG: ${{ needs.build-push.result == 'success' && needs.changes.outputs.sha || 'latest' }}
         run: |
           ssh -o StrictHostKeyChecking=accept-new "$DEPLOY_USER@$DEPLOY_HOST" \
             "cd '$DEPLOY_PATH' && \
