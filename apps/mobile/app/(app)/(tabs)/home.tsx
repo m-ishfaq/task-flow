@@ -70,7 +70,7 @@ export default function Home() {
     queryKey: ACTIVE_SPRINTS_QUERY_KEY,
     queryFn: async () => wire(await apiClient.work.sprints.active.query({})),
   });
-  const paddingTop = useTopInset();
+  const paddingTop = useTopInset(4);
 
   const runningSprintIds = useMemo(
     () => new Set((activeSprints.data ?? []).map((sprint) => sprint.sprintId)),
@@ -88,17 +88,17 @@ export default function Home() {
 
   return (
     <View style={[styles.container, { paddingTop }]}>
-      <View style={styles.header}>
+      <View style={styles.titleRow}>
         <Text style={styles.title}>My Tasks</Text>
-        <Text style={styles.subtitle}>
-          {visible.length} {visible.length === 1 ? 'card' : 'cards'}
-          {scope === 'all'
-            ? ' assigned to you, across every board.'
-            : scope === 'sprint'
-              ? ' assigned to you in a running sprint.'
-              : ' assigned to you and not in any sprint.'}
-        </Text>
       </View>
+      <Text style={styles.subtitle}>
+        {visible.length} {visible.length === 1 ? 'card' : 'cards'}
+        {scope === 'all'
+          ? ' assigned to you, across every board.'
+          : scope === 'sprint'
+            ? ' assigned to you in a running sprint.'
+            : ' assigned to you and not in any sprint.'}
+      </Text>
 
       {runningSprintIds.size > 0 && (
         <View style={styles.scopeRow} accessibilityRole="tablist">
@@ -153,9 +153,11 @@ const styles = StyleSheet.create({
     gap: 12,
     backgroundColor: colors.surface.hex,
   },
-  header: {
-    gap: 4,
-    paddingTop: 4,
+  titleRow: {
+    height: 36,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    paddingRight: 120,
   },
   title: {
     fontSize: 24,

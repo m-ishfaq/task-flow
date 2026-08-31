@@ -22,6 +22,8 @@ import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { SPACES_QUERY_KEY, type Space } from '../../../src/lib/docs.js';
 import { Fab } from '../../../src/lib/fab.js';
 
+const TOPBAR_ICON_CLEARANCE = 120;
+
 /**
  * Docs — the 6th... really the 5th bottom tab again: this closes the gap
  * `(tabs)/_layout.tsx`'s own header has named since the Account move
@@ -42,7 +44,7 @@ import { Fab } from '../../../src/lib/fab.js';
  * by tapping a space below.
  */
 export default function DocsScreen() {
-  const paddingTop = useTopInset();
+  const paddingTop = useTopInset(4);
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -211,6 +213,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 10,
     paddingHorizontal: 24,
+    paddingRight: 24 + TOPBAR_ICON_CLEARANCE,
     marginBottom: 10,
   },
   titleColumn: {

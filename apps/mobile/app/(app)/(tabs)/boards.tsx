@@ -2,6 +2,9 @@ import { useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -37,7 +40,25 @@ import { Fab } from '../../../src/lib/fab.js';
  * creating a project has no existing resource to hold a tuple, so `can()`
  * with no target resolves from role alone, and that boolean is the server's
  * own answer rather than this screen re-deriving it from `role`.
+ *
+ * **Title row height matches `TopBar`'s 36 px icon row**, both starting at
+ * `insets.top + 4`, so "Boards" and the account/search/bell icons share the
+ * same vertical centre. `useTopInset(4)` instead of the default 24 is what
+ * makes the content start there; `TOPBAR_ICON_CLEARANCE` keeps the title
+ * text out of the icon cluster on the right.
+ *
+ * **"New project" form is a bottom-sheet Modal, not an inline push-down
+ * panel.** The inline form displaced the project list downward, making
+ * the visible list shorter each time a user tapped "+", and gave no natural
+ * way to dismiss without a cancel button scroll. A sheet slides up from the
+ * bottom the same way the OS keyboard does — the list stays untouched, the
+ * form gets full focus, and a tap on the backdrop or the "Cancel" link
+ * dismisses it.
  */
+
+/** Right-side clearance so the title text never runs under the TopBar icon cluster. */
+const TOPBAR_ICON_CLEARANCE = 120;
+
 export default function Boards() {
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
@@ -70,7 +91,7 @@ export default function Boards() {
       await queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY });
     },
   });
-  const paddingTop = useTopInset();
+  const paddingTop = useTopInset(4);
 
   // Same shape as `packages/api/src/work/router.ts`'s `ProjectKey`, restated
   // as a client-side hint (not the check — the server still re-validates):
@@ -78,66 +99,19 @@ export default function Boards() {
   const keyValid = /^[A-Za-z][A-Za-z0-9]{1,9}$/.test(key.trim());
   const canSubmit = name.trim().length > 0 && keyValid && !create.isPending;
 
+  const closeSheet = () => {
+    setCreating(false);
+    setName('');
+    setKey('');
+    setDescription('');
+    create.reset();
+  };
+
   return (
     <View style={[styles.container, { paddingTop }]}>
       <View style={styles.titleRow}>
         <Text style={styles.title}>Boards</Text>
       </View>
-
-      {creating && canCreateProject && (
-        <View style={styles.createForm}>
-          <TextInput
-            value={name}
-            onChangeText={setName}
-            placeholder="Project name"
-            placeholderTextColor={colors.inkFaint.hex}
-            style={styles.createInput}
-            autoFocus
-          />
-          <TextInput
-            value={key}
-            onChangeText={setKey}
-            placeholder="Key (e.g. WEB)"
-            placeholderTextColor={colors.inkFaint.hex}
-            style={[styles.createInput, styles.createKeyInput]}
-            autoCapitalize="characters"
-            maxLength={10}
-          />
-          <TextInput
-            value={description}
-            onChangeText={setDescription}
-            placeholder="Description (optional)"
-            placeholderTextColor={colors.inkFaint.hex}
-            style={styles.createInput}
-          />
-          <Pressable
-            style={[styles.createSubmit, !canSubmit && styles.createSubmitDisabled]}
-            disabled={!canSubmit}
-            onPress={() => {
-              create.mutate();
-            }}
-          >
-            {create.isPending ? (
-              <ActivityIndicator color={colors.accentInk.hex} />
-            ) : (
-              <Text style={styles.createSubmitText}>Create project</Text>
-            )}
-          </Pressable>
-          {create.isError && (
-            <Text style={styles.createError} accessibilityRole="alert">
-              {apiErrorOf(create.error)?.error.message ?? 'The project could not be created.'}
-            </Text>
-          )}
-          <Pressable
-            style={styles.createCancel}
-            onPress={() => {
-              setCreating(false);
-            }}
-          >
-            <Text style={styles.createCancelText}>Cancel</Text>
-          </Pressable>
-        </View>
-      )}
 
       <FlatList<Project>
         data={projects.data}
@@ -163,6 +137,73 @@ export default function Boards() {
           }}
         />
       )}
+
+      {/* Bottom-sheet modal — slides up from the bottom, list stays visible
+          behind a dimmed backdrop. Tap outside or Cancel to dismiss. */}
+      <Modal
+        visible={creating && canCreateProject}
+        transparent
+        animationType="slide"
+        onRequestClose={closeSheet}
+      >
+        <View style={styles.sheetBackdrop}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={closeSheet} />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.sheetKAV}
+          >
+            <View style={styles.sheet}>
+              <View style={styles.sheetHandle} />
+              <Text style={styles.sheetTitle}>New project</Text>
+              <TextInput
+                value={name}
+                onChangeText={setName}
+                placeholder="Project name"
+                placeholderTextColor={colors.inkFaint.hex}
+                style={styles.createInput}
+                autoFocus
+              />
+              <TextInput
+                value={key}
+                onChangeText={setKey}
+                placeholder="Key (e.g. WEB)"
+                placeholderTextColor={colors.inkFaint.hex}
+                style={[styles.createInput, styles.createKeyInput]}
+                autoCapitalize="characters"
+                maxLength={10}
+              />
+              <TextInput
+                value={description}
+                onChangeText={setDescription}
+                placeholder="Description (optional)"
+                placeholderTextColor={colors.inkFaint.hex}
+                style={styles.createInput}
+              />
+              <Pressable
+                style={[styles.createSubmit, !canSubmit && styles.createSubmitDisabled]}
+                disabled={!canSubmit}
+                onPress={() => {
+                  create.mutate();
+                }}
+              >
+                {create.isPending ? (
+                  <ActivityIndicator color={colors.accentInk.hex} />
+                ) : (
+                  <Text style={styles.createSubmitText}>Create project</Text>
+                )}
+              </Pressable>
+              {create.isError && (
+                <Text style={styles.createError} accessibilityRole="alert">
+                  {apiErrorOf(create.error)?.error.message ?? 'The project could not be created.'}
+                </Text>
+              )}
+              <Pressable style={styles.createCancel} onPress={closeSheet}>
+                <Text style={styles.createCancelText}>Cancel</Text>
+              </Pressable>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -193,10 +234,15 @@ const styles = StyleSheet.create({
     gap: 12,
     backgroundColor: colors.surface.hex,
   },
+  /* 36 px height + center-align puts the title text on exactly the same
+     vertical axis as the TopBar's icon row, which also sits 4 px below the
+     safe-area top and spans 36 px. paddingRight reserves the right side for
+     those icons so the text never runs under them. */
   titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    height: 36,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    paddingRight: TOPBAR_ICON_CLEARANCE,
   },
   title: {
     fontSize: 24,
@@ -204,61 +250,12 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
     letterSpacing: -0.3,
   },
-  createCancel: {
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  createCancelText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.inkMuted.hex,
-  },
-  createForm: {
-    gap: 8,
-    borderWidth: 1,
-    borderColor: colors.line.hex + '80',
-    borderRadius: radiusCard,
-    backgroundColor: colors.surfaceSunken.hex,
-    padding: 12,
-  },
-  createInput: {
-    borderWidth: 1,
-    borderColor: colors.line.hex + '80',
-    borderRadius: radiusCard + 2,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: colors.ink.hex,
-    backgroundColor: colors.surface.hex,
-  },
-  createKeyInput: {
-    width: 140,
-    fontVariant: ['tabular-nums'],
-  },
-  createSubmit: {
-    backgroundColor: colors.accent.hex,
-    borderRadius: radiusCard,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  createSubmitDisabled: {
-    opacity: 0.5,
-  },
-  createSubmitText: {
-    color: colors.accentInk.hex,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  createError: {
-    fontSize: 12,
-    color: colors.danger.hex,
-  },
   listContainer: {
     flex: 1,
   },
   list: {
     gap: 10,
-    paddingBottom: 16,
+    paddingBottom: 80,
   },
   row: {
     flexDirection: 'row',
@@ -292,5 +289,78 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.inkMuted.hex,
     marginTop: 8,
+  },
+  /* Bottom-sheet modal */
+  sheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  sheetKAV: {
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: colors.surfaceRaised.hex,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    gap: 12,
+    paddingBottom: 32,
+  },
+  sheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.line.hex,
+    alignSelf: 'center',
+    marginBottom: 4,
+  },
+  sheetTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.ink.hex,
+    marginBottom: 4,
+  },
+  createInput: {
+    borderWidth: 1,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard + 2,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: colors.ink.hex,
+    backgroundColor: colors.surfaceSunken.hex,
+  },
+  createKeyInput: {
+    width: 140,
+    fontVariant: ['tabular-nums'],
+  },
+  createSubmit: {
+    backgroundColor: colors.accent.hex,
+    borderRadius: radiusCard,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  createSubmitDisabled: {
+    opacity: 0.5,
+  },
+  createSubmitText: {
+    color: colors.accentInk.hex,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  createError: {
+    fontSize: 12,
+    color: colors.danger.hex,
+  },
+  createCancel: {
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  createCancelText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.inkMuted.hex,
   },
 });

@@ -88,7 +88,7 @@ const TABS = [
 type TabId = (typeof TABS)[number]['id'];
 
 export default function CallsScreen() {
-  const paddingTop = useTopInset();
+  const paddingTop = useTopInset(4);
   const [tab, setTab] = useState<TabId>('calls');
 
   return (
@@ -1191,7 +1191,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface.hex,
   },
   titleRow: {
+    height: 36,
     paddingHorizontal: 24,
+    paddingRight: 24 + 120,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
   },
   title: {
     fontSize: 28,

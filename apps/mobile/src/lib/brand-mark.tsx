@@ -21,8 +21,12 @@ import { useBranding, usePaletteColors } from './branding-context.js';
  * something on-brand" problem — costs nothing and crashes nothing.
  */
 export function BrandMark({ size = 40 }: { readonly size?: number }): ReactNode {
-  const { logoUrl, productName } = useBranding();
+  const { logoUrl, productName, isPending } = useBranding();
   const palette = usePaletteColors();
+
+  // Render nothing while the first branding fetch is in-flight — avoids the
+  // fallback "T" initial flashing on screen before the real logo arrives.
+  if (isPending) return null;
 
   if (logoUrl !== null) {
     return (

@@ -33,6 +33,8 @@ import {
 } from '../../../src/lib/chat.js';
 import { FabMenu } from '../../../src/lib/fab.js';
 
+const TOPBAR_ICON_CLEARANCE = 120;
+
 /**
  * Chat's entry point — the fourth tab (see `_layout.tsx`). Wave 3's
  * roadmap row — see `chat.ts`'s own header for what's shipped and what is
@@ -73,7 +75,7 @@ export default function Chat() {
     queryKey: CHANNELS_QUERY_KEY,
     queryFn: async () => wire(await apiClient.chat.channels.list.query()),
   });
-  const paddingTop = useTopInset();
+  const paddingTop = useTopInset(4);
 
   // Org-wide, not per-channel — `chat.saved.list` re-checks `channel:read`
   // on every row and drops what the caller can no longer see, so this
@@ -588,9 +590,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface.hex,
   },
   titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    height: 36,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    paddingRight: TOPBAR_ICON_CLEARANCE,
   },
   title: {
     fontSize: 24,
