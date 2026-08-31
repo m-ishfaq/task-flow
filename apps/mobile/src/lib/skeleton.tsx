@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Animated, StyleSheet, View, type DimensionValue, type ViewStyle } from 'react-native';
 import { colors } from '@taskflow/tokens';
 
 interface SkeletonProps {
-  readonly width: number | string;
+  readonly width: DimensionValue;
   readonly height: number;
   readonly style?: ViewStyle;
   readonly borderRadius?: number;
@@ -26,10 +26,12 @@ export function Skeleton({ width, height, style, borderRadius = 6 }: SkeletonPro
     };
   }, [opacity]);
 
+  // Wrap in a plain View for dimensions; only the inner Animated.View carries opacity
+  // so the width type stays DimensionValue (not constrained by Animated.View's style).
   return (
-    <Animated.View
-      style={[{ width, height, borderRadius, backgroundColor: colors.line.hex, opacity }, style]}
-    />
+    <View style={[{ width, height, borderRadius, overflow: 'hidden' }, style]}>
+      <Animated.View style={{ flex: 1, backgroundColor: colors.line.hex, opacity }} />
+    </View>
   );
 }
 
@@ -52,9 +54,9 @@ export function SkeletonRow({ style }: { readonly style?: ViewStyle }) {
 export function SkeletonList({ count = 5 }: { readonly count?: number }) {
   return (
     <View>
-      {Array.from({ length: count }, (_, i) => (
-        <SkeletonRow key={i} style={i > 0 ? skeletonStyles.listGap : undefined} />
-      ))}
+      {Array.from({ length: count }, (_, i) =>
+        i > 0 ? <SkeletonRow key={i} style={skeletonStyles.listGap} /> : <SkeletonRow key={i} />,
+      )}
     </View>
   );
 }
