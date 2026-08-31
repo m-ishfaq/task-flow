@@ -1,6 +1,14 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
+import {
+  ActivityIndicator,
+  Pressable,
+  RefreshControl,
+  SectionList,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
 import { colors } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
@@ -60,7 +68,21 @@ type Scope = 'all' | 'sprint' | 'backlog';
  * rendering for a second screen; see that file's own header.
  */
 export default function Home() {
+  const queryClient = useQueryClient();
   const [scope, setScope] = useState<Scope>('all');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const doRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: MY_TASKS_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: ACTIVE_SPRINTS_QUERY_KEY }),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const cards = useQuery({
     queryKey: MY_TASKS_QUERY_KEY,
@@ -134,6 +156,13 @@ export default function Home() {
         contentContainerStyle={styles.list}
         style={styles.listContainer}
         stickySectionHeadersEnabled={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => { void doRefresh(); }}
+            tintColor={colors.accent.hex}
+          />
+        }
         ListEmptyComponent={
           cards.isPending ? (
             <ActivityIndicator color={colors.accent.hex} />

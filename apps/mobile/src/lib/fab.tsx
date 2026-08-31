@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '@taskflow/tokens';
@@ -63,6 +63,7 @@ export interface FabAction {
   readonly key: string;
   readonly label: string;
   readonly icon: IconName;
+  readonly badge?: number | undefined;
   readonly onPress: () => void;
 }
 
@@ -71,6 +72,9 @@ export interface FabAction {
  * than one screen-scoped action (Chat: New + Saved; a Docs space: New page +
  * Templates). Folding them into one menu keeps BOTH out of the top-right,
  * which a second title-row button would not.
+ *
+ * The "+" icon rotates 45° to form a "×" when the menu is open, using
+ * `Animated.timing` on the JS thread so no native build is required.
  */
 export function FabMenu(props: {
   readonly actions: readonly FabAction[];
@@ -81,33 +85,55 @@ export function FabMenu(props: {
   const [open, setOpen] = useState(false);
   const bottom = props.bottom ?? insets.bottom + BASE_BOTTOM;
 
+  const rotation = useRef(new Animated.Value(0)).current;
+
+  const openMenu = () => {
+    setOpen(true);
+    Animated.timing(rotation, {
+      toValue: 1,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const closeMenu = () => {
+    Animated.timing(rotation, {
+      toValue: 0,
+      duration: 160,
+      useNativeDriver: true,
+    }).start(() => {
+      setOpen(false);
+    });
+  };
+
+  const iconRotate = rotation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '45deg'],
+  });
+
   return (
     <>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={props.label ?? 'Actions'}
-        onPress={() => {
-          setOpen(true);
-        }}
+        onPress={open ? closeMenu : openMenu}
         style={({ pressed }) => [styles.fab, { bottom }, pressed && styles.pressed]}
       >
-        <Ionicons name="add" size={26} color={colors.accentInk.hex} />
+        <Animated.View style={{ transform: [{ rotate: iconRotate }] }}>
+          <Ionicons name="add" size={26} color={colors.accentInk.hex} />
+        </Animated.View>
       </Pressable>
 
       <Modal
         transparent
         visible={open}
         animationType="fade"
-        onRequestClose={() => {
-          setOpen(false);
-        }}
+        onRequestClose={closeMenu}
       >
         <Pressable
           style={styles.backdrop}
           accessibilityLabel="Dismiss menu"
-          onPress={() => {
-            setOpen(false);
-          }}
+          onPress={closeMenu}
         >
           <View style={[styles.menu, { right: RIGHT, bottom: bottom + SIZE + 12 }]}>
             {props.actions.map((action) => (
@@ -116,13 +142,20 @@ export function FabMenu(props: {
                 accessibilityRole="button"
                 accessibilityLabel={action.label}
                 onPress={() => {
-                  setOpen(false);
+                  closeMenu();
                   action.onPress();
                 }}
                 style={({ pressed }) => [styles.menuRow, pressed && styles.menuRowPressed]}
               >
-                <Ionicons name={action.icon} size={18} color={colors.ink.hex} />
+                <View style={styles.menuIconWrap}>
+                  <Ionicons name={action.icon} size={18} color={colors.ink.hex} />
+                </View>
                 <Text style={styles.menuLabel}>{action.label}</Text>
+                {action.badge !== undefined && action.badge > 0 && (
+                  <View style={styles.menuBadge}>
+                    <Text style={styles.menuBadgeText}>{action.badge}</Text>
+                  </View>
+                )}
               </Pressable>
             ))}
           </View>
@@ -160,9 +193,9 @@ const styles = StyleSheet.create({
   },
   menu: {
     position: 'absolute',
-    minWidth: 188,
+    minWidth: 200,
     backgroundColor: colors.surfaceRaised.hex,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.line.hex,
     paddingVertical: 6,
@@ -183,9 +216,32 @@ const styles = StyleSheet.create({
   menuRowPressed: {
     backgroundColor: colors.line.hex + '55',
   },
+  menuIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceSunken.hex,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   menuLabel: {
+    flex: 1,
     color: colors.ink.hex,
     fontSize: 15,
     fontWeight: '600',
+  },
+  menuBadge: {
+    backgroundColor: colors.accent.hex,
+    borderRadius: 999,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+  },
+  menuBadgeText: {
+    color: colors.accentInk.hex,
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

@@ -7,6 +7,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -48,6 +49,16 @@ export default function DocsScreen() {
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const doRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await queryClient.invalidateQueries({ queryKey: SPACES_QUERY_KEY });
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const spaces = useQuery({
     queryKey: SPACES_QUERY_KEY,
@@ -104,6 +115,13 @@ export default function DocsScreen() {
         data={spaces.data ?? []}
         keyExtractor={(space) => space.spaceId}
         contentContainerStyle={styles.list}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => { void doRefresh(); }}
+            tintColor={colors.accent.hex}
+          />
+        }
         renderItem={({ item }) => (
           <Pressable
             style={[styles.row, item.archivedAt !== null && styles.rowArchived]}

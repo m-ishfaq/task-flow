@@ -6,6 +6,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -65,6 +66,16 @@ export default function Boards() {
   const [name, setName] = useState('');
   const [key, setKey] = useState('');
   const [description, setDescription] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const doRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY });
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const projects = useQuery({
     queryKey: PROJECTS_QUERY_KEY,
@@ -119,6 +130,13 @@ export default function Boards() {
         renderItem={({ item }) => <ProjectRow project={item} />}
         contentContainerStyle={styles.list}
         style={styles.listContainer}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => { void doRefresh(); }}
+            tintColor={colors.accent.hex}
+          />
+        }
         ListEmptyComponent={
           projects.isPending ? (
             <ActivityIndicator color={colors.accent.hex} />
