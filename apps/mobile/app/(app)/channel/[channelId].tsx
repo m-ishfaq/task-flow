@@ -58,6 +58,7 @@ import {
   unfurlsQueryKey,
   CHANNELS_QUERY_KEY,
   QUICK_REACTIONS,
+  SAVED_QUERY_KEY,
   type Message,
   type MessageGroup,
   type UnfurlPreview,
@@ -674,6 +675,14 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
     },
   });
 
+  const saveMessage = useMutation({
+    mutationFn: (messageId: string) => apiClient.chat.saved.save.mutate({ messageId }),
+    onSuccess: async () => {
+      setActionsFor(null);
+      await queryClient.invalidateQueries({ queryKey: SAVED_QUERY_KEY });
+    },
+  });
+
   const edit = useMutation({
     mutationFn: (input: { messageId: string; text: string }) =>
       apiClient.chat.messages.edit.mutate({
@@ -983,6 +992,15 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
               }}
             >
               <Text style={styles.actionOptionText}>📌 Pin this message</Text>
+            </Pressable>
+            <Pressable
+              style={styles.actionOption}
+              disabled={saveMessage.isPending}
+              onPress={() => {
+                if (actionsFor) saveMessage.mutate(actionsFor.messageId);
+              }}
+            >
+              <Text style={styles.actionOptionText}>🔖 Save this message</Text>
             </Pressable>
             {actionsFor?.authorId === userId && (
               <Pressable

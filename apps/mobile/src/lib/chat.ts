@@ -183,6 +183,14 @@ export function firstUnreadAfter(
 /** Org-wide, same shape as `chat.saved.list`'s own scope — filtered client-side per channel, matching `apps/web`'s `SavedSection`. */
 export const SAVED_QUERY_KEY = ['chat.saved.list'] as const;
 
+/** All messages pinned across every channel the caller can see — `chat.messages.allPins`, the sidebar-level panel parallel to `SAVED_QUERY_KEY`. */
+export const ALL_PINS_QUERY_KEY = ['chat.messages.allPins'] as const;
+
+/** One row from `chat.messages.allPins` — a pin visible across every channel the caller can reach. */
+export type AllPinnedMessage = Wire<
+  Awaited<ReturnType<MobileTRPCClient['chat']['messages']['allPins']['query']>>
+>[number];
+
 export function filesQueryKey(
   channelId: string,
 ): readonly ['chat.attachments.listForChannel', string] {
