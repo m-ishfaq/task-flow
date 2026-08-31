@@ -209,17 +209,23 @@ jobs:
   deploy:
     name: Deploy
     needs: [changes, build-push]
-    # Runs whenever `changes` says the server needs updating — NOT gated on
-    # build-push's default success() the way a plain `needs: build-push`
-    # would be, because build-push is legitimately skipped on a
-    # compose/docker-postgres-only push. Writing an explicit `if` opts out of
-    # that default entirely, so `build-push.result == 'skipped'` has to be
-    # allowed back in by hand alongside `success()` — and a real build-push
-    # FAILURE must still block deploy, which is why `skipped` is the only
-    # non-success result let through here.
+    # Runs whenever `changes` says the server needs updating, INCLUDING when
+    # build-push was legitimately skipped (a compose/docker-postgres-only push
+    # rebuilds nothing). `!cancelled()` is load-bearing and used to be missing:
+    # GitHub skips a job whose `needs` includes a SKIPPED job UNLESS the `if`
+    # contains a status function, so an `if` that only references
+    # `build-push.result` is NOT enough to "opt out of the default" — the deploy
+    # job skipped anyway on every deploy-only push, and the first such push (the
+    # postgres digest pin) merged green while never reaching the server. Proven
+    # against a real run: `changes` emitted `deploy=true` and the Deploy job
+    # still skipped. `!cancelled()` makes GitHub evaluate this `if` instead of
+    # skip-propagating; `build-push.result != 'failure'` still blocks deploy on a
+    # real build FAILURE while allowing success, skipped, and the empty-result
+    # matrix case a fully-skipped build-push can produce.
     if: >-
+      !cancelled() &&
       needs.changes.outputs.deploy == 'true' &&
-      (needs.build-push.result == 'success' || needs.build-push.result == 'skipped')
+      needs.build-push.result != 'failure'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
