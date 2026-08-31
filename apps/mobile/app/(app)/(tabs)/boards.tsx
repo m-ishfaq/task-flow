@@ -147,7 +147,7 @@ export default function Boards() {
         onRequestClose={closeSheet}
       >
         <View style={styles.sheetBackdrop}>
-          <Pressable style={StyleSheet.absoluteFillObject} onPress={closeSheet} />
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeSheet} />
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.sheetKAV}
