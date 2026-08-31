@@ -190,10 +190,7 @@ function ProjectBoardsContent({
               could not submit this form regardless, so showing it as
               unusable is clutter, not information. */}
           {canCreateBoard && (
-            <Pressable
-              style={styles.newButton}
-              onPress={() => setCreating(true)}
-            >
+            <Pressable style={styles.newButton} onPress={() => setCreating(true)}>
               <Text style={styles.newButtonText}>+ New board</Text>
             </Pressable>
           )}
@@ -313,7 +310,10 @@ function ProjectBoardsContent({
                 autoFocus
               />
               <Pressable
-                style={[styles.createSubmit, (create.isPending || name.trim().length === 0) && styles.createSubmitDisabled]}
+                style={[
+                  styles.createSubmit,
+                  (create.isPending || name.trim().length === 0) && styles.createSubmitDisabled,
+                ]}
                 disabled={create.isPending || name.trim().length === 0}
                 onPress={() => {
                   create.mutate(name.trim());
