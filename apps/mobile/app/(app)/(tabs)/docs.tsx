@@ -20,6 +20,7 @@ import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { SPACES_QUERY_KEY, type Space } from '../../../src/lib/docs.js';
+import { Fab } from '../../../src/lib/fab.js';
 
 /**
  * Docs — the 6th... really the 5th bottom tab again: this closes the gap
@@ -83,14 +84,6 @@ export default function DocsScreen() {
           <Text style={styles.title}>Docs</Text>
           <Text style={styles.subtitle}>Spaces and pages, organized from here.</Text>
         </View>
-        <Pressable
-          style={styles.newButton}
-          onPress={() => {
-            setCreating(true);
-          }}
-        >
-          <Text style={styles.newButtonText}>+ New space</Text>
-        </Pressable>
       </View>
 
       {spaces.isPending && <ActivityIndicator style={styles.loading} color={colors.accent.hex} />}
@@ -101,7 +94,7 @@ export default function DocsScreen() {
       )}
       {spaces.isSuccess && spaces.data.length === 0 && (
         <Text style={styles.emptyHint}>
-          No spaces yet. Tap "+ New space" above to create the first one.
+          No spaces yet. Tap the + button to create the first one.
         </Text>
       )}
 
@@ -195,6 +188,14 @@ export default function DocsScreen() {
           </Pressable>
         </KeyboardAvoidingView>
       </Modal>
+
+      <Fab
+        label="New space"
+        bottom={24}
+        onPress={() => {
+          setCreating(true);
+        }}
+      />
     </View>
   );
 }
@@ -224,18 +225,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontSize: 13,
     color: colors.inkMuted.hex,
-  },
-  newButton: {
-    backgroundColor: colors.accent.hex,
-    borderRadius: radiusCard,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginTop: 2,
-  },
-  newButtonText: {
-    color: colors.accentInk.hex,
-    fontSize: 12,
-    fontWeight: '700',
   },
   loading: {
     marginTop: 12,

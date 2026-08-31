@@ -16,6 +16,7 @@ import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { PROJECTS_QUERY_KEY, type Project } from '../../../src/lib/work.js';
+import { Fab } from '../../../src/lib/fab.js';
 
 /**
  * Boards' entry point — the third tab, alongside My Tasks and Account (see
@@ -81,19 +82,6 @@ export default function Boards() {
     <View style={[styles.container, { paddingTop }]}>
       <View style={styles.titleRow}>
         <Text style={styles.title}>Boards</Text>
-        {/* Hidden rather than disabled: a caller without `project:create`
-            could not submit this form regardless, so showing it as
-            unusable is clutter, not information. */}
-        {canCreateProject && (
-          <Pressable
-            style={styles.newButton}
-            onPress={() => {
-              setCreating((open) => !open);
-            }}
-          >
-            <Text style={styles.newButtonText}>{creating ? 'Cancel' : '+ New project'}</Text>
-          </Pressable>
-        )}
       </View>
 
       {creating && canCreateProject && (
@@ -140,6 +128,14 @@ export default function Boards() {
               {apiErrorOf(create.error)?.error.message ?? 'The project could not be created.'}
             </Text>
           )}
+          <Pressable
+            style={styles.createCancel}
+            onPress={() => {
+              setCreating(false);
+            }}
+          >
+            <Text style={styles.createCancelText}>Cancel</Text>
+          </Pressable>
         </View>
       )}
 
@@ -157,6 +153,16 @@ export default function Boards() {
           )
         }
       />
+
+      {canCreateProject && (
+        <Fab
+          label="New project"
+          bottom={24}
+          onPress={() => {
+            setCreating(true);
+          }}
+        />
+      )}
     </View>
   );
 }
@@ -198,17 +204,14 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
     letterSpacing: -0.3,
   },
-  newButton: {
-    borderWidth: 1,
-    borderColor: colors.accent.hex,
-    borderRadius: radiusCard,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  createCancel: {
+    alignItems: 'center',
+    paddingVertical: 4,
   },
-  newButtonText: {
+  createCancelText: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.accent.hex,
+    color: colors.inkMuted.hex,
   },
   createForm: {
     gap: 8,
