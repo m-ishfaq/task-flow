@@ -22,6 +22,7 @@ import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { SPACES_QUERY_KEY, type Space } from '../../../src/lib/docs.js';
 import { Fab } from '../../../src/lib/fab.js';
+import { toast, ToastHost } from '../../../src/lib/toast.js';
 
 const TOPBAR_ICON_CLEARANCE = 120;
 
@@ -73,6 +74,7 @@ export default function DocsScreen() {
     mutationFn: (value: string) => apiClient.docs.spaces.create.mutate({ name: value }),
     onSuccess: () => {
       invalidate();
+      toast.success('Space created');
       setCreating(false);
       setName('');
     },
@@ -218,6 +220,7 @@ export default function DocsScreen() {
           setCreating(true);
         }}
       />
+      <ToastHost />
     </View>
   );
 }

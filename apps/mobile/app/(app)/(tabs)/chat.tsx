@@ -6,6 +6,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -34,6 +35,8 @@ import {
   type SavedMessage,
 } from '../../../src/lib/chat.js';
 import { FabMenu } from '../../../src/lib/fab.js';
+import { SkeletonList } from '../../../src/lib/skeleton.js';
+import { toast, ToastHost } from '../../../src/lib/toast.js';
 
 const TOPBAR_ICON_CLEARANCE = 120;
 
@@ -71,8 +74,21 @@ export default function Chat() {
   const [composerMode, setComposerMode] = useState<ComposerMode>('closed');
   const [savedOpen, setSavedOpen] = useState(false);
   const [pinnedOpen, setPinnedOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const viewerId = useSession((state) => state.userId);
+  const queryClient = useQueryClient();
   const { personOf, isPending: peoplePending } = useMembers();
+
+  const doRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await queryClient.invalidateQueries({ queryKey: CHANNELS_QUERY_KEY });
+      await queryClient.invalidateQueries({ queryKey: SAVED_QUERY_KEY });
+      await queryClient.invalidateQueries({ queryKey: ALL_PINS_QUERY_KEY });
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const channels = useQuery({
     queryKey: CHANNELS_QUERY_KEY,
@@ -143,9 +159,18 @@ export default function Chat() {
         )}
         contentContainerStyle={styles.list}
         style={styles.listContainer}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              void doRefresh();
+            }}
+            tintColor={colors.accent.hex}
+          />
+        }
         ListEmptyComponent={
           channels.isPending || peoplePending ? (
-            <ActivityIndicator color={colors.accent.hex} />
+            <SkeletonList count={6} />
           ) : (
             <Text style={styles.label}>No channels yet.</Text>
           )
@@ -204,6 +229,7 @@ export default function Chat() {
           },
         ]}
       />
+      <ToastHost />
     </View>
   );
 }
@@ -523,6 +549,7 @@ function NewChannelForm({
       apiClient.chat.channels.create.mutate({ type, name: name.trim(), topic: null }),
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: CHANNELS_QUERY_KEY });
+      toast.success('Channel created');
       onDone();
       router.push(`/channel/${result.channelId}`);
     },
@@ -609,6 +636,7 @@ function NewDirectMessageForm({
     mutationFn: () => apiClient.chat.channels.openDirect.mutate({ userIds: selected }),
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: CHANNELS_QUERY_KEY });
+      toast.success('Conversation opened');
       onDone();
       router.push(`/channel/${result.channelId}`);
     },

@@ -21,6 +21,8 @@ import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { PROJECTS_QUERY_KEY, type Project } from '../../../src/lib/work.js';
 import { Fab } from '../../../src/lib/fab.js';
+import { SkeletonList } from '../../../src/lib/skeleton.js';
+import { toast, ToastHost } from '../../../src/lib/toast.js';
 
 /**
  * Boards' entry point — the third tab, alongside My Tasks and Account (see
@@ -99,6 +101,7 @@ export default function Boards() {
       setKey('');
       setDescription('');
       setCreating(false);
+      toast.success('Project created');
       await queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY });
     },
   });
@@ -141,7 +144,7 @@ export default function Boards() {
         }
         ListEmptyComponent={
           projects.isPending ? (
-            <ActivityIndicator color={colors.accent.hex} />
+            <SkeletonList count={4} />
           ) : (
             <Text style={styles.label}>No projects yet.</Text>
           )
@@ -224,6 +227,7 @@ export default function Boards() {
           </KeyboardAvoidingView>
         </View>
       </Modal>
+      <ToastHost />
     </View>
   );
 }

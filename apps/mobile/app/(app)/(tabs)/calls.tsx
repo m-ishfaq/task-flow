@@ -6,6 +6,7 @@ import {
   Linking,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Switch,
@@ -133,6 +134,21 @@ export default function CallsScreen() {
 
 function CallsPanel() {
   const queryClient = useQueryClient();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const doRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: CALLS_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: PHONE_NUMBERS_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: SPEND_CURRENT_QUERY_KEY }),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const numbers = useQuery({
     queryKey: PHONE_NUMBERS_QUERY_KEY,
     queryFn: async () => wire(await apiClient.telephony.numbers.list.query({})),
@@ -177,7 +193,19 @@ function CallsPanel() {
   });
 
   return (
-    <ScrollView style={styles.panelScroll} contentContainerStyle={styles.panelContent}>
+    <ScrollView
+      style={styles.panelScroll}
+      contentContainerStyle={styles.panelContent}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => {
+            void doRefresh();
+          }}
+          tintColor={colors.accent.hex}
+        />
+      }
+    >
       <Section label="Place a call">
         <Text style={styles.fieldLabel}>To — pick a person, or type E.164</Text>
         <TelephonyContactPicker value={to} onChange={setTo} />
@@ -432,6 +460,7 @@ function StatusPill({ status }: { readonly status: string }) {
 function NumbersPanel() {
   const queryClient = useQueryClient();
   const { guard, pending, confirm, cancel } = useStepUp();
+  const [refreshing, setRefreshing] = useState(false);
   const numbers = useQuery({
     queryKey: PHONE_NUMBERS_QUERY_KEY,
     queryFn: async () => wire(await apiClient.telephony.numbers.list.query({})),
@@ -440,6 +469,15 @@ function NumbersPanel() {
   const [isoCountry, setIsoCountry] = useState('US');
   const [areaCode, setAreaCode] = useState('');
   const [results, setResults] = useState<readonly AvailableNumber[] | null>(null);
+
+  const doRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await queryClient.invalidateQueries({ queryKey: PHONE_NUMBERS_QUERY_KEY });
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: PHONE_NUMBERS_QUERY_KEY });
 
@@ -494,7 +532,19 @@ function NumbersPanel() {
   });
 
   return (
-    <ScrollView style={styles.panelScroll} contentContainerStyle={styles.panelContent}>
+    <ScrollView
+      style={styles.panelScroll}
+      contentContainerStyle={styles.panelContent}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => {
+            void doRefresh();
+          }}
+          tintColor={colors.accent.hex}
+        />
+      }
+    >
       <Section
         label={`This org's numbers${numbers.data !== undefined ? ` · ${String(numbers.data.length)}` : ''}`}
       >
@@ -628,12 +678,23 @@ function NumbersPanel() {
  * -------------------------------------------------------------------------- */
 
 function MessagesPanel() {
+  const queryClient = useQueryClient();
   const [threadId, setThreadId] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const threads = useQuery({
     queryKey: MESSAGE_THREADS_QUERY_KEY,
     queryFn: async () => wire(await apiClient.telephony.messages.threads.query({ limit: 50 })),
   });
+
+  const doRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await queryClient.invalidateQueries({ queryKey: MESSAGE_THREADS_QUERY_KEY });
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   if (composing) {
     return (
@@ -661,7 +722,19 @@ function MessagesPanel() {
   }
 
   return (
-    <ScrollView style={styles.panelScroll} contentContainerStyle={styles.panelContent}>
+    <ScrollView
+      style={styles.panelScroll}
+      contentContainerStyle={styles.panelContent}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => {
+            void doRefresh();
+          }}
+          tintColor={colors.accent.hex}
+        />
+      }
+    >
       <Pressable
         style={styles.primaryButton}
         onPress={() => {
@@ -1003,6 +1076,8 @@ function ThreadView({
 const SINCE_DAYS = 30;
 
 function SpendPanel() {
+  const queryClient = useQueryClient();
+  const [refreshing, setRefreshing] = useState(false);
   const current = useQuery({
     queryKey: SPEND_CURRENT_QUERY_KEY,
     queryFn: async () => wire(await apiClient.telephony.spend.current.query({})),
@@ -1026,8 +1101,32 @@ function SpendPanel() {
       : automationSpentCents / automationCapCents;
   const automationOver = automationRatio > 1;
 
+  const doRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: SPEND_CURRENT_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: spendReportQueryKey(SINCE_DAYS) }),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
-    <ScrollView style={styles.panelScroll} contentContainerStyle={styles.panelContent}>
+    <ScrollView
+      style={styles.panelScroll}
+      contentContainerStyle={styles.panelContent}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => {
+            void doRefresh();
+          }}
+          tintColor={colors.accent.hex}
+        />
+      }
+    >
       <Section label="This organization's spend">
         {current.isPending && <ActivityIndicator color={colors.accent.hex} />}
         {current.isError && (
