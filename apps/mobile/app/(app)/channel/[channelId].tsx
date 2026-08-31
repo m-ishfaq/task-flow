@@ -319,22 +319,18 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   const timeline = useMemo(
     (): readonly TimelineItem[] =>
       [
-        ...groups.map(
-          (group, index): TimelineItem => ({
-            kind: 'messages',
-            key: `${group.authorId ?? 'unknown'}-${String(index)}`,
-            at: group.messages[0]?.createdAt ?? '',
-            group,
-          }),
-        ),
-        ...(calls.data ?? []).map(
-          (entry): TimelineItem => ({
-            kind: 'call',
-            key: entry.sessionId,
-            at: entry.createdAt,
-            entry,
-          }),
-        ),
+        ...groups.map((group, index): TimelineItem => ({
+          kind: 'messages',
+          key: `${group.authorId ?? 'unknown'}-${String(index)}`,
+          at: group.messages[0]?.createdAt ?? '',
+          group,
+        })),
+        ...(calls.data ?? []).map((entry): TimelineItem => ({
+          kind: 'call',
+          key: entry.sessionId,
+          at: entry.createdAt,
+          entry,
+        })),
       ].sort((a, b) => a.at.localeCompare(b.at)),
     [groups, calls.data],
   );
