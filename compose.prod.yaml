@@ -701,7 +701,7 @@ services:
   # forwarding, which would hand Dozzle a request it no longer recognizes
   # as under its own base.
   dozzle:
-    image: amir20/dozzle:latest@sha256:01f9018ffdaa0ec523f9a91dea3eff65b25cdb5f0566ac6d5a2cb4cf591e35e9
+    image: amir20/dozzle:latest@sha256:243666b0593ff33ed1373901575236f0d6bed8a2d6b451cdae4345969a7b6d5c
     restart: unless-stopped
     environment:
       DOZZLE_NO_ANALYTICS: 'true'
