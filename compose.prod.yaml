@@ -53,10 +53,20 @@
 ## publisher moves the tag, which turns "we silently got a new MinIO" into a
 ## diff with a review on it.
 ##
-## `postgres:17-alpine` and `clamav/clamav:stable` are deliberately left on
-## their tags: both are version- or channel-scoped rather than a rolling
-## `latest`, and pinning the database's digest would make a routine 17.x patch
-## a repo change.
+## `postgres:17-alpine` is pinned by digest as well — not because a major jump is
+## the worry (the `17-alpine` tag already blocks 17 -> 18), but because the
+## database is the one stateful service with no rollback escape hatch: if an
+## unpinned 17.x patch build broke on a deploy, there is no recorded last-good
+## digest to fall back to, and the app's `IMAGE_TAG` rollback does not cover it.
+## The cost is a review PR on each routine 17.x patch (~quarterly), which is the
+## trade we want for the datastore. Both `postgres` lines below (the DB and the
+## `ensure-roles` helper) carry the SAME digest on purpose.
+##
+## `clamav/clamav:stable` is deliberately left on its tag: it is stateless (a bad
+## build is caught by its healthcheck and self-heals on the next rebuild), it
+## rebuilds far more often than Postgres patches, and its virus signatures update
+## at runtime regardless of the image digest — so pinning would add churn without
+## protecting the thing that actually matters.
 ##
 ## Updating one is a one-line edit — take the digest from the Dependabot PR, or
 ##   docker buildx imagetools inspect minio/minio:latest
@@ -69,7 +79,7 @@ x-app-env: &app-env
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -225,7 +235,7 @@ services:
   # NOCREATEROLE). Connects as the Postgres SUPERUSER, on the same `postgres`
   # image already pulled for the database itself — no extra image to build.
   ensure-roles:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
     profiles: ['tools']
     environment:
       PGHOST: postgres
