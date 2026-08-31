@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
   ActivityIndicator,
+  Animated,
   FlatList,
   Image,
   KeyboardAvoidingView,
   Linking,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   StyleSheet,
@@ -317,18 +319,22 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   const timeline = useMemo(
     (): readonly TimelineItem[] =>
       [
-        ...groups.map((group, index): TimelineItem => ({
-          kind: 'messages',
-          key: `${group.authorId ?? 'unknown'}-${String(index)}`,
-          at: group.messages[0]?.createdAt ?? '',
-          group,
-        })),
-        ...(calls.data ?? []).map((entry): TimelineItem => ({
-          kind: 'call',
-          key: entry.sessionId,
-          at: entry.createdAt,
-          entry,
-        })),
+        ...groups.map(
+          (group, index): TimelineItem => ({
+            kind: 'messages',
+            key: `${group.authorId ?? 'unknown'}-${String(index)}`,
+            at: group.messages[0]?.createdAt ?? '',
+            group,
+          }),
+        ),
+        ...(calls.data ?? []).map(
+          (entry): TimelineItem => ({
+            kind: 'call',
+            key: entry.sessionId,
+            at: entry.createdAt,
+            entry,
+          }),
+        ),
       ].sort((a, b) => a.at.localeCompare(b.at)),
     [groups, calls.data],
   );
@@ -849,6 +855,16 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                     params: { messageId: message.messageId, channelId },
                   });
                 }}
+                onSwipeToReply={
+                  canPost
+                    ? (message) => {
+                        router.push({
+                          pathname: '/thread/[messageId]',
+                          params: { messageId: message.messageId, channelId },
+                        });
+                      }
+                    : undefined
+                }
               />
             </>
           )
@@ -1208,6 +1224,7 @@ function MessageGroupRow({
   onLongPressMessage,
   onLongPressReaction,
   onOpenThread,
+  onSwipeToReply,
 }: {
   readonly group: MessageGroup;
   readonly viewerId: string | null;
@@ -1229,6 +1246,7 @@ function MessageGroupRow({
     userIds: readonly string[],
   ) => void;
   readonly onOpenThread: (message: Message) => void;
+  readonly onSwipeToReply?: (message: Message) => void;
 }) {
   const first = group.messages[0];
   if (!first) return null;
@@ -1284,60 +1302,194 @@ function MessageGroupRow({
           }
 
           return (
-            <Pressable
+            <MessageRow
               key={message.messageId}
-              onLongPress={() => {
-                onLongPressMessage(message);
-              }}
-              style={styles.messageBody}
-            >
-              {message.deletedAt !== null ? (
-                <Text style={styles.messageDeleted}>Message deleted</Text>
-              ) : (
-                <>
-                  <RichTextView document={message.body} />
-                  {message.editedAt !== null && <Text style={styles.editedTag}>edited</Text>}
-                </>
-              )}
-              {previews.length > 0 && <LinkPreviewList previews={previews} />}
-              {reactions && reactions.size > 0 && (
-                <View style={styles.reactionBar}>
-                  {[...reactions.entries()].map(([emoji, userIds]) => {
-                    const mine = viewerId !== null && userIds.includes(viewerId);
-                    return (
-                      <Pressable
-                        key={emoji}
-                        style={[styles.reactionPill, mine && styles.reactionPillMine]}
-                        onPress={() => {
-                          onTogglePill(message.messageId, emoji);
-                        }}
-                        onLongPress={() => {
-                          onLongPressReaction(message.messageId, emoji, userIds);
-                        }}
-                      >
-                        <Text style={styles.reactionPillText}>
-                          {emoji} {userIds.length}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              )}
-              {replyCount > 0 && (
-                <Pressable
-                  onPress={() => {
-                    onOpenThread(message);
-                  }}
-                >
-                  <Text style={styles.replyCountText}>
-                    {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
-                  </Text>
-                </Pressable>
-              )}
-            </Pressable>
+              message={message}
+              viewerId={viewerId}
+              reactions={reactions}
+              previews={previews}
+              replyCount={replyCount}
+              onLongPress={onLongPressMessage}
+              onTogglePill={onTogglePill}
+              onLongPressReaction={onLongPressReaction}
+              onOpenThread={onOpenThread}
+              onSwipeToReply={onSwipeToReply}
+            />
           );
         })}
       </View>
+    </View>
+  );
+}
+
+/** One message bubble inside a group — extracted so hooks (`useRef`) work per-message. */
+function MessageRow({
+  message,
+  viewerId,
+  reactions,
+  previews,
+  replyCount,
+  onLongPress,
+  onTogglePill,
+  onLongPressReaction,
+  onOpenThread,
+  onSwipeToReply,
+}: {
+  readonly message: Message;
+  readonly viewerId: string | null;
+  readonly reactions: Map<string, string[]> | undefined;
+  readonly previews: readonly UnfurlPreview[];
+  readonly replyCount: number;
+  readonly onLongPress: (message: Message) => void;
+  readonly onTogglePill: (messageId: string, emoji: string) => void;
+  readonly onLongPressReaction: (
+    messageId: string,
+    emoji: string,
+    userIds: readonly string[],
+  ) => void;
+  readonly onOpenThread: (message: Message) => void;
+  readonly onSwipeToReply?: (message: Message) => void;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const onPressIn = () => {
+    Animated.spring(scale, {
+      toValue: 0.97,
+      useNativeDriver: true,
+      speed: 40,
+      bounciness: 0,
+    }).start();
+  };
+  const onPressOut = () => {
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30, bounciness: 6 }).start();
+  };
+
+  const inner = (
+    <Pressable
+      onLongPress={() => {
+        onLongPress(message);
+      }}
+      onPressIn={onPressIn}
+      onPressOut={onPressOut}
+      style={styles.messageBody}
+    >
+      <Animated.View style={{ transform: [{ scale }] }}>
+        {message.deletedAt !== null ? (
+          <Text style={styles.messageDeleted}>Message deleted</Text>
+        ) : (
+          <>
+            <RichTextView document={message.body} />
+            {message.editedAt !== null && <Text style={styles.editedTag}>edited</Text>}
+          </>
+        )}
+        {previews.length > 0 && <LinkPreviewList previews={previews} />}
+      </Animated.View>
+      {reactions && reactions.size > 0 && (
+        <View style={styles.reactionBar}>
+          {[...reactions.entries()].map(([emoji, userIds]) => {
+            const mine = viewerId !== null && userIds.includes(viewerId);
+            return (
+              <Pressable
+                key={emoji}
+                style={[styles.reactionPill, mine && styles.reactionPillMine]}
+                onPress={() => {
+                  onTogglePill(message.messageId, emoji);
+                }}
+                onLongPress={() => {
+                  onLongPressReaction(message.messageId, emoji, userIds);
+                }}
+              >
+                <Text style={styles.reactionPillText}>
+                  {emoji} {userIds.length}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+      {replyCount > 0 && (
+        <Pressable
+          onPress={() => {
+            onOpenThread(message);
+          }}
+        >
+          <Text style={styles.replyCountText}>
+            {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
+          </Text>
+        </Pressable>
+      )}
+    </Pressable>
+  );
+
+  if (onSwipeToReply !== undefined && message.parentMessageId === null) {
+    return (
+      <SwipeableMessage
+        onSwipeReply={() => {
+          onSwipeToReply(message);
+        }}
+      >
+        {inner}
+      </SwipeableMessage>
+    );
+  }
+
+  return inner;
+}
+
+/**
+ * Horizontal swipe-to-reply wrapper using PanResponder + Animated.
+ * Swipe right ≥60px → trigger reply, spring back.
+ * Shows a reply glyph that fades in as the user drags.
+ */
+function SwipeableMessage({
+  onSwipeReply,
+  children,
+}: {
+  readonly onSwipeReply: () => void;
+  readonly children: ReactNode;
+}) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const replyOpacity = useRef(new Animated.Value(0)).current;
+  const triggered = useRef(false);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_evt, gestureState) =>
+        gestureState.dx > 8 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.5,
+      onPanResponderMove: (_evt, gestureState) => {
+        if (gestureState.dx > 0) {
+          const clamped = Math.min(gestureState.dx, 80);
+          translateX.setValue(clamped);
+          replyOpacity.setValue(Math.min(clamped / 60, 1));
+          if (gestureState.dx >= 60 && !triggered.current) {
+            triggered.current = true;
+            onSwipeReply();
+          }
+        }
+      },
+      onPanResponderRelease: () => {
+        triggered.current = false;
+        Animated.parallel([
+          Animated.spring(translateX, { toValue: 0, useNativeDriver: true, bounciness: 8 }),
+          Animated.timing(replyOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
+        ]).start();
+      },
+      onPanResponderTerminate: () => {
+        triggered.current = false;
+        translateX.setValue(0);
+        replyOpacity.setValue(0);
+      },
+    }),
+  ).current;
+
+  return (
+    <View style={styles.swipeRow}>
+      <Animated.View style={[styles.replyHint, { opacity: replyOpacity }]}>
+        <Text style={styles.replyHintText}>↩</Text>
+      </Animated.View>
+      <Animated.View style={{ transform: [{ translateX }] }} {...panResponder.panHandlers}>
+        {children}
+      </Animated.View>
     </View>
   );
 }
@@ -1747,5 +1899,21 @@ const styles = StyleSheet.create({
     color: colors.inkMuted.hex,
     paddingHorizontal: 20,
     paddingVertical: 6,
+  },
+  swipeRow: {
+    position: 'relative',
+  },
+  replyHint: {
+    position: 'absolute',
+    left: -28,
+    top: 0,
+    bottom: 0,
+    width: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  replyHintText: {
+    fontSize: 16,
+    color: colors.accent.hex,
   },
 });
