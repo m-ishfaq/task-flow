@@ -124,17 +124,8 @@ export function FabMenu(props: {
         </Animated.View>
       </Pressable>
 
-      <Modal
-        transparent
-        visible={open}
-        animationType="fade"
-        onRequestClose={closeMenu}
-      >
-        <Pressable
-          style={styles.backdrop}
-          accessibilityLabel="Dismiss menu"
-          onPress={closeMenu}
-        >
+      <Modal transparent visible={open} animationType="fade" onRequestClose={closeMenu}>
+        <Pressable style={styles.backdrop} accessibilityLabel="Dismiss menu" onPress={closeMenu}>
           <View style={[styles.menu, { right: RIGHT, bottom: bottom + SIZE + 12 }]}>
             {props.actions.map((action) => (
               <Pressable

@@ -159,7 +159,9 @@ export default function Home() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => { void doRefresh(); }}
+            onRefresh={() => {
+              void doRefresh();
+            }}
             tintColor={colors.accent.hex}
           />
         }

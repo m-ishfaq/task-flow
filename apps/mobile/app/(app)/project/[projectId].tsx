@@ -190,7 +190,12 @@ function ProjectBoardsContent({
               could not submit this form regardless, so showing it as
               unusable is clutter, not information. */}
           {canCreateBoard && (
-            <Pressable style={styles.newButton} onPress={() => { setCreating(true); }}>
+            <Pressable
+              style={styles.newButton}
+              onPress={() => {
+                setCreating(true);
+              }}
+            >
               <Text style={styles.newButtonText}>+ New board</Text>
             </Pressable>
           )}

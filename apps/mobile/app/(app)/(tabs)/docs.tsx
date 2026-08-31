@@ -118,7 +118,9 @@ export default function DocsScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => { void doRefresh(); }}
+            onRefresh={() => {
+              void doRefresh();
+            }}
             tintColor={colors.accent.hex}
           />
         }

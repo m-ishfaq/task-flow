@@ -57,7 +57,12 @@ export default function ChannelDetailsScreen() {
     return (
       <View style={styles.center}>
         <Text style={styles.label}>This channel link isn't valid.</Text>
-        <Pressable style={styles.navBack} onPress={() => { router.back(); }}>
+        <Pressable
+          style={styles.navBack}
+          onPress={() => {
+            router.back();
+          }}
+        >
           <Text style={styles.navBackText}>‹ Back</Text>
         </Pressable>
       </View>
@@ -119,7 +124,12 @@ function ChannelDetailsContent({ channelId }: { channelId: ChannelId }) {
         <Text style={styles.label}>
           {apiErrorOf(channel.error)?.error.message ?? "Couldn't load this channel."}
         </Text>
-        <Pressable style={styles.navBack} onPress={() => { router.back(); }}>
+        <Pressable
+          style={styles.navBack}
+          onPress={() => {
+            router.back();
+          }}
+        >
           <Text style={styles.navBackText}>‹ Back</Text>
         </Pressable>
       </View>
@@ -130,7 +140,12 @@ function ChannelDetailsContent({ channelId }: { channelId: ChannelId }) {
     <View style={[styles.container, { paddingTop }]}>
       {/* Fixed nav bar */}
       <View style={styles.navBar}>
-        <Pressable style={styles.navBack} onPress={() => { router.back(); }}>
+        <Pressable
+          style={styles.navBack}
+          onPress={() => {
+            router.back();
+          }}
+        >
           <Text style={styles.navBackText}>‹</Text>
         </Pressable>
         <Text style={styles.navTitle} numberOfLines={1}>
@@ -145,7 +160,9 @@ function ChannelDetailsContent({ channelId }: { channelId: ChannelId }) {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => { void doRefresh(); }}
+            onRefresh={() => {
+              void doRefresh();
+            }}
             tintColor={colors.accent.hex}
           />
         }
@@ -179,7 +196,11 @@ function ChannelDetailsContent({ channelId }: { channelId: ChannelId }) {
             />
 
             {!isDirect && (
-              <AddMemberControl channelId={channelId} memberIds={data.memberIds} onAdded={refresh} />
+              <AddMemberControl
+                channelId={channelId}
+                memberIds={data.memberIds}
+                onAdded={refresh}
+              />
             )}
 
             <PinnedSection channelId={channelId} personOf={personOf} />
