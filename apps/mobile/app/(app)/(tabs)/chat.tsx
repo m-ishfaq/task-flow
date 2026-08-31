@@ -31,6 +31,7 @@ import {
   type Channel,
   type SavedMessage,
 } from '../../../src/lib/chat.js';
+import { FabMenu } from '../../../src/lib/fab.js';
 
 /**
  * Chat's entry point — the fourth tab (see `_layout.tsx`). Wave 3's
@@ -114,26 +115,6 @@ export default function Chat() {
     <View style={[styles.container, { paddingTop }]}>
       <View style={styles.titleRow}>
         <Text style={styles.title}>Chat</Text>
-        <View style={styles.titleActions}>
-          <Pressable
-            style={styles.newButton}
-            onPress={() => {
-              setSavedOpen(true);
-            }}
-          >
-            <Text style={styles.newButtonText}>
-              🔖 Saved{(saved.data?.length ?? 0) > 0 ? ` · ${String(saved.data?.length)}` : ''}
-            </Text>
-          </Pressable>
-          <Pressable
-            style={styles.newButton}
-            onPress={() => {
-              setComposerMode('menu');
-            }}
-          >
-            <Text style={styles.newButtonText}>+ New</Text>
-          </Pressable>
-        </View>
       </View>
 
       <FlatList<Channel>
@@ -170,6 +151,29 @@ export default function Chat() {
         onClose={() => {
           setSavedOpen(false);
         }}
+      />
+
+      <FabMenu
+        label="New conversation or saved messages"
+        bottom={24}
+        actions={[
+          {
+            key: 'new',
+            label: 'New conversation',
+            icon: 'add-circle-outline',
+            onPress: () => {
+              setComposerMode('menu');
+            },
+          },
+          {
+            key: 'saved',
+            label: `Saved${(saved.data?.length ?? 0) > 0 ? ` · ${String(saved.data?.length)}` : ''}`,
+            icon: 'bookmark-outline',
+            onPress: () => {
+              setSavedOpen(true);
+            },
+          },
+        ]}
       />
     </View>
   );
@@ -593,22 +597,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.ink.hex,
     letterSpacing: -0.3,
-  },
-  titleActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  newButton: {
-    borderWidth: 1,
-    borderColor: colors.accent.hex,
-    borderRadius: radiusCard,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  newButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.accent.hex,
   },
   listContainer: {
     flex: 1,
