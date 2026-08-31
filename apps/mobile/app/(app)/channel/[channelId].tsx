@@ -851,16 +851,16 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                     params: { messageId: message.messageId, channelId },
                   });
                 }}
-                onSwipeToReply={
-                  canPost
-                    ? (message) => {
+                {...(canPost
+                  ? {
+                      onSwipeToReply: (message: Message) => {
                         router.push({
                           pathname: '/thread/[messageId]',
                           params: { messageId: message.messageId, channelId },
                         });
-                      }
-                    : undefined
-                }
+                      },
+                    }
+                  : {})}
               />
             </>
           )
@@ -1309,7 +1309,7 @@ function MessageGroupRow({
               onTogglePill={onTogglePill}
               onLongPressReaction={onLongPressReaction}
               onOpenThread={onOpenThread}
-              onSwipeToReply={onSwipeToReply}
+              {...(onSwipeToReply !== undefined ? { onSwipeToReply } : {})}
             />
           );
         })}
