@@ -567,8 +567,7 @@ function TransferOwnershipModal({
     if (transferSearch.trim() === '') return true;
     const q = transferSearch.toLowerCase();
     return (
-      (member.displayName ?? '').toLowerCase().includes(q) ||
-      member.email.toLowerCase().includes(q)
+      (member.displayName ?? '').toLowerCase().includes(q) || member.email.toLowerCase().includes(q)
     );
   });
 
@@ -717,8 +716,7 @@ function TeamCard({
     if (memberSearch.trim() === '') return true;
     const q = memberSearch.toLowerCase();
     return (
-      (member.displayName ?? '').toLowerCase().includes(q) ||
-      member.email.toLowerCase().includes(q)
+      (member.displayName ?? '').toLowerCase().includes(q) || member.email.toLowerCase().includes(q)
     );
   });
 
@@ -733,7 +731,10 @@ function TeamCard({
           {visibleMembers.map((member, i) => {
             const initials = (member.email[0] ?? '?').toUpperCase();
             return (
-              <View key={member.userId} style={[styles.teamAvatar, { marginLeft: i === 0 ? 0 : -8 }]}>
+              <View
+                key={member.userId}
+                style={[styles.teamAvatar, { marginLeft: i === 0 ? 0 : -8 }]}
+              >
                 <Text style={styles.teamAvatarText}>{initials}</Text>
               </View>
             );
@@ -745,7 +746,9 @@ function TeamCard({
           )}
         </View>
         <View style={styles.teamCardInfo}>
-          <Text style={styles.teamCardName} numberOfLines={1}>{team.name}</Text>
+          <Text style={styles.teamCardName} numberOfLines={1}>
+            {team.name}
+          </Text>
           <Text style={styles.teamCardMeta}>
             {team.members.length === 0
               ? 'No members'

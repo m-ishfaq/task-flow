@@ -453,13 +453,13 @@ function CreatePageModal({
                     </Pressable>
                   ))}
                 </ScrollView>
-                {selectedTemplateId !== null && (() => {
-                  const selected = templates.find((t) => t.templateId === selectedTemplateId);
-                  const hint = selected !== undefined ? (TEMPLATE_HINTS[selected.name] ?? null) : null;
-                  return hint !== null ? (
-                    <Text style={styles.templateHint}>{hint}</Text>
-                  ) : null;
-                })()}
+                {selectedTemplateId !== null &&
+                  (() => {
+                    const selected = templates.find((t) => t.templateId === selectedTemplateId);
+                    const hint =
+                      selected !== undefined ? (TEMPLATE_HINTS[selected.name] ?? null) : null;
+                    return hint !== null ? <Text style={styles.templateHint}>{hint}</Text> : null;
+                  })()}
               </View>
             )}
             {error !== null && (

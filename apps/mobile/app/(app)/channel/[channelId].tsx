@@ -237,9 +237,21 @@ type TimelineItem =
     };
 
 const MOBILE_QUICK_REACTIONS = [
-  '👍', '❤️', '😂', '🎉', '👀', '✅',
-  '🙏', '🔥', '😍', '🤔', '👏', '😢',
-  '🚀', '😅', '💯',
+  '👍',
+  '❤️',
+  '😂',
+  '🎉',
+  '👀',
+  '✅',
+  '🙏',
+  '🔥',
+  '😍',
+  '🤔',
+  '👏',
+  '😢',
+  '🚀',
+  '😅',
+  '💯',
 ];
 
 export default function ChannelScreen() {
@@ -517,19 +529,13 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
     queryKey: pinsQueryKey(channelId),
     queryFn: () => apiClient.chat.messages.pins.query({ channelId }),
   });
-  const pinnedIds = useMemo(
-    () => new Set((pins.data ?? []).map((p) => p.messageId)),
-    [pins.data],
-  );
+  const pinnedIds = useMemo(() => new Set((pins.data ?? []).map((p) => p.messageId)), [pins.data]);
 
   const saved = useQuery({
     queryKey: SAVED_QUERY_KEY,
     queryFn: () => apiClient.chat.saved.list.query(),
   });
-  const savedIds = useMemo(
-    () => new Set((saved.data ?? []).map((s) => s.messageId)),
-    [saved.data],
-  );
+  const savedIds = useMemo(() => new Set((saved.data ?? []).map((s) => s.messageId)), [saved.data]);
 
   const send = useMutation({
     // `RichTextNode`, not `ReturnType<typeof parseFormattedText>` — the
@@ -969,7 +975,10 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                     if (file !== null) attach.mutate(file);
                   })
                   .catch(() => {
-                    setUploadNotice({ kind: 'failure', text: 'File picker unavailable on this device.' });
+                    setUploadNotice({
+                      kind: 'failure',
+                      text: 'File picker unavailable on this device.',
+                    });
                   });
               },
             }}
