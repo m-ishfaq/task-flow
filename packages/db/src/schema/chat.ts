@@ -137,6 +137,11 @@ export const messages = chat.table(
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 
+    /** Auto-created placeholder messages that an upload attaches to. When a
+        synthetic carrier is deleted after a failed upload it is excluded from
+        messages.list entirely — no tombstone for any participant, ever. */
+    isSynthetic: boolean('is_synthetic').notNull().default(false),
+
     /** Legal hold. Null means not held; a timestamp answers "since when", which
         is the first question asked about one. Checked INSIDE the retention
         delete's WHERE clause, never as a read before it — see migration 0021. */

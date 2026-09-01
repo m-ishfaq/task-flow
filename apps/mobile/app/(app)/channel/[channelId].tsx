@@ -309,10 +309,11 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   });
 
   const oldestFirst = useMemo(() => [...(messages.data ?? [])].reverse(), [messages.data]);
-  // IDs of synthetic carriers we deleted after a failed upload — filtered out
-  // of topLevel so the server's soft-deleted tombstone never renders, even
-  // after invalidateQueries re-fetches and overwrites the cache.
-  const [hiddenMessageIds, setHiddenMessageIds] = useState<ReadonlySet<string>>(
+  // IDs of synthetic carriers whose upload failed this session — shown as
+  // "Upload failed" in red to the sender. The server already excludes these
+  // from messages.list once deleted, so receivers and re-mounts never see
+  // them at all; this set only controls the sender's in-session rendering.
+  const [failedUploadMessageIds, setFailedUploadMessageIds] = useState<ReadonlySet<string>>(
     () => new Set<string>(),
   );
   // Replies live in the same page as their root (`chat.messages.list` does
@@ -320,11 +321,8 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   // here — see this file's own header on why filtering to `topLevel`
   // matters once replies exist at all.
   const topLevel = useMemo(
-    () =>
-      oldestFirst.filter(
-        (message) => message.parentMessageId === null && !hiddenMessageIds.has(message.messageId),
-      ),
-    [oldestFirst, hiddenMessageIds],
+    () => oldestFirst.filter((message) => message.parentMessageId === null),
+    [oldestFirst],
   );
   const groups = useMemo(() => groupMessages(topLevel), [topLevel]);
   const replyCounts = useMemo(() => replyCountsOf(oldestFirst), [oldestFirst]);
@@ -698,6 +696,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
         ? await apiClient.chat.messages.send.mutate({
             channelId,
             body: parseFormattedText(`Shared **${file.name}**`),
+            isSynthetic: true,
           })
         : await apiClient.chat.messages.send.mutate({
             channelId,
@@ -779,10 +778,10 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
         const carrierId = carrierIdRef.current;
         try {
           await apiClient.chat.messages.delete.mutate({ messageId: carrierId });
-          // Hide the carrier BEFORE invalidateQueries re-fetches — setQueryData
-          // alone is overwritten by the re-fetch (server returns deletedAt ≠ null),
-          // so we keep the id in state and filter it out of topLevel permanently.
-          setHiddenMessageIds((prev) => new Set([...prev, carrierId]));
+          // Mark as failed so the sender sees "Upload failed" in red this
+          // session. The server excludes deleted synthetic messages from
+          // messages.list, so receivers and re-mounts see nothing at all.
+          setFailedUploadMessageIds((prev) => new Set([...prev, carrierId]));
         } catch {
           // Best-effort — an orphan "Shared filename" is cosmetic, not a data hazard.
         }
@@ -982,6 +981,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                 replyCounts={replyCounts}
                 pinnedIds={pinnedIds}
                 savedIds={savedIds}
+                failedUploadMessageIds={failedUploadMessageIds}
                 onDownloadAttachment={(attachmentId) => {
                   downloadAttachment.mutate(attachmentId);
                 }}
@@ -1445,6 +1445,7 @@ function MessageGroupRow({
   replyCounts,
   pinnedIds,
   savedIds,
+  failedUploadMessageIds,
   editingId,
   editDraft,
   onEditDraftChange,
@@ -1467,6 +1468,7 @@ function MessageGroupRow({
   readonly replyCounts: Map<string, number>;
   readonly pinnedIds: ReadonlySet<string>;
   readonly savedIds: ReadonlySet<string>;
+  readonly failedUploadMessageIds: ReadonlySet<string>;
   readonly editingId: string | null;
   readonly editDraft: string;
   readonly onEditDraftChange: (text: string) => void;
@@ -1549,6 +1551,7 @@ function MessageGroupRow({
               replyCount={replyCount}
               isPinned={pinnedIds.has(message.messageId)}
               isSaved={savedIds.has(message.messageId)}
+              isFailedUpload={failedUploadMessageIds.has(message.messageId)}
               onLongPress={onLongPressMessage}
               onTogglePill={onTogglePill}
               onLongPressReaction={onLongPressReaction}
@@ -1573,6 +1576,7 @@ function MessageRow({
   replyCount,
   isPinned,
   isSaved,
+  isFailedUpload,
   onLongPress,
   onTogglePill,
   onLongPressReaction,
@@ -1588,6 +1592,7 @@ function MessageRow({
   readonly replyCount: number;
   readonly isPinned: boolean;
   readonly isSaved: boolean;
+  readonly isFailedUpload: boolean;
   readonly onLongPress: (message: Message) => void;
   readonly onTogglePill: (messageId: string, emoji: string) => void;
   readonly onLongPressReaction: (
@@ -1624,7 +1629,9 @@ function MessageRow({
     >
       <Animated.View style={{ transform: [{ scale }] }}>
         {message.deletedAt !== null ? (
-          <Text style={styles.messageDeleted}>Message deleted</Text>
+          <Text style={isFailedUpload ? styles.messageUploadFailed : styles.messageDeleted}>
+            {isFailedUpload ? 'Upload failed — file was not attached.' : 'Message deleted'}
+          </Text>
         ) : (
           <>
             <RichTextView document={message.body} />
@@ -1930,6 +1937,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontStyle: 'italic',
     color: colors.inkFaint.hex,
+  },
+  messageUploadFailed: {
+    fontSize: 13,
+    fontStyle: 'italic',
+    color: colors.danger.hex,
   },
   reactionBar: {
     flexDirection: 'row',

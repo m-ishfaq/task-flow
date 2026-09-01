@@ -296,6 +296,10 @@ export function createChatRouter(deps: ChatRouterDeps) {
                  chat. */
               body: RichTextDocument,
               parentMessageId: MessageIdSchema.nullable().default(null),
+              /* Marks the message as an auto-created upload carrier. A deleted
+                 synthetic message is excluded from messages.list entirely —
+                 no tombstone for any participant. */
+              isSynthetic: z.boolean().optional().default(false),
             })
             .strict(),
         )
