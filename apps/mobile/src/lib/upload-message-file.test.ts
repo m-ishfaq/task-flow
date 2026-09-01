@@ -1,13 +1,12 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { uploadMessageFile, type UploadMessageFileDeps } from './upload-message-file.js';
 
 /**
- * The presign/PUT/confirm orchestration — `presign`/`confirm` are stubbed
- * via an injected `deps` object, and the PUT itself is exercised against a
- * stubbed global `fetch`, mirroring `apps/api/src/platform/
- * push-provider.test.ts`'s own `vi.stubGlobal('fetch', ...)` approach for
- * the identical reason: the property under test is the CALL ORDER and what
- * gets sent, not a real network.
+ * The presign/PUT/confirm orchestration — all three are stubbed via the
+ * injected `deps` object, including `put` (the XHR-backed PUT replaced
+ * fetch precisely so this file needs no `vi.stubGlobal('fetch', ...)`).
+ * The property under test is call order and what gets sent, not a real
+ * network.
  */
 
 function fakeFile(
@@ -26,27 +25,16 @@ function fakeDeps(overrides: Partial<UploadMessageFileDeps> = {}): UploadMessage
     presign: vi.fn().mockResolvedValue({
       attachmentId: 'attachment-1',
       url: 'https://storage.test/upload',
-      headers: { 'content-type': 'application/pdf' },
+      headers: { 'content-type': 'application/pdf', 'content-length': '1024' },
     }),
     confirm: vi.fn().mockResolvedValue({ status: 'clean' }),
+    put: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
 describe('uploadMessageFile', () => {
   it('presigns, PUTs the blob with the signed headers verbatim, then confirms', async () => {
-    let capturedInit: RequestInit | undefined;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((_url: unknown, init?: RequestInit) => {
-        capturedInit = init;
-        return Promise.resolve({ ok: true, status: 200 });
-      }),
-    );
     const deps = fakeDeps();
     const stages: string[] = [];
 
@@ -60,29 +48,26 @@ describe('uploadMessageFile', () => {
       contentType: 'application/pdf',
       sizeBytes: 1024,
     });
-    expect(capturedInit?.method).toBe('PUT');
-    expect(capturedInit?.headers).toEqual({ 'content-type': 'application/pdf' });
+    expect(deps.put).toHaveBeenCalledWith(
+      'https://storage.test/upload',
+      { 'content-type': 'application/pdf', 'content-length': '1024' },
+      expect.any(Blob),
+    );
     expect(deps.confirm).toHaveBeenCalledWith({ attachmentId: 'attachment-1' });
     expect(result).toEqual({ status: 'clean' });
     expect(stages).toEqual(['Requesting an upload URL…', 'Uploading…', 'Scanning…']);
   });
 
   it('never confirms when storage refuses the PUT', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve({ ok: false, status: 403 })),
-    );
-    const deps = fakeDeps();
+    const deps = fakeDeps({
+      put: vi.fn().mockRejectedValue(new Error('Storage refused the upload (403).')),
+    });
 
     await expect(uploadMessageFile(deps, 'message-1', fakeFile())).rejects.toThrow(/403/);
     expect(deps.confirm).not.toHaveBeenCalled();
   });
 
   it('surfaces a non-clean verdict from confirm without throwing', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve({ ok: true, status: 200 })),
-    );
     const deps = fakeDeps({
       confirm: vi.fn().mockResolvedValue({ status: 'infected', reason: 'malware detected' }),
     });
