@@ -296,15 +296,49 @@ export function createChatRouter(deps: ChatRouterDeps) {
                  chat. */
               body: RichTextDocument,
               parentMessageId: MessageIdSchema.nullable().default(null),
-              /* Marks the message as an auto-created upload carrier. A deleted
-                 synthetic message is excluded from messages.list entirely —
-                 no tombstone for any participant. */
+              /* Accepted but IGNORED — kept in the schema only so an
+                 already-installed mobile build that still sends it is not
+                 refused by `.strict()`. A synthetic message is excluded from
+                 messages.list once deleted (no tombstone), so honouring a
+                 client-supplied flag here let a caller silently erase their
+                 own content-bearing messages. The real carrier path is
+                 `sendUploadCarrier` below, which sets the flag server-side.
+                 Not forwarded to the service (see the handler). */
               isSynthetic: z.boolean().optional().default(false),
             })
             .strict(),
         )
         .output(z.object({ messageId: z.string() }))
-        .mutation(({ input, ctx }) => messages.sendMessage(actorOf(ctx), input)),
+        .mutation(({ input, ctx }) =>
+          messages.sendMessage(actorOf(ctx), {
+            channelId: input.channelId,
+            body: input.body,
+            parentMessageId: input.parentMessageId,
+          }),
+        ),
+
+      /**
+       * The upload CARRIER path — the placeholder a file attaches to when the
+       * composer is empty. The server sets `isSynthetic` and builds the body
+       * from the filename, so — unlike the now-ignored `isSynthetic` field on
+       * `send` above — no client can mark an arbitrary, content-bearing
+       * message synthetic (and thus delete it later with no tombstone). See
+       * `message.service.ts`'s `sendUploadCarrier`.
+       */
+      sendUploadCarrier: route({
+        permission: 'message:create',
+        feature: { flag: 'chat', display: 'Chat' },
+      })
+        .input(
+          z
+            .object({
+              channelId: ChannelIdSchema,
+              filename: z.string().min(1).max(255),
+            })
+            .strict(),
+        )
+        .output(z.object({ messageId: z.string() }))
+        .mutation(({ input, ctx }) => messages.sendUploadCarrier(actorOf(ctx), input)),
 
       edit: route({ permission: 'message:update', feature: { flag: 'chat', display: 'Chat' } })
         .input(z.object({ messageId: MessageIdSchema, body: RichTextDocument }).strict())

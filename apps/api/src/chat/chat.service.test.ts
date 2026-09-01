@@ -535,6 +535,39 @@ describe('messages', () => {
       ),
     ).toBe('VALIDATION_FAILED');
   });
+
+  it('drops a deleted upload carrier from the list entirely, unlike an ordinary message', async () => {
+    const { alice } = await scaffold('upload-carrier');
+    const channel = await channels.createChannel(alice, { type: 'public', name: 'general' });
+
+    /* The carrier the attach flow posts. The server sets isSynthetic and builds
+       the body from the filename — a client cannot assert either, which is the
+       whole point: isSynthetic suppresses the delete tombstone, so letting a
+       client set it let anyone silently erase a real message. */
+    const carrier = await messages.sendUploadCarrier(alice, {
+      channelId: channel.channelId,
+      filename: 'photo.png',
+    });
+
+    const beforeDelete = await messages.listMessages(alice, { channelId: channel.channelId });
+    const listed = beforeDelete.find((message) => message.messageId === carrier.messageId);
+    expect(listed?.bodyText).toBe('Shared photo.png');
+
+    await messages.deleteMessage(alice, { messageId: carrier.messageId });
+
+    // Gone completely — a failed-upload carrier leaves no trace for anyone.
+    const afterDelete = await messages.listMessages(alice, { channelId: channel.channelId });
+    expect(afterDelete.find((message) => message.messageId === carrier.messageId)).toBeUndefined();
+
+    // Contrast: an ordinary message, deleted, stays as a tombstone.
+    const ordinary = await messages.sendMessage(alice, {
+      channelId: channel.channelId,
+      body: body('a real message'),
+    });
+    await messages.deleteMessage(alice, { messageId: ordinary.messageId });
+    const withTombstone = await messages.listMessages(alice, { channelId: channel.channelId });
+    expect(withTombstone.find((message) => message.messageId === ordinary.messageId)).toBeDefined();
+  });
 });
 
 describe('membership changes', () => {
