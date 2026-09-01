@@ -309,13 +309,22 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   });
 
   const oldestFirst = useMemo(() => [...(messages.data ?? [])].reverse(), [messages.data]);
+  // IDs of synthetic carriers we deleted after a failed upload — filtered out
+  // of topLevel so the server's soft-deleted tombstone never renders, even
+  // after invalidateQueries re-fetches and overwrites the cache.
+  const [hiddenMessageIds, setHiddenMessageIds] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  );
   // Replies live in the same page as their root (`chat.messages.list` does
   // not separate them) but render inside `thread/[messageId].tsx`, not
   // here — see this file's own header on why filtering to `topLevel`
   // matters once replies exist at all.
   const topLevel = useMemo(
-    () => oldestFirst.filter((message) => message.parentMessageId === null),
-    [oldestFirst],
+    () =>
+      oldestFirst.filter(
+        (message) => message.parentMessageId === null && !hiddenMessageIds.has(message.messageId),
+      ),
+    [oldestFirst, hiddenMessageIds],
   );
   const groups = useMemo(() => groupMessages(topLevel), [topLevel]);
   const replyCounts = useMemo(() => replyCountsOf(oldestFirst), [oldestFirst]);
@@ -770,11 +779,10 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
         const carrierId = carrierIdRef.current;
         try {
           await apiClient.chat.messages.delete.mutate({ messageId: carrierId });
-          // Remove immediately so the re-fetch never shows a "Message deleted" tombstone.
-          queryClient.setQueryData<Message[]>(
-            messagesQueryKey(channelId),
-            (old) => old?.filter((m) => m.messageId !== carrierId) ?? old,
-          );
+          // Hide the carrier BEFORE invalidateQueries re-fetches — setQueryData
+          // alone is overwritten by the re-fetch (server returns deletedAt ≠ null),
+          // so we keep the id in state and filter it out of topLevel permanently.
+          setHiddenMessageIds((prev) => new Set([...prev, carrierId]));
         } catch {
           // Best-effort — an orphan "Shared filename" is cosmetic, not a data hazard.
         }
