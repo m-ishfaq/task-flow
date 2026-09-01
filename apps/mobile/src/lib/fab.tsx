@@ -184,12 +184,12 @@ const styles = StyleSheet.create({
   },
   menu: {
     position: 'absolute',
-    minWidth: 200,
+    minWidth: 180,
     backgroundColor: colors.surfaceRaised.hex,
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.line.hex,
-    paddingVertical: 6,
+    paddingVertical: 4,
     zIndex: 25,
     elevation: 8,
     shadowColor: '#000',
@@ -200,17 +200,17 @@ const styles = StyleSheet.create({
   menuRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
   },
   menuRowPressed: {
     backgroundColor: colors.line.hex + '55',
   },
   menuIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
+    width: 26,
+    height: 26,
+    borderRadius: 7,
     backgroundColor: colors.surfaceSunken.hex,
     alignItems: 'center',
     justifyContent: 'center',
@@ -218,7 +218,7 @@ const styles = StyleSheet.create({
   menuLabel: {
     flex: 1,
     color: colors.ink.hex,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
   },
   menuBadge: {

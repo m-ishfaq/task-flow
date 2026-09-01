@@ -13,6 +13,7 @@ import {
   PanResponder,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -869,7 +870,11 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                   setEditingId(null);
                 }}
                 onTogglePill={(messageId, emoji) => {
-                  react.mutate({ messageId, emoji });
+                  setReactionInfoFor({
+                    messageId,
+                    emoji,
+                    userIds: reactionsByMessage.get(messageId)?.get(emoji) ?? [],
+                  });
                 }}
                 onLongPressMessage={setActionsFor}
                 onLongPressReaction={(messageId, emoji, userIds) => {
@@ -959,9 +964,13 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
             attachAction={{
               pending: attach.isPending,
               onPress: () => {
-                void pickAttachment().then((file) => {
-                  if (file !== null) attach.mutate(file);
-                });
+                void pickAttachment()
+                  .then((file) => {
+                    if (file !== null) attach.mutate(file);
+                  })
+                  .catch(() => {
+                    setUploadNotice({ kind: 'failure', text: 'File picker unavailable on this device.' });
+                  });
               },
             }}
           />
@@ -1148,7 +1157,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
         onClose={() => {
           setReactionInfoFor(null);
         }}
-        onRemoveMine={() => {
+        onToggle={() => {
           if (reactionInfoFor === null) return;
           react.mutate({ messageId: reactionInfoFor.messageId, emoji: reactionInfoFor.emoji });
           setReactionInfoFor(null);
@@ -1177,7 +1186,7 @@ function ReactionInfoModal({
   viewerId,
   personOf,
   onClose,
-  onRemoveMine,
+  onToggle,
 }: {
   readonly info: {
     readonly messageId: string;
@@ -1187,7 +1196,7 @@ function ReactionInfoModal({
   readonly viewerId: string | null;
   readonly personOf: (userId: string) => { readonly label: string };
   readonly onClose: () => void;
-  readonly onRemoveMine: () => void;
+  readonly onToggle: () => void;
 }) {
   const mine = info !== null && viewerId !== null && info.userIds.includes(viewerId);
 
@@ -1206,11 +1215,13 @@ function ReactionInfoModal({
                   {userId === viewerId ? 'You' : personOf(userId).label}
                 </Text>
               ))}
-              {mine && (
-                <Pressable style={styles.actionOption} onPress={onRemoveMine}>
-                  <Text style={styles.actionOptionTextDanger}>Remove your reaction</Text>
-                </Pressable>
-              )}
+              <Pressable style={styles.actionOption} onPress={onToggle}>
+                {mine ? (
+                  <Text style={styles.actionOptionTextDanger}>Remove your {info.emoji}</Text>
+                ) : (
+                  <Text style={styles.actionOptionText}>React with {info.emoji}</Text>
+                )}
+              </Pressable>
             </>
           )}
         </Pressable>
