@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
+import * as Sharing from 'expo-sharing';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -40,6 +41,7 @@ import { CallButton } from '../../../src/lib/call-button.js';
 import { useChatRoom } from '../../../src/lib/use-chat-room.js';
 import { pickAttachment } from '../../../src/lib/pick-attachment.js';
 import { uploadMessageFile, type PickedFile } from '../../../src/lib/upload-message-file.js';
+import { downloadToCache } from '../../../src/lib/download-attachment.js';
 import { matchingCommands, messageTextFor, parseCommand } from '../../../src/lib/slash-commands.js';
 import {
   callHistoryQueryKey,
@@ -316,6 +318,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   const [failedUploadMessageIds, setFailedUploadMessageIds] = useState<ReadonlySet<string>>(
     () => new Set<string>(),
   );
+  const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
   // Replies live in the same page as their root (`chat.messages.list` does
   // not separate them) but render inside `thread/[messageId].tsx`, not
   // here — see this file's own header on why filtering to `topLevel`
@@ -857,14 +860,24 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
     },
   });
 
-  // `download` is a mutation on the server side (mints a capability + audit event);
-  // the URL it returns is opened directly — no caching, since the presigned URL
-  // has its own expiry.
+  // `download` is a mutation on the server side (mints a capability + audit
+  // event).  The presigned URL expires in 60 s, so the download begins
+  // immediately in onSuccess; we never hand the raw URL to the browser.
+  //
+  // Images are shown in an in-app full-screen preview modal.  Everything else
+  // goes through expo-sharing's OS share sheet, which offers "Open In…" for
+  // PDFs, Office docs, and any other app registered for the MIME type — this
+  // replaces the old Linking.openURL that sent the user to the browser.
   const downloadAttachment = useMutation({
-    mutationFn: (attachmentId: string) =>
+    mutationFn: ({ attachmentId }: { attachmentId: string; contentType: string }) =>
       apiClient.chat.attachments.download.mutate({ attachmentId }),
-    onSuccess: (result) => {
-      void Linking.openURL(result.url);
+    onSuccess: async (result, { contentType }) => {
+      const localUri = await downloadToCache(result.url, result.filename);
+      if (contentType.startsWith('image/')) {
+        setPreviewImageUri(localUri);
+      } else {
+        await Sharing.shareAsync(localUri, { mimeType: contentType });
+      }
     },
   });
 
@@ -982,8 +995,8 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                 pinnedIds={pinnedIds}
                 savedIds={savedIds}
                 failedUploadMessageIds={failedUploadMessageIds}
-                onDownloadAttachment={(attachmentId) => {
-                  downloadAttachment.mutate(attachmentId);
+                onDownloadAttachment={(attachmentId, contentType) => {
+                  downloadAttachment.mutate({ attachmentId, contentType });
                 }}
                 editingId={editingId}
                 editDraft={editDraft}
@@ -1293,6 +1306,37 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
           setReactionInfoFor(null);
         }}
       />
+
+      {/* Full-screen image preview — shown when the user taps a clean image
+          attachment. Non-image files go through expo-sharing's share sheet
+          instead so the OS can hand them to a registered viewer app. */}
+      <Modal
+        visible={previewImageUri !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setPreviewImageUri(null);
+        }}
+      >
+        <View style={styles.imagePreviewBackdrop}>
+          <Pressable
+            style={styles.imagePreviewClose}
+            onPress={() => {
+              setPreviewImageUri(null);
+            }}
+            accessibilityLabel="Close image preview"
+          >
+            <Ionicons name="close" size={28} color="#fff" />
+          </Pressable>
+          {previewImageUri !== null && (
+            <Image
+              source={{ uri: previewImageUri }}
+              style={styles.imagePreviewImage}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -1484,7 +1528,7 @@ function MessageGroupRow({
   ) => void;
   readonly onOpenThread: (message: Message) => void;
   readonly onSwipeToReply?: (message: Message) => void;
-  readonly onDownloadAttachment: (attachmentId: string) => void;
+  readonly onDownloadAttachment: (attachmentId: string, contentType: string) => void;
 }) {
   const first = group.messages[0];
   if (!first) return null;
@@ -1602,7 +1646,7 @@ function MessageRow({
   ) => void;
   readonly onOpenThread: (message: Message) => void;
   readonly onSwipeToReply?: (message: Message) => void;
-  readonly onDownloadAttachment: (attachmentId: string) => void;
+  readonly onDownloadAttachment: (attachmentId: string, contentType: string) => void;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
 
@@ -1660,7 +1704,7 @@ function MessageRow({
                 key={attachment.attachmentId}
                 style={styles.attachmentChip}
                 onPress={() => {
-                  onDownloadAttachment(attachment.attachmentId);
+                  onDownloadAttachment(attachment.attachmentId, attachment.contentType);
                 }}
               >
                 <Ionicons name="document-outline" size={14} color={colors.accent.hex} />
@@ -2294,5 +2338,22 @@ const styles = StyleSheet.create({
   replyHintText: {
     fontSize: 16,
     color: colors.accent.hex,
+  },
+  imagePreviewBackdrop: {
+    flex: 1,
+    backgroundColor: '#000000ee',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imagePreviewClose: {
+    position: 'absolute',
+    top: 56,
+    right: 20,
+    zIndex: 1,
+    padding: 8,
+  },
+  imagePreviewImage: {
+    width: '100%',
+    height: '100%',
   },
 });
