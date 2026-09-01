@@ -62,7 +62,6 @@ import {
   replyCountsOf,
   unfurlsQueryKey,
   CHANNELS_QUERY_KEY,
-  QUICK_REACTIONS,
   SAVED_QUERY_KEY,
   type Message,
   type MessageGroup,

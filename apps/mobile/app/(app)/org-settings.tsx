@@ -752,7 +752,7 @@ function TeamCard({
           <Text style={styles.teamCardMeta}>
             {team.members.length === 0
               ? 'No members'
-              : `${team.members.length} ${team.members.length === 1 ? 'member' : 'members'}`}
+              : `${String(team.members.length)} ${team.members.length === 1 ? 'member' : 'members'}`}
             {' · '}
             <Text style={styles.teamCardSlug}>{team.slug}</Text>
           </Text>
