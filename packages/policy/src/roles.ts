@@ -86,6 +86,14 @@ const ADMIN: readonly Permission[] = [
      because unlike `recording:export` or `phoneNumber:purchase` the worst case
      is clutter, not a bill or a leaked conversation. */
   'search:manage',
+
+  /* Analytics dashboards (Phase 11 §5, §7 decision 4). Admin AND Owner, no
+     lower: the charts aggregate across every board, and Admin can already read
+     every board, so the aggregate leaks nothing they could not assemble by
+     hand. Member and Guest are withheld deliberately — member-level analytics
+     would mean scoping each aggregate to the caller's readable boards, which is
+     named as the upgrade path, not built. */
+  'analytics:read',
 ];
 
 const MEMBER: readonly Permission[] = [
