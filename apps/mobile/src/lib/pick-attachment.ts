@@ -31,7 +31,7 @@ export async function pickAttachment(): Promise<PickedFile | null> {
   try {
     picker = await import('expo-document-picker');
   } catch {
-    return null;
+    throw new Error('File picker is not available on this device.');
   }
 
   const result = await picker.getDocumentAsync({

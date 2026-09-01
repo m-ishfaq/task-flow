@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { wire } from '@taskflow/client';
@@ -92,6 +93,7 @@ function FilterSheet({
   readonly onClose: () => void;
 }) {
   const { people, personOf } = useMembers();
+  const [assigneeSearch, setAssigneeSearch] = useState('');
 
   const statuses = useQuery({
     queryKey: statusesQueryKey(projectId ?? ''),
@@ -170,18 +172,41 @@ function FilterSheet({
             </View>
 
             <Text style={styles.groupLabel}>Assignee</Text>
-            <View style={styles.chipRow}>
-              {people.length === 0 && <Text style={styles.sectionEmptyHint}>No members yet.</Text>}
-              {people.map((member) => (
-                <Chip
-                  key={member.userId}
-                  label={personOf(member.userId).label}
-                  active={selection.assigneeIds.includes(member.userId)}
-                  onPress={() => {
-                    onChange(toggleAssignee(selection, member.userId));
-                  }}
+            <View style={styles.assigneeContainer}>
+              {people.length > 6 && (
+                <TextInput
+                  style={styles.assigneeSearch}
+                  placeholder="Search members…"
+                  placeholderTextColor={colors.inkFaint.hex}
+                  value={assigneeSearch}
+                  onChangeText={setAssigneeSearch}
+                  autoCorrect={false}
                 />
-              ))}
+              )}
+              <ScrollView style={styles.assigneeScroll} nestedScrollEnabled>
+                <View style={styles.chipRow}>
+                  {people.length === 0 && (
+                    <Text style={styles.sectionEmptyHint}>No members yet.</Text>
+                  )}
+                  {people
+                    .filter((member) => {
+                      if (assigneeSearch.trim() === '') return true;
+                      const q = assigneeSearch.toLowerCase();
+                      const p = personOf(member.userId);
+                      return p.label.toLowerCase().includes(q);
+                    })
+                    .map((member) => (
+                      <Chip
+                        key={member.userId}
+                        label={personOf(member.userId).label}
+                        active={selection.assigneeIds.includes(member.userId)}
+                        onPress={() => {
+                          onChange(toggleAssignee(selection, member.userId));
+                        }}
+                      />
+                    ))}
+                </View>
+              </ScrollView>
             </View>
 
             <Text style={styles.groupLabel}>Label</Text>
@@ -309,10 +334,29 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.inkFaint.hex,
   },
+  assigneeContainer: {
+    borderRadius: radiusCard,
+    overflow: 'hidden',
+  },
+  assigneeSearch: {
+    fontSize: 13,
+    color: colors.ink.hex,
+    backgroundColor: colors.surfaceSunken.hex,
+    borderRadius: radiusCard,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: colors.line.hex + '80',
+  },
+  assigneeScroll: {
+    maxHeight: 150,
+  },
   chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+    paddingBottom: 4,
   },
   chip: {
     borderRadius: 999,

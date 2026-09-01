@@ -561,6 +561,15 @@ function TransferOwnershipModal({
   readonly onClose: () => void;
 }) {
   const [selfNewRole, setSelfNewRole] = useState<'admin' | 'member'>('admin');
+  const [transferSearch, setTransferSearch] = useState('');
+
+  const filteredCandidates = candidates.filter((member) => {
+    if (transferSearch.trim() === '') return true;
+    const q = transferSearch.toLowerCase();
+    return (
+      (member.displayName ?? '').toLowerCase().includes(q) || member.email.toLowerCase().includes(q)
+    );
+  });
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -595,20 +604,36 @@ function TransferOwnershipModal({
           {candidates.length === 0 ? (
             <Text style={styles.emptyHint}>There is nobody else to transfer to yet.</Text>
           ) : (
-            candidates.map((member) => (
-              <Pressable
-                key={member.userId}
-                style={styles.modalRow}
-                disabled={pending}
-                onPress={() => {
-                  onTransfer({ toUserId: member.userId, selfNewRole });
-                }}
-              >
-                <Text style={styles.modalRowText}>
-                  {member.displayName ?? member.email} ({member.role})
-                </Text>
-              </Pressable>
-            ))
+            <>
+              <TextInput
+                style={styles.pickerSearch}
+                placeholder="Search members…"
+                placeholderTextColor={colors.inkFaint.hex}
+                value={transferSearch}
+                onChangeText={setTransferSearch}
+                autoCorrect={false}
+              />
+              <ScrollView style={styles.pickerScroll} nestedScrollEnabled>
+                {filteredCandidates.length === 0 ? (
+                  <Text style={styles.emptyHint}>No matches.</Text>
+                ) : (
+                  filteredCandidates.map((member) => (
+                    <Pressable
+                      key={member.userId}
+                      style={styles.modalRow}
+                      disabled={pending}
+                      onPress={() => {
+                        onTransfer({ toUserId: member.userId, selfNewRole });
+                      }}
+                    >
+                      <Text style={styles.modalRowText}>
+                        {member.displayName ?? member.email} ({member.role})
+                      </Text>
+                    </Pressable>
+                  ))
+                )}
+              </ScrollView>
+            </>
           )}
           <Pressable style={styles.modalCancel} onPress={onClose}>
             <Text style={styles.modalCancelText}>Cancel</Text>
@@ -684,32 +709,82 @@ function TeamCard({
   readonly onRemove: (userId: string) => void;
 }) {
   const [picking, setPicking] = useState(false);
+  const [memberSearch, setMemberSearch] = useState('');
   const onTeam = new Set(team.members.map((member) => member.userId));
   const candidates = orgMembers.filter((member) => !onTeam.has(member.userId));
+  const filteredCandidates = candidates.filter((member) => {
+    if (memberSearch.trim() === '') return true;
+    const q = memberSearch.toLowerCase();
+    return (
+      (member.displayName ?? '').toLowerCase().includes(q) || member.email.toLowerCase().includes(q)
+    );
+  });
+
+  const MAX_AVATARS = 5;
+  const visibleMembers = team.members.slice(0, MAX_AVATARS);
+  const overflow = team.members.length - MAX_AVATARS;
 
   return (
     <View style={styles.teamCard}>
       <View style={styles.teamCardHeader}>
-        <Text style={styles.teamCardName}>{team.name}</Text>
-        <Text style={styles.teamCardSlug}>{team.slug}</Text>
-        <Text style={styles.rowCount}>
-          {team.members.length} {team.members.length === 1 ? 'member' : 'members'}
-        </Text>
+        <View style={styles.teamAvatarStack}>
+          {visibleMembers.map((member, i) => {
+            const initials = (member.email[0] ?? '?').toUpperCase();
+            return (
+              <View
+                key={member.userId}
+                style={[styles.teamAvatar, { marginLeft: i === 0 ? 0 : -8 }]}
+              >
+                <Text style={styles.teamAvatarText}>{initials}</Text>
+              </View>
+            );
+          })}
+          {overflow > 0 && (
+            <View style={[styles.teamAvatar, styles.teamAvatarOverflow, { marginLeft: -8 }]}>
+              <Text style={styles.teamAvatarOverflowText}>+{overflow}</Text>
+            </View>
+          )}
+        </View>
+        <View style={styles.teamCardInfo}>
+          <Text style={styles.teamCardName} numberOfLines={1}>
+            {team.name}
+          </Text>
+          <Text style={styles.teamCardMeta}>
+            {team.members.length === 0
+              ? 'No members'
+              : `${String(team.members.length)} ${team.members.length === 1 ? 'member' : 'members'}`}
+            {' · '}
+            <Text style={styles.teamCardSlug}>{team.slug}</Text>
+          </Text>
+        </View>
+        {canManage && !picking && (
+          <Pressable
+            style={styles.teamAddButton}
+            onPress={() => {
+              setPicking(true);
+            }}
+          >
+            <Text style={styles.teamAddButtonText}>+ Add</Text>
+          </Pressable>
+        )}
       </View>
 
-      {team.members.length === 0 ? (
-        <Text style={styles.emptyHint}>Nobody on this team yet.</Text>
-      ) : (
-        <View style={styles.teamChipRow}>
+      {team.members.length > 0 && (
+        <View style={styles.teamMemberList}>
           {team.members.map((member) => (
-            <View key={member.userId} style={styles.teamChip}>
-              <Text style={styles.teamChipText} numberOfLines={1}>
+            <View key={member.userId} style={styles.teamMemberRow}>
+              <View style={styles.teamMemberAvatar}>
+                <Text style={styles.teamMemberAvatarText}>
+                  {(member.email[0] ?? '?').toUpperCase()}
+                </Text>
+              </View>
+              <Text style={styles.teamMemberEmail} numberOfLines={1}>
                 {member.email}
               </Text>
               {canManage && (
                 <Pressable
                   disabled={busy}
-                  hitSlop={8}
+                  hitSlop={10}
                   onPress={() => {
                     onRemove(member.userId);
                   }}
@@ -722,35 +797,59 @@ function TeamCard({
         </View>
       )}
 
-      {canManage &&
-        (picking ? (
-          candidates.length === 0 ? (
+      {canManage && picking && (
+        <View style={styles.teamPickerContainer}>
+          {candidates.length === 0 ? (
             <Text style={styles.emptyHint}>Everyone in the organization is on this team.</Text>
           ) : (
-            candidates.map((member) => (
+            <>
+              <TextInput
+                style={styles.pickerSearch}
+                placeholder="Search members…"
+                placeholderTextColor={colors.inkFaint.hex}
+                value={memberSearch}
+                onChangeText={setMemberSearch}
+                autoFocus
+                autoCorrect={false}
+              />
+              <ScrollView style={styles.pickerScroll} nestedScrollEnabled>
+                {filteredCandidates.length === 0 ? (
+                  <Text style={styles.emptyHint}>No matches.</Text>
+                ) : (
+                  filteredCandidates.map((member) => (
+                    <Pressable
+                      key={member.userId}
+                      style={styles.modalRow}
+                      disabled={busy}
+                      onPress={() => {
+                        onAdd(member.userId);
+                        setPicking(false);
+                        setMemberSearch('');
+                      }}
+                    >
+                      <View style={styles.teamMemberAvatar}>
+                        <Text style={styles.teamMemberAvatarText}>
+                          {(member.email[0] ?? '?').toUpperCase()}
+                        </Text>
+                      </View>
+                      <Text style={styles.modalRowText}>{member.displayName ?? member.email}</Text>
+                    </Pressable>
+                  ))
+                )}
+              </ScrollView>
               <Pressable
-                key={member.userId}
-                style={styles.modalRow}
-                disabled={busy}
+                style={styles.transferLink}
                 onPress={() => {
-                  onAdd(member.userId);
                   setPicking(false);
+                  setMemberSearch('');
                 }}
               >
-                <Text style={styles.modalRowText}>{member.email}</Text>
+                <Text style={styles.modalCancelText}>Cancel</Text>
               </Pressable>
-            ))
-          )
-        ) : (
-          <Pressable
-            style={styles.transferLink}
-            onPress={() => {
-              setPicking(true);
-            }}
-          >
-            <Text style={styles.transferLinkText}>Add member…</Text>
-          </Pressable>
-        ))}
+            </>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -826,51 +925,129 @@ const styles = StyleSheet.create({
     color: colors.inkFaint.hex,
   },
   teamCard: {
-    gap: 8,
     backgroundColor: colors.surfaceRaised.hex,
     borderRadius: radiusCard,
-    padding: 14,
+    padding: 12,
     borderWidth: 1,
     borderColor: colors.line.hex + '60',
+    gap: 10,
   },
   teamCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
+  },
+  teamAvatarStack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  teamAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: colors.accent.hex + '30',
+    borderWidth: 2,
+    borderColor: colors.surfaceRaised.hex,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  teamAvatarText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.accent.hex,
+  },
+  teamAvatarOverflow: {
+    backgroundColor: colors.line.hex,
+  },
+  teamAvatarOverflowText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.inkMuted.hex,
+  },
+  teamCardInfo: {
+    flex: 1,
+    gap: 2,
   },
   teamCardName: {
     fontSize: 14,
     fontWeight: '600',
     color: colors.ink.hex,
   },
+  teamCardMeta: {
+    fontSize: 11,
+    color: colors.inkMuted.hex,
+  },
   teamCardSlug: {
     fontSize: 11,
     fontFamily: 'monospace',
     color: colors.inkFaint.hex,
+  },
+  teamAddButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: colors.accent.hex + '18',
+    borderWidth: 1,
+    borderColor: colors.accent.hex + '40',
+  },
+  teamAddButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.accent.hex,
+  },
+  teamMemberList: {
+    gap: 2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line.hex,
+    paddingTop: 8,
+  },
+  teamMemberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 5,
+  },
+  teamMemberAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.accent.hex + '20',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  teamMemberAvatarText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.accent.hex,
+  },
+  teamMemberEmail: {
     flex: 1,
+    fontSize: 13,
+    color: colors.ink.hex,
+  },
+  teamPickerContainer: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line.hex,
+    paddingTop: 8,
+    gap: 4,
+  },
+  pickerSearch: {
+    fontSize: 13,
+    color: colors.ink.hex,
+    backgroundColor: colors.surfaceSunken.hex,
+    borderRadius: radiusCard,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: colors.line.hex + '80',
+  },
+  pickerScroll: {
+    maxHeight: 180,
   },
   rowCount: {
     fontSize: 11,
     color: colors.inkFaint.hex,
-  },
-  teamChipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  teamChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderRadius: 999,
-    backgroundColor: colors.surfaceSunken.hex,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    maxWidth: 200,
-  },
-  teamChipText: {
-    fontSize: 12,
-    color: colors.ink.hex,
   },
   teamChipRemove: {
     fontSize: 12,

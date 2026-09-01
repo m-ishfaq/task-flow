@@ -3,6 +3,9 @@ import { useLocalSearchParams, router } from 'expo-router';
 import {
   ActivityIndicator,
   FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -59,6 +62,14 @@ import { PROJECTS_QUERY_KEY, boardsQueryKey, type Board } from '../../../src/lib
  * `project-settings-page.tsx`'s `BoardSection`). No confirm on archive: it
  * is reversible and the board's cards are untouched, the same call web
  * makes for the identical control.
+ *
+ * **Header layout — two rows, not one.** The back button shares the same
+ * 36 px horizontal band as `TopBar`'s icon cluster (both starting at
+ * `insets.top + 4`), occupying only the left side so there is no collision.
+ * The title + Sprints/Settings row lives below that band and uses
+ * `paddingRight` to stay clear of the icons should the title ever be long.
+ * "New board" is a bottom-sheet modal rather than an inline toggle — same
+ * reasoning as `(tabs)/boards.tsx`'s own redesign of its create form.
  */
 export default function ProjectBoards() {
   const params = useLocalSearchParams<{ projectId: string }>();
@@ -128,7 +139,13 @@ function ProjectBoardsContent({
       await queryClient.invalidateQueries({ queryKey: boardsQueryKey(projectId) });
     },
   });
-  const paddingTop = useTopInset();
+  const paddingTop = useTopInset(4);
+
+  const closeSheet = () => {
+    setCreating(false);
+    setName('');
+    create.reset();
+  };
 
   if (boards.isError) {
     return (
@@ -143,25 +160,31 @@ function ProjectBoardsContent({
 
   return (
     <View style={[styles.container, { paddingTop }]}>
-      <BackButton />
+      {/* Row 1: back button — 36 px, left only — shares horizontal band with
+          TopBar icons. Keeps the right side clear so no collision occurs. */}
+      <View style={styles.backRow}>
+        <BackButton />
+      </View>
+
+      {/* Row 2: title + secondary actions — below the TopBar zone. */}
       <View style={styles.titleRow}>
         <Text style={styles.title}>Boards</Text>
         <View style={styles.titleActions}>
           <Pressable
-            style={styles.sprintsButton}
+            style={styles.secondaryButton}
             onPress={() => {
               router.push(`/sprints/${projectId}`);
             }}
           >
-            <Text style={styles.sprintsButtonText}>Sprints</Text>
+            <Text style={styles.secondaryButtonText}>Sprints</Text>
           </Pressable>
           <Pressable
-            style={styles.sprintsButton}
+            style={styles.secondaryButton}
             onPress={() => {
               router.push(`/project-settings/${projectId}`);
             }}
           >
-            <Text style={styles.sprintsButtonText}>Settings</Text>
+            <Text style={styles.secondaryButtonText}>Settings</Text>
           </Pressable>
           {/* Hidden rather than disabled: a caller without `project:update`
               could not submit this form regardless, so showing it as
@@ -170,45 +193,14 @@ function ProjectBoardsContent({
             <Pressable
               style={styles.newButton}
               onPress={() => {
-                setCreating((open) => !open);
+                setCreating(true);
               }}
             >
-              <Text style={styles.newButtonText}>{creating ? 'Cancel' : '+ New board'}</Text>
+              <Text style={styles.newButtonText}>+ New board</Text>
             </Pressable>
           )}
         </View>
       </View>
-
-      {creating && canCreateBoard && (
-        <View style={styles.createForm}>
-          <TextInput
-            value={name}
-            onChangeText={setName}
-            placeholder="Board name"
-            placeholderTextColor={colors.inkFaint.hex}
-            style={styles.createInput}
-            autoFocus
-          />
-          <Pressable
-            style={styles.createSubmit}
-            disabled={create.isPending || name.trim().length === 0}
-            onPress={() => {
-              create.mutate(name.trim());
-            }}
-          >
-            {create.isPending ? (
-              <ActivityIndicator color={colors.accentInk.hex} />
-            ) : (
-              <Text style={styles.createSubmitText}>Add</Text>
-            )}
-          </Pressable>
-          {create.isError && (
-            <Text style={styles.createError} accessibilityRole="alert">
-              {apiErrorOf(create.error)?.error.message ?? 'The board could not be created.'}
-            </Text>
-          )}
-        </View>
-      )}
 
       <FlatList<Board>
         data={boards.data}
@@ -297,6 +289,57 @@ function ProjectBoardsContent({
           {apiErrorOf(archive.error)?.error.message ?? 'Could not archive this board.'}
         </Text>
       )}
+
+      {/* Bottom-sheet modal for creating a board — same pattern as boards.tsx. */}
+      <Modal
+        visible={creating && canCreateBoard}
+        transparent
+        animationType="slide"
+        onRequestClose={closeSheet}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.sheetBackdrop}
+        >
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeSheet} />
+          <View style={styles.sheet}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>New board</Text>
+            <TextInput
+              value={name}
+              onChangeText={setName}
+              placeholder="Board name"
+              placeholderTextColor={colors.inkFaint.hex}
+              style={styles.sheetInput}
+              autoFocus
+            />
+            <Pressable
+              style={[
+                styles.createSubmit,
+                (create.isPending || name.trim().length === 0) && styles.createSubmitDisabled,
+              ]}
+              disabled={create.isPending || name.trim().length === 0}
+              onPress={() => {
+                create.mutate(name.trim());
+              }}
+            >
+              {create.isPending ? (
+                <ActivityIndicator color={colors.accentInk.hex} />
+              ) : (
+                <Text style={styles.createSubmitText}>Create board</Text>
+              )}
+            </Pressable>
+            {create.isError && (
+              <Text style={styles.createError} accessibilityRole="alert">
+                {apiErrorOf(create.error)?.error.message ?? 'The board could not be created.'}
+              </Text>
+            )}
+            <Pressable style={styles.createCancel} onPress={closeSheet}>
+              <Text style={styles.createCancelText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -318,7 +361,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 24,
-    gap: 12,
+    gap: 8,
     backgroundColor: colors.surface.hex,
   },
   center: {
@@ -328,6 +371,12 @@ const styles = StyleSheet.create({
     gap: 16,
     padding: 24,
     backgroundColor: colors.surface.hex,
+  },
+  /* 36 px height puts the back button text on the same vertical centre as
+     TopBar's icon row. Occupies only the left side — no collision on right. */
+  backRow: {
+    height: 36,
+    justifyContent: 'center',
   },
   backButton: {
     alignSelf: 'flex-start',
@@ -343,7 +392,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '700',
     color: colors.ink.hex,
     letterSpacing: -0.3,
@@ -351,18 +400,18 @@ const styles = StyleSheet.create({
   titleActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
-  sprintsButton: {
+  secondaryButton: {
     borderWidth: 1,
     borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     backgroundColor: colors.surfaceRaised.hex,
   },
-  sprintsButtonText: {
-    fontSize: 13,
+  secondaryButtonText: {
+    fontSize: 12,
     fontWeight: '600',
     color: colors.ink.hex,
   },
@@ -370,19 +419,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.accent.hex,
     borderRadius: radiusCard,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
   newButtonText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.accent.hex,
-  },
-  createForm: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 8,
   },
   createInput: {
     flex: 1,
@@ -396,6 +439,20 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
     backgroundColor: colors.surfaceSunken.hex,
   },
+  /* Sheet context: vertical flex column — `flex: 1` collapses a TextInput
+     to its minimum when there is no measured height in the parent. This
+     style gives the input a fixed height that looks right in a bottom
+     sheet while the inline-edit `createInput` keeps its flex behaviour. */
+  sheetInput: {
+    borderWidth: 1,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard + 2,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 16,
+    color: colors.ink.hex,
+    backgroundColor: colors.surfaceSunken.hex,
+  },
   createSubmit: {
     backgroundColor: colors.accent.hex,
     borderRadius: radiusCard,
@@ -403,6 +460,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     minWidth: 56,
     alignItems: 'center',
+  },
+  createSubmitDisabled: {
+    opacity: 0.5,
   },
   createSubmitText: {
     color: colors.accentInk.hex,
@@ -413,6 +473,15 @@ const styles = StyleSheet.create({
     width: '100%',
     fontSize: 12,
     color: colors.danger.hex,
+  },
+  createCancel: {
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  createCancelText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.inkMuted.hex,
   },
   listContainer: {
     flex: 1,
@@ -467,5 +536,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.inkMuted.hex,
     textAlign: 'center',
+  },
+  /* Bottom-sheet modal */
+  sheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: colors.surfaceRaised.hex,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    gap: 12,
+    paddingBottom: 32,
+  },
+  sheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.line.hex,
+    alignSelf: 'center',
+    marginBottom: 4,
+  },
+  sheetTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.ink.hex,
+    marginBottom: 4,
   },
 });

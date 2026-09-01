@@ -174,11 +174,28 @@ function OrgPickerContent() {
 
 /** The square with an initial in it — deliberately not `Avatar`, which hues
  *  from a USER id; an organization is not a person, and feeding an org id
- *  into it would mint a second meaning for the same visual language. */
+ *  into it would mint a second meaning for the same visual language.
+ *
+ *  Color is derived from the initial character's code-point mod the palette
+ *  length — stable across renders, never stored, never random. */
+const ORG_MARK_COLORS = [
+  '#4F7FFA',
+  '#7B61FF',
+  '#0AB5A1',
+  '#E86339',
+  '#D4437C',
+  '#2DA44E',
+  '#C8742F',
+  '#6B7280',
+];
+
 function OrgMark({ name }: { readonly name: string }) {
+  const initial = (name.trim()[0] ?? '?').toUpperCase();
+  const color =
+    ORG_MARK_COLORS[(initial.codePointAt(0) ?? 0) % ORG_MARK_COLORS.length] ?? '#6B7280';
   return (
-    <View style={styles.orgMark}>
-      <Text style={styles.orgMarkText}>{(name.trim()[0] ?? '?').toUpperCase()}</Text>
+    <View style={[styles.orgMark, { backgroundColor: color + '22', borderColor: color + '55' }]}>
+      <Text style={[styles.orgMarkText, { color }]}>{initial}</Text>
     </View>
   );
 }
@@ -357,28 +374,25 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
     borderWidth: 1,
     borderColor: colors.line.hex + '80',
-    borderRadius: radiusCard,
+    borderRadius: radiusCard + 2,
     backgroundColor: colors.surfaceRaised.hex,
-    padding: 12,
-    marginBottom: 8,
+    padding: 14,
+    marginBottom: 10,
   },
   orgMark: {
-    height: 36,
-    width: 36,
-    borderRadius: radiusCard,
-    borderWidth: 1,
-    borderColor: colors.line.hex,
-    backgroundColor: colors.surfaceSunken.hex,
+    height: 44,
+    width: 44,
+    borderRadius: 12,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
   orgMarkText: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
-    color: colors.inkMuted.hex,
   },
   rowText: {
     flex: 1,

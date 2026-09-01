@@ -395,7 +395,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
     },
   });
 
-  const paddingTop = useTopInset();
+  const paddingTop = useTopInset(4);
 
   if (lists.isError || cards.isError) {
     return (
@@ -418,24 +418,30 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
 
   return (
     <View style={[styles.container, { paddingTop }]}>
-      <View style={styles.header}>
+      {/* Row 1: back button only — sits in the same 36 px band as TopBar's
+          icon cluster (which lives at the same y-coordinate on the right).
+          Keeping row 1 left-only prevents the board's own action chips from
+          colliding with those absolute-positioned icons. */}
+      <View style={styles.backRow}>
         <BackButton />
-        <View style={styles.headerActions}>
-          <BoardFilterButton
-            projectId={boardProjectId}
-            selection={filterSelection}
-            onChange={setFilterSelection}
-          />
-          <ShareBoardButton boardId={boardId} />
-          <Pressable
-            style={styles.archivedButton}
-            onPress={() => {
-              setArchivedOpen(true);
-            }}
-          >
-            <Text style={styles.archivedButtonText}>Archived</Text>
-          </Pressable>
-        </View>
+      </View>
+      {/* Row 2: board actions — Filter, Share, Archived — below the TopBar
+          zone, so they never overlap with the global icon row. */}
+      <View style={styles.actionRow}>
+        <BoardFilterButton
+          projectId={boardProjectId}
+          selection={filterSelection}
+          onChange={setFilterSelection}
+        />
+        <ShareBoardButton boardId={boardId} />
+        <Pressable
+          style={styles.archivedButton}
+          onPress={() => {
+            setArchivedOpen(true);
+          }}
+        >
+          <Text style={styles.archivedButtonText}>Archived</Text>
+        </Pressable>
       </View>
 
       <ScrollView
@@ -969,7 +975,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                 setArchivedOpen(false);
               }}
             >
-              <Text style={styles.modalCancelText}>Done</Text>
+              <Text style={styles.modalDoneText}>Done</Text>
             </Pressable>
           </Pressable>
         </Pressable>
@@ -1135,17 +1141,20 @@ const styles = StyleSheet.create({
     padding: 24,
     backgroundColor: colors.surface.hex,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  /* 36 px matches TopBar icon height — the back button text is vertically
+     centred in the same horizontal band as the global icons on the right. */
+  backRow: {
+    height: 36,
+    justifyContent: 'center',
     paddingHorizontal: 24,
-    paddingBottom: 8,
   },
-  headerActions: {
+  /* Below the TopBar zone — no overlap possible with the icon cluster. */
+  actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    paddingHorizontal: 24,
+    paddingBottom: 8,
   },
   archivedButton: {
     borderRadius: 999,
@@ -1382,6 +1391,9 @@ const styles = StyleSheet.create({
   archivedSection: {
     marginTop: 12,
     gap: 4,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line.hex,
   },
   archivedSectionTitle: {
     fontSize: 13,
@@ -1436,6 +1448,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: colors.danger.hex,
+  },
+  modalDoneText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.accent.hex,
   },
   modalInput: {
     borderWidth: 1,

@@ -4,8 +4,10 @@ import {
   desc,
   eq,
   exists,
+  isNull,
   lt,
   not,
+  or,
   schema,
   withOrgScope,
   outboxWriter,
@@ -152,6 +154,9 @@ export async function listMessages(
       .where(
         and(
           notHiddenBy(actor, tx),
+          // Synthetic carriers that were deleted after a failed upload are
+          // excluded entirely — no tombstone for any participant, ever.
+          or(eq(schema.messages.isSynthetic, false), isNull(schema.messages.deletedAt)),
           olderThan === null
             ? eq(schema.messages.channelId, input.channelId)
             : and(
@@ -216,6 +221,7 @@ export async function sendMessage(
     readonly channelId: ChannelId;
     readonly body: RichTextNode;
     readonly parentMessageId?: MessageId | null;
+    readonly isSynthetic?: boolean;
   },
 ): Promise<{ readonly messageId: MessageId }> {
   const messageId = newId<'MessageId'>();
@@ -279,6 +285,7 @@ export async function sendMessage(
       authorId: userOf(actor),
       body: input.body,
       bodyText,
+      isSynthetic: input.isSynthetic ?? false,
     });
 
     await outboxWriter.append(tx, [

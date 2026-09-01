@@ -22,6 +22,8 @@ export interface BrandingValue {
   readonly productName: string;
   readonly logoUrl: string | null;
   readonly paletteId: PaletteId;
+  /** True while the first branding fetch is in-flight — lets BrandMark suppress the fallback initial to avoid a flash. */
+  readonly isPending: boolean;
 }
 
 /**
@@ -36,6 +38,7 @@ export const DEFAULT_BRANDING: BrandingValue = {
   productName: 'TaskFlow',
   logoUrl: null,
   paletteId: 'default',
+  isPending: false,
 };
 
 /**

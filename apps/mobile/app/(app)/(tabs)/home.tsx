@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
+import { Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
 import { colors } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { CardRow } from '../../../src/lib/card-row.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
+import { SkeletonList } from '../../../src/lib/skeleton.js';
 import { MY_TASKS_QUERY_KEY, groupCardsByDue, type CardSummary } from '../../../src/lib/work.js';
 import { ACTIVE_SPRINTS_QUERY_KEY } from '../../../src/lib/sprints.js';
 
@@ -60,7 +61,21 @@ type Scope = 'all' | 'sprint' | 'backlog';
  * rendering for a second screen; see that file's own header.
  */
 export default function Home() {
+  const queryClient = useQueryClient();
   const [scope, setScope] = useState<Scope>('all');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const doRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: MY_TASKS_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: ACTIVE_SPRINTS_QUERY_KEY }),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const cards = useQuery({
     queryKey: MY_TASKS_QUERY_KEY,
@@ -70,7 +85,7 @@ export default function Home() {
     queryKey: ACTIVE_SPRINTS_QUERY_KEY,
     queryFn: async () => wire(await apiClient.work.sprints.active.query({})),
   });
-  const paddingTop = useTopInset();
+  const paddingTop = useTopInset(4);
 
   const runningSprintIds = useMemo(
     () => new Set((activeSprints.data ?? []).map((sprint) => sprint.sprintId)),
@@ -88,17 +103,17 @@ export default function Home() {
 
   return (
     <View style={[styles.container, { paddingTop }]}>
-      <View style={styles.header}>
+      <View style={styles.titleRow}>
         <Text style={styles.title}>My Tasks</Text>
-        <Text style={styles.subtitle}>
-          {visible.length} {visible.length === 1 ? 'card' : 'cards'}
-          {scope === 'all'
-            ? ' assigned to you, across every board.'
-            : scope === 'sprint'
-              ? ' assigned to you in a running sprint.'
-              : ' assigned to you and not in any sprint.'}
-        </Text>
       </View>
+      <Text style={styles.subtitle}>
+        {visible.length} {visible.length === 1 ? 'card' : 'cards'}
+        {scope === 'all'
+          ? ' assigned to you, across every board.'
+          : scope === 'sprint'
+            ? ' assigned to you in a running sprint.'
+            : ' assigned to you and not in any sprint.'}
+      </Text>
 
       {runningSprintIds.size > 0 && (
         <View style={styles.scopeRow} accessibilityRole="tablist">
@@ -134,9 +149,18 @@ export default function Home() {
         contentContainerStyle={styles.list}
         style={styles.listContainer}
         stickySectionHeadersEnabled={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              void doRefresh();
+            }}
+            tintColor={colors.accent.hex}
+          />
+        }
         ListEmptyComponent={
           cards.isPending ? (
-            <ActivityIndicator color={colors.accent.hex} />
+            <SkeletonList count={5} />
           ) : (
             <Text style={styles.label}>Nothing assigned to you right now.</Text>
           )
@@ -153,9 +177,11 @@ const styles = StyleSheet.create({
     gap: 12,
     backgroundColor: colors.surface.hex,
   },
-  header: {
-    gap: 4,
-    paddingTop: 4,
+  titleRow: {
+    height: 36,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    paddingRight: 120,
   },
   title: {
     fontSize: 24,

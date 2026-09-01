@@ -1,14 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
+  Animated,
   FlatList,
   Image,
   KeyboardAvoidingView,
   Linking,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -51,14 +56,16 @@ import {
   groupMessages,
   groupPreviews,
   groupReactions,
+  messageAttachmentsQueryKey,
   messagesQueryKey,
   pinsQueryKey,
   reactionsQueryKey,
   replyCountsOf,
   unfurlsQueryKey,
   CHANNELS_QUERY_KEY,
-  QUICK_REACTIONS,
+  SAVED_QUERY_KEY,
   type Message,
+  type MessageAttachment,
   type MessageGroup,
   type UnfurlPreview,
 } from '../../../src/lib/chat.js';
@@ -230,6 +237,24 @@ type TimelineItem =
       readonly entry: CallHistoryEntry;
     };
 
+const MOBILE_QUICK_REACTIONS = [
+  '👍',
+  '❤️',
+  '😂',
+  '🎉',
+  '👀',
+  '✅',
+  '🙏',
+  '🔥',
+  '😍',
+  '🤔',
+  '👏',
+  '😢',
+  '🚀',
+  '😅',
+  '💯',
+];
+
 export default function ChannelScreen() {
   const params = useLocalSearchParams<{ channelId: string }>();
   const parsedChannelId = ChannelIdSchema.safeParse(params.channelId);
@@ -284,6 +309,13 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   });
 
   const oldestFirst = useMemo(() => [...(messages.data ?? [])].reverse(), [messages.data]);
+  // IDs of synthetic carriers whose upload failed this session — shown as
+  // "Upload failed" in red to the sender. The server already excludes these
+  // from messages.list once deleted, so receivers and re-mounts never see
+  // them at all; this set only controls the sender's in-session rendering.
+  const [failedUploadMessageIds, setFailedUploadMessageIds] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  );
   // Replies live in the same page as their root (`chat.messages.list` does
   // not separate them) but render inside `thread/[messageId].tsx`, not
   // here — see this file's own header on why filtering to `topLevel`
@@ -501,6 +533,48 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   });
   const previewsByMessage = useMemo(() => groupPreviews(previews.data ?? []), [previews.data]);
 
+  const messageAttachments = useQuery({
+    queryKey: messageAttachmentsQueryKey(channelId),
+    queryFn: async () => {
+      const CHUNK = 25;
+      const rows: MessageAttachment[] = [];
+      for (let index = 0; index < messageIds.length; index += CHUNK) {
+        const part = messageIds.slice(index, index + CHUNK);
+        if (part.length === 0) continue;
+        rows.push(
+          ...(await apiClient.chat.attachments.list.query({ channelId, messageIds: part })),
+        );
+      }
+      return rows;
+    },
+    enabled: messageIds.length > 0,
+  });
+  const attachmentsByMessage = useMemo(() => {
+    const map = new Map<string, MessageAttachment[]>();
+    for (const attachment of messageAttachments.data ?? []) {
+      if (attachment.status !== 'clean') continue;
+      const existing = map.get(attachment.messageId);
+      if (existing !== undefined) {
+        existing.push(attachment);
+      } else {
+        map.set(attachment.messageId, [attachment]);
+      }
+    }
+    return map;
+  }, [messageAttachments.data]);
+
+  const pins = useQuery({
+    queryKey: pinsQueryKey(channelId),
+    queryFn: () => apiClient.chat.messages.pins.query({ channelId }),
+  });
+  const pinnedIds = useMemo(() => new Set((pins.data ?? []).map((p) => p.messageId)), [pins.data]);
+
+  const saved = useQuery({
+    queryKey: SAVED_QUERY_KEY,
+    queryFn: () => apiClient.chat.saved.list.query(),
+  });
+  const savedIds = useMemo(() => new Set((saved.data ?? []).map((s) => s.messageId)), [saved.data]);
+
   const send = useMutation({
     // `RichTextNode`, not `ReturnType<typeof parseFormattedText>` — the
     // ordinary send path always builds one via `parseFormattedText`, but a
@@ -595,6 +669,12 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
     readonly text: string;
   } | null>(null);
 
+  // Refs that survive across the async gap between mutationFn, onError, and
+  // onSettled without going stale the way state would inside closures.
+  const uploadStageRef = useRef<string | null>(null);
+  const carrierIdRef = useRef<string | null>(null);
+  const carrierIsSyntheticRef = useRef(false);
+
   // Uploads against the LAST message this pick sends — an attachment hangs
   // off a message, and until one exists there is no channel to authorize
   // the upload against (`attachment.service.ts`), the same ordering
@@ -602,21 +682,28 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   const attach = useMutation({
     mutationFn: async (file: PickedFile) => {
       setUploadNotice(null);
+      carrierIdRef.current = null;
+      uploadStageRef.current = null;
+
       // `parseFormattedText`, not `plainParagraph`, for the synthetic
       // "Shared **filename**" carrier too — now that `**` really means bold,
       // leaving this on `plainParagraph` would post literal asterisks around
       // the filename instead of the bold text they were always meant to be.
-      const carrier =
-        draft.trim().length === 0
-          ? await apiClient.chat.messages.send.mutate({
-              channelId,
-              body: parseFormattedText(`Shared **${file.name}**`),
-            })
-          : await apiClient.chat.messages.send.mutate({
-              channelId,
-              body: parseFormattedText(draft.trim(), pendingMentions),
-            });
+      const isSynthetic = draft.trim().length === 0;
+      carrierIsSyntheticRef.current = isSynthetic;
 
+      const carrier = isSynthetic
+        ? await apiClient.chat.messages.send.mutate({
+            channelId,
+            body: parseFormattedText(`Shared **${file.name}**`),
+            isSynthetic: true,
+          })
+        : await apiClient.chat.messages.send.mutate({
+            channelId,
+            body: parseFormattedText(draft.trim(), pendingMentions),
+          });
+
+      carrierIdRef.current = carrier.messageId;
       setDraft('');
       setPendingMentions([]);
       chatSocket.stopTyping(channelId);
@@ -628,7 +715,10 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
         },
         carrier.messageId,
         file,
-        setUploadStage,
+        (stage) => {
+          uploadStageRef.current = stage;
+          setUploadStage(stage);
+        },
       );
     },
     onSuccess: (result) => {
@@ -645,11 +735,62 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
       }
     },
     onError: () => {
-      setUploadNotice({ kind: 'failure', text: 'The file was not uploaded.' });
+      const stage = uploadStageRef.current;
+      const isSynthetic = carrierIsSyntheticRef.current;
+      const hasCarrier = carrierIdRef.current !== null;
+
+      if (!hasCarrier) {
+        // The carrier send itself failed — nothing was posted, nothing uploaded.
+        setUploadNotice({ kind: 'failure', text: 'Message could not be sent.' });
+      } else if (stage === 'Scanning…') {
+        // Bytes reached storage but we have no scan verdict — the carrier stays
+        // so the Files tab can show the attachment's fate once it resolves.
+        setUploadNotice({
+          kind: 'failure',
+          text: 'Upload status is unknown — check the Files tab to verify.',
+        });
+      } else if (!isSynthetic) {
+        // User's own message was sent successfully; only the upload failed.
+        setUploadNotice({
+          kind: 'failure',
+          text: 'Your message was sent, but the file was not attached.',
+        });
+      } else {
+        // Synthetic carrier will be deleted in onSettled to avoid an orphan.
+        setUploadNotice({ kind: 'failure', text: 'Upload failed — the file was not attached.' });
+      }
     },
-    onSettled: async () => {
+    onSettled: async (_data, error) => {
+      // Read the stage BEFORE nulling it, then null both ref and state.
+      const stage = uploadStageRef.current;
+      uploadStageRef.current = null;
       setUploadStage(null);
-      await queryClient.invalidateQueries({ queryKey: messagesQueryKey(channelId) });
+
+      // Delete a synthetic carrier when the upload definitely did not happen
+      // (presign or PUT failed). If the error occurred at the Scanning stage,
+      // bytes reached storage — keep the carrier so the Files tab can resolve it.
+      if (
+        error !== null &&
+        carrierIsSyntheticRef.current &&
+        carrierIdRef.current !== null &&
+        stage !== 'Scanning…'
+      ) {
+        const carrierId = carrierIdRef.current;
+        try {
+          await apiClient.chat.messages.delete.mutate({ messageId: carrierId });
+          // Mark as failed so the sender sees "Upload failed" in red this
+          // session. The server excludes deleted synthetic messages from
+          // messages.list, so receivers and re-mounts see nothing at all.
+          setFailedUploadMessageIds((prev) => new Set([...prev, carrierId]));
+        } catch {
+          // Best-effort — an orphan "Shared filename" is cosmetic, not a data hazard.
+        }
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: messagesQueryKey(channelId) }),
+        queryClient.invalidateQueries({ queryKey: messageAttachmentsQueryKey(channelId) }),
+      ]);
     },
   });
 
@@ -671,6 +812,14 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
     onSuccess: async () => {
       setActionsFor(null);
       await queryClient.invalidateQueries({ queryKey: pinsQueryKey(channelId) });
+    },
+  });
+
+  const saveMessage = useMutation({
+    mutationFn: (messageId: string) => apiClient.chat.saved.save.mutate({ messageId }),
+    onSuccess: async () => {
+      setActionsFor(null);
+      await queryClient.invalidateQueries({ queryKey: SAVED_QUERY_KEY });
     },
   });
 
@@ -708,7 +857,19 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
     },
   });
 
+  // `download` is a mutation on the server side (mints a capability + audit event);
+  // the URL it returns is opened directly — no caching, since the presigned URL
+  // has its own expiry.
+  const downloadAttachment = useMutation({
+    mutationFn: (attachmentId: string) =>
+      apiClient.chat.attachments.download.mutate({ attachmentId }),
+    onSuccess: (result) => {
+      void Linking.openURL(result.url);
+    },
+  });
+
   const paddingTop = useTopInset();
+  const insets = useSafeAreaInsets();
 
   if (messages.isError) {
     return (
@@ -790,6 +951,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
         onContentSizeChange={onContentSizeChange}
         onScroll={onScroll}
         scrollEventThrottle={200}
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'none'}
         renderItem={({ item }) =>
           item.kind === 'call' ? (
             <CallTimelineCard entry={item.entry} viewerId={userId} personOf={personOf} />
@@ -815,7 +977,14 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                 personOf={personOf}
                 reactionsByMessage={reactionsByMessage}
                 previewsByMessage={previewsByMessage}
+                attachmentsByMessage={attachmentsByMessage}
                 replyCounts={replyCounts}
+                pinnedIds={pinnedIds}
+                savedIds={savedIds}
+                failedUploadMessageIds={failedUploadMessageIds}
+                onDownloadAttachment={(attachmentId) => {
+                  downloadAttachment.mutate(attachmentId);
+                }}
                 editingId={editingId}
                 editDraft={editDraft}
                 onEditDraftChange={setEditDraft}
@@ -828,7 +997,11 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                   setEditingId(null);
                 }}
                 onTogglePill={(messageId, emoji) => {
-                  react.mutate({ messageId, emoji });
+                  setReactionInfoFor({
+                    messageId,
+                    emoji,
+                    userIds: reactionsByMessage.get(messageId)?.get(emoji) ?? [],
+                  });
                 }}
                 onLongPressMessage={setActionsFor}
                 onLongPressReaction={(messageId, emoji, userIds) => {
@@ -840,6 +1013,16 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                     params: { messageId: message.messageId, channelId },
                   });
                 }}
+                {...(canPost
+                  ? {
+                      onSwipeToReply: (message: Message) => {
+                        router.push({
+                          pathname: '/thread/[messageId]',
+                          params: { messageId: message.messageId, channelId },
+                        });
+                      },
+                    }
+                  : {})}
               />
             </>
           )
@@ -908,9 +1091,16 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
             attachAction={{
               pending: attach.isPending,
               onPress: () => {
-                void pickAttachment().then((file) => {
-                  if (file !== null) attach.mutate(file);
-                });
+                void pickAttachment()
+                  .then((file) => {
+                    if (file !== null) attach.mutate(file);
+                  })
+                  .catch(() => {
+                    setUploadNotice({
+                      kind: 'failure',
+                      text: 'File picker unavailable on this device.',
+                    });
+                  });
               },
             }}
           />
@@ -936,7 +1126,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
       <Modal
         visible={actionsFor !== null}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => {
           setActionsFor(null);
         }}
@@ -948,19 +1138,32 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
           }}
         >
           <Pressable style={styles.reactionSheetCard} onPress={() => undefined}>
-            <View style={styles.reactionSheet}>
-              {QUICK_REACTIONS.map((emoji) => (
+            <View style={styles.sheetHandle} />
+
+            {/* Quick-react row */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.reactionSheet}
+              contentContainerStyle={styles.reactionSheetContent}
+            >
+              {MOBILE_QUICK_REACTIONS.map((emoji) => (
                 <Pressable
                   key={emoji}
                   style={styles.reactionOption}
                   onPress={() => {
                     if (actionsFor) react.mutate({ messageId: actionsFor.messageId, emoji });
+                    setActionsFor(null);
                   }}
                 >
                   <Text style={styles.reactionOptionText}>{emoji}</Text>
                 </Pressable>
               ))}
-            </View>
+            </ScrollView>
+
+            <View style={styles.actionDivider} />
+
+            {/* Action items — left-aligned icon + label */}
             {canPost && actionsFor?.parentMessageId === null && (
               <Pressable
                 style={styles.actionOption}
@@ -972,7 +1175,13 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                   setActionsFor(null);
                 }}
               >
-                <Text style={styles.actionOptionText}>💬 Reply in thread</Text>
+                <Ionicons
+                  name="chatbubble-outline"
+                  size={20}
+                  color={colors.ink.hex}
+                  style={styles.actionIcon}
+                />
+                <Text style={styles.actionOptionText}>Reply in thread</Text>
               </Pressable>
             )}
             <Pressable
@@ -982,7 +1191,28 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                 if (actionsFor) pin.mutate(actionsFor.messageId);
               }}
             >
-              <Text style={styles.actionOptionText}>📌 Pin this message</Text>
+              <Ionicons
+                name="pin-outline"
+                size={20}
+                color={colors.ink.hex}
+                style={styles.actionIcon}
+              />
+              <Text style={styles.actionOptionText}>Pin this message</Text>
+            </Pressable>
+            <Pressable
+              style={styles.actionOption}
+              disabled={saveMessage.isPending}
+              onPress={() => {
+                if (actionsFor) saveMessage.mutate(actionsFor.messageId);
+              }}
+            >
+              <Ionicons
+                name="bookmark-outline"
+                size={20}
+                color={colors.ink.hex}
+                style={styles.actionIcon}
+              />
+              <Text style={styles.actionOptionText}>Save this message</Text>
             </Pressable>
             {actionsFor?.authorId === userId && (
               <Pressable
@@ -993,7 +1223,13 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                   setActionsFor(null);
                 }}
               >
-                <Text style={styles.actionOptionText}>✏️ Edit</Text>
+                <Ionicons
+                  name="pencil-outline"
+                  size={20}
+                  color={colors.ink.hex}
+                  style={styles.actionIcon}
+                />
+                <Text style={styles.actionOptionText}>Edit message</Text>
               </Pressable>
             )}
             <Pressable
@@ -1003,7 +1239,15 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                 if (actionsFor) hide.mutate(actionsFor.messageId);
               }}
             >
-              <Text style={styles.actionOptionText}>🙈 Remove for me</Text>
+              <Ionicons
+                name="eye-off-outline"
+                size={20}
+                color={colors.inkMuted.hex}
+                style={styles.actionIcon}
+              />
+              <Text style={[styles.actionOptionText, { color: colors.inkMuted.hex }]}>
+                Remove for me
+              </Text>
             </Pressable>
             {(actionsFor?.authorId === userId || canModerate) && (
               <Pressable
@@ -1013,9 +1257,25 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                   if (actionsFor) remove.mutate(actionsFor.messageId);
                 }}
               >
-                <Text style={styles.actionOptionTextDanger}>🗑️ Delete for everyone</Text>
+                <Ionicons
+                  name="trash-outline"
+                  size={20}
+                  color={colors.danger.hex}
+                  style={styles.actionIcon}
+                />
+                <Text style={styles.actionOptionTextDanger}>Delete for everyone</Text>
               </Pressable>
             )}
+
+            <View style={[styles.actionDivider, { marginBottom: 4 }]} />
+            <Pressable
+              style={[styles.actionOption, { paddingBottom: Math.max(insets.bottom, 16) }]}
+              onPress={() => {
+                setActionsFor(null);
+              }}
+            >
+              <Text style={[styles.actionOptionText, styles.actionCancelText]}>Cancel</Text>
+            </Pressable>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1027,7 +1287,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
         onClose={() => {
           setReactionInfoFor(null);
         }}
-        onRemoveMine={() => {
+        onToggle={() => {
           if (reactionInfoFor === null) return;
           react.mutate({ messageId: reactionInfoFor.messageId, emoji: reactionInfoFor.emoji });
           setReactionInfoFor(null);
@@ -1056,7 +1316,7 @@ function ReactionInfoModal({
   viewerId,
   personOf,
   onClose,
-  onRemoveMine,
+  onToggle,
 }: {
   readonly info: {
     readonly messageId: string;
@@ -1066,7 +1326,7 @@ function ReactionInfoModal({
   readonly viewerId: string | null;
   readonly personOf: (userId: string) => { readonly label: string };
   readonly onClose: () => void;
-  readonly onRemoveMine: () => void;
+  readonly onToggle: () => void;
 }) {
   const mine = info !== null && viewerId !== null && info.userIds.includes(viewerId);
 
@@ -1085,11 +1345,13 @@ function ReactionInfoModal({
                   {userId === viewerId ? 'You' : personOf(userId).label}
                 </Text>
               ))}
-              {mine && (
-                <Pressable style={styles.actionOption} onPress={onRemoveMine}>
-                  <Text style={styles.actionOptionTextDanger}>Remove your reaction</Text>
-                </Pressable>
-              )}
+              <Pressable style={styles.actionOption} onPress={onToggle}>
+                {mine ? (
+                  <Text style={styles.actionOptionTextDanger}>Remove your {info.emoji}</Text>
+                ) : (
+                  <Text style={styles.actionOptionText}>React with {info.emoji}</Text>
+                )}
+              </Pressable>
             </>
           )}
         </Pressable>
@@ -1179,7 +1441,11 @@ function MessageGroupRow({
   personOf,
   reactionsByMessage,
   previewsByMessage,
+  attachmentsByMessage,
   replyCounts,
+  pinnedIds,
+  savedIds,
+  failedUploadMessageIds,
   editingId,
   editDraft,
   onEditDraftChange,
@@ -1190,13 +1456,19 @@ function MessageGroupRow({
   onLongPressMessage,
   onLongPressReaction,
   onOpenThread,
+  onSwipeToReply,
+  onDownloadAttachment,
 }: {
   readonly group: MessageGroup;
   readonly viewerId: string | null;
   readonly personOf: (userId: string) => { readonly label: string };
   readonly reactionsByMessage: Map<string, Map<string, string[]>>;
   readonly previewsByMessage: Map<string, readonly UnfurlPreview[]>;
+  readonly attachmentsByMessage: Map<string, MessageAttachment[]>;
   readonly replyCounts: Map<string, number>;
+  readonly pinnedIds: ReadonlySet<string>;
+  readonly savedIds: ReadonlySet<string>;
+  readonly failedUploadMessageIds: ReadonlySet<string>;
   readonly editingId: string | null;
   readonly editDraft: string;
   readonly onEditDraftChange: (text: string) => void;
@@ -1211,6 +1483,8 @@ function MessageGroupRow({
     userIds: readonly string[],
   ) => void;
   readonly onOpenThread: (message: Message) => void;
+  readonly onSwipeToReply?: (message: Message) => void;
+  readonly onDownloadAttachment: (attachmentId: string) => void;
 }) {
   const first = group.messages[0];
   if (!first) return null;
@@ -1230,6 +1504,7 @@ function MessageGroupRow({
         {group.messages.map((message) => {
           const reactions = reactionsByMessage.get(message.messageId);
           const previews = previewsByMessage.get(message.messageId) ?? [];
+          const attachments = attachmentsByMessage.get(message.messageId) ?? [];
           const replyCount = replyCounts.get(message.messageId) ?? 0;
           const isEditing = editingId === message.messageId;
 
@@ -1266,60 +1541,243 @@ function MessageGroupRow({
           }
 
           return (
-            <Pressable
+            <MessageRow
               key={message.messageId}
-              onLongPress={() => {
-                onLongPressMessage(message);
-              }}
-              style={styles.messageBody}
-            >
-              {message.deletedAt !== null ? (
-                <Text style={styles.messageDeleted}>Message deleted</Text>
-              ) : (
-                <>
-                  <RichTextView document={message.body} />
-                  {message.editedAt !== null && <Text style={styles.editedTag}>edited</Text>}
-                </>
-              )}
-              {previews.length > 0 && <LinkPreviewList previews={previews} />}
-              {reactions && reactions.size > 0 && (
-                <View style={styles.reactionBar}>
-                  {[...reactions.entries()].map(([emoji, userIds]) => {
-                    const mine = viewerId !== null && userIds.includes(viewerId);
-                    return (
-                      <Pressable
-                        key={emoji}
-                        style={[styles.reactionPill, mine && styles.reactionPillMine]}
-                        onPress={() => {
-                          onTogglePill(message.messageId, emoji);
-                        }}
-                        onLongPress={() => {
-                          onLongPressReaction(message.messageId, emoji, userIds);
-                        }}
-                      >
-                        <Text style={styles.reactionPillText}>
-                          {emoji} {userIds.length}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              )}
-              {replyCount > 0 && (
-                <Pressable
-                  onPress={() => {
-                    onOpenThread(message);
-                  }}
-                >
-                  <Text style={styles.replyCountText}>
-                    {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
-                  </Text>
-                </Pressable>
-              )}
-            </Pressable>
+              message={message}
+              viewerId={viewerId}
+              reactions={reactions}
+              previews={previews}
+              attachments={attachments}
+              replyCount={replyCount}
+              isPinned={pinnedIds.has(message.messageId)}
+              isSaved={savedIds.has(message.messageId)}
+              isFailedUpload={failedUploadMessageIds.has(message.messageId)}
+              onLongPress={onLongPressMessage}
+              onTogglePill={onTogglePill}
+              onLongPressReaction={onLongPressReaction}
+              onOpenThread={onOpenThread}
+              onDownloadAttachment={onDownloadAttachment}
+              {...(onSwipeToReply !== undefined ? { onSwipeToReply } : {})}
+            />
           );
         })}
       </View>
+    </View>
+  );
+}
+
+/** One message bubble inside a group — extracted so hooks (`useRef`) work per-message. */
+function MessageRow({
+  message,
+  viewerId,
+  reactions,
+  previews,
+  attachments,
+  replyCount,
+  isPinned,
+  isSaved,
+  isFailedUpload,
+  onLongPress,
+  onTogglePill,
+  onLongPressReaction,
+  onOpenThread,
+  onSwipeToReply,
+  onDownloadAttachment,
+}: {
+  readonly message: Message;
+  readonly viewerId: string | null;
+  readonly reactions: Map<string, string[]> | undefined;
+  readonly previews: readonly UnfurlPreview[];
+  readonly attachments: readonly MessageAttachment[];
+  readonly replyCount: number;
+  readonly isPinned: boolean;
+  readonly isSaved: boolean;
+  readonly isFailedUpload: boolean;
+  readonly onLongPress: (message: Message) => void;
+  readonly onTogglePill: (messageId: string, emoji: string) => void;
+  readonly onLongPressReaction: (
+    messageId: string,
+    emoji: string,
+    userIds: readonly string[],
+  ) => void;
+  readonly onOpenThread: (message: Message) => void;
+  readonly onSwipeToReply?: (message: Message) => void;
+  readonly onDownloadAttachment: (attachmentId: string) => void;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const onPressIn = () => {
+    Animated.spring(scale, {
+      toValue: 0.97,
+      useNativeDriver: true,
+      speed: 40,
+      bounciness: 0,
+    }).start();
+  };
+  const onPressOut = () => {
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30, bounciness: 6 }).start();
+  };
+
+  const inner = (
+    <Pressable
+      onLongPress={() => {
+        onLongPress(message);
+      }}
+      onPressIn={onPressIn}
+      onPressOut={onPressOut}
+      style={styles.messageBody}
+    >
+      <Animated.View style={{ transform: [{ scale }] }}>
+        {message.deletedAt !== null ? (
+          <Text style={isFailedUpload ? styles.messageUploadFailed : styles.messageDeleted}>
+            {isFailedUpload ? 'Upload failed — file was not attached.' : 'Message deleted'}
+          </Text>
+        ) : (
+          <>
+            <RichTextView document={message.body} />
+            {message.editedAt !== null && <Text style={styles.editedTag}>edited</Text>}
+            {(isPinned || isSaved) && (
+              <View style={styles.msgBadgeRow}>
+                {isPinned && (
+                  <View style={styles.msgBadge}>
+                    <Text style={styles.msgBadgeText}>📌 Pinned</Text>
+                  </View>
+                )}
+                {isSaved && (
+                  <View style={[styles.msgBadge, styles.msgBadgeSaved]}>
+                    <Text style={[styles.msgBadgeText, styles.msgBadgeTextSaved]}>🔖 Saved</Text>
+                  </View>
+                )}
+              </View>
+            )}
+          </>
+        )}
+        {previews.length > 0 && <LinkPreviewList previews={previews} />}
+        {attachments.length > 0 && (
+          <View style={styles.attachmentList}>
+            {attachments.map((attachment) => (
+              <Pressable
+                key={attachment.attachmentId}
+                style={styles.attachmentChip}
+                onPress={() => {
+                  onDownloadAttachment(attachment.attachmentId);
+                }}
+              >
+                <Ionicons name="document-outline" size={14} color={colors.accent.hex} />
+                <Text style={styles.attachmentChipText} numberOfLines={1}>
+                  {attachment.filename}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </Animated.View>
+      {reactions && reactions.size > 0 && (
+        <View style={styles.reactionBar}>
+          {[...reactions.entries()].map(([emoji, userIds]) => {
+            const mine = viewerId !== null && userIds.includes(viewerId);
+            return (
+              <Pressable
+                key={emoji}
+                style={[styles.reactionPill, mine && styles.reactionPillMine]}
+                onPress={() => {
+                  onTogglePill(message.messageId, emoji);
+                }}
+                onLongPress={() => {
+                  onLongPressReaction(message.messageId, emoji, userIds);
+                }}
+              >
+                <Text style={styles.reactionPillText}>
+                  {emoji} {userIds.length}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+      {replyCount > 0 && (
+        <Pressable
+          onPress={() => {
+            onOpenThread(message);
+          }}
+        >
+          <Text style={styles.replyCountText}>
+            {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
+          </Text>
+        </Pressable>
+      )}
+    </Pressable>
+  );
+
+  if (onSwipeToReply !== undefined && message.parentMessageId === null) {
+    return (
+      <SwipeableMessage
+        onSwipeReply={() => {
+          onSwipeToReply(message);
+        }}
+      >
+        {inner}
+      </SwipeableMessage>
+    );
+  }
+
+  return inner;
+}
+
+/**
+ * Horizontal swipe-to-reply wrapper using PanResponder + Animated.
+ * Swipe right ≥60px → trigger reply, spring back.
+ * Shows a reply glyph that fades in as the user drags.
+ */
+function SwipeableMessage({
+  onSwipeReply,
+  children,
+}: {
+  readonly onSwipeReply: () => void;
+  readonly children: ReactNode;
+}) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const replyOpacity = useRef(new Animated.Value(0)).current;
+  const triggered = useRef(false);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_evt, gestureState) =>
+        gestureState.dx > 8 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.5,
+      onPanResponderMove: (_evt, gestureState) => {
+        if (gestureState.dx > 0) {
+          const clamped = Math.min(gestureState.dx, 80);
+          translateX.setValue(clamped);
+          replyOpacity.setValue(Math.min(clamped / 60, 1));
+          if (gestureState.dx >= 60 && !triggered.current) {
+            triggered.current = true;
+            onSwipeReply();
+          }
+        }
+      },
+      onPanResponderRelease: () => {
+        triggered.current = false;
+        Animated.parallel([
+          Animated.spring(translateX, { toValue: 0, useNativeDriver: true, bounciness: 8 }),
+          Animated.timing(replyOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
+        ]).start();
+      },
+      onPanResponderTerminate: () => {
+        triggered.current = false;
+        translateX.setValue(0);
+        replyOpacity.setValue(0);
+      },
+    }),
+  ).current;
+
+  return (
+    <View style={styles.swipeRow}>
+      <Animated.View style={[styles.replyHint, { opacity: replyOpacity }]}>
+        <Text style={styles.replyHintText}>↩</Text>
+      </Animated.View>
+      <Animated.View style={{ transform: [{ translateX }] }} {...panResponder.panHandlers}>
+        {children}
+      </Animated.View>
     </View>
   );
 }
@@ -1480,6 +1938,11 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     color: colors.inkFaint.hex,
   },
+  messageUploadFailed: {
+    fontSize: 13,
+    fontStyle: 'italic',
+    color: colors.danger.hex,
+  },
   reactionBar: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1546,6 +2009,57 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontStyle: 'italic',
     color: colors.inkFaint.hex,
+  },
+  msgBadgeRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 4,
+    flexWrap: 'wrap',
+  },
+  msgBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.accent.hex + '18',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: colors.accent.hex + '30',
+  },
+  msgBadgeSaved: {
+    backgroundColor: colors.inkMuted.hex + '12',
+    borderColor: colors.inkMuted.hex + '25',
+  },
+  msgBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.accent.hex,
+  },
+  msgBadgeTextSaved: {
+    color: colors.inkMuted.hex,
+  },
+  attachmentList: {
+    marginTop: 4,
+    gap: 4,
+  },
+  attachmentChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.accent.hex + '12',
+    borderWidth: 1,
+    borderColor: colors.accent.hex + '30',
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    alignSelf: 'flex-start' as const,
+    maxWidth: 280,
+  },
+  attachmentChipText: {
+    fontSize: 12,
+    color: colors.accent.hex,
+    fontWeight: '500' as const,
+    flex: 1,
   },
   previewList: {
     gap: 4,
@@ -1644,35 +2158,70 @@ const styles = StyleSheet.create({
   },
   reactionSheetCard: {
     backgroundColor: colors.surfaceRaised.hex,
-    borderTopLeftRadius: radiusCard + 6,
-    borderTopRightRadius: radiusCard + 6,
-    paddingTop: 20,
+    borderTopLeftRadius: radiusCard + 10,
+    borderTopRightRadius: radiusCard + 10,
+    paddingTop: 8,
+    /* Shadow lifts the sheet off the backdrop on iOS. */
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 16,
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.line.hex,
+    marginBottom: 12,
   },
   reactionSheet: {
+    paddingBottom: 4,
+  },
+  reactionSheetContent: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: 20,
+    paddingHorizontal: 12,
+    gap: 4,
   },
   reactionOption: {
     padding: 8,
+    borderRadius: radiusCard,
   },
   reactionOptionText: {
-    fontSize: 28,
+    fontSize: 22,
+  },
+  actionDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.line.hex,
+    marginHorizontal: 16,
+    marginVertical: 4,
   },
   actionOption: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.line.hex,
-    paddingVertical: 14,
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    gap: 14,
+  },
+  actionIcon: {
+    width: 22,
+    textAlign: 'center',
   },
   actionOptionText: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '500',
     color: colors.ink.hex,
   },
-  actionOptionTextDanger: {
-    fontSize: 15,
+  actionCancelText: {
     fontWeight: '600',
+    color: colors.accent.hex,
+    flex: 1,
+    textAlign: 'center',
+  },
+  actionOptionTextDanger: {
+    fontSize: 16,
+    fontWeight: '500',
     color: colors.danger.hex,
   },
   unreadDivider: {
@@ -1729,5 +2278,21 @@ const styles = StyleSheet.create({
     color: colors.inkMuted.hex,
     paddingHorizontal: 20,
     paddingVertical: 6,
+  },
+  swipeRow: {
+    position: 'relative',
+  },
+  replyHint: {
+    position: 'absolute',
+    left: -28,
+    top: 0,
+    bottom: 0,
+    width: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  replyHintText: {
+    fontSize: 16,
+    color: colors.accent.hex,
   },
 });

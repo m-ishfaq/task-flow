@@ -6,6 +6,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,14 +24,21 @@ import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { useMembers, type Member } from '../../../src/lib/use-members.js';
 import {
+  ALL_PINS_QUERY_KEY,
   CHANNELS_QUERY_KEY,
   SAVED_QUERY_KEY,
   channelDisplayName,
   channelTypeGlyph,
   unreadCountsQueryKey,
+  type AllPinnedMessage,
   type Channel,
   type SavedMessage,
 } from '../../../src/lib/chat.js';
+import { FabMenu } from '../../../src/lib/fab.js';
+import { SkeletonList } from '../../../src/lib/skeleton.js';
+import { toast, ToastHost } from '../../../src/lib/toast.js';
+
+const TOPBAR_ICON_CLEARANCE = 120;
 
 /**
  * Chat's entry point — the fourth tab (see `_layout.tsx`). Wave 3's
@@ -65,14 +73,28 @@ import {
 export default function Chat() {
   const [composerMode, setComposerMode] = useState<ComposerMode>('closed');
   const [savedOpen, setSavedOpen] = useState(false);
+  const [pinnedOpen, setPinnedOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const viewerId = useSession((state) => state.userId);
+  const queryClient = useQueryClient();
   const { personOf, isPending: peoplePending } = useMembers();
+
+  const doRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await queryClient.invalidateQueries({ queryKey: CHANNELS_QUERY_KEY });
+      await queryClient.invalidateQueries({ queryKey: SAVED_QUERY_KEY });
+      await queryClient.invalidateQueries({ queryKey: ALL_PINS_QUERY_KEY });
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const channels = useQuery({
     queryKey: CHANNELS_QUERY_KEY,
     queryFn: async () => wire(await apiClient.chat.channels.list.query()),
   });
-  const paddingTop = useTopInset();
+  const paddingTop = useTopInset(4);
 
   // Org-wide, not per-channel — `chat.saved.list` re-checks `channel:read`
   // on every row and drops what the caller can no longer see, so this
@@ -82,6 +104,14 @@ export default function Chat() {
   const saved = useQuery({
     queryKey: SAVED_QUERY_KEY,
     queryFn: async () => wire(await apiClient.chat.saved.list.query()),
+  });
+
+  // Org-wide pins — same scope reasoning as `saved` above; `allPins`
+  // re-checks channel:read per row server-side so the count is never stale
+  // in the direction that would leak.
+  const allPins = useQuery({
+    queryKey: ALL_PINS_QUERY_KEY,
+    queryFn: async () => wire(await apiClient.chat.messages.allPins.query()),
   });
 
   const channelIds = channels.data?.channels.map((channel) => channel.channelId) ?? [];
@@ -114,26 +144,6 @@ export default function Chat() {
     <View style={[styles.container, { paddingTop }]}>
       <View style={styles.titleRow}>
         <Text style={styles.title}>Chat</Text>
-        <View style={styles.titleActions}>
-          <Pressable
-            style={styles.newButton}
-            onPress={() => {
-              setSavedOpen(true);
-            }}
-          >
-            <Text style={styles.newButtonText}>
-              🔖 Saved{(saved.data?.length ?? 0) > 0 ? ` · ${String(saved.data?.length)}` : ''}
-            </Text>
-          </Pressable>
-          <Pressable
-            style={styles.newButton}
-            onPress={() => {
-              setComposerMode('menu');
-            }}
-          >
-            <Text style={styles.newButtonText}>+ New</Text>
-          </Pressable>
-        </View>
       </View>
 
       <FlatList<Channel>
@@ -149,9 +159,18 @@ export default function Chat() {
         )}
         contentContainerStyle={styles.list}
         style={styles.listContainer}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              void doRefresh();
+            }}
+            tintColor={colors.accent.hex}
+          />
+        }
         ListEmptyComponent={
           channels.isPending || peoplePending ? (
-            <ActivityIndicator color={colors.accent.hex} />
+            <SkeletonList count={6} />
           ) : (
             <Text style={styles.label}>No channels yet.</Text>
           )
@@ -171,6 +190,46 @@ export default function Chat() {
           setSavedOpen(false);
         }}
       />
+
+      <PinnedMessagesModal
+        open={pinnedOpen}
+        rows={allPins.data ?? []}
+        onClose={() => {
+          setPinnedOpen(false);
+        }}
+      />
+
+      <FabMenu
+        label="New conversation, saved or pinned messages"
+        bottom={24}
+        actions={[
+          {
+            key: 'new',
+            label: 'New conversation',
+            icon: 'add-circle-outline',
+            onPress: () => {
+              setComposerMode('menu');
+            },
+          },
+          {
+            key: 'saved',
+            label: `Saved${(saved.data?.length ?? 0) > 0 ? ` · ${String(saved.data?.length)}` : ''}`,
+            icon: 'bookmark-outline',
+            onPress: () => {
+              setSavedOpen(true);
+            },
+          },
+          {
+            key: 'pinned',
+            label: `Pinned${(allPins.data?.length ?? 0) > 0 ? ` · ${String(allPins.data?.length)}` : ''}`,
+            icon: 'pin-outline',
+            onPress: () => {
+              setPinnedOpen(true);
+            },
+          },
+        ]}
+      />
+      <ToastHost />
     </View>
   );
 }
@@ -403,6 +462,77 @@ function SavedMessageRow({
   );
 }
 
+/**
+ * All messages pinned across every channel the caller can see — the org-wide
+ * counterpart to `SavedMessagesModal`. Mirrors `apps/web/src/features/chat/
+ * chat-page.tsx`'s own pinned-messages panel: tapping a row navigates into
+ * the channel the pin lives in. No "unpin" action here — the per-channel
+ * details screen owns that, where the full channel context (moderator check,
+ * channel name) is already loaded.
+ */
+function PinnedMessagesModal({
+  open,
+  rows,
+  onClose,
+}: {
+  readonly open: boolean;
+  readonly rows: readonly AllPinnedMessage[];
+  readonly onClose: () => void;
+}) {
+  return (
+    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={styles.modalCard} onPress={() => undefined}>
+          <Text style={styles.modalTitle}>Pinned messages</Text>
+          <ScrollView>
+            {rows.length === 0 ? (
+              <Text style={styles.label}>No pinned messages yet.</Text>
+            ) : (
+              rows.map((row) => (
+                <PinnedMessageRow
+                  key={row.messageId}
+                  row={row}
+                  onOpen={() => {
+                    onClose();
+                    router.push(`/channel/${row.channelId}`);
+                  }}
+                />
+              ))
+            )}
+          </ScrollView>
+          <Pressable style={styles.modalCancel} onPress={onClose}>
+            <Text style={styles.modalCancelText}>Close</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function PinnedMessageRow({
+  row,
+  onOpen,
+}: {
+  readonly row: AllPinnedMessage;
+  readonly onOpen: () => void;
+}) {
+  return (
+    <Pressable style={styles.savedRow} onPress={onOpen}>
+      <Text style={styles.savedRowChannel} numberOfLines={1}>
+        {channelTypeGlyph(row.channelType)}
+        {row.channelName ?? 'Direct message'}
+      </Text>
+      <Text style={styles.savedRowExcerpt} numberOfLines={2}>
+        {row.excerpt ?? '(message deleted)'}
+      </Text>
+      <Text style={styles.savedRowTime}>
+        Pinned {formatDistanceToNow(new Date(row.pinnedAt), { addSuffix: true })}
+        {row.pinnedBy !== null ? ` by ${row.pinnedBy}` : ''}
+      </Text>
+    </Pressable>
+  );
+}
+
 function NewChannelForm({
   onDone,
   onBack,
@@ -419,6 +549,7 @@ function NewChannelForm({
       apiClient.chat.channels.create.mutate({ type, name: name.trim(), topic: null }),
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: CHANNELS_QUERY_KEY });
+      toast.success('Channel created');
       onDone();
       router.push(`/channel/${result.channelId}`);
     },
@@ -505,6 +636,7 @@ function NewDirectMessageForm({
     mutationFn: () => apiClient.chat.channels.openDirect.mutate({ userIds: selected }),
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: CHANNELS_QUERY_KEY });
+      toast.success('Conversation opened');
       onDone();
       router.push(`/channel/${result.channelId}`);
     },
@@ -584,31 +716,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface.hex,
   },
   titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    height: 36,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    paddingRight: TOPBAR_ICON_CLEARANCE,
   },
   title: {
     fontSize: 24,
     fontWeight: '700',
     color: colors.ink.hex,
     letterSpacing: -0.3,
-  },
-  titleActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  newButton: {
-    borderWidth: 1,
-    borderColor: colors.accent.hex,
-    borderRadius: radiusCard,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  newButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.accent.hex,
   },
   listContainer: {
     flex: 1,

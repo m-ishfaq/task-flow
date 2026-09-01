@@ -32,7 +32,10 @@ import { BrandingContext, DEFAULT_BRANDING } from './branding-context.js';
  */
 export function BrandingProvider({ children }: { readonly children: ReactNode }) {
   const query = useQuery(publicBrandingQuery());
-  const branding = query.data ?? DEFAULT_BRANDING;
+  const branding: typeof DEFAULT_BRANDING = {
+    ...(query.data ?? DEFAULT_BRANDING),
+    isPending: query.isPending,
+  };
 
   return <BrandingContext.Provider value={branding}>{children}</BrandingContext.Provider>;
 }

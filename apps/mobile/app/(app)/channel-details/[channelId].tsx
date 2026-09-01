@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Linking,
   Pressable,
+  RefreshControl,
   ScrollView,
   Share,
   StyleSheet,
@@ -42,53 +43,11 @@ import {
 } from '../../../src/lib/chat.js';
 
 /**
- * A channel's Details screen — the gap a second real device review named
- * directly: "where to see details like what we do by clicking the chat
- * header to see members and all this info and where to add members." Ported
- * feature-for-feature from `apps/web/src/features/chat/channel-details.tsx`
- * (the user's own choice, offered explicitly against a narrower "roster +
- * settings only" cut): roster, add/remove, rename/topic, pinned, starred
- * (saved), files, guest access, retention/legal-hold/export, and
- * archive/restore. A full-screen route (`router.push`), not a bottom-sheet
- * `Modal` like this app's other secondary flows — web's own panel already
- * becomes "a full-width overlay on top of the conversation" below its `md`
- * breakpoint, i.e. at phone width, which is a router push in a navigator
- * that has no side-panel concept at all.
- *
- * **In-app calling has a real call-history list here (`CallHistorySection`,
- * below) — the "Call"/"Join call" button itself lives one screen up, in
- * `channel/[channelId].tsx`'s own header, not here.** This paragraph
- * originally excluded BOTH, on the reasoning that "Phase 13's WebRTC
- * signaling lives only in `apps/web`" — true when this screen first
- * shipped, no longer true once `apps/mobile` grew its own signaling stack
- * (`rtc-socket.ts`, `peer-mesh.ts`, `use-call.ts`, `call-surface.tsx` —
- * Phase 13, Wave 5 here). Left corrected in place rather than silently
- * rewritten, the same "a status marker is a claim, not a fact" habit
- * CLAUDE.md documents.
- *
- * **Still genuinely excluded: `DirectCallAction`**, web's click-to-call
- * button for a two-person DM's counterparty WORK PHONE — a Phase 7
- * (Twilio/PSTN) telephony affordance, not Phase 13's in-app WebRTC calling.
- * "Phase 7's telephony client has never been ported to `apps/mobile` at
- * all" was true when this paragraph was written; `(tabs)/calls.tsx` is that
- * port now, and `telephony-call-button.tsx`'s `TelephonyCallButton` is the
- * exact component `DirectCallAction` would reuse. Still not wired in HERE,
- * though — adding it to this screen is its own small follow-up, not
- * something the telephony port did on its way past. The two are easy to
- * conflate because both put a phone icon near a DM's header; they dial
- * through entirely different systems (a real PSTN number vs. this app's own
- * signaling gateway), and only the second one exists on this specific
- * screen today.
- *
- * **Every control here is shown; the server decides** — the same rule
- * `channel-details.tsx`'s own header states for web, restated because this
- * screen is a direct port of it: no `role === 'admin'`, no client-computed
- * "can I manage this channel" anywhere below. Rename/Archive/Remove read
- * `channel.data.capabilities.manage`; compliance and guest access are the
- * one exception that HIDES rather than shows-and-lets-the-server-refuse
- * (matching web exactly, for the identical reason web's header gives:
- * hiding a section gated on the server's own `capabilities.manage` is
- * displaying that decision, not a second one).
+ * A channel's Details screen — polished Telegram-style design with a hero
+ * header (large avatar, channel name, member count), pull-to-refresh, and
+ * cleaner section cards. Preserves all original functionality: roster,
+ * add/remove, rename/topic, pinned, saved, files, call history, guest
+ * access, compliance, and archive/restore.
  */
 export default function ChannelDetailsScreen() {
   const params = useLocalSearchParams<{ channelId: string }>();
@@ -98,7 +57,14 @@ export default function ChannelDetailsScreen() {
     return (
       <View style={styles.center}>
         <Text style={styles.label}>This channel link isn't valid.</Text>
-        <BackButton />
+        <Pressable
+          style={styles.navBack}
+          onPress={() => {
+            router.back();
+          }}
+        >
+          <Text style={styles.navBackText}>‹ Back</Text>
+        </Pressable>
       </View>
     );
   }
@@ -110,7 +76,8 @@ function ChannelDetailsContent({ channelId }: { channelId: ChannelId }) {
   const queryClient = useQueryClient();
   const viewerId = useSession((state) => state.userId);
   const { personOf } = useMembers();
-  const paddingTop = useTopInset();
+  const paddingTop = useTopInset(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   const channel = useQuery({
     queryKey: channelQueryKey(channelId),
@@ -125,6 +92,15 @@ function ChannelDetailsContent({ channelId }: { channelId: ChannelId }) {
       queryClient.invalidateQueries({ queryKey: channelQueryKey(channelId) }),
       queryClient.invalidateQueries({ queryKey: CHANNELS_QUERY_KEY }),
     ]);
+  };
+
+  const doRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refresh();
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const removeMember = useMutation({
@@ -144,83 +120,180 @@ function ChannelDetailsContent({ channelId }: { channelId: ChannelId }) {
 
   if (channel.isError) {
     return (
-      <View style={styles.center}>
+      <View style={[styles.center, { paddingTop }]}>
         <Text style={styles.label}>
           {apiErrorOf(channel.error)?.error.message ?? "Couldn't load this channel."}
         </Text>
-        <BackButton />
+        <Pressable
+          style={styles.navBack}
+          onPress={() => {
+            router.back();
+          }}
+        >
+          <Text style={styles.navBackText}>‹ Back</Text>
+        </Pressable>
       </View>
     );
   }
 
   return (
-    <ScrollView style={[styles.container, { paddingTop }]} contentContainerStyle={styles.content}>
-      <BackButton />
-      <Text style={styles.screenTitle}>Details</Text>
+    <View style={[styles.container, { paddingTop }]}>
+      {/* Fixed nav bar */}
+      <View style={styles.navBar}>
+        <Pressable
+          style={styles.navBack}
+          onPress={() => {
+            router.back();
+          }}
+        >
+          <Text style={styles.navBackText}>‹</Text>
+        </Pressable>
+        <Text style={styles.navTitle} numberOfLines={1}>
+          {data !== undefined ? (isDirect ? 'Chat Info' : 'Channel Info') : 'Info'}
+        </Text>
+      </View>
 
-      {data === undefined ? (
-        <ActivityIndicator color={colors.accent.hex} />
-      ) : (
-        <>
-          {isDirect ? (
-            <DirectMessageIdentity channel={data} viewerId={viewerId} personOf={personOf} />
-          ) : (
-            <ChannelIdentity channelId={channelId} channel={data} onSaved={refresh} />
-          )}
-
-          <MemberRoster
-            memberIds={data.memberIds}
-            viewerId={viewerId}
-            personOf={personOf}
-            removable={!isDirect}
-            pending={removeMember.isPending}
-            onRemove={(userId) => {
-              removeMember.mutate(userId);
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              void doRefresh();
             }}
+            tintColor={colors.accent.hex}
           />
+        }
+      >
+        {data === undefined ? (
+          <ActivityIndicator color={colors.accent.hex} style={styles.loadingCenter} />
+        ) : (
+          <>
+            <ChannelHero
+              channel={data}
+              isDirect={isDirect}
+              viewerId={viewerId}
+              personOf={personOf}
+            />
 
-          {!isDirect && (
-            <AddMemberControl channelId={channelId} memberIds={data.memberIds} onAdded={refresh} />
-          )}
+            {isDirect ? (
+              <DirectMessageIdentity channel={data} viewerId={viewerId} personOf={personOf} />
+            ) : (
+              <ChannelIdentity channelId={channelId} channel={data} onSaved={refresh} />
+            )}
 
-          <PinnedSection channelId={channelId} personOf={personOf} />
-          <SavedSection channelId={channelId} />
-          <FilesSection channelId={channelId} />
-          <CallHistorySection channelId={channelId} personOf={personOf} />
+            <MemberRoster
+              memberIds={data.memberIds}
+              viewerId={viewerId}
+              personOf={personOf}
+              removable={!isDirect}
+              pending={removeMember.isPending}
+              onRemove={(userId) => {
+                removeMember.mutate(userId);
+              }}
+            />
 
-          {!isDirect && data.type === 'private' && canManage && (
-            <GuestAccessSection channelId={channelId} />
-          )}
+            {!isDirect && (
+              <AddMemberControl
+                channelId={channelId}
+                memberIds={data.memberIds}
+                onAdded={refresh}
+              />
+            )}
 
-          {!isDirect && canManage && <ComplianceSection channelId={channelId} channel={data} />}
+            <PinnedSection channelId={channelId} personOf={personOf} />
+            <SavedSection channelId={channelId} />
+            <FilesSection channelId={channelId} />
+            <CallHistorySection channelId={channelId} personOf={personOf} />
 
-          {!isDirect && (
-            <View style={styles.archiveSection}>
-              <Pressable
-                style={styles.archiveButton}
-                disabled={archive.isPending}
-                onPress={() => {
-                  archive.mutate();
-                }}
-              >
-                <Text style={styles.archiveButtonText}>
-                  {data.archivedAt === null ? 'Archive channel' : 'Restore channel'}
-                </Text>
-              </Pressable>
-              {archive.isError && (
-                <Text style={styles.sectionError} accessibilityRole="alert">
-                  {apiErrorOf(archive.error)?.error.message ?? 'The channel could not be archived.'}
-                </Text>
-              )}
-            </View>
-          )}
-        </>
-      )}
-    </ScrollView>
+            {!isDirect && data.type === 'private' && canManage && (
+              <GuestAccessSection channelId={channelId} />
+            )}
+
+            {!isDirect && canManage && <ComplianceSection channelId={channelId} channel={data} />}
+
+            {!isDirect && (
+              <View style={styles.dangerSection}>
+                <Pressable
+                  style={styles.dangerButton}
+                  disabled={archive.isPending}
+                  onPress={() => {
+                    archive.mutate();
+                  }}
+                >
+                  <Text style={styles.dangerButtonText}>
+                    {data.archivedAt === null ? 'Archive channel' : 'Restore channel'}
+                  </Text>
+                </Pressable>
+                {archive.isError && (
+                  <Text style={styles.sectionError} accessibilityRole="alert">
+                    {apiErrorOf(archive.error)?.error.message ??
+                      'The channel could not be archived.'}
+                  </Text>
+                )}
+              </View>
+            )}
+          </>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
-/** Who you are talking to, for a DM — the header title's own participant lookup, restated as full rows. */
+/** Telegram-style hero header — large avatar, channel name, member count. */
+function ChannelHero({
+  channel,
+  isDirect,
+  viewerId,
+  personOf,
+}: {
+  readonly channel: ChannelDetail;
+  readonly isDirect: boolean;
+  readonly viewerId: string | null;
+  readonly personOf: (userId: string) => Person;
+}) {
+  const others = channel.memberIds.filter((id) => id !== viewerId);
+
+  let heroLabel: string;
+  let heroInitial: string;
+  let heroMeta: string;
+
+  if (isDirect) {
+    if (others.length === 1 && others[0] !== undefined) {
+      const person = personOf(others[0]);
+      heroLabel = person.label;
+      heroInitial = person.label.slice(0, 1).toUpperCase();
+    } else {
+      heroLabel = 'Group conversation';
+      heroInitial = 'G';
+    }
+    heroMeta = `${String(channel.memberIds.length)} ${channel.memberIds.length === 1 ? 'member' : 'members'}`;
+  } else {
+    heroLabel = channel.name ?? 'Channel';
+    heroInitial = (channel.name ?? '#').slice(0, 1).toUpperCase();
+    const typeStr = channel.type === 'public' ? '# Public' : '🔒 Private';
+    heroMeta = `${typeStr} · ${String(channel.memberIds.length)} ${channel.memberIds.length === 1 ? 'member' : 'members'}`;
+  }
+
+  return (
+    <View style={styles.hero}>
+      <View style={styles.heroAvatar}>
+        <Text style={styles.heroAvatarText}>{heroInitial}</Text>
+      </View>
+      <Text style={styles.heroName}>{heroLabel}</Text>
+      <Text style={styles.heroMeta}>{heroMeta}</Text>
+      {channel.archivedAt !== null && (
+        <View style={styles.heroBadge}>
+          <Text style={styles.heroBadgeText}>Archived</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+/** Who you are talking to, for a DM — phone call action if available. */
 function DirectMessageIdentity({
   channel,
   viewerId,
@@ -233,7 +306,7 @@ function DirectMessageIdentity({
   const others = channel.memberIds.filter((userId) => userId !== viewerId);
   const only = others.length === 1 ? others[0] : undefined;
   return (
-    <View style={styles.section}>
+    <View style={styles.card}>
       <Text style={styles.sectionTitle}>
         {others.length === 1 ? 'Direct message with' : 'Group conversation'}
       </Text>
@@ -246,25 +319,10 @@ function DirectMessageIdentity({
 }
 
 /**
- * Click-to-call the other side of a 1:1 DM — the mobile counterpart of
- * `apps/web/src/features/chat/channel-details.tsx`'s `DirectCallAction`,
- * ported here rather than left as a gap: `telephony-call-button.tsx`'s
- * `TelephonyCallButton` and `people.ts`'s `directoryMemberQueryKey` already
- * existed (built for `person/[userId].tsx`'s own "Job" section), so closing
- * this was wiring two existing pieces together, not new work.
- *
- * Only for a two-person DM — a group conversation has no single callee, and
- * picking one for the caller would dial someone they did not choose. The
- * number comes from the directory (`people.directory.get`), the same
- * org-scoped `workPhone` field `person/[userId].tsx` already reads, rather
- * than `useMembers`, whose cache backs every avatar in this app and is
- * deliberately narrow — widening it to carry a phone number would mean
- * every board render holds one, for the benefit of one panel.
- *
- * Silent when there is no number: this is an affordance, not a permission
- * boundary — there is simply nothing to dial, and an explanatory empty
- * state here would be noise on every DM in an org that has not filled the
- * directory in.
+ * Click-to-call the other side of a 1:1 DM. Only for a two-person DM —
+ * a group conversation has no single callee. Phone number comes from the
+ * directory, not useMembers (which is intentionally narrow). Silent when
+ * there is no number.
  */
 function DirectCallAction({ userId }: { readonly userId: string }) {
   const member = useQuery({
@@ -283,7 +341,7 @@ function DirectCallAction({ userId }: { readonly userId: string }) {
   );
 }
 
-/** A channel's name/topic, with an inline rename form gated on `capabilities.manage`. */
+/** Channel name/topic with inline rename form gated on `capabilities.manage`. */
 function ChannelIdentity({
   channelId,
   channel,
@@ -312,7 +370,8 @@ function ChannelIdentity({
 
   if (editing) {
     return (
-      <View style={styles.section}>
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Edit channel</Text>
         <TextInput
           value={draftName}
           onChangeText={setDraftName}
@@ -350,12 +409,12 @@ function ChannelIdentity({
             )}
           </Pressable>
           <Pressable
-            style={styles.modalCancel}
+            style={styles.cancelLink}
             onPress={() => {
               setEditing(false);
             }}
           >
-            <Text style={styles.modalCancelText}>Cancel</Text>
+            <Text style={styles.cancelLinkText}>Cancel</Text>
           </Pressable>
         </View>
       </View>
@@ -363,32 +422,32 @@ function ChannelIdentity({
   }
 
   return (
-    <View style={styles.section}>
-      <View style={styles.identityRow}>
-        <Text style={styles.identityName}>
-          {channel.type === 'public' ? '# ' : '🔒 '}
-          {channel.name}
-        </Text>
-        {channel.capabilities.manage && (
-          <Pressable
-            onPress={() => {
-              setEditing(true);
-            }}
-          >
-            <Text style={styles.editLink}>Edit</Text>
-          </Pressable>
-        )}
-      </View>
-      <Text style={channel.topic === null ? styles.identityTopicEmpty : styles.identityTopic}>
-        {channel.topic ?? 'No topic set.'}
-      </Text>
-      {channel.archivedAt !== null && (
-        <Text style={styles.archivedNotice}>Archived — no new messages can be posted.</Text>
+    <View style={styles.card}>
+      {channel.topic !== null ? (
+        <>
+          <Text style={styles.sectionTitle}>Topic</Text>
+          <Text style={styles.topicText}>{channel.topic}</Text>
+        </>
+      ) : (
+        <Text style={styles.topicEmpty}>No topic set.</Text>
+      )}
+      {channel.capabilities.manage && (
+        <Pressable
+          style={styles.editTopicLink}
+          onPress={() => {
+            setEditing(true);
+          }}
+        >
+          <Text style={styles.editTopicLinkText}>
+            {channel.topic !== null ? 'Edit topic' : 'Set topic & name'}
+          </Text>
+        </Pressable>
       )}
     </View>
   );
 }
 
+/** A person row with a large initial avatar and optional suffix text. */
 function PersonLine({
   person,
   suffix,
@@ -396,10 +455,11 @@ function PersonLine({
   readonly person: Person;
   readonly suffix?: string | undefined;
 }) {
+  const initial = person.label.slice(0, 1).toUpperCase();
   return (
     <View style={styles.personLine}>
-      <View style={styles.avatarSmall}>
-        <Text style={styles.avatarSmallText}>{person.label.slice(0, 1).toUpperCase()}</Text>
+      <View style={styles.avatar}>
+        <Text style={styles.avatarText}>{initial}</Text>
       </View>
       <Text style={styles.personLabel} numberOfLines={1}>
         {person.label}
@@ -425,7 +485,7 @@ function MemberRoster({
   readonly onRemove: (userId: string) => void;
 }) {
   return (
-    <View style={styles.section}>
+    <View style={styles.card}>
       <Text style={styles.sectionTitle}>Members · {memberIds.length}</Text>
       {memberIds.length === 0 ? (
         <Text style={styles.sectionEmpty}>This channel has no members.</Text>
@@ -453,7 +513,7 @@ function MemberRoster({
   );
 }
 
-/** Search by email, mirroring `apps/web`'s own `AddMemberControl` exactly — a product choice, not a mobile shortcut. */
+/** Search by email, mirroring `apps/web`'s own `AddMemberControl` exactly. */
 function AddMemberControl({
   channelId,
   memberIds,
@@ -483,7 +543,7 @@ function AddMemberControl({
     .slice(0, 8);
 
   return (
-    <View style={styles.section}>
+    <View style={styles.card}>
       <Text style={styles.sectionTitle}>Add people</Text>
       <TextInput
         value={query}
@@ -558,16 +618,7 @@ function ExcerptRow({
   );
 }
 
-/**
- * Every call this conversation has had, newest first — closes §6's "no
- * listing UI" gap for mobile, the same read `apps/web`'s Calls tab uses
- * (`rtc.history.list`, `channel:read`, not a narrower "was I on this
- * call" check — see that route's own header). No recording listing/
- * playback here: `use-call.ts`'s own header is why mobile never captures
- * one, so there is nothing of this app's own making to browse; a
- * recording captured by a web participant is a real, separate surface
- * this increment does not add.
- */
+/** Every call this conversation has had, newest first. */
 function CallHistorySection({
   channelId,
   personOf,
@@ -585,7 +636,7 @@ function CallHistorySection({
   const rows: readonly CallHistoryEntry[] = history.data ?? [];
 
   return (
-    <View style={styles.section}>
+    <View style={styles.card}>
       <Text style={styles.sectionTitle}>Calls · {rows.length}</Text>
       {rows.length === 0 ? (
         <Text style={styles.sectionEmpty}>No calls in this conversation yet.</Text>
@@ -603,8 +654,6 @@ function CallHistorySection({
   );
 }
 
-/** What a call history row's own line reads — a duration when the call
-    actually connected, otherwise the reason it did not. */
 function callOutcomeLabel(row: CallHistoryEntry): string {
   if (row.startedAt !== null && row.endedAt !== null) {
     const seconds = Math.max(
@@ -652,7 +701,7 @@ function PinnedSection({
   const rows: readonly PinnedMessage[] = pins.data ?? [];
 
   return (
-    <View style={styles.section}>
+    <View style={styles.card}>
       <Text style={styles.sectionTitle}>Pinned · {rows.length}</Text>
       {rows.length === 0 ? (
         <Text style={styles.sectionEmpty}>Nothing pinned in this conversation.</Text>
@@ -674,7 +723,6 @@ function PinnedSection({
   );
 }
 
-/** `chat.saved.list` is org-wide (a save is personal) — filtered here to this one channel, matching `apps/web`'s own `SavedSection`. */
 function SavedSection({ channelId }: { readonly channelId: ChannelId }) {
   const queryClient = useQueryClient();
   const saved = useQuery({
@@ -694,7 +742,7 @@ function SavedSection({ channelId }: { readonly channelId: ChannelId }) {
   );
 
   return (
-    <View style={styles.section}>
+    <View style={styles.card}>
       <Text style={styles.sectionTitle}>Starred by you · {inThisChannel.length}</Text>
       {inThisChannel.length === 0 ? (
         <Text style={styles.sectionEmpty}>
@@ -718,17 +766,6 @@ function SavedSection({ channelId }: { readonly channelId: ChannelId }) {
   );
 }
 
-/**
- * Every live attachment this conversation has ever held. Download only —
- * attaching a NEW file from the composer is real, separate work (an image
- * picker, an upload flow, virus-scan status polling), the same boundary
- * `channel/[channelId].tsx`'s own header now draws explicitly.
- *
- * `Linking.openURL`, not a fetch: the presigned URL is single-use and
- * short-lived, and the device's own browser/downloader is what actually
- * saves the file — the same primitive `rich-text-view.tsx` already uses for
- * a link mark, reused here rather than adding a download library.
- */
 function FilesSection({ channelId }: { readonly channelId: ChannelId }) {
   const files = useQuery({
     queryKey: filesQueryKey(channelId),
@@ -746,7 +783,7 @@ function FilesSection({ channelId }: { readonly channelId: ChannelId }) {
   const rows: readonly ChannelFile[] = files.data ?? [];
 
   return (
-    <View style={styles.section}>
+    <View style={styles.card}>
       <Text style={styles.sectionTitle}>Files · {rows.length}</Text>
       {rows.length === 0 ? (
         <Text style={styles.sectionEmpty}>Files shared in this conversation appear here.</Text>
@@ -786,7 +823,6 @@ function FilesSection({ channelId }: { readonly channelId: ChannelId }) {
   );
 }
 
-/** Invite or revoke a guest on this one PRIVATE channel — only ever rendered for `type === 'private'` (see this file's own header). */
 function GuestAccessSection({ channelId }: { readonly channelId: ChannelId }) {
   const { people, personOf } = useMembers();
   const queryClient = useQueryClient();
@@ -839,7 +875,7 @@ function GuestAccessSection({ channelId }: { readonly channelId: ChannelId }) {
     .slice(0, 8);
 
   return (
-    <View style={styles.section}>
+    <View style={styles.card}>
       <Text style={styles.sectionTitle}>Guest access</Text>
       <Text style={styles.sectionHint}>
         A guest can read and post in this one channel — nothing else in the organization.
@@ -919,15 +955,10 @@ function GuestAccessSection({ channelId }: { readonly channelId: ChannelId }) {
 }
 
 /**
- * Retention, legal hold and export — rendered only under `capabilities.manage`
- * (see this file's own header on why this section is the one exception that
- * hides rather than shows-and-lets-the-server-refuse, mirroring web exactly).
- *
- * Export has no browser download to fall back on. `Share.share` (React
- * Native core, zero new dependencies) hands the exported JSON to the OS
- * share sheet — Save to Files, AirDrop, email, whatever the device offers —
- * which is the mobile-native equivalent of web's Blob-and-anchor download,
- * not a reduced substitute for it.
+ * Retention, legal hold and export — rendered only under `capabilities.manage`.
+ * Export uses `Share.share` (React Native core) to hand JSON to the OS share
+ * sheet — Save to Files, AirDrop, email — the mobile equivalent of a Blob
+ * download.
  */
 function ComplianceSection({
   channelId,
@@ -971,7 +1002,7 @@ function ComplianceSection({
   });
 
   return (
-    <View style={styles.section}>
+    <View style={styles.card}>
       <Text style={styles.sectionTitle}>Retention &amp; compliance</Text>
 
       <View style={styles.retentionRow}>
@@ -996,13 +1027,12 @@ function ComplianceSection({
         </Pressable>
       </View>
       <Text style={styles.sectionHint}>
-        Delete messages older than this many days. Leave blank to keep them indefinitely; deletions
-        are recorded in the audit log.
+        Delete messages older than this many days. Leave blank to keep them indefinitely.
       </Text>
 
       <View style={styles.rosterRow}>
-        <View style={styles.identityRow}>
-          <Text style={styles.rosterAction}>Legal hold</Text>
+        <View style={styles.legalHoldLabel}>
+          <Text style={styles.fieldBold}>Legal hold</Text>
           <Text style={styles.sectionHint}>
             {channel.retentionHold ? 'On — retention will not delete anything here' : 'Off'}
           </Text>
@@ -1018,7 +1048,7 @@ function ComplianceSection({
       </View>
 
       <View style={styles.rosterRow}>
-        <Text style={styles.rosterAction}>Export conversation</Text>
+        <Text style={styles.fieldBold}>Export conversation</Text>
         <Pressable
           disabled={exportChannel.isPending}
           onPress={() => {
@@ -1039,28 +1069,17 @@ function ComplianceSection({
   );
 }
 
-function BackButton() {
-  return (
-    <Pressable
-      style={styles.backButton}
-      onPress={() => {
-        router.back();
-      }}
-    >
-      <Text style={styles.backButtonText}>← Back</Text>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.surface.hex,
   },
+  scroll: {
+    flex: 1,
+  },
   content: {
-    paddingHorizontal: 24,
-    paddingBottom: 40,
-    gap: 8,
+    paddingBottom: 48,
+    gap: 12,
   },
   center: {
     flex: 1,
@@ -1075,28 +1094,98 @@ const styles = StyleSheet.create({
     color: colors.inkMuted.hex,
     textAlign: 'center',
   },
-  backButton: {
-    alignSelf: 'flex-start',
+  loadingCenter: {
+    marginTop: 48,
+  },
+
+  /* Nav bar */
+  navBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line.hex + '60',
+    backgroundColor: colors.surface.hex,
+  },
+  navBack: {
+    paddingVertical: 4,
+    paddingRight: 10,
+  },
+  navBackText: {
+    fontSize: 22,
+    fontWeight: '400',
+    color: colors.accent.hex,
+    lineHeight: 26,
+  },
+  navTitle: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: '600',
+    color: colors.ink.hex,
+  },
+
+  /* Hero */
+  hero: {
+    alignItems: 'center',
+    paddingTop: 28,
+    paddingBottom: 20,
+    paddingHorizontal: 24,
+    gap: 8,
+    backgroundColor: colors.surface.hex,
+  },
+  heroAvatar: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: colors.accent.hex + '22',
+    borderWidth: 3,
+    borderColor: colors.accent.hex + '44',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 4,
   },
-  backButtonText: {
+  heroAvatarText: {
+    fontSize: 36,
+    fontWeight: '700',
     color: colors.accent.hex,
-    fontSize: 15,
-    fontWeight: '600',
   },
-  screenTitle: {
-    fontSize: 24,
+  heroName: {
+    fontSize: 22,
     fontWeight: '700',
     color: colors.ink.hex,
+    textAlign: 'center',
     letterSpacing: -0.3,
-    marginBottom: 8,
   },
-  section: {
-    gap: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.line.hex + '60',
-    paddingTop: 14,
-    paddingBottom: 4,
+  heroMeta: {
+    fontSize: 13,
+    color: colors.inkMuted.hex,
+    textAlign: 'center',
+  },
+  heroBadge: {
+    backgroundColor: colors.warning.hex + '22',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginTop: 4,
+  },
+  heroBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.warning.hex,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+
+  /* Cards / sections */
+  card: {
+    backgroundColor: colors.surfaceRaised.hex,
+    marginHorizontal: 16,
+    borderRadius: radiusCard + 2,
+    padding: 16,
+    gap: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.line.hex + '60',
   },
   sectionTitle: {
     fontSize: 11,
@@ -1104,21 +1193,12 @@ const styles = StyleSheet.create({
     color: colors.inkMuted.hex,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-  },
-  directCallRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 4,
-  },
-  directCallPhone: {
-    fontSize: 12,
-    color: colors.inkMuted.hex,
-    fontVariant: ['tabular-nums'],
+    marginBottom: 2,
   },
   sectionHint: {
     fontSize: 12,
     color: colors.inkFaint.hex,
+    lineHeight: 16,
   },
   sectionEmpty: {
     fontSize: 13,
@@ -1128,54 +1208,34 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.danger.hex,
   },
-  identityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  identityName: {
-    fontSize: 16,
+  fieldBold: {
+    fontSize: 14,
     fontWeight: '600',
     color: colors.ink.hex,
   },
-  identityTopic: {
-    fontSize: 13,
-    color: colors.inkMuted.hex,
-  },
-  identityTopicEmpty: {
-    fontSize: 13,
-    color: colors.inkFaint.hex,
-  },
-  editLink: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.accent.hex,
-  },
-  archivedNotice: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.warning.hex,
-  },
+
+  /* Person rows */
   personLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     flex: 1,
     minWidth: 0,
   },
-  avatarSmall: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surfaceHover.hex,
+    backgroundColor: colors.accent.hex + '18',
+    borderWidth: 1,
+    borderColor: colors.accent.hex + '30',
   },
-  avatarSmallText: {
-    fontSize: 11,
+  avatarText: {
+    fontSize: 14,
     fontWeight: '700',
-    color: colors.ink.hex,
+    color: colors.accent.hex,
   },
   personLabel: {
     fontSize: 14,
@@ -1184,6 +1244,7 @@ const styles = StyleSheet.create({
   },
   personSuffix: {
     color: colors.inkFaint.hex,
+    fontWeight: '400',
   },
   rosterRow: {
     flexDirection: 'row',
@@ -1197,6 +1258,45 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.accent.hex,
   },
+
+  /* Channel identity */
+  topicText: {
+    fontSize: 14,
+    color: colors.inkMuted.hex,
+    lineHeight: 20,
+  },
+  topicEmpty: {
+    fontSize: 14,
+    color: colors.inkFaint.hex,
+    fontStyle: 'italic',
+  },
+  editTopicLink: {
+    alignSelf: 'flex-start',
+  },
+  editTopicLinkText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.accent.hex,
+  },
+
+  /* Direct call row */
+  directCallRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line.hex + '60',
+  },
+  directCallPhone: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.inkMuted.hex,
+    fontVariant: ['tabular-nums'],
+  },
+
+  /* Forms */
   formInput: {
     borderWidth: 1,
     borderColor: colors.line.hex + '80',
@@ -1215,8 +1315,8 @@ const styles = StyleSheet.create({
   formSubmit: {
     backgroundColor: colors.accent.hex,
     borderRadius: radiusCard,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
     alignItems: 'center',
   },
   formSubmitDisabled: {
@@ -1227,35 +1327,38 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  modalCancel: {
+  cancelLink: {
     paddingVertical: 8,
   },
-  modalCancelText: {
+  cancelLinkText: {
     fontSize: 13,
     fontWeight: '600',
     color: colors.danger.hex,
   },
+
+  /* Excerpt rows */
   excerptRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: 8,
-    borderWidth: 1,
+    gap: 10,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.line.hex + '80',
     borderRadius: radiusCard,
     padding: 10,
-    backgroundColor: colors.surfaceRaised.hex,
+    backgroundColor: colors.surfaceSunken.hex,
   },
   excerptBody: {
     flex: 1,
-    gap: 2,
+    gap: 3,
   },
   excerptText: {
-    fontSize: 12,
+    fontSize: 13,
     color: colors.ink.hex,
+    lineHeight: 18,
   },
   excerptDeleted: {
-    fontSize: 12,
+    fontSize: 13,
     fontStyle: 'italic',
     color: colors.inkFaint.hex,
   },
@@ -1263,6 +1366,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.inkFaint.hex,
   },
+
+  /* Files */
   fileName: {
     fontSize: 13,
     color: colors.ink.hex,
@@ -1271,10 +1376,14 @@ const styles = StyleSheet.create({
   fileStatus: {
     fontSize: 12,
     color: colors.warning.hex,
+    fontWeight: '600',
   },
+
+  /* Retention */
   retentionRow: {
     flexDirection: 'row',
     gap: 8,
+    alignItems: 'center',
   },
   retentionInput: {
     flex: 1,
@@ -1283,18 +1392,27 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent.hex,
     borderRadius: radiusCard,
     paddingHorizontal: 16,
+    paddingVertical: 10,
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  archiveSection: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.line.hex,
-    paddingTop: 14,
-    gap: 4,
+  legalHoldLabel: {
+    flex: 1,
+    gap: 2,
   },
-  archiveButton: {
+
+  /* Danger zone */
+  dangerSection: {
+    marginHorizontal: 16,
+    marginTop: 4,
+    gap: 6,
+    paddingBottom: 8,
+  },
+  dangerButton: {
     alignSelf: 'flex-start',
+    paddingVertical: 4,
   },
-  archiveButtonText: {
+  dangerButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: colors.danger.hex,
