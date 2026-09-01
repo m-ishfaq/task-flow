@@ -1005,7 +1005,12 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                   setActionsFor(null);
                 }}
               >
-                <Ionicons name="chatbubble-outline" size={20} color={colors.ink.hex} style={styles.actionIcon} />
+                <Ionicons
+                  name="chatbubble-outline"
+                  size={20}
+                  color={colors.ink.hex}
+                  style={styles.actionIcon}
+                />
                 <Text style={styles.actionOptionText}>Reply in thread</Text>
               </Pressable>
             )}
@@ -1016,7 +1021,12 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                 if (actionsFor) pin.mutate(actionsFor.messageId);
               }}
             >
-              <Ionicons name="pin-outline" size={20} color={colors.ink.hex} style={styles.actionIcon} />
+              <Ionicons
+                name="pin-outline"
+                size={20}
+                color={colors.ink.hex}
+                style={styles.actionIcon}
+              />
               <Text style={styles.actionOptionText}>Pin this message</Text>
             </Pressable>
             <Pressable
@@ -1026,7 +1036,12 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                 if (actionsFor) saveMessage.mutate(actionsFor.messageId);
               }}
             >
-              <Ionicons name="bookmark-outline" size={20} color={colors.ink.hex} style={styles.actionIcon} />
+              <Ionicons
+                name="bookmark-outline"
+                size={20}
+                color={colors.ink.hex}
+                style={styles.actionIcon}
+              />
               <Text style={styles.actionOptionText}>Save this message</Text>
             </Pressable>
             {actionsFor?.authorId === userId && (
@@ -1038,7 +1053,12 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                   setActionsFor(null);
                 }}
               >
-                <Ionicons name="pencil-outline" size={20} color={colors.ink.hex} style={styles.actionIcon} />
+                <Ionicons
+                  name="pencil-outline"
+                  size={20}
+                  color={colors.ink.hex}
+                  style={styles.actionIcon}
+                />
                 <Text style={styles.actionOptionText}>Edit message</Text>
               </Pressable>
             )}
@@ -1049,8 +1069,15 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                 if (actionsFor) hide.mutate(actionsFor.messageId);
               }}
             >
-              <Ionicons name="eye-off-outline" size={20} color={colors.inkMuted.hex} style={styles.actionIcon} />
-              <Text style={[styles.actionOptionText, { color: colors.inkMuted.hex }]}>Remove for me</Text>
+              <Ionicons
+                name="eye-off-outline"
+                size={20}
+                color={colors.inkMuted.hex}
+                style={styles.actionIcon}
+              />
+              <Text style={[styles.actionOptionText, { color: colors.inkMuted.hex }]}>
+                Remove for me
+              </Text>
             </Pressable>
             {(actionsFor?.authorId === userId || canModerate) && (
               <Pressable
@@ -1060,7 +1087,12 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                   if (actionsFor) remove.mutate(actionsFor.messageId);
                 }}
               >
-                <Ionicons name="trash-outline" size={20} color={colors.danger.hex} style={styles.actionIcon} />
+                <Ionicons
+                  name="trash-outline"
+                  size={20}
+                  color={colors.danger.hex}
+                  style={styles.actionIcon}
+                />
                 <Text style={styles.actionOptionTextDanger}>Delete for everyone</Text>
               </Pressable>
             )}

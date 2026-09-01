@@ -179,13 +179,20 @@ function OrgPickerContent() {
  *  Color is derived from the initial character's code-point mod the palette
  *  length — stable across renders, never stored, never random. */
 const ORG_MARK_COLORS = [
-  '#4F7FFA', '#7B61FF', '#0AB5A1', '#E86339', '#D4437C',
-  '#2DA44E', '#C8742F', '#6B7280',
+  '#4F7FFA',
+  '#7B61FF',
+  '#0AB5A1',
+  '#E86339',
+  '#D4437C',
+  '#2DA44E',
+  '#C8742F',
+  '#6B7280',
 ];
 
 function OrgMark({ name }: { readonly name: string }) {
   const initial = (name.trim()[0] ?? '?').toUpperCase();
-  const color = ORG_MARK_COLORS[(initial.codePointAt(0) ?? 0) % ORG_MARK_COLORS.length] ?? '#6B7280';
+  const color =
+    ORG_MARK_COLORS[(initial.codePointAt(0) ?? 0) % ORG_MARK_COLORS.length] ?? '#6B7280';
   return (
     <View style={[styles.orgMark, { backgroundColor: color + '22', borderColor: color + '55' }]}>
       <Text style={[styles.orgMarkText, { color }]}>{initial}</Text>
