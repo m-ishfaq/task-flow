@@ -771,8 +771,9 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
         try {
           await apiClient.chat.messages.delete.mutate({ messageId: carrierId });
           // Remove immediately so the re-fetch never shows a "Message deleted" tombstone.
-          queryClient.setQueryData<Message[]>(messagesQueryKey(channelId), (old) =>
-            old?.filter((m) => m.messageId !== carrierId) ?? old,
+          queryClient.setQueryData<Message[]>(
+            messagesQueryKey(channelId),
+            (old) => old?.filter((m) => m.messageId !== carrierId) ?? old,
           );
         } catch {
           // Best-effort — an orphan "Shared filename" is cosmetic, not a data hazard.

@@ -343,15 +343,12 @@ export async function joinCall(input: {
        reason the module header documents for `react-native-webrtc` itself. */
     const { Platform, PermissionsAndroid } = await import('react-native');
     if (Platform.OS === 'android') {
-      const result = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-        {
-          title: 'Microphone permission',
-          message: 'TaskFlow needs your microphone to join voice calls.',
-          buttonPositive: 'Allow',
-          buttonNegative: 'Deny',
-        },
-      );
+      const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO, {
+        title: 'Microphone permission',
+        message: 'TaskFlow needs your microphone to join voice calls.',
+        buttonPositive: 'Allow',
+        buttonNegative: 'Deny',
+      });
       if (result !== PermissionsAndroid.RESULTS.GRANTED) {
         throw new Error(
           'Microphone access was denied. Enable it in Settings → Apps → TaskFlow → Permissions.',
