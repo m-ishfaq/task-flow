@@ -272,22 +272,10 @@ CREATE ROLE taskflow_integration_auth WITH LOGIN PASSWORD 'integration-auth-dev-
 CREATE ROLE taskflow_ops_events WITH LOGIN PASSWORD 'ops-events-dev-secret' NOSUPERUSER
   NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 
--- ---------------------------------------------------------------------------
--- taskflow_analytics — the analytics transitions projection's outbox CLAIM
--- role (Phase 11 Wave 1, ai/phase-11-analytics.md §1-§2, migration 0091's own
--- header).
---
--- The identical claim-only shape as taskflow_search and taskflow_automation:
--- NOBYPASSRLS, reaching across every tenant only on the tables carrying an
--- explicit `TO taskflow_analytics` policy (platform.outbox and
--- platform.outbox_dispatch, scoped to consumer = 'analytics'). It holds
--- NOTHING on analytics.card_transitions — the fact rows are written afterward,
--- per event, over the ordinary taskflow_app connection inside withOrgScope,
--- the same claim-then-write-as-app separation taskflow_search has from
--- search.documents.
--- ---------------------------------------------------------------------------
-CREATE ROLE taskflow_analytics WITH LOGIN PASSWORD 'analytics-dev-secret' NOSUPERUSER
-  NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+-- No dedicated role for the analytics transitions projection (Phase 11): it
+-- reuses taskflow_audit as its outbox claim role, the same way rtc-call-wake
+-- does (migration 0089). See migration 0091's header for why a low-volume
+-- status-change consumer does not justify its own role and connection.
 
 -- Baseline grants live in 03-grants.sql, NOT here.
 --

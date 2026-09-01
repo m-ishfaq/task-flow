@@ -1,12 +1,29 @@
--- 0091 — the analytics transitions projection and its claim role
--- (Phase 11 Wave 1, ai/phase-11-analytics.md §1-§2).
+-- 0091 — the analytics transitions projection (Phase 11 Wave 1,
+-- ai/phase-11-analytics.md §1-§2).
 --
 -- Every analytics metric is a question about the PAST, and the transactional
 -- schema only stores the PRESENT: a card row knows it is in Done, not WHEN it
 -- got there, how long it sat in Active first, or whether it went back. So this
 -- phase's spine is a transitions projection fed by the outbox — the fifth
--- consumer on the pattern search.documents (0045) established, mirrored here
--- almost line for line.
+-- consumer on the pattern search.documents (0045) established.
+--
+-- ==========================================================================
+-- THE CLAIM ROLE IS taskflow_audit, NOT A NEW ROLE — the call-wake precedent
+-- ==========================================================================
+--
+-- search.documents (0045) gave its indexer a dedicated claim role
+-- (taskflow_search) with its own connection. This projection does NOT, and the
+-- reason is the same one migration 0089 (rtc-call-wake) already acted on: a
+-- consumer that reads platform.outbox and writes its own outbox_dispatch
+-- bookkeeping needs exactly the three consumer-scoped policies below, and
+-- taskflow_audit ALREADY reads the outbox (it is the audit relay) — so a new
+-- role, its own database URL, and its own connection pool buy nothing here that
+-- the low volume of status-change events could justify. The analytics relay
+-- runs in apps/api's existing relay tick under withAuditScope, exactly like
+-- call-wake and the notification projection, claiming under consumer =
+-- 'analytics'. The fact write still happens afterward, per event, under
+-- taskflow_app inside withOrgScope — taskflow_audit holds NOTHING on
+-- analytics.card_transitions.
 --
 -- ==========================================================================
 -- A NEW SCHEMA, AND DELIBERATELY NO `ALTER DEFAULT PRIVILEGES` ON IT
@@ -149,64 +166,30 @@ CREATE POLICY card_transitions_tenant_isolation ON analytics.card_transitions
 GRANT SELECT, INSERT ON analytics.card_transitions TO taskflow_app;
 
 -- --------------------------------------------------------------------------
--- taskflow_analytics — the projection's CLAIM role (0016/0045's recipe).
---
--- The role is created in docker/postgres/init/02-roles.sql, not here — roles
--- are cluster-wide and the migrator is NOCREATEROLE. A database whose volume
--- predates that file fails this migration with "role taskflow_analytics does
--- not exist"; the fix is `docker compose down -v && docker compose up -d`.
---
--- What it may do is deliberately tiny: CLAIM card.status_changed events from
--- the outbox under its own consumer name. It holds NOTHING on
--- analytics.card_transitions — the fact write happens afterward, per event,
--- under taskflow_app inside withOrgScope, exactly as taskflow_search claims and
--- then indexes as taskflow_app (0045's header).
+-- The claim policies — three consumer-scoped rows on outbox_dispatch, TO
+-- taskflow_audit, scoped to consumer = 'analytics'. This is migration 0089's
+-- shape exactly (rtc-call-wake), for the same reason: taskflow_audit already
+-- holds SELECT/INSERT/UPDATE on platform.outbox_dispatch and already reads
+-- platform.outbox (it is the audit relay), so the ONLY thing a second consumer
+-- name needs is its own three policies. No table grant, no outbox policies, no
+-- new role — those all already exist for taskflow_audit.
 --
 -- The consumer name 'analytics' needs no CHECK widening: outbox_dispatch's only
 -- CHECK (0015) is `length(btrim(consumer)) > 0`, so it is legal the moment a
 -- policy names it.
 -- --------------------------------------------------------------------------
-GRANT USAGE ON SCHEMA platform TO taskflow_analytics;
-
--- Reading the queue. Its own three policies scoped to its own role, mirroring
--- outbox_search_read (0045) rather than widening it — separately revocable.
-GRANT SELECT, UPDATE ON platform.outbox TO taskflow_analytics;
-
-DROP POLICY IF EXISTS outbox_analytics_read ON platform.outbox;
-CREATE POLICY outbox_analytics_read ON platform.outbox
-  FOR SELECT TO taskflow_analytics
-  USING (true);
-
--- WITH CHECK (false), not (true), and the asymmetry is the whole point — the
--- identical reasoning 0016/0045 document: claimPending claims with
--- `SELECT ... FOR UPDATE OF o SKIP LOCKED`, and Postgres's RLS for a LOCKING
--- select requires a row to pass a policy applying to UPDATE. Without this the
--- claim silently returns zero rows, indistinguishable from an idle queue. WITH
--- CHECK (false) permits the lock (a locking select never writes a row, so it
--- never reaches WITH CHECK) and refuses an actual write, because this role's
--- bookkeeping lives in outbox_dispatch, never on the outbox row itself.
-DROP POLICY IF EXISTS outbox_analytics_mark ON platform.outbox;
-CREATE POLICY outbox_analytics_mark ON platform.outbox
-  FOR UPDATE TO taskflow_analytics
-  USING (true)
-  WITH CHECK (false);
-
--- Its own dispatch bookkeeping, pinned to its own consumer name. The WITH CHECK
--- keeps one consumer's typo from erasing another's queue.
-GRANT SELECT, INSERT, UPDATE ON platform.outbox_dispatch TO taskflow_analytics;
-
 DROP POLICY IF EXISTS outbox_dispatch_analytics_read ON platform.outbox_dispatch;
 CREATE POLICY outbox_dispatch_analytics_read ON platform.outbox_dispatch
-  FOR SELECT TO taskflow_analytics
+  FOR SELECT TO taskflow_audit
   USING (consumer = 'analytics');
 
 DROP POLICY IF EXISTS outbox_dispatch_analytics_insert ON platform.outbox_dispatch;
 CREATE POLICY outbox_dispatch_analytics_insert ON platform.outbox_dispatch
-  FOR INSERT TO taskflow_analytics
+  FOR INSERT TO taskflow_audit
   WITH CHECK (consumer = 'analytics');
 
 DROP POLICY IF EXISTS outbox_dispatch_analytics_update ON platform.outbox_dispatch;
 CREATE POLICY outbox_dispatch_analytics_update ON platform.outbox_dispatch
-  FOR UPDATE TO taskflow_analytics
+  FOR UPDATE TO taskflow_audit
   USING (consumer = 'analytics')
   WITH CHECK (consumer = 'analytics');

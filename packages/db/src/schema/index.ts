@@ -31,3 +31,4 @@ export * from './comms.js';
 export * from './rtc.js';
 export * from './search.js';
 export * from './billing.js';
+export * from './analytics.js';
