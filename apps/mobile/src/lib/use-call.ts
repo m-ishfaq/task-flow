@@ -332,6 +332,33 @@ export async function joinCall(input: {
        is never imported at module scope. */
     const webrtc = await import('react-native-webrtc');
 
+    /* On Android, dangerous permissions (RECORD_AUDIO) must be explicitly
+       requested via PermissionsAndroid before getUserMedia — the OS will not
+       show the dialog from inside the native WebRTC module if the permission
+       was previously denied ("Don't ask again"), and the failure is a silent
+       stream error rather than a clear "access denied" message. On iOS,
+       getUserMedia triggers the system dialog automatically on first use, so
+       no pre-check is needed there.
+       `react-native` is imported dynamically for the same Vitest-safety
+       reason the module header documents for `react-native-webrtc` itself. */
+    const { Platform, PermissionsAndroid } = await import('react-native');
+    if (Platform.OS === 'android') {
+      const result = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        {
+          title: 'Microphone permission',
+          message: 'TaskFlow needs your microphone to join voice calls.',
+          buttonPositive: 'Allow',
+          buttonNegative: 'Deny',
+        },
+      );
+      if (result !== PermissionsAndroid.RESULTS.GRANTED) {
+        throw new Error(
+          'Microphone access was denied. Enable it in Settings → Apps → TaskFlow → Permissions.',
+        );
+      }
+    }
+
     /* Only now — see the module header on why the microphone prompt comes
        third. */
     ownedStream = await withTimeout(
