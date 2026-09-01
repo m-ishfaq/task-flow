@@ -173,6 +173,12 @@ const config: ExpoConfig = {
        service-account key, which is a real secret and never belongs in a
        file this config references, committed or not. */
     ...(existsSync(GOOGLE_SERVICES_JSON) ? { googleServicesFile: './google-services.json' } : {}),
+    /* `adjustResize` makes Android resize the window when the software
+       keyboard appears, pushing bottom-sheet modals above it instead of
+       covering the input field. `adjustPan` (the default) scrolls the
+       whole window up, which leaves the keyboard overlapping sheets opened
+       via Modal — the exact bug this fixes in project/[projectId].tsx. */
+    softwareKeyboardLayoutMode: 'resize',
   },
   /* Found live: on Android, this app's default TRANSLUCENT status bar let
      scrolled content render visibly underneath the clock/battery icons —

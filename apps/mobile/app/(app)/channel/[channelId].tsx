@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
   Animated,
@@ -720,6 +722,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   });
 
   const paddingTop = useTopInset();
+  const insets = useSafeAreaInsets();
 
   if (messages.isError) {
     return (
@@ -801,6 +804,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
         onContentSizeChange={onContentSizeChange}
         onScroll={onScroll}
         scrollEventThrottle={200}
+        keyboardDismissMode="on-drag"
         renderItem={({ item }) =>
           item.kind === 'call' ? (
             <CallTimelineCard entry={item.entry} viewerId={userId} personOf={personOf} />
@@ -957,7 +961,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
       <Modal
         visible={actionsFor !== null}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => {
           setActionsFor(null);
         }}
@@ -969,6 +973,9 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
           }}
         >
           <Pressable style={styles.reactionSheetCard} onPress={() => undefined}>
+            <View style={styles.sheetHandle} />
+
+            {/* Quick-react row */}
             <View style={styles.reactionSheet}>
               {QUICK_REACTIONS.map((emoji) => (
                 <Pressable
@@ -976,12 +983,17 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                   style={styles.reactionOption}
                   onPress={() => {
                     if (actionsFor) react.mutate({ messageId: actionsFor.messageId, emoji });
+                    setActionsFor(null);
                   }}
                 >
                   <Text style={styles.reactionOptionText}>{emoji}</Text>
                 </Pressable>
               ))}
             </View>
+
+            <View style={styles.actionDivider} />
+
+            {/* Action items — left-aligned icon + label */}
             {canPost && actionsFor?.parentMessageId === null && (
               <Pressable
                 style={styles.actionOption}
@@ -993,7 +1005,8 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                   setActionsFor(null);
                 }}
               >
-                <Text style={styles.actionOptionText}>💬 Reply in thread</Text>
+                <Ionicons name="chatbubble-outline" size={20} color={colors.ink.hex} style={styles.actionIcon} />
+                <Text style={styles.actionOptionText}>Reply in thread</Text>
               </Pressable>
             )}
             <Pressable
@@ -1003,7 +1016,8 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                 if (actionsFor) pin.mutate(actionsFor.messageId);
               }}
             >
-              <Text style={styles.actionOptionText}>📌 Pin this message</Text>
+              <Ionicons name="pin-outline" size={20} color={colors.ink.hex} style={styles.actionIcon} />
+              <Text style={styles.actionOptionText}>Pin this message</Text>
             </Pressable>
             <Pressable
               style={styles.actionOption}
@@ -1012,7 +1026,8 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                 if (actionsFor) saveMessage.mutate(actionsFor.messageId);
               }}
             >
-              <Text style={styles.actionOptionText}>🔖 Save this message</Text>
+              <Ionicons name="bookmark-outline" size={20} color={colors.ink.hex} style={styles.actionIcon} />
+              <Text style={styles.actionOptionText}>Save this message</Text>
             </Pressable>
             {actionsFor?.authorId === userId && (
               <Pressable
@@ -1023,7 +1038,8 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                   setActionsFor(null);
                 }}
               >
-                <Text style={styles.actionOptionText}>✏️ Edit</Text>
+                <Ionicons name="pencil-outline" size={20} color={colors.ink.hex} style={styles.actionIcon} />
+                <Text style={styles.actionOptionText}>Edit message</Text>
               </Pressable>
             )}
             <Pressable
@@ -1033,7 +1049,8 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                 if (actionsFor) hide.mutate(actionsFor.messageId);
               }}
             >
-              <Text style={styles.actionOptionText}>🙈 Remove for me</Text>
+              <Ionicons name="eye-off-outline" size={20} color={colors.inkMuted.hex} style={styles.actionIcon} />
+              <Text style={[styles.actionOptionText, { color: colors.inkMuted.hex }]}>Remove for me</Text>
             </Pressable>
             {(actionsFor?.authorId === userId || canModerate) && (
               <Pressable
@@ -1043,9 +1060,20 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                   if (actionsFor) remove.mutate(actionsFor.messageId);
                 }}
               >
-                <Text style={styles.actionOptionTextDanger}>🗑️ Delete for everyone</Text>
+                <Ionicons name="trash-outline" size={20} color={colors.danger.hex} style={styles.actionIcon} />
+                <Text style={styles.actionOptionTextDanger}>Delete for everyone</Text>
               </Pressable>
             )}
+
+            <View style={[styles.actionDivider, { marginBottom: 4 }]} />
+            <Pressable
+              style={[styles.actionOption, { paddingBottom: Math.max(insets.bottom, 16) }]}
+              onPress={() => {
+                setActionsFor(null);
+              }}
+            >
+              <Text style={[styles.actionOptionText, styles.actionCancelText]}>Cancel</Text>
+            </Pressable>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1810,35 +1838,68 @@ const styles = StyleSheet.create({
   },
   reactionSheetCard: {
     backgroundColor: colors.surfaceRaised.hex,
-    borderTopLeftRadius: radiusCard + 6,
-    borderTopRightRadius: radiusCard + 6,
-    paddingTop: 20,
+    borderTopLeftRadius: radiusCard + 10,
+    borderTopRightRadius: radiusCard + 10,
+    paddingTop: 8,
+    /* Shadow lifts the sheet off the backdrop on iOS. */
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 16,
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.line.hex,
+    marginBottom: 12,
   },
   reactionSheet: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
+    paddingBottom: 4,
   },
   reactionOption: {
-    padding: 8,
+    padding: 10,
+    borderRadius: radiusCard,
   },
   reactionOptionText: {
-    fontSize: 28,
+    fontSize: 30,
+  },
+  actionDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.line.hex,
+    marginHorizontal: 16,
+    marginVertical: 4,
   },
   actionOption: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.line.hex,
-    paddingVertical: 14,
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    gap: 14,
+  },
+  actionIcon: {
+    width: 22,
+    textAlign: 'center',
   },
   actionOptionText: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '500',
     color: colors.ink.hex,
   },
-  actionOptionTextDanger: {
-    fontSize: 15,
+  actionCancelText: {
     fontWeight: '600',
+    color: colors.accent.hex,
+    flex: 1,
+    textAlign: 'center',
+  },
+  actionOptionTextDanger: {
+    fontSize: 16,
+    fontWeight: '500',
     color: colors.danger.hex,
   },
   unreadDivider: {

@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   SectionList,
@@ -14,6 +13,7 @@ import { colors } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { CardRow } from '../../../src/lib/card-row.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
+import { SkeletonList } from '../../../src/lib/skeleton.js';
 import { MY_TASKS_QUERY_KEY, groupCardsByDue, type CardSummary } from '../../../src/lib/work.js';
 import { ACTIVE_SPRINTS_QUERY_KEY } from '../../../src/lib/sprints.js';
 
@@ -167,7 +167,7 @@ export default function Home() {
         }
         ListEmptyComponent={
           cards.isPending ? (
-            <ActivityIndicator color={colors.accent.hex} />
+            <SkeletonList count={5} />
           ) : (
             <Text style={styles.label}>Nothing assigned to you right now.</Text>
           )

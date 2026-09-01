@@ -1,7 +1,12 @@
+import { useMemo } from 'react';
 import { Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
+import { wire } from '@taskflow/client';
 import { colors } from '@taskflow/tokens';
+import { apiClient } from '../../../src/lib/app-session.js';
+import { CHANNELS_QUERY_KEY, unreadCountsQueryKey } from '../../../src/lib/chat.js';
 
 /**
  * The tab bar — the navigation-shell increment a real device run found
@@ -68,6 +73,25 @@ import { colors } from '@taskflow/tokens';
  * real history entry for `back()` to return to.
  */
 export default function TabsLayout() {
+  const channels = useQuery({
+    queryKey: CHANNELS_QUERY_KEY,
+    queryFn: async () => wire(await apiClient.chat.channels.list.query()),
+  });
+  const channelIds = useMemo(
+    () => channels.data?.channels.map((c) => c.channelId) ?? [],
+    [channels.data],
+  );
+  const unread = useQuery({
+    queryKey: unreadCountsQueryKey(channelIds),
+    queryFn: async () => wire(await apiClient.chat.channels.unreadCounts.query({ channelIds })),
+    enabled: channelIds.length > 0,
+    refetchInterval: 15_000,
+  });
+  const totalUnread = useMemo(
+    () => (unread.data ?? []).reduce((sum, row) => sum + row.unreadCount, 0),
+    [unread.data],
+  );
+
   return (
     <Tabs
       screenOptions={{
@@ -128,6 +152,7 @@ export default function TabsLayout() {
               size={size}
             />
           ),
+          ...(totalUnread > 0 ? { tabBarBadge: totalUnread > 99 ? '99+' : totalUnread } : {}),
         }}
       />
       <Tabs.Screen

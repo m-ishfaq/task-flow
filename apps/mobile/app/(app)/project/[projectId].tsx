@@ -311,7 +311,7 @@ function ProjectBoardsContent({
                 onChangeText={setName}
                 placeholder="Board name"
                 placeholderTextColor={colors.inkFaint.hex}
-                style={styles.createInput}
+                style={styles.sheetInput}
                 autoFocus
               />
               <Pressable
@@ -438,6 +438,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
+    color: colors.ink.hex,
+    backgroundColor: colors.surfaceSunken.hex,
+  },
+  /* Sheet context: vertical flex column — `flex: 1` collapses a TextInput
+     to its minimum when there is no measured height in the parent. This
+     style gives the input a fixed height that looks right in a bottom
+     sheet while the inline-edit `createInput` keeps its flex behaviour. */
+  sheetInput: {
+    borderWidth: 1,
+    borderColor: colors.line.hex + '80',
+    borderRadius: radiusCard + 2,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 16,
     color: colors.ink.hex,
     backgroundColor: colors.surfaceSunken.hex,
   },
