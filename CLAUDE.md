@@ -230,7 +230,11 @@ so CI starts from a clean checkout and never sees this.
 - **Branded ID types** (`OrgId`, `UserId`) — constructed only by parsers at trust boundaries.
 - **Zod at every boundary**, `.strict()` by default.
 - **Migrations** are paired `NNNN_name.up.sql` / `.down.sql`, expand-migrate-contract, never
-  edited once applied.
+  edited once applied. The one accepted exception is a correctness fix to a `.down.sql` that has
+  never run against production data — e.g. commit `61da94d`, which added the `NO FORCE`/`FORCE`
+  bracketing a `DELETE` under `FORCE ROW LEVEL SECURITY` silently needs — since a broken reversal
+  path is only ever exercised by `migrate:verify` and a fresh CI checkout. A committed `.up.sql`
+  stays frozen regardless.
 - **Tests ship with the slice.** A slice with untested authorization is not done.
 - **Comments explain why, not what.** Prefer a sentence about the failure mode being prevented
   over a restatement of the code.
@@ -246,6 +250,23 @@ so CI starts from a clean checkout and never sees this.
 ---
 
 ## Current state
+
+**Later phases at a glance (added 2026-09-01 — the per-phase entries below had drifted behind the
+code, the exact "a status marker is a claim, not a fact" failure this section documents for Phases
+3.5, 5, 7 and 8, caught here in the governance doc itself).** Shipped since Phase 8, each with a
+detailed entry somewhere below or a spec in [ai/](ai/): **Phase 9 (Notifications)** — bell,
+digests, due reminders, web + Expo push (`apps/api/src/platform`, migration 0027); **Phase 10
+(Automation & webhooks)** — the `apps/worker` consumers (migrations 0047, 0049, 0055); **Phase 10.5
+(Sprints)** — `work.sprints` (migration 0054), with the Phase 10.6 sprint-flow slices built on top
+(spec header still reads DRAFT); **Phase 11.5 (People)** — `apps/api/src/people`, `people.profiles`
+(migration 0030); **Phase 12 Wave 3 (Billing)** — see its corrected entry below; **Phase 13 Wave 2
+(WebRTC ringing/recording)** — see the Phase 13 section; **operator broadcasts** — migrations
+0083–0084, `apps/api/src/platform-admin/broadcast*.ts`; and **Phase 14 (Mobile)** — a full Expo /
+React Native app (`apps/mobile`) covering auth, Work, Chat, Docs, Calls, People and Billing, whose
+own spec header (`ai/phase-14-mobile.md`) still says "DRAFT, Wave 1 only" despite the shipped
+breadth. **Still genuinely draft / not built:** analytics (Phase 11) and the Phase 12 Wave 4 plan
+catalog. When in doubt, open the newest `ai/phase-*.md` and read its status header, remembering it
+too can lag the code.
 
 **Phase 0B, Phase 1 (identity), Phase 2 (tenancy, authz & audit) and Phase 3 (Work) complete** —
 backend and `apps/web`.
@@ -555,8 +576,15 @@ Export sections but nothing for TOTP, so a user could never actually turn it on.
 `totp-section.tsx`, mirroring `passkey-section.tsx`'s enroll-then-confirm shape (show the secret,
 collect one real code, show recovery codes exactly once) rather than inventing a new pattern.
 
-**Phase 12 Wave 3 — billing & org lifecycle — DRAFT, not yet approved:**
-[ai/phase-12-wave3.md](ai/phase-12-wave3.md), written 2026-08-12. Confirms Wave 1's org-role /
+**Phase 12 Wave 3 — billing & org lifecycle — SHIPPED (the spec header lags).** Its spec
+[ai/phase-12-wave3.md](ai/phase-12-wave3.md) (written 2026-08-12) still opens "DRAFT, not yet
+approved for build", but the code has since landed: `packages/payments` (the `PaymentProvider`
+interface with a Stripe implementation and a `fake` for tests), `apps/api/src/billing`
+(`org-billing.service.ts`, `webhook.routes.ts`, `entitlement-resolver.ts`, `overage.service.ts`,
+`sweep.service.ts`, `billing-mail.ts`), migration 0059 (`identity.orgs.billing_status`), and the
+billing UI in both `apps/web` and `apps/mobile`. Left as a corrected-in-place note rather than a
+silent rewrite of the spec header, per this file's own discipline. The design, unchanged and
+correct: it confirms Wave 1's org-role /
 platform-operator split already holds (an Owner of N orgs has N independent, non-overlapping
 memberships; `platform.operators` has no relationship to org membership at all) and adds the
 piece that was actually missing: an org's subscription/trial state, as a **second, independent**

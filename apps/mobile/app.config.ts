@@ -132,15 +132,14 @@ const config: ExpoConfig = {
     bundleIdentifier: 'com.taskflow.app',
     supportsTablet: true,
     /* Passkeys (§4.4) need this ENTITLEMENT present before the ceremony can
-       even start, but the entitlement alone does nothing without a real
-       domain hosting `.well-known/apple-app-site-association` naming this
-       app's team + bundle id — see the README's "Passkeys" section for the
-       full checklist. Obviously-invalid placeholder rather than a
-       plausible-looking one, matching eas.json's own MOBILE_API_BASE_URL
-       precedent: a wrong-but-real-looking domain fails silently (the
-       ceremony just never completes, indistinguishable from "not
-       configured yet"); this fails loudly the moment anyone tries it. */
-    associatedDomains: ['webcredentials:SET-REAL-DOMAIN-BEFORE-PASSKEYS-WORK.invalid'],
+       even start, but the entitlement alone does nothing without the domain
+       below ALSO hosting `.well-known/apple-app-site-association` — a
+       `webcredentials` AASA file naming `<AppleTeamID>.com.taskflow.app`.
+       That server-side file is the remaining step: this config points iOS at
+       the domain, the AASA file on the domain points back at this app, and
+       passkeys only work once BOTH sides agree. See the README's "Passkeys"
+       section for the full checklist. */
+    associatedDomains: ['webcredentials:taskflow-demo.duckdns.org'],
     ...(existsSync(GOOGLE_SERVICE_INFO_PLIST)
       ? { googleServicesFile: './GoogleService-Info.plist' }
       : {}),

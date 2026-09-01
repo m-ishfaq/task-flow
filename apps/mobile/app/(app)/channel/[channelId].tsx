@@ -688,18 +688,20 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
       carrierIdRef.current = null;
       uploadStageRef.current = null;
 
-      // `parseFormattedText`, not `plainParagraph`, for the synthetic
-      // "Shared **filename**" carrier too — now that `**` really means bold,
-      // leaving this on `plainParagraph` would post literal asterisks around
-      // the filename instead of the bold text they were always meant to be.
       const isSynthetic = draft.trim().length === 0;
       carrierIsSyntheticRef.current = isSynthetic;
 
+      // The empty-composer "Shared <name>" carrier now goes through the
+      // dedicated `sendUploadCarrier` route: the SERVER sets isSynthetic and
+      // builds the body from the filename. The old path passed
+      // `isSynthetic: true` on `messages.send`, but a client-settable flag
+      // that suppresses the delete tombstone let anyone silently erase a real
+      // message — so the server owns it now. A carrier WITH a caption is an
+      // ordinary message and still goes through `send`.
       const carrier = isSynthetic
-        ? await apiClient.chat.messages.send.mutate({
+        ? await apiClient.chat.messages.sendUploadCarrier.mutate({
             channelId,
-            body: parseFormattedText(`Shared **${file.name}**`),
-            isSynthetic: true,
+            filename: file.name,
           })
         : await apiClient.chat.messages.send.mutate({
             channelId,

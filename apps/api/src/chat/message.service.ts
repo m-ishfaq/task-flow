@@ -18,7 +18,12 @@ import { newId } from '@taskflow/security';
 import { messageDeleted, messageEdited, messageHidden, messageSent } from './events.js';
 import { unfurlMessage } from './unfurl.service.js';
 import { channelMemberIds } from './membership.js';
-import { flattenToText, mentionedUserIds, type RichTextNode } from '../work/richtext.js';
+import {
+  flattenToText,
+  mentionedUserIds,
+  plainParagraph,
+  type RichTextNode,
+} from '../work/richtext.js';
 import {
   enforceOnChannel,
   envelopeOf,
@@ -336,6 +341,38 @@ export async function sendMessage(
   ).catch(() => undefined);
 
   return { messageId };
+}
+
+/**
+ * Creates an upload CARRIER — the placeholder message a file attaches to when
+ * the composer is empty (apps/mobile's attach flow posts one, then PUTs the
+ * file onto it).
+ *
+ * ## Why this is a route of its own, not `isSynthetic` on `sendMessage`
+ *
+ * `isSynthetic` is what makes a message vanish from `listMessages` once
+ * deleted — no "message deleted" tombstone for anyone. That is exactly right
+ * for a carrier whose upload failed, and exactly wrong as a capability any
+ * client can assert on an ordinary message: a caller could mark a real,
+ * content-bearing message synthetic and then delete it to erase it silently
+ * for everyone else. So the flag is set HERE, by the server, never accepted
+ * from a client on `send` (which now ignores the legacy field), and the body
+ * is BUILT here from the filename — a carrier can only ever be the
+ * "Shared <name>" placeholder it claims to be, never arbitrary content.
+ */
+export async function sendUploadCarrier(
+  actor: ChatActor,
+  input: { readonly channelId: ChannelId; readonly filename: string },
+): Promise<{ readonly messageId: MessageId }> {
+  const filename = input.filename.trim();
+  if (filename.length === 0 || filename.length > 255) {
+    throw errors.validation({ filename: 'A filename is required.' });
+  }
+  return sendMessage(actor, {
+    channelId: input.channelId,
+    body: plainParagraph(`Shared ${filename}`),
+    isSynthetic: true,
+  });
 }
 
 /**

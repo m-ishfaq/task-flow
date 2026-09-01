@@ -120,6 +120,11 @@ export async function verifyGoogleIdToken(
   const { payload } = await jwtVerify(idToken, keySource, {
     issuer: ['https://accounts.google.com', 'accounts.google.com'],
     audience: clientId,
+    // Pinned, matching every other verifier in this package (see jwt.ts): Google
+    // signs its ID tokens with RS256 and its JWKS holds only RS256 keys, so
+    // naming the algorithm costs nothing in the happy path and removes any room
+    // for an algorithm-confusion downgrade the library might otherwise accept.
+    algorithms: ['RS256'],
   });
 
   const { sub, email, email_verified: emailVerified } = payload;
