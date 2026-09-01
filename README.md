@@ -10,8 +10,15 @@ rather than merely discouraged.
 - **Working agreement:** [CLAUDE.md](CLAUDE.md) — the rules that apply to every change
 - **References:** [ai/](ai/) — architecture notes, security checklist, feature template
 
-**Status:** Phase 0A complete (foundation). Phase 0B next — contracts, policy engine, security
-primitives, domain events, and the tenancy isolation fuzz test.
+**Status:** Phases 0–8 complete, plus Chat, Docs, Search, Notifications (Phase 9), Automation &
+webhooks (Phase 10), Sprints (Phase 10.5), People (Phase 11.5), the platform-admin console
+(Phase 12 Waves 1–2), billing (Phase 12 Wave 3), in-app voice/WebRTC (Phase 13 Waves 1–2), and a
+React Native mobile app (Phase 14). The web app (`apps/web`), API (`apps/api`), realtime and collab
+gateways, worker, and mobile client all run. `CLAUDE.md`'s "Current state" section is the
+authoritative, per-phase status of record; a few later specs in [ai/](ai/) still carry pre-build
+"DRAFT" headers even though their code has shipped — read the newest `ai/phase-*.md` header
+alongside `CLAUDE.md` before trusting any single marker. Still draft / not built: analytics
+(Phase 11) and the Phase 12 Wave 4 plan catalog.
 
 ## Quick start
 
@@ -24,7 +31,8 @@ pnpm --filter @taskflow/db migrate:up
 pnpm verify                   # lint + typecheck + test
 ```
 
-There is no runnable application yet — the first API arrives at the end of Phase 0B.
+See `CLAUDE.md` § Commands for the per-service dev commands (`pnpm --filter @taskflow/api dev`,
+`… @taskflow/web dev`, and the realtime/collab gateways).
 
 ## Commands
 
