@@ -56,6 +56,7 @@ import {
   groupMessages,
   groupPreviews,
   groupReactions,
+  messageAttachmentsQueryKey,
   messagesQueryKey,
   pinsQueryKey,
   reactionsQueryKey,
@@ -64,6 +65,7 @@ import {
   CHANNELS_QUERY_KEY,
   SAVED_QUERY_KEY,
   type Message,
+  type MessageAttachment,
   type MessageGroup,
   type UnfurlPreview,
 } from '../../../src/lib/chat.js';
@@ -524,6 +526,36 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   });
   const previewsByMessage = useMemo(() => groupPreviews(previews.data ?? []), [previews.data]);
 
+  const messageAttachments = useQuery({
+    queryKey: messageAttachmentsQueryKey(channelId),
+    queryFn: async () => {
+      const CHUNK = 25;
+      const rows: MessageAttachment[] = [];
+      for (let index = 0; index < messageIds.length; index += CHUNK) {
+        const part = messageIds.slice(index, index + CHUNK);
+        if (part.length === 0) continue;
+        rows.push(
+          ...(await apiClient.chat.attachments.list.query({ channelId, messageIds: part })),
+        );
+      }
+      return rows;
+    },
+    enabled: messageIds.length > 0,
+  });
+  const attachmentsByMessage = useMemo(() => {
+    const map = new Map<string, MessageAttachment[]>();
+    for (const attachment of messageAttachments.data ?? []) {
+      if (attachment.status !== 'clean') continue;
+      const existing = map.get(attachment.messageId);
+      if (existing !== undefined) {
+        existing.push(attachment);
+      } else {
+        map.set(attachment.messageId, [attachment]);
+      }
+    }
+    return map;
+  }, [messageAttachments.data]);
+
   const pins = useQuery({
     queryKey: pinsQueryKey(channelId),
     queryFn: () => apiClient.chat.messages.pins.query({ channelId }),
@@ -630,6 +662,12 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
     readonly text: string;
   } | null>(null);
 
+  // Refs that survive across the async gap between mutationFn, onError, and
+  // onSettled without going stale the way state would inside closures.
+  const uploadStageRef = useRef<string | null>(null);
+  const carrierIdRef = useRef<string | null>(null);
+  const carrierIsSyntheticRef = useRef(false);
+
   // Uploads against the LAST message this pick sends — an attachment hangs
   // off a message, and until one exists there is no channel to authorize
   // the upload against (`attachment.service.ts`), the same ordering
@@ -637,21 +675,27 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
   const attach = useMutation({
     mutationFn: async (file: PickedFile) => {
       setUploadNotice(null);
+      carrierIdRef.current = null;
+      uploadStageRef.current = null;
+
       // `parseFormattedText`, not `plainParagraph`, for the synthetic
       // "Shared **filename**" carrier too — now that `**` really means bold,
       // leaving this on `plainParagraph` would post literal asterisks around
       // the filename instead of the bold text they were always meant to be.
-      const carrier =
-        draft.trim().length === 0
-          ? await apiClient.chat.messages.send.mutate({
-              channelId,
-              body: parseFormattedText(`Shared **${file.name}**`),
-            })
-          : await apiClient.chat.messages.send.mutate({
-              channelId,
-              body: parseFormattedText(draft.trim(), pendingMentions),
-            });
+      const isSynthetic = draft.trim().length === 0;
+      carrierIsSyntheticRef.current = isSynthetic;
 
+      const carrier = isSynthetic
+        ? await apiClient.chat.messages.send.mutate({
+            channelId,
+            body: parseFormattedText(`Shared **${file.name}**`),
+          })
+        : await apiClient.chat.messages.send.mutate({
+            channelId,
+            body: parseFormattedText(draft.trim(), pendingMentions),
+          });
+
+      carrierIdRef.current = carrier.messageId;
       setDraft('');
       setPendingMentions([]);
       chatSocket.stopTyping(channelId);
@@ -663,7 +707,10 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
         },
         carrier.messageId,
         file,
-        setUploadStage,
+        (stage) => {
+          uploadStageRef.current = stage;
+          setUploadStage(stage);
+        },
       );
     },
     onSuccess: (result) => {
@@ -680,11 +727,57 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
       }
     },
     onError: () => {
-      setUploadNotice({ kind: 'failure', text: 'The file was not uploaded.' });
+      const stage = uploadStageRef.current;
+      const isSynthetic = carrierIsSyntheticRef.current;
+      const hasCarrier = carrierIdRef.current !== null;
+
+      if (!hasCarrier) {
+        // The carrier send itself failed — nothing was posted, nothing uploaded.
+        setUploadNotice({ kind: 'failure', text: 'Message could not be sent.' });
+      } else if (stage === 'Scanning…') {
+        // Bytes reached storage but we have no scan verdict — the carrier stays
+        // so the Files tab can show the attachment's fate once it resolves.
+        setUploadNotice({
+          kind: 'failure',
+          text: 'Upload status is unknown — check the Files tab to verify.',
+        });
+      } else if (!isSynthetic) {
+        // User's own message was sent successfully; only the upload failed.
+        setUploadNotice({
+          kind: 'failure',
+          text: 'Your message was sent, but the file was not attached.',
+        });
+      } else {
+        // Synthetic carrier will be deleted in onSettled to avoid an orphan.
+        setUploadNotice({ kind: 'failure', text: 'Upload failed — the file was not attached.' });
+      }
     },
-    onSettled: async () => {
+    onSettled: async (_data, error) => {
+      // Read the stage BEFORE nulling it, then null both ref and state.
+      const stage = uploadStageRef.current;
+      uploadStageRef.current = null;
       setUploadStage(null);
-      await queryClient.invalidateQueries({ queryKey: messagesQueryKey(channelId) });
+
+      // Delete a synthetic carrier when the upload definitely did not happen
+      // (presign or PUT failed). If the error occurred at the Scanning stage,
+      // bytes reached storage — keep the carrier so the Files tab can resolve it.
+      if (
+        error !== null &&
+        carrierIsSyntheticRef.current &&
+        carrierIdRef.current !== null &&
+        stage !== 'Scanning…'
+      ) {
+        try {
+          await apiClient.chat.messages.delete.mutate({ messageId: carrierIdRef.current });
+        } catch {
+          // Best-effort — an orphan "Shared filename" is cosmetic, not a data hazard.
+        }
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: messagesQueryKey(channelId) }),
+        queryClient.invalidateQueries({ queryKey: messageAttachmentsQueryKey(channelId) }),
+      ]);
     },
   });
 
@@ -748,6 +841,17 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
     onSuccess: async () => {
       setActionsFor(null);
       await queryClient.invalidateQueries({ queryKey: messagesQueryKey(channelId) });
+    },
+  });
+
+  // `download` is a mutation on the server side (mints a capability + audit event);
+  // the URL it returns is opened directly — no caching, since the presigned URL
+  // has its own expiry.
+  const downloadAttachment = useMutation({
+    mutationFn: (attachmentId: string) =>
+      apiClient.chat.attachments.download.mutate({ attachmentId }),
+    onSuccess: (result) => {
+      void Linking.openURL(result.url);
     },
   });
 
@@ -860,9 +964,13 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                 personOf={personOf}
                 reactionsByMessage={reactionsByMessage}
                 previewsByMessage={previewsByMessage}
+                attachmentsByMessage={attachmentsByMessage}
                 replyCounts={replyCounts}
                 pinnedIds={pinnedIds}
                 savedIds={savedIds}
+                onDownloadAttachment={(attachmentId) => {
+                  downloadAttachment.mutate(attachmentId);
+                }}
                 editingId={editingId}
                 editDraft={editDraft}
                 onEditDraftChange={setEditDraft}
@@ -1319,6 +1427,7 @@ function MessageGroupRow({
   personOf,
   reactionsByMessage,
   previewsByMessage,
+  attachmentsByMessage,
   replyCounts,
   pinnedIds,
   savedIds,
@@ -1333,12 +1442,14 @@ function MessageGroupRow({
   onLongPressReaction,
   onOpenThread,
   onSwipeToReply,
+  onDownloadAttachment,
 }: {
   readonly group: MessageGroup;
   readonly viewerId: string | null;
   readonly personOf: (userId: string) => { readonly label: string };
   readonly reactionsByMessage: Map<string, Map<string, string[]>>;
   readonly previewsByMessage: Map<string, readonly UnfurlPreview[]>;
+  readonly attachmentsByMessage: Map<string, MessageAttachment[]>;
   readonly replyCounts: Map<string, number>;
   readonly pinnedIds: ReadonlySet<string>;
   readonly savedIds: ReadonlySet<string>;
@@ -1357,6 +1468,7 @@ function MessageGroupRow({
   ) => void;
   readonly onOpenThread: (message: Message) => void;
   readonly onSwipeToReply?: (message: Message) => void;
+  readonly onDownloadAttachment: (attachmentId: string) => void;
 }) {
   const first = group.messages[0];
   if (!first) return null;
@@ -1376,6 +1488,7 @@ function MessageGroupRow({
         {group.messages.map((message) => {
           const reactions = reactionsByMessage.get(message.messageId);
           const previews = previewsByMessage.get(message.messageId) ?? [];
+          const attachments = attachmentsByMessage.get(message.messageId) ?? [];
           const replyCount = replyCounts.get(message.messageId) ?? 0;
           const isEditing = editingId === message.messageId;
 
@@ -1418,6 +1531,7 @@ function MessageGroupRow({
               viewerId={viewerId}
               reactions={reactions}
               previews={previews}
+              attachments={attachments}
               replyCount={replyCount}
               isPinned={pinnedIds.has(message.messageId)}
               isSaved={savedIds.has(message.messageId)}
@@ -1425,6 +1539,7 @@ function MessageGroupRow({
               onTogglePill={onTogglePill}
               onLongPressReaction={onLongPressReaction}
               onOpenThread={onOpenThread}
+              onDownloadAttachment={onDownloadAttachment}
               {...(onSwipeToReply !== undefined ? { onSwipeToReply } : {})}
             />
           );
@@ -1440,6 +1555,7 @@ function MessageRow({
   viewerId,
   reactions,
   previews,
+  attachments,
   replyCount,
   isPinned,
   isSaved,
@@ -1448,11 +1564,13 @@ function MessageRow({
   onLongPressReaction,
   onOpenThread,
   onSwipeToReply,
+  onDownloadAttachment,
 }: {
   readonly message: Message;
   readonly viewerId: string | null;
   readonly reactions: Map<string, string[]> | undefined;
   readonly previews: readonly UnfurlPreview[];
+  readonly attachments: readonly MessageAttachment[];
   readonly replyCount: number;
   readonly isPinned: boolean;
   readonly isSaved: boolean;
@@ -1465,6 +1583,7 @@ function MessageRow({
   ) => void;
   readonly onOpenThread: (message: Message) => void;
   readonly onSwipeToReply?: (message: Message) => void;
+  readonly onDownloadAttachment: (attachmentId: string) => void;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
 
@@ -1513,6 +1632,24 @@ function MessageRow({
           </>
         )}
         {previews.length > 0 && <LinkPreviewList previews={previews} />}
+        {attachments.length > 0 && (
+          <View style={styles.attachmentList}>
+            {attachments.map((attachment) => (
+              <Pressable
+                key={attachment.attachmentId}
+                style={styles.attachmentChip}
+                onPress={() => {
+                  onDownloadAttachment(attachment.attachmentId);
+                }}
+              >
+                <Ionicons name="document-outline" size={14} color={colors.accent.hex} />
+                <Text style={styles.attachmentChipText} numberOfLines={1}>
+                  {attachment.filename}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
       </Animated.View>
       {reactions && reactions.size > 0 && (
         <View style={styles.reactionBar}>
@@ -1874,6 +2011,29 @@ const styles = StyleSheet.create({
   },
   msgBadgeTextSaved: {
     color: colors.inkMuted.hex,
+  },
+  attachmentList: {
+    marginTop: 4,
+    gap: 4,
+  },
+  attachmentChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.accent.hex + '12',
+    borderWidth: 1,
+    borderColor: colors.accent.hex + '30',
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    alignSelf: 'flex-start' as const,
+    maxWidth: 280,
+  },
+  attachmentChipText: {
+    fontSize: 12,
+    color: colors.accent.hex,
+    fontWeight: '500' as const,
+    flex: 1,
   },
   previewList: {
     gap: 4,

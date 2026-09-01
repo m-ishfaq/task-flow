@@ -82,6 +82,11 @@ export type ChannelFile = Wire<
   Awaited<ReturnType<MobileTRPCClient['chat']['attachments']['listForChannel']['query']>>
 >[number];
 
+/** One row from `chat.attachments.list` — the per-message attachment query. Only `status === 'clean'` items are rendered as download chips. */
+export type MessageAttachment = Wire<
+  Awaited<ReturnType<MobileTRPCClient['chat']['attachments']['list']['query']>>
+>[number];
+
 /** A guest grant on one private channel — `chat.compliance.listGuests`. */
 export type ChannelGuest = Wire<
   Awaited<ReturnType<MobileTRPCClient['chat']['compliance']['listGuests']['query']>>
@@ -216,6 +221,13 @@ export function reactionsQueryKey(channelId: string): readonly ['chat.messages.r
 /** Deliberately STABLE, same reasoning as `reactionsQueryKey` above — link previews are fetched chunked over the loaded page's message ids, not keyed by them. */
 export function unfurlsQueryKey(channelId: string): readonly ['chat.unfurls.list', string] {
   return ['chat.unfurls.list', channelId];
+}
+
+/** Deliberately STABLE — same reasoning as `reactionsQueryKey`: a key carrying a fresh array on every render restarts the query on every render. Invalidated on attach success so chips appear without a manual refresh. */
+export function messageAttachmentsQueryKey(
+  channelId: string,
+): readonly ['chat.attachments.list', string] {
+  return ['chat.attachments.list', channelId];
 }
 
 /**
