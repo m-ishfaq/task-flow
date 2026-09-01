@@ -235,6 +235,12 @@ type TimelineItem =
       readonly entry: CallHistoryEntry;
     };
 
+const MOBILE_QUICK_REACTIONS = [
+  '👍', '❤️', '😂', '🎉', '👀', '✅',
+  '🙏', '🔥', '😍', '🤔', '👏', '😢',
+  '🚀', '😅', '💯',
+];
+
 export default function ChannelScreen() {
   const params = useLocalSearchParams<{ channelId: string }>();
   const parsedChannelId = ChannelIdSchema.safeParse(params.channelId);
@@ -505,6 +511,24 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
     enabled: messageIds.length > 0,
   });
   const previewsByMessage = useMemo(() => groupPreviews(previews.data ?? []), [previews.data]);
+
+  const pins = useQuery({
+    queryKey: pinsQueryKey(channelId),
+    queryFn: () => apiClient.chat.messages.pins.query({ channelId }),
+  });
+  const pinnedIds = useMemo(
+    () => new Set((pins.data ?? []).map((p) => p.messageId)),
+    [pins.data],
+  );
+
+  const saved = useQuery({
+    queryKey: SAVED_QUERY_KEY,
+    queryFn: () => apiClient.chat.saved.list.query(),
+  });
+  const savedIds = useMemo(
+    () => new Set((saved.data ?? []).map((s) => s.messageId)),
+    [saved.data],
+  );
 
   const send = useMutation({
     // `RichTextNode`, not `ReturnType<typeof parseFormattedText>` — the
@@ -804,7 +828,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
         onContentSizeChange={onContentSizeChange}
         onScroll={onScroll}
         scrollEventThrottle={200}
-        keyboardDismissMode="on-drag"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'none'}
         renderItem={({ item }) =>
           item.kind === 'call' ? (
             <CallTimelineCard entry={item.entry} viewerId={userId} personOf={personOf} />
@@ -831,6 +855,8 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                 reactionsByMessage={reactionsByMessage}
                 previewsByMessage={previewsByMessage}
                 replyCounts={replyCounts}
+                pinnedIds={pinnedIds}
+                savedIds={savedIds}
                 editingId={editingId}
                 editDraft={editDraft}
                 onEditDraftChange={setEditDraft}
@@ -976,8 +1002,13 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
             <View style={styles.sheetHandle} />
 
             {/* Quick-react row */}
-            <View style={styles.reactionSheet}>
-              {QUICK_REACTIONS.map((emoji) => (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.reactionSheet}
+              contentContainerStyle={styles.reactionSheetContent}
+            >
+              {MOBILE_QUICK_REACTIONS.map((emoji) => (
                 <Pressable
                   key={emoji}
                   style={styles.reactionOption}
@@ -989,7 +1020,7 @@ function ChannelContent({ channelId }: { channelId: ChannelId }) {
                   <Text style={styles.reactionOptionText}>{emoji}</Text>
                 </Pressable>
               ))}
-            </View>
+            </ScrollView>
 
             <View style={styles.actionDivider} />
 
@@ -1270,6 +1301,8 @@ function MessageGroupRow({
   reactionsByMessage,
   previewsByMessage,
   replyCounts,
+  pinnedIds,
+  savedIds,
   editingId,
   editDraft,
   onEditDraftChange,
@@ -1288,6 +1321,8 @@ function MessageGroupRow({
   readonly reactionsByMessage: Map<string, Map<string, string[]>>;
   readonly previewsByMessage: Map<string, readonly UnfurlPreview[]>;
   readonly replyCounts: Map<string, number>;
+  readonly pinnedIds: ReadonlySet<string>;
+  readonly savedIds: ReadonlySet<string>;
   readonly editingId: string | null;
   readonly editDraft: string;
   readonly onEditDraftChange: (text: string) => void;
@@ -1365,6 +1400,8 @@ function MessageGroupRow({
               reactions={reactions}
               previews={previews}
               replyCount={replyCount}
+              isPinned={pinnedIds.has(message.messageId)}
+              isSaved={savedIds.has(message.messageId)}
               onLongPress={onLongPressMessage}
               onTogglePill={onTogglePill}
               onLongPressReaction={onLongPressReaction}
@@ -1385,6 +1422,8 @@ function MessageRow({
   reactions,
   previews,
   replyCount,
+  isPinned,
+  isSaved,
   onLongPress,
   onTogglePill,
   onLongPressReaction,
@@ -1396,6 +1435,8 @@ function MessageRow({
   readonly reactions: Map<string, string[]> | undefined;
   readonly previews: readonly UnfurlPreview[];
   readonly replyCount: number;
+  readonly isPinned: boolean;
+  readonly isSaved: boolean;
   readonly onLongPress: (message: Message) => void;
   readonly onTogglePill: (messageId: string, emoji: string) => void;
   readonly onLongPressReaction: (
@@ -1436,6 +1477,20 @@ function MessageRow({
           <>
             <RichTextView document={message.body} />
             {message.editedAt !== null && <Text style={styles.editedTag}>edited</Text>}
+            {(isPinned || isSaved) && (
+              <View style={styles.msgBadgeRow}>
+                {isPinned && (
+                  <View style={styles.msgBadge}>
+                    <Text style={styles.msgBadgeText}>📌 Pinned</Text>
+                  </View>
+                )}
+                {isSaved && (
+                  <View style={[styles.msgBadge, styles.msgBadgeSaved]}>
+                    <Text style={[styles.msgBadgeText, styles.msgBadgeTextSaved]}>🔖 Saved</Text>
+                  </View>
+                )}
+              </View>
+            )}
           </>
         )}
         {previews.length > 0 && <LinkPreviewList previews={previews} />}
@@ -1773,6 +1828,34 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     color: colors.inkFaint.hex,
   },
+  msgBadgeRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 4,
+    flexWrap: 'wrap',
+  },
+  msgBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.accent.hex + '18',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: colors.accent.hex + '30',
+  },
+  msgBadgeSaved: {
+    backgroundColor: colors.inkMuted.hex + '12',
+    borderColor: colors.inkMuted.hex + '25',
+  },
+  msgBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.accent.hex,
+  },
+  msgBadgeTextSaved: {
+    color: colors.inkMuted.hex,
+  },
   previewList: {
     gap: 4,
   },
@@ -1889,17 +1972,19 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   reactionSheet: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: 16,
     paddingBottom: 4,
   },
+  reactionSheetContent: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    gap: 4,
+  },
   reactionOption: {
-    padding: 10,
+    padding: 8,
     borderRadius: radiusCard,
   },
   reactionOptionText: {
-    fontSize: 30,
+    fontSize: 22,
   },
   actionDivider: {
     height: StyleSheet.hairlineWidth,
@@ -1910,7 +1995,7 @@ const styles = StyleSheet.create({
   actionOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 10,
     paddingHorizontal: 20,
     gap: 14,
   },

@@ -30,6 +30,14 @@ import {
 } from '../../../src/lib/docs.js';
 import { templatesQueryKey, type DocTemplate } from '../../../src/lib/docs-templates.js';
 
+const TEMPLATE_HINTS: Record<string, string> = {
+  'Meeting notes': 'Agenda, action items, and decisions in one place.',
+  'Onboarding checklist': 'Step-by-step tasks for new team members.',
+  'Project brief': 'Goals, scope, and key stakeholders at a glance.',
+  'Weekly update': 'Summarize progress, blockers, and next steps.',
+  'Decision record': 'Context, options considered, and the outcome.',
+};
+
 /**
  * One space's page tree — reached by tapping a space on the Docs tab.
  * `docs.ts`'s own header has the full account of what this screen does
@@ -396,52 +404,63 @@ function CreatePageModal({
               autoFocus
             />
             {templates.length > 0 && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.templatePickerRow}
-              >
-                <Pressable
-                  style={[
-                    styles.templateChip,
-                    selectedTemplateId === null && styles.templateChipActive,
-                  ]}
-                  onPress={() => {
-                    onSelectTemplate(null);
-                  }}
+              <View style={styles.templateSection}>
+                <Text style={styles.templateSectionLabel}>Start from a template</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.templatePickerRow}
                 >
-                  <Text
-                    style={[
-                      styles.templateChipText,
-                      selectedTemplateId === null && styles.templateChipTextActive,
-                    ]}
-                  >
-                    Blank page
-                  </Text>
-                </Pressable>
-                {templates.map((template) => (
                   <Pressable
-                    key={template.templateId}
                     style={[
                       styles.templateChip,
-                      selectedTemplateId === template.templateId && styles.templateChipActive,
+                      selectedTemplateId === null && styles.templateChipActive,
                     ]}
                     onPress={() => {
-                      onSelectTemplate(template.templateId);
+                      onSelectTemplate(null);
                     }}
                   >
                     <Text
                       style={[
                         styles.templateChipText,
-                        selectedTemplateId === template.templateId && styles.templateChipTextActive,
+                        selectedTemplateId === null && styles.templateChipTextActive,
                       ]}
-                      numberOfLines={1}
                     >
-                      {template.name}
+                      Blank page
                     </Text>
                   </Pressable>
-                ))}
-              </ScrollView>
+                  {templates.map((template) => (
+                    <Pressable
+                      key={template.templateId}
+                      style={[
+                        styles.templateChip,
+                        selectedTemplateId === template.templateId && styles.templateChipActive,
+                      ]}
+                      onPress={() => {
+                        onSelectTemplate(template.templateId);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.templateChipText,
+                          selectedTemplateId === template.templateId &&
+                            styles.templateChipTextActive,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {template.name}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+                {selectedTemplateId !== null && (() => {
+                  const selected = templates.find((t) => t.templateId === selectedTemplateId);
+                  const hint = selected !== undefined ? (TEMPLATE_HINTS[selected.name] ?? null) : null;
+                  return hint !== null ? (
+                    <Text style={styles.templateHint}>{hint}</Text>
+                  ) : null;
+                })()}
+              </View>
             )}
             {error !== null && (
               <Text style={styles.errorText} accessibilityRole="alert">
@@ -711,6 +730,23 @@ const styles = StyleSheet.create({
     color: colors.ink.hex,
     fontSize: 12,
     fontWeight: '600',
+  },
+  templateSection: {
+    gap: 6,
+    marginTop: 4,
+  },
+  templateSectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.inkMuted.hex,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  templateHint: {
+    fontSize: 12,
+    color: colors.inkMuted.hex,
+    fontStyle: 'italic',
+    marginTop: 2,
   },
   templatePickerRow: {
     flexDirection: 'row',

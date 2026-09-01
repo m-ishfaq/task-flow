@@ -975,7 +975,7 @@ function BoardContent({ boardId }: { boardId: ReturnType<typeof BoardIdSchema.pa
                 setArchivedOpen(false);
               }}
             >
-              <Text style={styles.modalCancelText}>Done</Text>
+              <Text style={styles.modalDoneText}>Done</Text>
             </Pressable>
           </Pressable>
         </Pressable>
@@ -1391,6 +1391,9 @@ const styles = StyleSheet.create({
   archivedSection: {
     marginTop: 12,
     gap: 4,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line.hex,
   },
   archivedSectionTitle: {
     fontSize: 13,
@@ -1445,6 +1448,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: colors.danger.hex,
+  },
+  modalDoneText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.accent.hex,
   },
   modalInput: {
     borderWidth: 1,

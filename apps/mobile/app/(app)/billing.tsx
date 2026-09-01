@@ -28,6 +28,22 @@ import {
   type BillingPlan,
 } from '../../src/lib/billing.js';
 
+const FEATURE_LABELS: Record<string, string> = {
+  chat: 'Chat — channels, DMs & threads',
+  docs: 'Docs — collaborative page editing',
+  telephony: 'Voice & Messaging — calls, SMS & recordings',
+  tqlTextSyntax: 'Advanced query syntax (TQL)',
+  automation: 'Automation rules engine',
+  publicApi: 'Public REST API & API tokens',
+  analytics: 'Analytics dashboards',
+};
+
+const PLAN_DESCRIPTIONS: Record<string, string> = {
+  Starter: 'Core work management for small teams getting started.',
+  Pro: 'Everything in Starter, plus advanced modules for growing teams.',
+  Enterprise: 'Unlimited access, custom security, and dedicated support.',
+};
+
 /**
  * Org billing — ported from `apps/web/src/features/admin/billing-
  * section.tsx`, as its own screen rather than a section on
@@ -416,9 +432,12 @@ export default function BillingScreen() {
                       {plan.name}
                       {current ? ' · current' : ''}
                     </Text>
-                    {plan.description !== null && (
-                      <Text style={styles.sectionHint}>{plan.description}</Text>
-                    )}
+                    {(PLAN_DESCRIPTIONS[plan.name] ?? plan.description) !== undefined &&
+                      (PLAN_DESCRIPTIONS[plan.name] ?? plan.description) !== null && (
+                        <Text style={styles.sectionHint}>
+                          {PLAN_DESCRIPTIONS[plan.name] ?? plan.description}
+                        </Text>
+                      )}
                     <Text style={styles.planPrice}>
                       {plan.prices
                         .map(
@@ -432,7 +451,7 @@ export default function BillingScreen() {
                     ) : (
                       plan.features.map((feature) => (
                         <Text key={feature} style={styles.rowCount}>
-                          ✓ {feature}
+                          ✓ {FEATURE_LABELS[feature] ?? feature}
                         </Text>
                       ))
                     )}
@@ -504,7 +523,7 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 24,
-    paddingBottom: 40,
+    paddingBottom: 80,
     gap: 12,
   },
   backButton: {

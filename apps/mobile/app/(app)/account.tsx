@@ -176,7 +176,7 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 20,
-    paddingBottom: 40,
+    paddingBottom: 80,
     gap: 24,
   },
   backButton: {

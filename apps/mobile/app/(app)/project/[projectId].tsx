@@ -297,50 +297,48 @@ function ProjectBoardsContent({
         animationType="slide"
         onRequestClose={closeSheet}
       >
-        <View style={styles.sheetBackdrop}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.sheetBackdrop}
+        >
           <Pressable style={StyleSheet.absoluteFill} onPress={closeSheet} />
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.sheetKAV}
-          >
-            <View style={styles.sheet}>
-              <View style={styles.sheetHandle} />
-              <Text style={styles.sheetTitle}>New board</Text>
-              <TextInput
-                value={name}
-                onChangeText={setName}
-                placeholder="Board name"
-                placeholderTextColor={colors.inkFaint.hex}
-                style={styles.sheetInput}
-                autoFocus
-              />
-              <Pressable
-                style={[
-                  styles.createSubmit,
-                  (create.isPending || name.trim().length === 0) && styles.createSubmitDisabled,
-                ]}
-                disabled={create.isPending || name.trim().length === 0}
-                onPress={() => {
-                  create.mutate(name.trim());
-                }}
-              >
-                {create.isPending ? (
-                  <ActivityIndicator color={colors.accentInk.hex} />
-                ) : (
-                  <Text style={styles.createSubmitText}>Create board</Text>
-                )}
-              </Pressable>
-              {create.isError && (
-                <Text style={styles.createError} accessibilityRole="alert">
-                  {apiErrorOf(create.error)?.error.message ?? 'The board could not be created.'}
-                </Text>
+          <View style={styles.sheet}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>New board</Text>
+            <TextInput
+              value={name}
+              onChangeText={setName}
+              placeholder="Board name"
+              placeholderTextColor={colors.inkFaint.hex}
+              style={styles.sheetInput}
+              autoFocus
+            />
+            <Pressable
+              style={[
+                styles.createSubmit,
+                (create.isPending || name.trim().length === 0) && styles.createSubmitDisabled,
+              ]}
+              disabled={create.isPending || name.trim().length === 0}
+              onPress={() => {
+                create.mutate(name.trim());
+              }}
+            >
+              {create.isPending ? (
+                <ActivityIndicator color={colors.accentInk.hex} />
+              ) : (
+                <Text style={styles.createSubmitText}>Create board</Text>
               )}
-              <Pressable style={styles.createCancel} onPress={closeSheet}>
-                <Text style={styles.createCancelText}>Cancel</Text>
-              </Pressable>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
+            </Pressable>
+            {create.isError && (
+              <Text style={styles.createError} accessibilityRole="alert">
+                {apiErrorOf(create.error)?.error.message ?? 'The board could not be created.'}
+              </Text>
+            )}
+            <Pressable style={styles.createCancel} onPress={closeSheet}>
+              <Text style={styles.createCancelText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -543,9 +541,6 @@ const styles = StyleSheet.create({
   sheetBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
-  sheetKAV: {
     justifyContent: 'flex-end',
   },
   sheet: {
