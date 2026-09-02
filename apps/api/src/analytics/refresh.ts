@@ -4,8 +4,8 @@ import {
   asc,
   isNotNull,
   withOrgScope,
+  withAuditScope,
   schema,
-  listOrgIds,
   type OrgId,
 } from '@taskflow/db';
 import { dateTrunc, countDistinct, minWhen, countRows, sumToMinutes } from '@taskflow/db';
@@ -102,10 +102,9 @@ interface BurndownTransitionRow {
  * Called per-org by `refreshAllOrgs`. Runs under `withOrgScope` so RLS
  * on both card_transitions and the rollup tables handles isolation.
  *
- * Exported for testing — the public `refreshAllOrgs` iterates via
- * `listOrgIds()` which uses `withGlobalScope`, and the RLS policy on
- * `identity.orgs` filters to empty when `app.org_id` is unset. Tests
- * call this directly to bypass the org-discovery step.
+ * Exported for testing — the public `refreshAllOrgs` discovers orgs through the
+ * audit role (see its own note), which a unit test would otherwise have to set
+ * up a second pool for. Tests call this directly, per-org, to skip that step.
  */
 export async function refreshOrg(orgId: OrgId): Promise<Omit<RefreshResult, 'orgsRefreshed'>> {
   return withOrgScope(orgId, async (tx) => {
@@ -453,7 +452,19 @@ export async function refreshAllOrgs(logger: {
   info: (obj: object, msg: string) => void;
   error: (obj: object, msg: string) => void;
 }): Promise<RefreshResult> {
-  const orgIds = await listOrgIds();
+  // Enumerate orgs through the AUDIT role, not the app role. identity.orgs has
+  // no RLS policy admitting taskflow_app with app.org_id cleared (migration
+  // 0004), so withGlobalScope/listOrgIds returns ZERO — which silently made this
+  // whole loop a no-op. Migration 0037 grants taskflow_audit an explicit
+  // `USING (true)` read of (id, status) — the same grant the notification sweeps
+  // use to visit every tenant. Reading status here also lets us skip suspended
+  // orgs (§6) without a second per-org query. The analytics projection relay
+  // already runs under withAuditScope, so the module's cross-tenant reads stay
+  // on one non-app role.
+  const allOrgs = await withAuditScope(async (tx) =>
+    tx.select({ id: schema.orgs.id, status: schema.orgs.status }).from(schema.orgs),
+  );
+
   let orgsRefreshed = 0;
   let totalVelocity = 0;
   let totalCfd = 0;
@@ -461,21 +472,12 @@ export async function refreshAllOrgs(logger: {
   let totalVolume = 0;
   let totalBurndown = 0;
 
-  for (const orgId of orgIds) {
+  for (const org of allOrgs) {
+    // Skip suspended orgs (§6): a frozen tenant's rollups are left as they were.
+    if (org.status !== 'active') continue;
+
     try {
-      // Check if org is active (skip suspended orgs, §6).
-      const isActive = await withOrgScope(orgId as OrgId, async (tx) => {
-        const rows = await tx
-          .select({ status: schema.orgs.status })
-          .from(schema.orgs)
-          .where(eq(schema.orgs.id, orgId))
-          .limit(1);
-        return rows[0]?.status === 'active';
-      });
-
-      if (!isActive) continue;
-
-      const result = await refreshOrg(orgId as OrgId);
+      const result = await refreshOrg(org.id as OrgId);
       orgsRefreshed += 1;
       totalVelocity += result.velocityRows;
       totalCfd += result.cfdRows;
@@ -483,7 +485,7 @@ export async function refreshAllOrgs(logger: {
       totalVolume += result.volumeRows;
       totalBurndown += result.burndownRows;
     } catch (error) {
-      logger.error({ err: error, orgId }, 'analytics refresh failed for org');
+      logger.error({ err: error, orgId: org.id }, 'analytics refresh failed for org');
     }
   }
 

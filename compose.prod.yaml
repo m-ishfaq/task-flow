@@ -607,6 +607,12 @@ services:
       PAYMENTS_PROVIDER: ${PAYMENTS_PROVIDER:-fake}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       DATABASE_OPS_EVENTS_URL: postgresql://taskflow_ops_events:${TASKFLOW_OPS_EVENTS_PASSWORD:?TASKFLOW_OPS_EVENTS_PASSWORD must be set}@postgres:5432/taskflow
+      # The analytics rollup refresh enumerates every tenant through the audit
+      # role (identity.orgs admits no such read for the app role; migration 0037
+      # grants it here). Without this the refresh loop declines to start and the
+      # Insights dashboards do not update as cards move — a feature that does not
+      # run, like the claim URLs above, not an enforcement boundary.
+      DATABASE_AUDIT_URL: postgresql://taskflow_audit:${TASKFLOW_AUDIT_PASSWORD:?TASKFLOW_AUDIT_PASSWORD must be set}@postgres:5432/taskflow
       # The worker decrypts webhook signing secrets at delivery, so it holds
       # the same master key pair the API holds — the same variables, same
       # meaning.

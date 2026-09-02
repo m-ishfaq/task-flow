@@ -1,5 +1,6 @@
 import {
   closeDatabase,
+  initializeAuditDatabase,
   initializeAutomationDatabase,
   initializeBillingSweepDatabase,
   initializeDatabase,
@@ -15,6 +16,7 @@ import { createActionExecutor } from './automation/executor.js';
 import { startAutomationEngine } from './automation/relay.js';
 import { startWebhookDeliveryLoop } from './webhooks/delivery.js';
 import { startBillingSweep } from './billing/sweep.js';
+import { startAnalyticsRefresh } from './analytics/refresh.js';
 import { FakePaymentProvider, StripePaymentProvider } from '@taskflow/payments';
 import type { PaymentProvider } from '@taskflow/contracts';
 
@@ -103,6 +105,18 @@ if (env.DATABASE_OPS_EVENTS_URL !== undefined) {
   initializeOpsEventsDatabase({
     url: env.DATABASE_OPS_EVENTS_URL,
     applicationName: 'taskflow-worker-ops-events',
+  });
+}
+
+/* The AUDIT role's pool, as `taskflow_audit` (Phase 11). The analytics rollup
+   refresh uses it to enumerate every tenant — identity.orgs admits no such read
+   for the app role (migration 0004), and 0037 gives this role the explicit
+   grant. Optional like the claim pools above: without it the refresh loop below
+   declines to start rather than discovering zero orgs and refreshing nothing. */
+if (env.DATABASE_AUDIT_URL !== undefined) {
+  initializeAuditDatabase({
+    url: env.DATABASE_AUDIT_URL,
+    applicationName: 'taskflow-worker-audit',
   });
 }
 
@@ -205,6 +219,23 @@ const billingSweep = startBillingSweep({
   intervalMs: env.WORKER_BILLING_SWEEP_INTERVAL_MS,
 });
 
+/* The analytics rollup refresh (Phase 11 §6) — the loop that keeps every
+   Insights dashboard current as cards move. Optional: it enumerates tenants
+   through the audit pool (refreshAllOrgs), so without DATABASE_AUDIT_URL it
+   stays OFF and says so, rather than starting and discovering zero orgs — the
+   same "decline rather than silently do nothing" contract the claim pools use.
+   When off, dashboards show only whatever a seed/manual backfill last wrote. */
+const analytics =
+  env.DATABASE_AUDIT_URL !== undefined
+    ? startAnalyticsRefresh({ logger, intervalMs: env.WORKER_ANALYTICS_REFRESH_INTERVAL_MS })
+    : undefined;
+if (analytics === undefined) {
+  logger.warn(
+    'DATABASE_AUDIT_URL is not set — the analytics rollup refresh will not run, so ' +
+      'Insights dashboards will not update as cards move. Set it to enable the refresh.',
+  );
+}
+
 logger.info({ port: env.WORKER_PORT }, 'worker started');
 
 /**
@@ -223,6 +254,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
       engine.stop();
       delivery.stop();
       billingSweep.stop();
+      analytics?.stop();
       await new Promise<void>((resolveClose) => {
         health.close(() => {
           resolveClose();
