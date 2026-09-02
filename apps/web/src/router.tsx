@@ -45,6 +45,7 @@ import { SprintsPage } from './features/work/sprints-page.js';
 import { PlatformAdminPage } from './features/platform-admin/platform-admin-page.js';
 import { AUTOMATION_TAB_IDS, AutomationsPage } from './features/automation/automations-page.js';
 import { IntegrationsCallbackPage } from './features/automation/integrations-callback-page.js';
+import { AnalyticsPage } from './features/analytics/analytics-page.js';
 
 /**
  * The route tree (PLAN.md §4.1 — typed routes and typed search params).
@@ -265,7 +266,7 @@ const boardRoute = createRoute({
   parseParams: (params) => ({ boardId: BoardIdSchema.parse(params.boardId) }),
   stringifyParams: (params) => ({ boardId: params.boardId }),
   validateSearch: z.object({
-    view: z.enum(['board', 'table', 'list']).catch('board').optional(),
+    view: z.enum(['board', 'table', 'list', 'insights']).catch('board').optional(),
     card: CardIdSchema.optional().catch(undefined),
     project: ProjectIdSchema.optional().catch(undefined),
     /**
@@ -529,6 +530,26 @@ const platformAdminRoute = createRoute({
  * `automation:manage` gets an honest FORBIDDEN rather than a hidden menu item
  * (§8.2).
  */
+/**
+ * Analytics dashboards (Phase 11, ai/phase-11-analytics.md §3, §5).
+ *
+ * `tab` is a search param — same pattern as telephony and automations — so
+ * the open dashboard is shareable and back-button-correct. Admin-and-Owner
+ * only on the server; the UI shows the page and lets the server refuse.
+ */
+const analyticsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/analytics',
+  validateSearch: z.object({
+    tab: z
+      .enum(['velocity', 'burndown', 'cfd', 'cycle-time', 'workload', 'volume', 'status'])
+      .optional()
+      .catch(undefined),
+  }),
+  beforeLoad: () => requireOrg('/analytics'),
+  component: AnalyticsPage,
+});
+
 const automationsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/automations',
@@ -578,6 +599,7 @@ const routeTree = rootRoute.addChildren([
   accountRoute,
   platformAdminRoute,
   automationsRoute,
+  analyticsRoute,
 ]);
 
 export function createAppRouter(queryClient: QueryClient) {

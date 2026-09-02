@@ -149,6 +149,19 @@ export const PERMISSIONS = [
      role-only call is exactly the shape `channel:create` uses to defeat a
      `couldGrant` false positive. */
   'search:manage',
+
+  /* Analytics dashboards (Phase 11, ai/phase-11-analytics.md §5). An ORG-LEVEL
+     read: every dashboard aggregates ACROSS boards, so a member who cannot read
+     board X must not learn X's throughput from a chart. Admin + Owner only —
+     they can already read every board, so an aggregate leaks nothing they could
+     not assemble by hand; scoping each aggregate to the caller's readable boards
+     is the named upgrade path if member-level analytics is ever wanted, not
+     built here (§7 decision 4). Structurally identical to `audit:read`: it is in
+     `ORG_LEVEL_PERMISSIONS` below so a channel tuple can never satisfy it (the
+     `couldGrant` vulnerability that block documents), and — like `search:query`
+     — deliberately NOT a `RESOURCE_TYPE`, because nothing holds a relationship
+     tuple on "analytics". */
+  'analytics:read',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -220,6 +233,11 @@ const ORG_LEVEL_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
   'team:read',
   'team:manage',
   'audit:read',
+  /* Phase 11 §5 — analytics is an org-level capability answered by ROLE ALONE:
+     no route loads a per-resource target for it and no service asks a second
+     question, so `route()`'s floor IS the whole decision, exactly like
+     `audit:read` directly above. A chat-channel tuple must never satisfy it. */
+  'analytics:read',
   'apiToken:create',
   'apiToken:revoke',
   /* Phase 10 §9 decision 4. All three were absent purely because nothing had

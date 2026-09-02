@@ -229,3 +229,128 @@ export function compiledPredicate(fragment: string, params: readonly unknown[]):
 
   return sql.join(chunks, sql``);
 }
+
+/**
+ * `COUNT(DISTINCT column)` — the number of distinct non-null values.
+ *
+ * The velocity and burndown dashboards count unique cards entering a status
+ * per day. A plain `COUNT` would double-count a card that transitions twice
+ * in one day; `COUNT(DISTINCT card_id)` collapses the duplicate.
+ */
+export function countDistinct(column: Column): SQL<string> {
+  return sql<string>`COUNT(DISTINCT ${column})::text`;
+}
+
+/**
+ * `date_trunc('day', column)` — truncates a timestamp to midnight UTC.
+ *
+ * Every dashboard groups by day, and grouping by a raw timestamp would
+ * produce one bucket per second. Postgres's `date_trunc` is the only
+ * correct truncation — JavaScript `new Date(d).toISOString().slice(0,10)`
+ * is a timezone-dependent string operation that produces different buckets
+ * for the same row depending on the server's clock.
+ *
+ * The precision is emitted as a QUOTED string literal — `date_trunc('day',
+ * col)`. `date_trunc`'s first argument is a `text` value, so a bare word
+ * (`date_trunc(day, col)`) parses as a COLUMN reference and fails with
+ * `column "day" does not exist`. It reaches `sql.raw` rather than a bound
+ * parameter so the SELECT and GROUP BY renderings are byte-identical (a
+ * parameter would be `$1` in one and `$2` in the other, which Postgres does
+ * not treat as the same GROUP BY expression). That makes it caller-chosen,
+ * never user input: the whitelist below both documents that and guarantees
+ * the interpolated text can only ever be one of these known unit words.
+ */
+const DATE_TRUNC_UNITS: ReadonlySet<string> = new Set([
+  'microseconds',
+  'milliseconds',
+  'second',
+  'minute',
+  'hour',
+  'day',
+  'week',
+  'month',
+  'quarter',
+  'year',
+  'decade',
+  'century',
+  'millennium',
+]);
+
+export function dateTrunc(column: Column, precision = 'day'): SQL {
+  if (!DATE_TRUNC_UNITS.has(precision)) {
+    throw new Error(`date_trunc precision must be a known unit, received "${precision}".`);
+  }
+  // sql.raw is REQUIRED here: Postgres demands date_trunc's precision be a
+  // compile-time constant, not a parameter ($1). Drizzle's template tag
+  // parameterizes plain strings, producing `date_trunc($1, ...)` which Postgres
+  // rejects. The single quotes are part of the raw injection so Postgres sees
+  // `date_trunc('day', ...)` — a string literal, not a parameter.
+  return sql`date_trunc(${sql.raw(`'${precision}'`)}, ${column})`;
+}
+
+/**
+ * `MIN(column) FILTER (WHERE condition)` — an aggregate restricted to a
+ * subset of rows, without a subquery.
+ *
+ * The refresh service computes the first transition into each status per
+ * card per day. Without `FILTER`, the alternative is a subquery with a
+ * correlated WHERE, which is both slower and harder to read.
+ */
+export function minWhen(column: Column, condition: SQL): SQL {
+  // MIN(...) is load-bearing: FILTER is only valid on an aggregate, so a bare
+  // `column FILTER (WHERE ...)` is a syntax error. The aggregate is what makes
+  // this "the earliest occurred_at among rows matching the condition".
+  return sql`MIN(${column}) FILTER (WHERE ${condition})`;
+}
+
+/**
+ * `SUM(duration_seconds) / 60.0` — call duration in minutes.
+ *
+ * The volume dashboard aggregates call minutes per day. Duration is stored
+ * in seconds (`comms.calls.duration_seconds`); dividing by 60 at the
+ * database level keeps the aggregation on one side of the wire.
+ */
+export function sumToMinutes(column: Column): SQL {
+  return sql`COALESCE(SUM(${column}) / 60.0, 0)::text`;
+}
+
+/**
+ * `array_length(column, 1)` — the number of elements in a one-dimensional
+ * Postgres array. Returns NULL for a NULL array, and 0 for an empty one.
+ *
+ * The workload dashboard filters to cards that have at least one assignee:
+ * `gt(arrayLength(schema.cards.assigneeIds), 0)`. A JavaScript
+ * `Array.isArray(x) && x.length > 0` would be wrong here — the comparison
+ * runs in the database where the array is a Postgres value, not a JS object,
+ * and the guardrail banning raw sql requires the expression to live here.
+ */
+export function arrayLength(column: Column): SQL<number> {
+  return sql<number>`array_length(${column}, 1)`;
+}
+
+/**
+ * `MAX(column)` — the latest value in a grouped result.
+ *
+ * The status dashboard reads the most recent transition timestamp and the
+ * most recent rollup day. `MAX` is the natural aggregate; returning it as
+ * text would lose the Date type the caller expects, so this is generic
+ * over the column type.
+ */
+export function maxColumn<T>(column: Column): SQL<T | null> {
+  return sql<T | null>`MAX(${column})`;
+}
+
+/**
+ * `COUNT(*) FILTER (WHERE condition)` — count only matching rows.
+ *
+ * Distinct from `countRows` (which counts all rows in a group) and from
+ * a `CASE WHEN ... THEN 1 END` pattern: `FILTER` is a Postgres aggregate
+ * filter, evaluated by the planner rather than per-row, so the index on
+ * the filtered column is usable.
+ *
+ * The status dashboard counts synthetic (backfilled) transitions to show
+ * how many rows are real vs. computed.
+ */
+export function countFiltered(condition: SQL): SQL<string> {
+  return sql<string>`COUNT(*) FILTER (WHERE ${condition})::text`;
+}

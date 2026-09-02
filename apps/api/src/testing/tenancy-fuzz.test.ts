@@ -482,6 +482,15 @@ describe('the application router', () => {
       .sort();
 
     expect(exempt).toEqual([
+      /* `analytics.status` and `analytics.backfill` (Phase 11) read/act on the
+         CALLER's own org via `ctx.principal.org.orgId` and take no id — the
+         other analytics routes (velocity, burndown, cfd, cycleTime, workload,
+         volume, spend) all take a date range or a board/project id this
+         technique substitutes, so they are enrolled and denied like any other.
+         `analytics:read` is answered from ROLE ALONE, so there is no
+         per-resource target for the fuzzer to cross anyway. */
+      'analytics.backfill',
+      'analytics.status',
       /* All seven read/act on the CALLER's own org (`ctx.principal.org.orgId`,
          Phase 12 Wave 3 §3.1) and take no id — `createCheckoutSession` and
          `changePlan` are NOT here because they take a `planId` this

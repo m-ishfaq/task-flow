@@ -232,6 +232,13 @@ export {
   minText,
   coalesceColumns,
   minCoalesced,
+  arrayLength,
+  countDistinct,
+  dateTrunc,
+  minWhen,
+  sumToMinutes,
+  maxColumn,
+  countFiltered,
 } from './expressions.js';
 
 /**

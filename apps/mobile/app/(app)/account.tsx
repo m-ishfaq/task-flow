@@ -134,6 +134,21 @@ export default function Account() {
         >
           <Text style={styles.secondaryButtonText}>Automations</Text>
         </Pressable>
+        {/* Insights is analytics:read (admin+owner only). The server
+            enforces the permission; this hides the link for non-admins as
+            a UX convenience — the same §8.2 reasoning: an unauthorized
+            caller who reaches the screen directly sees a proper error, not
+            a broken experience. */}
+        {(currentOrg?.role === 'owner' || currentOrg?.role === 'admin') && (
+          <Pressable
+            style={styles.secondaryButton}
+            onPress={() => {
+              router.push('/insights');
+            }}
+          >
+            <Text style={styles.secondaryButtonText}>Insights</Text>
+          </Pressable>
+        )}
       </View>
 
       <ProfileSection />

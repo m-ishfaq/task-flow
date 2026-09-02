@@ -35,6 +35,7 @@
     "./billing/sweep": "./src/billing/sweep.service.ts",
     "./platform-admin/plan-catalog": "./src/platform-admin/plan-catalog.service.ts",
     "./billing/deps": "./src/billing/deps.ts",
+    "./analytics/refresh": "./src/analytics/refresh.ts",
     "./billing/overage": "./src/billing/overage.service.ts",
     "./billing/billing-mail": "./src/billing/billing-mail.ts",
     "./telephony/call": "./src/telephony/call.service.ts",

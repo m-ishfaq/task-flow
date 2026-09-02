@@ -309,6 +309,24 @@ export const keys = {
    */
   savedSearches: (orgId: string) => ['org', orgId, 'saved-searches'] as const,
 
+  /* --- Analytics (Phase 11) --------------------------------------------------
+     Org-scoped dashboards over the transitions projection. All keys carry
+     the date range or filter that defines the query shape — the same pattern
+     `search()` uses for TQL text, where the key IS the query. */
+  analyticsVelocity: (start: string, end: string, boardId?: string) =>
+    ['org', 'analytics', 'velocity', start, end, boardId ?? ''] as const,
+  analyticsBurndown: (projectId: string, start: string, end: string, sprintId?: string) =>
+    ['org', 'analytics', 'burndown', projectId, start, end, sprintId ?? ''] as const,
+  analyticsCfd: (boardId: string, start: string, end: string) =>
+    ['org', 'analytics', 'cfd', boardId, start, end] as const,
+  analyticsCycleTime: (projectId?: string, boardId?: string) =>
+    ['org', 'analytics', 'cycleTime', projectId ?? '', boardId ?? ''] as const,
+  analyticsWorkload: (boardId?: string) => ['org', 'analytics', 'workload', boardId ?? ''] as const,
+  analyticsVolume: (start: string, end: string) =>
+    ['org', 'analytics', 'volume', start, end] as const,
+  analyticsSpend: (sinceDays: number) => ['org', 'analytics', 'spend', sinceDays] as const,
+  analyticsStatus: () => ['org', 'analytics', 'status'] as const,
+
   /** Every automation rule in the org (Phase 10 Wave 1). */
   automations: (orgId: string) => ['org', orgId, 'automations'] as const,
   /**

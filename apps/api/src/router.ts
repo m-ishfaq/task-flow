@@ -19,6 +19,7 @@ import { createRtcRouter } from './rtc/router.js';
 import type { RtcDeps } from './rtc/deps.js';
 import { createSearchRouter } from './search/router.js';
 import { createAutomationRouter } from './automation/router.js';
+import { createAnalyticsRouter } from './analytics/router.js';
 import { createApiTokenRouter } from './automation/api-token.router.js';
 import type { IntegrationDeps } from './automation/integration.service.js';
 import { PostgresSearchProvider } from './search/postgres-provider.js';
@@ -279,6 +280,8 @@ export function createAppRouter(deps: AppRouterDeps) {
      * mint/revoke routes are step-up (§6.4), which is the hook the slice-3
      * builder gate uses to refuse token principals here.
      */
+    analytics: createAnalyticsRouter(),
+
     apiToken: createApiTokenRouter(),
 
     /**

@@ -272,6 +272,11 @@ CREATE ROLE taskflow_integration_auth WITH LOGIN PASSWORD 'integration-auth-dev-
 CREATE ROLE taskflow_ops_events WITH LOGIN PASSWORD 'ops-events-dev-secret' NOSUPERUSER
   NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 
+-- No dedicated role for the analytics transitions projection (Phase 11): it
+-- reuses taskflow_audit as its outbox claim role, the same way rtc-call-wake
+-- does (migration 0089). See migration 0091's header for why a low-volume
+-- status-change consumer does not justify its own role and connection.
+
 -- Baseline grants live in 03-grants.sql, NOT here.
 --
 -- Roles are cluster-wide; grants are per-database. This file creates the roles

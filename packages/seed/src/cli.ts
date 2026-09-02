@@ -1,7 +1,12 @@
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { initializeAuditDatabase, initializePlatformAdminDatabase } from '@taskflow/db';
+import {
+  closeDatabase,
+  initializeAuditDatabase,
+  initializeDatabase,
+  initializePlatformAdminDatabase,
+} from '@taskflow/db';
 import { connectAsMigrator } from '@taskflow/db/testing';
 import { S3StorageProvider } from '@taskflow/storage';
 import { FakePaymentProvider, StripePaymentProvider } from '@taskflow/payments';
@@ -36,6 +41,7 @@ import { catalogModule } from './modules/billing.catalog.js';
 import { subscriptionsModule } from './modules/billing.subscriptions.js';
 import { apiTokensModule } from './modules/platform.api-tokens.js';
 import { webhooksModule } from './modules/platform.webhooks.js';
+import { backfillAnalytics } from './analytics-backfill.js';
 
 /**
  * `pnpm seed [--profile <name>] [--seed <value>] [--reset] [--chaos]`
@@ -525,6 +531,46 @@ async function main(): Promise<void> {
     if (webhook.signingSecret !== null) {
       console.warn('\nSeeded webhook signing secret (shown once, like a real creation):');
       console.warn(`  ${webhook.signingSecret}`);
+    }
+
+    /* Analytics needs its projection and rollups populated to show anything —
+       the same way search needs `search:backfill`. Run it here so `pnpm seed`
+       produces a database whose Insights dashboards are not empty out of the
+       box. Uses the APP pool (not the migrator connection above), because it
+       reuses `refreshOrg` which runs under `withOrgScope`; best-effort, so a
+       missing DATABASE_URL or an unreachable pool warns rather than failing a
+       seed that otherwise succeeded. Re-runnable on its own via
+       `pnpm --filter @taskflow/seed analytics:backfill`. */
+    const appUrl = process.env['DATABASE_URL'];
+    if (appUrl) {
+      initializeDatabase({ url: appUrl, applicationName: 'taskflow-seed-analytics' });
+      try {
+        console.warn('\nBackfilling analytics (transitions + rollups)...');
+        // Pass the ids we just seeded rather than discovering them:
+        // `listOrgIds()` runs as taskflow_app with no scope, which identity.orgs'
+        // RLS answers with zero rows (see analytics-backfill.ts's own note).
+        const analytics = await backfillAnalytics(
+          orgs.map((org) => org.id),
+          (message) => {
+            console.warn(message);
+          },
+        );
+        console.warn(
+          `analytics: ${String(analytics.transitions)} transition(s) across ` +
+            `${String(analytics.orgs)} org(s), rollups refreshed.`,
+        );
+      } catch (error) {
+        console.warn(
+          `analytics backfill skipped: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      } finally {
+        await closeDatabase();
+      }
+    } else {
+      console.warn(
+        '\nDATABASE_URL not set — analytics dashboards will be empty. Set it and run\n' +
+          '  pnpm --filter @taskflow/seed analytics:backfill',
+      );
     }
 
     console.warn('\nDone.');

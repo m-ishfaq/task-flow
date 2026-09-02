@@ -8,6 +8,7 @@ import {
 } from '../platform/notification.projection.js';
 import { deliverPendingPushes } from '../platform/notification-push.js';
 import { drainCallWakeFully } from '../platform/call-wake.js';
+import { tickAnalytics } from '../analytics/projection.relay.js';
 import type { ExpoPushProvider, PushProvider } from '../platform/push-provider.js';
 
 /**
@@ -195,6 +196,14 @@ export function startAuditRelay(options: StartRelayOptions): RelayHandle {
           );
         }
       }
+
+      /* The analytics transitions projection (Phase 11) rides the same tick
+         under its OWN consumer name ('analytics', migration 0091), claiming as
+         taskflow_audit — see analytics/projection.relay.ts's header. `tickAnalytics`
+         wraps its own try/catch so a projection error can never cascade into
+         the consumers above it (migration 0088's outage is the lesson), and it
+         needs no provider or extra config, so it always runs. */
+      await tickAnalytics(options.logger);
     } catch (error) {
       /* Logged, never rethrown. An unhandled rejection inside a timer takes the
          process down, and a transient database blip must not turn into an API

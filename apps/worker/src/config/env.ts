@@ -86,6 +86,14 @@ export const EnvSchema = z.object({
      gets no heartbeat rows rather than a sweep that fails to run. */
   DATABASE_OPS_EVENTS_URL: NonEmpty.optional(),
 
+  /* The AUDIT role's connection (Phase 11). The analytics rollup refresh needs
+     to enumerate every tenant, and identity.orgs admits no such read for the
+     app role (migration 0004) — migration 0037 grants taskflow_audit an
+     explicit read of (id, status). Optional, same contract as the claim pools:
+     without it the analytics refresh loop declines to start (it could not
+     discover orgs) rather than falling back to a role that would find none. */
+  DATABASE_AUDIT_URL: NonEmpty.optional(),
+
   /* The grace period a past_due org gets before the sweep cancels it — the
      SAME value apps/api's env schema validates, duplicated here rather than
      imported because the two processes' env schemas are deliberately
@@ -148,6 +156,18 @@ export const EnvSchema = z.object({
     .min(1_000)
     .max(3_600_000)
     .default(60_000),
+
+  /* How often the analytics rollups are recomputed from card_transitions
+     (Phase 11 §6). A full per-org recompute, so it is latency-insensitive and
+     runs on its own slow interval like the billing sweep — five minutes by
+     default, well short of the six-second dashboards-are-stale threshold §6
+     tolerates. */
+  WORKER_ANALYTICS_REFRESH_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(3_600_000)
+    .default(300_000),
 
   /* ------------------------------------------------------------------ *
    * Automation telephony (Phase 10 Wave 4, ai/phase-10-automation.md §5.5)
