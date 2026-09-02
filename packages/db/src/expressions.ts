@@ -250,11 +250,15 @@ export function countDistinct(column: Column): SQL<string> {
  * is a timezone-dependent string operation that produces different buckets
  * for the same row depending on the server's clock.
  *
- * `precision` reaches `sql.raw`, so it must never be caller/user input — it
- * is a fixed unit chosen at the call site. Every analytics call site passes
- * the default 'day'; the parameter exists only so a future 'week'/'month'
- * bucket is a literal here, never a value threaded from a request. A
- * whitelist guards it against a careless future caller.
+ * The precision is emitted as a QUOTED string literal — `date_trunc('day',
+ * col)`. `date_trunc`'s first argument is a `text` value, so a bare word
+ * (`date_trunc(day, col)`) parses as a COLUMN reference and fails with
+ * `column "day" does not exist`. It reaches `sql.raw` rather than a bound
+ * parameter so the SELECT and GROUP BY renderings are byte-identical (a
+ * parameter would be `$1` in one and `$2` in the other, which Postgres does
+ * not treat as the same GROUP BY expression). That makes it caller-chosen,
+ * never user input: the whitelist below both documents that and guarantees
+ * the interpolated text can only ever be one of these known unit words.
  */
 const DATE_TRUNC_UNITS: ReadonlySet<string> = new Set([
   'microseconds',
@@ -276,7 +280,7 @@ export function dateTrunc(column: Column, precision = 'day'): SQL {
   if (!DATE_TRUNC_UNITS.has(precision)) {
     throw new Error(`date_trunc precision must be a known unit, received "${precision}".`);
   }
-  return sql`date_trunc(${sql.raw(precision)}, ${column})`;
+  return sql`date_trunc(${sql.raw(`'${precision}'`)}, ${column})`;
 }
 
 /**
@@ -288,7 +292,10 @@ export function dateTrunc(column: Column, precision = 'day'): SQL {
  * correlated WHERE, which is both slower and harder to read.
  */
 export function minWhen(column: Column, condition: SQL): SQL {
-  return sql`${column} FILTER (WHERE ${condition})`;
+  // MIN(...) is load-bearing: FILTER is only valid on an aggregate, so a bare
+  // `column FILTER (WHERE ...)` is a syntax error. The aggregate is what makes
+  // this "the earliest occurred_at among rows matching the condition".
+  return sql`MIN(${column}) FILTER (WHERE ${condition})`;
 }
 
 /**
