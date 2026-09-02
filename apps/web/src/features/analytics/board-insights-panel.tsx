@@ -70,9 +70,7 @@ export function BoardInsightsPanel({
   return (
     <div className="space-y-6 p-4">
       {/* Velocity chart */}
-      {velocityPoints.length > 0 && (
-        <VelocityChart points={velocityPoints} days={days} />
-      )}
+      {velocityPoints.length > 0 && <VelocityChart points={velocityPoints} days={days} />}
 
       {/* Burndown chart */}
       {burndownPoints.length > 0 && <BurndownChart points={burndownPoints} />}
@@ -104,7 +102,7 @@ function VelocityChart({
           <div
             key={p.date}
             className="group relative flex-1"
-            style={{ height: `${(p.count / maxCount) * 100}%` }}
+            style={{ height: `${String((p.count / maxCount) * 100)}%` }}
           >
             <div className="h-full rounded-t bg-accent/60 transition-colors group-hover:bg-accent" />
             <div className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-ink/80 px-1.5 py-0.5 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100">
@@ -139,7 +137,7 @@ function BurndownChart({
       </div>
 
       <svg
-        viewBox={`0 0 ${points.length * 8} 120`}
+        viewBox={`0 0 ${String(points.length * 8)} 120`}
         className="w-full"
         style={{ height: 120 }}
         preserveAspectRatio="none"
@@ -151,8 +149,7 @@ function BurndownChart({
           className="text-accent"
           points={points
             .map(
-              (p, i) =>
-                `${i * 8 + 4},${120 - (p.remaining / maxRemaining) * 110}`,
+              (p, i) => `${String(i * 8 + 4)},${String(120 - (p.remaining / maxRemaining) * 110)}`,
             )
             .join(' ')}
         />

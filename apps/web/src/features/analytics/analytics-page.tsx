@@ -45,16 +45,16 @@ export function AnalyticsPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="border-b border-line/50 px-4 pt-4 pb-2">
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
-          Analytics
-        </h1>
-        <nav className="mt-2 flex gap-1 overflow-x-auto" role="tablist">
+        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Analytics</h1>
+        <div className="mt-2 flex gap-1 overflow-x-auto" role="tablist">
           {TABS.map((t) => (
             <button
               key={t.id}
               role="tab"
               aria-selected={tab === t.id}
-              onClick={() => selectTab(t.id)}
+              onClick={() => {
+                selectTab(t.id);
+              }}
               className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                 tab === t.id
                   ? 'bg-accent/10 text-accent'
@@ -64,16 +64,16 @@ export function AnalyticsPage() {
               {t.label}
             </button>
           ))}
-        </nav>
+        </div>
       </header>
 
       <div className="flex-1 overflow-auto p-4">
-        {tab === 'velocity' && <VelocityPanel orgId={orgId} />}
+        {tab === 'velocity' && <VelocityPanel />}
         {tab === 'burndown' && <BurndownPanel orgId={orgId} />}
         {tab === 'cfd' && <CfdPanel orgId={orgId} />}
-        {tab === 'cycle-time' && <CycleTimePanel orgId={orgId} />}
-        {tab === 'workload' && <WorkloadPanel orgId={orgId} />}
-        {tab === 'volume' && <VolumePanel orgId={orgId} />}
+        {tab === 'cycle-time' && <CycleTimePanel />}
+        {tab === 'workload' && <WorkloadPanel />}
+        {tab === 'volume' && <VolumePanel />}
         {tab === 'status' && <StatusPanel />}
       </div>
     </div>

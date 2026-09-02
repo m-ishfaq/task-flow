@@ -18,6 +18,7 @@ import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
+import { useSession } from '../../../src/lib/use-session.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { PROJECTS_QUERY_KEY, boardsQueryKey, type Board } from '../../../src/lib/work.js';
 
@@ -55,6 +56,14 @@ import { PROJECTS_QUERY_KEY, boardsQueryKey, type Board } from '../../../src/lib
  * (`project-settings/[projectId].tsx`) is the same: reachable by anyone who
  * can see this screen, with each control on it individually gated.
  *
+ * **"Insights" shows only for an org owner/admin.** Unlike Sprints and
+ * Settings, the insights screen is ORG-WIDE analytics gated `analytics:read`
+ * (owner + admin only), so — matching `account.tsx`'s own entry point to the
+ * same screen — this hides the link for everyone else rather than letting
+ * them tap into a guaranteed FORBIDDEN. The server is still the sole
+ * enforcer; hiding a dead control is only the UX convenience account.tsx's
+ * own comment already documents.
+ *
  * **Rename and Archive live on each board's own row**, gated on that
  * board's own `capabilities.update`/`.delete` — per-board, not inherited
  * from the project, since a board can carry its own share grant
@@ -63,11 +72,13 @@ import { PROJECTS_QUERY_KEY, boardsQueryKey, type Board } from '../../../src/lib
  * is reversible and the board's cards are untouched, the same call web
  * makes for the identical control.
  *
- * **Header layout — two rows, not one.** The back button shares the same
- * 36 px horizontal band as `TopBar`'s icon cluster (both starting at
+ * **Header layout — three rows.** The back button shares the same 36 px
+ * horizontal band as `TopBar`'s icon cluster (both starting at
  * `insets.top + 4`), occupying only the left side so there is no collision.
- * The title + Sprints/Settings row lives below that band and uses
- * `paddingRight` to stay clear of the icons should the title ever be long.
+ * The title sits on its own row below that band, and the secondary actions
+ * (Sprints, Insights, Settings, New board) get a third, wrapping row of
+ * their own: four buttons cannot share one line with the title on a phone,
+ * so they flow onto a second line rather than clipping off the right edge.
  * "New board" is a bottom-sheet modal rather than an inline toggle — same
  * reasoning as `(tabs)/boards.tsx`'s own redesign of its create form.
  */
@@ -112,6 +123,20 @@ function ProjectBoardsContent({
   });
   const canCreateBoard =
     projects.data?.find((project) => project.projectId === projectId)?.capabilities.update ?? false;
+
+  // Insights is org-wide analytics, gated `analytics:read` (owner + admin
+  // only). The server enforces it; this hides the link for non-admins as the
+  // same UX convenience account.tsx makes for the identical entry point —
+  // otherwise a member sees a button that only ever answers FORBIDDEN. Reuses
+  // account.tsx's own `tenancy.orgs.list` query (same key = a cache hit when
+  // that screen has already loaded), reading the role for the selected org.
+  const orgId = useSession((state) => state.orgId);
+  const orgs = useQuery({
+    queryKey: ['tenancy.orgs.list'],
+    queryFn: () => apiClient.tenancy.orgs.list.query(),
+  });
+  const currentOrg = orgs.data?.find((org) => org.orgId === orgId);
+  const isOrgAdmin = currentOrg?.role === 'owner' || currentOrg?.role === 'admin';
 
   const create = useMutation({
     mutationFn: (boardName: string) =>
@@ -166,18 +191,26 @@ function ProjectBoardsContent({
         <BackButton />
       </View>
 
-      {/* Row 2: title + secondary actions — below the TopBar zone. */}
+      {/* Row 2: title — below the TopBar zone. */}
       <View style={styles.titleRow}>
         <Text style={styles.title}>Boards</Text>
-        <View style={styles.titleActions}>
-          <Pressable
-            style={styles.secondaryButton}
-            onPress={() => {
-              router.push(`/sprints/${projectId}`);
-            }}
-          >
-            <Text style={styles.secondaryButtonText}>Sprints</Text>
-          </Pressable>
+      </View>
+
+      {/* Row 3: secondary actions, on their own wrapping row. Given the full
+          width rather than sharing a line with the title, a fourth button
+          wraps to the next line instead of pushing the others off the right
+          edge — the old single row could not fit Sprints + Insights +
+          Settings + New board on a phone. */}
+      <View style={styles.titleActions}>
+        <Pressable
+          style={styles.secondaryButton}
+          onPress={() => {
+            router.push(`/sprints/${projectId}`);
+          }}
+        >
+          <Text style={styles.secondaryButtonText}>Sprints</Text>
+        </Pressable>
+        {isOrgAdmin && (
           <Pressable
             style={styles.secondaryButton}
             onPress={() => {
@@ -186,28 +219,28 @@ function ProjectBoardsContent({
           >
             <Text style={styles.secondaryButtonText}>Insights</Text>
           </Pressable>
+        )}
+        <Pressable
+          style={styles.secondaryButton}
+          onPress={() => {
+            router.push(`/project-settings/${projectId}`);
+          }}
+        >
+          <Text style={styles.secondaryButtonText}>Settings</Text>
+        </Pressable>
+        {/* Hidden rather than disabled: a caller without `project:update`
+            could not submit this form regardless, so showing it as
+            unusable is clutter, not information. */}
+        {canCreateBoard && (
           <Pressable
-            style={styles.secondaryButton}
+            style={styles.newButton}
             onPress={() => {
-              router.push(`/project-settings/${projectId}`);
+              setCreating(true);
             }}
           >
-            <Text style={styles.secondaryButtonText}>Settings</Text>
+            <Text style={styles.newButtonText}>+ New board</Text>
           </Pressable>
-          {/* Hidden rather than disabled: a caller without `project:update`
-              could not submit this form regardless, so showing it as
-              unusable is clutter, not information. */}
-          {canCreateBoard && (
-            <Pressable
-              style={styles.newButton}
-              onPress={() => {
-                setCreating(true);
-              }}
-            >
-              <Text style={styles.newButtonText}>+ New board</Text>
-            </Pressable>
-          )}
-        </View>
+        )}
       </View>
 
       <FlatList<Board>
@@ -407,6 +440,7 @@ const styles = StyleSheet.create({
   },
   titleActions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: 6,
   },

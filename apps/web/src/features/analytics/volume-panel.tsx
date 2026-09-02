@@ -5,7 +5,7 @@ import { Empty, SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 
 /** §3.6 — Volume: messages, calls, and in-app calls per day. */
-export function VolumePanel({ orgId }: { readonly orgId: string }) {
+export function VolumePanel() {
   const [days] = useState(30);
   const { start, end } = useMemo(() => {
     const e = new Date();
@@ -21,7 +21,12 @@ export function VolumePanel({ orgId }: { readonly orgId: string }) {
 
   const points = data ?? [];
   if (points.length === 0) {
-    return <Empty title="No volume data" description="Messages and calls will appear here once activity begins." />;
+    return (
+      <Empty
+        title="No volume data"
+        description="Messages and calls will appear here once activity begins."
+      />
+    );
   }
 
   const totalMessages = points.reduce((s, p) => s + p.messages, 0);

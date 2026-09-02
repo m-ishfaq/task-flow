@@ -541,7 +541,10 @@ const analyticsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/analytics',
   validateSearch: z.object({
-    tab: z.enum(['velocity', 'burndown', 'cfd', 'cycle-time', 'workload', 'volume', 'status']).optional().catch(undefined),
+    tab: z
+      .enum(['velocity', 'burndown', 'cfd', 'cycle-time', 'workload', 'volume', 'status'])
+      .optional()
+      .catch(undefined),
   }),
   beforeLoad: () => requireOrg('/analytics'),
   component: AnalyticsPage,

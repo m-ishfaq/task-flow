@@ -325,9 +325,7 @@ export function BoardPage() {
           />
         )}
 
-        {view === 'insights' && (
-          <BoardInsightsPanel orgId={orgId} boardId={boardId} />
-        )}
+        {view === 'insights' && <BoardInsightsPanel orgId={orgId} boardId={boardId} />}
 
         <BulkBar
           orgId={orgId}

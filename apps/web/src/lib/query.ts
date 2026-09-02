@@ -321,12 +321,10 @@ export const keys = {
     ['org', 'analytics', 'cfd', boardId, start, end] as const,
   analyticsCycleTime: (projectId?: string, boardId?: string) =>
     ['org', 'analytics', 'cycleTime', projectId ?? '', boardId ?? ''] as const,
-  analyticsWorkload: (boardId?: string) =>
-    ['org', 'analytics', 'workload', boardId ?? ''] as const,
+  analyticsWorkload: (boardId?: string) => ['org', 'analytics', 'workload', boardId ?? ''] as const,
   analyticsVolume: (start: string, end: string) =>
     ['org', 'analytics', 'volume', start, end] as const,
-  analyticsSpend: (sinceDays: number) =>
-    ['org', 'analytics', 'spend', sinceDays] as const,
+  analyticsSpend: (sinceDays: number) => ['org', 'analytics', 'spend', sinceDays] as const,
   analyticsStatus: () => ['org', 'analytics', 'status'] as const,
 
   /** Every automation rule in the org (Phase 10 Wave 1). */

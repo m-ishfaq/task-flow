@@ -1,12 +1,5 @@
 import { useMemo } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { wire } from '@taskflow/client';
@@ -24,6 +17,17 @@ import {
   type WorkloadEntry,
   type VolumePoint,
 } from '../../src/lib/analytics.js';
+
+/**
+ * A ratio-derived percentage as the `${number}%` string React Native's
+ * `DimensionValue` style type wants. Built by string concatenation rather than
+ * a template literal so it does not trip `restrict-template-expressions` (a bare
+ * number in a template is a lint error); the cast restores the branded
+ * percentage type tsc needs for a style width/height. Same idiom as calls.tsx.
+ */
+function pct(value: number): `${number}%` {
+  return (String(value) + '%') as `${number}%`;
+}
 
 /**
  * Org-wide analytics insights — the mobile counterpart of
@@ -69,7 +73,8 @@ export default function InsightsScreen() {
       wire(await apiClient.analytics.volume.query({ startDate: start, endDate: end })),
   });
 
-  const isLoading = velocity.isLoading || cycleTime.isLoading || workload.isLoading || volume.isLoading;
+  const isLoading =
+    velocity.isLoading || cycleTime.isLoading || workload.isLoading || volume.isLoading;
   const hasError = velocity.isError || cycleTime.isError || workload.isError || volume.isError;
 
   return (
@@ -108,7 +113,9 @@ export default function InsightsScreen() {
 
           {/* Cycle Time */}
           <Section title="Cycle Time">
-            <CycleTimeCard result={cycleTime.data ?? { medianHours: 0, p85Hours: 0, count: 0, openCount: 0 }} />
+            <CycleTimeCard
+              result={cycleTime.data ?? { medianHours: 0, p85Hours: 0, count: 0, openCount: 0 }}
+            />
           </Section>
 
           {/* Workload */}
@@ -130,7 +137,13 @@ export default function InsightsScreen() {
  * Section wrapper
  * -------------------------------------------------------------------------- */
 
-function Section({ title, children }: { readonly title: string; readonly children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  readonly title: string;
+  readonly children: React.ReactNode;
+}) {
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -143,7 +156,13 @@ function Section({ title, children }: { readonly title: string; readonly childre
  * Velocity — simple bar chart
  * -------------------------------------------------------------------------- */
 
-function VelocityCard({ points, days }: { readonly points: readonly VelocityPoint[]; readonly days: number }) {
+function VelocityCard({
+  points,
+  days,
+}: {
+  readonly points: readonly VelocityPoint[];
+  readonly days: number;
+}) {
   if (points.length === 0) {
     return (
       <View style={styles.card}>
@@ -168,7 +187,7 @@ function VelocityCard({ points, days }: { readonly points: readonly VelocityPoin
               style={[
                 styles.bar,
                 {
-                  height: `${Math.max((p.count / maxCount) * 100, p.count > 0 ? 4 : 0)}%`,
+                  height: pct(Math.max((p.count / maxCount) * 100, p.count > 0 ? 4 : 0)),
                 },
               ]}
             />
@@ -192,10 +211,10 @@ function VelocityCard({ points, days }: { readonly points: readonly VelocityPoin
 
 function CycleTimeCard({ result }: { readonly result: CycleTimeResult }) {
   const formatHours = (h: number) => {
-    if (h < 24) return `${Math.round(h)}h`;
+    if (h < 24) return `${String(Math.round(h))}h`;
     const days = Math.floor(h / 24);
     const hours = Math.round(h % 24);
-    return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+    return hours > 0 ? `${String(days)}d ${String(hours)}h` : `${String(days)}d`;
   };
 
   return (
@@ -232,18 +251,13 @@ function WorkloadCard({ entries }: { readonly entries: readonly WorkloadEntry[] 
           </Text>
           <View style={styles.workloadBarBg}>
             <View
-              style={[
-                styles.workloadBar,
-                { width: `${(entry.cardCount / maxCount) * 100}%` },
-              ]}
+              style={[styles.workloadBar, { width: pct((entry.cardCount / maxCount) * 100) }]}
             />
           </View>
           <Text style={styles.workloadCount}>{entry.cardCount}</Text>
         </View>
       ))}
-      {entries.length > 10 && (
-        <Text style={styles.rangeText}>+{entries.length - 10} more</Text>
-      )}
+      {entries.length > 10 && <Text style={styles.rangeText}>+{entries.length - 10} more</Text>}
     </View>
   );
 }

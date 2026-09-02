@@ -249,21 +249,33 @@ export function countDistinct(column: Column): SQL<string> {
  * correct truncation — JavaScript `new Date(d).toISOString().slice(0,10)`
  * is a timezone-dependent string operation that produces different buckets
  * for the same row depending on the server's clock.
- */
-/**
- * `date_trunc('day', column)` — truncates a timestamp to midnight UTC.
  *
- * Every dashboard groups by day, and grouping by a raw timestamp would
- * produce one bucket per second. Postgres's `date_trunc` is the only
- * correct truncation — JavaScript `new Date(d).toISOString().slice(0,10)`
- * is a timezone-dependent string operation that produces different buckets
- * for the same row depending on the server's clock.
- *
- * Defaults to 'day' since that is the only precision used; the precision
- * is not caller-configurable because every analytics call site truncates
- * to the same unit.
+ * `precision` reaches `sql.raw`, so it must never be caller/user input — it
+ * is a fixed unit chosen at the call site. Every analytics call site passes
+ * the default 'day'; the parameter exists only so a future 'week'/'month'
+ * bucket is a literal here, never a value threaded from a request. A
+ * whitelist guards it against a careless future caller.
  */
+const DATE_TRUNC_UNITS: ReadonlySet<string> = new Set([
+  'microseconds',
+  'milliseconds',
+  'second',
+  'minute',
+  'hour',
+  'day',
+  'week',
+  'month',
+  'quarter',
+  'year',
+  'decade',
+  'century',
+  'millennium',
+]);
+
 export function dateTrunc(column: Column, precision = 'day'): SQL {
+  if (!DATE_TRUNC_UNITS.has(precision)) {
+    throw new Error(`date_trunc precision must be a known unit, received "${precision}".`);
+  }
   return sql`date_trunc(${sql.raw(precision)}, ${column})`;
 }
 

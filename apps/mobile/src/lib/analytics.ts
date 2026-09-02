@@ -19,14 +19,10 @@ import type { MobileTRPCClient } from './trpc-client.js';
  * Types — derived from the live client
  * -------------------------------------------------------------------------- */
 
-type VelocityOutput = Wire<
-  Awaited<ReturnType<MobileTRPCClient['analytics']['velocity']['query']>>
->;
+type VelocityOutput = Wire<Awaited<ReturnType<MobileTRPCClient['analytics']['velocity']['query']>>>;
 export type VelocityPoint = VelocityOutput[number];
 
-type BurndownOutput = Wire<
-  Awaited<ReturnType<MobileTRPCClient['analytics']['burndown']['query']>>
->;
+type BurndownOutput = Wire<Awaited<ReturnType<MobileTRPCClient['analytics']['burndown']['query']>>>;
 export type BurndownPoint = BurndownOutput[number];
 
 type CycleTimeOutput = Wire<
@@ -34,14 +30,10 @@ type CycleTimeOutput = Wire<
 >;
 export type CycleTimeResult = CycleTimeOutput;
 
-type WorkloadOutput = Wire<
-  Awaited<ReturnType<MobileTRPCClient['analytics']['workload']['query']>>
->;
+type WorkloadOutput = Wire<Awaited<ReturnType<MobileTRPCClient['analytics']['workload']['query']>>>;
 export type WorkloadEntry = WorkloadOutput[number];
 
-type VolumeOutput = Wire<
-  Awaited<ReturnType<MobileTRPCClient['analytics']['volume']['query']>>
->;
+type VolumeOutput = Wire<Awaited<ReturnType<MobileTRPCClient['analytics']['volume']['query']>>>;
 export type VolumePoint = VolumeOutput[number];
 
 /* -------------------------------------------------------------------------- *

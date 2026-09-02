@@ -4,7 +4,7 @@ import { Empty, SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 
 /** §3.5 — Workload: open cards per assignee. */
-export function WorkloadPanel({ orgId }: { readonly orgId: string }) {
+export function WorkloadPanel() {
   const { data, isLoading, error } = useQuery(workloadQuery());
 
   if (error) return <ErrorView error={error} />;
@@ -12,7 +12,12 @@ export function WorkloadPanel({ orgId }: { readonly orgId: string }) {
 
   const entries = data ?? [];
   if (entries.length === 0) {
-    return <Empty title="No assigned cards" description="Assign cards to team members to see workload distribution." />;
+    return (
+      <Empty
+        title="No assigned cards"
+        description="Assign cards to team members to see workload distribution."
+      />
+    );
   }
 
   const maxCount = Math.max(...entries.map((e) => e.cardCount), 1);
@@ -30,12 +35,10 @@ export function WorkloadPanel({ orgId }: { readonly orgId: string }) {
             <div className="flex-1">
               <div
                 className="h-4 rounded bg-accent/60"
-                style={{ width: `${(entry.cardCount / maxCount) * 100}%` }}
+                style={{ width: `${String((entry.cardCount / maxCount) * 100)}%` }}
               />
             </div>
-            <div className="w-8 text-right text-xs font-medium text-ink">
-              {entry.cardCount}
-            </div>
+            <div className="w-8 text-right text-xs font-medium text-ink">{entry.cardCount}</div>
           </div>
         ))}
       </div>

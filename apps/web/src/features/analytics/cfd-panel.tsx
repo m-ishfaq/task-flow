@@ -8,8 +8,8 @@ import { ErrorView } from '../../components/error-view.js';
 
 const CATEGORY_COLORS: Record<string, string> = {
   notStarted: 'rgb(156, 163, 175)', // gray
-  active: 'rgb(59, 130, 246)',      // blue
-  done: 'rgb(34, 197, 94)',         // green
+  active: 'rgb(59, 130, 246)', // blue
+  done: 'rgb(34, 197, 94)', // green
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -38,7 +38,7 @@ export function CfdPanel({ orgId }: { readonly orgId: string }) {
 
   const boards = useQuery({
     queryKey: ['work', 'boards', orgId, projectId],
-    queryFn: async () => wire(await api.work.boards.list.query({ projectId: projectId! })),
+    queryFn: async () => wire(await api.work.boards.list.query({ projectId: projectId ?? '' })),
     enabled: projectId !== undefined,
   });
 
@@ -58,13 +58,15 @@ export function CfdPanel({ orgId }: { readonly orgId: string }) {
 
   const points = data ?? [];
   if (points.length === 0) {
-    return <Empty title="No flow data" description="Transitions will appear as cards move through statuses." />;
+    return (
+      <Empty
+        title="No flow data"
+        description="Transitions will appear as cards move through statuses."
+      />
+    );
   }
 
-  const maxTotal = Math.max(
-    ...points.map((p) => p.notStarted + p.active + p.done),
-    1,
-  );
+  const maxTotal = Math.max(...points.map((p) => p.notStarted + p.active + p.done), 1);
 
   // Build stacked area points for SVG
   const width = points.length * 8;
@@ -73,14 +75,12 @@ export function CfdPanel({ orgId }: { readonly orgId: string }) {
   const toY = (count: number) => height - (count / maxTotal) * height;
 
   // Stacked: done on bottom, active in middle, notStarted on top
-  const donePath = points
-    .map((p, i) => `${i * 8 + 4},${toY(p.done)}`)
-    .join(' ');
+  const donePath = points.map((p, i) => `${String(i * 8 + 4)},${String(toY(p.done))}`).join(' ');
   const activePath = points
-    .map((p, i) => `${i * 8 + 4},${toY(p.done + p.active)}`)
+    .map((p, i) => `${String(i * 8 + 4)},${String(toY(p.done + p.active))}`)
     .join(' ');
   const notStartedPath = points
-    .map((p, i) => `${i * 8 + 4},${toY(p.done + p.active + p.notStarted)}`)
+    .map((p, i) => `${String(i * 8 + 4)},${String(toY(p.done + p.active + p.notStarted))}`)
     .join(' ');
 
   return (
@@ -90,17 +90,35 @@ export function CfdPanel({ orgId }: { readonly orgId: string }) {
       </div>
 
       {/* Stacked area chart */}
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ height: 120 }} preserveAspectRatio="none">
+      <svg
+        viewBox={`0 0 ${String(width)} ${String(height)}`}
+        className="w-full"
+        style={{ height: 120 }}
+        preserveAspectRatio="none"
+      >
         <polyline fill="none" stroke={CATEGORY_COLORS['done']} strokeWidth="1" points={donePath} />
-        <polyline fill="none" stroke={CATEGORY_COLORS['active']} strokeWidth="1" points={activePath} />
-        <polyline fill="none" stroke={CATEGORY_COLORS['notStarted']} strokeWidth="1" points={notStartedPath} />
+        <polyline
+          fill="none"
+          stroke={CATEGORY_COLORS['active']}
+          strokeWidth="1"
+          points={activePath}
+        />
+        <polyline
+          fill="none"
+          stroke={CATEGORY_COLORS['notStarted']}
+          strokeWidth="1"
+          points={notStartedPath}
+        />
       </svg>
 
       {/* Legend */}
       <div className="flex gap-4 text-xs text-ink/60">
         {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
           <div key={key} className="flex items-center gap-1.5">
-            <div className="h-2 w-2 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[key] }} />
+            <div
+              className="h-2 w-2 rounded-full"
+              style={{ backgroundColor: CATEGORY_COLORS[key] }}
+            />
             <span>{label}</span>
           </div>
         ))}

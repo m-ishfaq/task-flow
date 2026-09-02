@@ -118,7 +118,7 @@ export async function refreshOrg(orgId: OrgId): Promise<Omit<RefreshResult, 'org
 
     // ── Velocity (§3.1): done transitions per board per day ──────────
 
-    const velocityRows = await tx
+    const velocityRows = (await tx
       .select({
         boardId: schema.cardTransitions.boardId,
         day: dateTrunc(schema.cardTransitions.occurredAt).as('day'),
@@ -126,12 +126,12 @@ export async function refreshOrg(orgId: OrgId): Promise<Omit<RefreshResult, 'org
       })
       .from(schema.cardTransitions)
       .where(
-        and(
-          eq(schema.cardTransitions.orgId, orgId),
-          eq(schema.cardTransitions.toCategory, 'done'),
-        ),
+        and(eq(schema.cardTransitions.orgId, orgId), eq(schema.cardTransitions.toCategory, 'done')),
       )
-      .groupBy(schema.cardTransitions.boardId, dateTrunc(schema.cardTransitions.occurredAt)) as unknown as VelocityRow[];
+      .groupBy(
+        schema.cardTransitions.boardId,
+        dateTrunc(schema.cardTransitions.occurredAt),
+      )) as unknown as VelocityRow[];
 
     for (const row of velocityRows) {
       await tx.insert(schema.rollupVelocity).values({
@@ -147,10 +147,10 @@ export async function refreshOrg(orgId: OrgId): Promise<Omit<RefreshResult, 'org
     // Walk transitions forward from a starting snapshot per board.
     // This is the most complex rollup: it needs to accumulate daily deltas.
 
-    const boards = await tx
+    const boards = (await tx
       .selectDistinct({ boardId: schema.cardTransitions.boardId })
       .from(schema.cardTransitions)
-      .where(eq(schema.cardTransitions.orgId, orgId)) as unknown as BoardIdRow[];
+      .where(eq(schema.cardTransitions.orgId, orgId))) as unknown as BoardIdRow[];
 
     let cfdRowCount = 0;
 
@@ -163,7 +163,7 @@ export async function refreshOrg(orgId: OrgId): Promise<Omit<RefreshResult, 'org
       const running: Record<string, number> = { not_started: 0, active: 0, done: 0 };
 
       // Daily transitions for this board.
-      const transitions = await tx
+      const transitions = (await tx
         .select({
           day: dateTrunc(schema.cardTransitions.occurredAt).as('day'),
           fromCategory: schema.cardTransitions.fromCategory,
@@ -172,17 +172,16 @@ export async function refreshOrg(orgId: OrgId): Promise<Omit<RefreshResult, 'org
         })
         .from(schema.cardTransitions)
         .where(
-          and(
-            eq(schema.cardTransitions.orgId, orgId),
-            eq(schema.cardTransitions.boardId, boardId),
-          ),
+          and(eq(schema.cardTransitions.orgId, orgId), eq(schema.cardTransitions.boardId, boardId)),
         )
         .groupBy(
           dateTrunc(schema.cardTransitions.occurredAt),
           schema.cardTransitions.fromCategory,
           schema.cardTransitions.toCategory,
         )
-        .orderBy(asc(dateTrunc(schema.cardTransitions.occurredAt))) as unknown as CfdTransitionRow[];
+        .orderBy(
+          asc(dateTrunc(schema.cardTransitions.occurredAt)),
+        )) as unknown as CfdTransitionRow[];
 
       let currentDate = '';
 
@@ -235,7 +234,7 @@ export async function refreshOrg(orgId: OrgId): Promise<Omit<RefreshResult, 'org
     const activeEq = eq(schema.cardTransitions.toCategory, 'active');
     const doneEq = eq(schema.cardTransitions.toCategory, 'done');
 
-    const cycleTimeRows = await tx
+    const cycleTimeRows = (await tx
       .select({
         cardId: schema.cardTransitions.cardId,
         boardId: schema.cardTransitions.boardId,
@@ -250,7 +249,9 @@ export async function refreshOrg(orgId: OrgId): Promise<Omit<RefreshResult, 'org
         schema.cardTransitions.boardId,
         schema.cardTransitions.projectId,
       )
-      .having(isNotNull(minWhen(schema.cardTransitions.occurredAt, activeEq))) as unknown as CycleTimeRow[];
+      .having(
+        isNotNull(minWhen(schema.cardTransitions.occurredAt, activeEq)),
+      )) as unknown as CycleTimeRow[];
 
     let cycleTimeInserts = 0;
     for (const row of cycleTimeRows) {
@@ -261,9 +262,10 @@ export async function refreshOrg(orgId: OrgId): Promise<Omit<RefreshResult, 'org
       const rawDone = row.firstDoneAt as string | null;
       const activeTime = rawActive !== null ? new Date(rawActive) : null;
       const doneTime = rawDone !== null ? new Date(rawDone) : null;
-      const cycleHours = activeTime && doneTime
-        ? (doneTime.getTime() - activeTime.getTime()) / (1000 * 60 * 60)
-        : null;
+      const cycleHours =
+        activeTime && doneTime
+          ? (doneTime.getTime() - activeTime.getTime()) / (1000 * 60 * 60)
+          : null;
 
       await tx.insert(schema.rollupCycleTime).values({
         orgId,
@@ -279,16 +281,16 @@ export async function refreshOrg(orgId: OrgId): Promise<Omit<RefreshResult, 'org
 
     // ── Volume (§3.6): daily message/call counts ─────────────────────
 
-    const messages = await tx
+    const messages = (await tx
       .select({
         day: dateTrunc(schema.messages.createdAt).as('day'),
         count: countRows(schema.messages.id).as('count'),
       })
       .from(schema.messages)
       .where(eq(schema.messages.orgId, orgId))
-      .groupBy(dateTrunc(schema.messages.createdAt)) as unknown as VolumeRow[];
+      .groupBy(dateTrunc(schema.messages.createdAt))) as unknown as VolumeRow[];
 
-    const calls = await tx
+    const calls = (await tx
       .select({
         day: dateTrunc(schema.calls.createdAt).as('day'),
         count: countRows(schema.calls.id).as('count'),
@@ -296,24 +298,27 @@ export async function refreshOrg(orgId: OrgId): Promise<Omit<RefreshResult, 'org
       })
       .from(schema.calls)
       .where(eq(schema.calls.orgId, orgId))
-      .groupBy(dateTrunc(schema.calls.createdAt)) as unknown as VolumeRow[];
+      .groupBy(dateTrunc(schema.calls.createdAt))) as unknown as VolumeRow[];
 
-    const inAppCalls = await tx
+    const inAppCalls = (await tx
       .select({
         day: dateTrunc(schema.rtcSessions.createdAt).as('day'),
         count: countRows(schema.rtcSessions.id).as('count'),
       })
       .from(schema.rtcSessions)
       .where(eq(schema.rtcSessions.orgId, orgId))
-      .groupBy(dateTrunc(schema.rtcSessions.createdAt)) as unknown as VolumeRow[];
+      .groupBy(dateTrunc(schema.rtcSessions.createdAt))) as unknown as VolumeRow[];
 
     // Merge into a single map.
-    const volumeByDay = new Map<string, {
-      messageCount: number;
-      callCount: number;
-      callDurationMin: number;
-      inAppCallCount: number;
-    }>();
+    const volumeByDay = new Map<
+      string,
+      {
+        messageCount: number;
+        callCount: number;
+        callDurationMin: number;
+        inAppCallCount: number;
+      }
+    >();
 
     for (const row of messages) {
       const key = row.day;
@@ -373,7 +378,7 @@ export async function refreshOrg(orgId: OrgId): Promise<Omit<RefreshResult, 'org
 
     // ── Burndown (§3.2): daily done/undone per project ──────────────
 
-    const burndownTransitions = await tx
+    const burndownTransitions = (await tx
       .select({
         day: dateTrunc(schema.cardTransitions.occurredAt).as('day'),
         projectId: schema.cardTransitions.projectId,
@@ -389,7 +394,9 @@ export async function refreshOrg(orgId: OrgId): Promise<Omit<RefreshResult, 'org
         schema.cardTransitions.fromCategory,
         schema.cardTransitions.toCategory,
       )
-      .orderBy(asc(dateTrunc(schema.cardTransitions.occurredAt))) as unknown as BurndownTransitionRow[];
+      .orderBy(
+        asc(dateTrunc(schema.cardTransitions.occurredAt)),
+      )) as unknown as BurndownTransitionRow[];
 
     // Aggregate done/undone per (project, day).
     const burndownMap = new Map<string, { doneCount: number; undoneCount: number }>();
@@ -442,9 +449,10 @@ export async function refreshOrg(orgId: OrgId): Promise<Omit<RefreshResult, 'org
  * tick will retry. This is the same "logged, never rethrown" pattern
  * every other consumer loop in this codebase uses.
  */
-export async function refreshAllOrgs(
-  logger: { info: (obj: object, msg: string) => void; error: (obj: object, msg: string) => void },
-): Promise<RefreshResult> {
+export async function refreshAllOrgs(logger: {
+  info: (obj: object, msg: string) => void;
+  error: (obj: object, msg: string) => void;
+}): Promise<RefreshResult> {
   const orgIds = await listOrgIds();
   let orgsRefreshed = 0;
   let totalVelocity = 0;

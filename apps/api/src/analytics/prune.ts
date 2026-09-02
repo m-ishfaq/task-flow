@@ -35,10 +35,7 @@ export interface PruneResult {
  * An event is "fully dispatched" when every consumer has a dispatch row with
  * `dispatched_at IS NOT NULL`. Events with pending consumers are left alone.
  */
-export async function pruneOutbox(
-  orgId: OrgId,
-  retentionDays = 30,
-): Promise<PruneResult> {
+export async function pruneOutbox(orgId: OrgId, retentionDays = 30): Promise<PruneResult> {
   return withOrgScope(orgId, async (tx) => {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - retentionDays);
@@ -65,12 +62,7 @@ export async function pruneOutbox(
     const oldEvents = await tx
       .select({ id: schema.outbox.id })
       .from(schema.outbox)
-      .where(
-        and(
-          lte(schema.outbox.occurredAt, cutoff),
-          eq(schema.outbox.orgId, orgId),
-        ),
-      );
+      .where(and(lte(schema.outbox.occurredAt, cutoff), eq(schema.outbox.orgId, orgId)));
 
     const eligibleIds = oldEvents
       .map((e) => e.id)

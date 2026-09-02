@@ -37,9 +37,9 @@ export function StatusPanel() {
     const diffMs = now.getTime() - date.getTime();
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     if (diffHours < 1) return 'Just now';
-    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffHours < 24) return `${String(diffHours)}h ago`;
     const diffDays = Math.floor(diffHours / 24);
-    return `${diffDays}d ago`;
+    return `${String(diffDays)}d ago`;
   };
 
   return (
@@ -50,7 +50,7 @@ export function StatusPanel() {
         <InfoCard
           label="Total Transitions"
           value={String(status.totalTransitions)}
-          hint={`${status.syntheticCount} synthetic (backfilled)`}
+          hint={`${String(status.syntheticCount)} synthetic (backfilled)`}
         />
         <InfoCard
           label="Last Indexed"

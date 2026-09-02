@@ -170,7 +170,12 @@ async function insertCycleTimeRollup(
 async function insertVolumeRollup(
   orgId: OrgId,
   day: string,
-  data: { messageCount?: number; callCount?: number; callDurationMin?: number; inAppCallCount?: number },
+  data: {
+    messageCount?: number;
+    callCount?: number;
+    callDurationMin?: number;
+    inAppCallCount?: number;
+  },
 ): Promise<void> {
   await withOrgScope(orgId, async (tx) => {
     await tx.insert(schema.rollupVolume).values({
@@ -190,7 +195,6 @@ function daysAgo(n: number): Date {
   d.setHours(12, 0, 0, 0);
   return d;
 }
-
 
 function dayStr(n: number): string {
   return daysAgo(n).toISOString().slice(0, 10);
@@ -302,10 +306,18 @@ describe('queryBurndown', () => {
     // Populate rollup_burndown: card A done on day 4, card B done on day 2.
     await withOrgScope(f.orgId, async (tx) => {
       await tx.insert(schema.rollupBurndown).values({
-        orgId: f.orgId, projectId: f.projectId, day: dayStr(4), doneCount: 1, undoneCount: 0,
+        orgId: f.orgId,
+        projectId: f.projectId,
+        day: dayStr(4),
+        doneCount: 1,
+        undoneCount: 0,
       });
       await tx.insert(schema.rollupBurndown).values({
-        orgId: f.orgId, projectId: f.projectId, day: dayStr(2), doneCount: 1, undoneCount: 0,
+        orgId: f.orgId,
+        projectId: f.projectId,
+        day: dayStr(2),
+        doneCount: 1,
+        undoneCount: 0,
       });
     });
 

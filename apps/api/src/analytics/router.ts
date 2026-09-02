@@ -254,8 +254,12 @@ export function createAnalyticsRouter() {
           const stats = await tx
             .select({
               total: countRows(schema.cardTransitions.id).as('total'),
-              lastIndexedAt: maxColumn<Date>(schema.cardTransitions.occurredAt).as('last_indexed_at'),
-              syntheticCount: countFiltered(eq(schema.cardTransitions.synthetic, true)).as('synthetic_count'),
+              lastIndexedAt: maxColumn<Date>(schema.cardTransitions.occurredAt).as(
+                'last_indexed_at',
+              ),
+              syntheticCount: countFiltered(eq(schema.cardTransitions.synthetic, true)).as(
+                'synthetic_count',
+              ),
             })
             .from(schema.cardTransitions);
 
@@ -289,10 +293,11 @@ export function createAnalyticsRouter() {
       permission: 'analytics:read',
     })
       .output(z.object({ syntheticCreated: z.number().int() }))
-      .query(async ({ ctx }) => {
-        const syntheticCreated = await backfillSyntheticCreationRows(
-          ctx.principal.org.orgId,
-        );
+      // A mutation, not a query: it INSERTS synthetic creation rows. A query
+      // can be prefetched, refetched on focus, or retried, none of which may
+      // trigger a write.
+      .mutation(async ({ ctx }) => {
+        const syntheticCreated = await backfillSyntheticCreationRows(ctx.principal.org.orgId);
         return { syntheticCreated };
       }),
 
@@ -359,7 +364,11 @@ export function createAnalyticsRouter() {
           dispatchesPruned: z.number().int(),
         }),
       )
-      .query(async ({ ctx, input }) => {
+      // A mutation, not a query: it DELETES outbox rows. See prune.ts's own
+      // header for the correctness constraints this destructive operation
+      // carries (it must run after the backfill, and the outbox is a shared
+      // event store other consumers may still need to drain).
+      .mutation(async ({ ctx, input }) => {
         return pruneOutbox(ctx.principal.org.orgId, input.retentionDays);
       }),
   });

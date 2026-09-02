@@ -43,11 +43,7 @@ function dateRange(start: Date, end: Date) {
 }
 
 /** §3.1 — Velocity: done cards per day. */
-export function velocityQuery(
-  start: Date,
-  end: Date,
-  boardId?: string,
-) {
+export function velocityQuery(start: Date, end: Date, boardId?: string) {
   return queryOptions({
     queryKey: keys.analyticsVelocity(start.toISOString(), end.toISOString(), boardId),
     queryFn: async () =>
@@ -56,20 +52,17 @@ export function velocityQuery(
 }
 
 /** §3.2 — Burndown: remaining work over time. */
-export function burndownQuery(
-  projectId: string,
-  start: Date,
-  end: Date,
-  sprintId?: string,
-) {
+export function burndownQuery(projectId: string, start: Date, end: Date, sprintId?: string) {
   return queryOptions({
     queryKey: keys.analyticsBurndown(projectId, start.toISOString(), end.toISOString(), sprintId),
     queryFn: async () =>
-      wire(await api.analytics.burndown.query({
-        projectId,
-        ...dateRange(start, end),
-        ...(sprintId !== undefined ? { sprintId } : {}),
-      })),
+      wire(
+        await api.analytics.burndown.query({
+          projectId,
+          ...dateRange(start, end),
+          ...(sprintId !== undefined ? { sprintId } : {}),
+        }),
+      ),
   });
 }
 
@@ -77,8 +70,7 @@ export function burndownQuery(
 export function cfdQuery(boardId: string, start: Date, end: Date) {
   return queryOptions({
     queryKey: keys.analyticsCfd(boardId, start.toISOString(), end.toISOString()),
-    queryFn: async () =>
-      wire(await api.analytics.cfd.query({ boardId, ...dateRange(start, end) })),
+    queryFn: async () => wire(await api.analytics.cfd.query({ boardId, ...dateRange(start, end) })),
   });
 }
 
@@ -87,10 +79,12 @@ export function cycleTimeQuery(projectId?: string, boardId?: string) {
   return queryOptions({
     queryKey: keys.analyticsCycleTime(projectId, boardId),
     queryFn: async () =>
-      wire(await api.analytics.cycleTime.query({
-        ...(projectId !== undefined ? { projectId } : {}),
-        ...(boardId !== undefined ? { boardId } : {}),
-      })),
+      wire(
+        await api.analytics.cycleTime.query({
+          ...(projectId !== undefined ? { projectId } : {}),
+          ...(boardId !== undefined ? { boardId } : {}),
+        }),
+      ),
   });
 }
 
@@ -99,9 +93,11 @@ export function workloadQuery(boardId?: string) {
   return queryOptions({
     queryKey: keys.analyticsWorkload(boardId),
     queryFn: async () =>
-      wire(await api.analytics.workload.query({
-        ...(boardId !== undefined ? { boardId } : {}),
-      })),
+      wire(
+        await api.analytics.workload.query({
+          ...(boardId !== undefined ? { boardId } : {}),
+        }),
+      ),
   });
 }
 
@@ -109,8 +105,7 @@ export function workloadQuery(boardId?: string) {
 export function volumeQuery(start: Date, end: Date) {
   return queryOptions({
     queryKey: keys.analyticsVolume(start.toISOString(), end.toISOString()),
-    queryFn: async () =>
-      wire(await api.analytics.volume.query(dateRange(start, end))),
+    queryFn: async () => wire(await api.analytics.volume.query(dateRange(start, end))),
   });
 }
 
@@ -118,8 +113,7 @@ export function volumeQuery(start: Date, end: Date) {
 export function spendQuery(sinceDays = 30) {
   return queryOptions({
     queryKey: keys.analyticsSpend(sinceDays),
-    queryFn: async () =>
-      wire(await api.analytics.spend.query({ sinceDays })),
+    queryFn: async () => wire(await api.analytics.spend.query({ sinceDays })),
   });
 }
 
@@ -127,7 +121,6 @@ export function spendQuery(sinceDays = 30) {
 export function statusQuery() {
   return queryOptions({
     queryKey: keys.analyticsStatus(),
-    queryFn: async () =>
-      wire(await api.analytics.status.query()),
+    queryFn: async () => wire(await api.analytics.status.query()),
   });
 }

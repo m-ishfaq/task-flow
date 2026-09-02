@@ -104,12 +104,17 @@ async function emitStatusChanged(
   await admin.query(
     `INSERT INTO platform.outbox (id, org_id, name, version, occurred_at, payload)
      VALUES ($1, $2, 'card.status_changed', 1, $3, $4::jsonb)`,
-    [eventId, f.orgId, opts?.occurredAt ?? new Date(), JSON.stringify({
-      cardId,
-      boardId,
-      before: beforeStatusId,
-      after: afterStatusId,
-    })],
+    [
+      eventId,
+      f.orgId,
+      opts?.occurredAt ?? new Date(),
+      JSON.stringify({
+        cardId,
+        boardId,
+        before: beforeStatusId,
+        after: afterStatusId,
+      }),
+    ],
   );
   await admin.setOrg(null);
   return eventId;

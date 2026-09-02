@@ -4,7 +4,7 @@ import { SkeletonRows } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 
 /** §3.4 — Cycle Time: median and p85 time from active to done. */
-export function CycleTimePanel({ orgId }: { readonly orgId: string }) {
+export function CycleTimePanel() {
   const { data, isLoading, error } = useQuery(cycleTimeQuery());
 
   if (error) return <ErrorView error={error} />;
@@ -13,10 +13,10 @@ export function CycleTimePanel({ orgId }: { readonly orgId: string }) {
   const result = data ?? { medianHours: 0, p85Hours: 0, count: 0, openCount: 0 };
 
   const formatHours = (h: number) => {
-    if (h < 24) return `${Math.round(h)}h`;
+    if (h < 24) return `${String(Math.round(h))}h`;
     const days = Math.floor(h / 24);
     const hours = Math.round(h % 24);
-    return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+    return hours > 0 ? `${String(days)}d ${String(hours)}h` : `${String(days)}d`;
   };
 
   return (
@@ -31,9 +31,7 @@ export function CycleTimePanel({ orgId }: { readonly orgId: string }) {
       </div>
 
       {result.count === 0 && (
-        <p className="text-xs text-ink/50">
-          No completed cards with active→done transitions yet.
-        </p>
+        <p className="text-xs text-ink/50">No completed cards with active→done transitions yet.</p>
       )}
     </div>
   );

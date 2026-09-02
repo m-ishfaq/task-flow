@@ -38,7 +38,12 @@ export function BurndownPanel({ orgId }: { readonly orgId: string }) {
 
   const points = data ?? [];
   if (points.length === 0) {
-    return <Empty title="No burndown data" description="Transitions will appear as cards move through statuses." />;
+    return (
+      <Empty
+        title="No burndown data"
+        description="Transitions will appear as cards move through statuses."
+      />
+    );
   }
 
   const maxRemaining = Math.max(...points.map((p) => p.remaining), 1);
@@ -54,7 +59,7 @@ export function BurndownPanel({ orgId }: { readonly orgId: string }) {
 
       {/* Simple line chart via SVG */}
       <svg
-        viewBox={`0 0 ${points.length * 8} 120`}
+        viewBox={`0 0 ${String(points.length * 8)} 120`}
         className="w-full"
         style={{ height: 120 }}
         preserveAspectRatio="none"
@@ -66,8 +71,7 @@ export function BurndownPanel({ orgId }: { readonly orgId: string }) {
           className="text-accent"
           points={points
             .map(
-              (p, i) =>
-                `${i * 8 + 4},${120 - (p.remaining / maxRemaining) * 110}`,
+              (p, i) => `${String(i * 8 + 4)},${String(120 - (p.remaining / maxRemaining) * 110)}`,
             )
             .join(' ')}
         />

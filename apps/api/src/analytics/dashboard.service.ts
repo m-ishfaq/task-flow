@@ -212,10 +212,7 @@ async function queryBurndownFromTransactions(
     .select({ id: schema.cards.id })
     .from(schema.cards)
     .where(
-      and(
-        eq(schema.cards.projectId, opts.projectId),
-        eq(schema.cards.sprintId, opts.sprintId),
-      ),
+      and(eq(schema.cards.projectId, opts.projectId), eq(schema.cards.sprintId, opts.sprintId)),
     );
 
   const cardIds = sprintCardIds.map((r) => r.id);
@@ -246,7 +243,7 @@ async function queryBurndownFromTransactions(
     count: string;
   }
 
-  const transitions = await tx
+  const transitions = (await tx
     .select({
       date: dateTrunc(schema.cardTransitions.occurredAt),
       fromCategory: schema.cardTransitions.fromCategory,
@@ -266,7 +263,9 @@ async function queryBurndownFromTransactions(
       schema.cardTransitions.fromCategory,
       schema.cardTransitions.toCategory,
     )
-    .orderBy(asc(dateTrunc(schema.cardTransitions.occurredAt))) as unknown as BurndownTransitionRow[];
+    .orderBy(
+      asc(dateTrunc(schema.cardTransitions.occurredAt)),
+    )) as unknown as BurndownTransitionRow[];
 
   const dailyDone = new Map<string, number>();
   const dailyUndone = new Map<string, number>();
@@ -462,9 +461,7 @@ export async function queryWorkload(
       isNull(schema.cards.archivedAt),
       isNull(schema.cards.deletedAt),
       gt(arrayLength(schema.cards.assigneeIds), 0),
-      ...(opts.boardId !== undefined
-        ? [eq(schema.cards.boardId, opts.boardId)]
-        : []),
+      ...(opts.boardId !== undefined ? [eq(schema.cards.boardId, opts.boardId)] : []),
     ];
 
     const rows = await tx
