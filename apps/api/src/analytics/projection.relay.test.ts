@@ -10,7 +10,7 @@ import {
   type OutboxRow,
 } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
-import { drainAnalytics, indexCardTransition } from './projection.relay.js';
+import { drainAnalyticsFully, indexCardTransition } from './projection.relay.js';
 
 /**
  * The analytics transitions projection (Phase 11 Wave 1, migration 0091),
@@ -203,9 +203,19 @@ describe('analytics transitions projection', () => {
       after: f.doneStatusId,
     });
 
-    const result = await drainAnalytics();
-    expect(result.processed).toBe(1);
-    expect(result.written).toBe(1);
+    // `drainAnalytics` claims for consumer 'analytics' across the GLOBAL
+    // outbox, so a sibling suite running in parallel against this shared
+    // taskflow_test can leave its own card.status_changed events pending for
+    // this consumer — they are claimed here too. So the drain's own counts are
+    // "at least ours", never exactly one (the `ours()` lesson in relay.test.ts
+    // and audit.test.ts). Drain FULLY, not one batch: a large parallel backlog
+    // could otherwise push this org's event past a single 100-row claim and
+    // leave the scoped assertion below with zero rows. The correctness proof is
+    // that org-SCOPED row count: this org is a fresh random id nothing else
+    // touches.
+    const result = await drainAnalyticsFully();
+    expect(result.processed).toBeGreaterThanOrEqual(1);
+    expect(result.written).toBeGreaterThanOrEqual(1);
 
     const rows = await transitionRows(f.orgId);
     expect(rows).toHaveLength(1);
@@ -225,7 +235,7 @@ describe('analytics transitions projection', () => {
     const f = await scaffold('no-status-first');
     await f.emit({ cardId: f.cardId, boardId: f.boardId, before: null, after: f.activeStatusId });
 
-    await drainAnalytics();
+    await drainAnalyticsFully();
 
     const rows = await transitionRows(f.orgId);
     expect(rows).toHaveLength(1);
