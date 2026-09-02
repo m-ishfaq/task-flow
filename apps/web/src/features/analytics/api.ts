@@ -117,10 +117,24 @@ export function spendQuery(sinceDays = 30) {
   });
 }
 
-/** §6 — Status: staleness and rollup freshness. */
+/**
+ * §6 — Status: staleness and rollup freshness.
+ *
+ * Overrides the global focus/reconnect refetch defaults (`packages/client`)
+ * deliberately: this route can trigger a real rollup recompute server-side
+ * (see `analytics/router.ts`'s `status` handler) when an org's rollups
+ * haven't caught up yet, and the global defaults would refire it every time
+ * the tab regains focus. The server-side single-flight guard
+ * (`refreshOrgOnce`) makes concurrent calls safe either way, but there is no
+ * reason to keep re-asking a question whose answer changes at most once per
+ * worker refresh interval.
+ */
 export function statusQuery() {
   return queryOptions({
     queryKey: keys.analyticsStatus(),
     queryFn: async () => wire(await api.analytics.status.query()),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 }

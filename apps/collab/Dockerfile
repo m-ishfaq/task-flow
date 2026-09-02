@@ -72,6 +72,10 @@ FROM node:22-alpine AS runtime
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 # Alpine OS-package CVEs — see apps/api/Dockerfile's runtime stage for why.
+# APK_CACHE_BUST is passed from CI (cd.yml) and changes every run, forcing
+# this layer to rebuild fresh instead of reusing a cache that predates a
+# later Alpine security patch.
+ARG APK_CACHE_BUST
 RUN apk update && apk upgrade --no-cache
 
 RUN addgroup -S taskflow && adduser -S taskflow -G taskflow

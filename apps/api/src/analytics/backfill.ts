@@ -74,7 +74,11 @@ export async function backfillSyntheticCreationRows(orgId: OrgId): Promise<numbe
         }
       }
 
-      await tx
+      // .returning() reports whether this insert actually landed a row — a
+      // concurrent backfill call racing on the same card hits
+      // card_transitions_synthetic_card_key and is skipped by
+      // onConflictDoNothing, and must not be counted as created too.
+      const inserted = await tx
         .insert(schema.cardTransitions)
         .values({
           id: newId(),
@@ -88,9 +92,10 @@ export async function backfillSyntheticCreationRows(orgId: OrgId): Promise<numbe
           synthetic: true,
           sourceEventId: null,
         })
-        .onConflictDoNothing();
+        .onConflictDoNothing()
+        .returning({ id: schema.cardTransitions.id });
 
-      created += 1;
+      if (inserted.length > 0) created += 1;
     }
 
     return created;

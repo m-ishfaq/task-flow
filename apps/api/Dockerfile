@@ -102,6 +102,12 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 # version in the 3.24 apk repo by build time) — same fix apps/web/Dockerfile
 # already carries for its nginx base, applied here for the same reason: this
 # runtime stage is still root at this point, before USER taskflow below.
+# APK_CACHE_BUST is passed from CI (cd.yml) and changes every run,
+# invalidating this layer so `apk upgrade` always pulls fresh packages —
+# without it, GHA's layer cache can keep serving a package version that
+# predates a CVE fix Alpine shipped after the layer was first built (this is
+# exactly what broke apps/web/Dockerfile's build once already).
+ARG APK_CACHE_BUST
 RUN apk update && apk upgrade --no-cache
 
 RUN addgroup -S taskflow && adduser -S taskflow -G taskflow
