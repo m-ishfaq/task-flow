@@ -91,6 +91,9 @@ FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
 # `USER nginx` the comment above already calls for — which now also covers
 # the COPY steps below, exactly as it did before this block existed.
 USER root
+# APK_CACHE_BUST is passed from CI (cd.yml) and changes every run,
+# invalidating this layer so `apk upgrade` always pulls fresh packages.
+ARG APK_CACHE_BUST
 RUN apk update && apk upgrade --no-cache
 USER nginx
 
