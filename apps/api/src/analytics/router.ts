@@ -10,7 +10,7 @@ import {
   queryVolume,
 } from './dashboard.service.js';
 import { backfillSyntheticCreationRows } from './backfill.js';
-import { refreshOrg } from './refresh.js';
+import { refreshOrgOnce } from './refresh.js';
 import { spendReport } from '../telephony/spend-report.service.js';
 
 /**
@@ -285,8 +285,13 @@ export function createAnalyticsRouter() {
 
           // Auto-refresh rollups when transitions exist but rollups are empty.
           // This covers dev (no worker process) and first load after seeding.
+          // refreshOrgOnce (not refreshOrg) — this route is a QUERY, so a
+          // client can retry it, refetch it on focus, or have several tabs
+          // call it at once; the single-flight guard collapses concurrent
+          // callers for the same org into one recompute instead of each
+          // racing their own DELETE-then-INSERT over the rollup tables.
           if (totalTransitions > 0 && rollupLastRefreshedAt === null) {
-            await refreshOrg(ctx.principal.org.orgId);
+            await refreshOrgOnce(ctx.principal.org.orgId);
             // Re-read freshness after refresh.
             const refreshed = await tx
               .select({

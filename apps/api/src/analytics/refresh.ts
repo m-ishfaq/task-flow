@@ -512,3 +512,31 @@ export async function refreshAllOrgs(logger: {
     burndownRows: totalBurndown,
   };
 }
+
+/**
+ * De-dupes concurrent `refreshOrg` callers for the same org into one shared
+ * recompute — the `platform-admin/flag-evaluator.ts` single-flight shape,
+ * one org at a time instead of one global snapshot.
+ *
+ * `analytics.status` calls this (never `refreshOrg` directly) because it is
+ * reached from a QUERY, which a client can retry, refetch on focus, or fire
+ * from several open tabs at once. Without this, each of those concurrent
+ * calls would independently DELETE-then-INSERT the same org's rollup rows —
+ * redundant work at best, lock contention on the rollup tables at worst.
+ * `refreshAllOrgs`'s own timer tick does not go through this: it already
+ * visits each org at most once per tick, so there is nothing to de-dupe.
+ */
+const refreshInFlight = new Map<OrgId, Promise<Omit<RefreshResult, 'orgsRefreshed'>>>();
+
+export async function refreshOrgOnce(
+  orgId: OrgId,
+): Promise<Omit<RefreshResult, 'orgsRefreshed'>> {
+  const existing = refreshInFlight.get(orgId);
+  if (existing) return existing;
+
+  const promise = refreshOrg(orgId).finally(() => {
+    refreshInFlight.delete(orgId);
+  });
+  refreshInFlight.set(orgId, promise);
+  return promise;
+}

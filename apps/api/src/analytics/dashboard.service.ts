@@ -483,14 +483,19 @@ export async function queryWorkload(
 
     if (userIdSet.size === 0) return [];
 
-    // Resolve display names and emails from identity.users.
+    // Resolve display names and emails from identity.users, scoped to the
+    // assignees actually collected above — identity.users is a GLOBAL table
+    // (no org scoping; a user can belong to multiple orgs), so an unfiltered
+    // read here would scan every user on the platform on every dashboard
+    // load instead of just this org's own assignees.
     const userList = await tx
       .select({
         id: schema.users.id,
         displayName: schema.users.displayName,
         email: schema.users.email,
       })
-      .from(schema.users);
+      .from(schema.users)
+      .where(inArray(schema.users.id, [...userIdSet]));
 
     const userLookup = new Map<string, { displayName: string | null; email: string | null }>();
     for (const u of userList) {

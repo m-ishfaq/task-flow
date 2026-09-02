@@ -171,12 +171,13 @@ jobs:
           tags: |
             ghcr.io/${{ env.IMAGE_OWNER }}/task-flow-${{ matrix.service }}:${{ needs.changes.outputs.sha }}
             ghcr.io/${{ env.IMAGE_OWNER }}/task-flow-${{ matrix.service }}:latest
-          # APK_CACHE_BUST: The web image's `apk upgrade` layer is cached by
+          # APK_CACHE_BUST: every image's `apk upgrade` layer is cached by
           # GHA's Docker layer cache. When a new CVE fix lands in the Alpine
           # repo after the layer was first built, Trivy keeps finding the old
-          # package. This arg changes every CI run, invalidating just the apk
-          # layer. Other images (node:22-alpine) don't have this issue but
-          # benefit from fresh packages too.
+          # package — this is what broke apps/web's build once already, and
+          # api/realtime/collab/worker run the identical `apk upgrade` line on
+          # the same base, so they carry the same exposure. This arg changes
+          # every CI run, invalidating just the apk layer in all five images.
           build-args: APK_CACHE_BUST=${{ github.run_id }}
           # Scoped per service — a shared cache key across four independent
           # Dockerfiles would mean api's cache entries evicting web's.
