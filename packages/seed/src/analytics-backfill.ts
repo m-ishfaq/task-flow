@@ -27,16 +27,20 @@ import { daysBefore } from './support.js';
  * WHEN a card reached each category — which the transactional schema never
  * stored. So for each card this mints:
  *
- *   - a synthetic CREATION transition (from nothing into not_started) at the
- *     card's own `created_at` — the one shape migration 0091's CHECK allows for a
- *     `synthetic` row (source_event_id NULL, from_category NULL);
+ *   - a synthetic CREATION transition (from nothing into not_started) — the one
+ *     shape migration 0091's CHECK allows for a `synthetic` row (source_event_id
+ *     NULL, from_category NULL);
  *   - for a card whose current category is active or done, a not_started ->
- *     active transition, and for a done card an active -> done one, placed in the
- *     last ~5 weeks so the default 30-day dashboards are not empty. These carry
+ *     active transition, and for a done card an active -> done one. These carry
  *     from_category, so the same CHECK requires them to be `synthetic = false`
  *     with a source_event_id — a deterministic one derived from the card's own
  *     RNG stream, so re-running is idempotent against the (org, source_event_id)
  *     partial-unique rather than duplicating.
+ *
+ * The timing of all three is spread across the last ~50 days (see
+ * `buildTransitions`), NOT anchored to the card's real `created_at` — that is
+ * what keeps the flow inside the 30-day window the Flow and Burndown dashboards
+ * read.
  *
  * The result is fixture data, honest about being fixture data: the numbers are
  * plausible and internally consistent, not a replay of events that happened.
@@ -57,10 +61,6 @@ const ID_EPOCH = new Date('2020-01-01T00:00:00.000Z');
 /** Chunk size for the transition insert — well under Postgres's 65_535-parameter ceiling. */
 const INSERT_CHUNK = 500;
 
-function clamp(value: Date, lo: Date, hi: Date): Date {
-  return new Date(Math.min(Math.max(value.getTime(), lo.getTime()), hi.getTime()));
-}
-
 function normalizeCategory(value: string | null | undefined): Category {
   return value === 'active' || value === 'done' ? value : 'not_started';
 }
@@ -70,7 +70,6 @@ interface SeedCard {
   readonly boardId: string;
   readonly projectId: string;
   readonly statusId: string | null;
-  readonly createdAt: Date;
 }
 
 interface TransitionInsert {
@@ -86,7 +85,20 @@ interface TransitionInsert {
   readonly sourceEventId: string | null;
 }
 
-/** The transition timeline for one card, ending at its current category. */
+/**
+ * The transition timeline for one card, ending at its current category.
+ *
+ * The lifecycle is spread across the last ~50 days rather than anchored to
+ * `card.createdAt` (which the seed scatters up to 300 days back), and that is
+ * deliberate: the FLOW (CFD) and BURNDOWN dashboards read a 30-day window and
+ * need the movement to fall INSIDE it — a card "created" 300 days ago and moved
+ * to done last week gives velocity a data point but leaves CFD's backlog and
+ * burndown's baseline off the left edge of the chart, which is why those two
+ * tabs read empty while the org-wide ones did not. Done cards are created
+ * before the window (so burndown has a starting backlog to burn down) and flow
+ * through active to done inside it. Fixture timing, independent of the card's
+ * real `created_at`, which analytics never joins against.
+ */
 function buildTransitions(
   orgId: string,
   card: SeedCard,
@@ -99,44 +111,42 @@ function buildTransitions(
     cardId: card.id,
     boardId: card.boardId,
     projectId: card.projectId,
-  } as const;
+  };
 
-  const rows: TransitionInsert[] = [
-    {
-      ...base,
-      id: rng.uuid(ID_EPOCH),
-      fromCategory: null,
-      toCategory: 'not_started',
-      occurredAt: card.createdAt,
-      synthetic: true,
-      sourceEventId: null,
-    },
-  ];
-
-  if (category === 'active' || category === 'done') {
-    const activeAt = clamp(daysBefore(now, rng.int(5, 34)), card.createdAt, now);
+  const rows: TransitionInsert[] = [];
+  const push = (
+    fromCategory: Category | null,
+    toCategory: Category,
+    daysAgo: number,
+    synthetic: boolean,
+  ): void => {
     rows.push({
       ...base,
       id: rng.uuid(ID_EPOCH),
-      fromCategory: 'not_started',
-      toCategory: 'active',
-      occurredAt: activeAt,
-      synthetic: false,
-      sourceEventId: rng.uuid(ID_EPOCH),
+      fromCategory,
+      toCategory,
+      occurredAt: daysBefore(now, daysAgo),
+      synthetic,
+      sourceEventId: synthetic ? null : rng.uuid(ID_EPOCH),
     });
+  };
 
-    if (category === 'done') {
-      const doneAt = clamp(daysBefore(now, rng.int(0, 4)), activeAt, now);
-      rows.push({
-        ...base,
-        id: rng.uuid(ID_EPOCH),
-        fromCategory: 'active',
-        toCategory: 'done',
-        occurredAt: doneAt,
-        synthetic: false,
-        sourceEventId: rng.uuid(ID_EPOCH),
-      });
-    }
+  if (category === 'done') {
+    const created = rng.int(28, 50); // before the 30-day window: burndown's baseline
+    const active = rng.int(10, created - 2); // inside the window
+    const done = rng.int(0, Math.min(9, active - 1)); // recent, after active
+    push(null, 'not_started', created, true);
+    push('not_started', 'active', active, false);
+    push('active', 'done', done, false);
+  } else if (category === 'active') {
+    const created = rng.int(18, 50);
+    const active = rng.int(0, created - 2);
+    push(null, 'not_started', created, true);
+    push('not_started', 'active', active, false);
+  } else {
+    // A still-open card: some created inside the window, some before it, so the
+    // CFD backlog is visible and burndown's remaining line does not start flat.
+    push(null, 'not_started', rng.int(1, 40), true);
   }
 
   return rows;
@@ -161,7 +171,6 @@ export async function backfillAnalyticsOrg(orgId: OrgId, now: Date): Promise<num
         boardId: schema.cards.boardId,
         projectId: schema.cards.projectId,
         statusId: schema.cards.statusId,
-        createdAt: schema.cards.createdAt,
       })
       .from(schema.cards)
       .where(isNull(schema.cards.deletedAt));

@@ -21,6 +21,10 @@ const CATEGORY_LABELS: Record<string, string> = {
 /** §3.3 — Cumulative Flow Diagram: cards in each category per day. */
 export function CfdPanel({ orgId }: { readonly orgId: string }) {
   const [days] = useState(30);
+  // The board this chart is scoped to. Defaults to the first board below, but a
+  // selector lets the reader switch — otherwise a sparse first board reads as
+  // "no data" when other boards have plenty.
+  const [selectedBoardId, setSelectedBoardId] = useState<string | undefined>(undefined);
   const { start, end } = useMemo(() => {
     const e = new Date();
     const s = new Date();
@@ -28,7 +32,7 @@ export function CfdPanel({ orgId }: { readonly orgId: string }) {
     return { start: s, end: e };
   }, [days]);
 
-  // Get the first project, then its first board.
+  // Get the first project, then its boards.
   const projects = useQuery({
     queryKey: ['work', 'projects', orgId],
     queryFn: async () => wire(await api.work.projects.list.query({})),
@@ -42,7 +46,8 @@ export function CfdPanel({ orgId }: { readonly orgId: string }) {
     enabled: projectId !== undefined,
   });
 
-  const boardId = boards.data?.[0]?.boardId;
+  const boardId = selectedBoardId ?? boards.data?.[0]?.boardId;
+  const boardOptions = boards.data ?? [];
 
   const { data, isLoading, error } = useQuery({
     ...cfdQuery(boardId ?? '', start, end),
@@ -87,6 +92,21 @@ export function CfdPanel({ orgId }: { readonly orgId: string }) {
     <div className="space-y-4">
       <div className="flex items-baseline gap-3">
         <h2 className="text-sm font-medium text-ink/80">Cumulative Flow</h2>
+        {boardOptions.length > 1 && (
+          <select
+            value={boardId}
+            onChange={(e) => {
+              setSelectedBoardId(e.target.value);
+            }}
+            className="rounded border border-line/50 bg-surface px-2 py-1 text-xs text-ink"
+          >
+            {boardOptions.map((board) => (
+              <option key={board.boardId} value={board.boardId}>
+                {board.name}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Stacked area chart */}

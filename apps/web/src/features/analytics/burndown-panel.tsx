@@ -9,6 +9,10 @@ import { ErrorView } from '../../components/error-view.js';
 /** §3.2 — Burndown: remaining not-done work over time. */
 export function BurndownPanel({ orgId }: { readonly orgId: string }) {
   const [days] = useState(30);
+  // The project this chart is scoped to. Defaults to the first below; the
+  // selector lets the reader switch so a sparse first project does not read as
+  // "no data".
+  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
   const { start, end } = useMemo(() => {
     const e = new Date();
     const s = new Date();
@@ -16,13 +20,13 @@ export function BurndownPanel({ orgId }: { readonly orgId: string }) {
     return { start: s, end: e };
   }, [days]);
 
-  // Get the first project to show burndown for.
   const projects = useQuery({
     queryKey: ['work', 'projects', orgId],
     queryFn: async () => wire(await api.work.projects.list.query({})),
   });
 
-  const projectId = projects.data?.[0]?.projectId;
+  const projectId = selectedProjectId ?? projects.data?.[0]?.projectId;
+  const projectOptions = projects.data ?? [];
 
   const { data, isLoading, error } = useQuery({
     ...burndownQuery(projectId ?? '', start, end),
@@ -52,6 +56,21 @@ export function BurndownPanel({ orgId }: { readonly orgId: string }) {
     <div className="space-y-4">
       <div className="flex items-baseline gap-3">
         <h2 className="text-sm font-medium text-ink/80">Burndown</h2>
+        {projectOptions.length > 1 && (
+          <select
+            value={projectId}
+            onChange={(e) => {
+              setSelectedProjectId(e.target.value);
+            }}
+            className="rounded border border-line/50 bg-surface px-2 py-1 text-xs text-ink"
+          >
+            {projectOptions.map((project) => (
+              <option key={project.projectId} value={project.projectId}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+        )}
         <span className="text-xs text-ink/50">
           {points[0]?.remaining} → {points[points.length - 1]?.remaining} remaining
         </span>
