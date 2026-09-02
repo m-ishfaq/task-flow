@@ -181,6 +181,14 @@ function ProjectBoardsContent({
           <Pressable
             style={styles.secondaryButton}
             onPress={() => {
+              router.push('/insights');
+            }}
+          >
+            <Text style={styles.secondaryButtonText}>Insights</Text>
+          </Pressable>
+          <Pressable
+            style={styles.secondaryButton}
+            onPress={() => {
               router.push(`/project-settings/${projectId}`);
             }}
           >

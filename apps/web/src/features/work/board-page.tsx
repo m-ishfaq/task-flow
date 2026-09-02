@@ -17,6 +17,7 @@ import { ListView } from './list-view.js';
 import { FilterBuilder } from './filter/filter-builder.js';
 import { ViewTabs } from './view-tabs.js';
 import { BulkBar } from './bulk-bar.js';
+import { BoardInsightsPanel } from '../analytics/board-insights-panel.js';
 import {
   EMPTY_SELECTION,
   pruneSelection,
@@ -324,6 +325,10 @@ export function BoardPage() {
           />
         )}
 
+        {view === 'insights' && (
+          <BoardInsightsPanel orgId={orgId} boardId={boardId} />
+        )}
+
         <BulkBar
           orgId={orgId}
           boardId={boardId}
@@ -355,8 +360,8 @@ function ViewToggle({
   value,
   onChange,
 }: {
-  readonly value: 'board' | 'table' | 'list';
-  readonly onChange: (value: 'board' | 'table' | 'list') => void;
+  readonly value: 'board' | 'table' | 'list' | 'insights';
+  readonly onChange: (value: 'board' | 'table' | 'list' | 'insights') => void;
 }) {
   return (
     <div
@@ -364,7 +369,7 @@ function ViewToggle({
       role="group"
       aria-label="View"
     >
-      {(['board', 'list', 'table'] as const).map((mode) => (
+      {(['board', 'list', 'table', 'insights'] as const).map((mode) => (
         <button
           key={mode}
           type="button"

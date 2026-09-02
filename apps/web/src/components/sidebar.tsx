@@ -2,6 +2,7 @@ import { useState, type ComponentType } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  BarChart3,
   ChevronDown,
   ChevronRight,
   FileText,
@@ -113,6 +114,7 @@ const PRIMARY_SECTIONS: readonly {
       { to: '/docs', label: 'Docs', icon: FileText },
       { to: '/calls', label: 'Calls', icon: Phone },
       { to: '/people', label: 'People', icon: Users },
+      { to: '/analytics', label: 'Analytics', icon: BarChart3 },
     ],
   },
 ];
