@@ -280,7 +280,10 @@ export function dateTrunc(column: Column, precision = 'day'): SQL {
   if (!DATE_TRUNC_UNITS.has(precision)) {
     throw new Error(`date_trunc precision must be a known unit, received "${precision}".`);
   }
-  return sql`date_trunc(${sql.raw(`'${precision}'`)}, ${column})`;
+  // Drizzle wraps plain string interpolation as a SQL string literal (quoted),
+  // so `date_trunc('day', ...)` — correct. sql.raw injects unquoted text,
+  // which made `date_trunc(day, ...)` and Postgres treated `day` as a column name.
+  return sql`date_trunc(${precision}, ${column})`;
 }
 
 /**

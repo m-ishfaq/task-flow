@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueries } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { cfdQuery } from './api.js';
 import { api } from '../../lib/trpc.js';
@@ -32,29 +32,39 @@ export function CfdPanel({ orgId }: { readonly orgId: string }) {
     return { start: s, end: e };
   }, [days]);
 
-  // Get the first project, then its boards.
+  // boards.list requires a projectId (there is no org-wide board list), so
+  // fetch all projects, then fan out one query per project and flatten.
   const projects = useQuery({
     queryKey: ['work', 'projects', orgId],
     queryFn: async () => wire(await api.work.projects.list.query({})),
   });
+  const projectList = projects.data ?? [];
 
-  const projectId = projects.data?.[0]?.projectId;
+  const boardQueries = useQueries({
+    queries: projectList.map((project) => ({
+      queryKey: ['work', 'boards', orgId, project.projectId],
+      queryFn: async () => wire(await api.work.boards.list.query({ projectId: project.projectId })),
+    })),
+  });
+  const boardsLoading = boardQueries.some((q) => q.isLoading);
 
-  const boards = useQuery({
-    queryKey: ['work', 'boards', orgId, projectId],
-    queryFn: async () => wire(await api.work.boards.list.query({ projectId: projectId ?? '' })),
-    enabled: projectId !== undefined,
+  const boardOptions = boardQueries.flatMap((q, index) => {
+    const projectName = projectList[index]?.name ?? '';
+    return (q.data ?? []).map((board) => ({
+      boardId: board.boardId,
+      // Prefix with project name so two boards named "Sprint 1" are distinguishable.
+      label: projectList.length > 1 ? `${projectName} / ${board.name}` : board.name,
+    }));
   });
 
-  const boardId = selectedBoardId ?? boards.data?.[0]?.boardId;
-  const boardOptions = boards.data ?? [];
+  const boardId = selectedBoardId ?? boardOptions[0]?.boardId;
 
   const { data, isLoading, error } = useQuery({
     ...cfdQuery(boardId ?? '', start, end),
     enabled: boardId !== undefined,
   });
 
-  if (projects.isLoading || boards.isLoading || isLoading) return <SkeletonRows rows={5} />;
+  if (projects.isLoading || boardsLoading || isLoading) return <SkeletonRows rows={5} />;
   if (error) return <ErrorView error={error} />;
 
   if (!boardId) {
@@ -102,7 +112,7 @@ export function CfdPanel({ orgId }: { readonly orgId: string }) {
           >
             {boardOptions.map((board) => (
               <option key={board.boardId} value={board.boardId}>
-                {board.name}
+                {board.label}
               </option>
             ))}
           </select>

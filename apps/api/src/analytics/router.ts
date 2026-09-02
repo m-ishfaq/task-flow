@@ -10,6 +10,7 @@ import {
   queryVolume,
 } from './dashboard.service.js';
 import { backfillSyntheticCreationRows } from './backfill.js';
+import { refreshOrg } from './refresh.js';
 import { spendReport } from '../telephony/spend-report.service.js';
 
 /**
@@ -183,6 +184,8 @@ export function createAnalyticsRouter() {
         z.array(
           z.object({
             userId: z.string().uuid(),
+            name: z.string().nullable(),
+            email: z.string().nullable(),
             cardCount: z.number().int(),
           }),
         ),
@@ -191,7 +194,12 @@ export function createAnalyticsRouter() {
         const entries = await queryWorkload(ctx.principal.org.orgId, {
           ...(input.boardId === undefined ? {} : { boardId: input.boardId }),
         });
-        return entries.map((e) => ({ userId: e.userId, cardCount: e.cardCount }));
+        return entries.map((e) => ({
+          userId: e.userId,
+          name: e.name,
+          email: e.email,
+          cardCount: e.cardCount,
+        }));
       }),
 
     /**
@@ -272,11 +280,34 @@ export function createAnalyticsRouter() {
             .from(schema.rollupVelocity)
             .where(eq(schema.rollupVelocity.orgId, ctx.principal.org.orgId));
 
+          const totalTransitions = Number(row?.total ?? '0');
+          const rollupLastRefreshedAt = rollupFreshness[0]?.lastRefreshedAt ?? null;
+
+          // Auto-refresh rollups when transitions exist but rollups are empty.
+          // This covers dev (no worker process) and first load after seeding.
+          if (totalTransitions > 0 && rollupLastRefreshedAt === null) {
+            await refreshOrg(ctx.principal.org.orgId);
+            // Re-read freshness after refresh.
+            const refreshed = await tx
+              .select({
+                lastRefreshedAt: maxColumn<Date>(schema.rollupVelocity.day).as('last_refreshed_at'),
+              })
+              .from(schema.rollupVelocity)
+              .where(eq(schema.rollupVelocity.orgId, ctx.principal.org.orgId));
+            return {
+              totalTransitions,
+              lastIndexedAt: row?.lastIndexedAt ?? null,
+              syntheticCount: Number(row?.syntheticCount ?? '0'),
+              rollupLastRefreshedAt: refreshed[0]?.lastRefreshedAt ?? null,
+              rollupOrgCount: 1,
+            };
+          }
+
           return {
-            totalTransitions: Number(row?.total ?? '0'),
+            totalTransitions,
             lastIndexedAt: row?.lastIndexedAt ?? null,
             syntheticCount: Number(row?.syntheticCount ?? '0'),
-            rollupLastRefreshedAt: rollupFreshness[0]?.lastRefreshedAt ?? null,
+            rollupLastRefreshedAt,
             rollupOrgCount: 1,
           };
         });

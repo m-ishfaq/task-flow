@@ -447,6 +447,8 @@ export async function queryCycleTime(
 
 export interface WorkloadEntry {
   userId: string;
+  name: string | null;
+  email: string | null;
   cardCount: number;
 }
 
@@ -471,6 +473,30 @@ export async function queryWorkload(
       .from(schema.cards)
       .where(and(...whereFilters));
 
+    // Collect unique user IDs across all cards.
+    const userIdSet = new Set<string>();
+    for (const row of rows) {
+      for (const userId of row.assigneeIds) {
+        userIdSet.add(userId);
+      }
+    }
+
+    if (userIdSet.size === 0) return [];
+
+    // Resolve display names and emails from identity.users.
+    const userList = await tx
+      .select({
+        id: schema.users.id,
+        displayName: schema.users.displayName,
+        email: schema.users.email,
+      })
+      .from(schema.users);
+
+    const userLookup = new Map<string, { displayName: string | null; email: string | null }>();
+    for (const u of userList) {
+      userLookup.set(u.id, { displayName: u.displayName, email: u.email });
+    }
+
     const counts = new Map<string, number>();
     for (const row of rows) {
       for (const userId of row.assigneeIds) {
@@ -479,7 +505,15 @@ export async function queryWorkload(
     }
 
     return [...counts.entries()]
-      .map(([userId, cardCount]) => ({ userId, cardCount }))
+      .map(([userId, cardCount]) => {
+        const user = userLookup.get(userId);
+        return {
+          userId,
+          name: user?.displayName ?? null,
+          email: user?.email ?? null,
+          cardCount,
+        };
+      })
       .sort((a, b) => b.cardCount - a.cardCount);
   });
 }

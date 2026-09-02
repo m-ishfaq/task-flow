@@ -29,6 +29,17 @@ function pct(value: number): `${number}%` {
   return (String(value) + '%') as `${number}%`;
 }
 
+/** Extract a human-readable display name from a workload entry. */
+function entryDisplayName(entry: {
+  readonly userId: string;
+  readonly name?: string | null;
+  readonly email?: string | null;
+}): string {
+  if (entry.name) return entry.name;
+  if (entry.email) return entry.email.split('@')[0];
+  return entry.userId.slice(0, 8) + '…';
+}
+
 /**
  * Org-wide analytics insights — the mobile counterpart of
  * `apps/web/src/features/analytics/analytics-page.tsx`.
@@ -247,7 +258,7 @@ function WorkloadCard({ entries }: { readonly entries: readonly WorkloadEntry[] 
       {entries.slice(0, 10).map((entry) => (
         <View key={entry.userId} style={styles.workloadRow}>
           <Text style={styles.workloadLabel} numberOfLines={1}>
-            {entry.userId.slice(0, 8)}…
+            {entryDisplayName(entry)}
           </Text>
           <View style={styles.workloadBarBg}>
             <View

@@ -29,8 +29,8 @@ export function WorkloadPanel() {
       <div className="space-y-2">
         {entries.map((entry) => (
           <div key={entry.userId} className="flex items-center gap-3">
-            <div className="w-24 truncate text-xs text-ink/60" title={entry.userId}>
-              {entry.userId.slice(0, 8)}…
+            <div className="w-32 truncate text-xs text-ink/80" title={entry.email ?? entry.userId}>
+              {entry.name ?? entry.email?.split('@')[0] ?? entry.userId.slice(0, 8) + '…'}
             </div>
             <div className="flex-1">
               <div
