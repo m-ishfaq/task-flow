@@ -35,12 +35,12 @@
     "eslint-plugin-import-x": "^4.6.1",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.3",
+    "eslint-plugin-react-refresh": "^0.5.5",
     "globals": "^15.14.0",
     "prettier": "^3.4.2",
-    "turbo": "^2.3.3",
+    "turbo": "^2.10.12",
     "typescript": "^5.7.2",
-    "typescript-eslint": "^8.18.2",
+    "typescript-eslint": "^8.68.0",
     "yaml": "^2.9.0"
   },
   "pnpm": {
