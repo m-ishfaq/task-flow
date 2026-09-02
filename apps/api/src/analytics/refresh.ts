@@ -528,9 +528,7 @@ export async function refreshAllOrgs(logger: {
  */
 const refreshInFlight = new Map<OrgId, Promise<Omit<RefreshResult, 'orgsRefreshed'>>>();
 
-export async function refreshOrgOnce(
-  orgId: OrgId,
-): Promise<Omit<RefreshResult, 'orgsRefreshed'>> {
+export async function refreshOrgOnce(orgId: OrgId): Promise<Omit<RefreshResult, 'orgsRefreshed'>> {
   const existing = refreshInFlight.get(orgId);
   if (existing) return existing;
 
