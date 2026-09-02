@@ -36,7 +36,7 @@ function entryDisplayName(entry: {
   readonly email?: string | null;
 }): string {
   if (entry.name) return entry.name;
-  if (entry.email) return entry.email.split('@')[0];
+  if (entry.email) return entry.email.split('@')[0] ?? entry.email;
   return entry.userId.slice(0, 8) + '…';
 }
 
