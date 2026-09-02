@@ -1,4 +1,4 @@
-import { isNull, listOrgIds, schema, withOrgScope } from '@taskflow/db';
+import { isNull, schema, withOrgScope } from '@taskflow/db';
 import { unsafeAsId, type OrgId } from '@taskflow/contracts';
 import { refreshOrg } from '@taskflow/api/analytics/refresh';
 import { createRng } from './rng.js';
@@ -199,15 +199,23 @@ export interface AnalyticsBackfillResult {
 }
 
 /**
- * Backfills analytics for every org. Assumes the app pool is already
+ * Backfills analytics for the given orgs. Assumes the app pool is already
  * initialized (`initializeDatabase`) — the caller owns its lifecycle, exactly
  * as `search-backfill.cli.ts` does.
+ *
+ * The caller passes the org ids rather than this discovering them, and that is
+ * deliberate: `listOrgIds()` runs under `withGlobalScope` as `taskflow_app`,
+ * and `identity.orgs` has NO policy admitting the app role with `app.org_id`
+ * cleared — so it returns ZERO rows (migration 0004; the app role can only see
+ * an org it is scoped INTO or a MEMBER of). The seed already holds the ids it
+ * just wrote; the standalone CLI enumerates them through the audit role, which
+ * 0037 grants an explicit `USING (true)` read of `identity.orgs`.
  */
 export async function backfillAnalytics(
+  orgIds: readonly string[],
   log: (message: string) => void,
 ): Promise<AnalyticsBackfillResult> {
   const now = new Date();
-  const orgIds = await listOrgIds();
 
   let transitions = 0;
   for (const id of orgIds) {

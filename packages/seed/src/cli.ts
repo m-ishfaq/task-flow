@@ -546,9 +546,15 @@ async function main(): Promise<void> {
       initializeDatabase({ url: appUrl, applicationName: 'taskflow-seed-analytics' });
       try {
         console.warn('\nBackfilling analytics (transitions + rollups)...');
-        const analytics = await backfillAnalytics((message) => {
-          console.warn(message);
-        });
+        // Pass the ids we just seeded rather than discovering them:
+        // `listOrgIds()` runs as taskflow_app with no scope, which identity.orgs'
+        // RLS answers with zero rows (see analytics-backfill.ts's own note).
+        const analytics = await backfillAnalytics(
+          orgs.map((org) => org.id),
+          (message) => {
+            console.warn(message);
+          },
+        );
         console.warn(
           `analytics: ${String(analytics.transitions)} transition(s) across ` +
             `${String(analytics.orgs)} org(s), rollups refreshed.`,
