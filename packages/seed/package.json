@@ -9,6 +9,7 @@
   "scripts": {
     "seed": "tsx src/cli.ts",
     "search:backfill": "tsx src/search-backfill.cli.ts",
+    "analytics:backfill": "tsx src/analytics-backfill.cli.ts",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
