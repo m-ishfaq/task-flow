@@ -10,7 +10,6 @@ import {
   queryVolume,
 } from './dashboard.service.js';
 import { backfillSyntheticCreationRows } from './backfill.js';
-import { pruneOutbox } from './prune.js';
 import { spendReport } from '../telephony/spend-report.service.js';
 
 /**
@@ -286,8 +285,7 @@ export function createAnalyticsRouter() {
     /**
      * §2.2 — Backfill: synthetic creation rows for never-moved cards.
      *
-     * Manual trigger for one org. Safe to re-run (idempotent). Must be run
-     * BEFORE pruneOutbox (§2.4 ordering constraint).
+     * Manual trigger for one org. Safe to re-run (idempotent).
      */
     backfill: route({
       permission: 'analytics:read',
@@ -339,37 +337,6 @@ export function createAnalyticsRouter() {
           estimatedCents: r.estimatedCents,
           billedCents: r.billedCents,
         }));
-      }),
-
-    /**
-     * §7 decision 7 — Prune old outbox events.
-     *
-     * Must be run AFTER backfill (§2.4 ordering constraint). Removes outbox
-     * events older than `retentionDays` that have been dispatched to every
-     * consumer. Returns the counts of deleted rows.
-     */
-    prune: route({
-      permission: 'analytics:read',
-    })
-      .input(
-        z
-          .object({
-            retentionDays: z.number().int().min(1).max(365).default(30),
-          })
-          .strict(),
-      )
-      .output(
-        z.object({
-          eventsPruned: z.number().int(),
-          dispatchesPruned: z.number().int(),
-        }),
-      )
-      // A mutation, not a query: it DELETES outbox rows. See prune.ts's own
-      // header for the correctness constraints this destructive operation
-      // carries (it must run after the backfill, and the outbox is a shared
-      // event store other consumers may still need to drain).
-      .mutation(async ({ ctx, input }) => {
-        return pruneOutbox(ctx.principal.org.orgId, input.retentionDays);
       }),
   });
 }
