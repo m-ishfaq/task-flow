@@ -200,5 +200,25 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/testing/setup.ts'],
     css: false,
+
+    /**
+     * Report-only, deliberately no `thresholds`.
+     *
+     * This is the first time coverage has been measured for this app at all
+     * (38 test files against 100+ components, previously a guess rather than
+     * a number). Gating CI on a threshold before a single real run has
+     * established the baseline would mean picking a number blind — either
+     * low enough to be meaningless or high enough to fail the very first
+     * run. `pnpm test:coverage` / CI's own step print the real number; a
+     * threshold (or a ratchet against the current baseline) is a follow-up
+     * once that number is known, not a default to guess at here.
+     */
+    coverage: {
+      provider: 'v8',
+      reporter: ['text-summary', 'lcov', 'json-summary'],
+      reportsDirectory: 'coverage',
+      // Test infrastructure and generated wire types have nothing to cover.
+      exclude: ['src/testing/**', 'src/**/*.test.{ts,tsx}', 'src/**/*.d.ts'],
+    },
   },
 });

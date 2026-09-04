@@ -213,6 +213,15 @@ jobs:
       - name: Lint, typecheck, test
         run: pnpm verify
 
+      # Report-only — see apps/web/vite.config.ts's own comment on why there is
+      # no threshold yet. Prints the real number on every run so "the frontend
+      # is under-tested" is a percentage someone can watch move, not a guess
+      # from counting files. A separate run rather than folded into `pnpm
+      # verify` above: v8 coverage instrumentation has its own overhead, and
+      # the ordinary fast path (every push) should not pay it by default.
+      - name: Frontend test coverage (apps/web, report-only)
+        run: pnpm --filter @taskflow/web test:coverage
+
       # Explicit, separate from `pnpm verify`, because a silently-dead guardrail
       # is the failure this whole architecture is built to prevent (§2.3).
       - name: Guardrail self-test
