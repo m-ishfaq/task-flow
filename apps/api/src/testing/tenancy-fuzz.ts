@@ -69,8 +69,26 @@ export interface FuzzResult {
  */
 const FUZZ_SESSION_ID = '018f4d1e-7c3a-7b2e-8f1a-0000000000fa';
 
-/** Error codes that count as a correct refusal. */
-const ACCEPTABLE = new Set(['FORBIDDEN', 'NOT_FOUND', 'UNAUTHENTICATED', 'BAD_REQUEST']);
+/**
+ * Error codes that count as a correct refusal.
+ *
+ * These are the domain `AppError` codes (`codeOf` below reads `error.cause.code`
+ * first, which is where the original `AppError` survives `mapErrors`' wrapping)
+ * — not tRPC's own wire codes, which is why `UNAUTHENTICATED` is here rather
+ * than `UNAUTHORIZED` (`toTrpcCode`'s mapping for that family in
+ * `trpc/builder.ts`). `PLAN_REQUIRED` (Phase 12 Wave 4) belongs here for the
+ * same reason `FORBIDDEN` does: the caller's role permitted the action and a
+ * later, independent check still refused it — a correct refusal, not a leak
+ * and not a handler that fell over. Absent until a route finally called
+ * `requireFeature` (`apps/api/src/analytics/router.ts`), which is the first
+ * time this set needed a domain code with no matching entry. */
+const ACCEPTABLE = new Set([
+  'FORBIDDEN',
+  'NOT_FOUND',
+  'UNAUTHENTICATED',
+  'BAD_REQUEST',
+  'PLAN_REQUIRED',
+]);
 
 /**
  * A resolved tRPC caller procedure.
