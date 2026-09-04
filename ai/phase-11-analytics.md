@@ -1,7 +1,24 @@
 # Phase 11 — Analytics
 
-Status: **DRAFT — all seven open decisions RESOLVED 2026-08-11 in review; awaiting final
-approval to build.** Written 2026-08-11 against `pre-launch-hardening` HEAD, alongside
+Status: **SHIPPED.** This header still read "DRAFT... awaiting final approval to build" for a
+stretch after the code landed — `apps/api/src/analytics` (router, dashboard queries, the
+rollup refresh, backfill), wired into the app router, plus the web UI at
+`apps/web/src/features/analytics` — the same "status marker is a claim, not a fact" failure
+CLAUDE.md documents for Phases 3.5, 5, 7 and 8, caught here the same way: by checking the code
+rather than trusting the header. Left corrected in place rather than silently rewritten, per
+this file's own discipline below.
+
+One real gap was found alongside the stale header, not by it: `packages/feature-flags/src/
+flags.ts`'s `analytics` entry existed and was `perOrg: true`, but no route in
+`apps/api/src/analytics/router.ts` ever consulted it — every route checked `permission:
+'analytics:read'` (role) and nothing else, so every org on every plan got full analytics for
+free regardless of `billing.plans.features`, the exact monetization gate Phase 12 Wave 4 built
+for modules like this one. Every route now also carries `feature: { flag: 'analytics', display:
+'Analytics' }`, and `business` is the one plan tier that grants it in
+`packages/seed/src/modules/billing.catalog.ts` — the first real feature difference between
+`pro` and `business`, which previously differed only on limits and price.
+
+Written 2026-08-11 against `pre-launch-hardening` HEAD, alongside
 [ai/phase-10-automation.md](ai/phase-10-automation.md), per `ai/pre-launch-hardening.md`
 Priority 4.
 
