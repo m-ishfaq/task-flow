@@ -25,15 +25,21 @@ import { ACCESS_TOKEN_TTL_SECONDS } from '@taskflow/security';
 
 const NonEmpty = z.string().min(1);
 
-const Base64Key = z.string().refine(
+/**
+ * A PEM key block, base64-encoded so it survives a single-line `.env` file.
+ * Only checks it decodes to something PEM-shaped — `importAccessTokenPublicKey`
+ * does the real structural validation at boot. Mirrors `apps/api/src/config/env.ts`'s
+ * identical schema.
+ */
+const Base64PemKey = z.string().refine(
   (value) => {
     try {
-      return Buffer.from(value, 'base64').length === 32;
+      return Buffer.from(value, 'base64').toString('utf8').includes('-----BEGIN');
     } catch {
       return false;
     }
   },
-  { message: 'must be 32 bytes of base64-encoded key material' },
+  { message: 'must be a base64-encoded PEM key block' },
 );
 
 /**
@@ -64,12 +70,12 @@ export const EnvSchema = z
        process doing nothing while appearing healthy. */
     DATABASE_REALTIME_URL: NonEmpty,
 
-    /* Verified with the same secret, issuer and audience the API signs with.
-       The token IS an API credential; the gateway is a second verifier of it,
-       which is the trade `packages/security/src/jwt.ts` names as the point
-       where HS256 would become RS256 if the verifier were ever a third party.
-       It is not — both processes are ours and share the secret. */
-    JWT_SECRET: Base64Key,
+    /* Verified with the same issuer and audience the API signs with, and now
+       (packages/security/src/jwt.ts's file header) the same RS256 PUBLIC key
+       — never the private one. This gateway can check a token's signature
+       but never mint one; a leak of this variable buys read access to the
+       verification path, not forgery. */
+    JWT_PUBLIC_KEY: Base64PemKey,
 
     REALTIME_PORT: z.coerce.number().int().positive().max(65_535).default(3001),
     REALTIME_HOST: z.string().default('0.0.0.0'),
@@ -203,7 +209,7 @@ const KNOWN_VARIABLES = new Set([
   'MAIL_FROM',
   'MASTER_KEY_ID',
   'MASTER_KEY_BASE64',
-  'JWT_SECRET',
+  'JWT_PUBLIC_KEY',
   'API_PORT',
   'API_HOST',
   'API_TRUST_PROXY',

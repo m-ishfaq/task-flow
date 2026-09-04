@@ -71,6 +71,8 @@ export { checkPasswordBreached, type BreachResult, type BreachCheckOptions } fro
 export {
   signAccessToken,
   verifyAccessToken,
+  importAccessTokenPrivateKey,
+  importAccessTokenPublicKey,
   signTotpChallenge,
   verifyTotpChallenge,
   signOAuthState,
@@ -80,6 +82,8 @@ export {
   InvalidTokenError,
   ACCESS_TOKEN_TTL_SECONDS,
   type AccessTokenClaims,
+  type AccessTokenSigningConfig,
+  type AccessTokenVerifyConfig,
   type TotpChallengeClaims,
   type OAuthStateClaims,
   type ConnectorStateClaims,

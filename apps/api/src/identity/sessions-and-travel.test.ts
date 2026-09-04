@@ -9,6 +9,7 @@ import * as identity from './identity.service.js';
 import type { IdentityDeps, RequestMeta, TokenPair } from './identity.service.js';
 import * as sessions from './sessions.service.js';
 import * as repo from './repository.js';
+import { TEST_JWT_PRIVATE_KEY, TEST_JWT_PUBLIC_KEY } from '../testing/fixtures.js';
 
 /**
  * Phase 12 Wave 2 §3.4 — impossible-travel detection and the device/session
@@ -41,7 +42,7 @@ const MIGRATIONS_DIR = resolve(
   'migrations',
 );
 
-const JWT_SECRET = new Uint8Array(Buffer.alloc(32, 7));
+const JWT_STATE_SECRET = new Uint8Array(Buffer.alloc(32, 7));
 const PASSWORD = 'correct horse battery staple 42';
 
 let events: RecordingEventBus;
@@ -63,7 +64,8 @@ function deps(
 ): IdentityDeps {
   return {
     config: {
-      jwtSecret: JWT_SECRET,
+      jwtPrivateKey: TEST_JWT_PRIVATE_KEY,
+      jwtStateSecret: JWT_STATE_SECRET,
       refreshTokenTtlMs: 30 * 24 * 60 * 60 * 1000,
       verificationTtlMs: 24 * 60 * 60 * 1000,
       passwordResetTtlMs: 60 * 60 * 1000,
@@ -131,7 +133,7 @@ async function loginSession(email: string, requestMeta: RequestMeta): Promise<To
 }
 
 async function userIdOf(pair: TokenPair): Promise<string> {
-  return (await verifyAccessToken(pair.accessToken, { secret: JWT_SECRET })).userId;
+  return (await verifyAccessToken(pair.accessToken, { publicKey: TEST_JWT_PUBLIC_KEY })).userId;
 }
 
 async function storedSessions(

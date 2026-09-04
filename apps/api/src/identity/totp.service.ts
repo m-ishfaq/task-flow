@@ -229,7 +229,7 @@ export async function verifyLogin(
   channel: SessionChannel = 'browser',
 ): Promise<TokenPair> {
   const { userId } = await verifyTotpChallenge(input.challengeToken, {
-    secret: deps.identity.config.jwtSecret,
+    secret: deps.identity.config.jwtStateSecret,
   });
   const now = clock(deps);
 

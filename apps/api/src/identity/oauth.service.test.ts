@@ -11,6 +11,7 @@ import * as repo from './repository.js';
 import * as oauth from './oauth.service.js';
 import type { IdentityDeps } from './identity.service.js';
 import type { OAuthDeps, OAuthProvider } from './oauth.service.js';
+import { TEST_JWT_PRIVATE_KEY } from '../testing/fixtures.js';
 
 /**
  * OAuth sign-in, against real Postgres (Phase 12 Wave 2 §3.3) — same
@@ -45,7 +46,7 @@ const MIGRATIONS_DIR = resolve(
   'migrations',
 );
 
-const JWT_SECRET = new Uint8Array(Buffer.alloc(32, 7));
+const JWT_STATE_SECRET = new Uint8Array(Buffer.alloc(32, 7));
 const PASSWORD = 'correct horse battery staple 42';
 
 let events: RecordingEventBus;
@@ -53,7 +54,8 @@ let events: RecordingEventBus;
 function identityDeps(): IdentityDeps {
   return {
     config: {
-      jwtSecret: JWT_SECRET,
+      jwtPrivateKey: TEST_JWT_PRIVATE_KEY,
+      jwtStateSecret: JWT_STATE_SECRET,
       refreshTokenTtlMs: 30 * 24 * 60 * 60 * 1000,
       verificationTtlMs: 24 * 60 * 60 * 1000,
       passwordResetTtlMs: 60 * 60 * 1000,
@@ -221,7 +223,7 @@ describe('callback — fresh sign-in, no existing account', () => {
     const deps = googleDeps({ subject: 'google-sub-1', email: 'oauth-new@example.test' });
     const state = await signOAuthState(
       { provider: 'google', codeVerifier: 'v' },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
 
     const result = await oauth.callback(
@@ -253,7 +255,7 @@ describe('callback — auto-link on verified email match', () => {
     const deps = googleDeps({ subject: 'google-sub-2', email: 'oauth-existing@example.test' });
     const state = await signOAuthState(
       { provider: 'google', codeVerifier: 'v' },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
 
     const result = await oauth.callback(
@@ -274,7 +276,7 @@ describe('callback — existing linked identity', () => {
     const deps1 = googleDeps({ subject: 'google-sub-3', email: 'oauth-repeat@example.test' });
     const state1 = await signOAuthState(
       { provider: 'google', codeVerifier: 'v' },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
     await oauth.callback(deps1, { provider: 'google', code: 'c1', state: state1 }, meta);
 
@@ -282,7 +284,7 @@ describe('callback — existing linked identity', () => {
     const deps2 = googleDeps({ subject: 'google-sub-3', email: 'oauth-repeat@example.test' });
     const state2 = await signOAuthState(
       { provider: 'google', codeVerifier: 'v' },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
     const result = await oauth.callback(
       deps2,
@@ -298,7 +300,7 @@ describe('callback — existing linked identity', () => {
     const deps1 = googleDeps({ subject: 'google-sub-4', email: 'oauth-suspend@example.test' });
     const state1 = await signOAuthState(
       { provider: 'google', codeVerifier: 'v' },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
     await oauth.callback(deps1, { provider: 'google', code: 'c1', state: state1 }, meta);
 
@@ -310,7 +312,7 @@ describe('callback — existing linked identity', () => {
     const deps2 = googleDeps({ subject: 'google-sub-4', email: 'oauth-suspend@example.test' });
     const state2 = await signOAuthState(
       { provider: 'google', codeVerifier: 'v' },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
 
     const errorCode = await codeOfRejection(
@@ -325,7 +327,7 @@ describe('callback — GitHub', () => {
     const deps = githubDeps({ id: 555, email: 'oauth-gh@example.test' });
     const state = await signOAuthState(
       { provider: 'github', codeVerifier: 'v' },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
 
     const result = await oauth.callback(deps, { provider: 'github', code: 'c', state }, meta);
@@ -340,7 +342,7 @@ describe('callback — GitHub', () => {
     const deps = githubDeps({ id: 556, email: 'oauth-gh2@example.test', verified: false });
     const state = await signOAuthState(
       { provider: 'github', codeVerifier: 'v' },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
 
     const errorCode = await codeOfRejection(
@@ -355,7 +357,7 @@ describe('callback — state integrity', () => {
     const deps = googleDeps({ subject: 'google-sub-9', email: 'oauth-mismatch@example.test' });
     const state = await signOAuthState(
       { provider: 'github', codeVerifier: 'v' },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
 
     const errorCode = await codeOfRejection(
@@ -436,7 +438,7 @@ describe('native channel — the client-held PKCE binding (§4.4)', () => {
     const { challenge } = generatePkcePair();
     const state = await signOAuthState(
       { provider: 'google', codeVerifier: 'v', channel: 'native', clientChallenge: challenge },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
 
     expect(
@@ -455,7 +457,7 @@ describe('native channel — the client-held PKCE binding (§4.4)', () => {
     const other = generatePkcePair();
     const state = await signOAuthState(
       { provider: 'google', codeVerifier: 'v', channel: 'native', clientChallenge: challenge },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
 
     expect(
@@ -475,7 +477,7 @@ describe('native channel — the client-held PKCE binding (§4.4)', () => {
        outright rather than falling through to it. */
     const state = await signOAuthState(
       { provider: 'google', codeVerifier: 'v', channel: 'native' },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
 
     expect(
@@ -503,7 +505,7 @@ describe('native channel — the client-held PKCE binding (§4.4)', () => {
     });
     const state = await signOAuthState(
       { provider: 'google', codeVerifier: 'v' },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
 
     const result = await oauth.callback(deps, { provider: 'google', code: 'c', state }, meta);
@@ -520,7 +522,7 @@ describe('native channel', () => {
     const { verifier, challenge } = generatePkcePair();
     const state = await signOAuthState(
       { provider: 'google', codeVerifier: 'v', channel: 'native', clientChallenge: challenge },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
 
     const result = await oauth.callback(
@@ -583,7 +585,7 @@ describe('native channel', () => {
     const { verifier, challenge } = generatePkcePair();
     const state = await signOAuthState(
       { provider: 'google', codeVerifier: 'v', channel: 'native', clientChallenge: challenge },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
 
     const result = await oauth.callback(
@@ -599,7 +601,7 @@ describe('native channel', () => {
     const deps = googleDeps({ subject: 'unused', email: 'unused@example.test' });
     const state = await signOAuthState(
       { provider: 'google', codeVerifier: 'v', channel: 'native' },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
 
     const errorCode = await codeOfRejection(
@@ -616,7 +618,7 @@ describe('native channel', () => {
     const { verifier, challenge } = generatePkcePair();
     const state = await signOAuthState(
       { provider: 'github', codeVerifier: 'v', channel: 'native', clientChallenge: challenge },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
 
     const errorCode = await codeOfRejection(
@@ -653,7 +655,7 @@ describe('linking to an existing session', () => {
 
     const state = await signOAuthState(
       { provider: 'google', codeVerifier: 'v', linkUserId: userId },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
     const deps = googleDeps({ subject: 'google-sub-link', email: 'someone-else@example.test' });
 
@@ -711,7 +713,7 @@ describe('linking to an existing session', () => {
 
     const victimState = await signOAuthState(
       { provider: 'google', codeVerifier: 'v', linkUserId: victim },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
     await oauth.callback(
       googleDeps({ subject: 'google-sub-shared', email: 'victim-google@example.test' }),
@@ -721,7 +723,7 @@ describe('linking to an existing session', () => {
 
     const attackerState = await signOAuthState(
       { provider: 'google', codeVerifier: 'v', linkUserId: attacker },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
     const errorCode = await codeOfRejection(
       oauth.callback(
@@ -740,7 +742,7 @@ describe('unlink', () => {
     const userId = await registeredUser('oauth-lastmethod@example.test');
     const state = await signOAuthState(
       { provider: 'google', codeVerifier: 'v', linkUserId: userId },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
     await oauth.callback(
       googleDeps({ subject: 'google-sub-only', email: 'irrelevant@example.test' }),
@@ -769,7 +771,7 @@ describe('unlink', () => {
     const userId = await registeredUser('oauth-unlink@example.test');
     const state = await signOAuthState(
       { provider: 'google', codeVerifier: 'v', linkUserId: userId },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
     await oauth.callback(
       googleDeps({ subject: 'google-sub-unlink', email: 'irrelevant@example.test' }),
@@ -794,7 +796,7 @@ describe('listConnected', () => {
     const userId = await registeredUser('oauth-list@example.test');
     const state = await signOAuthState(
       { provider: 'google', codeVerifier: 'v', linkUserId: userId },
-      { secret: JWT_SECRET },
+      { secret: JWT_STATE_SECRET },
     );
     await oauth.callback(
       googleDeps({ subject: 'google-sub-list', email: 'captured@example.test' }),

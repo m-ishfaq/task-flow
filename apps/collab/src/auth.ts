@@ -1,4 +1,8 @@
-import { InvalidTokenError, verifyAccessToken } from '@taskflow/security';
+import {
+  InvalidTokenError,
+  verifyAccessToken,
+  type AccessTokenVerifyConfig,
+} from '@taskflow/security';
 import {
   MOBILE_CLIENT,
   OrgIdSchema,
@@ -122,7 +126,8 @@ export interface AuthenticateInput {
 }
 
 export interface AuthenticateOptions {
-  readonly jwtSecret: Uint8Array;
+  /** RS256 public key only — this gateway verifies, it never mints a token. */
+  readonly jwtPublicKey: AccessTokenVerifyConfig['publicKey'];
   readonly allowedOrigins: readonly string[];
 }
 
@@ -175,7 +180,7 @@ export async function authenticateConnection(
 
   let claims;
   try {
-    claims = await verifyAccessToken(input.token, { secret: options.jwtSecret });
+    claims = await verifyAccessToken(input.token, { publicKey: options.jwtPublicKey });
   } catch (error) {
     if (error instanceof InvalidTokenError) throw new CollabAuthError('invalid_token');
     throw error;

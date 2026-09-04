@@ -4,11 +4,26 @@ import { parseEnv } from './env.js';
 const KEY_A = Buffer.alloc(32, 1).toString('base64');
 const KEY_B = Buffer.alloc(32, 2).toString('base64');
 
+/**
+ * PEM-shaped, not a real key: `parseEnv` only checks the shape
+ * (`Base64PemKey`'s job) — real structural validation happens at boot, when
+ * `importAccessTokenPrivateKey`/`importAccessTokenPublicKey` actually parse
+ * it, which is exercised for real in packages/security/src/jwt.test.ts.
+ */
+const PEM_KEY_A = Buffer.from(
+  '-----BEGIN PRIVATE KEY-----\nfake-a\n-----END PRIVATE KEY-----',
+).toString('base64');
+const PEM_KEY_B = Buffer.from(
+  '-----BEGIN PUBLIC KEY-----\nfake-b\n-----END PUBLIC KEY-----',
+).toString('base64');
+
 const valid = {
   DATABASE_URL: 'postgresql://taskflow_app:secret@localhost:5432/taskflow',
   MASTER_KEY_ID: 'mk-dev-1',
   MASTER_KEY_BASE64: KEY_A,
-  JWT_SECRET: KEY_B,
+  JWT_PRIVATE_KEY: PEM_KEY_A,
+  JWT_PUBLIC_KEY: PEM_KEY_B,
+  JWT_STATE_SECRET: KEY_B,
   MAIL_HOST: 'localhost',
   MAIL_FROM: 'TaskFlow <no-reply@taskflow.test>',
   WEB_ORIGIN: 'http://localhost:5173',
@@ -40,13 +55,17 @@ describe('parseEnv', () => {
     expect(env.DATABASE_POOL_MAX).toBe(25);
   });
 
-  it.each(['DATABASE_URL', 'MASTER_KEY_BASE64', 'JWT_SECRET', 'WEB_ORIGIN'] as const)(
-    'fails when %s is missing',
-    (key) => {
-      const { [key]: _removed, ...incomplete } = valid;
-      expect(() => parseEnv(incomplete)).toThrow(new RegExp(key));
-    },
-  );
+  it.each([
+    'DATABASE_URL',
+    'MASTER_KEY_BASE64',
+    'JWT_PRIVATE_KEY',
+    'JWT_PUBLIC_KEY',
+    'JWT_STATE_SECRET',
+    'WEB_ORIGIN',
+  ] as const)('fails when %s is missing', (key) => {
+    const { [key]: _removed, ...incomplete } = valid;
+    expect(() => parseEnv(incomplete)).toThrow(new RegExp(key));
+  });
 
   describe('API_TRUST_PROXY', () => {
     it('defaults to trusting nothing', () => {
@@ -142,13 +161,13 @@ describe('parseEnv', () => {
   it('rejects reusing one secret for two purposes in production', () => {
     // Compromising either would compromise both, and the two keys could no
     // longer be rotated independently.
-    expect(() => parseEnv({ ...valid, NODE_ENV: 'production', JWT_SECRET: KEY_A })).toThrow(
+    expect(() => parseEnv({ ...valid, NODE_ENV: 'production', JWT_STATE_SECRET: KEY_A })).toThrow(
       /must be different/,
     );
   });
 
   it('allows it outside production, where fixtures reuse keys', () => {
-    expect(() => parseEnv({ ...valid, JWT_SECRET: KEY_A })).not.toThrow();
+    expect(() => parseEnv({ ...valid, JWT_STATE_SECRET: KEY_A })).not.toThrow();
   });
 
   it('rejects an out-of-range port', () => {

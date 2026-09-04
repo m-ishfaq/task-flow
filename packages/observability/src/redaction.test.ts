@@ -99,7 +99,9 @@ describe('log redaction', () => {
 
 describe('isSecretEnvVar', () => {
   it.each([
-    'JWT_SECRET',
+    'JWT_PRIVATE_KEY',
+    'JWT_PUBLIC_KEY',
+    'JWT_STATE_SECRET',
     'MASTER_KEY_BASE64',
     'STORAGE_SECRET_ACCESS_KEY',
     'DATABASE_URL',

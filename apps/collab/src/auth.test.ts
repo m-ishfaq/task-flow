@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { signAccessToken } from '@taskflow/security';
+import { generateTestAccessTokenKeyPair } from '@taskflow/security/testing';
 import { MOBILE_CLIENT } from '@taskflow/contracts';
 import { authenticateConnection, isNativeClient, isSelfOrigin, originAllowed } from './auth.js';
 
@@ -77,14 +78,18 @@ describe('isNativeClient (§8, ported from apps/realtime/src/auth.ts)', () => {
   });
 });
 
+/* A deliberately WRONG key pair (module scope: top-level await, since a
+   `describe` callback cannot be async), so a connection that gets past the
+   origin gate fails at token verification next rather than reaching
+   `authorizeConnect` — which needs real Postgres. Asserting the refusal is
+   `invalid_token` (not `forbidden_origin`) is how these run as pure unit
+   tests and still prove the origin gate was actually passed. */
+const { publicKey: ORIGIN_GATE_PUBLIC_KEY } = await generateTestAccessTokenKeyPair();
+const { privateKey: ORIGIN_GATE_WRONG_PRIVATE_KEY } = await generateTestAccessTokenKeyPair();
+
 describe('authenticateConnection’s origin gate (§8, the native-client interim allowance)', () => {
-  /* A deliberately WRONG secret, so a connection that gets past the origin
-     gate fails at token verification next rather than reaching
-     `authorizeConnect` — which needs real Postgres. Asserting the refusal
-     is `invalid_token` (not `forbidden_origin`) is how these run as pure
-     unit tests and still prove the origin gate was actually passed. */
-  const SECRET = Buffer.from('a'.repeat(32), 'utf8');
-  const WRONG_SECRET = Buffer.from('b'.repeat(32), 'utf8');
+  const PUBLIC_KEY = ORIGIN_GATE_PUBLIC_KEY;
+  const WRONG_PRIVATE_KEY = ORIGIN_GATE_WRONG_PRIVATE_KEY;
   const ORIGINS = ['http://localhost:5173'];
 
   async function pastOriginToken(): Promise<string> {
@@ -94,7 +99,7 @@ describe('authenticateConnection’s origin gate (§8, the native-client interim
         sessionId: '0195ff00-0000-7000-8000-000000000501',
         authenticatedAt: Math.floor(Date.now() / 1000),
       },
-      { secret: WRONG_SECRET },
+      { privateKey: WRONG_PRIVATE_KEY },
     );
   }
 
@@ -104,7 +109,7 @@ describe('authenticateConnection’s origin gate (§8, the native-client interim
     try {
       await authenticateConnection(
         { ...input, token: await pastOriginToken(), documentName: 'page:irrelevant' },
-        { jwtSecret: SECRET, allowedOrigins: ORIGINS },
+        { jwtPublicKey: PUBLIC_KEY, allowedOrigins: ORIGINS },
       );
     } catch (error) {
       if (error instanceof Error && 'refusal' in error) return String(error.refusal);
@@ -182,14 +187,14 @@ describe('authenticateConnection’s origin gate (§8, the native-client interim
 
 describe('token signing smoke test', () => {
   it('signs a token this module can later verify (proves the shared primitive is wired)', async () => {
-    const secret = Buffer.from('a'.repeat(32), 'utf8');
+    const { privateKey } = await generateTestAccessTokenKeyPair();
     const token = await signAccessToken(
       {
         userId: '0195ff20-0000-7000-8000-000000000001',
         sessionId: '0195ff20-0000-7000-8000-000000000501',
         authenticatedAt: Math.floor(Date.now() / 1000),
       },
-      { secret },
+      { privateKey },
     );
 
     expect(typeof token).toBe('string');

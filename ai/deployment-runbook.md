@@ -58,8 +58,10 @@ comment in `.env.prod.example` has its generation command. The ones to get right
 - The nine Postgres role passwords and both MinIO values: `openssl rand -hex 24`.
   **Hex only** for the Postgres ones — `docker/postgres/init-prod/05-set-passwords.sh`
   interpolates them into a single-quoted SQL literal and hex cannot contain a `'`.
-- `MASTER_KEY_BASE64` and `JWT_SECRET`: the two `node -e` one-liners in the
-  example file. They must differ from each other (enforced at boot).
+- `MASTER_KEY_BASE64`, `JWT_PRIVATE_KEY`/`JWT_PUBLIC_KEY` (an RS256 key pair,
+  not a shared secret — apps/realtime and apps/collab get only the public
+  half) and `JWT_STATE_SECRET`: the `node -e` one-liners in the example file.
+  `MASTER_KEY_BASE64` must differ from `JWT_STATE_SECRET` (enforced at boot).
 - `WEB_ORIGIN`: the public origin users will load, e.g. `https://app.example.com`.
   It doubles as the WebSocket handshake allowlist and the passkey relying-party
   id, so it must match exactly what the browser sees (including scheme).
@@ -209,9 +211,44 @@ deliberately.
   which only fire on an empty data directory; (2) update `.env.prod` and restart
   the one or two services that hold that role's URL (`docker compose up -d
 --force-recreate <service>`).
-- **`JWT_SECRET`**: rotating it invalidates every live session and every
-  in-flight access token immediately. State that plainly to whoever asked for
-  the rotation; schedule it as an outage window.
+- **`JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY`** (the access-token signing pair —
+  see packages/security/src/jwt.ts's file header): rotating this does NOT log
+  anyone out. The long-lived session is the httpOnly refresh cookie, a random
+  value stored in `identity.sessions` — it is not a JWT and does not depend on
+  this key pair at all. Only the short-lived (`ACCESS_TOKEN_TTL_SECONDS`, 10
+  minutes) access token depends on it, and a browser transparently mints a
+  fresh one from its still-valid refresh token the moment an old one fails to
+  verify. So a hard cutover (generate a new pair, swap both env vars, restart
+  api/realtime/collab) is survivable on its own — every open tab sees at most
+  one failed request, silently retried — but for a LEAKED key, prefer the
+  gentler sequence instead of a simultaneous restart, so the retry never even
+  happens:
+  1. Generate a new pair. Deploy `apps/api` first, changing ONLY
+     `JWT_PRIVATE_KEY` to the new private key while `JWT_PUBLIC_KEY`
+     everywhere (api, realtime, collab) still names the OLD public key —
+     `apps/api` is now signing with a key nothing can verify yet, so do not
+     stop here.
+  2. Immediately deploy `JWT_PUBLIC_KEY=<new public key>` to all three
+     services (api, realtime, collab). Once this lands, verification
+     against the OLD key pair stops entirely.
+  3. Wait `ACCESS_TOKEN_TTL_SECONDS` (10 minutes) plus a safety margin
+     (~15–20 minutes total) past step 2 before considering the old private
+     key fully retired — any token it signed has, by then, either been used
+     and replaced or simply expired.
+     `jwtVerify` in `packages/security/src/jwt.ts` currently accepts exactly one
+     public key at a time, so steps 1–2 above are a brief real gap (signed with
+     new, nothing yet verifies it) rather than a true overlapping dual-key
+     window; that gap is normally sub-second between two deploys of the same
+     release. If a true overlapping window is ever needed, `verifyAccessToken`
+     would need to accept a short list of acceptable public keys instead of one
+     — a small, contained change, not yet built because nothing has needed it.
+- **`JWT_STATE_SECRET`**: signs/verifies TOTP challenge, OAuth state and
+  connector state tokens — all single-process (apps/api signs and verifies
+  its own), all short-lived (5–10 minutes). Rotating it fails any of those
+  three flows that are mid-flight at the exact moment of restart (a TOTP
+  prompt or an OAuth redirect someone is mid-way through); nothing durable is
+  lost, and a retry from the start works immediately. No outage window
+  needed, just note it may interrupt an in-progress sign-in for a few people.
 - **`MASTER_KEY_BASE64`**: re-encrypt anything encrypted under the old key (the
   app's key-id scheme in `@taskflow/security` is designed for this).
 - **`TELEPHONY_INDEX_KEY`**: rotating invalidates every blind index — lookups

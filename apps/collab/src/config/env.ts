@@ -21,15 +21,21 @@ import { z } from 'zod';
 
 const NonEmpty = z.string().min(1);
 
-const Base64Key = z.string().refine(
+/**
+ * A PEM key block, base64-encoded so it survives a single-line `.env` file.
+ * Only checks it decodes to something PEM-shaped — `importAccessTokenPublicKey`
+ * does the real structural validation at boot. Mirrors `apps/api/src/config/env.ts`'s
+ * identical schema.
+ */
+const Base64PemKey = z.string().refine(
   (value) => {
     try {
-      return Buffer.from(value, 'base64').length === 32;
+      return Buffer.from(value, 'base64').toString('utf8').includes('-----BEGIN');
     } catch {
       return false;
     }
   },
-  { message: 'must be 32 bytes of base64-encoded key material' },
+  { message: 'must be a base64-encoded PEM key block' },
 );
 
 export const EnvSchema = z.object({
@@ -45,10 +51,10 @@ export const EnvSchema = z.object({
      docs.page_versions. Nothing else. */
   DATABASE_COLLAB_URL: NonEmpty,
 
-  /* Same secret, issuer and audience the API signs with — this process is a
-     second verifier of the same credential, not a third party, exactly as
-     apps/realtime's JWT_SECRET note explains. */
-  JWT_SECRET: Base64Key,
+  /* Same issuer and audience the API signs with, and now
+     (packages/security/src/jwt.ts's file header) the same RS256 PUBLIC key —
+     never the private one. This gateway verifies, it never mints. */
+  JWT_PUBLIC_KEY: Base64PemKey,
 
   COLLAB_PORT: z.coerce.number().int().positive().max(65_535).default(3002),
   COLLAB_HOST: z.string().default('0.0.0.0'),
@@ -113,7 +119,7 @@ const KNOWN_VARIABLES = new Set([
      and the worker, never here. Same class again. */
   'DATABASE_OPS_EVENTS_URL',
   'DATABASE_POOL_MAX',
-  'JWT_SECRET',
+  'JWT_PUBLIC_KEY',
   'WEB_ORIGIN',
   /* apps/web's vite.config.ts reads these; no server does. Same reasoning as
      the API's identical note: the `WEB_` prefix makes the misspelling check

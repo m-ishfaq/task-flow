@@ -288,7 +288,7 @@ function depsFor(
     },
     redirectUri: (provider) => `https://app.test/integrations/callback/${provider}`,
     webhookOrigin: 'https://app.test',
-    jwtSecret: Buffer.alloc(32, 9),
+    jwtStateSecret: Buffer.alloc(32, 9),
     keys,
     fetchImpl,
     ...overrides,
@@ -734,7 +734,7 @@ describe('the state token is the trust anchor', () => {
 
     /* A state signed by an attacker's own secret is indistinguishable from
        garbage to the verifier — the audience, issuer and HMAC all fail. */
-    const forgedDeps = depsFor(fake.fetch, { jwtSecret: Buffer.alloc(32, 1) });
+    const forgedDeps = depsFor(fake.fetch, { jwtStateSecret: Buffer.alloc(32, 1) });
     const { state } = await beginState(owner, forgedDeps, 'slack');
 
     await expect(
