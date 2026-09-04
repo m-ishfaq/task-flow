@@ -10,6 +10,7 @@
     "seed": "tsx src/cli.ts",
     "search:backfill": "tsx src/search-backfill.cli.ts",
     "analytics:backfill": "tsx src/analytics-backfill.cli.ts",
+    "plans:reconcile": "tsx src/plan-catalog-reconcile.cli.ts",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
