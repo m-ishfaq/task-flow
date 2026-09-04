@@ -61,10 +61,24 @@ import { adminModule } from './platform.admin.js';
  *
  * The limits are the interesting part and are NOT uniform. Free has a zero
  * telephony cap (spend nothing at all — a real, different state from
- * unlimited); Business has `null` where the others have a number, so the
- * "unlimited" rendering has a subject; and the markup climbs while the
- * included allowance climbs faster, which is the shape a real usage-billing
- * ladder has.
+ * unlimited); the markup climbs down while the included allowance climbs up
+ * faster as tiers rise, which is the shape a real usage-billing ladder has.
+ *
+ * `telephonyCapCents` is deliberately NOT scaled to price (migration 0095).
+ * It is real carrier spend — paid to Twilio in near-real-time, independent
+ * of whether the org ever pays the overage invoice for usage past
+ * `telephonyIncludedCents` — so a cap sized as a multiple of the
+ * subscription price means the platform's worst-case exposure on a single
+ * bad signup (stolen card, chargeback, simple non-payment) comfortably
+ * exceeds what it collected. That was true for every paid tier at
+ * launch — Starter's $50 cap against a $19/mo price, Business genuinely
+ * `null` (unlimited) behind the exact same unvetted, self-serve Stripe
+ * checkout as the other two — and none of it had been weighed against
+ * dollars actually at risk. The corrected caps are a flat, small, per-tier
+ * FRAUD BACKSTOP instead: enough to cover real small-team usage, small
+ * enough that the worst case stays bounded. `telephonyIncludedCents` (the
+ * prepaid allowance) and the markup percentages are unchanged — those were
+ * already sized as a fraction of what a plan collects and hold up.
  */
 export const CATALOG = [
   {
@@ -94,7 +108,10 @@ export const CATALOG = [
     monthlyCents: 1900,
     annualCents: 19_000,
     limits: {
-      telephonyCapCents: 5000,
+      // Flat fraud backstop, not a multiple of price (migration 0095) — see
+      // this file's header. $15 covers real small-team usage; the prepaid
+      // $5 (telephonyIncludedCents below) is what's actually "free."
+      telephonyCapCents: 1500,
       automationRunsPerHour: 60,
       turnIssuancePerDay: 200,
       telephonyIncludedCents: 500,
@@ -111,7 +128,8 @@ export const CATALOG = [
     monthlyCents: 4900,
     annualCents: 49_000,
     limits: {
-      telephonyCapCents: 25_000,
+      // Flat fraud backstop, not a multiple of price (migration 0095).
+      telephonyCapCents: 5000,
       automationRunsPerHour: 600,
       turnIssuancePerDay: 2000,
       telephonyIncludedCents: 2500,
@@ -121,7 +139,7 @@ export const CATALOG = [
   {
     id: 'business',
     name: 'Business',
-    description: 'Everything, with no ceiling on spend and priority support.',
+    description: 'Everything, with generous usage limits and priority support.',
     sortOrder: 3,
     /* `analytics` is the one feature this tier has that `pro` does not — every
        other entry below is identical to `pro`'s list, so without it Business
@@ -141,10 +159,16 @@ export const CATALOG = [
     monthlyCents: 14_900,
     annualCents: 149_000,
     limits: {
-      /* NULL is UNLIMITED, and 0 above is none-at-all. Both are seeded so the
-         two renderings are both reachable — a catalog where every limit is a
-         number never shows the "Unlimited" branch. */
-      telephonyCapCents: null,
+      /* NULL is UNLIMITED, and 0 is none-at-all — both real, reachable
+         states elsewhere in this catalog (Free's telephonyCapCents is 0,
+         automationRunsPerHour/turnIssuancePerDay stay null/unlimited here).
+         telephonyCapCents does NOT get that treatment (migration 0095, this
+         file's header): Business is the same unvetted, self-serve Stripe
+         checkout as Starter and Pro, just a higher price, so "no ceiling on
+         spend" was payment-risk exposure nobody had priced in, not a
+         deliberately unlimited allowance. $100 is still enormous for any
+         real team's usage — it just stops being infinite. */
+      telephonyCapCents: 10_000,
       automationRunsPerHour: null,
       turnIssuancePerDay: null,
       telephonyIncludedCents: 10_000,
