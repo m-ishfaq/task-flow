@@ -382,6 +382,35 @@ and say so in their output (`platform.attachments: STORAGE_* not fully
 configured — attachments will be skipped.` and similarly for telephony,
 webhooks, and the platform operator). Nothing fails; you just get less data.
 
+## Reconciling the plan catalog against production
+
+```bash
+docker compose --env-file .env.prod -f compose.prod.yaml --profile tools run --rm \
+  plans-reconcile --operator-email you@company.com --dry-run
+```
+
+Drop `--dry-run` (and add `--yes`, since this is never `localhost` from the
+container's own point of view) once the preview looks right. `plans-reconcile`
+is a DIFFERENT service from `seed` and exists precisely because `seed` is the
+wrong tool for this: `seed --reset` (or even a plain `seed` run) walks the
+full fixture graph — demo orgs, demo users, and `platform.admin.ts`'s own
+hardcoded flag overrides — none of which belongs anywhere near this database.
+`plans-reconcile` touches only `billing.plans`/`billing.plan_prices`, through
+the same `createPlan`/`updatePlan`/`setPrice` the console's Plans tab calls
+(feature-registry validation, an audited operator-log entry, a domain event),
+reconciling every tier in `packages/seed/src/modules/billing.catalog.ts`'s
+`CATALOG` to match — attributed to a REAL operator account you name by email,
+never a seeded one. `--operator-email` has no default on purpose; the account
+named must already exist in `platform.operators` (grant one the same way any
+other operator is granted — §7 decision 7 — before running this against a
+database that has none).
+
+Safe to re-run any time the `CATALOG` literal changes: `updatePlan` only
+writes (and only audits) fields that actually differ, and pricing is
+reconciled only when the amount has genuinely changed — unlike `setPrice`'s
+behavior inside `seed`'s own fixture run, this will not mint a fresh, real
+Stripe Price object on a re-run that changed nothing.
+
 ## Enabling the TURN profile (in-app voice relay)
 
 Set `RTC_TURN_URLS` and `RTC_TURN_SECRET` to real values in `.env.prod` FIRST,

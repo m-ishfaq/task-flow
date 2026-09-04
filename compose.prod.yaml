@@ -376,6 +376,58 @@ services:
     # `migrate`'s own comment above for why there is no pnpm in this image.
     entrypoint: ['packages/seed/node_modules/.bin/tsx', 'packages/seed/src/cli.ts']
 
+  # One-shot, manual only -- same profile gating as migrate/seed, and the
+  # same reason there is no `pnpm --filter @taskflow/seed plans:reconcile`
+  # version of this: no pnpm binary in this image (`migrate`'s own comment).
+  #
+  # Unlike `seed`, this runs as ordinary NODE_ENV: production (`<<:
+  # *app-env`) -- it is not the fixture generator seed is, has no
+  # assertSafeToSeed()-style refusal to guard, and is explicitly meant to
+  # run against this real database
+  # (packages/seed/src/plan-catalog-reconcile.cli.ts's own header). It
+  # writes only billing.plans/billing.plan_prices, through the same
+  # createPlan/updatePlan/setPrice the console's Plans tab calls, so it
+  # needs DATABASE_PLATFORM_ADMIN_URL rather than migrate's
+  # DATABASE_MIGRATION_URL, plus the same Stripe variables `seed` carries
+  # for the identical reason: repricing (only when a price actually
+  # changed) calls the real processor when PAYMENTS_PROVIDER=stripe.
+  #
+  # `entrypoint`, not `command`, for the same reason `seed` uses it: every
+  # flag typed after the service name reaches the script directly --
+  #   docker compose --env-file .env.prod -f compose.prod.yaml --profile tools \
+  #     run --rm plans-reconcile --operator-email you@co.com --dry-run
+  #
+  # `${IMAGE_TAG:-latest}`, NOT `${IMAGE_TAG:-local}` like every other
+  # service in this file -- deliberately different, not a copy-paste miss.
+  # `migrate`/`ensure-roles` are run AS PART OF one specific deploy, tied to
+  # the exact SHA that deploy just built (cd.yml and the runbook both set
+  # `IMAGE_TAG=<that-sha>` by hand for them) -- `:local` is a safe default
+  # there because a human invoking them manually is expected to supply the
+  # real tag every time. This service is invoked on its own schedule, not
+  # tied to any particular deploy, and a bare `docker compose run --rm
+  # plans-reconcile ...` with no `IMAGE_TAG=` prefix must still work --
+  # `:local` was never pushed to the registry by CD at all (build-push only
+  # ever tags `<sha>` and `latest`), so that default would just fail to
+  # pull. `latest` always matches whatever the most recent deploy actually
+  # published, which is the only sane thing to run against absent a reason
+  # to pin an older SHA.
+  plans-reconcile:
+    image: ${REGISTRY:-ghcr.io/m-ishfaq}/task-flow-api:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    profiles: ['tools']
+    environment:
+      <<: *app-env
+      DATABASE_PLATFORM_ADMIN_URL: postgresql://taskflow_platform_admin:${TASKFLOW_PLATFORM_ADMIN_PASSWORD:?TASKFLOW_PLATFORM_ADMIN_PASSWORD must be set}@postgres:5432/taskflow
+      PAYMENTS_PROVIDER: ${PAYMENTS_PROVIDER:-fake}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint:
+      ['packages/seed/node_modules/.bin/tsx', 'packages/seed/src/plan-catalog-reconcile.cli.ts']
+
   api:
     image: ${REGISTRY:-ghcr.io/m-ishfaq}/task-flow-api:${IMAGE_TAG:-local}
     build:
