@@ -49,6 +49,8 @@ export interface BrandingRow {
   readonly logoKey: string | null;
   readonly faviconKey: string | null;
   readonly paletteId: PaletteId;
+  /** Migration 0095. NULL until an operator sets one. */
+  readonly salesEmail: string | null;
   readonly updatedBy: string | null;
   readonly updatedAt: Date;
 }
@@ -88,6 +90,7 @@ async function loadRow(): Promise<BrandingRow> {
       logoKey: row.logoKey,
       faviconKey: row.faviconKey,
       paletteId: asPaletteId(row.paletteId),
+      salesEmail: row.salesEmail,
       updatedBy: row.updatedBy,
       updatedAt: row.updatedAt,
     };
@@ -135,13 +138,18 @@ export async function setBranding(
   input: {
     readonly productName?: string | undefined;
     readonly paletteId?: PaletteId | undefined;
+    /** `undefined` leaves it alone; `null` clears it — the route's own
+     * `.email().nullable().optional()` is what makes the distinction
+     * arrive intact from a browser, and this function trusts it rather
+     * than re-validating the format. */
+    readonly salesEmail?: string | null | undefined;
   },
 ): Promise<BrandingRow> {
   const now = new Date();
 
   const fields = Object.keys(input).filter(
     (key) => input[key as keyof typeof input] !== undefined,
-  ) as readonly ('productName' | 'paletteId')[];
+  ) as readonly ('productName' | 'paletteId' | 'salesEmail')[];
 
   if (fields.length === 0) throw errors.validation({ productName: 'Nothing to change.' });
 
@@ -151,6 +159,7 @@ export async function setBranding(
       .set({
         ...(input.productName === undefined ? {} : { productName: input.productName }),
         ...(input.paletteId === undefined ? {} : { paletteId: input.paletteId }),
+        ...(input.salesEmail === undefined ? {} : { salesEmail: input.salesEmail }),
         updatedBy: operator.userId,
         updatedAt: now,
       })
@@ -332,6 +341,10 @@ export interface PublicBranding {
   readonly logoUrl: string | null;
   readonly faviconUrl: string | null;
   readonly paletteId: PaletteId;
+  /** Migration 0095. NULL until an operator sets one — the Enterprise
+   * "contact us" tile on the billing page renders nothing rather than a
+   * dead mailto link when this is null. */
+  readonly salesEmail: string | null;
 }
 
 /**
@@ -366,5 +379,6 @@ export async function publicBrandingSnapshot(deps: {
         ? null
         : await deps.storage.presignDownload(snapshot.faviconKey, ASSET_URL_TTL_SECONDS),
     paletteId: snapshot.paletteId,
+    salesEmail: snapshot.salesEmail,
   };
 }

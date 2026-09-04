@@ -102,6 +102,15 @@ function useAssetUpload({
   return upload;
 }
 
+/**
+ * A shape check only — enough to grey out Save on an obvious typo before a
+ * round trip. The route's own `z.string().email()` is the real validator;
+ * this never needs to agree with it exactly, only to not be looser.
+ */
+function isLikelyEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
 export function BrandingTab({
   guard,
   onStepUp,
@@ -112,6 +121,8 @@ export function BrandingTab({
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [nameDirty, setNameDirty] = useState(false);
+  const [salesEmail, setSalesEmail] = useState('');
+  const [salesEmailDirty, setSalesEmailDirty] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
   const [logoProgress, setLogoProgress] = useState<string | null>(null);
@@ -128,10 +139,14 @@ export function BrandingTab({
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.platformBranding() });
 
   const setBranding = useMutation({
-    mutationFn: (input: { productName?: string; paletteId?: PaletteId }) =>
-      api.platformAdmin.branding.set.mutate(input),
+    mutationFn: (input: {
+      productName?: string;
+      paletteId?: PaletteId;
+      salesEmail?: string | null;
+    }) => api.platformAdmin.branding.set.mutate(input),
     onSuccess: async () => {
       setNameDirty(false);
+      setSalesEmailDirty(false);
       setPreviewPalette(null);
       await refresh();
     },
@@ -166,6 +181,7 @@ export function BrandingTab({
 
   const data = brandingQuery.data;
   const displayName = nameDirty ? name : (data?.productName ?? '');
+  const displayEmail = salesEmailDirty ? salesEmail : (data?.salesEmail ?? '');
 
   return (
     <section aria-label="Branding" className="flex flex-col gap-4">
@@ -208,6 +224,51 @@ export function BrandingTab({
                     onClick={() => {
                       setName('');
                       setNameDirty(false);
+                    }}
+                  >
+                    Reset
+                  </Button>
+                )}
+              </div>
+            </Field>
+
+            <Field
+              label="Sales / contact email"
+              htmlFor="branding-sales-email"
+              hint="Powers the 'Contact us' tile owners see on the billing page when no plan fits them. Leave blank to hide it."
+            >
+              <div className="flex gap-2">
+                <Input
+                  id="branding-sales-email"
+                  type="email"
+                  placeholder="sales@yourcompany.com"
+                  value={displayEmail}
+                  maxLength={254}
+                  onChange={(event) => {
+                    setSalesEmail(event.target.value);
+                    setSalesEmailDirty(true);
+                  }}
+                />
+                <Button
+                  disabled={
+                    setBranding.isPending ||
+                    !salesEmailDirty ||
+                    (displayEmail.trim() !== '' && !isLikelyEmail(displayEmail.trim()))
+                  }
+                  onClick={() => {
+                    const trimmed = displayEmail.trim();
+                    setBranding.mutate({ salesEmail: trimmed === '' ? null : trimmed });
+                  }}
+                >
+                  Save
+                </Button>
+                {salesEmailDirty && (
+                  <Button
+                    variant="ghost"
+                    disabled={setBranding.isPending}
+                    onClick={() => {
+                      setSalesEmail('');
+                      setSalesEmailDirty(false);
                     }}
                   >
                     Reset

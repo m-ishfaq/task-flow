@@ -44,7 +44,7 @@ import { webhooksModule } from './modules/platform.webhooks.js';
 import { backfillAnalytics } from './analytics-backfill.js';
 
 /**
- * `pnpm seed [--profile <name>] [--seed <value>] [--reset] [--chaos]`
+ * `pnpm seed [--profile <name>] [--seed <value>] [--reset] [--chaos] [--reseed-plans]`
  *
  * Everything below `parseArgs` and the three safety guards is process
  * plumbing: build a context, walk the module graph in dependency order,
@@ -73,6 +73,7 @@ interface Args {
   readonly seed: string;
   readonly reset: boolean;
   readonly chaos: boolean;
+  readonly reseedPlans: boolean;
   readonly help: boolean;
 }
 
@@ -81,6 +82,7 @@ function parseArgs(argv: readonly string[]): Args {
   let seed = 'taskflow-dev';
   let doReset = false;
   let chaos = false;
+  let reseedPlans = false;
   let help = false;
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -108,6 +110,9 @@ function parseArgs(argv: readonly string[]): Args {
       case '--chaos':
         chaos = true;
         break;
+      case '--reseed-plans':
+        reseedPlans = true;
+        break;
       case '--help':
       case '-h':
         help = true;
@@ -117,7 +122,7 @@ function parseArgs(argv: readonly string[]): Args {
     }
   }
 
-  return { profile, seed, reset: doReset, chaos, help };
+  return { profile, seed, reset: doReset, chaos, reseedPlans, help };
 }
 
 function printHelp(): void {
@@ -129,6 +134,7 @@ function printHelp(): void {
       '  --seed <value>     RNG seed — same value always produces the same database',
       "  --reset            remove this package's previously seeded orgs/users first",
       '  --chaos            deliberately create a degenerate rank, to exercise rebalance',
+      '  --reseed-plans     reconcile EXISTING plans to billing.catalog.ts too (default: skip them)',
       '  --help             this message',
     ].join('\n'),
   );
@@ -441,7 +447,7 @@ async function main(): Promise<void> {
         // A ceiling, for the opposite reason — see `plannedPageCount`.
         `<=${String(plannedPageCount(profile))} page(s). Seed: ${args.seed}${
           args.chaos ? ' (chaos)' : ''
-        }`,
+        }${args.reseedPlans ? ' (reseed-plans)' : ''}`,
     );
 
     const rng = createRng(args.seed);
@@ -474,6 +480,7 @@ async function main(): Promise<void> {
       profile,
       now: new Date(),
       chaos: args.chaos,
+      reseedPlans: args.reseedPlans,
       storage,
       telephony,
       keys,

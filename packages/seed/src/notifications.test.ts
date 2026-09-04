@@ -56,6 +56,7 @@ function harnessFor(
     profile,
     now: new Date('2026-08-06T12:00:00.000Z'),
     chaos: false,
+    reseedPlans: false,
     storage: null,
     telephony: null,
     keys: null,

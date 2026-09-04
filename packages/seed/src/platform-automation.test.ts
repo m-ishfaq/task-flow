@@ -203,6 +203,7 @@ function harnessFor(
     profile: findProfile('demo'),
     now: new Date('2026-08-12T12:00:00.000Z'),
     chaos: false,
+    reseedPlans: false,
     payments: null,
     storage: null,
     telephony: null,

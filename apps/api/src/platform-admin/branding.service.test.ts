@@ -175,7 +175,7 @@ beforeEach(async () => {
   await admin.query(
     `UPDATE platform.branding
      SET product_name = 'TaskFlow', logo_key = NULL, favicon_key = NULL,
-         palette_id = 'default', updated_by = NULL, updated_at = now()
+         palette_id = 'default', sales_email = NULL, updated_by = NULL, updated_at = now()
      WHERE id = true`,
   );
   await admin.query(`DELETE FROM platform.operator_audit_log`);
@@ -194,7 +194,7 @@ afterAll(async () => {
   await admin.query(
     `UPDATE platform.branding
      SET product_name = 'TaskFlow', logo_key = NULL, favicon_key = NULL,
-         palette_id = 'default', updated_by = NULL, updated_at = now()
+         palette_id = 'default', sales_email = NULL, updated_by = NULL, updated_at = now()
      WHERE id = true`,
   );
   await admin.query(
@@ -212,6 +212,7 @@ describe('the branding singleton', () => {
       logoKey: null,
       faviconKey: null,
       paletteId: 'default',
+      salesEmail: null,
       updatedBy: null,
       updatedAt: expect.any(Date) as unknown,
     });
@@ -270,6 +271,26 @@ describe('the branding singleton', () => {
       operatorUserId: OPERATOR,
       fields: expect.arrayContaining(['productName', 'paletteId']) as unknown,
     });
+  });
+
+  it('sets, then clears, the sales/contact email (migration 0095)', async () => {
+    const events = new RecordingEventBus();
+    const deps = {
+      events,
+      storage: new FakeStorage(),
+      scanner: { host: '127.0.0.1', port: 1, timeoutMs: 1 },
+    };
+
+    const afterSet = await branding.setBranding(deps, operator, {
+      salesEmail: 'sales@example.com',
+    });
+    expect(afterSet.salesEmail).toBe('sales@example.com');
+
+    /* Explicit `null` clears it — distinct from `undefined`, which leaves it
+       alone. setBranding's own doc comment on `salesEmail` is what this
+       proves against a real write, not just a type. */
+    const afterClear = await branding.setBranding(deps, operator, { salesEmail: null });
+    expect(afterClear.salesEmail).toBeNull();
   });
 
   it('records an operator action for both a read and a write', async () => {

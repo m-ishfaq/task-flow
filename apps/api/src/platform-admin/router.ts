@@ -345,6 +345,7 @@ const BrandingRow = z
     logoKey: z.string().nullable(),
     faviconKey: z.string().nullable(),
     paletteId: PaletteIdSchema,
+    salesEmail: z.string().nullable(),
     updatedBy: z.string().nullable(),
     updatedAt: z.date(),
   })
@@ -752,6 +753,13 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
             .object({
               productName: z.string().trim().min(1).max(80).optional(),
               paletteId: PaletteIdSchema.optional(),
+              /* `.nullable()` alongside `.optional()`, not one or the
+                 other — undefined means "not in this patch" (setBranding's
+                 own doc comment), an explicit null means "clear it". A
+                 client that sent `''` to mean "clear" would fail `.email()`
+                 first, which is the point: an empty string is not a valid
+                 address to save, where null unambiguously is "none". */
+              salesEmail: z.string().trim().email().max(254).nullable().optional(),
             })
             .strict(),
         )
@@ -805,6 +813,7 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
               logoUrl: z.string().nullable(),
               faviconUrl: z.string().nullable(),
               paletteId: PaletteIdSchema,
+              salesEmail: z.string().nullable(),
             })
             .strict(),
         )

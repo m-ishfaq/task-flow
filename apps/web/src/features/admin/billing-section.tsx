@@ -8,16 +8,7 @@ import { formatDate } from '../../lib/format.js';
 import { Badge, Button, Section, SkeletonRows } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { featureDescription, featureLabel } from '../../lib/feature-labels.js';
-
-/**
- * Marketing copy only — never a `billing.plans` row. Enterprise has no fixed
- * price to sell through Stripe Checkout, so it can never be `sellable`
- * (`plan.prices.length > 0`); the fulfillment side already exists
- * (`billing.org_entitlements`, the operator console's per-org override) and
- * needs no plan row to work. Swap this for the real sales inbox before
- * launch.
- */
-const ENTERPRISE_CONTACT_EMAIL = 'sales@taskflow.example';
+import { useBranding } from '../../lib/branding-context.js';
 
 /**
  * Org billing (Phase 12 Wave 3 §3.1, §5; rebuilt in Wave 4) — the
@@ -47,6 +38,7 @@ const ENTERPRISE_CONTACT_EMAIL = 'sales@taskflow.example';
  */
 export function BillingSection({ orgId }: { readonly orgId: string }) {
   const queryClient = useQueryClient();
+  const { salesEmail } = useBranding();
 
   const overview = useQuery({
     queryKey: keys.billing(orgId),
@@ -468,26 +460,34 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
               </ul>
             )}
 
-            {/* Static — not a `billing.plans` row (see ENTERPRISE_CONTACT_EMAIL's
-                own comment). Always shown, catalog empty or not: this is the
-                answer for "none of these fit us", which is a real question
-                regardless of what happens to be sellable today. */}
-            <div className="mt-3 flex items-center justify-between gap-3 border-t border-line/50 pt-3">
-              <div>
-                <p className="text-sm text-ink">Enterprise</p>
-                <p className="text-xs text-ink-muted">
-                  Custom limits and a plan tailored to how your organization actually works.
-                </p>
+            {/* Static — not a `billing.plans` row. Enterprise has no fixed
+                price to sell through Checkout, so it can never be
+                `sellable` (`plan.prices.length > 0`); the fulfillment side
+                already exists (`billing.org_entitlements`, the operator
+                console's per-org override) and needs no plan row to work.
+                `salesEmail` comes from the platform-wide branding singleton
+                (migration 0095, Branding tab in the operator console) —
+                never a hardcoded address — and the whole tile renders
+                nothing until an operator sets one, the same "no dead
+                button" rule `sellable.length === 0` above follows. */}
+            {salesEmail !== null && (
+              <div className="mt-3 flex items-center justify-between gap-3 border-t border-line/50 pt-3">
+                <div>
+                  <p className="text-sm text-ink">Enterprise</p>
+                  <p className="text-xs text-ink-muted">
+                    Custom limits and a plan tailored to how your organization actually works.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    window.location.assign(`mailto:${salesEmail}`);
+                  }}
+                >
+                  Contact us
+                </Button>
               </div>
-              <Button
-                size="sm"
-                onClick={() => {
-                  window.location.assign(`mailto:${ENTERPRISE_CONTACT_EMAIL}`);
-                }}
-              >
-                Contact us
-              </Button>
-            </div>
+            )}
           </div>
         </div>
       )}
