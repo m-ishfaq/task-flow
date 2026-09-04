@@ -73,6 +73,16 @@ beforeAll(async () => {
   });
 
   await admin.setOrg(null);
+  /* Before, not only after — an aborted previous run skips teardown
+     (billing.catalog.ts's own comment on the same pattern). setOrgEntitlements
+     calls recordOperatorAction, which writes OWNER into
+     platform.operator_audit_log as the operator; that row's FK to
+     identity.users refuses the user delete below unless it goes first.
+     Scoped to OWNER's own rows, not a full-table wipe — the whole table is
+     platform-admin.service.test.ts's to reset (see its own header on why
+     every other file avoids that), and this only ever touches the handful
+     of rows this file's own OWNER id produced. */
+  await admin.query(`DELETE FROM platform.operator_audit_log WHERE operator_id = $1`, [OWNER]);
   await admin.query(`DELETE FROM identity.users WHERE id = $1`, [OWNER]);
   await admin.query(
     `INSERT INTO identity.users (id, email, email_normalized, email_verified_at)
@@ -97,6 +107,7 @@ afterAll(async () => {
     await admin.query(`DELETE FROM identity.orgs WHERE id = $1`, [orgId]);
     await admin.setOrg(null);
   }
+  await admin.query(`DELETE FROM platform.operator_audit_log WHERE operator_id = $1`, [OWNER]);
   await admin.query(`DELETE FROM identity.users WHERE id = $1`, [OWNER]);
   await admin.end();
   await closeDatabase();
