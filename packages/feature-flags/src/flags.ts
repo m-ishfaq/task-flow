@@ -24,20 +24,48 @@
  * for deletion — they are the vocabulary a plan is written in, and deleting
  * one now would silently drop it from every plan that grants it.
  *
- * ## Why every shipped module's `defaultValue` had to change to `true`
+ * ## `defaultValue` inverted back to `false` for every launched, perOrg flag
  *
- * Six of these said `stage: 'planned'`, `defaultValue: false` while the module
- * had been shipped for months. That was harmless for exactly as long as
- * nothing consulted them — and the day the resolver started reading plan
- * features, a stale `false` became a paying customer's module going dark with
- * nothing in any log to explain it.
+ * This is the second reversal this file has documented, and it is worth
+ * being honest that it directly contradicts the reasoning the FIRST one
+ * gave. That reasoning was not wrong at the time — it was solving a real
+ * problem (a stale `false` on a shipped module going dark for a paying
+ * customer with nothing in any log to explain it) with the tool available
+ * then, which was "assume on unless told off." The problem with that fix,
+ * found only once real plan data existed to look at: a plan's feature list
+ * can only ADD a grant on top of the registry default (see
+ * `entitlement-resolver.ts`'s own tier-2 comment) — it can never restrict
+ * one. So with every launched flag defaulting `true`, NO plan could ever
+ * withhold Chat, Docs, Voice & Messaging, Advanced Search, Automation, or
+ * the Public API from anything — Free and an org with no plan at all
+ * resolved identically to Business, because there was nothing left for a
+ * plan to restrict. `analytics` was the one flag that ever actually
+ * differed by plan, for the single reason that it alone had kept
+ * `defaultValue: false`.
  *
- * The direction of the correction is the safe one. `true` means "this module
- * exists and works unless something says otherwise", and the somethings are
- * an explicit env value, a global operator override, or a plan that does not
- * include it — each of which is a deliberate act with a record. `false` would
- * have meant "off until someone remembers", which is the state that shipped
- * for six months without anyone noticing.
+ * `ai/phase-12-wave4-plans.md` §3.6 already specified the intended shape —
+ * "an org spends fourteen days on trial entitlements... lands on Free with
+ * no Docs" — a real restriction. The registry could not produce it while
+ * every flag defaulted to `true`. Flipping back to `false` is what makes a
+ * plan's `features` list a real decision again instead of a decorative one,
+ * matching how `analytics` worked all along.
+ *
+ * The trap the first reversal was written to avoid has NOT reopened,
+ * because the trial gap it would otherwise create is closed structurally,
+ * not by trusting anyone to remember: migration 0094 gives every new org a
+ * real `trial` plan the moment it is created (`org.service.ts`'s
+ * `createOrg`, never `plan_id = NULL`), so "no plan" — the state that used
+ * to mean "give them everything" — no longer exists as a reachable state
+ * for a real org, trialing or otherwise. What DOES require deliberate,
+ * ongoing attention is the one thing that reversal could not fix by
+ * construction: every plan's stored `features` row must actually list what
+ * it is meant to grant. `free`'s row was seeded empty on purpose
+ * (migration 0063's own comment: "the seeded plans preserve the status quo
+ * — they do not design the pricing") specifically so an operator would fill
+ * it in deliberately, through the console, rather than a migration guessing
+ * at pricing. That is a real, standing gap this file cannot close on its
+ * own — checked by hand once, in the operator console's Plans tab, for
+ * every plan that exists.
  */
 
 /** Development stage of a flagged module, for reporting and cleanup sweeps. */
@@ -61,10 +89,14 @@ export interface FlagDefinition {
 export const FLAGS = {
   /* --- Phase 5 ----------------------------------------------------------- */
   chat: {
+    /* `defaultValue: false` — an org gets Chat because its plan lists it
+       (every seeded tier does; migration 0094's `trial` plan does too), not
+       because the registry hands it out for free. See this file's header on
+       why the registry default had to invert back to match `analytics`. */
     description: 'Chat module: channels, DMs, threads',
     phase: 5,
     stage: 'launched',
-    defaultValue: true,
+    defaultValue: false,
     perOrg: true,
   },
 
@@ -73,7 +105,7 @@ export const FLAGS = {
     description: 'Docs module: spaces, collaborative page editing',
     phase: 6,
     stage: 'launched',
-    defaultValue: true,
+    defaultValue: false,
     perOrg: true,
   },
 
@@ -86,7 +118,7 @@ export const FLAGS = {
     // product surface is behind this flag yet — Wave 1 deliberately ships
     // nothing a user would call a feature (ai/phase-7-voice.md §5).
     stage: 'launched',
-    defaultValue: true,
+    defaultValue: false,
     perOrg: true,
   },
   telephonyLiveCredentials: {
@@ -106,7 +138,7 @@ export const FLAGS = {
     description: 'TQL text query syntax (the AST and visual builder are not gated)',
     phase: 8,
     stage: 'launched',
-    defaultValue: true,
+    defaultValue: false,
     perOrg: true,
   },
 
@@ -115,14 +147,14 @@ export const FLAGS = {
     description: 'Cross-product automation rules engine',
     phase: 10,
     stage: 'launched',
-    defaultValue: true,
+    defaultValue: false,
     perOrg: true,
   },
   publicApi: {
     description: 'Public REST API and scoped API tokens',
     phase: 10,
     stage: 'launched',
-    defaultValue: true,
+    defaultValue: false,
     perOrg: true,
   },
 
@@ -130,17 +162,13 @@ export const FLAGS = {
   analytics: {
     /* Launched: `apps/api/src/analytics` (router, dashboards, refresh,
        backfill) is real, wired into the app router, and every one of its
-       routes now carries `feature: { flag: 'analytics', ... }` — this entry
-       is no longer scaffolding with nothing behind it.
+       routes carries `feature: { flag: 'analytics', ... }`.
 
-       `defaultValue: false` stays false deliberately, unlike the other
-       launched, perOrg flags above (which default `true` because the
-       registry default is the "environment" tier every org falls back to
-       with no plan). Analytics is the one module a plan is meant to grant or
-       withhold as the actual product decision — `business` currently does,
-       via `packages/seed/src/modules/billing.catalog.ts`'s catalog — so a
-       `true` default here would hand it to every org regardless of plan,
-       which is the exact gap this flag existed to close and briefly did not. */
+       `defaultValue: false` was always the answer here, and every other
+       launched, perOrg flag above has now joined it — see this file's own
+       header on why. `business` grants analytics explicitly via
+       `packages/seed/src/modules/billing.catalog.ts`'s catalog; nothing
+       else does, which is the point of a plan being a decision. */
     description: 'Analytics dashboards',
     phase: 11,
     stage: 'launched',

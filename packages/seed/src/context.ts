@@ -90,6 +90,24 @@ export interface SeedContext {
    */
   readonly chaos: boolean;
   /**
+   * `--reseed-plans` (off by default). `billing.catalog`'s CATALOG literal is
+   * the source of truth for what each plan should grant and cost, but the
+   * module normally SKIPS any plan id that already exists — the correct
+   * default, because a plain `pnpm seed` run must never silently overwrite an
+   * operator's live console edit. This flag is the deliberate exception: when
+   * set, an EXISTING plan is reconciled to the literal too, through the same
+   * `updatePlan`/`setPrice` the console itself calls (audit log entry, domain
+   * event, feature-registry validation, Stripe price archival — never a raw
+   * write). Off by default for the same reason `--reset` is: an accidental
+   * run must be a no-op, not a silent rewrite of real pricing.
+   *
+   * The existing remote-host guard in `cli.ts`'s `assertSafeToSeed`
+   * (`SEED_I_MEAN_IT`) already covers this — this flag does not need its own
+   * copy of that check, since nothing in this package writes anywhere without
+   * passing it first.
+   */
+  readonly reseedPlans: boolean;
+  /**
    * Object storage, or null when attachments cannot be seeded for real —
    * `STORAGE_*` unset, or the profile does not ask for them. `platform.attachments`
    * treats null as "skip", never as "fake it": CLAUDE.md is explicit that an
@@ -289,6 +307,7 @@ export interface CreateContextOptions {
   readonly profile: Profile;
   readonly now: Date;
   readonly chaos: boolean;
+  readonly reseedPlans: boolean;
   readonly storage: StorageProvider | null;
   readonly telephony: TelephonySeedConfig | null;
   readonly keys: KeyProvider | null;
@@ -320,6 +339,7 @@ export function createSeedContext(options: CreateContextOptions): SeedContextHan
     profile: options.profile,
     now: options.now,
     chaos: options.chaos,
+    reseedPlans: options.reseedPlans,
     storage: options.storage,
     telephony: options.telephony,
     keys: options.keys,

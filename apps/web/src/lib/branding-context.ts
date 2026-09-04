@@ -16,6 +16,8 @@ export interface BrandingValue {
   readonly logoUrl: string | null;
   readonly faviconUrl: string | null;
   readonly paletteId: PaletteId;
+  /** Migration 0096. Null until an operator sets one in the console. */
+  readonly salesEmail: string | null;
 }
 
 /**
@@ -31,6 +33,7 @@ export const DEFAULT_BRANDING: BrandingValue = {
   logoUrl: null,
   faviconUrl: null,
   paletteId: 'default',
+  salesEmail: null,
 };
 
 /**

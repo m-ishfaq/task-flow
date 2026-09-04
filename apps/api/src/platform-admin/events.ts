@@ -95,8 +95,8 @@ export const flagOverrideCleared = defineEvent(
 );
 
 /**
- * The deployment's branding changed — product name, logo, favicon, or
- * accent palette (migration 0073).
+ * The deployment's branding changed — product name, logo, favicon, accent
+ * palette, or sales/contact email (migrations 0073, 0096).
  *
  * Global, like `flagOverrideSet`: the envelope carries SYSTEM_ORG, because
  * there is exactly one branding row for the whole platform and no target
@@ -112,7 +112,7 @@ export const brandingUpdated = defineEvent(
   z
     .object({
       operatorUserId: z.string(),
-      fields: z.array(z.enum(['productName', 'logoKey', 'faviconKey', 'paletteId'])),
+      fields: z.array(z.enum(['productName', 'logoKey', 'faviconKey', 'paletteId', 'salesEmail'])),
     })
     .strict(),
 );

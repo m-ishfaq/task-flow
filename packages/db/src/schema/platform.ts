@@ -395,6 +395,8 @@ export const branding = platform.table('branding', {
   logoKey: text('logo_key'),
   faviconKey: text('favicon_key'),
   paletteId: text('palette_id').notNull().default('default'),
+  /** Migration 0096. NULL until an operator sets one — same as logo/favicon. */
+  salesEmail: text('sales_email'),
   updatedBy: uuid('updated_by').references(() => users.id),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

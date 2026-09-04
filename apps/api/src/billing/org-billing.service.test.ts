@@ -142,7 +142,11 @@ describe('getStatus', () => {
     const status = await billing.getStatus(orgId);
 
     expect(status.billingStatus).toBe('trialing');
-    expect(status.planId).toBeNull();
+    /* Migration 0094: `createOrg` assigns the real `trial` plan, not NULL —
+       every module flag now defaults to `false` (packages/feature-flags/src
+       /flags.ts's own header), so a NULL plan would mean a brand-new org
+       sees nothing at all. */
+    expect(status.planId).toBe('trial');
     expect(status.trialEndsAt).not.toBeNull();
   });
 });

@@ -140,11 +140,20 @@ const FUZZ_ANCHOR = (() => {
 async function seedTenant(admin: AdminConnection, tenant: Tenant, label: string): Promise<void> {
   await admin.setOrg(tenant.orgId);
 
-  await admin.query(`INSERT INTO identity.orgs (id, name, slug) VALUES ($1, $2, $3)`, [
-    tenant.orgId,
-    `Fuzz ${label}`,
-    `fuzz-${label.toLowerCase()}`,
-  ]);
+  /* `plan_id = 'trial'` (migration 0094), not the column's own NULL default —
+     every module flag now defaults to `false` (packages/feature-flags/src
+     /flags.ts's own header), so a planless attacker would be refused by
+     `requireFeature` before a Chat/Docs/Voice/Automation route's OWN
+     cross-tenant check ever ran. That would report `denied`, same as today,
+     but for the wrong reason: it would stop proving the handler refuses
+     org B's ids and start only proving the plan gate does, which is exactly
+     the coverage gap this harness exists to catch, not create. `trial`
+     grants all four, so every route's own check is still what the fuzz
+     result reflects. */
+  await admin.query(
+    `INSERT INTO identity.orgs (id, name, slug, plan_id) VALUES ($1, $2, $3, 'trial')`,
+    [tenant.orgId, `Fuzz ${label}`, `fuzz-${label.toLowerCase()}`],
+  );
 
   /* Owner, so a denial can never be explained away as "that role lacked the
      permission anyway". The only thing between this session and the other

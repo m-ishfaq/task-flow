@@ -1,6 +1,11 @@
 import { InMemoryEventBus } from '@taskflow/events';
 import { unsafeAsId, type RequestId, type UserId } from '@taskflow/contracts';
-import { createPlan, setPrice, listPlans } from '@taskflow/api/platform-admin/plan-catalog';
+import {
+  createPlan,
+  updatePlan,
+  setPrice,
+  listPlans,
+} from '@taskflow/api/platform-admin/plan-catalog';
 import { FLAG_NAMES } from '@taskflow/feature-flags';
 import { defineSeedModule } from '../registry.js';
 import { adminModule } from './platform.admin.js';
@@ -46,6 +51,27 @@ import { adminModule } from './platform.admin.js';
  * That also keeps the Stripe side sane: skipping the plan skips the product,
  * so re-seeding against a live key does not multiply Products.
  *
+ * ## `--reseed-plans` is the deliberate exception to "existing ids are skipped"
+ *
+ * The skip above is right for an ORDINARY run: `pnpm seed` is invoked far
+ * more often than the CATALOG literal changes, and a plain run must never
+ * silently overwrite a price or feature list an operator set by hand in the
+ * console. But that same default means a correction made to CATALOG never
+ * reaches a database that already has the row — which is what made fixing
+ * Pro's stray `analytics` grant (inherited from migration 0063, written
+ * before this module existed) or the telephony caps below need a one-off
+ * migration instead of just editing this file, the exact "why is this a
+ * migration and not the seeder" question CLAUDE.md's own commit history
+ * should not have to keep answering.
+ *
+ * `ctx.reseedPlans` (`--reseed-plans`, off by default) is that door: when
+ * set, an EXISTING plan is also reconciled to the literal, through
+ * `updatePlan` — the same function `PATCH /platformAdmin/plans` calls, so a
+ * reconciliation gets the same feature-registry validation, audit-log entry
+ * and domain event a console edit gets, never a raw write. Pricing is
+ * unaffected by this flag because it was never guarded by it: `setPrice`
+ * already runs unconditionally on every tier, every run (see below).
+ *
  * ## No `tables` entry, deliberately
  *
  * For the same reason — nothing may delete these rows, so declaring them for
@@ -61,10 +87,24 @@ import { adminModule } from './platform.admin.js';
  *
  * The limits are the interesting part and are NOT uniform. Free has a zero
  * telephony cap (spend nothing at all — a real, different state from
- * unlimited); Business has `null` where the others have a number, so the
- * "unlimited" rendering has a subject; and the markup climbs while the
- * included allowance climbs faster, which is the shape a real usage-billing
- * ladder has.
+ * unlimited); the markup climbs down while the included allowance climbs up
+ * faster as tiers rise, which is the shape a real usage-billing ladder has.
+ *
+ * `telephonyCapCents` is deliberately NOT scaled to price. It is real
+ * carrier spend — paid to Twilio in near-real-time, independent
+ * of whether the org ever pays the overage invoice for usage past
+ * `telephonyIncludedCents` — so a cap sized as a multiple of the
+ * subscription price means the platform's worst-case exposure on a single
+ * bad signup (stolen card, chargeback, simple non-payment) comfortably
+ * exceeds what it collected. That was true for every paid tier at
+ * launch — Starter's $50 cap against a $19/mo price, Business genuinely
+ * `null` (unlimited) behind the exact same unvetted, self-serve Stripe
+ * checkout as the other two — and none of it had been weighed against
+ * dollars actually at risk. The corrected caps are a flat, small, per-tier
+ * FRAUD BACKSTOP instead: enough to cover real small-team usage, small
+ * enough that the worst case stays bounded. `telephonyIncludedCents` (the
+ * prepaid allowance) and the markup percentages are unchanged — those were
+ * already sized as a fraction of what a plan collects and hold up.
  */
 export const CATALOG = [
   {
@@ -94,7 +134,10 @@ export const CATALOG = [
     monthlyCents: 1900,
     annualCents: 19_000,
     limits: {
-      telephonyCapCents: 5000,
+      // Flat fraud backstop, not a multiple of price — see this file's
+      // header. $15 covers real small-team usage; the prepaid $5
+      // (telephonyIncludedCents below) is what's actually "free."
+      telephonyCapCents: 1500,
       automationRunsPerHour: 60,
       turnIssuancePerDay: 200,
       telephonyIncludedCents: 500,
@@ -111,7 +154,8 @@ export const CATALOG = [
     monthlyCents: 4900,
     annualCents: 49_000,
     limits: {
-      telephonyCapCents: 25_000,
+      // Flat fraud backstop, not a multiple of price.
+      telephonyCapCents: 5000,
       automationRunsPerHour: 600,
       turnIssuancePerDay: 2000,
       telephonyIncludedCents: 2500,
@@ -121,7 +165,7 @@ export const CATALOG = [
   {
     id: 'business',
     name: 'Business',
-    description: 'Everything, with no ceiling on spend and priority support.',
+    description: 'Everything, with generous usage limits and priority support.',
     sortOrder: 3,
     /* `analytics` is the one feature this tier has that `pro` does not — every
        other entry below is identical to `pro`'s list, so without it Business
@@ -141,10 +185,16 @@ export const CATALOG = [
     monthlyCents: 14_900,
     annualCents: 149_000,
     limits: {
-      /* NULL is UNLIMITED, and 0 above is none-at-all. Both are seeded so the
-         two renderings are both reachable — a catalog where every limit is a
-         number never shows the "Unlimited" branch. */
-      telephonyCapCents: null,
+      /* NULL is UNLIMITED, and 0 is none-at-all — both real, reachable
+         states elsewhere in this catalog (Free's telephonyCapCents is 0,
+         automationRunsPerHour/turnIssuancePerDay stay null/unlimited here).
+         telephonyCapCents does NOT get that treatment (this file's header):
+         Business is the same unvetted, self-serve Stripe
+         checkout as Starter and Pro, just a higher price, so "no ceiling on
+         spend" was payment-risk exposure nobody had priced in, not a
+         deliberately unlimited allowance. $100 is still enormous for any
+         real team's usage — it just stops being infinite. */
+      telephonyCapCents: 10_000,
       automationRunsPerHour: null,
       turnIssuancePerDay: null,
       telephonyIncludedCents: 10_000,
@@ -157,7 +207,10 @@ export interface CatalogOutput {
   /** Plan ids that exist and are sellable, in display order. */
   readonly planIds: readonly string[];
   readonly created: number;
+  /** Existing, left untouched (the default — `ctx.reseedPlans` is false). */
   readonly reused: number;
+  /** Existing, reconciled to CATALOG via `updatePlan` (`ctx.reseedPlans` is true). */
+  readonly reconciled: number;
 }
 
 /**
@@ -179,7 +232,7 @@ export const catalogModule = defineSeedModule({
   async seed(ctx): Promise<CatalogOutput> {
     if (ctx.payments === null) {
       ctx.log('billing.catalog: no payment provider — skipped.');
-      return { planIds: [], created: 0, reused: 0 };
+      return { planIds: [], created: 0, reused: 0, reconciled: 0 };
     }
 
     const { operator } = ctx.use(adminModule);
@@ -192,7 +245,7 @@ export const catalogModule = defineSeedModule({
        along with the console that would have managed it. */
     if (operator === null) {
       ctx.log('billing.catalog: no platform operator — skipped.');
-      return { planIds: [], created: 0, reused: 0 };
+      return { planIds: [], created: 0, reused: 0, reconciled: 0 };
     }
 
     const deps = { events: new InMemoryEventBus(), payments: ctx.payments };
@@ -235,10 +288,28 @@ export const catalogModule = defineSeedModule({
 
     let created = 0;
     let reused = 0;
+    let reconciled = 0;
 
     for (const tier of CATALOG) {
       if (existing.has(tier.id)) {
-        reused += 1;
+        if (ctx.reseedPlans) {
+          /* `updatePlan` diffs against what's stored and only writes (and
+             only audits/emits) the fields that actually changed — see its
+             own `assign` helper — so passing the full desired shape here on
+             every reconciling run is safe: a plan already matching CATALOG
+             is a genuine no-op, not a no-op audit log entry. */
+          await updatePlan(deps, actor, {
+            planId: tier.id,
+            name: tier.name,
+            description: tier.description,
+            sortOrder: tier.sortOrder,
+            features: [...tier.features],
+            ...tier.limits,
+          });
+          reconciled += 1;
+        } else {
+          reused += 1;
+        }
       } else {
         await createPlan(deps, actor, {
           id: tier.id,
@@ -281,9 +352,10 @@ export const catalogModule = defineSeedModule({
     const planIds = CATALOG.map((tier) => tier.id);
     ctx.log(
       `billing.catalog: ${String(created)} plan(s) created, ${String(reused)} reused, ` +
+        `${String(reconciled)} reconciled, ` +
         `${String(planIds.length)} priced (${ctx.payments.isLive ? 'LIVE processor' : 'fake processor'})`,
     );
 
-    return { planIds, created, reused };
+    return { planIds, created, reused, reconciled };
   },
 });

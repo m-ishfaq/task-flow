@@ -162,7 +162,13 @@ describe('setOrgEntitlements', () => {
     });
 
     expect(cleared.cleared).toBe(true);
-    expect((await getEntitlements(orgId)).sources.docs).toBeUndefined();
+    /* Migration 0094: `newOrg` (via `createOrg`) assigns the real `trial`
+       plan, not a NULL `plan_id` — and `trial` grants `docs`. So clearing the
+       override no longer falls all the way through to an untracked registry
+       default (`sources` has no 'registry' or 'environment' entry at all,
+       entitlement-resolver.ts's own type); it falls back one tier, to the
+       plan, which DOES report a source. */
+    expect((await getEntitlements(orgId)).sources.docs).toBe('plan');
 
     const rows = await admin.query(`SELECT 1 FROM billing.org_entitlements WHERE org_id = $1`, [
       orgId,
@@ -238,7 +244,10 @@ describe('setOrgEntitlements', () => {
       expiresAt: new Date(Date.now() - 60_000),
     });
 
-    expect((await getEntitlements(orgId)).sources.docs).toBeUndefined();
+    // Same reasoning as the "deletes the row" test above: an expired
+    // override falls back to the org's real `trial` plan (migration 0094),
+    // which grants `docs` — not to an untracked registry default.
+    expect((await getEntitlements(orgId)).sources.docs).toBe('plan');
   });
 });
 

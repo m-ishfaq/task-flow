@@ -25,6 +25,8 @@ export interface BrandingSnapshot {
   readonly logoKey: string | null;
   readonly faviconKey: string | null;
   readonly paletteId: PaletteId;
+  /** Migration 0096. NULL until an operator sets one. */
+  readonly salesEmail: string | null;
 }
 
 const CACHE_TTL_MS = 30_000;
@@ -37,6 +39,7 @@ const DEFAULT_SNAPSHOT: BrandingSnapshot = {
   logoKey: null,
   faviconKey: null,
   paletteId: 'default',
+  salesEmail: null,
 };
 
 /**
@@ -65,6 +68,7 @@ async function loadBranding(): Promise<BrandingSnapshot> {
     logoKey: row.logoKey,
     faviconKey: row.faviconKey,
     paletteId: asPaletteId(row.paletteId),
+    salesEmail: row.salesEmail,
   };
 }
 

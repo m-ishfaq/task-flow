@@ -20,6 +20,16 @@ export interface Actor {
   readonly requestId: RequestId;
 }
 
+/**
+ * The plan every new org is placed on (migration 0094). Hardcoded, not read
+ * from a marker column like `billing.plans.is_default` — which plan lands an
+ * *expiring* trial is a real, recurring operator decision (§3.6), but which
+ * plan IS the trial is structural: it is the specific row migration 0094
+ * creates for this exact call site, not something meant to move to a
+ * different existing plan without a matching code change regardless.
+ */
+const TRIAL_PLAN_ID = 'trial';
+
 /** SQLSTATE for a unique constraint violation. */
 const UNIQUE_VIOLATION = '23505';
 
@@ -111,9 +121,23 @@ export async function createOrg(
 
   try {
     await withOrgScope(orgId, async (tx) => {
-      await tx
-        .insert(schema.orgs)
-        .values({ id: orgId, name: input.name, slug: input.slug, trialEndsAt });
+      await tx.insert(schema.orgs).values({
+        id: orgId,
+        name: input.name,
+        slug: input.slug,
+        trialEndsAt,
+        /* Migration 0094 (packages/feature-flags/src/flags.ts's own header
+           explains why): every module flag now defaults to `false`, so a
+           `plan_id` of NULL would mean this org sees nothing at all the
+           moment it exists. `trial` is a real, non-purchasable plan row
+           granting the full trial preview — assigned here, in the same
+           transaction as the org itself, for the same "no half-created org"
+           reasoning the membership insert below already follows. It is
+           never `is_active`, so no owner can pick it from the upgrade
+           picker and no operator can move an existing org onto it through
+           `plans.setOrgPlan` — this INSERT is the one door onto it. */
+        planId: TRIAL_PLAN_ID,
+      });
 
       await tx.insert(schema.memberships).values({
         id: membershipId,
