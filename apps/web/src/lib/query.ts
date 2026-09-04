@@ -161,6 +161,14 @@ export const keys = {
 
   org: (orgId: string) => ['org', orgId] as const,
 
+  /**
+   * The resolved feature-flag snapshot for the selected org (`flags.snapshot`)
+   * — every registered flag, `true`/`false`. Not owner-only, unlike
+   * `keys.billing()`: every member needs it to know which nav items are
+   * actually usable, not just the person who can change the plan.
+   */
+  flags: (orgId: string) => ['org', orgId, 'flags'] as const,
+
   /** The org's own billing state (Phase 12 Wave 3 §3.1) — `billing.status`, owner-only. */
   billing: (orgId: string) => ['org', orgId, 'billing'] as const,
   /**

@@ -8,6 +8,7 @@ import {
   FileText,
   Folder,
   ListChecks,
+  Lock,
   MessageSquare,
   Pin,
   Phone,
@@ -34,6 +35,7 @@ import {
 import { api } from '../lib/trpc.js';
 import { keys } from '../lib/query.js';
 import { useBranding } from '../lib/branding-context.js';
+import { useEntitlements } from '../lib/entitlements.js';
 import { FocusOnMountInput, Skeleton } from './primitives.js';
 import { TaskFlowLogo } from './taskflow-logo.js';
 
@@ -85,20 +87,32 @@ import { TaskFlowLogo } from './taskflow-logo.js';
  * Configuration is NOT in this list; it lives in `CONFIG_ITEMS` below, pinned
  * to the bottom of the rail. See that constant for why the split exists.
  *
- * Every item is shown to everyone. A member who lacks a permission gets an
+ * Every item is shown to everyone. A member who lacks a PERMISSION gets an
  * honest refusal from the page, never a menu that quietly differs by role —
  * §8.2, because the hidden version is the one that never gets tested.
+ *
+ * `flag` below is a deliberate, different exception, not a quiet violation of
+ * that rule: it is a PLAN entitlement, not a permission, and unlike a control
+ * hidden for a role the caller lacks, a locked-but-visible module with an
+ * upgrade path is the entire point of a paid tier existing. It is still not
+ * the enforcement point — `FeatureGate` (`router.tsx`) and every gated server
+ * route re-resolve the same entitlement independently, so a stale or wrong
+ * answer here costs a wrongly-styled nav item, never wrongly-granted access.
  */
 /** A `lucide-react` icon component — every nav row's leading glyph. */
 type NavIcon = ComponentType<LucideProps>;
 
+interface NavItem {
+  readonly to: string;
+  readonly label: string;
+  readonly icon: NavIcon;
+  /** The plan entitlement this item needs, or absent when it needs none. */
+  readonly flag?: string;
+}
+
 const PRIMARY_SECTIONS: readonly {
   readonly id: string;
-  readonly items: readonly {
-    readonly to: string;
-    readonly label: string;
-    readonly icon: NavIcon;
-  }[];
+  readonly items: readonly NavItem[];
 }[] = [
   {
     id: 'start',
@@ -110,11 +124,11 @@ const PRIMARY_SECTIONS: readonly {
   {
     id: 'products',
     items: [
-      { to: '/chat', label: 'Chat', icon: MessageSquare },
-      { to: '/docs', label: 'Docs', icon: FileText },
-      { to: '/calls', label: 'Calls', icon: Phone },
+      { to: '/chat', label: 'Chat', icon: MessageSquare, flag: 'chat' },
+      { to: '/docs', label: 'Docs', icon: FileText, flag: 'docs' },
+      { to: '/calls', label: 'Calls', icon: Phone, flag: 'telephony' },
       { to: '/people', label: 'People', icon: Users },
-      { to: '/analytics', label: 'Analytics', icon: BarChart3 },
+      { to: '/analytics', label: 'Analytics', icon: BarChart3, flag: 'analytics' },
     ],
   },
 ];
@@ -136,11 +150,9 @@ const PRIMARY_SECTIONS: readonly {
  * muscle memory. Slack's and Linear's rails are shaped this way for the same
  * reason.
  */
-const CONFIG_ITEMS: readonly {
-  readonly to: string;
-  readonly label: string;
-  readonly icon: NavIcon;
-}[] = [{ to: '/automations', label: 'Automations', icon: Workflow }];
+const CONFIG_ITEMS: readonly NavItem[] = [
+  { to: '/automations', label: 'Automations', icon: Workflow, flag: 'automation' },
+];
 
 /**
  * The active-state contract, defined once for every navigable thing in the rail.
@@ -187,23 +199,36 @@ const ACTIVE_BAR =
  */
 const ACTIVE_ROW = 'has-[a[data-status=active]]:bg-accent/10';
 
-/** One top-level nav item — icon-leading, per the Slack/Teams rail reference. */
+/**
+ * One top-level nav item — icon-leading, per the Slack/Teams rail reference.
+ *
+ * `locked` still renders a real `<Link>`, not a disabled control: clicking it
+ * navigates to the real route exactly as an unlocked item does, and lands on
+ * `FeatureGate`'s own upgrade page there — one place owns that copy and that
+ * "View plans" link, not a tooltip duplicated per nav item. The lock glyph
+ * and dimmer text are the only difference, and they exist to set the right
+ * expectation BEFORE the click, not to block it.
+ */
 function NavLink({
   to,
   label,
   icon: Icon,
+  locked = false,
 }: {
   readonly to: string;
   readonly label: string;
   readonly icon: NavIcon;
+  readonly locked?: boolean;
 }) {
   return (
     <Link
       to={to}
       className={cn(
-        'relative mb-0.5 flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-ink-muted',
+        'relative mb-0.5 flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium',
         'transition-colors duration-[var(--motion-fast)]',
-        'hover:bg-surface-hover hover:text-ink',
+        locked
+          ? 'text-ink-faint hover:bg-surface-hover'
+          : 'text-ink-muted hover:bg-surface-hover hover:text-ink',
       )}
       activeProps={{
         className: cn('bg-accent/10 text-accent hover:bg-accent/10 hover:text-accent', ACTIVE_BAR),
@@ -211,6 +236,9 @@ function NavLink({
     >
       <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={2} />
       <span className="truncate">{label}</span>
+      {locked && (
+        <Lock aria-label="Not on your plan" className="ml-auto size-3 shrink-0" strokeWidth={2} />
+      )}
     </Link>
   );
 }
@@ -221,6 +249,11 @@ export function Sidebar() {
   const collapsed = useUi((state) => !state.sidebarOpen);
   const toggleSidebar = useUi((state) => state.toggleSidebar);
   const isDesktop = useIsDesktop();
+  /* Undefined (not yet loaded) reads as unlocked below — see the `?? true`
+     at each call site — so a nav item never flashes locked-then-unlocked on
+     first paint; it only ever goes unlocked-then-locked, which is far less
+     jarring for the common case (the flag turns out granted). */
+  const entitlements = useEntitlements().data;
 
   /* `sidebarOpen` is a DESKTOP preference — collapse to a rail to reclaim
      width. Below `md` this component is rendered inside Shell's off-canvas
@@ -303,7 +336,13 @@ export function Sidebar() {
             {PRIMARY_SECTIONS.map((section, index) => (
               <div key={section.id} className={cn(index > 0 && 'mt-2 border-t border-line pt-2')}>
                 {section.items.map((item) => (
-                  <NavLink key={item.to} to={item.to} label={item.label} icon={item.icon} />
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    label={item.label}
+                    icon={item.icon}
+                    locked={item.flag !== undefined && !(entitlements?.[item.flag] ?? true)}
+                  />
                 ))}
               </div>
             ))}
@@ -374,7 +413,13 @@ export function Sidebar() {
             className="shrink-0 border-t border-line px-2 pt-2 pb-1.5"
           >
             {CONFIG_ITEMS.map((item) => (
-              <NavLink key={item.to} to={item.to} label={item.label} icon={item.icon} />
+              <NavLink
+                key={item.to}
+                to={item.to}
+                label={item.label}
+                icon={item.icon}
+                locked={item.flag !== undefined && !(entitlements?.[item.flag] ?? true)}
+              />
             ))}
           </nav>
         </>

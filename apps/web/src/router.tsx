@@ -19,6 +19,7 @@ import {
 import { FilterTree } from '@taskflow/filter';
 import { useSession } from './lib/session.js';
 import { Shell } from './components/shell.js';
+import { FeatureGate } from './components/feature-gate.js';
 import { LoginPage } from './features/auth/login-page.js';
 import { RegisterPage } from './features/auth/register-page.js';
 import { VerifyEmailPage } from './features/auth/verify-email-page.js';
@@ -341,7 +342,11 @@ const chatRoute = createRoute({
     channel: ChannelIdSchema.optional().catch(undefined),
   }),
   beforeLoad: () => requireOrg('/chat'),
-  component: ChatPage,
+  component: () => (
+    <FeatureGate flag="chat">
+      <ChatPage />
+    </FeatureGate>
+  ),
 });
 
 /**
@@ -372,7 +377,11 @@ const telephonyRoute = createRoute({
     call: z.string().uuid().optional().catch(undefined),
   }),
   beforeLoad: () => requireOrg('/calls'),
-  component: TelephonyPage,
+  component: () => (
+    <FeatureGate flag="telephony">
+      <TelephonyPage />
+    </FeatureGate>
+  ),
 });
 
 /**
@@ -414,7 +423,11 @@ const docsRoute = createRoute({
     page: PageIdSchema.optional().catch(undefined),
   }),
   beforeLoad: () => requireOrg('/docs'),
-  component: DocsPage,
+  component: () => (
+    <FeatureGate flag="docs">
+      <DocsPage />
+    </FeatureGate>
+  ),
 });
 
 /**
@@ -547,7 +560,11 @@ const analyticsRoute = createRoute({
       .catch(undefined),
   }),
   beforeLoad: () => requireOrg('/analytics'),
-  component: AnalyticsPage,
+  component: () => (
+    <FeatureGate flag="analytics">
+      <AnalyticsPage />
+    </FeatureGate>
+  ),
 });
 
 const automationsRoute = createRoute({
@@ -568,7 +585,11 @@ const automationsRoute = createRoute({
     tab: z.enum(AUTOMATION_TAB_IDS).optional().catch(undefined),
   }),
   beforeLoad: () => requireOrg('/automations'),
-  component: AutomationsPage,
+  component: () => (
+    <FeatureGate flag="automation">
+      <AutomationsPage />
+    </FeatureGate>
+  ),
 });
 
 const routeTree = rootRoute.addChildren([
