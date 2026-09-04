@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { initTRPC } from '@trpc/server';
+import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { errors } from '@taskflow/contracts';
 import { createCallerFactory, publicRoute, route, router, selfRoute } from './builder.js';
 import {
   UndeclaredRouteError,
@@ -203,6 +204,35 @@ describe('error envelope', () => {
 
     expect(message).not.toMatch(/role=/);
     expect(message).not.toMatch(/tuple/);
+  });
+});
+
+describe('the plan gate maps to a refusal, not a server error', () => {
+  /* `requireFeature` throws `errors.planRequired(...)` directly (no `t.procedure`
+     wrapping, no DB) — the same shape a route hits after `requireFeature` runs,
+     without needing Postgres to exercise it. This is the regression test for
+     the bug the tenancy-fuzz test caught: `toTrpcCode` had no case for
+     `PLAN_REQUIRED`, so it fell through to `INTERNAL_SERVER_ERROR` and every
+     plan-gated route answered 500 instead of 403 the moment a real route
+     started calling `requireFeature` (apps/api/src/analytics/router.ts). */
+  const gatedRouter = router({
+    dashboards: router({
+      velocity: route({ permission: 'card:read' }).query(() => {
+        throw errors.planRequired('Analytics');
+      }),
+    }),
+  });
+
+  it('answers FORBIDDEN, never INTERNAL_SERVER_ERROR', async () => {
+    const caller = createCallerFactory(gatedRouter)(context(subject('member')));
+
+    const error = await caller.dashboards.velocity().then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toBeInstanceOf(TRPCError);
+    expect((error as TRPCError).code).toBe('FORBIDDEN');
   });
 });
 

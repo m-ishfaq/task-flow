@@ -232,6 +232,15 @@ function fieldErrorsOf(cause: unknown): Record<string, string> | undefined {
  * service-level tests; only the HTTP status was wrong, and only a test that went
  * through HTTP could see it.
  *
+ * `PLAN_REQUIRED` (Phase 12 Wave 4) shipped with `requireFeature`'s own comment
+ * already claiming it "renders as a 403" — untrue, because this switch had no
+ * case for it and fell through to the `default`. Invisible for as long as no
+ * route called `requireFeature`; the tenancy-fuzz test caught it the same day a
+ * route finally did (see `apps/api/src/analytics/router.ts`), reporting the gate
+ * as `errored` rather than `denied` because 500 is not a code the fuzz harness
+ * accepts as a refusal. A claim in a comment is not a fact any more than a
+ * status header is (CLAUDE.md's own recurring lesson).
+ *
  * That is not cosmetic. A 500 tells a client to retry, tells a load balancer the
  * instance is sick, and lights up every 5xx alert on the dashboard — for a user
  * mistyping their password.
@@ -249,6 +258,7 @@ function toTrpcCode(code: string): TRPCError['code'] {
     case 'FORBIDDEN':
     case 'NOT_A_MEMBER':
     case 'ORG_SUSPENDED':
+    case 'PLAN_REQUIRED':
       return 'FORBIDDEN';
     case 'NOT_FOUND':
     case 'GONE':
