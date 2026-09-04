@@ -466,7 +466,7 @@ export function BillingSection({ orgId }: { readonly orgId: string }) {
                 already exists (`billing.org_entitlements`, the operator
                 console's per-org override) and needs no plan row to work.
                 `salesEmail` comes from the platform-wide branding singleton
-                (migration 0095, Branding tab in the operator console) —
+                (migration 0096, Branding tab in the operator console) —
                 never a hardcoded address — and the whole tile renders
                 nothing until an operator sets one, the same "no dead
                 button" rule `sellable.length === 0` above follows. */}

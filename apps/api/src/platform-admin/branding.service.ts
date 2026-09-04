@@ -49,7 +49,7 @@ export interface BrandingRow {
   readonly logoKey: string | null;
   readonly faviconKey: string | null;
   readonly paletteId: PaletteId;
-  /** Migration 0095. NULL until an operator sets one. */
+  /** Migration 0096. NULL until an operator sets one. */
   readonly salesEmail: string | null;
   readonly updatedBy: string | null;
   readonly updatedAt: Date;
@@ -341,7 +341,7 @@ export interface PublicBranding {
   readonly logoUrl: string | null;
   readonly faviconUrl: string | null;
   readonly paletteId: PaletteId;
-  /** Migration 0095. NULL until an operator sets one — the Enterprise
+  /** Migration 0096. NULL until an operator sets one — the Enterprise
    * "contact us" tile on the billing page renders nothing rather than a
    * dead mailto link when this is null. */
   readonly salesEmail: string | null;

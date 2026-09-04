@@ -25,7 +25,7 @@ export interface BrandingSnapshot {
   readonly logoKey: string | null;
   readonly faviconKey: string | null;
   readonly paletteId: PaletteId;
-  /** Migration 0095. NULL until an operator sets one. */
+  /** Migration 0096. NULL until an operator sets one. */
   readonly salesEmail: string | null;
 }
 

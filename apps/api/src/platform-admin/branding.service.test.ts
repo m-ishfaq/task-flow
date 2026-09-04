@@ -273,7 +273,7 @@ describe('the branding singleton', () => {
     });
   });
 
-  it('sets, then clears, the sales/contact email (migration 0095)', async () => {
+  it('sets, then clears, the sales/contact email (migration 0096)', async () => {
     const events = new RecordingEventBus();
     const deps = {
       events,

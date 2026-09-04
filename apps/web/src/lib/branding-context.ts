@@ -16,7 +16,7 @@ export interface BrandingValue {
   readonly logoUrl: string | null;
   readonly faviconUrl: string | null;
   readonly paletteId: PaletteId;
-  /** Migration 0095. Null until an operator sets one in the console. */
+  /** Migration 0096. Null until an operator sets one in the console. */
   readonly salesEmail: string | null;
 }
 

@@ -1,4 +1,4 @@
--- 0095 — adds an operator-configurable sales/contact email to the
+-- 0096 — adds an operator-configurable sales/contact email to the
 -- platform-wide branding singleton (migration 0073).
 --
 -- Closes a real hardcoding gap: BillingSection's "Enterprise — contact us"

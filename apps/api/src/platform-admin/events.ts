@@ -96,7 +96,7 @@ export const flagOverrideCleared = defineEvent(
 
 /**
  * The deployment's branding changed — product name, logo, favicon, accent
- * palette, or sales/contact email (migrations 0073, 0095).
+ * palette, or sales/contact email (migrations 0073, 0096).
  *
  * Global, like `flagOverrideSet`: the envelope carries SYSTEM_ORG, because
  * there is exactly one branding row for the whole platform and no target
