@@ -396,6 +396,7 @@ export function OrgsTab({
       {detailOrgId !== null && (
         <OrgDetailDialog
           orgId={detailOrgId}
+          guard={guard}
           onClose={() => {
             setDetailOrgId(null);
           }}

@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import { MoreHorizontal, Search, ShieldAlert, type LucideProps } from 'lucide-react';
+import type { OrgId } from '@taskflow/contracts';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
-import { wire } from '@taskflow/client';
+import { parseInstant, wire } from '@taskflow/client';
 import { formatDate, formatDateTime } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
-import { Badge, Button, SkeletonRows } from '../../components/primitives.js';
+import { Badge, Button, Field, Input, SkeletonRows, Spinner } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { featureDescription, featureLabel } from '../../lib/feature-labels.js';
 
@@ -353,11 +354,22 @@ export function DetailRow({
  */
 export function OrgDetailDialog({
   orgId,
+  guard,
   onClose,
 }: {
   readonly orgId: string;
+  /**
+   * Optional because the panel opens from places with no mutation on this
+   * screen yet (the very first caller, before the override dialog existed).
+   * Every current caller passes it — the override control below is disabled
+   * without one rather than silently swallowing a STEP_UP_REQUIRED.
+   */
+  readonly guard?: (error: unknown, retry: () => void) => boolean;
   readonly onClose: () => void;
 }) {
+  const queryClient = useQueryClient();
+  const [overrideOpen, setOverrideOpen] = useState(false);
+
   const detail = useQuery({
     queryKey: keys.platformOrgDetail(orgId),
     queryFn: async () => wire(await api.platformAdmin.orgs.detail.query({ orgId })),
@@ -443,7 +455,20 @@ export function OrgDetailDialog({
             )}
 
             <section>
-              <h3 className="mb-2 text-[13px] font-semibold text-ink">Entitlements</h3>
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-[13px] font-semibold text-ink">Entitlements</h3>
+                {guard !== undefined && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      setOverrideOpen(true);
+                    }}
+                  >
+                    {data.override === null ? 'Add override' : 'Edit override'}
+                  </Button>
+                )}
+              </div>
               <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line">
                 {data.features.map((feature) => (
                   <li
@@ -559,6 +584,199 @@ export function OrgDetailDialog({
             </div>
           </div>
         )}
+      </ModalContent>
+
+      {overrideOpen && data !== undefined && guard !== undefined && (
+        <OrgOverrideDialog
+          guard={guard}
+          org={{ orgId: data.orgId, name: data.name }}
+          features={data.features}
+          currentOverride={data.override}
+          onClose={() => {
+            setOverrideOpen(false);
+          }}
+          onSaved={() => {
+            setOverrideOpen(false);
+            void queryClient.invalidateQueries({ queryKey: keys.platformOrgDetail(orgId) });
+            void queryClient.invalidateQueries({ queryKey: keys.platformOrgHistory(orgId) });
+          }}
+        />
+      )}
+    </ModalRoot>
+  );
+}
+
+type OverrideChoice = 'inherit' | 'add' | 'remove';
+
+/**
+ * Sets or clears ONE org's entitlement override — tier 1 of four
+ * (ai/phase-12-wave4-plans.md §3.1), the escape hatch that outranks the plan.
+ *
+ * Three states per flag, not a checkbox: "inherit" (the plan/registry
+ * decides — the common case), "force on" and "force off" both OUTRANK the
+ * plan, and a checkbox can only tell two of those apart. Saving with every
+ * flag left on "inherit" submits empty arrays, which `setOrgEntitlements`
+ * reads as CLEAR rather than as an override that grants nothing — see that
+ * function's own header on why "no override" has to be one state, not two.
+ *
+ * Numeric ceilings (telephony cap, automation rate, TURN issuance) are the
+ * other half of what this table can override, deliberately left out of this
+ * dialog: they are a spend/capacity decision with their own console
+ * (`billing-tab.tsx`'s grace-period tools), not a feature toggle, and mixing
+ * the two would make one save button respend two different kinds of
+ * authority. Omitting them from the mutation leaves them at the schema's own
+ * `.default(null)` — "no override" — untouched.
+ */
+export function OrgOverrideDialog({
+  guard,
+  org,
+  features,
+  currentOverride,
+  onClose,
+  onSaved,
+}: {
+  readonly guard: (error: unknown, retry: () => void) => boolean;
+  readonly org: { readonly orgId: string; readonly name: string };
+  readonly features: readonly { readonly flagName: string; readonly description: string }[];
+  /** Wire-shaped — `expiresAt` is a JSON string, not a `Date` (see wire.ts). */
+  readonly currentOverride: {
+    readonly featuresAdd: readonly string[];
+    readonly featuresRemove: readonly string[];
+    readonly reason: string;
+    readonly expiresAt: string | null;
+  } | null;
+  readonly onClose: () => void;
+  readonly onSaved: () => void;
+}) {
+  const [choices, setChoices] = useState<Record<string, OverrideChoice>>(() => {
+    const initial: Record<string, OverrideChoice> = {};
+    for (const feature of features) {
+      initial[feature.flagName] =
+        currentOverride?.featuresAdd.includes(feature.flagName) === true
+          ? 'add'
+          : currentOverride?.featuresRemove.includes(feature.flagName) === true
+            ? 'remove'
+            : 'inherit';
+    }
+    return initial;
+  });
+  const [reason, setReason] = useState(currentOverride?.reason ?? '');
+  const [expiresAt, setExpiresAt] = useState(
+    currentOverride?.expiresAt !== null && currentOverride?.expiresAt !== undefined
+      ? parseInstant(currentOverride.expiresAt).toISOString().slice(0, 10)
+      : '',
+  );
+
+  const save = useMutation({
+    mutationFn: (input: {
+      orgId: OrgId;
+      featuresAdd: string[];
+      featuresRemove: string[];
+      reason: string;
+      expiresAt: Date | null;
+    }) => api.platformAdmin.plans.setOrgEntitlements.mutate(input),
+    onSuccess: onSaved,
+    onError: (error, input) => {
+      guard(error, () => {
+        save.mutate(input);
+      });
+    },
+  });
+
+  const featuresAdd = Object.entries(choices)
+    .filter(([, choice]) => choice === 'add')
+    .map(([name]) => name);
+  const featuresRemove = Object.entries(choices)
+    .filter(([, choice]) => choice === 'remove')
+    .map(([name]) => name);
+  const isClear = featuresAdd.length === 0 && featuresRemove.length === 0;
+
+  return (
+    <ModalRoot open onOpenChange={onClose}>
+      <ModalContent className="p-4">
+        <ModalTitle>{org.name} — entitlement override</ModalTitle>
+        <ModalDescription>
+          Outranks the plan — this org, and only this org. Leave every flag on{' '}
+          <strong>Inherit</strong> and save to remove an existing override.
+        </ModalDescription>
+
+        <div className="mt-3 flex flex-col gap-3">
+          <ul className="divide-y divide-line/40 overflow-hidden rounded-lg border border-line/50">
+            {features.map((feature) => (
+              <li key={feature.flagName} className="flex items-center gap-2 px-3 py-2">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm text-ink">{featureLabel(feature.flagName)}</span>
+                  <span className="block text-[11px] text-ink-faint">
+                    {featureDescription(feature.flagName) ?? feature.description}
+                  </span>
+                </span>
+                <select
+                  aria-label={`${featureLabel(feature.flagName)} override`}
+                  value={choices[feature.flagName] ?? 'inherit'}
+                  onChange={(event) => {
+                    const value = event.target.value as OverrideChoice;
+                    setChoices((prev) => ({ ...prev, [feature.flagName]: value }));
+                  }}
+                  className="h-8 shrink-0 rounded border border-line bg-surface-sunken px-2 text-xs text-ink focus:border-accent focus:outline-none"
+                >
+                  <option value="inherit">Inherit</option>
+                  <option value="add">Force on</option>
+                  <option value="remove">Force off</option>
+                </select>
+              </li>
+            ))}
+          </ul>
+
+          <Field label="Reason" htmlFor="org-override-reason">
+            <Input
+              id="org-override-reason"
+              value={reason}
+              placeholder="Beta access while we finish the contract"
+              onChange={(event) => {
+                setReason(event.target.value);
+              }}
+            />
+            <p className="mt-0.5 text-[11px] text-ink-faint">
+              Recorded in the operator audit chain. Required, even to clear an override.
+            </p>
+          </Field>
+
+          <Field label="Expires" htmlFor="org-override-expires">
+            <Input
+              id="org-override-expires"
+              type="date"
+              value={expiresAt}
+              onChange={(event) => {
+                setExpiresAt(event.target.value);
+              }}
+            />
+            <p className="mt-0.5 text-[11px] text-ink-faint">
+              Optional. A temporary grant that outlives its reason is worse than no grant at all —
+              leave empty only for something meant to stay indefinitely.
+            </p>
+          </Field>
+
+          {save.isError && <ErrorView error={save.error} title="Could not save the override" />}
+
+          <div className="flex justify-end gap-2">
+            <Button onClick={onClose}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={save.isPending || reason.trim() === ''}
+              onClick={() => {
+                save.mutate({
+                  orgId: org.orgId as OrgId,
+                  featuresAdd,
+                  featuresRemove,
+                  reason: reason.trim(),
+                  expiresAt: expiresAt === '' ? null : new Date(`${expiresAt}T00:00:00.000Z`),
+                });
+              }}
+            >
+              {save.isPending ? <Spinner /> : isClear ? 'Clear override' : 'Save override'}
+            </Button>
+          </div>
+        </div>
       </ModalContent>
     </ModalRoot>
   );

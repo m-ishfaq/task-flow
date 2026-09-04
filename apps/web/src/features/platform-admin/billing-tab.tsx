@@ -444,6 +444,7 @@ export function BillingTab({
       {billingDetailOrgId !== null && (
         <OrgDetailDialog
           orgId={billingDetailOrgId}
+          guard={guard}
           onClose={() => {
             setBillingDetailOrgId(null);
           }}
