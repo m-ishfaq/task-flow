@@ -1,7 +1,11 @@
 import proxyaddr from 'proxy-addr';
 import type { Socket } from 'socket.io';
 import type { IncomingMessage } from 'node:http';
-import { InvalidTokenError, verifyAccessToken } from '@taskflow/security';
+import {
+  InvalidTokenError,
+  verifyAccessToken,
+  type AccessTokenVerifyConfig,
+} from '@taskflow/security';
 import { CLIENT_HEADER, MOBILE_CLIENT, UserIdSchema, type UserId } from '@taskflow/contracts';
 import type { TrustProxyValue } from '@taskflow/api/config/trust-proxy';
 
@@ -218,7 +222,8 @@ export function isSelfOrigin(origin: string, headers: Socket['handshake']['heade
 }
 
 export interface HandshakeOptions {
-  readonly jwtSecret: Uint8Array;
+  /** RS256 public key only — this gateway verifies, it never mints a token. */
+  readonly jwtPublicKey: AccessTokenVerifyConfig['publicKey'];
   readonly allowedOrigins: readonly string[];
 }
 
@@ -275,7 +280,7 @@ export async function verifyHandshake(
 
   let claims;
   try {
-    claims = await verifyAccessToken(token, { secret: options.jwtSecret });
+    claims = await verifyAccessToken(token, { publicKey: options.jwtPublicKey });
   } catch (error) {
     if (error instanceof InvalidTokenError) throw new HandshakeError('invalid_token');
     throw error;

@@ -1,5 +1,5 @@
 import { SessionIdSchema, UserIdSchema } from '@taskflow/contracts';
-import { verifyAccessToken } from '@taskflow/security';
+import { verifyAccessToken, type AccessTokenVerifyConfig } from '@taskflow/security';
 import type { AuthenticatedPrincipal } from '../trpc/context.js';
 
 /**
@@ -31,7 +31,8 @@ import type { AuthenticatedPrincipal } from '../trpc/context.js';
 const BEARER = /^Bearer$/i;
 
 export interface AuthenticateConfig {
-  readonly jwtSecret: Uint8Array;
+  /** RS256 public key only — this function can verify a token, never mint one. */
+  readonly jwtPublicKey: AccessTokenVerifyConfig['publicKey'];
 }
 
 /**
@@ -71,7 +72,7 @@ export async function authenticate(
   if (token === null) return null;
 
   try {
-    const claims = await verifyAccessToken(token, { secret: config.jwtSecret });
+    const claims = await verifyAccessToken(token, { publicKey: config.jwtPublicKey });
 
     /* Parsed rather than cast. The signature proves the claims came from this
        API, not that they are well-formed — a token minted by an earlier version

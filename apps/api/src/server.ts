@@ -1,7 +1,14 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { isDatabaseHealthy, recordOperationalEvent } from '@taskflow/db';
-import { masterKeysFromBase64, newId, SoftwareKeyProvider } from '@taskflow/security';
+import {
+  importAccessTokenPrivateKey,
+  importAccessTokenPublicKey,
+  masterKeysFromBase64,
+  newId,
+  SoftwareKeyProvider,
+  type AccessTokenVerifyConfig,
+} from '@taskflow/security';
 import { ensureIdentityDataKey } from './identity/secret-key.js';
 import { createAppRouter, type AppRouter } from './router.js';
 import type { IntegrationDeps } from './automation/integration.service.js';
@@ -87,6 +94,14 @@ export interface BuildOptions {
 }
 
 export async function buildServer(options: BuildOptions): Promise<FastifyInstance> {
+  /* Access token keys, imported once here rather than inside buildIdentityDeps
+     — see that function's own comment on why it stays synchronous. The public
+     key is held in THIS scope (not on identityDeps.config, which only carries
+     the private/signing half) because `authenticateRequest` below verifies,
+     and a verifier must never be handed something it could sign with. */
+  const jwtPrivateKey = await importAccessTokenPrivateKey(options.env.JWT_PRIVATE_KEY);
+  const jwtPublicKey = await importAccessTokenPublicKey(options.env.JWT_PUBLIC_KEY);
+
   const mail = resolveMail(options);
   const billingDeps = buildBillingDeps(options.env, mail.queue);
   /* Built AFTER billing so the outbound paths can reach the same mailer the
@@ -99,6 +114,7 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
     env: options.env,
     ...(options.events === undefined ? {} : { events: options.events }),
     deliver: mail.deliver,
+    jwtPrivateKey,
   });
   const identityDataKey = await ensureIdentityDataKey(
     new SoftwareKeyProvider({
@@ -126,14 +142,15 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
     /* §9 decision 3 — whether the cost-bearing telephony actions exist in the
        rule builder. OFF by default; see config/env.ts. The connectors (Wave 4
        slice 2, §7) ride in here too: the connector state is signed with the
-       SAME secret that signs access tokens (the jwt config, not a second
-       env var), and connector credentials are wrapped by the SAME key
-       provider that wraps webhook signing secrets. */
+       SAME state secret oauth.service.ts's sign-in state and the TOTP
+       challenge use (JWT_STATE_SECRET, not a second env var) — never the
+       access token's RS256 key pair, which only this API's own signing path
+       touches. */
     automation: {
       keys: automationKeys,
       telephonyActionsEnabled: options.env.AUTOMATION_TELEPHONY_ACTIONS_ENABLED,
       integration: buildIntegrationDeps(options.env, {
-        jwtSecret: identityDeps.config.jwtSecret,
+        jwtStateSecret: identityDeps.config.jwtStateSecret,
         keys: automationKeys,
       }),
     },
@@ -305,7 +322,7 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
       createContext: async ({ req, res }): Promise<RequestContext> => ({
         requestId: req.id as RequestContext['requestId'],
         principal: await authenticateRequest(req.headers.authorization, req.headers[ORG_HEADER], {
-          jwtSecret: identityDeps.config.jwtSecret,
+          jwtPublicKey,
         }),
         refreshToken: readRefreshCookie(req.headers.cookie),
         ip: req.ip.length > 0 ? req.ip : null,
@@ -358,7 +375,7 @@ export async function buildServer(options: BuildOptions): Promise<FastifyInstanc
 async function authenticateRequest(
   authorization: string | undefined,
   orgHeader: string | string[] | undefined,
-  config: { jwtSecret: Uint8Array },
+  config: { jwtPublicKey: AccessTokenVerifyConfig['publicKey'] },
 ): Promise<AuthenticatedPrincipal | null> {
   const bearer = bearerToken(authorization);
   if (bearer?.startsWith('tf_pat_') === true) {
@@ -465,7 +482,7 @@ function buildOAuthDeps(env: Env): Omit<OAuthDeps, 'identity'> {
  */
 function buildIntegrationDeps(
   env: Env,
-  keys: { jwtSecret: Uint8Array; keys: KeyProvider },
+  keys: { jwtStateSecret: Uint8Array; keys: KeyProvider },
 ): IntegrationDeps {
   return {
     providers: {

@@ -11,6 +11,7 @@ import {
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { createLogger } from '@taskflow/observability';
 import { signAccessToken } from '@taskflow/security';
+import { generateTestAccessTokenKeyPair } from '@taskflow/security/testing';
 import { unsafeAsId, type UserId } from '@taskflow/contracts';
 import type { DomainEvent } from '@taskflow/events';
 import { buildGateway, type Gateway } from './gateway.js';
@@ -57,7 +58,8 @@ const MIGRATION_URL =
 
 const PORT = 3477;
 const ORIGIN = 'http://localhost:5173';
-const SECRET = Buffer.from('c'.repeat(32), 'utf8');
+const { privateKey: JWT_PRIVATE_KEY, publicKey: JWT_PUBLIC_KEY } =
+  await generateTestAccessTokenKeyPair();
 
 const ORG = unsafeAsId<'OrgId'>('0195ff02-0000-7000-8000-0000000000a1');
 const MEMBER = unsafeAsId<'UserId'>('0195ff02-0000-7000-8000-000000000a01');
@@ -84,7 +86,10 @@ const env: Env = {
   DATABASE_URL: APP_URL,
   DATABASE_POOL_MAX: 5,
   DATABASE_REALTIME_URL: REALTIME_URL,
-  JWT_SECRET: SECRET.toString('base64'),
+  /* Unused by gateway.ts now — it takes the imported CryptoKey directly as
+     `jwtPublicKey` below, the same way main.ts imports it before calling
+     buildGateway. This placeholder only exists to satisfy Env's shape. */
+  JWT_PUBLIC_KEY: 'unused-see-jwtPublicKey-option',
   REALTIME_PORT: PORT,
   REALTIME_HOST: '127.0.0.1',
   REALTIME_TRUST_PROXY: false,
@@ -108,7 +113,7 @@ async function tokenFor(userId: UserId): Promise<string> {
       sessionId: `sess-${userId}`,
       authenticatedAt: Math.floor(Date.now() / 1000),
     },
-    { secret: SECRET },
+    { privateKey: JWT_PRIVATE_KEY },
   );
 }
 
@@ -217,7 +222,7 @@ beforeAll(async () => {
   initializeDatabase({ url: APP_URL, applicationName: 'gateway-int-app' });
   initializeRealtimeDatabase({ url: REALTIME_URL, applicationName: 'gateway-int-realtime' });
 
-  gateway = buildGateway({ env, logger });
+  gateway = buildGateway({ env, logger, jwtPublicKey: JWT_PUBLIC_KEY });
   await gateway.listen();
 }, 60_000);
 

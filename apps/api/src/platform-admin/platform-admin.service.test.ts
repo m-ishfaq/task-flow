@@ -25,6 +25,7 @@ import * as members from '../tenancy/member.service.js';
 import * as orgs from '../tenancy/org.service.js';
 import { resolveOrgMembership } from '../tenancy/resolve.js';
 import { loadSubaccount } from '../telephony/subaccount.service.js';
+import { getEntitlements, resetEntitlementCache } from '../billing/entitlement-resolver.js';
 import { readOperatorAudit } from './audit.js';
 import { listFlags, setFlag } from './flags.service.js';
 import * as directory from './org-directory.service.js';
@@ -679,5 +680,58 @@ describe('org deletion (Phase 12 Wave 2 §3.5)', () => {
     expect(mailer.sent).toHaveLength(1);
     expect(mailer.sent[0]?.to).toBe('owner@platform.test');
     expect(mailer.sent[0]?.subject).toMatch(/deleted/i);
+  });
+});
+
+describe('plans.setOrgEntitlements — the route, over a real caller', () => {
+  it('accepts an ISO date string for expiresAt, the shape JSON actually delivers', async () => {
+    /* The regression test for a real bug: the route originally declared
+       `expiresAt: z.date()`, which validates only an actual `Date` instance.
+       There is no transformer on this tRPC instance, so a `Date` sent from a
+       browser arrives JSON-serialized as a plain STRING — which `z.date()`
+       refuses outright. `createCallerFactory` calls the resolver in-process,
+       so passing a real `Date` here would prove nothing (both the broken
+       schema and the fix accept one identically, which is exactly how the
+       route shipped broken with a passing service-level test); only a
+       caller that hands the route the STRING a JSON body actually carries
+       tells the two apart. See plan-catalog.service.test.ts's own header on
+       why this lives here rather than there: it needs a real row in
+       platform.operators, which only this file may touch. */
+    const orgId = await newOrg('wire-date');
+    await admin.query(
+      `INSERT INTO platform.operators (user_id, granted_by, note)
+       VALUES ($1, $1, 'wire-format regression test grant')`,
+      [OPERATOR],
+    );
+
+    const context = testContext({ principal: testPrincipal('owner', { userId: OPERATOR }) });
+    const caller = createCallerFactory(
+      createPlatformAdminRouter({
+        events: new RecordingEventBus(),
+        payments: new FakePaymentProvider(),
+        storage: unusedStorage,
+        scanner: unusedScanner,
+      }),
+    )(context);
+
+    const future = new Date(Date.now() + 3_600_000).toISOString();
+
+    const result = await caller.plans.setOrgEntitlements({
+      orgId,
+      featuresAdd: ['docs'],
+      featuresRemove: [],
+      telephonyCapCents: null,
+      automationRunsPerHour: null,
+      turnIssuancePerDay: null,
+      reason: 'wire-format regression test',
+      /* The double cast, same reasoning as `Wire<T>`'s own: the TS input
+         type says `Date`, and a real JSON body never carries one — this
+         simulates what actually arrives rather than what the type promises. */
+      expiresAt: future as unknown as Date,
+    });
+
+    expect(result.cleared).toBe(false);
+    expect((await getEntitlements(orgId)).sources.docs).toBe('override');
+    resetEntitlementCache();
   });
 });

@@ -429,7 +429,7 @@ const automationRouter = createAutomationRouter({
     providers: {},
     redirectUri: (provider) => `https://app.test/integrations/callback/${provider}`,
     webhookOrigin: undefined,
-    jwtSecret: Buffer.alloc(32, 9),
+    jwtStateSecret: Buffer.alloc(32, 9),
     keys: automationKeys,
   },
 });

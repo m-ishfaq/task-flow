@@ -1,5 +1,6 @@
 import { Server } from '@hocuspocus/server';
 import { CLIENT_HEADER, type OrgId, type PageId, type UserId } from '@taskflow/contracts';
+import type { AccessTokenVerifyConfig } from '@taskflow/security';
 import type { Logger } from '@taskflow/observability';
 import { CollabAuthError, authenticateConnection } from './auth.js';
 import { compactPage } from './compaction.js';
@@ -37,13 +38,20 @@ export interface Gateway {
 export interface BuildGatewayOptions {
   readonly env: Env;
   readonly logger: Logger;
+  /**
+   * Imported (async, from `JWT_PUBLIC_KEY`) by `main.ts` before this function
+   * runs — mirrors `apps/realtime`'s identical `BuildGatewayOptions` field and
+   * the same reason `apps/api`'s `buildIdentityDeps` takes its key
+   * pre-imported: this stays synchronous. Public key only: this gateway
+   * verifies, never mints.
+   */
+  readonly jwtPublicKey: AccessTokenVerifyConfig['publicKey'];
 }
 
 export function buildGateway(options: BuildGatewayOptions): Gateway {
-  const { env, logger } = options;
+  const { env, logger, jwtPublicKey } = options;
 
   const origins = allowedOrigins(env);
-  const jwtSecret = Buffer.from(env.JWT_SECRET, 'base64');
 
   const server = new Server<CollabContext>({
     port: env.COLLAB_PORT,
@@ -65,7 +73,7 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
             nativeClientHeader: data.requestHeaders.get(CLIENT_HEADER),
             host: data.requestHeaders.get('host'),
           },
-          { jwtSecret, allowedOrigins: origins },
+          { jwtPublicKey, allowedOrigins: origins },
         );
       } catch (error) {
         if (error instanceof CollabAuthError) {

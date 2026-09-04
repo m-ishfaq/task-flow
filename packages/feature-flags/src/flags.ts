@@ -128,19 +128,22 @@ export const FLAGS = {
 
   /* --- Phase 11 ---------------------------------------------------------- */
   analytics: {
-    /* NOT launched, and the only flag in this registry that is still honestly
-       scaffolding. Phase 11 has not shipped — there is no `apps/api/src/
-       analytics`, no route, and nothing for a plan to grant.
+    /* Launched: `apps/api/src/analytics` (router, dashboards, refresh,
+       backfill) is real, wired into the app router, and every one of its
+       routes now carries `feature: { flag: 'analytics', ... }` — this entry
+       is no longer scaffolding with nothing behind it.
 
-       This one was flipped to `launched`/`true` alongside the six genuinely
-       shipped modules during Wave 4's registry correction, which was wrong:
-       the correction's whole argument was that a stale `false` on a SHIPPED
-       module goes dark for a paying customer, and that argument says nothing
-       about a module that does not exist. A plan listing `analytics` would
-       promise a customer a surface with nothing behind it. */
+       `defaultValue: false` stays false deliberately, unlike the other
+       launched, perOrg flags above (which default `true` because the
+       registry default is the "environment" tier every org falls back to
+       with no plan). Analytics is the one module a plan is meant to grant or
+       withhold as the actual product decision — `business` currently does,
+       via `packages/seed/src/modules/billing.catalog.ts`'s catalog — so a
+       `true` default here would hand it to every org regardless of plan,
+       which is the exact gap this flag existed to close and briefly did not. */
     description: 'Analytics dashboards',
     phase: 11,
-    stage: 'planned',
+    stage: 'launched',
     defaultValue: false,
     perOrg: true,
   },

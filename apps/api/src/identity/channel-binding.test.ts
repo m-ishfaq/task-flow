@@ -7,6 +7,7 @@ import { RecordingEventBus } from '@taskflow/events';
 import { errors, isAppError } from '@taskflow/contracts';
 import * as identity from './identity.service.js';
 import type { DeliverableLink, IdentityDeps, TokenPair } from './identity.service.js';
+import { TEST_JWT_PRIVATE_KEY } from '../testing/fixtures.js';
 
 /**
  * Channel binding (ai/phase-14-mobile.md §4.3), against real Postgres.
@@ -43,7 +44,7 @@ const MIGRATIONS_DIR = resolve(
   'migrations',
 );
 
-const JWT_SECRET = new Uint8Array(Buffer.alloc(32, 7));
+const JWT_STATE_SECRET = new Uint8Array(Buffer.alloc(32, 7));
 const PASSWORD = 'correct horse battery staple 42';
 const EMAIL = 'channel@example.test';
 
@@ -53,7 +54,8 @@ let delivered: DeliverableLink[];
 function deps(): IdentityDeps {
   return {
     config: {
-      jwtSecret: JWT_SECRET,
+      jwtPrivateKey: TEST_JWT_PRIVATE_KEY,
+      jwtStateSecret: JWT_STATE_SECRET,
       refreshTokenTtlMs: 30 * 24 * 60 * 60 * 1000,
       verificationTtlMs: 24 * 60 * 60 * 1000,
       passwordResetTtlMs: 60 * 60 * 1000,

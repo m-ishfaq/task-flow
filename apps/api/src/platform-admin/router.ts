@@ -997,8 +997,16 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
               reason: z.string().min(1).max(500),
               /* A date, not a duration: "until 2026-09-01" survives being read
                  back six weeks later, where "30 days" only means something
-                 relative to a moment nobody recorded. */
-              expiresAt: z.date().nullable().default(null),
+                 relative to a moment nobody recorded.
+                 `coerce`, not a bare `z.date()` — there is no transformer on
+                 this tRPC instance (builder.ts's own header), so a `Date` sent
+                 from a browser arrives here JSON-serialized as a string, and
+                 `z.date()` refuses anything that is not already a `Date`
+                 instance. Every other date INPUT in this app router takes the
+                 same shape (`dateRangeInput` in analytics/router.ts); this
+                 field had no caller until now, which is how it kept the one
+                 that would have refused every real request. */
+              expiresAt: z.coerce.date().nullable().default(null),
             })
             .strict(),
         )

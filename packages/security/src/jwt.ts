@@ -1,4 +1,4 @@
-import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
+import { SignJWT, jwtVerify, importPKCS8, importSPKI, type JWTPayload, type CryptoKey } from 'jose';
 
 /**
  * Access tokens (PLAN.md §8.1).
@@ -10,12 +10,30 @@ import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
  * takeover: script running on the page can steal an access token good for ten
  * minutes, but not the thing that mints new ones.
  *
- * HS256 rather than RS256 because there is exactly one issuer and one verifier,
- * both this API. Asymmetric signing buys the ability to let other parties verify
- * without the signing key, which nothing here needs, in exchange for key
- * management this project does not want yet. If the socket gateway or a
- * third-party consumer ever verifies these, that trade flips and this becomes
- * RS256 — the interface below does not change.
+ * RS256, not HS256. The original design used one shared HS256 secret, reasoned
+ * as fine because there was exactly one issuer and one verifier — both this
+ * API. That stopped being true once apps/realtime and apps/collab each grew
+ * their own `onAuthenticate`/handshake check and started verifying this same
+ * token independently (both still ours, not third parties — see each app's
+ * own config/env.ts for why that distinction mattered under HS256). Two
+ * MORE processes holding the one secret that can also MINT a token widens
+ * what a leak from either of them buys an attacker, from "read tokens" to
+ * "forge tokens" — and RS256 closes exactly that gap for free: this API alone
+ * holds `JWT_PRIVATE_KEY` and signs; every verifier, including this API's own
+ * `authenticate()`, holds only `JWT_PUBLIC_KEY` and can check a signature but
+ * never produce one. Rotation is also just "publish a new public key" rather
+ * than "every verifying process gets a new copy of a secret that can forge
+ * tokens in the meantime."
+ *
+ * The other signed-token types below this in the file — TOTP challenge, OAuth
+ * state, connector state — are unaffected and stay HS256: each is signed and
+ * verified by this API alone, so the property RS256 buys (a verifier that
+ * cannot also sign) has no caller here. They now use a SEPARATE secret,
+ * `JWT_STATE_SECRET`, rather than reusing the access-token key material —
+ * reusing one key across unrelated purposes is the same anti-pattern
+ * `MASTER_KEY_BASE64` vs `JWT_SECRET` used to guard against, and there is no
+ * reason the access token's asymmetric key pair should also double as an
+ * HMAC secret for three other token types.
  *
  * ⚠ HUMAN REVIEW SURFACE (§2.2).
  */
@@ -31,7 +49,11 @@ import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
  */
 export const ACCESS_TOKEN_TTL_SECONDS = 600;
 
-const ALGORITHM = 'HS256';
+/** Access tokens only — asymmetric, see the file header. */
+const ACCESS_TOKEN_ALGORITHM = 'RS256';
+
+/** TOTP challenge, OAuth state, connector state — single-process, symmetric. */
+const STATE_TOKEN_ALGORITHM = 'HS256';
 
 /**
  * Fixed issuer and audience.
@@ -74,13 +96,49 @@ function assertSecret(secret: Uint8Array): void {
   }
 }
 
+/**
+ * Access token signing/verifying keys.
+ *
+ * Two distinct config types on purpose, not one bidirectional key pair: the
+ * type system is what stops a verify-only process (apps/realtime,
+ * apps/collab, both of which never construct an `AccessTokenSigningConfig` at
+ * all) from ever being handed something it could sign with, even by accident.
+ */
+export interface AccessTokenSigningConfig {
+  /** Imported once at boot via `importAccessTokenPrivateKey`. Held by apps/api only. */
+  readonly privateKey: CryptoKey;
+}
+
+export interface AccessTokenVerifyConfig {
+  /** Imported once at boot via `importAccessTokenPublicKey`. Safe to hand to every verifier. */
+  readonly publicKey: CryptoKey;
+}
+
+/**
+ * Imports the RSA private key used to sign access tokens.
+ *
+ * `pkcs8Base64` is `JWT_PRIVATE_KEY` from the validated env schema: a PKCS8 PEM
+ * block, base64-encoded so it survives a single-line `.env` file the way
+ * `MASTER_KEY_BASE64` and the old `JWT_SECRET` already did. Import is async
+ * (WebCrypto), so this runs once at process boot — never per-request — and the
+ * resulting `CryptoKey` is threaded through config from there.
+ */
+export async function importAccessTokenPrivateKey(pkcs8Base64: string): Promise<CryptoKey> {
+  const pem = Buffer.from(pkcs8Base64, 'base64').toString('utf8');
+  return importPKCS8(pem, ACCESS_TOKEN_ALGORITHM);
+}
+
+/** Imports the RSA public key used to verify access tokens. See `importAccessTokenPrivateKey`. */
+export async function importAccessTokenPublicKey(spkiBase64: string): Promise<CryptoKey> {
+  const pem = Buffer.from(spkiBase64, 'base64').toString('utf8');
+  return importSPKI(pem, ACCESS_TOKEN_ALGORITHM);
+}
+
 /** Signs an access token valid for `ACCESS_TOKEN_TTL_SECONDS`. */
 export async function signAccessToken(
   claims: AccessTokenClaims,
-  config: JwtConfig,
+  config: AccessTokenSigningConfig,
 ): Promise<string> {
-  assertSecret(config.secret);
-
   // Destructured rather than compared as `claims.role === undefined`, which the
   // role-comparison guardrail flags — correctly, in the sense that it cannot
   // tell an authorization decision from a presence check, and would rather stop
@@ -97,12 +155,12 @@ export async function signAccessToken(
   };
 
   return new SignJWT(payload)
-    .setProtectedHeader({ alg: ALGORITHM, typ: 'JWT' })
+    .setProtectedHeader({ alg: ACCESS_TOKEN_ALGORITHM, typ: 'JWT' })
     .setIssuer(ISSUER)
     .setAudience(AUDIENCE)
     .setIssuedAt()
     .setExpirationTime(`${String(ACCESS_TOKEN_TTL_SECONDS)}s`)
-    .sign(config.secret);
+    .sign(config.privateKey);
 }
 
 /**
@@ -133,7 +191,7 @@ export async function signTotpChallenge(
   assertSecret(config.secret);
 
   return new SignJWT({ sub: claims.userId })
-    .setProtectedHeader({ alg: ALGORITHM, typ: 'JWT' })
+    .setProtectedHeader({ alg: STATE_TOKEN_ALGORITHM, typ: 'JWT' })
     .setIssuer(ISSUER)
     .setAudience(TOTP_CHALLENGE_AUDIENCE)
     .setIssuedAt()
@@ -151,7 +209,7 @@ export async function verifyTotpChallenge(
     const { payload } = await jwtVerify(token, config.secret, {
       issuer: ISSUER,
       audience: TOTP_CHALLENGE_AUDIENCE,
-      algorithms: [ALGORITHM],
+      algorithms: [STATE_TOKEN_ALGORITHM],
       clockTolerance: 5,
     });
 
@@ -223,7 +281,7 @@ export async function signOAuthState(claims: OAuthStateClaims, config: JwtConfig
     ...(channel === undefined ? {} : { channel }),
     ...(clientChallenge === undefined ? {} : { cc: clientChallenge }),
   })
-    .setProtectedHeader({ alg: ALGORITHM, typ: 'JWT' })
+    .setProtectedHeader({ alg: STATE_TOKEN_ALGORITHM, typ: 'JWT' })
     .setIssuer(ISSUER)
     .setAudience(OAUTH_STATE_AUDIENCE)
     .setIssuedAt()
@@ -241,7 +299,7 @@ export async function verifyOAuthState(
     const { payload } = await jwtVerify(token, config.secret, {
       issuer: ISSUER,
       audience: OAUTH_STATE_AUDIENCE,
-      algorithms: [ALGORITHM],
+      algorithms: [STATE_TOKEN_ALGORITHM],
       clockTolerance: 5,
     });
 
@@ -322,7 +380,7 @@ export async function signConnectorState(
     org: claims.orgId,
     uid: claims.userId,
   })
-    .setProtectedHeader({ alg: ALGORITHM, typ: 'JWT' })
+    .setProtectedHeader({ alg: STATE_TOKEN_ALGORITHM, typ: 'JWT' })
     .setIssuer(ISSUER)
     .setAudience(CONNECTOR_STATE_AUDIENCE)
     .setIssuedAt()
@@ -340,7 +398,7 @@ export async function verifyConnectorState(
     const { payload } = await jwtVerify(token, config.secret, {
       issuer: ISSUER,
       audience: CONNECTOR_STATE_AUDIENCE,
-      algorithms: [ALGORITHM],
+      algorithms: [STATE_TOKEN_ALGORITHM],
       clockTolerance: 5,
     });
 
@@ -371,18 +429,19 @@ export async function verifyConnectorState(
  */
 export async function verifyAccessToken(
   token: string,
-  config: JwtConfig,
+  config: AccessTokenVerifyConfig,
 ): Promise<AccessTokenClaims> {
-  assertSecret(config.secret);
-
   try {
-    const { payload } = await jwtVerify(token, config.secret, {
+    const { payload } = await jwtVerify(token, config.publicKey, {
       issuer: ISSUER,
       audience: AUDIENCE,
       // Pinned. Without it, a token whose header says `alg: none` — or one
       // signed with a weaker algorithm the library also supports — is accepted,
-      // which is the oldest JWT vulnerability there is.
-      algorithms: [ALGORITHM],
+      // which is the oldest JWT vulnerability there is. Also now the thing that
+      // makes an HS256 state token (TOTP challenge, OAuth state, connector
+      // state) unable to be replayed here even if it somehow carried a matching
+      // audience: this verifier accepts RS256 signatures only.
+      algorithms: [ACCESS_TOKEN_ALGORITHM],
       clockTolerance: 5,
     });
 

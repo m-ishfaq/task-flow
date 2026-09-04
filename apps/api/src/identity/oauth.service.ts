@@ -175,7 +175,7 @@ export async function start(
       ...(channel === 'native' ? { channel } : {}),
       ...(input.clientChallenge === undefined ? {} : { clientChallenge: input.clientChallenge }),
     },
-    { secret: deps.identity.config.jwtSecret },
+    { secret: deps.identity.config.jwtStateSecret },
   );
 
   const redirectUri = deps.redirectUri(input.provider, channel);
@@ -235,7 +235,7 @@ export async function callback(
   },
   meta: { ip: string | null; userAgent: string | null },
 ): Promise<OAuthCallbackResult> {
-  const state = await verifyState(input.state, deps.identity.config.jwtSecret);
+  const state = await verifyState(input.state, deps.identity.config.jwtStateSecret);
   const channel: SessionChannel = state.channel === 'native' ? 'native' : 'browser';
   const credentials = credentialsFor(deps, input.provider, channel);
 

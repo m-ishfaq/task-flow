@@ -28,6 +28,25 @@ const Base64Key = z.string().refine(
   { message: 'must be 32 bytes of base64-encoded key material' },
 );
 
+/**
+ * A PEM key block (PKCS8 private or SPKI public), base64-encoded so it
+ * survives a single-line `.env` file the same way `Base64Key` above does.
+ * Only checks it decodes to something PEM-shaped — `importAccessTokenPrivateKey`
+ * / `importAccessTokenPublicKey` do the real structural validation at boot,
+ * where a malformed key fails loudly with jose's own error rather than
+ * silently here.
+ */
+const Base64PemKey = z.string().refine(
+  (value) => {
+    try {
+      return Buffer.from(value, 'base64').toString('utf8').includes('-----BEGIN');
+    } catch {
+      return false;
+    }
+  },
+  { message: 'must be a base64-encoded PEM key block' },
+);
+
 /* An optional variable arrives as the EMPTY STRING whenever a compose file or
    .env entry is present-but-blank — compose.prod.yaml passes every optional
    variable through `${VAR:-}`, which yields '' for an unset one — and
@@ -197,7 +216,18 @@ export const EnvSchema = z
 
     MASTER_KEY_ID: NonEmpty,
     MASTER_KEY_BASE64: Base64Key,
-    JWT_SECRET: Base64Key,
+
+    /* Access token signing/verifying key pair (RS256) — this API is the only
+       process that holds JWT_PRIVATE_KEY. apps/realtime and apps/collab hold
+       only JWT_PUBLIC_KEY, so a leak from either can read a token but never
+       forge one. See packages/security/src/jwt.ts's file header. */
+    JWT_PRIVATE_KEY: Base64PemKey,
+    JWT_PUBLIC_KEY: Base64PemKey,
+
+    /* TOTP challenge / OAuth state / connector state tokens — single-process
+       (signed and verified by this API alone), so these stay HS256 on their
+       own secret rather than the access token's key pair. */
+    JWT_STATE_SECRET: Base64Key,
 
     /* Mail (§8.1). Mailpit locally, a real provider in deployed environments.
        Verification and reset links are the credential for the flow that issues
@@ -538,12 +568,15 @@ export const EnvSchema = z
      for is provided by `assertNoMisspelledVariables` below, which knows which
      names are ours. */
   .superRefine((env, ctx) => {
-    if (env.NODE_ENV === 'production' && env.MASTER_KEY_BASE64 === env.JWT_SECRET) {
+    if (env.NODE_ENV === 'production' && env.MASTER_KEY_BASE64 === env.JWT_STATE_SECRET) {
       // Reusing one secret for two purposes means compromising either
-      // compromises both, and key rotation stops being independent.
+      // compromises both, and key rotation stops being independent. Compared
+      // against JWT_STATE_SECRET, not JWT_PRIVATE_KEY/JWT_PUBLIC_KEY — those
+      // are PEM key blocks, a different shape entirely, and not the kind of
+      // value someone accidentally reuses across an AES key and a JWT secret.
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'MASTER_KEY_BASE64 and JWT_SECRET must be different values.',
+        message: 'MASTER_KEY_BASE64 and JWT_STATE_SECRET must be different values.',
       });
     }
 
@@ -663,7 +696,9 @@ const KNOWN_VARIABLES = new Set([
   'GITHUB_NATIVE_CLIENT_SECRET',
   'MASTER_KEY_ID',
   'MASTER_KEY_BASE64',
-  'JWT_SECRET',
+  'JWT_PRIVATE_KEY',
+  'JWT_PUBLIC_KEY',
+  'JWT_STATE_SECRET',
   'API_PORT',
   'API_HOST',
   'API_TRUST_PROXY',

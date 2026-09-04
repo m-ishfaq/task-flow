@@ -264,9 +264,21 @@ digests, due reminders, web + Expo push (`apps/api/src/platform`, migration 0027
 0083–0084, `apps/api/src/platform-admin/broadcast*.ts`; and **Phase 14 (Mobile)** — a full Expo /
 React Native app (`apps/mobile`) covering auth, Work, Chat, Docs, Calls, People and Billing, whose
 own spec header (`ai/phase-14-mobile.md`) still says "DRAFT, Wave 1 only" despite the shipped
-breadth. **Still genuinely draft / not built:** analytics (Phase 11) and the Phase 12 Wave 4 plan
-catalog. When in doubt, open the newest `ai/phase-*.md` and read its status header, remembering it
-too can lag the code.
+breadth; **Phase 11 (Analytics)** — velocity, burndown, CFD, cycle time, workload, volume and
+spend dashboards (`apps/api/src/analytics`, `apps/web/src/features/analytics`), whose own spec
+header said "DRAFT... awaiting approval" the whole time; and **Phase 12 Wave 4 (Plan catalog &
+entitlements)** — the four-tier plan/override resolution in `apps/api/src/billing/
+entitlement-resolver.ts` and its operator-facing editor in `plans-tab.tsx`, whose own spec header
+said "DRAFT... nothing built" the whole time. **Both of those last two headers were corrected the
+same day a real gap between them was found**: `analytics`'s flag had existed in the registry since
+Phase 11 landed, but no analytics route ever checked it, so every org on every plan received full
+analytics for free — the entitlement system Wave 4 built to gate exactly this kind of module was
+never connected to it. Fixed by adding `feature: { flag: 'analytics', ... }` to every route in
+`apps/api/src/analytics/router.ts` and granting `analytics` to the `business` tier in
+`packages/seed/src/modules/billing.catalog.ts` — the first real feature difference between `pro`
+and `business`, which previously differed only on limits and price. When in doubt, open the
+newest `ai/phase-*.md` and read its status header, remembering it too can lag the code — twice
+more, in this case.
 
 **Phase 0B, Phase 1 (identity), Phase 2 (tenancy, authz & audit) and Phase 3 (Work) complete** —
 backend and `apps/web`.

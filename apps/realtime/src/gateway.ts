@@ -3,6 +3,7 @@ import { Server } from 'socket.io';
 import { createAdapter } from '@socket.io/postgres-adapter';
 import { createRealtimeAdapterPool, isDatabaseHealthy, type OutboxRow } from '@taskflow/db';
 import type { Logger } from '@taskflow/observability';
+import type { AccessTokenVerifyConfig } from '@taskflow/security';
 import { clientAddress, HandshakeError, isNativeClient, verifyHandshake } from './auth.js';
 import { allowedOrigins, type Env } from './config/env.js';
 import {
@@ -78,10 +79,17 @@ export interface Gateway {
 export interface BuildGatewayOptions {
   readonly env: Env;
   readonly logger: Logger;
+  /**
+   * Imported (async, from `JWT_PUBLIC_KEY`) by `main.ts` BEFORE this function
+   * runs, the same reason `apps/api`'s `buildIdentityDeps` takes its signing
+   * key pre-imported rather than importing it here — this stays synchronous.
+   * Public key only: this gateway verifies, never mints.
+   */
+  readonly jwtPublicKey: AccessTokenVerifyConfig['publicKey'];
 }
 
 export function buildGateway(options: BuildGatewayOptions): Gateway {
-  const { env, logger } = options;
+  const { env, logger, jwtPublicKey } = options;
 
   /* Boot-time, before a connection is accepted: a room table that ever maps an
      attachment event would hand a presigned download URL to everyone in the
@@ -90,7 +98,6 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
   assertRoomTableIsSafe();
 
   const origins = allowedOrigins(env);
-  const jwtSecret = Buffer.from(env.JWT_SECRET, 'base64');
 
   const http = createServer((request, response) => {
     /* Health only. This server exists to carry WebSockets; anything else
@@ -213,7 +220,7 @@ export function buildGateway(options: BuildGatewayOptions): Gateway {
       }
 
       try {
-        const identity = await verifyHandshake(socket, { jwtSecret, allowedOrigins: origins });
+        const identity = await verifyHandshake(socket, { jwtPublicKey, allowedOrigins: origins });
 
         /* THE one assignment of a socket's identity (§3.7). Everything else in
            this file reads `socket.data.identity`; nothing anywhere writes it. */

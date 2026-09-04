@@ -7,6 +7,7 @@ import { closeDatabase, initializeCollabDatabase, initializeDatabase } from '@ta
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { createLogger } from '@taskflow/observability';
 import { signAccessToken } from '@taskflow/security';
+import { generateTestAccessTokenKeyPair } from '@taskflow/security/testing';
 import { loadTuples } from '@taskflow/api/tenancy/resolve';
 import {
   listPageVersions,
@@ -62,7 +63,8 @@ const MIGRATION_URL =
   'postgresql://taskflow_migrator:migrator-dev-secret@localhost:5433/taskflow_test';
 
 const ORIGIN = 'http://localhost:5173';
-const SECRET = Buffer.from('d'.repeat(32), 'utf8');
+const { privateKey: JWT_PRIVATE_KEY, publicKey: JWT_PUBLIC_KEY } =
+  await generateTestAccessTokenKeyPair();
 
 const logger = createLogger({ name: 'collab-gateway-integration-test', level: 'silent' });
 
@@ -184,7 +186,10 @@ function envFor(port: number): Env {
     DATABASE_URL: APP_URL,
     DATABASE_POOL_MAX: 5,
     DATABASE_COLLAB_URL: COLLAB_URL,
-    JWT_SECRET: SECRET.toString('base64'),
+    /* Unused by gateway.ts now — it takes the imported CryptoKey directly as
+       `jwtPublicKey` below, the same way main.ts imports it before calling
+       buildGateway. This placeholder only exists to satisfy Env's shape. */
+    JWT_PUBLIC_KEY: 'unused-see-jwtPublicKey-option',
     COLLAB_PORT: port,
     COLLAB_HOST: '127.0.0.1',
     WEB_ORIGIN: ORIGIN,
@@ -195,7 +200,7 @@ function envFor(port: number): Env {
 async function startGateway(): Promise<{ gateway: Gateway; port: number }> {
   const port = nextPort;
   nextPort += 1;
-  const gateway = buildGateway({ env: envFor(port), logger });
+  const gateway = buildGateway({ env: envFor(port), logger, jwtPublicKey: JWT_PUBLIC_KEY });
   await gateway.listen();
   return { gateway, port };
 }
@@ -203,7 +208,7 @@ async function startGateway(): Promise<{ gateway: Gateway; port: number }> {
 async function tokenFor(userId: UserId): Promise<string> {
   return signAccessToken(
     { userId, sessionId: `sess-${userId}`, authenticatedAt: Math.floor(Date.now() / 1000) },
-    { secret: SECRET },
+    { privateKey: JWT_PRIVATE_KEY },
   );
 }
 

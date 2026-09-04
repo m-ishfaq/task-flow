@@ -123,7 +123,20 @@ export const CATALOG = [
     name: 'Business',
     description: 'Everything, with no ceiling on spend and priority support.',
     sortOrder: 3,
-    features: ['chat', 'docs', 'tqlTextSyntax', 'telephony', 'automation', 'publicApi'],
+    /* `analytics` is the one feature this tier has that `pro` does not — every
+       other entry below is identical to `pro`'s list, so without it Business
+       would differ from Pro on limits and price alone. Dashboards aggregate
+       activity across the whole org, which fits "the top tier that removes
+       every ceiling" better than a mid tier still bounded by run-rate limits. */
+    features: [
+      'chat',
+      'docs',
+      'tqlTextSyntax',
+      'telephony',
+      'automation',
+      'publicApi',
+      'analytics',
+    ],
     withProduct: true,
     monthlyCents: 14_900,
     annualCents: 149_000,

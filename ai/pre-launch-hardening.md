@@ -235,8 +235,9 @@ instruction in item 5.
 
    Fill in `.env.prod` with real generated values — every variable has a generation command in its
    own comment in that file (`openssl rand -hex 24` for the 9 Postgres role passwords,
-   `openssl rand -hex 24` for MinIO credentials, the two `node -e "..."` one-liners for
-   `MASTER_KEY_BASE64` and `JWT_SECRET`, `openssl rand -hex 24` for `TASKFLOW_*` again — do not
+   `openssl rand -hex 24` for MinIO credentials, the `node -e "..."` one-liners for
+   `MASTER_KEY_BASE64`, `JWT_PRIVATE_KEY`/`JWT_PUBLIC_KEY` (an RS256 key pair) and
+   `JWT_STATE_SECRET`, `openssl rand -hex 24` for `TASKFLOW_*` again — do not
    reuse one value for two different variables). Set `WEB_ORIGIN=http://localhost` (matches the
    `web` service's `80:80` port mapping for a local test), `STORAGE_ENDPOINT=http://localhost:9000`,
    `MAIL_HOST`/`MAIL_PORT`/`MAIL_FROM` to anything non-empty for this smoke test (a real SMTP
@@ -299,8 +300,11 @@ down -v` — the `-v` drops the test volumes; do NOT run this against a real dep
    - Secrets rotation: for a Postgres role password, the two-step version is (1) `ALTER ROLE ...
 PASSWORD` directly against the running database (NOT by re-running the init scripts, which
      only fire on an empty data directory), (2) update `.env.prod` and restart the one or two
-     services that hold that role's URL. For `JWT_SECRET`, rotating it invalidates every live
-     session — state that plainly rather than leaving it implicit.
+     services that hold that role's URL. For the access-token key pair (`JWT_PRIVATE_KEY`/
+     `JWT_PUBLIC_KEY`) and `JWT_STATE_SECRET`, see `ai/deployment-runbook.md`'s own "Secrets
+     rotation" section — neither invalidates a live session (sessions are the refresh cookie, not
+     a JWT), and the access-token pair specifically has a documented two-step sequence so a leaked
+     key is fully retired without a simultaneous-restart gap.
    - TLS: this compose file deliberately terminates nothing — say what the operator needs to add in
      front of the `web` service (a managed load balancer, or another reverse proxy doing ACME) and
      that `WEB_ORIGIN`/`TELEPHONY_WEBHOOK_ORIGIN` must be the `https://` public URL once TLS exists,

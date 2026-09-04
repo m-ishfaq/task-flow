@@ -1,5 +1,9 @@
 import { InMemoryEventBus, type EventBus } from '@taskflow/events';
-import { checkPasswordBreached, relyingPartyFrom } from '@taskflow/security';
+import {
+  checkPasswordBreached,
+  relyingPartyFrom,
+  type AccessTokenSigningConfig,
+} from '@taskflow/security';
 import type { Env } from '../config/env.js';
 import type { DeliverableLink, IdentityDeps } from './identity.service.js';
 import type { PasskeyDeps } from './passkey.service.js';
@@ -56,12 +60,23 @@ export interface BuildIdentityDepsOptions {
    * constructs the real one and registers its shutdown.
    */
   readonly deliver: (message: DeliverableLink) => Promise<void>;
+  /**
+   * Imported (async, from `JWT_PRIVATE_KEY`) by the caller BEFORE this
+   * function runs — see `server.ts`. Not imported in here: this function
+   * stays synchronous, for the same reason `identityDataKey` is threaded as a
+   * sibling of `IdentityDeps` rather than folded into it (see
+   * `totp.service.ts`'s `TotpDeps` header) — an async `buildIdentityDeps`
+   * would force every construction site, every test fixture included, to
+   * become async for a value most of them would still have to fake.
+   */
+  readonly jwtPrivateKey: AccessTokenSigningConfig['privateKey'];
 }
 
 export function buildIdentityDeps(options: BuildIdentityDepsOptions): IdentityDeps {
   return {
     config: {
-      jwtSecret: new Uint8Array(Buffer.from(options.env.JWT_SECRET, 'base64')),
+      jwtPrivateKey: options.jwtPrivateKey,
+      jwtStateSecret: new Uint8Array(Buffer.from(options.env.JWT_STATE_SECRET, 'base64')),
       refreshTokenTtlMs: REFRESH_TOKEN_TTL_MS,
       verificationTtlMs: VERIFICATION_TTL_MS,
       passwordResetTtlMs: PASSWORD_RESET_TTL_MS,

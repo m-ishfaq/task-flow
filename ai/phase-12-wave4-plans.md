@@ -1,6 +1,17 @@
 # Phase 12, Wave 4 — Plan catalog, entitlements & usage billing
 
-**Status: DRAFT, written 2026-08-13. Not approved, nothing built.**
+**Status: SHIPPED — the spec header lags, per CLAUDE.md's own "status marker is a claim, not a
+fact" discipline (also caught stale on Phase 11's own header, the same day, by the same check).**
+`packages/db/migrations/0062_plan_catalog.up.sql`/`0063_org_plan_fk.up.sql`, `apps/api/src/
+billing/entitlement-resolver.ts` (the four-tier resolution this section describes),
+`apps/api/src/platform-admin/plan-catalog.service.ts`, and `apps/web/src/features/
+platform-admin/plans-tab.tsx` (the operator console's plan editor, including the per-plan
+feature checkbox dialog this section names) are all real and wired in. `packages/seed/src/
+modules/billing.catalog.ts` seeds four real tiers (free/starter/pro/business) through the
+console's own service functions rather than raw inserts, exactly as §1 below argues for. Left
+corrected in place rather than silently rewritten.
+
+**Written 2026-08-13, still DRAFT below.**
 
 Wave 3 shipped billing STATE — is this org trialing, paying, lapsed. It never shipped a
 notion of WHAT an org is paying for. This wave adds the catalog, makes it operator-editable

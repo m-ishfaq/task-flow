@@ -1,4 +1,5 @@
 import { closeDatabase, initializeCollabDatabase, initializeDatabase } from '@taskflow/db';
+import { importAccessTokenPublicKey } from '@taskflow/security';
 import { createLogger } from '@taskflow/observability';
 import { loadEnv } from './config/env.js';
 import { buildGateway } from './gateway.js';
@@ -31,7 +32,10 @@ initializeCollabDatabase({
 });
 
 const logger = createLogger({ name: 'collab', level: env.LOG_LEVEL });
-const gateway = buildGateway({ env, logger });
+/* Public key only — this process verifies access tokens, never mints one
+   (packages/security/src/jwt.ts's file header). */
+const jwtPublicKey = await importAccessTokenPublicKey(env.JWT_PUBLIC_KEY);
+const gateway = buildGateway({ env, logger, jwtPublicKey });
 
 await gateway.listen();
 logger.info({ port: env.COLLAB_PORT }, 'collab gateway listening');

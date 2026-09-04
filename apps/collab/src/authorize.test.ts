@@ -9,6 +9,7 @@ import {
 import { closeDatabase, initializeDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { signAccessToken } from '@taskflow/security';
+import { generateTestAccessTokenKeyPair } from '@taskflow/security/testing';
 import { authorizeConnect } from './authorize.js';
 import { authenticateConnection, CollabAuthError } from './auth.js';
 import { pageDocumentName } from './document-name.js';
@@ -39,7 +40,7 @@ import { pageDocumentName } from './document-name.js';
  * suites.
  */
 
-const SECRET = Buffer.alloc(32, 2);
+const { privateKey: PRIVATE_KEY, publicKey: PUBLIC_KEY } = await generateTestAccessTokenKeyPair();
 const ORIGINS = ['http://localhost:5173'];
 
 const OWNER = unsafeAsId<'UserId'>('0195ff30-0000-7000-8000-000000000001');
@@ -62,7 +63,7 @@ async function token(userId: UserId): Promise<string> {
       sessionId: '0195ff30-0000-7000-8000-000000000501',
       authenticatedAt: Math.floor(Date.now() / 1000),
     },
-    { secret: SECRET },
+    { privateKey: PRIVATE_KEY },
   );
 }
 
@@ -253,7 +254,7 @@ describe('authenticateConnection', () => {
         nativeClientHeader: null,
         host: null,
       },
-      { jwtSecret: SECRET, allowedOrigins: ORIGINS },
+      { jwtPublicKey: PUBLIC_KEY, allowedOrigins: ORIGINS },
     );
 
     expect(connection.userId).toBe(MEMBER);
@@ -274,7 +275,7 @@ describe('authenticateConnection', () => {
           nativeClientHeader: null,
           host: null,
         },
-        { jwtSecret: SECRET, allowedOrigins: ORIGINS },
+        { jwtPublicKey: PUBLIC_KEY, allowedOrigins: ORIGINS },
       ),
     ).rejects.toMatchObject({ refusal: 'forbidden_origin' });
   });
@@ -292,7 +293,7 @@ describe('authenticateConnection', () => {
           nativeClientHeader: null,
           host: null,
         },
-        { jwtSecret: SECRET, allowedOrigins: ORIGINS },
+        { jwtPublicKey: PUBLIC_KEY, allowedOrigins: ORIGINS },
       ),
     ).rejects.toMatchObject({ refusal: 'invalid_document' });
   });
@@ -310,7 +311,7 @@ describe('authenticateConnection', () => {
           nativeClientHeader: null,
           host: null,
         },
-        { jwtSecret: SECRET, allowedOrigins: ORIGINS },
+        { jwtPublicKey: PUBLIC_KEY, allowedOrigins: ORIGINS },
       ),
     ).rejects.toBeInstanceOf(CollabAuthError);
   });

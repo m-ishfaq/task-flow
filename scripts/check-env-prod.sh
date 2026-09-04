@@ -110,7 +110,7 @@ for var in "${REQUIRED_VARS[@]}"; do
   # `migrator-dev-secret`, the MinIO root password, `coturn-dev-secret` —
   # across fifteen database URLs, object storage and TURN. The realistic
   # failure is copying an example file over and editing the fields you were
-  # thinking about; JWT_SECRET is caught because it is spelled CHANGE_ME_...,
+  # thinking about; JWT_PRIVATE_KEY is caught because it is spelled ENTER_HERE,
   # and every Postgres role password is not.
   #
   # Compared against the example file rather than pattern-matched, so a

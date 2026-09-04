@@ -19,8 +19,19 @@ import { spendReport } from '../telephony/spend-report.service.js';
  * `analytics:read` is Admin-and-Owner only (§7 decision 4). Every dashboard
  * aggregates ACROSS boards, so a member who cannot read board X must not learn
  * X's throughput from a chart. The org-level permission is answered by ROLE
- * ALONE (§5), so `route({ permission: 'analytics:read' })` IS the whole
- * decision at this layer — no per-resource `can()` follows.
+ * ALONE (§5), so `route({ permission: 'analytics:read' })` is the whole
+ * AUTHORIZATION decision at this layer — no per-resource `can()` follows.
+ *
+ * Every route also carries `feature: { flag: 'analytics', display: 'Analytics' }`
+ * — the plan-entitlement gate (`apps/api/src/trpc/builder.ts`'s
+ * `requireFeature`), which runs AFTER the permission check above and can only
+ * ever REMOVE access, never grant it (guardrail 7: a plan check rides
+ * alongside authorization, never instead of it). This module shipped without
+ * it for a stretch: the flag existed in the registry but no route consulted
+ * it, so every org on every plan got analytics for free regardless of what
+ * `billing.plans.features` granted — the exact gap this comment now
+ * documents so it does not reopen silently. See
+ * `packages/feature-flags/src/flags.ts`'s own `analytics` entry.
  */
 
 const dateRangeInput = z
@@ -37,6 +48,7 @@ export function createAnalyticsRouter() {
      */
     velocity: route({
       permission: 'analytics:read',
+      feature: { flag: 'analytics', display: 'Analytics' },
       quotaClass: 'expensive',
     })
       .input(
@@ -70,6 +82,7 @@ export function createAnalyticsRouter() {
      */
     burndown: route({
       permission: 'analytics:read',
+      feature: { flag: 'analytics', display: 'Analytics' },
       quotaClass: 'expensive',
     })
       .input(
@@ -105,6 +118,7 @@ export function createAnalyticsRouter() {
      */
     cfd: route({
       permission: 'analytics:read',
+      feature: { flag: 'analytics', display: 'Analytics' },
       quotaClass: 'expensive',
     })
       .input(
@@ -141,6 +155,7 @@ export function createAnalyticsRouter() {
      */
     cycleTime: route({
       permission: 'analytics:read',
+      feature: { flag: 'analytics', display: 'Analytics' },
       quotaClass: 'expensive',
     })
       .input(
@@ -171,6 +186,7 @@ export function createAnalyticsRouter() {
      */
     workload: route({
       permission: 'analytics:read',
+      feature: { flag: 'analytics', display: 'Analytics' },
       quotaClass: 'expensive',
     })
       .input(
@@ -207,6 +223,7 @@ export function createAnalyticsRouter() {
      */
     volume: route({
       permission: 'analytics:read',
+      feature: { flag: 'analytics', display: 'Analytics' },
       quotaClass: 'expensive',
     })
       .input(dateRangeInput)
@@ -246,6 +263,7 @@ export function createAnalyticsRouter() {
      */
     status: route({
       permission: 'analytics:read',
+      feature: { flag: 'analytics', display: 'Analytics' },
     })
       .output(
         z.object({
@@ -325,6 +343,7 @@ export function createAnalyticsRouter() {
      */
     backfill: route({
       permission: 'analytics:read',
+      feature: { flag: 'analytics', display: 'Analytics' },
     })
       .output(z.object({ syntheticCreated: z.number().int() }))
       // A mutation, not a query: it INSERTS synthetic creation rows. A query
@@ -344,6 +363,7 @@ export function createAnalyticsRouter() {
      */
     spend: route({
       permission: 'analytics:read',
+      feature: { flag: 'analytics', display: 'Analytics' },
       quotaClass: 'expensive',
     })
       .input(

@@ -1,6 +1,11 @@
 import { unsafeAsId } from '@taskflow/contracts';
 import { RecordingEventBus } from '@taskflow/events';
-import { masterKeysFromBase64, SoftwareKeyProvider } from '@taskflow/security';
+import {
+  importAccessTokenPrivateKey,
+  importAccessTokenPublicKey,
+  masterKeysFromBase64,
+  SoftwareKeyProvider,
+} from '@taskflow/security';
 import { createAppRouter } from '../router.js';
 import { buildIdentityDeps, buildPasskeyDeps } from '../identity/deps.js';
 import { buildWorkDeps } from '../work/deps.js';
@@ -19,11 +24,27 @@ import { parseEnv, type Env } from '../config/env.js';
  * and the usual response to that chore is to loosen the type.
  */
 
+/**
+ * A fixed, real RS256 test key pair — generated once for this fixture file,
+ * not per test run, the same "deterministic fixed bytes" spirit as
+ * `MASTER_KEY_BASE64: Buffer.alloc(32, 1)` below. Unlike that one, this can't
+ * be arbitrary bytes: `Base64PemKey` validates PEM shape, and real
+ * sign/verify round trips in `authenticate.test.ts` etc. need a real,
+ * matching key pair, not just something that passes the env schema.
+ */
+const TEST_JWT_PRIVATE_KEY_PEM_B64 =
+  'LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2d0lCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktrd2dnU2xBZ0VBQW9JQkFRRE1PeUtUZHpGTDUzR0cKMmNUeG8rMUV3ZGd3WFpWQWJ2b284S3JZSEt5RTVZMncva3pnVE4rSk0vVDVIWXd4ZXV3SE1lc2oxdlozbmZlcApoRno2RDU4SEFxWHZJL1NTcTdTaEY4TFM1NUJpMUk1SlFXN0dvQjB6MEYya01mN2xjQ0hnK0VWSHZaNGdCT1FzCjU1ZUR3L1JWVEs1S3k5VHRLMnFLOFk5R2N0cDJSdUZCbjFmakJ2ejN6ZnVjcTVhektRcXZ6M2RJTVJLTFdtdDUKU0J3dnJSMmk2OHVuNDlzWjdjWmZZQnNqWDZpWWY5Y0ZiK09UUTkzRngvcjUzdlA3cjhxbTZ0dUtqTTUwdnEvNQo5OCtMcTFGbEp3Z2NmWWJreGhmeTJQdkJqc2JoY3NZTTd5UUkweThnc04ybTE3ek5uaS9MZG5mUUdPRDV6V3p1CndUNzBleldIQWdNQkFBRUNnZ0VBRGJhUXlVY1JFOUFzRXNwdmkyd2U0K1dDTHlreGV0eVl4b1AyYk1Gc0loWkoKejg4YmVWb2dEbFhqUnBEaDEzYXgvMyt1RXI5OTJDVk91bDZ0WVlzSCtoQUc5VW84UTFidEwzM3Bjb0RpOUlmaQpML0FKVUtQeW9nYUZLeC9DUmtTanViZmg2d0hENnRGNVFyeWdNMVJHaFMyN2JFRklnRTVRZnBqZXJuUEswSE11CkdQU2tFUGgybHgrcWhka25oTUlvemo1b0dCL3FWS2VOMXNoRDZiSGdCdTVJVTQxN3JvZEQ3M1B1V044RENRYVgKaTcyMGZSQ1hNYnhxRVN0cmxYb2Z0bFNLRjFsQXhHNTgzTG5TWlV2S1kvdlJ1U1F2RDZPdDhDQms1Zm1SYVJZTwpEL3Uzc2hrUERkYU5KYStaKy8xbTRrSHVrNW1Kc3BYNEtaSE9yTHB1eVFLQmdRRDY3ZHRjbzJPcjZYbTBQdlpTCm5yYWNnTWF0YVZpMEg2WmhBRWxzdzB0UGFsQ1RVVTUzbCthb3Q5Qjk2czB6by9FUHdINWhvTHluTjlKVFdNWFMKZjdpd1VtWnN0Qm83L1Y3ZER6YXdOeXA0Ti9keEhwYzRvRGc5MDEwV1poQTRoZnh3bndmcEN4c1VITzJ0ZDQ4YgpicmtVdmhrVUtmUUVHc01ZRE5pR2d3Szh2d0tCZ1FEUVc3Rk9VUGp5YmM4VC94clkvQURJQ256cWF1NDNXaHlyClhaNExmT3FJa1U0MTBUTHAzT2FLTWwvemdaNkluY2d4Y3VNZi9tUXRNc3J2d3Z4b0ZmaldUQUpVSkV1SG9vMzQKQlRhaEZVR0srUnRjcFBTRWpqZ1JkWG9JYW1PZ3JHcEE4d3pORzk1Q2RxY0EwUGVjaVcxNXlBQm41Tm1uYmh6UgpIUVJQZHNtUk9RS0JnUUNZOUJ2ZW9BbkZaSSsyK3hvU3lvUHRhZUd4R3FIalNkZVZFU093bEdwM2dncVRnZUFlCnJnei9rdXdYbE9SNE1kcGpDNmI5dzRpN05SK1RobTB2SG9OcGx4Q3YraWh6b01JT1paT2tYandaQTZSazQ0eXkKQzVlOHQvWHFEVlNkMzY0OHgvTitiaktYVS9yYzNoL3hUTkNzZ0NPeFV0RlhIeWtFbysvb0xqdWc2UUtCZ1FDWAo5OGpDamx5RXRZS3IydzBCNWd2TDI1cHdmNzF2c2RIblMwalNxREdIbWpPcEhRUTlmbGpId3lZb3ZRbWNLeml3Cm1GTUFLdE4yQSszd0lnOW0rMStiTGFVbEtiUE5JY3JhY3pMOUdqdkwyUlVUNVZ4U3NraENzNlJtTHZLclpoVzUKZVl5RXJTYlc0eU83Zks2ZEJiOUxhNHlnT2xKbHcvSlFzeEZKeENJUVFRS0JnUUNqUGpWbDJMb3hvdWtFV3lJWAoyRnRDdnhCbkowVVJmSXMvaTVKRmt1YS85dWd5NVRLREVzV1pRRlBSR2psWmVMRFNra0E3dExzcndqWnZKOGcwCmVTVVd3V3lMdzZOUVBBT3pVYThPNTlyQ3VVa1czVmUvaFJTSXFQS3d5dWZkZ0JkZ09WdUNERTFKdGhROWtlYWsKaFRVQjJBejlrY3d5ZlBQVTRkSkh3bXdGSlE9PQotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0t';
+
+const TEST_JWT_PUBLIC_KEY_PEM_B64 =
+  'LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUF6RHNpazNjeFMrZHhodG5FOGFQdApSTUhZTUYyVlFHNzZLUENxMkJ5c2hPV05zUDVNNEV6ZmlUUDArUjJNTVhyc0J6SHJJOWIyZDUzM3FZUmMrZytmCkJ3S2w3eVAwa3F1MG9SZkMwdWVRWXRTT1NVRnV4cUFkTTlCZHBESCs1WEFoNFBoRlI3MmVJQVRrTE9lWGc4UDAKVlV5dVNzdlU3U3RxaXZHUFJuTGFka2JoUVo5WDR3Yjg5ODM3bkt1V3N5a0tyODkzU0RFU2kxcHJlVWdjTDYwZApvdXZMcCtQYkdlM0dYMkFiSTErb21IL1hCVy9qazBQZHhjZjYrZDd6KzYvS3B1cmJpb3pPZEw2ditmZlBpNnRSClpTY0lISDJHNU1ZWDh0ajd3WTdHNFhMR0RPOGtDTk12SUxEZHB0ZTh6WjR2eTNaMzBCamcrYzFzN3NFKzlIczEKaHdJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0t';
+
 export const TEST_ENV: Env = parseEnv({
   DATABASE_URL: 'postgresql://taskflow_app:app-dev-secret@localhost:5433/taskflow_test',
   MASTER_KEY_ID: 'mk-test',
   MASTER_KEY_BASE64: Buffer.alloc(32, 1).toString('base64'),
-  JWT_SECRET: Buffer.alloc(32, 2).toString('base64'),
+  JWT_PRIVATE_KEY: TEST_JWT_PRIVATE_KEY_PEM_B64,
+  JWT_PUBLIC_KEY: TEST_JWT_PUBLIC_KEY_PEM_B64,
+  JWT_STATE_SECRET: Buffer.alloc(32, 2).toString('base64'),
   MAIL_HOST: 'localhost',
   MAIL_PORT: '1025',
   MAIL_FROM: 'TaskFlow <no-reply@taskflow.test>',
@@ -55,6 +76,17 @@ export const TEST_ENV: Env = parseEnv({
      Stripe account, not a real secret. */
   STRIPE_WEBHOOK_SECRET: 'whsec_test',
 });
+
+/**
+ * Pre-imported once, top-level-await, so `testAppRouter` below can stay a
+ * plain synchronous function — it is called unawaited at module scope all
+ * over this test suite (`const { router } = testAppRouter();`), and making it
+ * async would ripple into every one of those call sites for a value most of
+ * them never look at directly.
+ */
+export const TEST_JWT_PRIVATE_KEY = await importAccessTokenPrivateKey(TEST_JWT_PRIVATE_KEY_PEM_B64);
+/** The matching public half — for any test that verifies an access token directly. */
+export const TEST_JWT_PUBLIC_KEY = await importAccessTokenPublicKey(TEST_JWT_PUBLIC_KEY_PEM_B64);
 
 export function testContext(overrides: Partial<RequestContext> = {}): RequestContext {
   return {
@@ -131,6 +163,7 @@ export function testAppRouter(
     env: TEST_ENV,
     events,
     deliver: options.deliver ?? (() => Promise.resolve()),
+    jwtPrivateKey: TEST_JWT_PRIVATE_KEY,
   });
 
   const passkeys = buildPasskeyDeps(deps, TEST_ENV);
@@ -164,7 +197,7 @@ export function testAppRouter(
           providers: {},
           redirectUri: (provider) => `${TEST_ENV.WEB_ORIGIN}/integrations/callback/${provider}`,
           webhookOrigin: undefined,
-          jwtSecret: deps.config.jwtSecret,
+          jwtStateSecret: deps.config.jwtStateSecret,
           keys: automationKeys,
         },
       },

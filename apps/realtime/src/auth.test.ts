@@ -2,6 +2,7 @@ import type { IncomingMessage } from 'node:http';
 import type { Socket } from 'socket.io';
 import { describe, expect, it } from 'vitest';
 import { signAccessToken } from '@taskflow/security';
+import { generateTestAccessTokenKeyPair } from '@taskflow/security/testing';
 import { CLIENT_HEADER, MOBILE_CLIENT } from '@taskflow/contracts';
 import type { TrustProxyValue } from '@taskflow/api/config/trust-proxy';
 import {
@@ -27,8 +28,8 @@ import {
  * exactly the ones a stub cannot demonstrate.
  */
 
-const SECRET = Buffer.from('a'.repeat(32), 'utf8');
-const WRONG_SECRET = Buffer.from('b'.repeat(32), 'utf8');
+const { privateKey: PRIVATE_KEY, publicKey: PUBLIC_KEY } = await generateTestAccessTokenKeyPair();
+const { privateKey: WRONG_PRIVATE_KEY } = await generateTestAccessTokenKeyPair();
 const ORIGINS = ['http://localhost:5173'];
 
 const USER = '0195ff00-0000-7000-8000-000000000a01';
@@ -36,7 +37,7 @@ const SESSION = '0195ff00-0000-7000-8000-000000000501';
 
 async function token(
   overrides: Partial<Parameters<typeof signAccessToken>[0]> = {},
-  secret = SECRET,
+  privateKey = PRIVATE_KEY,
 ): Promise<string> {
   return signAccessToken(
     {
@@ -45,7 +46,7 @@ async function token(
       authenticatedAt: Math.floor(Date.now() / 1000),
       ...overrides,
     },
-    { secret },
+    { privateKey },
   );
 }
 
@@ -65,7 +66,7 @@ function fakeSocket(
 
 async function refusalOf(socket: Socket): Promise<string> {
   try {
-    await verifyHandshake(socket, { jwtSecret: SECRET, allowedOrigins: ORIGINS });
+    await verifyHandshake(socket, { jwtPublicKey: PUBLIC_KEY, allowedOrigins: ORIGINS });
   } catch (error) {
     if (error instanceof HandshakeError) return error.refusal;
     throw error;
@@ -147,7 +148,7 @@ describe('verifyHandshake (§3.2, §3.8)', () => {
         userId: '0195ff00-0000-7000-8000-0000000000ff',
         role: 'owner',
       }),
-      { jwtSecret: SECRET, allowedOrigins: ORIGINS },
+      { jwtPublicKey: PUBLIC_KEY, allowedOrigins: ORIGINS },
     );
 
     expect(identity.userId).toBe(USER);
@@ -162,9 +163,9 @@ describe('verifyHandshake (§3.2, §3.8)', () => {
   });
 
   it('refuses a token signed with a different secret', async () => {
-    expect(await refusalOf(fakeSocket(ORIGINS[0], { token: await token({}, WRONG_SECRET) }))).toBe(
-      'invalid_token',
-    );
+    expect(
+      await refusalOf(fakeSocket(ORIGINS[0], { token: await token({}, WRONG_PRIVATE_KEY) })),
+    ).toBe('invalid_token');
   });
 
   it('refuses a malformed token', async () => {
@@ -184,7 +185,7 @@ describe('verifyHandshake (§3.2, §3.8)', () => {
     it('is let through with no Origin, if it presents the marker and a valid token', async () => {
       const identity = await verifyHandshake(
         fakeSocket(undefined, { token: await token() }, { [CLIENT_HEADER]: MOBILE_CLIENT }),
-        { jwtSecret: SECRET, allowedOrigins: ORIGINS },
+        { jwtPublicKey: PUBLIC_KEY, allowedOrigins: ORIGINS },
       );
       expect(identity.userId).toBe(USER);
     });
@@ -222,7 +223,7 @@ describe('verifyHandshake (§3.2, §3.8)', () => {
         await refusalOf(
           fakeSocket(
             undefined,
-            { token: await token({}, WRONG_SECRET) },
+            { token: await token({}, WRONG_PRIVATE_KEY) },
             {
               [CLIENT_HEADER]: MOBILE_CLIENT,
             },
@@ -248,7 +249,7 @@ describe('verifyHandshake (§3.2, §3.8)', () => {
               host: REAL_DEVICE_HOST,
             },
           ),
-          { jwtSecret: SECRET, allowedOrigins: ORIGINS },
+          { jwtPublicKey: PUBLIC_KEY, allowedOrigins: ORIGINS },
         );
         expect(identity.userId).toBe(USER);
       });

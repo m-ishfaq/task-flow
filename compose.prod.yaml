@@ -445,7 +445,9 @@ services:
 
       MASTER_KEY_ID: ${MASTER_KEY_ID:?MASTER_KEY_ID must be set}
       MASTER_KEY_BASE64: ${MASTER_KEY_BASE64:?MASTER_KEY_BASE64 must be set — generate with the command in .env.prod.example, never reuse the dev value}
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set — generate with the command in .env.prod.example, never reuse the dev value}
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?JWT_PRIVATE_KEY must be set — generate with the command in .env.prod.example, never reuse the dev value}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?JWT_PUBLIC_KEY must be set — generate with the command in .env.prod.example, never reuse the dev value}
+      JWT_STATE_SECRET: ${JWT_STATE_SECRET:?JWT_STATE_SECRET must be set — generate with the command in .env.prod.example, never reuse the dev value}
 
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
@@ -516,7 +518,7 @@ services:
       DATABASE_URL: postgresql://taskflow_app:${TASKFLOW_APP_PASSWORD:?TASKFLOW_APP_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_REALTIME_URL: postgresql://taskflow_realtime:${TASKFLOW_REALTIME_PASSWORD:?TASKFLOW_REALTIME_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?JWT_PUBLIC_KEY must be set}
       REALTIME_PORT: 3001
       REALTIME_HOST: 0.0.0.0
       REALTIME_TRUST_PROXY: ${REALTIME_TRUST_PROXY:-1}
@@ -550,7 +552,7 @@ services:
       DATABASE_URL: postgresql://taskflow_app:${TASKFLOW_APP_PASSWORD:?TASKFLOW_APP_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_COLLAB_URL: postgresql://taskflow_collab:${TASKFLOW_COLLAB_PASSWORD:?TASKFLOW_COLLAB_PASSWORD must be set}@postgres:5432/taskflow
       DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?JWT_PUBLIC_KEY must be set}
       COLLAB_PORT: 3002
       COLLAB_HOST: 0.0.0.0
       WEB_ORIGIN: ${WEB_ORIGIN:?WEB_ORIGIN must be set}

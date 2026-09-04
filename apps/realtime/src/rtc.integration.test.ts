@@ -4,6 +4,7 @@ import { closeDatabase, initializeDatabase, initializeRealtimeDatabase } from '@
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { createLogger } from '@taskflow/observability';
 import { signAccessToken } from '@taskflow/security';
+import { generateTestAccessTokenKeyPair } from '@taskflow/security/testing';
 import { unsafeAsId, type UserId } from '@taskflow/contracts';
 import { buildGateway, type Gateway } from './gateway.js';
 import { RTC_NAMESPACE } from './wire.js';
@@ -43,7 +44,8 @@ const MIGRATION_URL =
 /** Its own port — this suite and the board gateway's may run concurrently. */
 const PORT = 3479;
 const ORIGIN = 'http://localhost:5173';
-const SECRET = Buffer.from('d'.repeat(32), 'utf8');
+const { privateKey: JWT_PRIVATE_KEY, publicKey: JWT_PUBLIC_KEY } =
+  await generateTestAccessTokenKeyPair();
 
 /** ⚠ Prefix `0195ff03`, used by no other suite. See gateway.integration.test.ts. */
 const ORG = '0195ff03-0000-7000-8000-0000000000a1';
@@ -67,7 +69,8 @@ const env: Env = {
   DATABASE_URL: APP_URL,
   DATABASE_POOL_MAX: 5,
   DATABASE_REALTIME_URL: REALTIME_URL,
-  JWT_SECRET: SECRET.toString('base64'),
+  /* Unused by gateway.ts now — see gateway.integration.test.ts's identical note. */
+  JWT_PUBLIC_KEY: 'unused-see-jwtPublicKey-option',
   REALTIME_PORT: PORT,
   REALTIME_HOST: '127.0.0.1',
   REALTIME_TRUST_PROXY: false,
@@ -87,7 +90,7 @@ const open: ClientSocket[] = [];
 async function tokenFor(userId: UserId): Promise<string> {
   return signAccessToken(
     { userId, sessionId: `sess-${userId}`, authenticatedAt: Math.floor(Date.now() / 1000) },
-    { secret: SECRET },
+    { privateKey: JWT_PRIVATE_KEY },
   );
 }
 
@@ -203,7 +206,7 @@ beforeAll(async () => {
   initializeDatabase({ url: APP_URL, applicationName: 'rtc-int-app' });
   initializeRealtimeDatabase({ url: REALTIME_URL, applicationName: 'rtc-int-realtime' });
 
-  gateway = buildGateway({ env, logger });
+  gateway = buildGateway({ env, logger, jwtPublicKey: JWT_PUBLIC_KEY });
   await gateway.listen();
 }, 60_000);
 

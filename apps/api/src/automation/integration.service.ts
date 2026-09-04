@@ -82,8 +82,8 @@ export interface IntegrationDeps {
   readonly redirectUri: (provider: ConnectorProvider) => string;
   /** The absolute origin slice 3's inbound routes live on; absent = webhook URLs are hidden. */
   readonly webhookOrigin: string | undefined;
-  /** For the connector state token — the same secret that signs access tokens. */
-  readonly jwtSecret: Uint8Array;
+  /** For the connector state token — the same secret oauth.service.ts's sign-in state uses, not the access token's key pair (see packages/security/src/jwt.ts's file header). */
+  readonly jwtStateSecret: Uint8Array;
   readonly keys: KeyProvider;
   /** Injectable so tests never make a real network call. */
   readonly fetchImpl?: typeof fetch;
@@ -231,7 +231,7 @@ export async function beginIntegration(
       orgId: orgOf(actor),
       userId: userOf(actor),
     },
-    { secret: deps.jwtSecret },
+    { secret: deps.jwtStateSecret },
   );
 
   const redirectUri = deps.redirectUri(input.provider);
@@ -308,7 +308,7 @@ export async function completeIntegration(
      demands it (the same brand `AutomationActor['requestId']` carries). */
   requestId: AutomationActor['requestId'],
 ): Promise<CompleteResult> {
-  const claims = await verifyState(input.state, deps.jwtSecret);
+  const claims = await verifyState(input.state, deps.jwtStateSecret);
 
   if (claims.provider !== input.provider) {
     // The state was minted for a different provider than the callback URL

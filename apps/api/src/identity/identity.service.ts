@@ -12,6 +12,7 @@ import {
   signTotpChallenge,
   verifyDeviceSignature,
   verifyPassword,
+  type AccessTokenSigningConfig,
   type BreachResult,
 } from '@taskflow/security';
 import * as repo from './repository.js';
@@ -37,7 +38,10 @@ import { assessImpossibleTravel, countryOfIp } from './geo.js';
  */
 
 export interface IdentityConfig {
-  readonly jwtSecret: Uint8Array;
+  /** Signs access tokens (RS256) — apps/realtime and apps/collab verify with the public half only. */
+  readonly jwtPrivateKey: AccessTokenSigningConfig['privateKey'];
+  /** Signs/verifies TOTP challenge, OAuth state and connector state tokens — single-process, stays HS256. */
+  readonly jwtStateSecret: Uint8Array;
   readonly refreshTokenTtlMs: number;
   readonly verificationTtlMs: number;
   readonly passwordResetTtlMs: number;
@@ -378,7 +382,7 @@ export async function login(
   if (totp?.confirmedAt) {
     const challengeToken = await signTotpChallenge(
       { userId: user.id },
-      { secret: deps.config.jwtSecret },
+      { secret: deps.config.jwtStateSecret },
     );
     return { kind: 'totp_required', challengeToken };
   }
@@ -533,7 +537,7 @@ export async function refresh(
       // protected operations.
       authenticatedAt: Math.floor(found.authenticatedAt.getTime() / 1000),
     },
-    { secret: deps.config.jwtSecret },
+    { privateKey: deps.config.jwtPrivateKey },
   );
 
   return {
@@ -838,7 +842,7 @@ export async function issueSession(
       sessionId,
       authenticatedAt: Math.floor(authenticatedAt.getTime() / 1000),
     },
-    { secret: deps.config.jwtSecret },
+    { privateKey: deps.config.jwtPrivateKey },
   );
 
   return {

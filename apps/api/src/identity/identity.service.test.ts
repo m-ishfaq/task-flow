@@ -8,6 +8,7 @@ import { isAppError } from '@taskflow/contracts';
 import { verifyAccessToken } from '@taskflow/security';
 import * as identity from './identity.service.js';
 import type { DeliverableLink, IdentityDeps, TokenPair } from './identity.service.js';
+import { TEST_JWT_PRIVATE_KEY, TEST_JWT_PUBLIC_KEY } from '../testing/fixtures.js';
 
 /**
  * Identity integration tests (PLAN.md §8.1).
@@ -40,7 +41,7 @@ const MIGRATIONS_DIR = resolve(
   'migrations',
 );
 
-const JWT_SECRET = new Uint8Array(Buffer.alloc(32, 7));
+const JWT_STATE_SECRET = new Uint8Array(Buffer.alloc(32, 7));
 
 let events: RecordingEventBus;
 let delivered: DeliverableLink[];
@@ -49,7 +50,8 @@ let breachResult: Awaited<ReturnType<IdentityDeps['checkBreached']>>;
 function deps(config: Partial<IdentityDeps['config']> = {}): IdentityDeps {
   return {
     config: {
-      jwtSecret: JWT_SECRET,
+      jwtPrivateKey: TEST_JWT_PRIVATE_KEY,
+      jwtStateSecret: JWT_STATE_SECRET,
       refreshTokenTtlMs: 30 * 24 * 60 * 60 * 1000,
       verificationTtlMs: 24 * 60 * 60 * 1000,
       passwordResetTtlMs: 60 * 60 * 1000,
@@ -298,7 +300,7 @@ describe('login', () => {
   it('signs an access token this API accepts', async () => {
     const email = await registeredUser();
     const pair = await loginSession(deps(), { email, password: PASSWORD }, meta);
-    const claims = await verifyAccessToken(pair.accessToken, { secret: JWT_SECRET });
+    const claims = await verifyAccessToken(pair.accessToken, { publicKey: TEST_JWT_PUBLIC_KEY });
 
     expect(claims.sessionId).toBe(pair.sessionId);
     expect(typeof claims.userId).toBe('string');
@@ -456,11 +458,11 @@ describe('refresh rotation and reuse detection', () => {
     // stolen session permanently eligible for step-up protected operations.
     const email = await registeredUser();
     const first = await loginSession(deps(), { email, password: PASSWORD }, meta);
-    const before = (await verifyAccessToken(first.accessToken, { secret: JWT_SECRET }))
+    const before = (await verifyAccessToken(first.accessToken, { publicKey: TEST_JWT_PUBLIC_KEY }))
       .authenticatedAt;
 
     const second = await identity.refresh(deps(), { refreshToken: first.refreshToken }, meta);
-    const after = (await verifyAccessToken(second.accessToken, { secret: JWT_SECRET }))
+    const after = (await verifyAccessToken(second.accessToken, { publicKey: TEST_JWT_PUBLIC_KEY }))
       .authenticatedAt;
 
     expect(after).toBe(before);
@@ -546,7 +548,8 @@ describe('logout', () => {
     const first = await loginSession(deps(), { email, password: PASSWORD }, meta);
     const second = await loginSession(deps(), { email, password: PASSWORD }, meta);
 
-    const userId = (await verifyAccessToken(first.accessToken, { secret: JWT_SECRET })).userId;
+    const userId = (await verifyAccessToken(first.accessToken, { publicKey: TEST_JWT_PUBLIC_KEY }))
+      .userId;
     const result = await identity.logoutEverywhere(deps(), { userId });
 
     expect(result.revoked).toBe(2);
