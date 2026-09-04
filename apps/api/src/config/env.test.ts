@@ -6,15 +6,23 @@ const KEY_B = Buffer.alloc(32, 2).toString('base64');
 
 /**
  * PEM-shaped, not a real key: `parseEnv` only checks the shape
- * (`Base64PemKey`'s job) — real structural validation happens at boot, when
+ * (`Base64PemKey`'s job, which looks for the literal `-----BEGIN` substring
+ * — see that schema) — real structural validation happens at boot, when
  * `importAccessTokenPrivateKey`/`importAccessTokenPublicKey` actually parse
  * it, which is exercised for real in packages/security/src/jwt.test.ts.
+ *
+ * The block label is deliberately NOT "PRIVATE KEY"/"PUBLIC KEY": gitleaks'
+ * default `private-key` rule matches on that exact PEM header regardless of
+ * content, so a faithfully-labelled fake key is flagged identically to a
+ * real one. `Base64PemKey` never inspects the label, only the `-----BEGIN`
+ * prefix, so this satisfies the schema without reproducing the pattern the
+ * scanner exists to catch.
  */
 const PEM_KEY_A = Buffer.from(
-  '-----BEGIN PRIVATE KEY-----\nfake-a\n-----END PRIVATE KEY-----',
+  '-----BEGIN TEST FIXTURE-----\nfake-a\n-----END TEST FIXTURE-----',
 ).toString('base64');
 const PEM_KEY_B = Buffer.from(
-  '-----BEGIN PUBLIC KEY-----\nfake-b\n-----END PUBLIC KEY-----',
+  '-----BEGIN TEST FIXTURE-----\nfake-b\n-----END TEST FIXTURE-----',
 ).toString('base64');
 
 const valid = {
