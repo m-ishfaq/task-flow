@@ -1,20 +1,12 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import {
-  unsafeAsId,
-  type OrgId,
-  type RequestId,
-  type StorageProvider,
-  type UserId,
-} from '@taskflow/contracts';
+import { unsafeAsId, type OrgId, type RequestId, type UserId } from '@taskflow/contracts';
 import { RecordingEventBus } from '@taskflow/events';
-import { closeDatabase, initializeDatabase } from '@taskflow/db';
+import { closeDatabase, initializeDatabase, initializePlatformAdminDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { FakePaymentProvider } from '@taskflow/payments';
-import { TEST_ENV, testContext, testPrincipal } from '../testing/fixtures.js';
+import { TEST_ENV } from '../testing/fixtures.js';
 import * as orgs from '../tenancy/org.service.js';
 import { getEntitlements, resetEntitlementCache } from '../billing/entitlement-resolver.js';
-import { createCallerFactory } from '../trpc/builder.js';
-import { createPlatformAdminRouter } from './router.js';
 import { setOrgEntitlements, type PlanCatalogDeps } from './plan-catalog.service.js';
 import type { PlatformOperator } from './org-directory.service.js';
 
@@ -27,16 +19,22 @@ import type { PlatformOperator } from './org-directory.service.js';
  * setOrgEntitlements`) existed with no caller and no test until the console's
  * override dialog gave it one — see `shared.tsx`'s `OrgOverrideDialog`.
  *
- * The router-level case below exists because the route ORIGINALLY declared
- * `expiresAt: z.date()`, which validates only an actual `Date` instance.
- * There is no transformer on this tRPC instance (builder.ts's own header), so
- * a `Date` sent from a browser arrives JSON-serialized as a plain string —
- * which `z.date()` refuses outright. Nothing caught it: the service-level
- * assertions below call `setOrgEntitlements` in-process with a real `Date`,
- * which both `z.date()` and `z.coerce.date()` accept identically, and the
- * seed CLI does the same. Only a caller that hands the route a STRING, the
- * shape JSON actually delivers, tells the two apart.
+ * Calls `setOrgEntitlements` directly with a plain `PlatformOperator` value
+ * rather than through a router caller, and deliberately never touches
+ * `platform.operators` — same reasoning as `billing-directory.service.test
+ * .ts`'s own header: that table is GLOBAL, `platform-admin.service.test.ts`
+ * owns resetting it in its own `beforeEach`, and Vitest runs test files in
+ * this package in parallel, so a second file granting or clearing rows in
+ * it would race that reset. The router-level regression for the
+ * `expiresAt: z.date()` -> `z.coerce.date()` fix (proving a route that
+ * NEEDS a real operator grant still accepts the wire-format a browser
+ * actually sends) lives in `platform-admin.service.test.ts` instead, where
+ * that grant is already owned.
  */
+
+const PLATFORM_ADMIN_URL =
+  process.env['TEST_DATABASE_PLATFORM_ADMIN_URL'] ??
+  'postgresql://taskflow_platform_admin:platform-admin-dev-secret@localhost:5433/taskflow_test';
 
 const OWNER = unsafeAsId<'UserId'>('0195dd30-0000-7000-8000-000000000001');
 const requestId = unsafeAsId<'RequestId'>('0195dd30-0000-7000-8000-0000000000ff');
@@ -45,18 +43,6 @@ const actorOf = (userId: UserId): { userId: UserId; requestId: RequestId } => ({
   requestId,
 });
 const operatorOf = (userId: UserId): PlatformOperator => ({ userId, requestId });
-
-const unusedStorage: StorageProvider = new Proxy(
-  {},
-  {
-    get(_target, method) {
-      return () => {
-        throw new Error(`StorageProvider.${String(method)} was not expected to be called here.`);
-      };
-    },
-  },
-) as StorageProvider;
-const unusedScanner = { host: '127.0.0.1', port: 1, timeoutMs: 500 };
 
 let admin: AdminConnection;
 const created: OrgId[] = [];
@@ -77,6 +63,14 @@ beforeAll(async () => {
   await applyMigrations();
   admin = await connectAsMigrator();
   initializeDatabase({ url: TEST_ENV.DATABASE_URL, applicationName: 'taskflow-org-override-test' });
+  /* setOrgEntitlements writes through withPlatformAdminScope — without this,
+     every call fails boot-time with "Platform-admin database not
+     initialized" rather than a test assertion, which is exactly what the
+     first version of this file did. */
+  initializePlatformAdminDatabase({
+    url: PLATFORM_ADMIN_URL,
+    applicationName: 'taskflow-org-override-admin',
+  });
 
   await admin.setOrg(null);
   await admin.query(`DELETE FROM identity.users WHERE id = $1`, [OWNER]);
@@ -237,42 +231,11 @@ describe('setOrgEntitlements', () => {
   });
 });
 
-describe('platformAdmin.plans.setOrgEntitlements — the route', () => {
-  it('accepts an ISO date string for expiresAt, the shape JSON actually delivers', async () => {
-    /* The regression test. Before this fix, `expiresAt: z.date()` refused
-       anything that was not already a `Date` instance — which is every real
-       browser request, since there is no transformer on this tRPC instance.
-       `createCallerFactory` calls the resolver in-process, so passing a real
-       `Date` here would prove nothing; passing the STRING a JSON body
-       actually carries is what distinguishes the fix from the bug. */
-    const orgId = await newOrg('wire-date');
-    const context = testContext({ principal: testPrincipal('owner') });
-    const caller = createCallerFactory(
-      createPlatformAdminRouter({
-        events: new RecordingEventBus(),
-        payments: new FakePaymentProvider(),
-        storage: unusedStorage,
-        scanner: unusedScanner,
-      }),
-    )(context);
-
-    const future = new Date(Date.now() + 3_600_000).toISOString();
-
-    const result = await caller.plans.setOrgEntitlements({
-      orgId,
-      featuresAdd: ['docs'],
-      featuresRemove: [],
-      telephonyCapCents: null,
-      automationRunsPerHour: null,
-      turnIssuancePerDay: null,
-      reason: 'wire-format regression test',
-      /* The double cast, same reasoning as `Wire<T>`'s own: the TS input type
-         says `Date`, and a real JSON body never carries one — this simulates
-         what actually arrives rather than what the type promises. */
-      expiresAt: future as unknown as Date,
-    });
-
-    expect(result.cleared).toBe(false);
-    expect((await getEntitlements(orgId)).sources.docs).toBe('override');
-  });
-});
+/* The router-level regression for the `expiresAt: z.date()` -> `z.coerce.date()`
+   fix lives in platform-admin.service.test.ts instead of here, alongside its
+   own `describe('the operator console routes', ...)` — that file already
+   owns `platform.operators` for the whole package (see
+   billing-directory.service.test.ts's own header on why every OTHER file in
+   this directory avoids writing to it: Vitest runs test files in this
+   package in parallel, and a second file resetting or granting rows in that
+   GLOBAL table would race platform-admin.service.test.ts's own beforeEach). */
