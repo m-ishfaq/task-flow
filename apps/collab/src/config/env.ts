@@ -119,7 +119,15 @@ const KNOWN_VARIABLES = new Set([
      and the worker, never here. Same class again. */
   'DATABASE_OPS_EVENTS_URL',
   'DATABASE_POOL_MAX',
+  /* apps/api alone signs and holds this; this process only verifies, against
+     JWT_PUBLIC_KEY below. Legitimately present in a shared developer `.env`,
+     never read here — the same "spelled correctly, not ours to read" class
+     every DATABASE_* entry above documents. */
+  'JWT_PRIVATE_KEY',
   'JWT_PUBLIC_KEY',
+  /* apps/api's own TOTP/OAuth-state/connector-state secret — single-process,
+     never read here. Same class as JWT_PRIVATE_KEY above. */
+  'JWT_STATE_SECRET',
   'WEB_ORIGIN',
   /* apps/web's vite.config.ts reads these; no server does. Same reasoning as
      the API's identical note: the `WEB_` prefix makes the misspelling check
