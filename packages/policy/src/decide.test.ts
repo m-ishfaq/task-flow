@@ -164,7 +164,10 @@ describe('couldGrant — the route-level pre-check', () => {
 
     // The roles that genuinely hold these still do. This is the assertion that
     // fails if someone "fixes" the above by removing them from the catalog.
-    expect(couldGrant(subject('member'), 'call:read')).toBe(true);
+    // `member` no longer holds these by role at all (Phase 15 §1's
+    // "contract" step, migration 0098) — `admin` is the role that still
+    // does, alongside `owner`.
+    expect(couldGrant(subject('admin'), 'call:read')).toBe(true);
     expect(couldGrant(subject('admin'), 'recording:read')).toBe(true);
   });
 

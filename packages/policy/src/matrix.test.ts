@@ -111,11 +111,9 @@ const EXPECTED: Readonly<Record<Role, readonly Permission[]>> = {
     'comment:create',
     'attachment:upload',
     'attachment:download',
-    'phoneNumber:read',
-    'call:place',
-    'call:read',
-    'sms:send',
-    'sms:read',
+    /* No telephony permissions — see roles.ts's own comment. Removed by the
+       Phase 15 §1 "contract" step (migration 0098); an org grants these
+       individually per person now, through authz.member_grants. */
     'search:query',
   ],
 
@@ -157,6 +155,26 @@ describe('matrix invariants', () => {
       expect(roleGrants('owner', permission)).toBe(true);
       expect(roleGrants('admin', permission)).toBe(false);
       expect(roleGrants('member', permission)).toBe(false);
+    }
+  });
+
+  it('no longer hands ordinary telephony use to every Member by role alone (Phase 15 §1)', () => {
+    // Migration 0098's "contract" step: a flat Member-role grant meant any
+    // member could place a call or send an SMS through any of the org's
+    // numbers, with no way to restrict it to specific people. Admin keeps
+    // these — a deliberate, unchanged asymmetry (see roles.ts) — only
+    // Member is narrowed. `authz.member_grants` is how an org opts a
+    // specific person back in.
+    for (const permission of [
+      'phoneNumber:read',
+      'call:place',
+      'call:read',
+      'sms:send',
+      'sms:read',
+    ] as const) {
+      expect(roleGrants('member', permission)).toBe(false);
+      expect(roleGrants('admin', permission)).toBe(true);
+      expect(roleGrants('owner', permission)).toBe(true);
     }
   });
 
