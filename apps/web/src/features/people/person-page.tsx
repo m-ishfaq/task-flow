@@ -25,22 +25,33 @@ import {
   updateMembershipProfile,
   type DirectoryDetail,
 } from './api.js';
+import { orgDetailQuery } from '../org/api.js';
 
 /**
  * One person in the org (Phase 11.5 Wave 2, ai/phase-11.5-people.md §3.6).
  *
  * The org chart: who they report to, who reports to them, plus the org-scoped
  * facts (job title, department, out-of-office state as the directory shows
- * it). Edit affordances for ANOTHER member's membership facts are shown and
- * the server answers (§8.2 — the UI never re-derives authorization): a caller
- * without `member:manage` gets an honest FORBIDDEN toast and the row stays as
- * it was. Self-service on one's OWN job title happens on `/account` through
+ * it). Self-service on one's OWN job title happens on `/account` through
  * `people.profile.update`, which is why this page hides the edit controls for
  * yourself — editing yourself here would be a second, redundant path.
+ *
+ * The "Manage member" section — edit affordances for ANOTHER member's job
+ * facts and reporting line — is gated on `capabilities.manageMembers`, the
+ * same org-wide `member:manage` boolean `settings-page.tsx`'s own
+ * `PermissionsSection` uses. It used to render for anyone who wasn't
+ * viewing their own profile, pre-filled with the target's current job
+ * title/department/work phone and a Save button, and rely on the server to
+ * answer FORBIDDEN when a plain Member touched Save (Phase 15 §1's sweep
+ * missed this page the first time through; found via the same colleague
+ * profile URL that started the sweep, reused by a later report). Every
+ * member could see this — never just the caller who could actually use it.
  */
 export function PersonPage({ userId }: { readonly userId: string }) {
   const orgId = useSession((state) => state.orgId) ?? '';
   const me = useSession((state) => state.userId);
+  const canManageMembers =
+    useQuery(orgDetailQuery(orgId)).data?.capabilities.manageMembers === true;
 
   const detail = useQuery(directoryMemberQuery(orgId, userId));
 
@@ -109,7 +120,7 @@ export function PersonPage({ userId }: { readonly userId: string }) {
 
       <OutOfOfficeSection member={member} />
 
-      {member.userId !== me && <AdminSection member={member} orgId={orgId} />}
+      {member.userId !== me && canManageMembers && <AdminSection member={member} orgId={orgId} />}
     </div>
   );
 }
@@ -245,10 +256,7 @@ function AdminSection({
   const directory = useQuery({ ...directoryQuery(orgId, null, 100) });
 
   return (
-    <Section
-      title="Manage member"
-      description="Job facts and the reporting line. Needs member:manage — the server answers if not."
-    >
+    <Section title="Manage member" description="Job facts and the reporting line.">
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Job title" htmlFor="person-job-title">
           <Input

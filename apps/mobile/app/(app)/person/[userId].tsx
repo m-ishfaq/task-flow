@@ -31,6 +31,7 @@ import {
   type ResolvedMember,
 } from '../../../src/lib/people.js';
 import { PHONE_CONTACTS_QUERY_KEY } from '../../../src/lib/telephony.js';
+import { ORG_DETAIL_QUERY_KEY } from '../../../src/lib/org-settings.js';
 
 /**
  * One person in the org — `apps/web/src/features/people/person-page.tsx`'s
@@ -41,15 +42,18 @@ import { PHONE_CONTACTS_QUERY_KEY } from '../../../src/lib/telephony.js';
  *
  * The org chart (who they report to, who reports to them), the job facts
  * a directory carries, out-of-office state, and — only when viewing
- * someone ELSE — an admin-edit form for job title/department/work phone
- * and the reporting line. Editing your OWN job title happens self-service
- * on the Account tab through `people.profile.update`
- * (`profile-section.tsx`), which is why this screen hides its own edit
- * controls for yourself: a second path to the same field would drift.
+ * someone ELSE AND the caller holds `capabilities.manageMembers` — an
+ * admin-edit form for job title/department/work phone and the reporting
+ * line. Editing your OWN job title happens self-service on the Account tab
+ * through `people.profile.update` (`profile-section.tsx`), which is why
+ * this screen hides its own edit controls for yourself: a second path to
+ * the same field would drift.
  *
- * Every edit control renders for everyone and the server answers
- * (CLAUDE.md §8.2) — a caller without `member:manage` gets an honest
- * FORBIDDEN via `Alert.alert`, never a hidden section.
+ * The admin-edit section used to render for everyone regardless of role,
+ * pre-filled with the target's current job title/department/work phone,
+ * and rely on the server to answer FORBIDDEN when a plain Member touched
+ * Save (Phase 15 §1's sweep missed this screen the first time through).
+ * Gated the same way `settings-page.tsx`'s own `PermissionsSection` is.
  */
 export default function PersonScreen() {
   const params = useLocalSearchParams<{ userId: string }>();
@@ -70,6 +74,11 @@ export default function PersonScreen() {
 function PersonContent({ userId }: { readonly userId: string }) {
   const paddingTop = useTopInset();
   const me = useSession((state) => state.userId);
+  const canManageMembers =
+    useQuery({
+      queryKey: ORG_DETAIL_QUERY_KEY,
+      queryFn: async () => wire(await apiClient.tenancy.orgs.get.query()),
+    }).data?.capabilities.manageMembers === true;
 
   const detail = useQuery({
     queryKey: directoryMemberQueryKey(userId),
@@ -150,7 +159,7 @@ function PersonContent({ userId }: { readonly userId: string }) {
 
       <OutOfOfficeSection member={member} />
 
-      {member.userId !== me && <AdminSection member={member} />}
+      {member.userId !== me && canManageMembers && <AdminSection member={member} />}
     </ScrollView>
   );
 }
@@ -302,10 +311,7 @@ function AdminSection({ member }: { readonly member: DirectoryDetail }) {
     workPhone.trim() !== (member.workPhone ?? '');
 
   return (
-    <Section
-      label="Manage member"
-      hint="Job facts and the reporting line. Needs member:manage — the server answers if not."
-    >
+    <Section label="Manage member" hint="Job facts and the reporting line.">
       <Text style={styles.fieldLabel}>Job title</Text>
       <TextInput
         style={styles.input}
