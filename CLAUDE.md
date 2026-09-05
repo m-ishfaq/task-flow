@@ -549,6 +549,28 @@ always an inline org-role check drifting from `can()`. `AiMessage.role` is a dif
 (a chat turn's speaker) that the selector cannot distinguish by name alone, and per this file's
 own rule the fix is in the code, not a guardrail exemption.
 
+**`OpenAiProvider` and `GeminiProvider` (added after this section was first written) are the
+second and third `AiProvider` implementations, added specifically so `resolveAiProvider` is a
+real per-org CHOICE and not an Anthropic-shaped interface with one tenant.** Migration 0101
+widened `ai_provider_config_provider_valid` from `('anthropic')` to
+`('anthropic', 'openai', 'gemini')` — the expand half of expand-migrate-contract, no existing
+row touched — and `provider-resolver.ts`'s `providerFor` switch, `provider-config.service.ts`'s
+`CreateProviderConfigInput`, and the platform-admin router's `CreateAiProviderConfigInput` widen
+to match. Each new provider is proven against the identical `describeAiProviderContract` suite
+`AnthropicProvider` is, plus its own round-trip tests — the same "outgrowing an implementation is
+a config change plus a green contract run" property `describeTelephonyProviderContract` and
+`describePaymentProviderContract` already give their own modules. The two are NOT shaped alike
+on the wire, and each owns a real translation, not a cosmetic one: OpenAI's Chat Completions API
+already has `system`/`tool` roles inside the same `messages` array (closer to `AiMessage`'s own
+union than Anthropic's content-block scheme), but has no `is_error` field on a tool message, so a
+failed result is prefixed `Error: ` rather than dropping the signal. Gemini has no call-id concept
+at all — a `functionCall`/`functionResponse` pair is matched by NAME, not an opaque id the
+provider mints — so `AiToolCall.id` is synthesized as `"<name>::<partIndex>"` and decoded back on
+the return trip; and `stopReason` cannot trust `finishReason` alone, because Gemini often reports
+`STOP` on a turn that also asked for a tool, so `tool_use` is read off the presence of a
+`functionCall` part instead. `rates.ts` carries each provider's own published list prices rather
+than one blended figure, the same reasoning `RATES`' own header gives for Anthropic's three tiers.
+
 **The provider catalog's write path lives in `apps/api/src/ai/provider-config.service.ts`,
 gated entirely on `platformRoute`, and publishes through the injected `EventBus` rather than
 the transactional outbox** — `taskflow_platform_admin` holds no grant on `platform.outbox`
