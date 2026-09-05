@@ -269,6 +269,15 @@ export interface SettingsCapabilities {
   readonly readCalls: boolean;
   readonly sendSms: boolean;
   readonly readSms: boolean;
+  /**
+   * May open `/settings` → Billing at all, or the mobile Billing screen —
+   * `org:billing`, Owner-only by role alone (no tuple, no member grant: it
+   * is not in `GRANTABLE_PERMISSIONS`). Same reasoning as `viewAnalytics`:
+   * nothing ever turns this on for a non-owner, so a locked icon would
+   * advertise a door nobody but the current owner can open — hide it
+   * entirely rather than show it and let it 403.
+   */
+  readonly viewBilling: boolean;
 }
 
 export interface OrgDetail {
@@ -334,6 +343,7 @@ export async function getOrg(orgId: OrgId, subject: Subject): Promise<OrgDetail>
       readCalls: can(subject, 'call:read').allowed,
       sendSms: can(subject, 'sms:send').allowed,
       readSms: can(subject, 'sms:read').allowed,
+      viewBilling: can(subject, 'org:billing').allowed,
     },
   };
 }

@@ -14,11 +14,18 @@ import { useBranding } from '../../lib/branding-context.js';
  * Org billing (Phase 12 Wave 3 §3.1, §5; rebuilt in Wave 4) — the
  * owner-facing half.
  *
- * `billing.*` is `org:billing`, Owner-only. Rendered unconditionally, like
- * every other section on this page (§8.2 — the UI never re-derives
- * authorization): a non-owner sees the same honest FORBIDDEN card `ErrorView`
- * renders for any other section they lack the permission for, not a hidden
- * panel.
+ * `billing.*` is `org:billing`, Owner-only, and nothing ever turns it on
+ * for anyone else — no tuple, no plan upgrade, no member grant
+ * (`org:billing` is not in `GRANTABLE_PERMISSIONS`). `settings-page.tsx`
+ * only mounts this component when `capabilities.viewBilling` is true
+ * (Phase 15 §1's audit of the old "render unconditionally, let it 403"
+ * doctrine — showing a non-owner a live Billing section that always
+ * answers FORBIDDEN is not "the UI re-deriving authorization" §8.2 warns
+ * against, it is exposing another person's payment configuration to
+ * someone who was never going to be allowed to see it). This component
+ * itself still does not re-check anything — it trusts the mount decision
+ * and would render correctly even if reached directly, since every route it
+ * calls still enforces `org:billing` server-side regardless.
  *
  * Checkout and the customer portal are both processor-hosted redirects — this
  * component never collects a card number, and never will, for any processor

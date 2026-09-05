@@ -210,13 +210,14 @@ describe('settings capabilities', () => {
       readCalls: true,
       sendSms: true,
       readSms: true,
+      viewBilling: true,
     });
 
     // A plain Member holds none of these — card:create and friends do not
-    // touch org, member, team, project, analytics, automation, or audit
-    // administration at all, and (Phase 15 §1) the telephony five are no
-    // longer role defaults either: this Member has no `authz.member_grants`
-    // row, so all five read false too.
+    // touch org, member, team, project, analytics, automation, billing, or
+    // audit administration at all, and (Phase 15 §1) the telephony five are
+    // no longer role defaults either: this Member has no
+    // `authz.member_grants` row, so all five read false too.
     expect(asMember.capabilities).toEqual({
       updateOrg: false,
       inviteMember: false,
@@ -232,14 +233,16 @@ describe('settings capabilities', () => {
       readCalls: false,
       sendSms: false,
       readSms: false,
+      viewBilling: false,
     });
   });
 
   it('gives an Admin invite/team capabilities but not the Owner-only ones', async () => {
     /* The role matrix's own asymmetry (packages/policy/src/roles.ts): Admin
-       gets member:invite and team:manage, but org:update, member:manage, and
-       member:remove stay Owner-only. A capabilities object that collapsed
-       these into one "isAdmin" flag would be wrong for exactly this role. */
+       gets member:invite and team:manage, but org:update, member:manage,
+       member:remove, and org:billing stay Owner-only. A capabilities object
+       that collapsed these into one "isAdmin" flag would be wrong for
+       exactly this role. */
     const orgId = await newOrg('capabilities-two');
     await members.addMember(
       orgId,
@@ -265,6 +268,7 @@ describe('settings capabilities', () => {
       readCalls: true,
       sendSms: true,
       readSms: true,
+      viewBilling: false,
     });
   });
 });

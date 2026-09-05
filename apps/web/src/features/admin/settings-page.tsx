@@ -67,9 +67,10 @@ import { BillingSection } from './billing-section.js';
  */
 export function SettingsPage() {
   const orgId = useSession((state) => state.orgId) ?? '';
-  // Only for the Audit log link below — every section further down fetches
-  // this same cached query itself for its own capabilities, so this costs
-  // no extra request.
+  // For the Audit log link and for deciding which SECTIONS below even
+  // render (Billing, Individual permissions) — every section that renders
+  // fetches this same cached query itself for its own inner capabilities,
+  // so this costs no extra request.
   const org = useQuery(orgDetailQuery(orgId));
 
   return (
@@ -90,9 +91,9 @@ export function SettingsPage() {
       />
 
       <OrgSection orgId={orgId} />
-      <BillingSection orgId={orgId} />
+      {org.data?.capabilities.viewBilling === true && <BillingSection orgId={orgId} />}
       <MemberSection orgId={orgId} />
-      <PermissionsSection orgId={orgId} />
+      {org.data?.capabilities.manageMembers === true && <PermissionsSection orgId={orgId} />}
       <TeamSection orgId={orgId} />
     </div>
   );
@@ -200,6 +201,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
     readCalls: false,
     sendSms: false,
     readSms: false,
+    viewBilling: false,
   };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.members(orgId) });
@@ -541,10 +543,15 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
  * file's own note on pulling it into a shared component once a good moment
  * presents itself, not forced here.
  *
- * The grant list itself is visible to anyone who can see the Members section
- * above (both routes sit behind `member:read`) — only the add form and the
- * revoke buttons are hidden for a caller without `member:manage`, matching
- * how the invite form above is hidden rather than shown-and-disabled.
+ * The whole section is gated on `capabilities.manageMembers`
+ * (`SettingsPage`'s own render), not just the add form and revoke buttons
+ * inside it — even though `memberGrants.list`'s own floor is `member:read`
+ * (every role). Seeing the LIST tells a caller exactly which individual
+ * permission each of their colleagues holds, which is administrative
+ * information about other people, not something "you can see the Members
+ * page" should imply on its own. `member:manage` is Owner-only
+ * (`packages/policy/src/roles.ts`), so in practice this section is Owner-only
+ * end to end, matching who can act on it anyway.
  */
 function PermissionsSection({ orgId }: { readonly orgId: string }) {
   const queryClient = useQueryClient();
@@ -568,6 +575,7 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
     readCalls: false,
     sendSms: false,
     readSms: false,
+    viewBilling: false,
   };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.memberGrants(orgId) });

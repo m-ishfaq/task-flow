@@ -52,9 +52,15 @@ const PLAN_DESCRIPTIONS: Record<string, string> = {
  * ("who is in it and what can they do") — web's single settings page
  * bundles both for density on a wide layout; a phone screen has no such
  * spare room, and the two were already two different `Section`s there.
- * Reached from a "Billing" link at the top of `org-settings.tsx`, always
- * visible for the same reason every control there is (§8.2): a non-owner
- * gets the honest error below, not a hidden link.
+ * Reached from a "Billing" link at the top of `org-settings.tsx`, which
+ * (Phase 15 §1) now hides that link entirely for a non-owner rather than
+ * showing it and letting this screen answer FORBIDDEN — `org:billing` is
+ * Owner-only and nothing (no plan upgrade, no member grant) ever changes
+ * that for anyone else, so there is no honest "locked" state to show, only
+ * a door nobody but the current owner can open. This screen itself is
+ * still reachable directly (a stale link, a deep link) and still shows the
+ * plain error below if it is — the gate is the nav link's job, not a
+ * second copy of the permission check running here.
  *
  * **Checkout and the customer portal are processor-hosted redirects,
  * exactly as on web** — this screen never collects a card number, and

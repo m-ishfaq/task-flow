@@ -110,6 +110,7 @@ export default function OrgSettingsScreen() {
     readCalls: false,
     sendSms: false,
     readSms: false,
+    viewBilling: false,
   };
 
   const refreshMembers = async (): Promise<void> => {
@@ -222,18 +223,23 @@ export default function OrgSettingsScreen() {
       </Pressable>
       <View style={styles.titleRow}>
         <Text style={styles.screenTitle}>Organization settings</Text>
-        {/* Always visible, like every other section on this page — `org:billing`
-            is Owner-only and answered by no tuple, so a non-owner reaching this
-            link sees the same honest error `billing.tsx` renders for anyone else
-            lacking a permission, not a hidden button (§8.2). */}
-        <Pressable
-          style={styles.billingLink}
-          onPress={() => {
-            router.push('/billing');
-          }}
-        >
-          <Text style={styles.billingLinkText}>Billing</Text>
-        </Pressable>
+        {/* `org:billing` is Owner-only and nothing ever turns it on for
+            anyone else (no tuple, no plan upgrade, no member grant) — see
+            `billing.tsx`'s own header, updated alongside this one (Phase 15
+            §1's audit of the old "render unconditionally, let it 403"
+            doctrine). Hidden entirely rather than shown-and-refused: a
+            non-owner tapping this would only ever see their own org's
+            billing configuration answer FORBIDDEN, never anything useful. */}
+        {capabilities.viewBilling && (
+          <Pressable
+            style={styles.billingLink}
+            onPress={() => {
+              router.push('/billing');
+            }}
+          >
+            <Text style={styles.billingLinkText}>Billing</Text>
+          </Pressable>
+        )}
       </View>
 
       {org.isPending ? (
