@@ -7,7 +7,7 @@ import { useSession } from '../../lib/session.js';
 import { Skeleton } from '../../components/primitives.js';
 import { ErrorView } from '../../components/error-view.js';
 import { useMembers } from '../org/use-members.js';
-import { cardsQuery, listsQuery, statusesQuery } from './api.js';
+import { boardsQuery, cardsQuery, listsQuery, projectsQuery, statusesQuery } from './api.js';
 import { SprintPicker } from './sprints.js';
 import { filterCardsBySprint, type SprintFilter } from './sprint-filter.js';
 import { useBoardRoom } from './use-board-room.js';
@@ -84,6 +84,24 @@ export function BoardPage() {
      The query gating below flips itself on the moment a card lands. Cast
      because the fallback comes off the wire un-branded. */
   const projectId = (search.project ?? cards.data?.[0]?.projectId ?? null) as ProjectId | null;
+
+  /* `boards.list`/`projects.list` already return per-row `capabilities.update`
+     (`board:update`/`project:update`) — `projects-page.tsx` and
+     `project-settings-page.tsx` already read them for their own controls, but
+     this page never fetched either, so every list/sprint/import management
+     control below rendered unconditionally and let a Member's attempt come
+     back FORBIDDEN (Phase 15 §1's sweep). `enabled: projectId !== null`
+     matches the same gating `statuses` above already uses. */
+  const boards = useQuery({
+    ...boardsQuery(orgId, projectId ?? ('' as ProjectId)),
+    enabled: projectId !== null,
+  });
+  const canManageBoard =
+    boards.data?.find((board) => board.boardId === boardId)?.capabilities.update ?? false;
+
+  const projects = useQuery(projectsQuery(orgId));
+  const canManageProject =
+    projects.data?.find((project) => project.projectId === projectId)?.capabilities.update ?? false;
 
   /* Realtime spine (ai/phase-4-realtime.md §5, §9): joins this board's room
      and patches/invalidates the queries above live as the full Wave 2 event
@@ -193,6 +211,7 @@ export function BoardPage() {
                 filter: arrangement.filter ?? undefined,
               });
             }}
+            canManageBoard={canManageBoard}
           />
 
           <FilterBuilder
@@ -216,6 +235,7 @@ export function BoardPage() {
               onChange={(next) => {
                 setSearch({ sprint: next ?? undefined });
               }}
+              canManageProject={canManageProject}
             />
           )}
 
@@ -266,14 +286,19 @@ export function BoardPage() {
             </div>
           )}
 
-          <ArchivedCardsDialog orgId={orgId} boardId={boardId} />
+          <ArchivedCardsDialog orgId={orgId} boardId={boardId} canManageBoard={canManageBoard} />
           <ShareBoardDialog orgId={orgId} boardId={boardId} />
           {/* Import/export is project-scoped — a board reached by a pasted
               URL with no `?project=` cannot know which project's cards it
               would move, so it waits for the vocabulary to resolve, exactly
               like the sprint picker above. */}
           {projectId !== null && (
-            <ImportExportDialog orgId={orgId} boardId={boardId} projectId={projectId} />
+            <ImportExportDialog
+              orgId={orgId}
+              boardId={boardId}
+              projectId={projectId}
+              canManageProject={canManageProject}
+            />
           )}
         </div>
 
@@ -296,6 +321,7 @@ export function BoardPage() {
             onOpenCard={(cardId) => {
               setSearch({ card: cardId as CardId });
             }}
+            canManageBoard={canManageBoard}
           />
         )}
 

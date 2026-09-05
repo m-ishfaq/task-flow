@@ -99,6 +99,13 @@ export interface BoardViewProps {
   /** `extend` is a shift-click — a range from the anchor, not a single toggle. */
   readonly onToggleSelect: (cardId: string, extend: boolean) => void;
   readonly onOpenCard: (cardId: string) => void;
+  /**
+   * `boards.list`'s per-board `capabilities.update` (`board:update`) —
+   * threaded to `ListColumn`'s rename/WIP/reorder/archive menu and to
+   * `AddListColumn`/`EmptyBoard`'s "+ Add list" (`lists.create` is also
+   * `board:update`). See `ListColumnProps.canManage`'s own comment.
+   */
+  readonly canManageBoard: boolean;
 }
 
 const GROUP_SEP = '::';
@@ -125,6 +132,7 @@ export function BoardView({
   selected,
   onToggleSelect,
   onOpenCard,
+  canManageBoard,
 }: BoardViewProps) {
   const queryClient = useQueryClient();
   const optimistic = useOptimistic();
@@ -301,7 +309,7 @@ export function BoardView({
   };
 
   if (lists.length === 0) {
-    return <EmptyBoard orgId={orgId} boardId={boardId} />;
+    return <EmptyBoard orgId={orgId} boardId={boardId} canManage={canManageBoard} />;
   }
 
   if (!isDraggable(groupBy)) {
@@ -379,6 +387,7 @@ export function BoardView({
                     list={list}
                     count={columnCards.length}
                     siblings={lists}
+                    canManage={canManageBoard}
                   >
                     <SortableContext
                       items={columnCards.map((card) => card.cardId)}
@@ -427,7 +436,9 @@ export function BoardView({
               cards are added from inside a column. Other groupings add no
               column of their own: the vocabulary (a status, say) is managed
               from project settings, not invented mid-drag. */}
-          {groupBy === 'list' && <AddListColumn orgId={orgId} boardId={boardId} />}
+          {groupBy === 'list' && (
+            <AddListColumn orgId={orgId} boardId={boardId} canManage={canManageBoard} />
+          )}
         </div>
 
         {/* The overlay is what the pointer carries. Without it the original tile

@@ -32,10 +32,15 @@ import { matchingView, type BoardArrangement } from './view-match.js';
  *
  * ## Shared versus private
  *
- * The server decides who may publish; this renders the control either way and
- * lets the answer come back (§8.2). A member without `board:update` gets an
- * honest FORBIDDEN on the shared checkbox rather than a hidden option, which is
- * the same reasoning the permission debug page is built on.
+ * A PRIVATE view needs only `board:read` to save or delete (author-only,
+ * enforced by identity, not a permission). Publishing or deleting a SHARED
+ * one is `board:update`. `canManageBoard` (`boards.list`'s per-board
+ * `capabilities.update`) gates the "Share with everyone" checkbox and a
+ * shared view's own delete button — this used to render both
+ * unconditionally and let a Member's click come back FORBIDDEN (Phase 15
+ * §1's sweep; this file's own comment used to cite the permission debug
+ * page as the precedent for NOT gating, which is now the opposite of that
+ * page's own fix).
  */
 
 export interface ViewTabsProps {
@@ -44,9 +49,10 @@ export interface ViewTabsProps {
   /** What the URL currently says the board is showing. */
   readonly current: BoardArrangement;
   readonly onApply: (arrangement: BoardArrangement) => void;
+  readonly canManageBoard: boolean;
 }
 
-export function ViewTabs({ orgId, boardId, current, onApply }: ViewTabsProps) {
+export function ViewTabs({ orgId, boardId, current, onApply, canManageBoard }: ViewTabsProps) {
   const views = useQuery(viewsQuery(orgId, boardId));
   const [saving, setSaving] = useState(false);
 
@@ -63,6 +69,7 @@ export function ViewTabs({ orgId, boardId, current, onApply }: ViewTabsProps) {
           view={view}
           active={view.viewId === activeId}
           onApply={onApply}
+          canManageBoard={canManageBoard}
         />
       ))}
 
@@ -81,6 +88,7 @@ export function ViewTabs({ orgId, boardId, current, onApply }: ViewTabsProps) {
           orgId={orgId}
           boardId={boardId}
           current={current}
+          canManageBoard={canManageBoard}
           onClose={() => {
             setSaving(false);
           }}
@@ -96,12 +104,14 @@ function ViewTab({
   view,
   active,
   onApply,
+  canManageBoard,
 }: {
   readonly orgId: string;
   readonly boardId: BoardId;
   readonly view: SavedView;
   readonly active: boolean;
   readonly onApply: (arrangement: BoardArrangement) => void;
+  readonly canManageBoard: boolean;
 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -163,17 +173,23 @@ function ViewTab({
         )}
       </button>
 
-      <button
-        type="button"
-        aria-label={`Delete ${view.name}`}
-        disabled={remove.isPending}
-        onClick={() => {
-          remove.mutate();
-        }}
-        className="px-1 text-xs text-ink-faint opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-      >
-        ×
-      </button>
+      {/* A private view is author-only (identity, not a permission — the
+          server never returns another person's private view, so every one
+          here IS the caller's own). A shared view's delete is `board:update`,
+          same as the "Share" checkbox below. */}
+      {(!view.isShared || canManageBoard) && (
+        <button
+          type="button"
+          aria-label={`Delete ${view.name}`}
+          disabled={remove.isPending}
+          onClick={() => {
+            remove.mutate();
+          }}
+          className="px-1 text-xs text-ink-faint opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+        >
+          ×
+        </button>
+      )}
     </span>
   );
 }
@@ -182,11 +198,13 @@ function SaveViewDialog({
   orgId,
   boardId,
   current,
+  canManageBoard,
   onClose,
 }: {
   readonly orgId: string;
   readonly boardId: BoardId;
   readonly current: BoardArrangement;
+  readonly canManageBoard: boolean;
   readonly onClose: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -250,20 +268,19 @@ function SaveViewDialog({
             />
           </label>
 
-          <label className="flex items-center gap-2 text-xs text-ink">
-            <input
-              type="checkbox"
-              checked={isShared}
-              onChange={(event) => {
-                setIsShared(event.target.checked);
-              }}
-            />
-            Share with everyone on this board
-          </label>
+          {canManageBoard && (
+            <label className="flex items-center gap-2 text-xs text-ink">
+              <input
+                type="checkbox"
+                checked={isShared}
+                onChange={(event) => {
+                  setIsShared(event.target.checked);
+                }}
+              />
+              Share with everyone on this board
+            </label>
+          )}
 
-          {/* Rendered for everyone. A member without `board:update` gets a
-                FORBIDDEN from the server rather than a missing checkbox — the
-                UI never re-derives authorization (§8.2). */}
           {save.isError && <ErrorText error={save.error} />}
 
           <div className="flex justify-end gap-2">

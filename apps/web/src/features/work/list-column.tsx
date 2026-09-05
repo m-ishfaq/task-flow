@@ -33,9 +33,26 @@ export interface ListColumnProps {
   /** Every column, in rank order — the menu needs neighbours to reorder. */
   readonly siblings: readonly ListSummary[];
   readonly children: ReactNode;
+  /**
+   * `boards.list`'s per-board `capabilities.update` — `lists.update`/
+   * `.reorder`/`.archive` are all `board:update`, so `ListMenu` (rename,
+   * WIP limit, reorder, archive) is hidden entirely for a caller who lacks
+   * it, rather than rendered and left to answer FORBIDDEN (Phase 15 §1's
+   * sweep). `AddCard` below is unaffected — creating a card is
+   * `card:create`, which a plain Member holds.
+   */
+  readonly canManage: boolean;
 }
 
-export function ListColumn({ orgId, boardId, list, count, siblings, children }: ListColumnProps) {
+export function ListColumn({
+  orgId,
+  boardId,
+  list,
+  count,
+  siblings,
+  canManage,
+  children,
+}: ListColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: list.listId });
   const overLimit = list.wipLimit !== null && count > list.wipLimit;
 
@@ -64,7 +81,7 @@ export function ListColumn({ orgId, boardId, list, count, siblings, children }: 
           {count}
           {list.wipLimit !== null && `/${String(list.wipLimit)}`}
         </span>
-        <ListMenu orgId={orgId} boardId={boardId} list={list} siblings={siblings} />
+        {canManage && <ListMenu orgId={orgId} boardId={boardId} list={list} siblings={siblings} />}
       </header>
 
       <div className="flex min-h-16 flex-col gap-1.5 overflow-y-auto px-2 pb-2 pt-0.5">

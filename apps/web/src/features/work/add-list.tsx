@@ -23,6 +23,14 @@ import { ErrorText } from '../../components/error-view.js';
 export interface AddListProps {
   readonly orgId: string;
   readonly boardId: BoardId;
+  /**
+   * `boards.list`'s per-board `capabilities.update` — `lists.create` is
+   * `board:update` (`list-column.tsx`'s own `ListColumnProps.canManage`
+   * comment has the fuller reasoning). Both components below render
+   * nothing when this is false, rather than a button that always answers
+   * FORBIDDEN (Phase 15 §1's sweep).
+   */
+  readonly canManage: boolean;
 }
 
 function useCreateList(orgId: string, boardId: BoardId) {
@@ -37,7 +45,7 @@ function useCreateList(orgId: string, boardId: BoardId) {
 }
 
 /** The trailing "+ Add list" column, alongside the existing ones. */
-export function AddListColumn({ orgId, boardId }: AddListProps) {
+export function AddListColumn({ orgId, boardId, canManage }: AddListProps) {
   const create = useCreateList(orgId, boardId);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
@@ -53,6 +61,8 @@ export function AddListColumn({ orgId, boardId }: AddListProps) {
       },
     });
   };
+
+  if (!canManage) return null;
 
   if (!open) {
     return (
@@ -122,7 +132,7 @@ export function AddListColumn({ orgId, boardId }: AddListProps) {
  * the same position and land in an arbitrary order — the one thing a Todo →
  * Doing → Done row must not do.
  */
-export function EmptyBoard({ orgId, boardId }: AddListProps) {
+export function EmptyBoard({ orgId, boardId, canManage }: AddListProps) {
   const create = useCreateList(orgId, boardId);
   const [busy, setBusy] = useState(false);
 
@@ -145,16 +155,20 @@ export function EmptyBoard({ orgId, boardId }: AddListProps) {
         <div>
           <p className="text-sm font-medium text-ink">This board has no lists yet</p>
           <p className="mt-1 text-xs text-ink-muted">
-            Lists are the columns cards move between. Start with the usual three, or name your own.
+            {canManage
+              ? 'Lists are the columns cards move between. Start with the usual three, or name your own.'
+              : 'Lists are the columns cards move between. An admin or owner needs to set them up.'}
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="primary" size="sm" disabled={busy} onClick={scaffold}>
-            {busy ? 'Creating…' : 'Add Todo, Doing, Done'}
-          </Button>
-          <AddListColumn orgId={orgId} boardId={boardId} />
-        </div>
+        {canManage && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="primary" size="sm" disabled={busy} onClick={scaffold}>
+              {busy ? 'Creating…' : 'Add Todo, Doing, Done'}
+            </Button>
+            <AddListColumn orgId={orgId} boardId={boardId} canManage={canManage} />
+          </div>
+        )}
 
         {create.isError && <ErrorText error={create.error} />}
       </div>

@@ -21,9 +21,13 @@ import type { SprintFilter } from './sprint-filter.js';
  *
  * The picker is the same control that opens the sprints manager panel — one
  * surface, one vocabulary, matching how statuses are managed. Every control in
- * the manager is rendered for everyone and the server answers (§8.2): a member
- * without `project:update` gets an honest FORBIDDEN toast, never a hidden
- * button.
+ * the manager is `project:update` (create/edit/start/complete/cancel — none of
+ * it is readable-but-not-writable), so the "Manage" button that opens it is
+ * gated on `canManageProject` (`projects.list`'s per-project
+ * `capabilities.update`) rather than shown to every viewer and left to answer
+ * FORBIDDEN (Phase 15 §1's sweep). The sprint `<select>` above it stays
+ * unconditional — filtering the board by sprint needs nothing beyond
+ * `board:read`, which every viewer already has to be looking at the board.
  *
  * The filter itself lives in `sprint-filter.ts` — NOT here — because a
  * component file with a function export cannot fast-refresh.
@@ -35,9 +39,17 @@ export interface SprintPickerProps {
   readonly boardId: BoardId;
   readonly value: SprintFilter;
   readonly onChange: (value: SprintFilter) => void;
+  readonly canManageProject: boolean;
 }
 
-export function SprintPicker({ orgId, projectId, boardId, value, onChange }: SprintPickerProps) {
+export function SprintPicker({
+  orgId,
+  projectId,
+  boardId,
+  value,
+  onChange,
+  canManageProject,
+}: SprintPickerProps) {
   const sprints = useQuery(sprintsQuery(orgId, projectId));
   const [managing, setManaging] = useState(false);
 
@@ -64,15 +76,17 @@ export function SprintPicker({ orgId, projectId, boardId, value, onChange }: Spr
         </select>
       </label>
 
-      <Button
-        size="sm"
-        variant="ghost"
-        onClick={() => {
-          setManaging(true);
-        }}
-      >
-        Manage
-      </Button>
+      {canManageProject && (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            setManaging(true);
+          }}
+        >
+          Manage
+        </Button>
+      )}
 
       {managing && (
         <SprintsManagerDialog
