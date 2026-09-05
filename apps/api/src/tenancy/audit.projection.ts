@@ -78,6 +78,14 @@ export const RESOURCE_OF: Readonly<Record<string, { type: string; key: string }>
   'team.member_removed': { type: 'team', key: 'teamId' },
   'grant.created': { type: 'member', key: 'subjectId' },
   'grant.revoked': { type: 'member', key: 'subjectId' },
+  /* ai/phase-15-ai-copilot-and-permissions.md §1 — the org-level counterpart
+     to the tuple grants directly above. Resolves to the MEMBER the
+     permission was given to or taken from, keyed on `userId` (the tuple
+     events above use `subjectId`, since a tuple's subject can be a team; a
+     member grant's subject is always one person, so the payload names it
+     the same way `member.role_changed` does). */
+  'member_grant.created': { type: 'member', key: 'userId' },
+  'member_grant.revoked': { type: 'member', key: 'userId' },
 
   /* Work (Phase 3). Lists resolve to their BOARD, matching the authorization
      model: there is no `list` resource type, because a list is not

@@ -542,6 +542,12 @@ describe('the application router', () => {
       'notifications.markAllRead',
       'notifications.unreadCount',
       'tenancy.audit.verify',
+      /* Same shape as `tenancy.members.list` directly below — every active
+         individual permission grant in the CALLER's org
+         (ai/phase-15-ai-copilot-and-permissions.md §1), read via
+         `ctx.principal.org.orgId` alone with no id this technique could
+         substitute. */
+      'tenancy.memberGrants.list',
       'tenancy.members.list',
       'tenancy.orgs.get',
       'tenancy.teams.list',
