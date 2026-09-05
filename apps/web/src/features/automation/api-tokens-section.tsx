@@ -32,7 +32,22 @@ import { apiTokensQuery, heldApiTokenScopesQuery } from './api.js';
 
 type TokenSummary = Wire<Awaited<ReturnType<typeof api.apiToken.list.query>>>[number];
 
-export function ApiTokensSection({ orgId }: { readonly orgId: string }) {
+export function ApiTokensSection({
+  orgId,
+  canRevoke,
+}: {
+  readonly orgId: string;
+  /**
+   * `apiToken:revoke` — Wave 2 (ai/phase-15-ai-copilot-and-permissions.md
+   * §1) split it from `apiToken:create` for individual grants, so a Member
+   * granted only `createApiTokens` can mint but never revoke. `TokenRow`
+   * hides its Revoke button entirely for that caller rather than rendering
+   * it and letting the click land on FORBIDDEN — this was never reachable
+   * before the split, since both permissions were Admin/Owner-only by role
+   * together until now.
+   */
+  readonly canRevoke: boolean;
+}) {
   const [creating, setCreating] = useState(false);
   const [createdToken, setCreatedToken] = useState<{
     readonly name: string;
@@ -112,7 +127,7 @@ export function ApiTokensSection({ orgId }: { readonly orgId: string }) {
         <ul className="space-y-2">
           {tokens.data.map((token) => (
             <li key={token.tokenId}>
-              <TokenRow orgId={orgId} token={token} />
+              <TokenRow orgId={orgId} token={token} canRevoke={canRevoke} />
             </li>
           ))}
         </ul>
@@ -313,7 +328,15 @@ function TokenCreateForm({
 }
 
 /** One credential. */
-function TokenRow({ orgId, token }: { readonly orgId: string; readonly token: TokenSummary }) {
+function TokenRow({
+  orgId,
+  token,
+  canRevoke,
+}: {
+  readonly orgId: string;
+  readonly token: TokenSummary;
+  readonly canRevoke: boolean;
+}) {
   const queryClient = useQueryClient();
   const toast = useToast();
 
@@ -388,7 +411,7 @@ function TokenRow({ orgId, token }: { readonly orgId: string; readonly token: To
           </p>
         )}
 
-        {active && (
+        {active && canRevoke && (
           <div className="flex shrink-0 items-center gap-0.5">
             {/* Revoking is a two-click action for the same reason deleting a
                 webhook is: every script holding this credential breaks the

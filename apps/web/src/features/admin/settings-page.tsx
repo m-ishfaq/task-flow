@@ -194,13 +194,17 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
     manageTeams: false,
     createProject: false,
     viewAnalytics: false,
-    viewAutomations: false,
     viewAuditLog: false,
     readPhoneNumbers: false,
     placeCalls: false,
     readCalls: false,
     sendSms: false,
     readSms: false,
+    manageAutomations: false,
+    manageWebhooks: false,
+    manageIntegrations: false,
+    createApiTokens: false,
+    revokeApiTokens: false,
     viewBilling: false,
     purchaseNumbers: false,
     releaseNumbers: false,
@@ -538,15 +542,38 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
  * mostly-off toggles nobody can scan. What anyone actually needs to see is
  * "who currently has an extra grant, and what" — a short, sparse list — so
  * this follows the same "add first, then the list" shape the Members section
- * above uses: a form to grant one permission to one person, and a list of
- * only the grants that actually exist. It grows with usage, not with
- * headcount × catalog size.
+ * above uses: a list of only the grants that actually exist, below a form
+ * that CREATES them. It grows with usage, not with headcount × catalog size.
+ * `GRANTABLE_PERMISSIONS` doubling in Wave 2 (automation permissions joining
+ * telephony's original five) is the reason this stays true rather than a
+ * reason to reconsider it — a matrix's cost is exactly `members × catalog
+ * size`, so it only gets worse as the catalog grows, which is the direction
+ * it is actually moving.
+ *
+ * ## The add form is a batch, not a single pair
+ *
+ * Both pickers below are multi-select: choosing 3 members and 2 permissions
+ * and submitting once grants the full 3×2 Cartesian product, not one pair.
+ * This is what actually needed fixing — not the LIST's shape, which already
+ * scales, but the one-member-one-permission-per-click workflow needed to
+ * populate it, which did not: giving one person several abilities, or one
+ * ability to several people, or several people several abilities all at
+ * once, were each N separate trips through the form. `runGrantBatch` below
+ * still calls the server's existing single-pair `memberGrants.grant` route
+ * once per pair in sequence — there is no new bulk endpoint — which is safe
+ * ONLY because that route is already idempotent (granting something already
+ * granted returns the existing row, per `member-grant.service.ts`'s own
+ * comment): a batch that fails partway through step-up is retried from
+ * index 0 in full, and every pair before the failure point silently no-ops
+ * on the retry rather than erroring or duplicating.
  *
  * The member picker is the same type-to-filter Popover list
  * `assignee-section.tsx` and `card-tile.tsx`'s `QuickAssignee` already use —
  * this is a further occurrence of that pattern, not a new one; see that
  * file's own note on pulling it into a shared component once a good moment
- * presents itself, not forced here.
+ * presents itself, not forced here. It has grown a checkbox per row rather
+ * than closing on selection, so several members can be picked without
+ * reopening the popover between each one.
  *
  * The whole section is gated on `capabilities.manageMembers`
  * (`SettingsPage`'s own render), not just the add form and revoke buttons
@@ -573,13 +600,17 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
     manageTeams: false,
     createProject: false,
     viewAnalytics: false,
-    viewAutomations: false,
     viewAuditLog: false,
     readPhoneNumbers: false,
     placeCalls: false,
     readCalls: false,
     sendSms: false,
     readSms: false,
+    manageAutomations: false,
+    manageWebhooks: false,
+    manageIntegrations: false,
+    createApiTokens: false,
+    revokeApiTokens: false,
     viewBilling: false,
     purchaseNumbers: false,
     releaseNumbers: false,
@@ -590,17 +621,35 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.memberGrants(orgId) });
 
-  const grant = useMutation({
-    mutationFn: (input: { userId: UserId; permission: string }) =>
-      api.tenancy.memberGrants.grant.mutate(input),
+  /**
+   * One pair per member × permission chosen in the form, sent to the
+   * existing single-pair route in sequence. Sequential rather than
+   * `Promise.all` — a batch that fails at pair 4 of 10 with a batch of
+   * concurrent in-flight requests leaves an unknowable subset applied;
+   * sequential means "the ones before the failure succeeded" is always
+   * true, which is what makes retrying the WHOLE array from index 0 safe
+   * (each already-applied pair no-ops on the idempotent route rather than
+   * erroring).
+   */
+  const runGrantBatch = async (
+    pairs: readonly { readonly userId: UserId; readonly permission: string }[],
+  ): Promise<void> => {
+    for (const pair of pairs) {
+      await api.tenancy.memberGrants.grant.mutate(pair);
+    }
+  };
+
+  const bulkGrant = useMutation({
+    mutationFn: runGrantBatch,
     onSuccess: async () => {
-      setPickedUserId('');
+      setPickedUserIds(new Set());
+      setPickedPermissions(new Set());
       setMemberQuery('');
       await refresh();
     },
-    onError: (error, input) => {
+    onError: (error, pairs) => {
       guard(error, () => {
-        grant.mutate(input);
+        bulkGrant.mutate(pairs);
       });
     },
   });
@@ -618,12 +667,31 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
 
   const permissions = [...GRANTABLE_PERMISSIONS];
 
-  const [pickedUserId, setPickedUserId] = useState('');
+  const [pickedUserIds, setPickedUserIds] = useState<ReadonlySet<string>>(new Set());
   const [memberQuery, setMemberQuery] = useState('');
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [permission, setPermission] = useState<string>(permissions[0] ?? '');
+  const [memberPickerOpen, setMemberPickerOpen] = useState(false);
+  const [pickedPermissions, setPickedPermissions] = useState<ReadonlySet<string>>(new Set());
+  const [permissionPickerOpen, setPermissionPickerOpen] = useState(false);
 
   const [grantSearch, setGrantSearch] = useState('');
+
+  const toggleUser = (userId: string) => {
+    setPickedUserIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  };
+
+  const togglePermission = (value: string) => {
+    setPickedPermissions((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  };
 
   if (members.data === undefined || grants.data === undefined) return null;
 
@@ -631,7 +699,7 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
     member.displayName ?? member.email;
 
   const memberById = new Map(members.data.map((member) => [member.userId, member]));
-  const pickedMember = memberById.get(pickedUserId);
+  const submitCount = pickedUserIds.size * pickedPermissions.size;
 
   const needle = memberQuery.trim().toLowerCase();
   const matches =
@@ -660,20 +728,25 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
       {capabilities.manageMembers && permissions.length > 0 && (
         <AddPanel>
           <form
-            className="flex flex-wrap items-end gap-2"
+            className="flex flex-wrap items-start gap-2"
             onSubmit={(event) => {
               event.preventDefault();
-              if (pickedUserId !== '' && permission !== '') {
-                grant.mutate({ userId: pickedUserId as UserId, permission });
+              if (submitCount === 0) return;
+              const pairs: { readonly userId: UserId; readonly permission: string }[] = [];
+              for (const userId of pickedUserIds) {
+                for (const perm of pickedPermissions) {
+                  pairs.push({ userId: userId as UserId, permission: perm });
+                }
               }
+              bulkGrant.mutate(pairs);
             }}
           >
             <div className="min-w-[16rem] flex-1">
-              <Field label="Member" htmlFor="grant-member-search">
+              <Field label="Members" htmlFor="grant-member-search">
                 <PopoverRoot
-                  open={pickerOpen}
+                  open={memberPickerOpen}
                   onOpenChange={(open) => {
-                    setPickerOpen(open);
+                    setMemberPickerOpen(open);
                     if (!open) setMemberQuery('');
                   }}
                 >
@@ -683,17 +756,12 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
                       id="grant-member-search"
                       className="flex h-9 w-full items-center rounded-lg border border-line/50 bg-surface px-2 text-left text-sm text-ink"
                     >
-                      {pickedMember ? (
-                        <span className="flex items-center gap-1.5 truncate">
-                          <Avatar
-                            userId={pickedMember.userId}
-                            label={labelOf(pickedMember)}
-                            size="xs"
-                          />
-                          <span className="truncate">{labelOf(pickedMember)}</span>
-                        </span>
-                      ) : (
+                      {pickedUserIds.size === 0 ? (
                         <span className="text-ink-faint">Search by name or email…</span>
+                      ) : (
+                        <span>
+                          {pickedUserIds.size} member{pickedUserIds.size === 1 ? '' : 's'} selected
+                        </span>
                       )}
                     </button>
                   </PopoverTrigger>
@@ -716,12 +784,16 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
                             <button
                               type="button"
                               onClick={() => {
-                                setPickedUserId(member.userId);
-                                setPickerOpen(false);
-                                setMemberQuery('');
+                                toggleUser(member.userId);
                               }}
                               className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
                             >
+                              <input
+                                type="checkbox"
+                                readOnly
+                                checked={pickedUserIds.has(member.userId)}
+                                className="pointer-events-none"
+                              />
                               <Avatar userId={member.userId} label={labelOf(member)} size="xs" />
                               <span className="truncate">{labelOf(member)}</span>
                               <span className="ml-auto text-ink-faint">{member.role}</span>
@@ -732,34 +804,114 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
                     )}
                   </PopoverContent>
                 </PopoverRoot>
+                {pickedUserIds.size > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {[...pickedUserIds].map((userId) => {
+                      const member = memberById.get(userId);
+                      const label = member ? labelOf(member) : userId;
+                      return (
+                        <span
+                          key={userId}
+                          className="inline-flex items-center gap-1 rounded-full bg-surface-sunken px-2 py-0.5 text-xs text-ink"
+                        >
+                          {label}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              toggleUser(userId);
+                            }}
+                            aria-label={`Remove ${label}`}
+                            className="text-ink-faint hover:text-ink"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </Field>
             </div>
 
-            <select
-              aria-label="Permission to grant"
-              value={permission}
-              onChange={(event) => {
-                setPermission(event.target.value);
-              }}
-              className="h-9 rounded-lg border border-line/50 bg-surface px-2 text-sm text-ink"
-            >
-              {permissions.map((entry) => (
-                <option key={entry} value={entry}>
-                  {entry}
-                </option>
-              ))}
-            </select>
+            <div className="min-w-[12rem]">
+              <Field label="Permissions" htmlFor="grant-permission-picker">
+                <PopoverRoot open={permissionPickerOpen} onOpenChange={setPermissionPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      id="grant-permission-picker"
+                      className="flex h-9 w-full items-center rounded-lg border border-line/50 bg-surface px-2 text-left text-sm text-ink"
+                    >
+                      {pickedPermissions.size === 0 ? (
+                        <span className="text-ink-faint">Choose permissions…</span>
+                      ) : (
+                        <span>{pickedPermissions.size} selected</span>
+                      )}
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-56 space-y-0.5 p-2">
+                    <ul className="max-h-56 space-y-0.5 overflow-y-auto">
+                      {permissions.map((entry) => (
+                        <li key={entry}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              togglePermission(entry);
+                            }}
+                            className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
+                          >
+                            <input
+                              type="checkbox"
+                              readOnly
+                              checked={pickedPermissions.has(entry)}
+                              className="pointer-events-none"
+                            />
+                            <span className="truncate font-mono">{entry}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </PopoverContent>
+                </PopoverRoot>
+                {pickedPermissions.size > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {[...pickedPermissions].map((entry) => (
+                      <span
+                        key={entry}
+                        className="inline-flex items-center gap-1 rounded-full bg-surface-sunken px-2 py-0.5 font-mono text-xs text-ink"
+                      >
+                        {entry}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            togglePermission(entry);
+                          }}
+                          aria-label={`Remove ${entry}`}
+                          className="text-ink-faint hover:text-ink"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </Field>
+            </div>
 
             <Button
               type="submit"
               variant="primary"
-              disabled={grant.isPending || pickedUserId === ''}
+              disabled={bulkGrant.isPending || submitCount === 0}
             >
-              {grant.isPending ? 'Granting…' : 'Grant'}
+              {bulkGrant.isPending
+                ? 'Granting…'
+                : submitCount > 1
+                  ? `Grant (${String(submitCount)})`
+                  : 'Grant'}
             </Button>
           </form>
 
-          {grant.isError && <ErrorText error={grant.error} />}
+          {bulkGrant.isError && <ErrorText error={bulkGrant.error} />}
         </AddPanel>
       )}
 

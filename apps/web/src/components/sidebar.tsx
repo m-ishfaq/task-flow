@@ -190,7 +190,20 @@ const CONFIG_ITEMS: readonly NavItem[] = [
     label: 'Automations',
     icon: Workflow,
     flag: 'automation',
-    capability: 'viewAutomations',
+    /* Wave 2 (ai/phase-15-ai-copilot-and-permissions.md §1): the four
+       automation permissions joined `GRANTABLE_PERMISSIONS`, so — like
+       `/calls` above — this is no longer all-or-nothing by role. A Member
+       granted only `webhook:manage` still needs to see this link; gating on
+       a single capability would hide it for them the same way a single
+       `capability` key would have hidden `/calls` from someone holding only
+       `sms:read`. */
+    anyOfCapabilities: [
+      'manageAutomations',
+      'manageWebhooks',
+      'manageIntegrations',
+      'createApiTokens',
+      'revokeApiTokens',
+    ],
   },
 ];
 
@@ -295,8 +308,8 @@ export function Sidebar() {
      jarring for the common case (the flag turns out granted). */
   const entitlements = useEntitlements().data;
 
-  /* Capability-gated items (`viewAnalytics`, `viewAutomations`) default to
-     HIDDEN while this is still loading, the opposite default from
+  /* Capability-gated items (`viewAnalytics`, the Automations `anyOfCapabilities`)
+     default to HIDDEN while this is still loading, the opposite default from
      `entitlements` above — a plan-flag lock icon flashing in and out is a
      cosmetic annoyance, but a full nav link doing the same is a much
      stronger "wait, do I have this or not" moment, and hiding a real

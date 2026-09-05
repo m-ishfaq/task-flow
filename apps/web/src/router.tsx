@@ -615,12 +615,17 @@ const analyticsRoute = createRoute({
  * `requireOrg`, not `requireSession`: rules are org-scoped, and every query
  * this page fires needs an org header.
  *
- * Same reasoning as `analyticsRoute` above: `automation:manage` is
- * Admin-and-Owner-only by role with no plan-upgrade path for a Member, so
- * this also wraps in `CapabilityGate` — a direct URL/bookmark shows "not for
- * your role" instead of a raw FORBIDDEN. The server still re-checks
- * `automation:manage` on every route regardless; this only changes what a
- * Member who cannot use it sees on the way there.
+ * Wrapped in `CapabilityGate`, `anyOf` rather than a single `capability` —
+ * the same reasoning `telephonyRoute` above gives, and for the identical
+ * cause: Wave 2 (ai/phase-15-ai-copilot-and-permissions.md §1) made the four
+ * automation permissions individually grantable, so a Member holding only
+ * `webhook:manage` still needs this route to load rather than showing "not
+ * for your role" — the PAGE decides which tab that person actually lands on
+ * (`AutomationsPage`'s own gating, mirroring each tab's floor permission).
+ * A direct URL/bookmark still shows "not for your role" for a caller with
+ * NONE of the five, instead of a raw FORBIDDEN. The server still re-checks
+ * the real floor permission on every route regardless; this only changes
+ * what a Member who cannot use any of it sees on the way there.
  */
 const automationsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -641,7 +646,15 @@ const automationsRoute = createRoute({
   }),
   beforeLoad: () => requireOrg('/automations'),
   component: () => (
-    <CapabilityGate capability="viewAutomations">
+    <CapabilityGate
+      anyOf={[
+        'manageAutomations',
+        'manageWebhooks',
+        'manageIntegrations',
+        'createApiTokens',
+        'revokeApiTokens',
+      ]}
+    >
       <FeatureGate flag="automation">
         <AutomationsPage />
       </FeatureGate>

@@ -251,10 +251,28 @@ export interface SettingsCapabilities {
    * icon here would advertise a door nothing can open for them.
    */
   readonly viewAnalytics: boolean;
-  /** Same reasoning as `viewAnalytics`, for `/automations` and `automation:manage`. */
-  readonly viewAutomations: boolean;
   /** Same reasoning again, for the "Audit log" link and `audit:read`. */
   readonly viewAuditLog: boolean;
+  /**
+   * The four `/automations` tabs, UNLIKE `viewAnalytics`/`viewAuditLog`
+   * above: `automation:manage`, `webhook:manage`, `integration:manage` and
+   * `apiToken:create`/`apiToken:revoke` joined `GRANTABLE_PERMISSIONS` in
+   * Wave 2 (`packages/policy/src/permissions.ts`), so — exactly like the
+   * five telephony booleans below — these are not all-or-nothing by role.
+   * Admin and Owner hold all five by role; a Member holds each only via an
+   * explicit `authz.member_grants` row, so someone granted only
+   * `webhook:manage` needs `/automations` to open (there is no single
+   * `viewAutomations` flag to gate the route on any more) and land on the
+   * Webhooks tab specifically, not Rules. `readApiTokens` does not exist:
+   * `apiToken.router.ts`'s `list`/`heldScopes` both floor on
+   * `apiToken:create`, matching `createApiTokens` below — reading the list
+   * is bundled with minting, not a third capability.
+   */
+  readonly manageAutomations: boolean;
+  readonly manageWebhooks: boolean;
+  readonly manageIntegrations: boolean;
+  readonly createApiTokens: boolean;
+  readonly revokeApiTokens: boolean;
   /**
    * The five telephony permissions (`GRANTABLE_PERMISSIONS`,
    * `packages/policy/src/permissions.ts`), UNLIKE the three above, are not
@@ -368,7 +386,7 @@ export async function getOrg(orgId: OrgId, subject: Subject): Promise<OrgDetail>
       manageTeams: can(subject, 'team:manage').allowed,
       createProject: can(subject, 'project:create').allowed,
       /* Nav-visibility capabilities, not settings-page ones — the sidebar
-         reads these too (see sidebar.tsx). Analytics and Automations are
+         reads these too (see sidebar.tsx). Analytics and the audit log are
          each Admin-and-Owner-only by ROLE ALONE (no per-resource target),
          with no separate "read" tier a Member could hold — a plan-flag lock
          icon says "your ORG could have this," which is true and worth
@@ -376,7 +394,6 @@ export async function getOrg(orgId: OrgId, subject: Subject): Promise<OrgDetail>
          upgrading a plan, so showing the same lock icon for that case would
          be advertising a door that plan money can never open for them. */
       viewAnalytics: can(subject, 'analytics:read').allowed,
-      viewAutomations: can(subject, 'automation:manage').allowed,
       viewAuditLog: can(subject, 'audit:read').allowed,
       /* Individually granted (Phase 15 §1) — see the interface doc comment.
          Each reads `subject.memberGrants` through the same `can()` a route
@@ -387,6 +404,13 @@ export async function getOrg(orgId: OrgId, subject: Subject): Promise<OrgDetail>
       readCalls: can(subject, 'call:read').allowed,
       sendSms: can(subject, 'sms:send').allowed,
       readSms: can(subject, 'sms:read').allowed,
+      /* Wave 2 — see the interface doc comment. Individually granted exactly
+         like the telephony five above, unlike Analytics/audit above them. */
+      manageAutomations: can(subject, 'automation:manage').allowed,
+      manageWebhooks: can(subject, 'webhook:manage').allowed,
+      manageIntegrations: can(subject, 'integration:manage').allowed,
+      createApiTokens: can(subject, 'apiToken:create').allowed,
+      revokeApiTokens: can(subject, 'apiToken:revoke').allowed,
       viewBilling: can(subject, 'org:billing').allowed,
       purchaseNumbers: can(subject, 'phoneNumber:purchase').allowed,
       releaseNumbers: can(subject, 'phoneNumber:release').allowed,

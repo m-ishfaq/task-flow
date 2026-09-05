@@ -20,9 +20,10 @@ import { orgDetailQuery, type SettingsCapabilities } from '../features/org/api.j
  * the honest, sellable state. A capability like `analytics:read` is
  * Admin-and-Owner-only by ROLE; no plan purchase ever changes what a
  * Member's role grants, so an upgrade CTA here would point at a door money
- * cannot open. Same reasoning `org.service.ts`'s `viewAnalytics`/
- * `viewAutomations` comment gives for why the sidebar treats the two
- * differently.
+ * cannot open. Same reasoning `org.service.ts`'s `viewAnalytics` comment
+ * gives for why the sidebar treats it differently from Automations, whose
+ * `anyOfCapabilities` (Wave 2) can genuinely change for a Member without any
+ * plan involved — an individual grant, not a purchase.
  *
  * This is still a COSMETIC gate, not the authorization decision — the same
  * reasoning `FeatureGate`'s own doc comment gives: every route behind this

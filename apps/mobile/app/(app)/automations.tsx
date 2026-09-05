@@ -39,13 +39,17 @@ import {
  * itself out of the tab bar applies to this screen from the start rather
  * than needing a later move).
  *
- * `automation:manage` is Admin-and-Owner only by role, no tuple and no
- * member grant — `account.tsx` now hides the link for a Member (Phase 15
- * §1's sweep fixed a real gap here: it previously rendered unconditionally
- * with no gate at all, unlike "Insights" two links below it), and this
- * default export additionally wraps the screen in `CapabilityGate
- * capability="viewAutomations"` so a deep link lands on a plain "not for
- * your role" screen rather than loading straight into a raw FORBIDDEN.
+ * `automation:manage` is Admin-and-Owner by role, or an individual grant
+ * (Wave 2, ai/phase-15-ai-copilot-and-permissions.md §1) — `account.tsx`
+ * hides the link for anyone with neither (Phase 15 §1's sweep fixed a real
+ * gap here: it previously rendered unconditionally with no gate at all,
+ * unlike "Insights" two links below it), and this default export
+ * additionally wraps the screen in `CapabilityGate capability=
+ * "manageAutomations"` so a deep link lands on a plain "not for your role"
+ * screen rather than loading straight into a raw FORBIDDEN. Not an "any
+ * of" the four automation permissions the web sidebar now checks — this
+ * screen is Rules only, so `manageAutomations` alone is the correct floor;
+ * someone granted only `webhook:manage` has no mobile UI to reach at all.
  *
 
  * **Creating and editing a rule now ship too — `automation-editor.tsx`,
@@ -62,7 +66,7 @@ import {
  */
 export default function AutomationsScreen(): React.JSX.Element | null {
   return (
-    <CapabilityGate capability="viewAutomations">
+    <CapabilityGate capability="manageAutomations">
       <AutomationsScreenContent />
     </CapabilityGate>
   );

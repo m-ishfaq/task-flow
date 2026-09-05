@@ -190,10 +190,14 @@ const PERMISSION_SET: ReadonlySet<string> = new Set<string>(PERMISSIONS);
  * channel could read the whole org audit log through it; see
  * `ai/phase-5-chat.md`'s findings on `couldGrant`).
  *
- * `org:delete`, `org:billing`, `apiToken:create` and `apiToken:revoke` are not
- * reachable through any route today, but are included on the same reasoning
- * ahead of the day one is added — deleting or billing the org, or minting
- * your own API credentials, will never be something a resource tuple grants.
+ * `org:delete` and `org:billing` are not reachable through any route today,
+ * but are included on the same reasoning ahead of the day one is added —
+ * deleting or billing the org will never be something a resource tuple
+ * grants. `apiToken:create`/`apiToken:revoke` WERE in that same "ahead of
+ * the day" category when this paragraph was written; `apiToken.router.ts`
+ * (Phase 10 Wave 3) is the route that arrived, and the reasoning held —
+ * minting or revoking your own API credentials is still never something a
+ * resource tuple should be able to satisfy.
  *
  * The telephony permissions were once excluded here with the note that "those
  * phases have not shipped". Phase 7 shipped five waves and a UI, and the
@@ -325,6 +329,25 @@ export function resourceOf(permission: Permission): ResourceType {
  * the only source is a deliberate follow-up (needs a data migration
  * backfilling existing orgs' grants first), not bundled into the wave that
  * introduces the mechanism.
+ *
+ * Wave 2 adds the four automation permissions (`automation:manage`,
+ * `webhook:manage`, `integration:manage`, `apiToken:create`,
+ * `apiToken:revoke` — five entries, `apiToken` split across the matrix
+ * pair). Unlike telephony, none of these were ever on the Member role — an
+ * org that wants ONE Member able to build rules, or manage the webhook
+ * registry, without promoting them to Admin previously had no way to say
+ * that at all. This is safe to grant narrowly for the same reason it is
+ * safe to grant to Admin at every org: `automation.service.ts` asks no
+ * per-resource question when a rule is BUILT, because the resource-aware
+ * question is asked again at EXECUTION, in the worker, against the rule
+ * owner's own live permissions re-resolved on every run (see
+ * `apps/worker/src/automation/executor.ts`). A Member granted
+ * `automation:manage` can therefore only build rules whose actions their
+ * OWN permissions already allow — granting the ABILITY TO BUILD does not
+ * also grant the actions a built rule may take. `integration:manage` and
+ * `apiToken:create`/`revoke` are still stepUp-gated at their own routes
+ * regardless of how the floor permission was obtained, so a hijacked
+ * session cannot use an individual grant to skip that ceremony either.
  */
 export const GRANTABLE_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
   'phoneNumber:read',
@@ -332,6 +355,11 @@ export const GRANTABLE_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission
   'call:read',
   'sms:send',
   'sms:read',
+  'automation:manage',
+  'webhook:manage',
+  'integration:manage',
+  'apiToken:create',
+  'apiToken:revoke',
 ]);
 
 /** True when `permission` may be granted to an individual member — see `GRANTABLE_PERMISSIONS`. */

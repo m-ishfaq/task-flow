@@ -203,13 +203,17 @@ describe('settings capabilities', () => {
       manageTeams: true,
       createProject: true,
       viewAnalytics: true,
-      viewAutomations: true,
       viewAuditLog: true,
       readPhoneNumbers: true,
       placeCalls: true,
       readCalls: true,
       sendSms: true,
       readSms: true,
+      manageAutomations: true,
+      manageWebhooks: true,
+      manageIntegrations: true,
+      createApiTokens: true,
+      revokeApiTokens: true,
       viewBilling: true,
       purchaseNumbers: true,
       releaseNumbers: true,
@@ -220,9 +224,10 @@ describe('settings capabilities', () => {
 
     // A plain Member holds none of these — card:create and friends do not
     // touch org, member, team, project, analytics, automation, billing, or
-    // audit administration at all, and (Phase 15 §1) the telephony five are
-    // no longer role defaults either: this Member has no
-    // `authz.member_grants` row, so all five read false too.
+    // audit administration at all, and (Phase 15 §1) the telephony five and
+    // (Wave 2) the five automation permissions are no longer role defaults
+    // either: this Member has no `authz.member_grants` row, so all ten read
+    // false too.
     expect(asMember.capabilities).toEqual({
       updateOrg: false,
       inviteMember: false,
@@ -231,13 +236,17 @@ describe('settings capabilities', () => {
       manageTeams: false,
       createProject: false,
       viewAnalytics: false,
-      viewAutomations: false,
       viewAuditLog: false,
       readPhoneNumbers: false,
       placeCalls: false,
       readCalls: false,
       sendSms: false,
       readSms: false,
+      manageAutomations: false,
+      manageWebhooks: false,
+      manageIntegrations: false,
+      createApiTokens: false,
+      revokeApiTokens: false,
       viewBilling: false,
       purchaseNumbers: false,
       releaseNumbers: false,
@@ -273,13 +282,17 @@ describe('settings capabilities', () => {
       manageTeams: true,
       createProject: true,
       viewAnalytics: true,
-      viewAutomations: true,
       viewAuditLog: true,
       readPhoneNumbers: true,
       placeCalls: true,
       readCalls: true,
       sendSms: true,
       readSms: true,
+      manageAutomations: true,
+      manageWebhooks: true,
+      manageIntegrations: true,
+      createApiTokens: true,
+      revokeApiTokens: true,
       viewBilling: false,
       purchaseNumbers: false,
       releaseNumbers: false,
@@ -287,6 +300,41 @@ describe('settings capabilities', () => {
       readRecordings: true,
       createSpace: true,
     });
+  });
+
+  it('reflects an individual automation grant, and only that one permission', async () => {
+    /* Wave 2 (ai/phase-15-ai-copilot-and-permissions.md §1): a Member can
+       now be granted one of the four automation permissions individually,
+       the same mechanism telephony already used. `getOrg`'s capabilities
+       must show EXACTLY the one granted, not "has automation access" as a
+       single flag — someone with only webhook:manage still cannot build
+       rules or connect an integration. */
+    const orgId = await newOrg('capabilities-automation-grant');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'member' },
+      actorOf(OWNER),
+    );
+    await memberGrants.grant(
+      orgId,
+      { userId: COLLEAGUE, permission: 'webhook:manage' },
+      actorOf(OWNER),
+    );
+
+    const memberSubject: Subject = {
+      orgId,
+      userId: COLLEAGUE,
+      role: 'member',
+      tuples: [],
+      memberGrants: ['webhook:manage'],
+    };
+    const result = await orgs.getOrg(orgId, memberSubject);
+
+    expect(result.capabilities.manageWebhooks).toBe(true);
+    expect(result.capabilities.manageAutomations).toBe(false);
+    expect(result.capabilities.manageIntegrations).toBe(false);
+    expect(result.capabilities.createApiTokens).toBe(false);
+    expect(result.capabilities.revokeApiTokens).toBe(false);
   });
 });
 

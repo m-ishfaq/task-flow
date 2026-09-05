@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { resourceForTrigger, type FilterNode } from '@taskflow/filter';
@@ -14,6 +14,7 @@ import { Button, ConfirmButton, Empty, Field, SkeletonRows } from '../../compone
 import { SecretReveal } from '../../components/secret-reveal.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { FilterBuilder } from '../work/filter/filter-builder.js';
+import { orgDetailQuery, type SettingsCapabilities } from '../org/api.js';
 import {
   apiTokensQuery,
   automationCapabilitiesQuery,
@@ -192,12 +193,27 @@ function draftsFrom(stored: readonly unknown[] | undefined): ActionDraft[] {
 export const AUTOMATION_TAB_IDS = ['rules', 'webhooks', 'apiTokens', 'integrations'] as const;
 export type AutomationTabId = (typeof AUTOMATION_TAB_IDS)[number];
 
+/**
+ * Each tab's own floor permission (Wave 2,
+ * ai/phase-15-ai-copilot-and-permissions.md §1) — `automation:manage`,
+ * `webhook:manage`, `apiToken:create` and `integration:manage`
+ * respectively, per `router.ts`'s own routing. Unlike Wave 1, none of these
+ * are all-or-nothing by role any more: they joined `GRANTABLE_PERMISSIONS`,
+ * so a Member can hold any SUBSET via `authz.member_grants`, exactly the
+ * shape `telephony-page.tsx` already handles for its four tabs. Rendering
+ * all four unconditionally would put three of them one click from a "You do
+ * not have permission to do that" for anyone with a partial grant.
+ */
 const TABS = [
-  { id: 'rules', label: 'Rules' },
-  { id: 'webhooks', label: 'Webhooks' },
-  { id: 'apiTokens', label: 'API tokens' },
-  { id: 'integrations', label: 'Integrations' },
-] as const;
+  { id: 'rules', label: 'Rules', capability: 'manageAutomations' },
+  { id: 'webhooks', label: 'Webhooks', capability: 'manageWebhooks' },
+  { id: 'apiTokens', label: 'API tokens', capability: 'createApiTokens' },
+  { id: 'integrations', label: 'Integrations', capability: 'manageIntegrations' },
+] as const satisfies readonly {
+  id: string;
+  label: string;
+  capability: keyof SettingsCapabilities;
+}[];
 
 type TabId = AutomationTabId;
 
@@ -223,14 +239,50 @@ export function AutomationsPage() {
   const orgId = useSession((state) => state.orgId) ?? '';
   const navigate = useNavigate();
   const tab: TabId = useSearch({ from: '/automations', select: (value) => value.tab }) ?? 'rules';
+  const org = useQuery(orgDetailQuery(orgId));
+  const capabilities = org.data?.capabilities;
+
+  const visibleTabs =
+    capabilities === undefined ? [] : TABS.filter((item) => capabilities[item.capability]);
+
+  const selectTab = (next: TabId) => {
+    void navigate({ to: '/automations', search: { tab: next } });
+  };
+
+  // If the current tab isn't one the caller can see (a stale link, or a
+  // partial grant that never covered it), land on the first tab that is —
+  // the same correction telephony-page.tsx makes for the identical reason.
+  useEffect(() => {
+    if (capabilities === undefined) return;
+    const allowed = TABS.filter((item) => capabilities[item.capability]);
+    if (allowed.some((item) => item.id === tab)) return;
+    const fallback = allowed[0];
+    if (fallback !== undefined) selectTab(fallback.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [capabilities, tab]);
 
   /* The badges read page 1 only — the same query the panels open with, so this
      is not an extra fetch. A `+` marks "there is at least one more page", since
-     an exact total would cost a COUNT the list itself never needs. */
-  const rulesHead = useQuery({ ...automationsQuery(orgId, null), enabled: orgId !== '' });
-  const webhooksHead = useQuery({ ...webhooksPageQuery(orgId, null), enabled: orgId !== '' });
-  const apiTokens = useQuery({ ...apiTokensQuery(orgId), enabled: orgId !== '' });
-  const integrations = useQuery({ ...integrationsQuery(orgId), enabled: orgId !== '' });
+     an exact total would cost a COUNT the list itself never needs. Each is
+     gated on its own tab's capability, not just `orgId !== ''` — firing a
+     query the caller cannot answer is a guaranteed FORBIDDEN for a badge
+     count nobody asked to see. */
+  const rulesHead = useQuery({
+    ...automationsQuery(orgId, null),
+    enabled: orgId !== '' && capabilities?.manageAutomations === true,
+  });
+  const webhooksHead = useQuery({
+    ...webhooksPageQuery(orgId, null),
+    enabled: orgId !== '' && capabilities?.manageWebhooks === true,
+  });
+  const apiTokens = useQuery({
+    ...apiTokensQuery(orgId),
+    enabled: orgId !== '' && capabilities?.createApiTokens === true,
+  });
+  const integrations = useQuery({
+    ...integrationsQuery(orgId),
+    enabled: orgId !== '' && capabilities?.manageIntegrations === true,
+  });
 
   const pageBadge = (count: number | undefined, more: boolean): string | undefined =>
     count === undefined ? undefined : `${String(count)}${more ? '+' : ''}`;
@@ -244,6 +296,17 @@ export function AutomationsPage() {
     integrations: integrations.data?.filter((row) => row.status === 'connected').length,
   };
 
+  if (capabilities !== undefined && visibleTabs.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center p-8">
+        <p className="max-w-sm text-center text-sm text-ink-muted">
+          You don&apos;t have access to any part of Automations yet. An admin or owner can grant you
+          access from Settings → Individual permissions.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="shrink-0 border-b border-line/50 px-4 pt-4 pb-2 md:px-6">
@@ -254,7 +317,7 @@ export function AutomationsPage() {
         </p>
 
         <nav aria-label="Automation sections" className="mt-3 flex gap-1">
-          {TABS.map((item) => {
+          {visibleTabs.map((item) => {
             const count = counts[item.id];
             return (
               <button
@@ -262,7 +325,7 @@ export function AutomationsPage() {
                 type="button"
                 aria-current={tab === item.id ? 'page' : undefined}
                 onClick={() => {
-                  void navigate({ to: '/automations', search: { tab: item.id } });
+                  selectTab(item.id);
                 }}
                 className={cn(
                   'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
@@ -294,13 +357,16 @@ export function AutomationsPage() {
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-4xl p-4 md:p-6">
-          {tab === 'rules' ? (
+          {tab === 'rules' && capabilities?.manageAutomations === true && (
             <RulesPanel orgId={orgId} />
-          ) : tab === 'webhooks' ? (
+          )}
+          {tab === 'webhooks' && capabilities?.manageWebhooks === true && (
             <WebhooksSection orgId={orgId} />
-          ) : tab === 'apiTokens' ? (
-            <ApiTokensSection orgId={orgId} />
-          ) : (
+          )}
+          {tab === 'apiTokens' && capabilities?.createApiTokens === true && (
+            <ApiTokensSection orgId={orgId} canRevoke={capabilities.revokeApiTokens} />
+          )}
+          {tab === 'integrations' && capabilities?.manageIntegrations === true && (
             <IntegrationsSection orgId={orgId} />
           )}
         </div>

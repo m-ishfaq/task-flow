@@ -84,13 +84,25 @@ describe('member grants — decide.ts composition', () => {
 });
 
 describe('GRANTABLE_PERMISSIONS / isGrantable', () => {
-  it('accepts the telephony permissions the phase spec names as the starting set', () => {
+  it('accepts the telephony permissions the phase spec names as the Wave 1 starting set', () => {
     for (const permission of [
       'phoneNumber:read',
       'call:place',
       'call:read',
       'sms:send',
       'sms:read',
+    ] as const) {
+      expect(isGrantable(permission)).toBe(true);
+    }
+  });
+
+  it('accepts the Wave 2 automation permissions', () => {
+    for (const permission of [
+      'automation:manage',
+      'webhook:manage',
+      'integration:manage',
+      'apiToken:create',
+      'apiToken:revoke',
     ] as const) {
       expect(isGrantable(permission)).toBe(true);
     }
@@ -103,13 +115,12 @@ describe('GRANTABLE_PERMISSIONS / isGrantable', () => {
       'org:billing',
       'member:manage',
       'member:remove',
-      'apiToken:create',
     ] as const) {
       expect(isGrantable(permission)).toBe(false);
     }
   });
 
   it('has no duplicate entries', () => {
-    expect(GRANTABLE_PERMISSIONS.size).toBe(5);
+    expect(GRANTABLE_PERMISSIONS.size).toBe(10);
   });
 });

@@ -68,14 +68,19 @@ export default function Account() {
   const paddingTop = useTopInset();
 
   /* Gates the Automations and Insights links below — `automation:manage`/
-     `analytics:read`, both Admin-and-Owner-only by role alone, the same
-     `capabilities` object `org-settings.tsx` already reads from this
-     identical route (Phase 15 §1's sweep: Automations rendered with NO gate
-     at all, and Insights used a hardcoded `role === 'owner' || role ===
-     'admin'` string comparison — the exact inline-role-comparison pattern
-     `packages/policy/src/roles.ts`'s own header calls out as a lint error
-     everywhere outside `packages/policy`, just not caught here because
-     nothing in this app lints for it). */
+     `analytics:read` — the same `capabilities` object `org-settings.tsx`
+     already reads from this identical route (Phase 15 §1's sweep:
+     Automations rendered with NO gate at all, and Insights used a
+     hardcoded `role === 'owner' || role === 'admin'` string comparison —
+     the exact inline-role-comparison pattern `packages/policy/src/roles.ts`'s
+     own header calls out as a lint error everywhere outside
+     `packages/policy`, just not caught here because nothing in this app
+     lints for it). `analytics:read` is still Admin-and-Owner-only by role
+     alone; `automation:manage` joined `GRANTABLE_PERMISSIONS` in Wave 2, but
+     this screen only ever needed the ONE permission that gates the rules
+     screen it links to (`automations.tsx` has no webhook/integration/API
+     token UI — that is web-only) — `manageAutomations` specifically, not an
+     "any of" the four automation permissions the web sidebar now checks. */
   const capabilities = useQuery({
     queryKey: ORG_DETAIL_QUERY_KEY,
     queryFn: async () => wire(await apiClient.tenancy.orgs.get.query()),
@@ -140,11 +145,11 @@ export default function Account() {
         >
           <Text style={styles.secondaryButtonText}>People</Text>
         </Pressable>
-        {/* `automation:manage`, Admin-and-Owner-only by role, no tuple and
-            no member grant — nothing ever turns it on for a Member, so
-            (Phase 15 §1's sweep) this hides entirely rather than showing a
-            link that always lands on FORBIDDEN. */}
-        {capabilities?.viewAutomations === true && (
+        {/* `automation:manage` — Admin/Owner by role, or an individual
+            grant (Wave 2). This hides entirely for anyone with neither,
+            rather than showing a link that always lands on FORBIDDEN
+            (Phase 15 §1's sweep). */}
+        {capabilities?.manageAutomations === true && (
           <Pressable
             style={styles.secondaryButton}
             onPress={() => {
