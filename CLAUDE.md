@@ -256,29 +256,42 @@ code, the exact "a status marker is a claim, not a fact" failure this section do
 3.5, 5, 7 and 8, caught here in the governance doc itself).** Shipped since Phase 8, each with a
 detailed entry somewhere below or a spec in [ai/](ai/): **Phase 9 (Notifications)** — bell,
 digests, due reminders, web + Expo push (`apps/api/src/platform`, migration 0027); **Phase 10
-(Automation & webhooks)** — the `apps/worker` consumers (migrations 0047, 0049, 0055); **Phase 10.5
-(Sprints)** — `work.sprints` (migration 0054), with the Phase 10.6 sprint-flow slices built on top
-(spec header still reads DRAFT); **Phase 11.5 (People)** — `apps/api/src/people`, `people.profiles`
-(migration 0030); **Phase 12 Wave 3 (Billing)** — see its corrected entry below; **Phase 13 Wave 2
-(WebRTC ringing/recording)** — see the Phase 13 section; **operator broadcasts** — migrations
-0083–0084, `apps/api/src/platform-admin/broadcast*.ts`; and **Phase 14 (Mobile)** — a full Expo /
-React Native app (`apps/mobile`) covering auth, Work, Chat, Docs, Calls, People and Billing, whose
-own spec header (`ai/phase-14-mobile.md`) still says "DRAFT, Wave 1 only" despite the shipped
-breadth; **Phase 11 (Analytics)** — velocity, burndown, CFD, cycle time, workload, volume and
+(Automation & webhooks)** — the `apps/worker` consumers (migrations 0047, 0049, 0055), all four
+waves (engine, webhooks, public API + scoped tokens, connectors and the flagged telephony
+actions), not just Wave 1 — PLAN.md §13's roadmap row said "Waves 2-4... not started" until this
+pass corrected it; **Phase 10.5 (Sprints)** — `work.sprints` (migration 0054), with the Phase 10.6
+sprint-flow slices (all four) built on top — that spec's own header said only slices 1-3 were
+built and "uncommitted" until this pass corrected it, past tense being the operative word: the
+code has been in `main` for some time; **Phase 11.5 (People)** — `apps/api/src/people`,
+`people.profiles` (migration 0030); **Phase 12 Wave 1 (org governance & platform admin)** and
+**Wave 3 (Billing)** — see their corrected entries below, both of whose own spec headers said
+"DRAFT, not yet approved for build" long after shipping; **Phase 13 Wave 2 (WebRTC
+ringing/recording)** — see the Phase 13 section; **operator broadcasts** — migrations 0083–0084,
+`apps/api/src/platform-admin/broadcast*.ts`; **Phase 14 (Mobile)** — a full Expo / React Native app
+(`apps/mobile`) covering auth, Work, Chat, Docs, Calls, People and Billing, whose own spec header
+(`ai/phase-14-mobile.md`) said "DRAFT, Wave 1 only" despite the shipped breadth until this pass
+corrected it; **Phase 11 (Analytics)** — velocity, burndown, CFD, cycle time, workload, volume and
 spend dashboards (`apps/api/src/analytics`, `apps/web/src/features/analytics`), whose own spec
-header said "DRAFT... awaiting approval" the whole time; and **Phase 12 Wave 4 (Plan catalog &
+header said "DRAFT... awaiting approval" the whole time; **Phase 12 Wave 4 (Plan catalog &
 entitlements)** — the four-tier plan/override resolution in `apps/api/src/billing/
 entitlement-resolver.ts` and its operator-facing editor in `plans-tab.tsx`, whose own spec header
 said "DRAFT... nothing built" the whole time. **Both of those last two headers were corrected the
-same day a real gap between them was found**: `analytics`'s flag had existed in the registry since
-Phase 11 landed, but no analytics route ever checked it, so every org on every plan received full
-analytics for free — the entitlement system Wave 4 built to gate exactly this kind of module was
-never connected to it. Fixed by adding `feature: { flag: 'analytics', ... }` to every route in
-`apps/api/src/analytics/router.ts` and granting `analytics` to the `business` tier in
-`packages/seed/src/modules/billing.catalog.ts` — the first real feature difference between `pro`
+same day a real gap between them was found**:
+`analytics`'s flag had existed in the registry since Phase 11 landed, but no analytics route ever
+checked it, so every org on every plan received full analytics for free — the entitlement system
+Wave 4 built to gate exactly this kind of module was never connected to it. Fixed by adding
+`feature: { flag: 'analytics', ... }` to every route in `apps/api/src/analytics/router.ts` and
+granting `analytics` to the `business` tier in `packages/seed/src/modules/billing.catalog.ts` —
+the first real feature difference between `pro`
 and `business`, which previously differed only on limits and price. When in doubt, open the
 newest `ai/phase-*.md` and read its status header, remembering it too can lag the code — twice
 more, in this case.
+
+**One phase was missing from this list entirely, not just stale within it: Phase 15.** §1 (org-level
+permission grants) shipped and was then substantially extended — see its own section below, added
+by this same pass. §2 onward (the AI copilot itself: `packages/ai`, the spend ledger, the
+assistant, the standup view, GitHub PR review, onboarding/offboarding automation) remain exactly
+as drafted in `ai/phase-15-ai-copilot-and-permissions.md` — designed, not built.
 
 **Phase 0B, Phase 1 (identity), Phase 2 (tenancy, authz & audit) and Phase 3 (Work) complete** —
 backend and `apps/web`.
@@ -379,6 +392,85 @@ before clearing a page's published pointer, and Postgres refused it —
 never be left pointing at a version that no longer exists. Fixed in the test (clear the pointer
 first, delete the version rows after — "children before parents," the same ordering
 `tenancy-seed.ts`'s `clearTenant` already documents for Work), not in the schema.
+
+### Phase 15 §1 — org-level permission grants (SHIPPED, extended past its own spec)
+
+`packages/policy/src/permissions.ts` (`GRANTABLE_PERMISSIONS`) · `authz.member_grants` ·
+`apps/api/src/tenancy/member-grant.service.ts` · `apps/web/src/features/admin/settings-page.tsx`
+(`PermissionsSection`) · `apps/mobile/app/(app)/permissions.tsx`. Spec:
+[ai/phase-15-ai-copilot-and-permissions.md](ai/phase-15-ai-copilot-and-permissions.md) — its own
+header names exactly what shipped and what is still just designed; §2 onward (the AI copilot
+itself) has no code behind it yet.
+
+**One org-level permission, given to one specific member on top of their role, with no resource
+attached.** This is deliberately a SECOND mechanism from relationship tuples, not tuples stretched
+to cover a shape they were not built for — `permissions.ts`'s own `ORG_LEVEL_PERMISSIONS` already
+drew that boundary before this phase, and this phase does not remove it. `can()` composes role +
+tuple + grant; a grant only ever ADDS capability, never narrows what a role already gives (taking
+capability away from one member is a harder, explicitly deferred problem — see the spec's §9).
+
+**Closed the telephony gap the phase exists to fix, then found and closed the same gap for
+automation.** `call:place`/`call:read`/`sms:send`/`sms:read`/`phoneNumber:read` moved off the flat
+Member role onto individual grants first (Wave 1, migration 0098 backfilling existing access so
+nobody already using it was silently cut off). A follow-up pass added `automation:manage`,
+`webhook:manage`, `integration:manage`, `apiToken:create`, and `apiToken:revoke` to the same list —
+an org can now hand one Member the ability to build automation rules, or manage the webhook
+registry, without promoting them to Admin. Safe for the identical reason it is safe for every
+Admin: `automation.service.ts` asks no per-resource question when a rule is BUILT, because the
+resource-aware question is asked again at EXECUTION, in the worker, against the rule owner's own
+live permissions re-resolved on every run — granting the ability to build a rule never also grants
+what a built rule can do.
+
+**A full sweep found and fixed every remaining place a permission-gated control rendered
+unconditionally.** The pattern report started with two live bugs: a Member opening Settings →
+Billing got a raw "You do not have permission to do that" instead of the section simply not being
+there, and the "Individual permissions" list itself disclosed which extra permission each colleague
+held to anyone who could see the Members page. A search-first sweep across `apps/web` and
+`apps/mobile` (deliberately done before any fixing, per the standing instruction that motivated it)
+found the same shape repeated: telephony's Buy/Release buttons, Docs space creation and page
+archive/restore, board/list/sprint management, comment moderation, card recordings, saved-search
+sharing, and — found only by following the exact URL that had originally reported the bug, after
+the sweep itself had already been declared done — the People page's "Manage member" edit form,
+which rendered for anyone viewing a colleague's profile regardless of role. Every one of these is
+now a boolean computed server-side from the real `can()` check (`SettingsCapabilities` for
+org-level permissions, a per-row `capabilities` object for resource-scoped ones like
+`board:update`/`space:manage`/`page:delete`), read by the client to decide what to render — never a
+second authorization decision, and never assumed to be the last one: this sweep is the second time
+this exact bug class was found in this codebase (the first is Phase 5's `closed`-target findings),
+which is worth remembering the next time a permission is added to `GRANTABLE_PERMISSIONS` and every
+one of its old unconditional display sites needs the identical re-check, not just the one that gets
+reported.
+
+**Hide entirely, except when the underlying data is already visible.** The default fix for a
+control gated on a permission not every role holds is to hide it, not disable it — a disabled
+control still discloses that the action exists and, to anyone who inspects the DOM, exactly how it
+is wired. The one deliberate exception is the People page's "Manage member" section: job
+title/department/work phone/manager are not privileged the way billing figures or another
+colleague's individual grants are — they are already visible elsewhere on the same page as
+read-only badges and an org-chart card — so a caller without `manageMembers` gets
+`PersonFactsSummary`, the same four fields presented read-only, instead of nothing. Getting this
+distinction right required checking, for each hidden section, whether hiding it actually withheld
+information the viewer could not already see, not applying one rule everywhere.
+
+**The one-member-one-permission add form became a bulk batch, on both platforms.** Both the member
+picker and the permission picker in `settings-page.tsx`'s `PermissionsSection` are multi-select —
+choosing 3 members and 2 permissions and submitting once grants the full 3×2 Cartesian product.
+There is no new bulk server endpoint: `runGrantBatch` calls the existing single-pair
+`memberGrants.grant` route once per pair in sequence, which is safe only because that route is
+idempotent (granting something already granted returns the existing row) — a batch that fails
+partway through a step-up prompt is retried from the start in full, and every pair before the
+failure point silently no-ops rather than erroring or duplicating. The list gained the identical
+batching in reverse (checkboxes + "Revoke selected"), which needed `member-grant.service.ts`'s
+`revoke()` to gain the same idempotency `grant()` already had — without it, a retried revoke batch
+would 404 on a pair it already revoked before the interruption and abort whatever was left selected.
+A missing MEMBERSHIP still throws on either route; that is a different failure from "already
+granted" or "already revoked", not the same one.
+
+**Mobile had no Individual Permissions screen at all until this pass** — web-only since the
+feature was built, a real gap rather than a deliberate platform difference, and one that mattered
+more once the automation permissions became grantable too: before `permissions.tsx` existed, an
+org running mobile-only had no way to hand one out. Built to the identical bulk-grant shape as web,
+reusing the same mobile `useStepUp`/`StepUpSheet` pair `org-settings.tsx` already established.
 
 ### Phase 8 — Search & TQL (COMPLETE, all three waves)
 

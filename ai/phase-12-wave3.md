@@ -1,10 +1,17 @@
 # Phase 12, Wave 3 — Billing & org lifecycle
 
-**Status: DRAFT, not yet approved for build.** Written 2026-08-12, at the project owner's request,
-after a design conversation about a real point of confusion: with Wave 1 and Wave 2 both shipped,
-org role and platform-operator access are already fully decoupled in code — but nothing in the
-system says _when_ an org should lose access for non-payment, and that gap is what made "an org
-owner" and "the system admin" feel like the same thing in practice. This wave closes that gap.
+**Status: SHIPPED.** Written 2026-08-12, at the project owner's request, after a design
+conversation about a real point of confusion: with Wave 1 and Wave 2 both shipped, org role and
+platform-operator access are already fully decoupled in code — but nothing in the system says
+_when_ an org should lose access for non-payment, and that gap is what made "an org owner" and "the
+system admin" feel like the same thing in practice. This wave closes that gap. This header said
+"DRAFT, not yet approved for build" long after `packages/payments`, `apps/api/src/billing`
+(`org-billing.service.ts`, `webhook.routes.ts`, `entitlement-resolver.ts`, `overage.service.ts`,
+`sweep.service.ts`, `billing-mail.ts`), migration 0059 (`identity.orgs.billing_status`), and the
+billing UI in both `apps/web` and `apps/mobile` had all landed — CLAUDE.md's own Phase 12 Wave 3
+section already documented this in detail while this file's header still claimed nothing had been
+approved. Left corrected in place rather than silently rewritten, per this repo's own "a status
+marker is a claim, not a fact" discipline (CLAUDE.md).
 
 Parent: [PLAN.md](../PLAN.md) §13 (Roadmap, row 12). Siblings:
 [phase-12-admin.md](phase-12-admin.md) (Wave 1 — org governance & platform admin, shipped),

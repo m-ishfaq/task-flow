@@ -359,13 +359,16 @@ thing it gates.
 - **Wave 3 — the public API and scoped tokens.** `tf_pat` tokens with per-token scopes, a
   quota-based rate limit (PLAN.md §627 names analytics/search/export/telephony as the
   quota tier). §9 decision 5 resolved the surface question: one API, the existing tRPC
-  router with token auth. **Fully spec'd in §6, 2026-08-11 — not built.**
+  router with token auth. **SHIPPED 2026-08-11** (`apiToken.router.ts` — this bullet said "not
+  built" long after the header above already recorded Wave 3 COMPLETE; left corrected in place).
 - **Wave 4 — connectors, import/export, and the cost-bearing actions.** Slack and GitHub as
   the two named integrations, plus CSV/JSON importers and exporters. A connector is a webhook
   with a known shape and an OAuth credential, so everything here is built on Waves 2–3's
   primitives. **`place call` / `send SMS` SHIPPED 2026-08-12** (§5.5 — off-by-default env
-  flag and their own sub-budget, commit `1e48295`); **the connectors and import/export are
-  spec'd in §7, not yet built.**
+  flag and their own sub-budget, commit `1e48295`); **the connectors and import/export SHIPPED
+  2026-08-12 too** (`integration.router.ts`, `integration-action.service.ts` — this bullet said
+  "not yet built" long after the header above already recorded Wave 4 COMPLETE; left corrected
+  in place, per this repo's own "a status marker is a claim, not a fact" discipline).
 
 ---
 

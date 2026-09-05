@@ -1,8 +1,31 @@
 # Phase 15 — Org-Level Permission Grants & AI Copilot
 
-**Status: DRAFT — not yet approved for build.** Written up per this repo's own convention (see
-CLAUDE.md's running note that "a status marker is a claim, not a fact") so that build order and
-scope are agreed before code, not discovered after. Nothing in this document has been implemented.
+**Status: §1 (org-level permission grants) SHIPPED and extended past this draft's own scope; §2–§8
+(the AI copilot itself) remain DRAFT — not yet approved for build, and nothing in those sections
+has been implemented.** Written up per this repo's own convention (see CLAUDE.md's running note
+that "a status marker is a claim, not a fact") so that build order and scope are agreed before
+code, not discovered after — left corrected in place here rather than silently rewritten, per that
+same convention, once §1 shipped without this header being updated.
+
+**What §1 actually shipped, past what this draft asked for:** the `authz.member_grants` mechanism,
+`can()` composing role + tuple + grant, and the telephony five (`phoneNumber:read`, `call:place`,
+`call:read`, `sms:send`, `sms:read`) becoming individually grantable — closing the §0.3 gap this
+phase exists to fix. Then, in a follow-up pass this same header failed to record until now: a
+second wave made `automation:manage`, `webhook:manage`, `integration:manage`, `apiToken:create`,
+and `apiToken:revoke` individually grantable too (`GRANTABLE_PERMISSIONS` now holds ten entries,
+not five); a full sweep across `apps/web` and `apps/mobile` found and fixed every remaining place a
+permission-gated control rendered unconditionally and let the click answer FORBIDDEN, rather than
+hiding (or, for the People page specifically, presenting read-only) the control a caller could
+never use; the one-member-one-permission add form in `settings-page.tsx` became a bulk multi-select
+grant AND revoke UI on both platforms; and `apps/mobile` gained a full Individual Permissions
+screen (`permissions.tsx`) where none existed before. None of that — Wave 2's permission set, the
+sweep, the bulk UI, or mobile parity — is described anywhere above in §1.1–§1.4; this status line is
+the only place that says so until §1 itself is rewritten to match.
+
+**§2 through §8 — the AI provider foundation, the spend ledger, the assistant, the standup view,
+the doc-space bootstrap, GitHub/PR review, and onboarding/offboarding automation — are exactly as
+drafted below: designed, not built.** `packages/ai` does not exist; no `ai:use` permission exists;
+none of §4's tools, §5's standup screen, or §7's PR review/merge tools have any code behind them.
 This spec intentionally covers several waves under one phase number because they share one
 foundation (§1) and were scoped together in one planning conversation — later waves may be split
 into their own `ai/phase-1N-*.md` files once build starts, the way Phase 12's waves eventually got

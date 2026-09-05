@@ -1,11 +1,16 @@
 # Phase 14 — Mobile (Android & iOS)
 
-Status: **DRAFT, not yet approved.** Written 2026-08-20. This draft scopes **Wave 1 only — the
-mobile foundation spine**: the shared client, the native session/auth model, the socket layer,
-the org gate, the navigation shell, and the guardrail story for a new rendering surface. It is
-the mobile equivalent of Phases 0B–4 for the web — the base every product surface will later sit
-on — and deliberately ships **no product feature**. Work, Chat, Docs, and Voice are named here as
-later waves so the spine is designed to hold them, not built now.
+Status: **Wave 1 SHIPPED, and so is far more than this draft ever scoped.** Written 2026-08-20,
+this draft scoped **Wave 1 only — the mobile foundation spine**: the shared client, the native
+session/auth model, the socket layer, the org gate, the navigation shell, and the guardrail story
+for a new rendering surface — deliberately shipping **no product feature**, with Work, Chat, Docs,
+and Voice named only as later waves the spine was designed to hold. The header said "DRAFT, not
+yet approved" long after that: `apps/mobile` today is a full app covering auth, Work, Chat, Docs,
+Calls, People, and Billing. None of those later waves is scoped in THIS document's body — they
+were built without a corresponding spec addendum here, which is itself worth knowing before
+trusting this file's own §-numbered sections as a map of what exists; read the code under
+`apps/mobile/app/` directly for anything past Wave 1's spine. Left corrected in place rather than
+silently rewritten, per this repo's own "a status marker is a claim, not a fact" discipline.
 
 Read this header before trusting a phase marker anywhere else. The standing lesson from Phases
 3.5, 5, 7, 8 and 12 Wave 2 holds with extra force here: **a status marker is a claim, not a
