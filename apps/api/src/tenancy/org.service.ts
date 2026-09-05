@@ -255,6 +255,20 @@ export interface SettingsCapabilities {
   readonly viewAutomations: boolean;
   /** Same reasoning again, for the "Audit log" link and `audit:read`. */
   readonly viewAuditLog: boolean;
+  /**
+   * The five telephony permissions (`GRANTABLE_PERMISSIONS`,
+   * `packages/policy/src/permissions.ts`), UNLIKE the three above, are not
+   * all-or-nothing by role: Admin and Owner hold all five by role, but a
+   * Member holds each independently, only via an explicit
+   * `authz.member_grants` row (migration 0097/0098). So these are five
+   * booleans, not one — someone can have `readSms` and nothing else, and the
+   * UI must reflect exactly that, not "has telephony" as a single flag.
+   */
+  readonly readPhoneNumbers: boolean;
+  readonly placeCalls: boolean;
+  readonly readCalls: boolean;
+  readonly sendSms: boolean;
+  readonly readSms: boolean;
 }
 
 export interface OrgDetail {
@@ -311,6 +325,15 @@ export async function getOrg(orgId: OrgId, subject: Subject): Promise<OrgDetail>
       viewAnalytics: can(subject, 'analytics:read').allowed,
       viewAutomations: can(subject, 'automation:manage').allowed,
       viewAuditLog: can(subject, 'audit:read').allowed,
+      /* Individually granted (Phase 15 §1) — see the interface doc comment.
+         Each reads `subject.memberGrants` through the same `can()` a route
+         floors on, so a grant made in Settings shows up here with no second
+         source of truth. */
+      readPhoneNumbers: can(subject, 'phoneNumber:read').allowed,
+      placeCalls: can(subject, 'call:place').allowed,
+      readCalls: can(subject, 'call:read').allowed,
+      sendSms: can(subject, 'sms:send').allowed,
+      readSms: can(subject, 'sms:read').allowed,
     },
   };
 }

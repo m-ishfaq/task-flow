@@ -96,9 +96,10 @@ export function PersonPage({ userId }: { readonly userId: string }) {
               <>
                 <span className="font-mono text-xs text-ink-muted">{member.workPhone}</span>
                 {/* Click-to-call from a contact — PLAN.md §3.4's second of the
-                    three surfaces it names. The button renders for everyone and
-                    the server decides; a member without `call:place` gets a real
-                    FORBIDDEN rather than a control that quietly is not there. */}
+                    three surfaces it names. `CallButton` hides itself for a
+                    member without `call:place` (Phase 15 §1) — see its own
+                    doc comment for why that changed from "render for
+                    everyone and let the server decide". */}
                 <CallButton orgId={orgId} to={member.workPhone} variant="primary" />
               </>
             )}

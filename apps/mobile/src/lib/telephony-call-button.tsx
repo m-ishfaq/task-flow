@@ -5,6 +5,7 @@ import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from './app-session.js';
 import { apiErrorOf } from './trpc-client.js';
+import { ORG_DETAIL_QUERY_KEY } from './org-settings.js';
 import { CALLS_QUERY_KEY, PHONE_NUMBERS_QUERY_KEY, SPEND_CURRENT_QUERY_KEY } from './telephony.js';
 
 /**
@@ -18,16 +19,23 @@ import { CALLS_QUERY_KEY, PHONE_NUMBERS_QUERY_KEY, SPEND_CURRENT_QUERY_KEY } fro
  * (`features/rtc/call-button.tsx` vs `features/telephony/call-button.tsx`);
  * this app is flat under `src/lib/`, so the name itself has to do that job.
  *
- * ## It re-derives no authorization
+ * ## It hides itself, and that is new (Phase 15 §1)
  *
- * The button renders for everyone and the server answers — the same
- * argument this app's own Phase 13 `CallButton` already makes. A member
- * without `call:place` gets an honest FORBIDDEN via `Alert.alert` rather
- * than a control that silently is not there.
+ * `call:place` used to be a Member role default, so "render for everyone
+ * and let the server answer" was correct — nobody would ever actually be
+ * refused. It is now an individually granted permission
+ * (`authz.member_grants`), so a Member who does not hold it would
+ * otherwise see a live "Call" button on the call log and every SMS thread
+ * and get a FORBIDDEN alert every time — see
+ * `apps/web/src/features/telephony/call-button.tsx`'s own doc comment for
+ * the identical fix on the other platform. `capabilities.placeCalls` is
+ * the same server-computed boolean `calls.tsx` reads
+ * (`tenancy.orgs.get`), so this still is not re-deriving `can()`. Renders
+ * `null` while that capability is loading or absent.
  *
- * The ONE thing checked locally is whether the org owns a number at all —
- * not a permission, a precondition with a specific remedy ("buy one"), and
- * a FORBIDDEN-shaped error would describe it wrongly.
+ * The ONE thing checked locally beyond that is whether the org owns a
+ * number at all — not a permission, a precondition with a specific remedy
+ * ("buy one"), and a FORBIDDEN-shaped error would describe it wrongly.
  *
  * ## Never records
  *
@@ -45,11 +53,17 @@ export function TelephonyCallButton({
   readonly to: string;
   readonly label?: string;
   readonly variant?: 'primary' | 'ghost';
-}): React.JSX.Element {
+}): React.JSX.Element | null {
   const queryClient = useQueryClient();
+  const org = useQuery({
+    queryKey: ORG_DETAIL_QUERY_KEY,
+    queryFn: async () => wire(await apiClient.tenancy.orgs.get.query()),
+  });
+  const canPlaceCalls = org.data?.capabilities.placeCalls === true;
   const numbers = useQuery({
     queryKey: PHONE_NUMBERS_QUERY_KEY,
     queryFn: async () => wire(await apiClient.telephony.numbers.list.query({})),
+    enabled: canPlaceCalls,
   });
 
   const from = numbers.data?.[0]?.phoneNumberId ?? '';
@@ -71,6 +85,10 @@ export function TelephonyCallButton({
   });
 
   const noNumber = !numbers.isPending && from === '';
+
+  // Renders nothing until the capability is known, and nothing at all for a
+  // caller who does not hold `call:place` — see the doc comment above.
+  if (!canPlaceCalls) return null;
 
   return (
     <Pressable

@@ -105,6 +105,11 @@ export default function OrgSettingsScreen() {
     viewAnalytics: false,
     viewAutomations: false,
     viewAuditLog: false,
+    readPhoneNumbers: false,
+    placeCalls: false,
+    readCalls: false,
+    sendSms: false,
+    readSms: false,
   };
 
   const refreshMembers = async (): Promise<void> => {

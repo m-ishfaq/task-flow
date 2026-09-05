@@ -195,6 +195,11 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
     viewAnalytics: false,
     viewAutomations: false,
     viewAuditLog: false,
+    readPhoneNumbers: false,
+    placeCalls: false,
+    readCalls: false,
+    sendSms: false,
+    readSms: false,
   };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.members(orgId) });
@@ -558,6 +563,11 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
     viewAnalytics: false,
     viewAutomations: false,
     viewAuditLog: false,
+    readPhoneNumbers: false,
+    placeCalls: false,
+    readCalls: false,
+    sendSms: false,
+    readSms: false,
   };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.memberGrants(orgId) });

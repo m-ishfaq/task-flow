@@ -363,6 +363,15 @@ const chatRoute = createRoute({
  * `router.ts`'s own inputs are — every telephony route takes
  * `z.string().uuid()`, not a branded schema (§6.3: no relationship-tuple or
  * ancestor component to a telephony resource, so nothing here needed one).
+ *
+ * Also wrapped in `CapabilityGate`, `anyOf` rather than a single
+ * `capability` (Phase 15 §1): unlike Analytics/Automations/Audit log, none
+ * of the five telephony permissions are all-or-nothing by role for a
+ * Member — each is its own `authz.member_grants` row, so a Member with only
+ * `sms:read` still needs to reach this route to use it. The page itself
+ * (`telephony-page.tsx`) gates each TAB on its own specific capability;
+ * this route-level gate only refuses someone holding NONE of the five,
+ * matching the sidebar's own `anyOfCapabilities` on the `/calls` nav item.
  */
 const telephonyRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -380,7 +389,9 @@ const telephonyRoute = createRoute({
   beforeLoad: () => requireOrg('/calls'),
   component: () => (
     <FeatureGate flag="telephony">
-      <TelephonyPage />
+      <CapabilityGate anyOf={['readPhoneNumbers', 'placeCalls', 'readCalls', 'sendSms', 'readSms']}>
+        <TelephonyPage />
+      </CapabilityGate>
     </FeatureGate>
   ),
 });

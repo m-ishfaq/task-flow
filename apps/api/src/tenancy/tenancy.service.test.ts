@@ -205,11 +205,18 @@ describe('settings capabilities', () => {
       viewAnalytics: true,
       viewAutomations: true,
       viewAuditLog: true,
+      readPhoneNumbers: true,
+      placeCalls: true,
+      readCalls: true,
+      sendSms: true,
+      readSms: true,
     });
 
     // A plain Member holds none of these — card:create and friends do not
     // touch org, member, team, project, analytics, automation, or audit
-    // administration at all.
+    // administration at all, and (Phase 15 §1) the telephony five are no
+    // longer role defaults either: this Member has no `authz.member_grants`
+    // row, so all five read false too.
     expect(asMember.capabilities).toEqual({
       updateOrg: false,
       inviteMember: false,
@@ -220,6 +227,11 @@ describe('settings capabilities', () => {
       viewAnalytics: false,
       viewAutomations: false,
       viewAuditLog: false,
+      readPhoneNumbers: false,
+      placeCalls: false,
+      readCalls: false,
+      sendSms: false,
+      readSms: false,
     });
   });
 
@@ -248,6 +260,11 @@ describe('settings capabilities', () => {
       viewAnalytics: true,
       viewAutomations: true,
       viewAuditLog: true,
+      readPhoneNumbers: true,
+      placeCalls: true,
+      readCalls: true,
+      sendSms: true,
+      readSms: true,
     });
   });
 });

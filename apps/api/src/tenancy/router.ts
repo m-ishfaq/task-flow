@@ -100,6 +100,11 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
                 viewAnalytics: z.boolean(),
                 viewAutomations: z.boolean(),
                 viewAuditLog: z.boolean(),
+                readPhoneNumbers: z.boolean(),
+                placeCalls: z.boolean(),
+                readCalls: z.boolean(),
+                sendSms: z.boolean(),
+                readSms: z.boolean(),
               })
               .strict(),
           }),

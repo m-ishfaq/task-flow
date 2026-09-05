@@ -121,6 +121,15 @@ interface NavItem {
    * here would advertise a door nothing can open for them.
    */
   readonly capability?: keyof SettingsCapabilities;
+  /**
+   * Like `capability`, but satisfied by ANY ONE of these — for a page whose
+   * access is not all-or-nothing by role. Telephony (Phase 15 §1) is the
+   * first case: Admin/Owner hold all five `GRANTABLE_PERMISSIONS` by role,
+   * but a Member holds each independently via `authz.member_grants`, so
+   * someone with only `sms:read` still needs to see "Calls" in the rail —
+   * gating on a single capability key here would hide it for them too.
+   */
+  readonly anyOfCapabilities?: readonly (keyof SettingsCapabilities)[];
 }
 
 const PRIMARY_SECTIONS: readonly {
@@ -139,7 +148,13 @@ const PRIMARY_SECTIONS: readonly {
     items: [
       { to: '/chat', label: 'Chat', icon: MessageSquare, flag: 'chat' },
       { to: '/docs', label: 'Docs', icon: FileText, flag: 'docs' },
-      { to: '/calls', label: 'Calls', icon: Phone, flag: 'telephony' },
+      {
+        to: '/calls',
+        label: 'Calls',
+        icon: Phone,
+        flag: 'telephony',
+        anyOfCapabilities: ['readPhoneNumbers', 'placeCalls', 'readCalls', 'sendSms', 'readSms'],
+      },
       { to: '/people', label: 'People', icon: Users },
       {
         to: '/analytics',
@@ -293,8 +308,15 @@ export function Sidebar() {
     enabled: orgId !== null,
   }).data?.capabilities;
 
-  const visible = (item: NavItem): boolean =>
-    item.capability === undefined || capabilities?.[item.capability] === true;
+  const visible = (item: NavItem): boolean => {
+    if (item.capability !== undefined && capabilities?.[item.capability] !== true) return false;
+    if (
+      item.anyOfCapabilities !== undefined &&
+      !item.anyOfCapabilities.some((capability) => capabilities?.[capability] === true)
+    )
+      return false;
+    return true;
+  };
 
   /* `sidebarOpen` is a DESKTOP preference — collapse to a rail to reclaim
      width. Below `md` this component is rendered inside Shell's off-canvas

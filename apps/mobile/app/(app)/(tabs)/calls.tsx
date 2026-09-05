@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -27,6 +27,7 @@ import { useStepUp } from '../../../src/lib/use-step-up.js';
 import { StepUpSheet } from '../../../src/lib/step-up-sheet.js';
 import { TelephonyCallButton } from '../../../src/lib/telephony-call-button.js';
 import { TelephonyContactPicker } from '../../../src/lib/telephony-contact-picker.js';
+import { ORG_DETAIL_QUERY_KEY, type SettingsCapabilities } from '../../../src/lib/org-settings.js';
 import {
   CALLS_QUERY_KEY,
   MESSAGE_THREADS_QUERY_KEY,
@@ -70,27 +71,67 @@ import {
  * so it is local state instead — the same simplification `org-settings.tsx`
  * already makes for its own sections.
  *
- * Per CLAUDE.md §8.2, nothing here re-derives authorization: every control
- * renders unconditionally, and a caller without the permission gets a real
- * FORBIDDEN from the server — `phoneNumber:read`/`call:read`/`sms:read`
- * cover MEMBER for three tabs; Spend's itemized report needs
- * `recording:read` (Admin), so a member sees "current spend" and a
- * FORBIDDEN on the report below it, exactly as the server's own tiering
- * intends.
+ * Per CLAUDE.md §8.2, nothing here re-derives authorization — every tab
+ * still renders through the server, which is what actually refuses a
+ * request. What changed (Phase 15 §1, ported from the identical fix in
+ * `apps/web/src/features/telephony/telephony-page.tsx`):
+ * `phoneNumber:read`/`call:read`/`sms:read`/`call:place`/`sms:send` are no
+ * longer Member role defaults — they are individually granted via
+ * `authz.member_grants`, so a Member can hold any SUBSET of them. Each tab
+ * below is hidden unless its own `SettingsCapabilities` boolean is true,
+ * for the same reason web's fix states: rendering all four unconditionally
+ * would leave three of them permanently one tap from a "You do not have
+ * permission to do that" error for anyone with a partial grant. Spend's
+ * `report` sub-view still needs `recording:read` (ADMIN, not one of the
+ * five grantable permissions), so it stays an inline FORBIDDEN exactly as
+ * before — that half was never freely available to a Member to begin with.
  */
 
 const TABS = [
-  { id: 'calls', label: 'Calls' },
-  { id: 'numbers', label: 'Numbers' },
-  { id: 'messages', label: 'Messages' },
-  { id: 'spend', label: 'Spend' },
-] as const;
+  { id: 'calls', label: 'Calls', capability: 'readCalls' },
+  { id: 'numbers', label: 'Numbers', capability: 'readPhoneNumbers' },
+  { id: 'messages', label: 'Messages', capability: 'readSms' },
+  { id: 'spend', label: 'Spend', capability: 'readPhoneNumbers' },
+] as const satisfies readonly {
+  id: string;
+  label: string;
+  capability: keyof SettingsCapabilities;
+}[];
 
 type TabId = (typeof TABS)[number]['id'];
 
 export default function CallsScreen() {
   const paddingTop = useTopInset(4);
   const [tab, setTab] = useState<TabId>('calls');
+  const org = useQuery({
+    queryKey: ORG_DETAIL_QUERY_KEY,
+    queryFn: async () => wire(await apiClient.tenancy.orgs.get.query()),
+  });
+  const capabilities = org.data?.capabilities;
+
+  const visibleTabs =
+    capabilities === undefined ? [] : TABS.filter((item) => capabilities[item.capability]);
+
+  // If the current tab isn't one the caller can see (a partial grant that
+  // never covered it), land on the first tab that is.
+  useEffect(() => {
+    if (capabilities === undefined) return;
+    const allowed = TABS.filter((item) => capabilities[item.capability]);
+    if (allowed.some((item) => item.id === tab)) return;
+    const fallback = allowed[0];
+    if (fallback !== undefined) setTab(fallback.id);
+  }, [capabilities, tab]);
+
+  if (capabilities !== undefined && visibleTabs.length === 0) {
+    return (
+      <View style={[styles.container, styles.emptyState, { paddingTop }]}>
+        <Text style={styles.emptyStateText}>
+          You don&apos;t have access to any part of Voice &amp; Messaging yet. An admin or owner can
+          grant you access from Settings.
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { paddingTop }]}>
@@ -105,7 +146,7 @@ export default function CallsScreen() {
         style={styles.tabStripFrame}
         contentContainerStyle={styles.tabStrip}
       >
-        {TABS.map((entry) => (
+        {visibleTabs.map((entry) => (
           <Pressable
             key={entry.id}
             style={[styles.tab, tab === entry.id && styles.tabActive]}
@@ -120,10 +161,10 @@ export default function CallsScreen() {
         ))}
       </ScrollView>
 
-      {tab === 'calls' && <CallsPanel />}
-      {tab === 'numbers' && <NumbersPanel />}
-      {tab === 'messages' && <MessagesPanel />}
-      {tab === 'spend' && <SpendPanel />}
+      {tab === 'calls' && capabilities?.readCalls === true && <CallsPanel />}
+      {tab === 'numbers' && capabilities?.readPhoneNumbers === true && <NumbersPanel />}
+      {tab === 'messages' && capabilities?.readSms === true && <MessagesPanel />}
+      {tab === 'spend' && capabilities?.readPhoneNumbers === true && <SpendPanel />}
     </View>
   );
 }
@@ -1288,6 +1329,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.surface.hex,
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  emptyStateText: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    color: colors.inkMuted.hex,
   },
   titleRow: {
     height: 36,

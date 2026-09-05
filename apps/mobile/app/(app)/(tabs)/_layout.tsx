@@ -7,6 +7,7 @@ import { wire } from '@taskflow/client';
 import { colors } from '@taskflow/tokens';
 import { apiClient } from '../../../src/lib/app-session.js';
 import { CHANNELS_QUERY_KEY, unreadCountsQueryKey } from '../../../src/lib/chat.js';
+import { ORG_DETAIL_QUERY_KEY } from '../../../src/lib/org-settings.js';
 
 /**
  * The tab bar — the navigation-shell increment a real device run found
@@ -73,6 +74,29 @@ import { CHANNELS_QUERY_KEY, unreadCountsQueryKey } from '../../../src/lib/chat.
  * real history entry for `back()` to return to.
  */
 export default function TabsLayout() {
+  const org = useQuery({
+    queryKey: ORG_DETAIL_QUERY_KEY,
+    queryFn: async () => wire(await apiClient.tenancy.orgs.get.query()),
+  });
+  /* Phase 15 §1 — the five telephony permissions are no longer Member role
+     defaults, they are individually granted (`authz.member_grants`), so a
+     Member can hold any SUBSET of them rather than all-or-nothing. `href:
+     null` below (not omitting the `<Tabs.Screen>` entirely) hides the tab
+     from the bar while `calls.tsx` still handles someone reaching it some
+     other way — the same reasoning `apps/web/src/components/sidebar.tsx`'s
+     `anyOfCapabilities` states for the `/calls` nav item. Defaults to
+     hidden while loading, the fail-closed direction — a tab flashing in
+     then disappearing is a worse "wait, do I have this or not" moment than
+     one appearing a beat late. */
+  const capabilities = org.data?.capabilities;
+  const showCalls =
+    capabilities !== undefined &&
+    (capabilities.readPhoneNumbers ||
+      capabilities.placeCalls ||
+      capabilities.readCalls ||
+      capabilities.sendSms ||
+      capabilities.readSms);
+
   const channels = useQuery({
     queryKey: CHANNELS_QUERY_KEY,
     queryFn: async () => wire(await apiClient.chat.channels.list.query()),
@@ -172,6 +196,10 @@ export default function TabsLayout() {
         name="calls"
         options={{
           title: 'Calls',
+          // `exactOptionalPropertyTypes` refuses an explicit `undefined` for
+          // `href` (it wants the key omitted, not set to undefined) — so the
+          // "show" case spreads no override at all rather than `href: undefined`.
+          ...(showCalls ? {} : { href: null }),
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'call' : 'call-outline'} color={color} size={size} />
           ),

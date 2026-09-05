@@ -35,9 +35,19 @@ import { orgDetailQuery, type SettingsCapabilities } from '../features/org/api.j
  */
 export function CapabilityGate({
   capability,
+  anyOf,
   children,
 }: {
-  readonly capability: keyof SettingsCapabilities;
+  /** Required exactly, when the page is all-or-nothing by role (Analytics, Automations, Audit log). */
+  readonly capability?: keyof SettingsCapabilities;
+  /**
+   * Satisfied by ANY ONE of these — for a page whose access is granted
+   * per-permission rather than all-or-nothing, like telephony (Phase 15
+   * §1): a Member can hold `sms:read` without `call:place`, and still needs
+   * to reach `/calls` to use it. Exactly one of `capability`/`anyOf` should
+   * be passed.
+   */
+  readonly anyOf?: readonly (keyof SettingsCapabilities)[];
   readonly children: ReactNode;
 }) {
   const orgId = useSession((state) => state.orgId);
@@ -47,7 +57,13 @@ export function CapabilityGate({
   // flash of "not for your role" immediately replaced by the real page is
   // worse than a brief blank beat.
   if (org.data === undefined) return null;
-  if (org.data.capabilities[capability]) return <>{children}</>;
+
+  const allowed =
+    capability !== undefined
+      ? org.data.capabilities[capability]
+      : (anyOf?.some((key) => org.data.capabilities[key]) ?? false);
+
+  if (allowed) return <>{children}</>;
 
   return <NotForYourRole />;
 }
