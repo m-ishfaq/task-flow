@@ -82,9 +82,11 @@ import {
  * for the same reason web's fix states: rendering all four unconditionally
  * would leave three of them permanently one tap from a "You do not have
  * permission to do that" error for anyone with a partial grant. Spend's
- * `report` sub-view still needs `recording:read` (ADMIN, not one of the
- * five grantable permissions), so it stays an inline FORBIDDEN exactly as
- * before — that half was never freely available to a Member to begin with.
+ * `report` sub-view needs `recording:read` (Admin-and-Owner only, not one
+ * of the five grantable permissions) on top of the tab's own
+ * `readPhoneNumbers` floor — `SpendPanel` hides that section too, on
+ * `capabilities.readRecordings`, rather than showing it and letting it
+ * answer FORBIDDEN.
  */
 
 const TABS = [
@@ -498,6 +500,15 @@ function StatusPill({ status }: { readonly status: string }) {
  * Numbers — owned numbers, release, search + buy
  * -------------------------------------------------------------------------- */
 
+/**
+ * Buying and releasing are `phoneNumber:purchase`/`phoneNumber:release` —
+ * Owner-only, NEITHER individually grantable (unlike `phoneNumber:read`,
+ * which gates the tab this panel lives in). Mirrors the identical fix in
+ * `apps/web/src/features/telephony/numbers-panel.tsx` (Phase 15 §1's
+ * sweep): "Release" is gated on `capabilities.releaseNumbers`, and "Buy a
+ * number" (search included — it exists only to feed a purchase) is gated
+ * on `capabilities.purchaseNumbers`.
+ */
 function NumbersPanel() {
   const queryClient = useQueryClient();
   const { guard, pending, confirm, cancel } = useStepUp();
@@ -506,6 +517,10 @@ function NumbersPanel() {
     queryKey: PHONE_NUMBERS_QUERY_KEY,
     queryFn: async () => wire(await apiClient.telephony.numbers.list.query({})),
   });
+  const capabilities = useQuery({
+    queryKey: ORG_DETAIL_QUERY_KEY,
+    queryFn: async () => wire(await apiClient.tenancy.orgs.get.query()),
+  }).data?.capabilities;
 
   const [isoCountry, setIsoCountry] = useState('US');
   const [areaCode, setAreaCode] = useState('');
@@ -605,109 +620,116 @@ function NumbersPanel() {
             <Text style={styles.rowFaintFlex} numberOfLines={1}>
               bought {format(new Date(number.purchasedAt), 'd MMM yyyy')}
             </Text>
-            <Pressable
-              disabled={release.isPending}
-              onPress={() => {
-                Alert.alert('Release this number?', String(number.e164), [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Release',
-                    style: 'destructive',
-                    onPress: () => {
-                      release.mutate(number.phoneNumberId);
+            {capabilities?.releaseNumbers === true && (
+              <Pressable
+                disabled={release.isPending}
+                onPress={() => {
+                  Alert.alert('Release this number?', String(number.e164), [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Release',
+                      style: 'destructive',
+                      onPress: () => {
+                        release.mutate(number.phoneNumberId);
+                      },
                     },
-                  },
-                ]);
-              }}
-            >
-              <Text style={styles.dangerLinkText}>Release</Text>
-            </Pressable>
+                  ]);
+                }}
+              >
+                <Text style={styles.dangerLinkText}>Release</Text>
+              </Pressable>
+            )}
           </View>
         ))}
       </Section>
 
-      <Section label="Buy a number">
-        <View style={styles.buyRow}>
-          <View style={styles.buyField}>
-            <Text style={styles.fieldLabel}>Country</Text>
-            <TextInput
-              style={styles.smallInput}
-              value={isoCountry}
-              maxLength={2}
-              autoCapitalize="characters"
-              onChangeText={(value) => {
-                setIsoCountry(value.toUpperCase());
-              }}
-            />
-          </View>
-          <View style={styles.buyField}>
-            <Text style={styles.fieldLabel}>Area code (optional)</Text>
-            <TextInput
-              style={styles.smallInput}
-              value={areaCode}
-              maxLength={3}
-              keyboardType="number-pad"
-              placeholder="415"
-              placeholderTextColor={colors.inkFaint.hex}
-              onChangeText={(value) => {
-                setAreaCode(value.replace(/\D/g, ''));
-              }}
-            />
-          </View>
-        </View>
-        <Pressable
-          style={[styles.primaryButton, search.isPending && styles.buttonDisabled]}
-          disabled={search.isPending}
-          onPress={() => {
-            search.mutate();
-          }}
-        >
-          {search.isPending ? (
-            <ActivityIndicator color={colors.accentInk.hex} />
-          ) : (
-            <Text style={styles.primaryButtonText}>Search</Text>
-          )}
-        </Pressable>
-        {search.isError && (
-          <Text style={styles.errorText}>
-            {apiErrorOf(search.error)?.error.message ?? 'The search did not complete.'}
-          </Text>
-        )}
-
-        {results !== null &&
-          (results.length === 0 ? (
-            <Text style={styles.emptyHint}>No numbers matched that search.</Text>
-          ) : (
-            <View style={styles.resultsList}>
-              {results.map((available) => (
-                <View key={String(available.phoneNumber)} style={styles.resultRow}>
-                  <Text style={styles.rowMono}>{String(available.phoneNumber)}</Text>
-                  <Text style={styles.rowFaintFlex} numberOfLines={1}>
-                    {[available.locality, available.region].filter(Boolean).join(', ') ||
-                      available.isoCountry}
-                  </Text>
-                  <Text style={styles.rowFaint}>
-                    ${(available.monthlyCostCents / 100).toFixed(2)}/mo
-                  </Text>
-                  <Pressable
-                    style={[styles.smallPrimaryButton, purchase.isPending && styles.buttonDisabled]}
-                    disabled={purchase.isPending}
-                    onPress={() => {
-                      purchase.mutate(String(available.phoneNumber));
-                    }}
-                  >
-                    <Text style={styles.smallPrimaryButtonText}>Buy</Text>
-                  </Pressable>
-                </View>
-              ))}
+      {capabilities?.purchaseNumbers === true && (
+        <Section label="Buy a number">
+          <View style={styles.buyRow}>
+            <View style={styles.buyField}>
+              <Text style={styles.fieldLabel}>Country</Text>
+              <TextInput
+                style={styles.smallInput}
+                value={isoCountry}
+                maxLength={2}
+                autoCapitalize="characters"
+                onChangeText={(value) => {
+                  setIsoCountry(value.toUpperCase());
+                }}
+              />
             </View>
-          ))}
-        {purchase.isError && (
-          <Text style={styles.errorText}>
-            {apiErrorOf(purchase.error)?.error.message ?? 'The number was not purchased.'}
-          </Text>
-        )}
-      </Section>
+            <View style={styles.buyField}>
+              <Text style={styles.fieldLabel}>Area code (optional)</Text>
+              <TextInput
+                style={styles.smallInput}
+                value={areaCode}
+                maxLength={3}
+                keyboardType="number-pad"
+                placeholder="415"
+                placeholderTextColor={colors.inkFaint.hex}
+                onChangeText={(value) => {
+                  setAreaCode(value.replace(/\D/g, ''));
+                }}
+              />
+            </View>
+          </View>
+          <Pressable
+            style={[styles.primaryButton, search.isPending && styles.buttonDisabled]}
+            disabled={search.isPending}
+            onPress={() => {
+              search.mutate();
+            }}
+          >
+            {search.isPending ? (
+              <ActivityIndicator color={colors.accentInk.hex} />
+            ) : (
+              <Text style={styles.primaryButtonText}>Search</Text>
+            )}
+          </Pressable>
+          {search.isError && (
+            <Text style={styles.errorText}>
+              {apiErrorOf(search.error)?.error.message ?? 'The search did not complete.'}
+            </Text>
+          )}
+
+          {results !== null &&
+            (results.length === 0 ? (
+              <Text style={styles.emptyHint}>No numbers matched that search.</Text>
+            ) : (
+              <View style={styles.resultsList}>
+                {results.map((available) => (
+                  <View key={String(available.phoneNumber)} style={styles.resultRow}>
+                    <Text style={styles.rowMono}>{String(available.phoneNumber)}</Text>
+                    <Text style={styles.rowFaintFlex} numberOfLines={1}>
+                      {[available.locality, available.region].filter(Boolean).join(', ') ||
+                        available.isoCountry}
+                    </Text>
+                    <Text style={styles.rowFaint}>
+                      ${(available.monthlyCostCents / 100).toFixed(2)}/mo
+                    </Text>
+                    <Pressable
+                      style={[
+                        styles.smallPrimaryButton,
+                        purchase.isPending && styles.buttonDisabled,
+                      ]}
+                      disabled={purchase.isPending}
+                      onPress={() => {
+                        purchase.mutate(String(available.phoneNumber));
+                      }}
+                    >
+                      <Text style={styles.smallPrimaryButtonText}>Buy</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            ))}
+          {purchase.isError && (
+            <Text style={styles.errorText}>
+              {apiErrorOf(purchase.error)?.error.message ?? 'The number was not purchased.'}
+            </Text>
+          )}
+        </Section>
+      )}
 
       <StepUpSheet visible={pending} onConfirmed={confirm} onCancel={cancel} />
     </ScrollView>
@@ -1116,6 +1138,14 @@ function ThreadView({
 
 const SINCE_DAYS = 30;
 
+/**
+ * "Cost attribution" (the itemized report) is gated on
+ * `capabilities.readRecordings` — `recording:read`, Admin-and-Owner only by
+ * role, mirroring web's identical fix in
+ * `apps/web/src/features/telephony/spend-panel.tsx` (Phase 15 §1's sweep).
+ * "Current spend" above it stays unconditional — `phoneNumber:read`, which
+ * already gates this whole tab.
+ */
 function SpendPanel() {
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
@@ -1123,10 +1153,16 @@ function SpendPanel() {
     queryKey: SPEND_CURRENT_QUERY_KEY,
     queryFn: async () => wire(await apiClient.telephony.spend.current.query({})),
   });
+  const canReadRecordings =
+    useQuery({
+      queryKey: ORG_DETAIL_QUERY_KEY,
+      queryFn: async () => wire(await apiClient.tenancy.orgs.get.query()),
+    }).data?.capabilities.readRecordings === true;
   const report = useQuery({
     queryKey: spendReportQueryKey(SINCE_DAYS),
     queryFn: async () =>
       wire(await apiClient.telephony.spend.report.query({ sinceDays: SINCE_DAYS })),
+    enabled: canReadRecordings,
   });
 
   const spentCents = current.data?.spentCents ?? 0;
@@ -1232,43 +1268,46 @@ function SpendPanel() {
         )}
       </Section>
 
-      <Section label={`Cost attribution — last ${String(SINCE_DAYS)} days`}>
-        {report.isPending && <ActivityIndicator color={colors.accent.hex} />}
-        {report.isError && (
-          <Text style={styles.errorText}>
-            {apiErrorOf(report.error)?.error.message ?? 'Could not load the itemized report.'}
-          </Text>
-        )}
-        {report.data?.length === 0 && (
-          <Text style={styles.emptyHint}>
-            No spend recorded in this window — place a call or send an SMS to see it itemized here.
-          </Text>
-        )}
-        {report.data !== undefined && report.data.length > 0 && (
-          <View style={styles.spendTable}>
-            <View style={styles.spendTableHeaderRow}>
-              <Text style={[styles.spendTableHeader, styles.spendTableKindCol]}>Kind</Text>
-              <Text style={[styles.spendTableHeader, styles.spendTableNumCol]}>Count</Text>
-              <Text style={[styles.spendTableHeader, styles.spendTableNumCol]}>Est.</Text>
-              <Text style={[styles.spendTableHeader, styles.spendTableNumCol]}>Billed</Text>
-            </View>
-            {report.data.map((row) => (
-              <View key={row.kind} style={styles.spendTableRow}>
-                <Text style={[styles.spendTableCell, styles.spendTableKindCol]} numberOfLines={1}>
-                  {SPEND_KIND_LABEL[row.kind] ?? row.kind}
-                </Text>
-                <Text style={[styles.spendTableCell, styles.spendTableNumCol]}>{row.count}</Text>
-                <Text style={[styles.spendTableCell, styles.spendTableNumCol]}>
-                  {formatCents(row.estimatedCents)}
-                </Text>
-                <Text style={[styles.spendTableCell, styles.spendTableNumCol]}>
-                  {formatCents(row.billedCents)}
-                </Text>
+      {canReadRecordings && (
+        <Section label={`Cost attribution — last ${String(SINCE_DAYS)} days`}>
+          {report.isPending && <ActivityIndicator color={colors.accent.hex} />}
+          {report.isError && (
+            <Text style={styles.errorText}>
+              {apiErrorOf(report.error)?.error.message ?? 'Could not load the itemized report.'}
+            </Text>
+          )}
+          {report.data?.length === 0 && (
+            <Text style={styles.emptyHint}>
+              No spend recorded in this window — place a call or send an SMS to see it itemized
+              here.
+            </Text>
+          )}
+          {report.data !== undefined && report.data.length > 0 && (
+            <View style={styles.spendTable}>
+              <View style={styles.spendTableHeaderRow}>
+                <Text style={[styles.spendTableHeader, styles.spendTableKindCol]}>Kind</Text>
+                <Text style={[styles.spendTableHeader, styles.spendTableNumCol]}>Count</Text>
+                <Text style={[styles.spendTableHeader, styles.spendTableNumCol]}>Est.</Text>
+                <Text style={[styles.spendTableHeader, styles.spendTableNumCol]}>Billed</Text>
               </View>
-            ))}
-          </View>
-        )}
-      </Section>
+              {report.data.map((row) => (
+                <View key={row.kind} style={styles.spendTableRow}>
+                  <Text style={[styles.spendTableCell, styles.spendTableKindCol]} numberOfLines={1}>
+                    {SPEND_KIND_LABEL[row.kind] ?? row.kind}
+                  </Text>
+                  <Text style={[styles.spendTableCell, styles.spendTableNumCol]}>{row.count}</Text>
+                  <Text style={[styles.spendTableCell, styles.spendTableNumCol]}>
+                    {formatCents(row.estimatedCents)}
+                  </Text>
+                  <Text style={[styles.spendTableCell, styles.spendTableNumCol]}>
+                    {formatCents(row.billedCents)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </Section>
+      )}
     </ScrollView>
   );
 }

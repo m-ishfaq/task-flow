@@ -35,8 +35,16 @@ import { EMPTY_DOCUMENT, isEmptyDocument, type DocumentNode } from './rich-text.
  *
  *   DELETE is author-or-moderator, and the event records which. Moderation is a
  *   real need, so unlike Edit there IS a legitimate way for someone else's
- *   Delete to succeed — the control stays visible to everyone and the server
- *   decides, same as every other permission-gated control in this app.
+ *   Delete to succeed — but `comment:delete` is Admin-and-Owner only
+ *   (`packages/policy/src/roles.ts`), so it used to render for every Member
+ *   on every comment they did not write and let their click come back
+ *   FORBIDDEN (Phase 15 §1's sweep). `canModerate` (`CardDetailProps` →
+ *   `cards.get`'s `capabilities.moderateComments`, computed per-card since
+ *   `comment:delete` is resource-scoped — a Member can hold it via a tuple
+ *   on this card's board without any org-wide grant) is what the Delete
+ *   button reads instead: `comment.authorId === viewerId || canModerate`.
+ *   The AUTHOR's own Delete still needs no permission at all (`comment:
+ *   create` covers withdrawing your own comment, same as the service).
  *
  * Commenting is `comment:create`, never `card:update`. That separation is why
  * the `commenter` relation exists at all (§8.2): someone can be given a voice on
@@ -190,9 +198,11 @@ export interface CommentSectionProps {
   readonly orgId: string;
   readonly boardId: BoardId;
   readonly cardId: CardId;
+  /** `cards.get`'s `capabilities.moderateComments` — see the header note. */
+  readonly canModerate: boolean;
 }
 
-export function CommentSection({ orgId, boardId, cardId }: CommentSectionProps) {
+export function CommentSection({ orgId, boardId, cardId, canModerate }: CommentSectionProps) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const comments = useQuery(commentsQuery(orgId, cardId));
@@ -277,6 +287,7 @@ export function CommentSection({ orgId, boardId, cardId }: CommentSectionProps) 
             <CommentRow
               comment={comment}
               viewerId={viewerId}
+              canModerate={canModerate}
               personOf={personOf}
               isEditing={editing === comment.commentId}
               onStartEdit={() => {
@@ -310,6 +321,7 @@ export function CommentSection({ orgId, boardId, cardId }: CommentSectionProps) 
                     <CommentRow
                       comment={reply}
                       viewerId={viewerId}
+                      canModerate={canModerate}
                       personOf={personOf}
                       isEditing={editing === reply.commentId}
                       onStartEdit={() => {
@@ -429,6 +441,7 @@ function ReplyComposer({
 function CommentRow({
   comment,
   viewerId,
+  canModerate,
   personOf,
   isEditing,
   onStartEdit,
@@ -440,6 +453,7 @@ function CommentRow({
 }: {
   readonly comment: Comment;
   readonly viewerId: string | null;
+  readonly canModerate: boolean;
   readonly personOf: (userId: string) => Person;
   readonly isEditing: boolean;
   readonly onStartEdit: () => void;
@@ -498,10 +512,11 @@ function CommentRow({
           <div className="flex gap-1">
             {/* Edit is hidden for anyone but the author — there is no
                 override, ever (updateComment), so showing it to someone else
-                could only ever end in a FORBIDDEN toast. Delete stays visible
-                to everyone: a moderator without `comment:delete` gets a real
-                denial from the server, the same as every other
-                permission-gated control here. */}
+                could only ever end in a FORBIDDEN toast. Delete is shown to
+                the author (needs only `comment:create`, same as the
+                service) OR a caller `canModerate` — `comment:delete` is
+                Admin-and-Owner only, so a plain Member viewing someone
+                else's comment sees neither control at all. */}
             {comment.authorId !== null && comment.authorId === viewerId && (
               <Button
                 size="sm"
@@ -512,9 +527,11 @@ function CommentRow({
                 Edit
               </Button>
             )}
-            <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onDelete}>
-              Delete
-            </Button>
+            {(comment.authorId === viewerId || canModerate) && (
+              <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onDelete}>
+                Delete
+              </Button>
+            )}
             {onReply !== undefined && (
               <Button size="sm" variant="ghost" className="h-5 px-1 text-[11px]" onClick={onReply}>
                 Reply

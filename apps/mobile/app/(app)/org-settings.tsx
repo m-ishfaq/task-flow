@@ -111,6 +111,10 @@ export default function OrgSettingsScreen() {
     sendSms: false,
     readSms: false,
     viewBilling: false,
+    purchaseNumbers: false,
+    releaseNumbers: false,
+    manageSavedSearches: false,
+    readRecordings: false,
   };
 
   const refreshMembers = async (): Promise<void> => {

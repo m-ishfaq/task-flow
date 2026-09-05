@@ -465,11 +465,28 @@ const publicDocsPageRoute = createRoute({
   },
 });
 
+/**
+ * Behind `audit:read` server-side (`apps/api/src/tenancy/router.ts`'s
+ * `authz.explain` — "because it reports another user's access, which is
+ * exactly the information an attacker would want before choosing a
+ * target"). Wrapped in `CapabilityGate capability="viewAuditLog"` — the
+ * SAME capability the Audit log route already uses, since both are gated
+ * on the identical permission — rather than showing this page to every
+ * role and letting it answer FORBIDDEN: unlike a page reporting the
+ * caller's OWN access, this one exists specifically to inspect someone
+ * ELSE's, so leaving it reachable-but-refused is not a cosmetic miss, it
+ * advertises the existence of a tool for probing a colleague's grants to
+ * people who were never going to be allowed to use it (Phase 15 §1's sweep).
+ */
 const permissionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/admin/permissions',
   beforeLoad: () => requireOrg('/admin/permissions'),
-  component: PermissionDebugPage,
+  component: () => (
+    <CapabilityGate capability="viewAuditLog">
+      <PermissionDebugPage />
+    </CapabilityGate>
+  ),
 });
 
 const projectSettingsRoute = createRoute({

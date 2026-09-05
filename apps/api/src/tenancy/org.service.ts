@@ -278,6 +278,39 @@ export interface SettingsCapabilities {
    * entirely rather than show it and let it 403.
    */
   readonly viewBilling: boolean;
+  /**
+   * Buying/releasing a phone number on `/calls` → Numbers — `phoneNumber:
+   * purchase`/`phoneNumber:release`, Owner-only (unlike `readPhoneNumbers`
+   * above, NEITHER is in `GRANTABLE_PERMISSIONS`: reading the org's numbers
+   * is delegable, spending money on a new one or giving one up is not).
+   * `numbers-panel.tsx` used to render both buttons for every viewer
+   * holding `readPhoneNumbers` and let a non-owner's click come back
+   * FORBIDDEN — its own doc comment said so explicitly (Phase 15 §1's
+   * sweep).
+   */
+  readonly purchaseNumbers: boolean;
+  readonly releaseNumbers: boolean;
+  /**
+   * Sharing a saved search with the whole org — `search:manage`,
+   * Admin-and-Owner only by role (`packages/policy/src/roles.ts`'s own
+   * comment: "unlike `recording:export` or `phoneNumber:purchase` the
+   * worst case is clutter, not a bill or a leaked conversation" — Admin
+   * gets it for that reason, where telephony spend stays Owner-only).
+   * `search-page.tsx`'s "Share with the organization" checkbox used to
+   * render for every caller and let a Member's tick come back FORBIDDEN.
+   */
+  readonly manageSavedSearches: boolean;
+  /**
+   * The Recordings section on a card, and the Spend tab's itemized report
+   * (`spend-panel.tsx`) — `recording:read`, Admin-and-Owner only by role
+   * alone (in `ORG_LEVEL_PERMISSIONS`, `packages/policy/src/permissions.ts`
+   * — "no route declares this one as its floor... `route()`'s pre-check IS
+   * the whole decision", so unlike the five telephony fields above this is
+   * a flat org-wide boolean, not per-resource). `recording-section.tsx`
+   * used to render on every card unconditionally and let a Member's
+   * interaction come back FORBIDDEN.
+   */
+  readonly readRecordings: boolean;
 }
 
 export interface OrgDetail {
@@ -344,6 +377,10 @@ export async function getOrg(orgId: OrgId, subject: Subject): Promise<OrgDetail>
       sendSms: can(subject, 'sms:send').allowed,
       readSms: can(subject, 'sms:read').allowed,
       viewBilling: can(subject, 'org:billing').allowed,
+      purchaseNumbers: can(subject, 'phoneNumber:purchase').allowed,
+      releaseNumbers: can(subject, 'phoneNumber:release').allowed,
+      manageSavedSearches: can(subject, 'search:manage').allowed,
+      readRecordings: can(subject, 'recording:read').allowed,
     },
   };
 }

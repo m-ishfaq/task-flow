@@ -228,7 +228,7 @@ function CardDetailContent({ cardId }: { cardId: CardId }) {
 
         <AttachmentSection cardId={cardId} />
 
-        <CommentsSection cardId={cardId} />
+        <CommentsSection cardId={cardId} canModerate={data.capabilities.moderateComments} />
       </ScrollView>
     </KeyboardAvoidingView>
   );

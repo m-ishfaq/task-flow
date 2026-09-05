@@ -202,6 +202,10 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
     sendSms: false,
     readSms: false,
     viewBilling: false,
+    purchaseNumbers: false,
+    releaseNumbers: false,
+    manageSavedSearches: false,
+    readRecordings: false,
   };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.members(orgId) });
@@ -576,6 +580,10 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
     sendSms: false,
     readSms: false,
     viewBilling: false,
+    purchaseNumbers: false,
+    releaseNumbers: false,
+    manageSavedSearches: false,
+    readRecordings: false,
   };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.memberGrants(orgId) });

@@ -19,6 +19,7 @@ import { formatRelative } from '../../lib/format.js';
 import { Search } from 'lucide-react';
 import { Button, Empty, PageHeader, Skeleton } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
+import { orgDetailQuery } from '../org/api.js';
 import { savedSearchesQuery, searchResultsQuery } from './api.js';
 import { freeTextTermOf, splitOnTerm } from './term.js';
 
@@ -358,13 +359,15 @@ export function SearchPage({ initialQuery }: { readonly initialQuery: string }) 
 /**
  * Saved searches (§3.2) — the list, plus saving what is currently typed.
  *
- * ## Sharing is offered to everyone and refused by the server
+ * ## Sharing is gated on `capabilities.manageSavedSearches`
  *
- * The "Share with the organization" checkbox is shown to every caller, not
- * hidden from members. §8.2 is explicit that a UI reimplementing `can()`
- * produces two models that drift, and the one users see is the one that is
- * never tested — so a member who ticks it gets an honest FORBIDDEN from the
- * server, rendered here, rather than a control that silently was not there.
+ * `search:manage` is Admin-and-Owner only by role. The checkbox used to be
+ * shown to every caller and let a Member's tick come back FORBIDDEN — fixed
+ * (Phase 15 §1's sweep) the same way `viewBilling` and the rest of that
+ * sweep were: reading a boolean the server already computed via `can()`, not
+ * re-deriving the decision here. A Member can still save a PRIVATE search
+ * (`isShared: false` needs no permission at all), so the form itself is not
+ * gated — only the option that requires the extra permission is.
  *
  * ## A broken entry stays visible
  *
@@ -389,6 +392,9 @@ function SavedSearches({
   const [share, setShare] = useState(false);
 
   const saved = useQuery({ ...savedSearchesQuery(orgId), enabled: orgId !== '' });
+  const canShare =
+    useQuery({ ...orgDetailQuery(orgId), enabled: orgId !== '' }).data?.capabilities
+      .manageSavedSearches === true;
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: keys.savedSearches(orgId) });
 
@@ -489,16 +495,18 @@ function SavedSearches({
             placeholder="Name it"
             className="min-w-32 flex-1 rounded-lg border border-line/50 bg-surface-sunken px-2.5 py-1.5 text-xs text-ink outline-none focus:border-accent"
           />
-          <label className="flex items-center gap-1.5 text-xs text-ink-muted">
-            <input
-              type="checkbox"
-              checked={share}
-              onChange={(event) => {
-                setShare(event.target.checked);
-              }}
-            />
-            Share with the organization
-          </label>
+          {canShare && (
+            <label className="flex items-center gap-1.5 text-xs text-ink-muted">
+              <input
+                type="checkbox"
+                checked={share}
+                onChange={(event) => {
+                  setShare(event.target.checked);
+                }}
+              />
+              Share with the organization
+            </label>
+          )}
           <Button type="submit" size="sm" disabled={name.trim() === '' || create.isPending}>
             {create.isPending ? 'Saving…' : 'Save'}
           </Button>

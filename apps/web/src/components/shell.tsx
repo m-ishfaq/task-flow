@@ -26,7 +26,7 @@ import { disconnectRtcSocket } from '../lib/rtc-socket.js';
 import { hangUp } from '../features/rtc/use-call.js';
 import { useUi } from '../lib/ui-store.js';
 import { useIsDesktop } from '../lib/use-media-query.js';
-import { orgsQuery } from '../features/org/api.js';
+import { orgDetailQuery, orgsQuery } from '../features/org/api.js';
 import { useBranding } from '../lib/branding-context.js';
 import { cn } from '../lib/cn.js';
 import { Avatar, Button } from './primitives.js';
@@ -328,6 +328,16 @@ function SidebarFooter({ standalone }: { readonly standalone: boolean }) {
 function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
   const setShortcutsOpen = useUi((state) => state.setShortcutsOpen);
   const toggleMobileNav = useUi((state) => state.toggleMobileNav);
+  const orgId = useSession((state) => state.orgId);
+  /* Gates the "Permissions" link below — `audit:read`, the same capability
+     `/settings/audit` already reads (Phase 15 §1's sweep: this link used to
+     render for every role and let `/admin/permissions` answer FORBIDDEN,
+     worse than most of that sweep's other findings because the page it
+     points at inspects a COLLEAGUE's access, not the caller's own). */
+  const canDebugPermissions = useQuery({
+    ...orgDetailQuery(orgId ?? ''),
+    enabled: orgId !== null,
+  }).data?.capabilities.viewAuditLog;
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line/50 px-4">
@@ -381,7 +391,9 @@ function Header({ showMenuButton }: { readonly showMenuButton: boolean }) {
           <Keyboard aria-hidden="true" className="size-4" strokeWidth={2} />
         </button>
         <NavLink to="/settings" label="Settings" icon={SlidersHorizontal} />
-        <NavLink to="/admin/permissions" label="Permissions" icon={ShieldCheck} />
+        {canDebugPermissions === true && (
+          <NavLink to="/admin/permissions" label="Permissions" icon={ShieldCheck} />
+        )}
       </nav>
     </header>
   );

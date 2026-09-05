@@ -742,6 +742,27 @@ describe('comments', () => {
     expect(card.commentCount).toBe(0);
   });
 
+  it('exposes moderateComments to a moderator and hides it from a plain member (Phase 15 §1)', async () => {
+    /* `getCard`'s `capabilities.moderateComments` is what `comment-
+       section.tsx` reads to decide whether to show "Delete" on a comment
+       that is not the viewer's own — a Member without `comment:delete`
+       used to see that button on every comment and get a real FORBIDDEN
+       on click. */
+    const fixture = await scaffold('detail-comments-capabilities');
+    await members.addMember(
+      fixture.orgId,
+      { email: 'member@detail.test', role: 'member' },
+      { userId: OWNER, requestId },
+    );
+    const member = await actorFor(fixture.orgId, MEMBER, 'member');
+
+    const asOwner = await cards.getCard(fixture.owner, { cardId: fixture.cardId });
+    expect(asOwner.capabilities.moderateComments).toBe(true);
+
+    const asMember = await cards.getCard(member, { cardId: fixture.cardId });
+    expect(asMember.capabilities.moderateComments).toBe(false);
+  });
+
   it('refuses a member deleting another member’s comment', async () => {
     const fixture = await scaffold('detail-comments-nomod');
     for (const email of ['member@detail.test', 'viewer@detail.test']) {

@@ -8,6 +8,7 @@ import { ErrorView } from '../../../components/error-view.js';
 import { formatDateTime } from '../../../lib/format.js';
 import { api } from '../../../lib/trpc.js';
 import { cardQuery, invalidateCard } from '../api.js';
+import { orgDetailQuery } from '../../org/api.js';
 import { useUpdateCard } from '../use-update-card.js';
 import { RichTextEditor } from './rich-text-editor.js';
 import { isEmptyDocument, type DocumentNode } from './rich-text.js';
@@ -74,6 +75,8 @@ export function CardDetailPanel({
   onClose,
 }: CardDetailPanelProps) {
   const card = useQuery(cardQuery(orgId, cardId));
+  const canReadRecordings =
+    useQuery(orgDetailQuery(orgId)).data?.capabilities.readRecordings === true;
 
   return (
     <ModalRoot
@@ -148,7 +151,7 @@ export function CardDetailPanel({
 
                 <ChecklistSection orgId={orgId} boardId={boardId} cardId={cardId} />
                 <AttachmentSection orgId={orgId} cardId={cardId} />
-                <RecordingSection orgId={orgId} cardId={cardId} />
+                {canReadRecordings && <RecordingSection orgId={orgId} cardId={cardId} />}
               </div>
 
               {/* The properties rail. Bordered and sunken so the glanceable
@@ -225,7 +228,12 @@ export function CardDetailPanel({
               </div>
 
               <div className="space-y-6 border-t border-line pt-4 md:col-span-2">
-                <CommentSection orgId={orgId} boardId={boardId} cardId={cardId} />
+                <CommentSection
+                  orgId={orgId}
+                  boardId={boardId}
+                  cardId={cardId}
+                  canModerate={card.data.capabilities.moderateComments}
+                />
 
                 <p className="text-xs text-ink-faint">
                   Created {formatDateTime(card.data.createdAt)} · updated{' '}

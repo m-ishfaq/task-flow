@@ -13,15 +13,21 @@ import {
   SkeletonRows,
 } from '../../components/primitives.js';
 import { ErrorText, ErrorView } from '../../components/error-view.js';
+import { orgDetailQuery } from '../org/api.js';
 import { invalidatePhoneNumbers, phoneNumbersQuery, type AvailableNumber } from './api.js';
 
 /**
  * Phone number provisioning (ai/phase-7-voice.md §3.1, Wave 2).
  *
  * Buying and releasing are both `phoneNumber:purchase`/`release` — Owner-only
- * AND step-up server-side (`router.ts`) — but the buttons render for every
- * viewer regardless of role. A Member's click comes back FORBIDDEN through
- * the ordinary toast path; nothing here re-checks the role first (§8.2).
+ * AND step-up server-side (`router.ts`), and NEITHER is in
+ * `GRANTABLE_PERMISSIONS` (unlike `phoneNumber:read`, which gates this whole
+ * tab and IS individually grantable). The buttons used to render for every
+ * viewer holding `readPhoneNumbers` and let a non-owner's click come back
+ * FORBIDDEN — fixed (Phase 15 §1's sweep) by gating "Buy a number" (search
+ * is itself `phoneNumber:purchase`, since it exists only to feed a purchase)
+ * on `capabilities.purchaseNumbers`, and "Release" on
+ * `capabilities.releaseNumbers`.
  */
 
 export function NumbersPanel({ orgId }: { readonly orgId: string }) {
@@ -29,6 +35,7 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
   const toast = useToast();
   const { guard, dialog } = useStepUp();
   const numbers = useQuery(phoneNumbersQuery(orgId));
+  const capabilities = useQuery(orgDetailQuery(orgId)).data?.capabilities;
 
   const [isoCountry, setIsoCountry] = useState('US');
   const [areaCode, setAreaCode] = useState('');
@@ -119,15 +126,17 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
                 <span className="min-w-0 flex-1 truncate text-[11px] text-ink-faint">
                   bought {formatDate(number.purchasedAt)}
                 </span>
-                <ConfirmButton
-                  label="Release"
-                  confirmLabel={`Release ${String(number.e164)}`}
-                  disabled={release.isPending}
-                  onConfirm={() => {
-                    release.mutate(number.phoneNumberId);
-                  }}
-                  className="focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
-                />
+                {capabilities?.releaseNumbers === true && (
+                  <ConfirmButton
+                    label="Release"
+                    confirmLabel={`Release ${String(number.e164)}`}
+                    disabled={release.isPending}
+                    onConfirm={() => {
+                      release.mutate(number.phoneNumberId);
+                    }}
+                    className="focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                  />
+                )}
               </li>
             ))}
           </ul>
@@ -135,90 +144,92 @@ export function NumbersPanel({ orgId }: { readonly orgId: string }) {
         {release.isError && <ErrorText error={release.error} />}
       </section>
 
-      <section className="space-y-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-[13px] font-semibold text-ink">Buy a number</h2>
-        </div>
-        <form
-          className="rounded-lg border border-line bg-surface-raised p-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            search.mutate();
-          }}
-        >
-          {/* `items-start`, not `items-end` — "Area code" has a hint and
+      {capabilities?.purchaseNumbers === true && (
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <h2 className="text-[13px] font-semibold text-ink">Buy a number</h2>
+          </div>
+          <form
+            className="rounded-lg border border-line bg-surface-raised p-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              search.mutate();
+            }}
+          >
+            {/* `items-start`, not `items-end` — "Area code" has a hint and
               "Country" does not, so bottom-aligning would sit the country input
               a line below the area-code one. See `Field`'s own note. */}
-          <div className="flex flex-wrap items-start gap-2">
-            <Field label="Country" htmlFor="tel-country">
-              <Input
-                id="tel-country"
-                value={isoCountry}
-                maxLength={2}
-                className="w-16 uppercase"
-                onChange={(event) => {
-                  setIsoCountry(event.target.value.toUpperCase());
-                }}
-              />
-            </Field>
-            <Field label="Area code" htmlFor="tel-area" hint="Optional, e.g. 415">
-              <Input
-                id="tel-area"
-                value={areaCode}
-                maxLength={3}
-                className="w-24"
-                onChange={(event) => {
-                  setAreaCode(event.target.value.replace(/\D/g, ''));
-                }}
-              />
-            </Field>
-            <Button type="submit" variant="primary" className="mt-5" disabled={search.isPending}>
-              {search.isPending ? 'Searching…' : 'Search'}
-            </Button>
-          </div>
-          {search.isError && <ErrorText error={search.error} />}
-
-          {results !== null && (
-            <div className="mt-3 border-t border-line pt-3">
-              {results.length === 0 ? (
-                <p className="text-xs text-ink-muted">No numbers matched that search.</p>
-              ) : (
-                <ul className="space-y-1">
-                  {results.map((available) => {
-                    const phoneNumber = String(available.phoneNumber);
-                    return (
-                      <li
-                        key={phoneNumber}
-                        className="group flex items-center gap-3 rounded border border-line px-2.5 py-1.5 transition-colors hover:border-accent/40 hover:bg-surface-hover"
-                      >
-                        <span className="font-mono text-xs text-ink">{phoneNumber}</span>
-                        <span className="min-w-0 flex-1 truncate text-[11px] text-ink-faint">
-                          {[available.locality, available.region].filter(Boolean).join(', ') ||
-                            available.isoCountry}
-                        </span>
-                        <span className="text-[11px] text-ink-muted">
-                          ${(available.monthlyCostCents / 100).toFixed(2)}/mo
-                        </span>
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          disabled={purchase.isPending}
-                          onClick={() => {
-                            purchase.mutate(phoneNumber);
-                          }}
-                        >
-                          Buy
-                        </Button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
+            <div className="flex flex-wrap items-start gap-2">
+              <Field label="Country" htmlFor="tel-country">
+                <Input
+                  id="tel-country"
+                  value={isoCountry}
+                  maxLength={2}
+                  className="w-16 uppercase"
+                  onChange={(event) => {
+                    setIsoCountry(event.target.value.toUpperCase());
+                  }}
+                />
+              </Field>
+              <Field label="Area code" htmlFor="tel-area" hint="Optional, e.g. 415">
+                <Input
+                  id="tel-area"
+                  value={areaCode}
+                  maxLength={3}
+                  className="w-24"
+                  onChange={(event) => {
+                    setAreaCode(event.target.value.replace(/\D/g, ''));
+                  }}
+                />
+              </Field>
+              <Button type="submit" variant="primary" className="mt-5" disabled={search.isPending}>
+                {search.isPending ? 'Searching…' : 'Search'}
+              </Button>
             </div>
-          )}
-          {purchase.isError && <ErrorText error={purchase.error} />}
-        </form>
-      </section>
+            {search.isError && <ErrorText error={search.error} />}
+
+            {results !== null && (
+              <div className="mt-3 border-t border-line pt-3">
+                {results.length === 0 ? (
+                  <p className="text-xs text-ink-muted">No numbers matched that search.</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {results.map((available) => {
+                      const phoneNumber = String(available.phoneNumber);
+                      return (
+                        <li
+                          key={phoneNumber}
+                          className="group flex items-center gap-3 rounded border border-line px-2.5 py-1.5 transition-colors hover:border-accent/40 hover:bg-surface-hover"
+                        >
+                          <span className="font-mono text-xs text-ink">{phoneNumber}</span>
+                          <span className="min-w-0 flex-1 truncate text-[11px] text-ink-faint">
+                            {[available.locality, available.region].filter(Boolean).join(', ') ||
+                              available.isoCountry}
+                          </span>
+                          <span className="text-[11px] text-ink-muted">
+                            ${(available.monthlyCostCents / 100).toFixed(2)}/mo
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            disabled={purchase.isPending}
+                            onClick={() => {
+                              purchase.mutate(phoneNumber);
+                            }}
+                          >
+                            Buy
+                          </Button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            )}
+            {purchase.isError && <ErrorText error={purchase.error} />}
+          </form>
+        </section>
+      )}
 
       {dialog}
     </div>

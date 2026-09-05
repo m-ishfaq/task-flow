@@ -17,6 +17,7 @@ import {
   errors,
   type CardId,
   type ListId,
+  type OrgId,
   type Priority,
   type StatusId,
   type UserId,
@@ -286,6 +287,21 @@ export interface CardDetail extends CardSummary {
   readonly startDate: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
+  /**
+   * What the client may show on THIS card that a plain commenter cannot do
+   * by default. `comment:delete` is resource-scoped, not a flat org-wide
+   * role check — a Member with no org-wide grant can still hold it via a
+   * tuple on this card's board or project (the same reasoning
+   * `manageCapabilitiesFor`'s own doc comment gives for `project:update`/
+   * `board:update`), so this has to be computed per-card, here, rather than
+   * folded into `SettingsCapabilities`. `comment-section.tsx` used to show
+   * "Delete" on every comment/reply regardless of author or role and let a
+   * Member's click come back FORBIDDEN (Phase 15 §1's sweep) — this is what
+   * it reads instead.
+   */
+  readonly capabilities: {
+    readonly moderateComments: boolean;
+  };
 }
 
 export async function getCard(
@@ -329,11 +345,18 @@ export async function getCard(
 
     enforceOn(actor, 'card:read', { type: 'card', id: input.cardId }, card, ancestorsOfCard(card));
 
+    const moderateComments = can(actor.subject, 'comment:delete', {
+      orgId: card.orgId as OrgId,
+      resource: { type: 'card', id: input.cardId },
+      ancestors: ancestorsOfCard(card),
+    }).allowed;
+
     const { number, projectKey, orgId: _orgId, ...rest } = card;
     return {
       ...rest,
       priority: rest.priority as Priority | null,
       reference: referenceOf(projectKey, number),
+      capabilities: { moderateComments },
     };
   });
 }

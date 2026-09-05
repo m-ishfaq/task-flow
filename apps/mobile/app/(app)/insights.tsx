@@ -6,6 +6,7 @@ import { wire } from '@taskflow/client';
 import { colors, radiusCard } from '@taskflow/tokens';
 import { apiClient } from '../../src/lib/app-session.js';
 import { useTopInset } from '../../src/lib/use-top-inset.js';
+import { CapabilityGate } from '../../src/lib/capability-gate.js';
 import {
   velocityKey,
   cycleTimeKey,
@@ -48,15 +49,26 @@ function entryDisplayName(entry: {
  * flow charts. The heavy dashboards stay web-first (ai/phase-11-analytics.md
  * §11.1 mobile scope).
  *
- * Admin-and-Owner only (`analytics:read`). The server enforces this; the UI
- * does not gate it — an unauthorized caller sees the same honest FORBIDDEN
- * error every other screen does, per §8.2. This screen is only reachable
- * from `account.tsx`, which hides the link for non-admins, but that is a
- * UX convenience, not an authorization boundary.
+ * Admin-and-Owner only (`analytics:read`). `account.tsx` hides the link for
+ * non-admins, and this default export additionally wraps the real screen in
+ * `CapabilityGate capability="viewAnalytics"` (Phase 15 §1's sweep) — the
+ * mobile counterpart of web's route-level `CapabilityGate` on
+ * `/analytics`, so a deep link or a stale link lands on a plain "not for
+ * your role" screen instead of this component loading and crashing into a
+ * raw FORBIDDEN. Still cosmetic only: `analytics.velocity` and friends
+ * enforce `analytics:read` themselves regardless of what this renders.
  *
  * Reached from: Account → Insights.
  */
-export default function InsightsScreen() {
+export default function InsightsScreen(): React.JSX.Element | null {
+  return (
+    <CapabilityGate capability="viewAnalytics">
+      <InsightsScreenContent />
+    </CapabilityGate>
+  );
+}
+
+function InsightsScreenContent() {
   const paddingTop = useTopInset();
   const { start, end } = useMemo(last30Days, []);
   const startIso = start.toISOString();

@@ -6,6 +6,7 @@ import type { ProjectId } from '@taskflow/contracts';
 import { useSession } from '../lib/session.js';
 import { useUi } from '../lib/ui-store.js';
 import { activeSprintsQuery, projectsQuery } from '../features/work/api.js';
+import { orgDetailQuery } from '../features/org/api.js';
 import { cn } from '../lib/cn.js';
 
 /**
@@ -117,6 +118,13 @@ function PaletteDialog({
      this warm too, so it is normally a cache hit — and there is at most one row
      per project, so this never grows into a list worth paginating. */
   const activeSprints = useQuery({ ...activeSprintsQuery(orgId), enabled: open && orgId !== '' });
+  /* Same open-only rule — gates the "Audit log" and "Permissions" commands
+     below (Phase 15 §1's sweep: both used to be offered to every role
+     unconditionally, pointing at routes that are now `CapabilityGate`d —
+     `router.tsx` and `shell.tsx`'s nav are the other two places this same
+     `viewAuditLog` boolean hides the identical destinations). */
+  const capabilities = useQuery({ ...orgDetailQuery(orgId), enabled: open && orgId !== '' }).data
+    ?.capabilities;
 
   const commands = useMemo<readonly Command[]>(() => {
     const go =
@@ -129,8 +137,17 @@ function PaletteDialog({
       { id: 'home', label: 'My tasks', hint: 'Go to', run: go('/home') },
       { id: 'projects', label: 'Projects', hint: 'Go to', run: go('/projects') },
       { id: 'settings', label: 'Settings', hint: 'Go to', run: go('/settings') },
-      { id: 'audit', label: 'Audit log', hint: 'Go to', run: go('/settings/audit') },
-      { id: 'permissions', label: 'Permissions', hint: 'Go to', run: go('/admin/permissions') },
+      ...(capabilities?.viewAuditLog === true
+        ? [
+            { id: 'audit', label: 'Audit log', hint: 'Go to', run: go('/settings/audit') },
+            {
+              id: 'permissions',
+              label: 'Permissions',
+              hint: 'Go to',
+              run: go('/admin/permissions'),
+            },
+          ]
+        : []),
       { id: 'toggle-sidebar', label: 'Toggle sidebar', hint: 'Action', run: toggleSidebar },
     ];
 
@@ -191,7 +208,14 @@ function PaletteDialog({
     });
 
     return [...searchCommand, ...navigation, ...sprintCommands, ...projectCommands];
-  }, [activeSprints.data, navigate, projects.data, query, toggleSidebar]);
+  }, [
+    activeSprints.data,
+    capabilities?.viewAuditLog,
+    navigate,
+    projects.data,
+    query,
+    toggleSidebar,
+  ]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();

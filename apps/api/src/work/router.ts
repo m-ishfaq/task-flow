@@ -731,6 +731,11 @@ export function createWorkRouter(deps: WorkRouterDeps) {
             version: z.number().int().positive(),
             createdAt: z.date(),
             updatedAt: z.date(),
+            /* Read by `comment-section.tsx` to hide "Delete" on a comment
+               the caller cannot moderate — see `CardDetail`'s own comment
+               for why this is computed per-card rather than folded into
+               the org-level `SettingsCapabilities`. */
+            capabilities: z.object({ moderateComments: z.boolean() }).strict(),
           }),
         )
         .query(({ input, ctx }) => cards.getCard(actorOf(ctx), input)),

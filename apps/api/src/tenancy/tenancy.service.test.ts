@@ -211,6 +211,10 @@ describe('settings capabilities', () => {
       sendSms: true,
       readSms: true,
       viewBilling: true,
+      purchaseNumbers: true,
+      releaseNumbers: true,
+      manageSavedSearches: true,
+      readRecordings: true,
     });
 
     // A plain Member holds none of these — card:create and friends do not
@@ -234,15 +238,21 @@ describe('settings capabilities', () => {
       sendSms: false,
       readSms: false,
       viewBilling: false,
+      purchaseNumbers: false,
+      releaseNumbers: false,
+      manageSavedSearches: false,
+      readRecordings: false,
     });
   });
 
   it('gives an Admin invite/team capabilities but not the Owner-only ones', async () => {
     /* The role matrix's own asymmetry (packages/policy/src/roles.ts): Admin
        gets member:invite and team:manage, but org:update, member:manage,
-       member:remove, and org:billing stay Owner-only. A capabilities object
-       that collapsed these into one "isAdmin" flag would be wrong for
-       exactly this role. */
+       member:remove, org:billing, and phoneNumber:purchase/release stay
+       Owner-only — Admin holds phoneNumber:read (below) but not the two
+       that spend money or give a number up. A capabilities object that
+       collapsed these into one "isAdmin" flag would be wrong for exactly
+       this role. */
     const orgId = await newOrg('capabilities-two');
     await members.addMember(
       orgId,
@@ -269,6 +279,10 @@ describe('settings capabilities', () => {
       sendSms: true,
       readSms: true,
       viewBilling: false,
+      purchaseNumbers: false,
+      releaseNumbers: false,
+      manageSavedSearches: true,
+      readRecordings: true,
     });
   });
 });
