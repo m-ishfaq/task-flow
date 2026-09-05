@@ -67,13 +67,27 @@ const ChatMessage = z.discriminatedUnion('role', [
    chat may run — the budget gate is what actually stops an org from
    spending, this is only sane input-size hygiene, the same role
    `search.query`'s own `.max()` limit plays. */
-const ChatSendInput = z.object({ messages: z.array(ChatMessage).min(1).max(40) }).strict();
+const ChatSendInput = z
+  .object({
+    messages: z.array(ChatMessage).min(1).max(40),
+    /** §4.2: which of the PREVIOUS response's `pendingToolCalls` a human
+        approved. Defaults to none, which is also the correct value for a
+        fresh turn with nothing pending — see `assistant.ts`'s own header on
+        why an id absent from this list is a decline, not an "undecided". */
+    confirmedToolCallIds: z.array(z.string().min(1).max(128)).max(8).default([]),
+  })
+  .strict();
 
 const ChatSendOutput = z
   .object({
     content: z.string(),
     messages: z.array(ChatMessage).readonly(),
     toolRounds: z.number().int().nonnegative(),
+    /** Present only when the turn stopped on a §4.2 confirmation — the
+        caller must show these to a human and resend `messages` unchanged
+        (it already carries the requesting assistant turn) along with
+        `confirmedToolCallIds` to resume. */
+    pendingToolCalls: z.array(ToolCall).optional(),
   })
   .strict();
 
@@ -174,7 +188,7 @@ export function createAiRouter(deps: AiRouterDeps) {
           const result = await runAssistantTurn(
             provider,
             { orgId, userId, membershipId, requestId: ctx.requestId },
-            { subject: subjectOf(ctx.principal) },
+            { subject: subjectOf(ctx.principal), requestId: ctx.requestId },
             tools,
             {
               feature: 'assistant.chat',
@@ -184,8 +198,11 @@ export function createAiRouter(deps: AiRouterDeps) {
                 'You are the TaskFlow Assistant. You help the current user find and understand ' +
                 'their work using the tools available to you. You only ever act with the ' +
                 'permissions of the person you are talking to — you cannot see or do anything ' +
-                'they could not do themselves. Be concise.',
+                'they could not do themselves. Some actions require the person to confirm ' +
+                'before they run; when that happens, tell them what you are asking to do and ' +
+                'wait for their answer rather than assuming it. Be concise.',
               messages: input.messages,
+              confirmedToolCallIds: input.confirmedToolCallIds,
             },
           );
 
@@ -193,6 +210,14 @@ export function createAiRouter(deps: AiRouterDeps) {
             content: result.content,
             toolRounds: result.toolRounds,
             messages: result.messages.map(toWireMessage),
+            ...(result.pendingToolCalls === undefined
+              ? {}
+              : {
+                  pendingToolCalls: result.pendingToolCalls.map((call) => ({
+                    ...call,
+                    input: { ...call.input },
+                  })),
+                }),
           };
         }),
     }),

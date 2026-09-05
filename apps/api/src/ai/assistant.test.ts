@@ -8,6 +8,10 @@ import { TEST_ENV } from '../testing/fixtures.js';
 import * as orgs from '../tenancy/org.service.js';
 import { loadTuples } from '../tenancy/resolve.js';
 import { PostgresSearchProvider } from '../search/postgres-provider.js';
+import * as projects from '../work/project.service.js';
+import * as boards from '../work/board.service.js';
+import * as lists from '../work/list.service.js';
+import type { WorkActor } from '../work/shared.js';
 import { buildToolRegistry } from './tools/index.js';
 import { AssistantLoopExceededError, runAssistantTurn } from './assistant.js';
 import type { AiCompletionActor } from './complete.js';
@@ -80,6 +84,34 @@ function actorOf(orgId: OrgId, membershipId: MembershipId): AiCompletionActor {
   return { orgId, userId: OWNER, membershipId, requestId };
 }
 
+async function workActorOf(orgId: OrgId): Promise<WorkActor> {
+  return { subject: await subjectOf(orgId), requestId };
+}
+
+/** A project/board/list — the minimum `card.create` needs a real `listId`. */
+async function seedList(orgId: OrgId): Promise<{ listId: string }> {
+  const actor = await workActorOf(orgId);
+  const project = await projects.createProject(actor, {
+    name: 'Website',
+    key: 'WEB',
+    description: null,
+  });
+  const board = await boards.createBoard(actor, { projectId: project.projectId, name: 'Delivery' });
+  const list = await lists.createList(actor, {
+    boardId: board.boardId,
+    name: 'Todo',
+    wipLimit: null,
+  });
+  return { listId: list.listId };
+}
+
+async function cardCount(orgId: OrgId): Promise<number> {
+  await admin.setOrg(orgId);
+  const rows = await admin.query(`SELECT id FROM work.cards WHERE org_id = $1`, [orgId]);
+  await admin.setOrg(null);
+  return rows.rowCount ?? 0;
+}
+
 beforeAll(async () => {
   await applyMigrations();
   admin = await connectAsMigrator();
@@ -127,7 +159,7 @@ describe('runAssistantTurn', () => {
     const result = await runAssistantTurn(
       provider,
       actorOf(orgId, membershipId),
-      { subject: await subjectOf(orgId) },
+      { subject: await subjectOf(orgId), requestId },
       tools,
       {
         feature: 'assistant.chat',
@@ -165,7 +197,7 @@ describe('runAssistantTurn', () => {
     const result = await runAssistantTurn(
       provider,
       actorOf(orgId, membershipId),
-      { subject: await subjectOf(orgId) },
+      { subject: await subjectOf(orgId), requestId },
       tools,
       {
         feature: 'assistant.chat',
@@ -216,7 +248,7 @@ describe('runAssistantTurn', () => {
     const result = await runAssistantTurn(
       provider,
       actorOf(orgId, membershipId),
-      { subject: await subjectOf(orgId) },
+      { subject: await subjectOf(orgId), requestId },
       tools,
       {
         feature: 'assistant.chat',
@@ -251,7 +283,7 @@ describe('runAssistantTurn', () => {
       runAssistantTurn(
         provider,
         actorOf(orgId, membershipId),
-        { subject: await subjectOf(orgId) },
+        { subject: await subjectOf(orgId), requestId },
         tools,
         {
           feature: 'assistant.chat',
@@ -262,5 +294,163 @@ describe('runAssistantTurn', () => {
         },
       ),
     ).rejects.toBeInstanceOf(AssistantLoopExceededError);
+  });
+
+  it('defers a round requesting a confirmation-required tool, without running it', async () => {
+    const { orgId, membershipId } = await newOrg('assistant-confirm-defer');
+    const { listId } = await seedList(orgId);
+
+    const provider = new FakeAiProvider();
+    provider.enqueue({
+      content: 'Sure, I can create that.',
+      toolCalls: [
+        { id: 'toolu_1', name: 'card.create', input: { listId, title: 'Fix login bug' } },
+      ],
+      usage: { inputTokens: 20, outputTokens: 10 },
+      stopReason: 'tool_use',
+    });
+
+    const tools = buildToolRegistry({ searchProvider: new PostgresSearchProvider() });
+    const result = await runAssistantTurn(
+      provider,
+      actorOf(orgId, membershipId),
+      { subject: await subjectOf(orgId), requestId },
+      tools,
+      {
+        feature: 'assistant.chat',
+        providerName: 'fake',
+        model: 'claude-sonnet-4',
+        systemPrompt: 'You are TaskFlow Assistant.',
+        messages: [{ role: 'user', content: 'Create a card for the login bug.' }],
+      },
+    );
+
+    // Only the one completion happened — the loop never asked the model
+    // again, because it stopped to defer instead of continuing.
+    expect(provider.calls).toHaveLength(1);
+    expect(result.pendingToolCalls).toEqual([
+      { id: 'toolu_1', name: 'card.create', input: { listId, title: 'Fix login bug' } },
+    ]);
+    // Nothing was actually created.
+    expect(await cardCount(orgId)).toBe(0);
+    // The transcript ends in the unresolved assistant tool-call turn, with
+    // no tool_result following it yet.
+    const lastMessage = result.messages.at(-1);
+    expect(lastMessage?.role).toBe('assistant');
+    expect(lastMessage).toMatchObject({
+      toolCalls: [{ id: 'toolu_1', name: 'card.create' }],
+    });
+  });
+
+  it('resumes after confirmation and executes exactly the approved call', async () => {
+    const { orgId, membershipId } = await newOrg('assistant-confirm-approve');
+    const { listId } = await seedList(orgId);
+
+    const provider = new FakeAiProvider();
+    provider.enqueue({
+      content: 'Sure, I can create that.',
+      toolCalls: [
+        { id: 'toolu_1', name: 'card.create', input: { listId, title: 'Fix login bug' } },
+      ],
+      usage: { inputTokens: 20, outputTokens: 10 },
+      stopReason: 'tool_use',
+    });
+
+    const tools = buildToolRegistry({ searchProvider: new PostgresSearchProvider() });
+    const toolCtx = { subject: await subjectOf(orgId), requestId };
+    const deferred = await runAssistantTurn(
+      provider,
+      actorOf(orgId, membershipId),
+      toolCtx,
+      tools,
+      {
+        feature: 'assistant.chat',
+        providerName: 'fake',
+        model: 'claude-sonnet-4',
+        systemPrompt: 'You are TaskFlow Assistant.',
+        messages: [{ role: 'user', content: 'Create a card for the login bug.' }],
+      },
+    );
+
+    provider.enqueue({
+      content: 'Done — created it.',
+      toolCalls: [],
+      usage: { inputTokens: 15, outputTokens: 5 },
+      stopReason: 'end_turn',
+    });
+
+    const resumed = await runAssistantTurn(provider, actorOf(orgId, membershipId), toolCtx, tools, {
+      feature: 'assistant.chat',
+      providerName: 'fake',
+      model: 'claude-sonnet-4',
+      systemPrompt: 'You are TaskFlow Assistant.',
+      messages: deferred.messages,
+      confirmedToolCallIds: ['toolu_1'],
+    });
+
+    expect(resumed.content).toBe('Done — created it.');
+    expect(resumed.pendingToolCalls).toBeUndefined();
+    // The real service ran for real.
+    expect(await cardCount(orgId)).toBe(1);
+    const toolResult = resumed.messages.find((m) => TOOL_RESULT_ROLE_MESSAGES.has(m.role));
+    expect(toolResult).toMatchObject({ toolCallId: 'toolu_1' });
+    expect((toolResult as { content: string }).content).toContain('cardId');
+  });
+
+  it('treats a call absent from confirmedToolCallIds as declined, not merely unconfirmed', async () => {
+    const { orgId, membershipId } = await newOrg('assistant-confirm-decline');
+    const { listId } = await seedList(orgId);
+
+    const provider = new FakeAiProvider();
+    provider.enqueue({
+      content: 'Sure, I can create that.',
+      toolCalls: [
+        { id: 'toolu_1', name: 'card.create', input: { listId, title: 'Fix login bug' } },
+      ],
+      usage: { inputTokens: 20, outputTokens: 10 },
+      stopReason: 'tool_use',
+    });
+
+    const tools = buildToolRegistry({ searchProvider: new PostgresSearchProvider() });
+    const toolCtx = { subject: await subjectOf(orgId), requestId };
+    const deferred = await runAssistantTurn(
+      provider,
+      actorOf(orgId, membershipId),
+      toolCtx,
+      tools,
+      {
+        feature: 'assistant.chat',
+        providerName: 'fake',
+        model: 'claude-sonnet-4',
+        systemPrompt: 'You are TaskFlow Assistant.',
+        messages: [{ role: 'user', content: 'Create a card for the login bug.' }],
+      },
+    );
+
+    provider.enqueue({
+      content: 'No problem, I will not create it.',
+      toolCalls: [],
+      usage: { inputTokens: 15, outputTokens: 5 },
+      stopReason: 'end_turn',
+    });
+
+    // No confirmedToolCallIds at all — the default (`[]`) must decline,
+    // never silently run what was pending.
+    const resumed = await runAssistantTurn(provider, actorOf(orgId, membershipId), toolCtx, tools, {
+      feature: 'assistant.chat',
+      providerName: 'fake',
+      model: 'claude-sonnet-4',
+      systemPrompt: 'You are TaskFlow Assistant.',
+      messages: deferred.messages,
+    });
+
+    expect(resumed.content).toBe('No problem, I will not create it.');
+    expect(await cardCount(orgId)).toBe(0);
+    const toolResult = resumed.messages.find((m) => TOOL_RESULT_ROLE_MESSAGES.has(m.role));
+    expect(toolResult).toMatchObject({
+      toolCallId: 'toolu_1',
+      content: 'The user declined to run this action.',
+      isError: true,
+    });
   });
 });

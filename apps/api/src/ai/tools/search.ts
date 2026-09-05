@@ -52,6 +52,7 @@ export function createSearchTool(provider: SearchProvider): ToolDefinition {
       required: ['query'],
       additionalProperties: false,
     },
+    requiresConfirmation: false,
     inputSchema: SearchToolInput,
     async execute(ctx, input) {
       const hits = await performSearch(provider, ctx.subject, {

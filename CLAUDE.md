@@ -289,12 +289,13 @@ more, in this case.
 
 **One phase was missing from this list entirely, not just stale within it: Phase 15.** §1 (org-level
 permission grants) shipped and was then substantially extended — see its own section below.
-§2+§3 (the `AiProvider` abstraction and the token/spend budget gate) and §4 Wave 1 (the
-tool-calling assistant, read-only tools) have since shipped too — see their own sections below.
-§4's write tools and confirm-before-execute, plus §5 (the standup view), §6 (new-org Docs
-bootstrap), §7 (GitHub PR review — its own spec flags this as needing a separate review pass), and
-§8 (onboarding/offboarding automation) remain exactly as drafted in
-`ai/phase-15-ai-copilot-and-permissions.md` — designed, not built.
+§2+§3 (the `AiProvider` abstraction and the token/spend budget gate), §4 Wave 1 (the tool-calling
+assistant, read-only tools) and §4 Wave 2 (single-card write tools plus confirm-before-execute)
+have since shipped too — see their own sections below. §4.3's remaining waves (sprint planning,
+cross-member tagging), plus §5 (the standup view), §6 (new-org Docs bootstrap), §7 (GitHub PR
+review — its own spec flags this as needing a separate review pass), and §8 (onboarding/offboarding
+automation) remain exactly as drafted in `ai/phase-15-ai-copilot-and-permissions.md` — designed,
+not built.
 
 **Phase 0B, Phase 1 (identity), Phase 2 (tenancy, authz & audit) and Phase 3 (Work) complete** —
 backend and `apps/web`.
@@ -599,7 +600,8 @@ Deliberately NOT built in this pass: §4's write tools and confirm-before-execut
 standup view (§5), new-org Docs bootstrap (§6), GitHub/PR integration (§7, its own spec explicitly
 flags it as needing a separate review pass), and onboarding/offboarding automation (§8) — this is
 Wave 1 only, per §4.3's own order ("read-only... proves the UX and the token ledger with the
-least risk").
+least risk"). _(Wave 2 — single-card writes and confirm-before-execute — has since shipped; see its
+own section below.)_
 
 **`AiMessage` shipped in §2 could not actually hold a multi-turn tool-calling conversation, and
 nothing caught it until this wave tried to build one.** The original type was a flat
@@ -658,6 +660,69 @@ org plan, resolved through the same entitlement chain §3 already reuses). `rout
 both fire independently — a member with no grant is refused before any provider is ever resolved,
 and an owner on a plan without the flag gets `PLAN_REQUIRED` even though their role alone would
 grant `ai:use`.
+
+### Phase 15 §4 Wave 2 — single-card write tools and confirm-before-execute (SHIPPED)
+
+`apps/api/src/ai/tools/card.ts` · `assistant.ts`'s `pendingToolCalls`/`confirmedToolCallIds` ·
+`ToolDefinition.requiresConfirmation`. Spec: same file, §4.2, §4.3 item 2 ("small single-card
+writes: create/update/assign/prioritize, always confirmed inline"). Deliberately not built:
+sprint planning (§4.3 item 3), cross-member tagging/discussion (item 4), the standup view (§5),
+doc-space bootstrap (§6), GitHub/PR integration (§7), onboarding/offboarding automation (§8).
+
+**§4.2 and §4.3 contradict each other on exactly these tools, and this wave ships the more
+conservative reading rather than guessing.** §4.2's illustrative text says
+`card.create`/`card.update` "are cheap to undo and can execute directly once permitted"; §4.3's
+wave-ordering table says the identical tools are "always confirmed inline." The spec is marked
+DRAFT — not yet approved for build — and this is exactly the kind of ambiguity CLAUDE.md's own
+"a status marker is a claim, not a fact" discipline exists to catch rather than paper over. Every
+write tool in this wave requires confirmation, with no exception, matching §4.3's stricter text:
+loosening any of them to auto-execute is real, separate, reviewable work later — the identical
+posture §4.3 itself takes toward PR merge/close ("loosening that later is a deliberate, separate
+decision"), not a default this pass takes for itself.
+
+**`card.set_priority` is `card.update`, not a fifth tool** — there is no separate
+`setCardPriority` SERVICE to wrap; `card.service.ts`'s own doc comment already explains why
+priority "rides" `updateCard` rather than getting a dedicated mutation, and inventing a
+priority-only AI tool around the same full-replace call would just be `card.update` with fewer
+fields exposed.
+
+**`card.update` and `card.set_priority`'s old §4.1 name both read the card FIRST and pass every
+untouched field back unchanged** — the identical fix `apps/worker`'s automation executor already
+uses for its own `card.set_priority` action, itself citing this file's documented `cards.update`
+full-replace trap for the web client. A tool that patches by taking "whatever the model
+mentioned" and defaulting the rest would erase a description per rename exactly like the bug this
+file already documents once. `'field' in input` distinguishes "not supplied" from "explicitly
+cleared" (`{ dueDate: null }`), the same reasoning `apps/web`'s own `useUpdateCard` gives.
+
+**`card.assign` is ADDITIVE, never the real `assignCard`'s full replace** — mirroring
+`apps/worker`'s own automation `card.assign` action, which is additive for the identical reason:
+"assign this to Bob" spoken in a chat means ADD Bob, and a tool that silently unassigned everyone
+else because the model did not enumerate them would do quiet damage a confirmation prompt would
+not even show clearly. An "unassign" tool is future work, not a gap in this one's contract.
+
+**Confirm-before-execute needed no new server-side state, no persistence table, and no second
+route.** When a round's tool calls include one flagged `requiresConfirmation`, NONE of that
+round's calls run — the model's assistant turn (its text plus the requested `toolCalls`) is
+appended to the transcript and `runAssistantTurn` returns immediately with `pendingToolCalls` set,
+before calling the model again. The pending state IS the transcript itself: only a deferred return
+ever leaves an unresolved assistant tool-call turn with no `tool_result` after it, since every
+other path in the loop appends matching results before returning or continuing — so a caller
+resumes by resending that exact transcript back, unchanged, with a new `confirmedToolCallIds`
+naming which pending calls a human actually approved. A call whose id is absent from that list is
+DECLINED, never merely unconfirmed — defaulting an omitted id to "run it anyway" would make a
+client bug indistinguishable from a human's "yes," which is the one guarantee this whole
+mechanism exists to prevent. `assistant.test.ts` proves all three shapes against the real
+`card.create` tool and a real database: deferred (nothing runs, zero rows), resumed-and-confirmed
+(the real service runs, a real row exists), and resumed-with-nothing-confirmed (declined, zero
+rows) — not against a mock that could agree with a wrong implementation.
+
+**`ToolDefinition.requiresConfirmation` is a required field, not a default.** The same reasoning
+guardrail 6 gives for not defaulting a domain event to "none": a write tool that forgot to set it
+should fail to compile, never silently inherit whatever the previous tool in the file happened to
+choose. `ToolContext` gained a `requestId` alongside `subject` for the identical reason a `WorkActor`
+needs one — every write tool builds a real `WorkActor` to call the real `apps/api/src/work` service,
+so the domain event it emits carries a real request id into the audit trail, reading "AI, on behalf
+of `<user>`, did X," never "AI did X."
 
 ### Phase 8 — Search & TQL (COMPLETE, all three waves)
 

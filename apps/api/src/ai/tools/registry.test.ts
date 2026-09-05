@@ -21,6 +21,8 @@ const SUBJECT: Subject = {
   role: 'member',
   tuples: [],
 };
+const REQUEST_ID = unsafeAsId<'RequestId'>('018f4d1e-7c3a-7b2e-8f1a-000000000003');
+const TOOL_CTX = { subject: SUBJECT, requestId: REQUEST_ID };
 
 describe('defineTool', () => {
   it('rejects input that fails the Zod schema before the executor ever runs', async () => {
@@ -29,6 +31,7 @@ describe('defineTool', () => {
       name: 'echo',
       description: 'test',
       jsonSchema: { type: 'object' },
+      requiresConfirmation: false,
       inputSchema: z.object({ value: z.string() }).strict(),
       execute: (_ctx, input) => {
         executed = true;
@@ -36,7 +39,7 @@ describe('defineTool', () => {
       },
     });
 
-    const result = await tool.execute({ subject: SUBJECT }, { value: 42 });
+    const result = await tool.execute(TOOL_CTX, { value: 42 });
 
     expect(result.isError).toBe(true);
     expect(executed).toBe(false);
@@ -47,11 +50,12 @@ describe('defineTool', () => {
       name: 'echo',
       description: 'test',
       jsonSchema: { type: 'object' },
+      requiresConfirmation: false,
       inputSchema: z.object({ value: z.string() }).strict(),
       execute: (_ctx, input) => Promise.resolve({ content: `echo: ${input.value}` }),
     });
 
-    const result = await tool.execute({ subject: SUBJECT }, { value: 'hi' });
+    const result = await tool.execute(TOOL_CTX, { value: 'hi' });
 
     expect(result).toEqual({ content: 'echo: hi' });
   });
@@ -61,11 +65,12 @@ describe('defineTool', () => {
       name: 'limited',
       description: 'test',
       jsonSchema: { type: 'object' },
+      requiresConfirmation: false,
       inputSchema: z.object({ limit: z.number().int().default(5) }).strict(),
       execute: (_ctx, input) => Promise.resolve({ content: String(input.limit) }),
     });
 
-    const result = await tool.execute({ subject: SUBJECT }, {});
+    const result = await tool.execute(TOOL_CTX, {});
 
     expect(result).toEqual({ content: '5' });
   });
@@ -75,13 +80,14 @@ describe('defineTool', () => {
       name: 'guarded',
       description: 'test',
       jsonSchema: { type: 'object' },
+      requiresConfirmation: false,
       inputSchema: z.object({}).strict(),
       execute: () => {
         throw new Error('FORBIDDEN: you do not have permission to do that');
       },
     });
 
-    const result = await tool.execute({ subject: SUBJECT }, {});
+    const result = await tool.execute(TOOL_CTX, {});
 
     expect(result.isError).toBe(true);
     expect(result.content).toContain('FORBIDDEN');
@@ -92,6 +98,7 @@ describe('defineTool', () => {
       name: 'weird',
       description: 'test',
       jsonSchema: { type: 'object' },
+      requiresConfirmation: false,
       inputSchema: z.object({}).strict(),
       execute: () => {
         // eslint-disable-next-line @typescript-eslint/only-throw-error -- deliberately proving the wrapper survives a caller that violates this rule elsewhere (e.g. a third-party dependency).
@@ -99,7 +106,7 @@ describe('defineTool', () => {
       },
     });
 
-    const result = await tool.execute({ subject: SUBJECT }, {});
+    const result = await tool.execute(TOOL_CTX, {});
     expect(result).toEqual({ content: 'The tool failed for an unknown reason.', isError: true });
   });
 });
@@ -110,6 +117,7 @@ describe('toAiToolDefinition', () => {
       name: 'search',
       description: 'Search things.',
       jsonSchema: { type: 'object', properties: { query: { type: 'string' } } },
+      requiresConfirmation: false,
       inputSchema: z.object({ query: z.string() }).strict(),
       execute: () => Promise.resolve({ content: '' }),
     });

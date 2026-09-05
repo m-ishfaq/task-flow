@@ -2,10 +2,12 @@
 
 **Status: §1 (org-level permission grants) SHIPPED and extended past this draft's own scope; §2+§3
 (the `AiProvider` abstraction and the token/spend budget gate) have SHIPPED, per §10's own build
-order; §4 Wave 1 (the tool-calling assistant, read-only tools: `search`) has SHIPPED; §4's write
-tools and confirm-before-execute, plus §5–§8 (the standup view, the doc-space bootstrap, GitHub/PR
-review, onboarding/offboarding automation) remain DRAFT — not yet approved for build, and nothing
-in those sections has been implemented.** Written up per this repo's own convention (see
+order; §4 Wave 1 (the tool-calling assistant, read-only tools: `search`) has SHIPPED; §4 Wave 2
+(single-card write tools — `card.create`/`card.update`/`card.assign`/`card.set_status` — plus
+confirm-before-execute, §4.2) has SHIPPED; the rest of §4.3 (sprint planning, cross-member
+tagging), plus §5–§8 (the standup view, the doc-space bootstrap, GitHub/PR review,
+onboarding/offboarding automation) remain DRAFT — not yet approved for build, and nothing in
+those sections has been implemented.** Written up per this repo's own convention (see
 CLAUDE.md's running note that "a status marker is a claim, not a fact") so that build order and
 scope are agreed before code, not discovered after — left corrected in place here rather than
 silently rewritten, per that same convention, each time a wave shipped without this header being
@@ -51,13 +53,24 @@ the real content-block wire shape. See CLAUDE.md's own "Phase 15 §4 Wave 1" sec
 the loop's bounding, the sequential (not parallel) tool execution, and how a tool's thrown error
 becomes a `tool_result` the model reads rather than a crash.
 
-**§4's write tools and confirm-before-execute (§4.2), §5 (the standup view), §6 (the doc-space
-bootstrap), §7 (GitHub/PR review), and §8 (onboarding/offboarding automation) remain exactly as
-drafted below: designed, not built.** None of §5's standup screen or §7's PR review/merge tools
-have any code behind them yet. This spec intentionally covers several waves under one phase number
-because they share one foundation (§1) and were scoped together in one planning conversation —
-later waves may be split into their own `ai/phase-1N-*.md` files once build starts, the way
-Phase 12's waves eventually got their own sections.
+**§4 Wave 2 — single-card writes and confirm-before-execute — has shipped, resolving a
+self-contradiction this draft did not notice until code tried to follow it.** §4.2's own text says
+`card.create`/`card.update` "are cheap to undo and can execute directly once permitted," while
+§4.3's wave-ordering table says the identical tools are "always confirmed inline." Rather than
+guess which reading a still-unapproved draft meant, every write tool in this wave requires
+confirmation, no exceptions — see CLAUDE.md's own "Phase 15 §4 Wave 2" section for the full
+reasoning, the additive `card.assign` semantics (mirroring `apps/worker`'s own automation action),
+and how confirm-before-execute needed no new persistence at all. `card.set_priority` folded into
+`card.update` rather than becoming a fifth tool, since there is no separate `setCardPriority`
+service to wrap.
+
+**§4.3's remaining waves (sprint planning, cross-member tagging), §5 (the standup view), §6 (the
+doc-space bootstrap), §7 (GitHub/PR review), and §8 (onboarding/offboarding automation) remain
+exactly as drafted below: designed, not built.** None of §5's standup screen or §7's PR
+review/merge tools have any code behind them yet. This spec intentionally covers several waves
+under one phase number because they share one foundation (§1) and were scoped together in one
+planning conversation — later waves may be split into their own `ai/phase-1N-*.md` files once
+build starts, the way Phase 12's waves eventually got their own sections.
 
 ⚠ **This phase touches four surfaces CLAUDE.md already requires human review for** —
 `packages/policy` (§1), any webhook signature verification (§4.3), and it adds a fifth:

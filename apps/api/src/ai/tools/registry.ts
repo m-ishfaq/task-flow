@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import type { AiToolDefinition } from '@taskflow/contracts';
+import type { AiToolDefinition, RequestId } from '@taskflow/contracts';
 import type { Subject } from '@taskflow/policy';
 
 /**
@@ -19,6 +19,11 @@ import type { Subject } from '@taskflow/policy';
 
 export interface ToolContext {
   readonly subject: Subject;
+  /** Needed only by a write tool that builds a `WorkActor` to call a real
+      `apps/api/src/work` service — carried through to the domain event's
+      envelope exactly as a human's own click would set it, so the audit
+      trail reads "AI, on behalf of <user>, did X," never "AI did X." */
+  readonly requestId: RequestId;
 }
 
 export interface ToolResult {
@@ -43,6 +48,17 @@ export interface ToolDefinition {
       registry owes no dependency on a Zod-to-JSON-Schema converter for a
       handful of tools. */
   readonly jsonSchema: Readonly<Record<string, unknown>>;
+  /**
+   * §4.2's confirm-before-execute gate. A REQUIRED field on every tool,
+   * deliberately not defaulted — the same reasoning `guardrail 6`'s
+   * event-per-mutation lint rule gives for not defaulting a domain event: a
+   * new write tool that forgot to set this should fail to compile, not
+   * silently inherit whatever the last tool in the file happened to choose.
+   * `true` means `assistant.ts`'s loop defers the ENTIRE round it appears in
+   * rather than executing anything, and returns the pending call(s) to the
+   * caller for an explicit human decision.
+   */
+  readonly requiresConfirmation: boolean;
   execute(ctx: ToolContext, rawInput: Readonly<Record<string, unknown>>): Promise<ToolResult>;
 }
 
@@ -63,6 +79,7 @@ export function defineTool<Schema extends z.ZodTypeAny>(config: {
   readonly name: string;
   readonly description: string;
   readonly jsonSchema: Readonly<Record<string, unknown>>;
+  readonly requiresConfirmation: boolean;
   readonly inputSchema: Schema;
   readonly execute: (ctx: ToolContext, input: z.infer<Schema>) => Promise<ToolResult>;
 }): ToolDefinition {
@@ -70,6 +87,7 @@ export function defineTool<Schema extends z.ZodTypeAny>(config: {
     name: config.name,
     description: config.description,
     jsonSchema: config.jsonSchema,
+    requiresConfirmation: config.requiresConfirmation,
     async execute(ctx, rawInput) {
       const parsed = config.inputSchema.safeParse(rawInput);
       if (!parsed.success) {
