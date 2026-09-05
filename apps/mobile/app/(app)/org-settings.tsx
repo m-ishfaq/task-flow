@@ -68,7 +68,17 @@ import {
  *
  * **What this deliberately does NOT port**: billing (`BillingSection`) is
  * a real, separate surface — see `billing.tsx`'s own header for why it is
- * a whole screen rather than a section appended here.
+ * a whole screen rather than a section appended here. Individual
+ * permissions (`PermissionsSection`) is the same shape — its own screen,
+ * `permissions.tsx`, reached from the link below — but for a different
+ * reason: it isn't a distinct PRODUCT surface the way billing is, it is
+ * simply large enough (a multi-select member picker, a multi-select
+ * permission picker, a batch-grant sheet, a revocable list) that folding it
+ * into this already-1000-line screen would make both worse. This was a real
+ * gap until this pass, not a deliberate omission — mobile had no way to
+ * grant or revoke an individual permission at all, web-only, which mattered
+ * more once Wave 2 made the automation permissions individually grantable
+ * too and an org running mobile-only had no way to hand one out.
  */
 export default function OrgSettingsScreen() {
   const paddingTop = useTopInset();
@@ -427,6 +437,26 @@ export default function OrgSettingsScreen() {
               </Text>
             )}
           </View>
+
+          {/* `permissions.tsx` — its own screen, ported from web's
+              `PermissionsSection` (Phase 15 §1). Hidden entirely for anyone
+              without `member:manage`, the same reasoning `transferLink`
+              above already follows: seeing this link would mean seeing
+              which colleague holds which individual permission, which is
+              administrative information about other people, not something
+              "you can see the Members list" implies on its own. */}
+          {capabilities.manageMembers && (
+            <View style={styles.section}>
+              <Pressable
+                style={styles.transferLink}
+                onPress={() => {
+                  router.push('/permissions');
+                }}
+              >
+                <Text style={styles.transferLinkText}>Individual permissions…</Text>
+              </Pressable>
+            </View>
+          )}
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Teams · {teams.data?.length ?? 0}</Text>

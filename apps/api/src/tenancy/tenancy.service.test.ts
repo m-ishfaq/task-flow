@@ -1125,6 +1125,49 @@ describe('member grants (ai/phase-15-ai-copilot-and-permissions.md §1)', () => 
     expect(second.grantId).toBe(first.grantId);
   });
 
+  it('is idempotent on revoke too, so revoking an already-revoked grant no-ops rather than 404ing', async () => {
+    // The property `permissions.tsx` (mobile) and `settings-page.tsx`'s bulk
+    // revoke sheet (web) both depend on: a batch that retries the WHOLE
+    // remaining selection after a step-up interruption must not fail on a
+    // pair it already revoked earlier in the same batch.
+    const orgId = await newOrg('member-grant-revoke-idempotent');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'guest' },
+      actorOf(OWNER),
+    );
+    await memberGrants.grant(
+      orgId,
+      { userId: COLLEAGUE, permission: 'call:place' },
+      actorOf(OWNER),
+    );
+
+    const first = await memberGrants.revoke(
+      orgId,
+      { userId: COLLEAGUE, permission: 'call:place' },
+      actorOf(OWNER),
+    );
+    const second = await memberGrants.revoke(
+      orgId,
+      { userId: COLLEAGUE, permission: 'call:place' },
+      actorOf(OWNER),
+    );
+
+    expect(first.revoked).toBe(true);
+    expect(second.revoked).toBe(true);
+
+    // Never-granted-at-all takes the identical no-op path.
+    await expect(
+      memberGrants.revoke(orgId, { userId: COLLEAGUE, permission: 'sms:send' }, actorOf(OWNER)),
+    ).resolves.toEqual({ revoked: true });
+
+    // A missing MEMBERSHIP is still a real 404 — that is not the same
+    // failure as "already revoked".
+    await expect(
+      memberGrants.revoke(orgId, { userId: OUTSIDER, permission: 'call:place' }, actorOf(OWNER)),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
   it('refuses a permission that is not on the eligible list, even a real one', async () => {
     // `org:update` is a real permission in the catalog — the refusal is
     // `isGrantable`, not `isPermission`, and a caller must not be able to

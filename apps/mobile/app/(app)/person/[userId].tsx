@@ -42,12 +42,18 @@ import { ORG_DETAIL_QUERY_KEY } from '../../../src/lib/org-settings.js';
  *
  * The org chart (who they report to, who reports to them), the job facts
  * a directory carries, out-of-office state, and — only when viewing
- * someone ELSE AND the caller holds `capabilities.manageMembers` — an
- * admin-edit form for job title/department/work phone and the reporting
- * line. Editing your OWN job title happens self-service on the Account tab
- * through `people.profile.update` (`profile-section.tsx`), which is why
- * this screen hides its own edit controls for yourself: a second path to
- * the same field would drift.
+ * someone ELSE — either the admin-edit form (job title/department/work
+ * phone/manager, `capabilities.manageMembers`) or, for anyone without that
+ * capability, `PersonFactsSummary`: the same four fields, read-only.
+ * Matching web's own `PersonFactsSummary` (`person-page.tsx`) rather than
+ * hiding the section outright — job title and department are already
+ * visible as badges in the "Job" section above and the manager is already
+ * reachable via the "Reports to" card, so nothing new is disclosed by
+ * presenting them here too, just without edit controls a plain Member
+ * could never use anyway. Editing your OWN job title happens self-service
+ * on the Account tab through `people.profile.update` (`profile-section.tsx`),
+ * which is why this screen hides its own edit controls for yourself: a
+ * second path to the same field would drift.
  *
  * The admin-edit section used to render for everyone regardless of role,
  * pre-filled with the target's current job title/department/work phone,
@@ -159,7 +165,12 @@ function PersonContent({ userId }: { readonly userId: string }) {
 
       <OutOfOfficeSection member={member} />
 
-      {member.userId !== me && canManageMembers && <AdminSection member={member} />}
+      {member.userId !== me &&
+        (canManageMembers ? (
+          <AdminSection member={member} />
+        ) : (
+          <PersonFactsSummary member={member} />
+        ))}
     </ScrollView>
   );
 }
@@ -237,6 +248,48 @@ function OutOfOfficeSection({ member }: { readonly member: DirectoryDetail }) {
 
 function dateLabel(date: Date): string {
   return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/* -------------------------------------------------------------------------- *
+ * Read-only presentable form (no member:manage)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * `AdminSection`'s read-only counterpart, matching web's own
+ * `PersonFactsSummary` (`person-page.tsx`) — same four fields, no inputs,
+ * no Save button.
+ */
+function PersonFactsSummary({ member }: { readonly member: DirectoryDetail }) {
+  return (
+    <Section label="Manage member" hint="Job facts and the reporting line.">
+      <View style={styles.factRow}>
+        <Text style={styles.factRowLabel}>Job title</Text>
+        <Text style={styles.factRowValue}>{member.jobTitle ?? 'Not set'}</Text>
+      </View>
+      <View style={styles.factRow}>
+        <Text style={styles.factRowLabel}>Department</Text>
+        <Text style={styles.factRowValue}>{member.department ?? 'Not set'}</Text>
+      </View>
+      <View style={styles.factRow}>
+        <Text style={styles.factRowLabel}>Work phone</Text>
+        <Text style={styles.factRowValue}>{member.workPhone ?? 'Not set'}</Text>
+      </View>
+      <View style={styles.factRow}>
+        <Text style={styles.factRowLabel}>Manager</Text>
+        {member.manager === null ? (
+          <Text style={styles.factRowValue}>No manager</Text>
+        ) : (
+          <Pressable
+            onPress={() => {
+              if (member.manager !== null) router.push(`/person/${member.manager.userId}`);
+            }}
+          >
+            <Text style={styles.factRowLink}>{directoryLabel(member.manager)}</Text>
+          </Pressable>
+        )}
+      </View>
+    </Section>
+  );
 }
 
 /* -------------------------------------------------------------------------- *
@@ -620,6 +673,28 @@ const styles = StyleSheet.create({
   oooMessage: {
     fontSize: 12,
     color: colors.inkMuted.hex,
+  },
+  factRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line.hex,
+  },
+  factRowLabel: {
+    fontSize: 13,
+    color: colors.inkMuted.hex,
+  },
+  factRowValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.ink.hex,
+  },
+  factRowLink: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.accent.hex,
   },
   fieldLabel: {
     fontSize: 12,

@@ -575,6 +575,20 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
  * than closing on selection, so several members can be picked without
  * reopening the popover between each one.
  *
+ * ## The list gained the same batching, in reverse
+ *
+ * Each row has its own checkbox now; checking several and confirming
+ * "Revoke selected" revokes all of them, the same `runRevokeBatch` shape as
+ * the grant side — sequential calls to the existing single-pair
+ * `memberGrants.revoke` route, retried from the start of the SELECTION on a
+ * step-up interruption. This is why `revoke()` in
+ * `member-grant.service.ts` had to gain the identical idempotency `grant()`
+ * already had: without it, retrying a partially-completed revoke batch
+ * would 404 on the pairs it already revoked before the interruption and
+ * abort whatever was left selected. The single per-row "Revoke" button
+ * stays too, for the common one-off case that does not need a checkbox
+ * first.
+ *
  * The whole section is gated on `capabilities.manageMembers`
  * (`SettingsPage`'s own render), not just the add form and revoke buttons
  * inside it — even though `memberGrants.list`'s own floor is `member:read`
@@ -665,6 +679,36 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
     },
   });
 
+  /**
+   * Bulk revoke — the list's own counterpart to the add form's bulk grant.
+   * Same shape: sequential calls to the existing single-pair route, retried
+   * from the start of the SELECTION on a step-up interruption. Safe for the
+   * identical reason the grant batch is, now that `member-grant.service.ts`'s
+   * `revoke()` is ALSO idempotent on "nothing to revoke" — a pair the batch
+   * already revoked before an interruption no-ops on retry instead of
+   * throwing NOT_FOUND and aborting whatever was left in the selection.
+   */
+  const runRevokeBatch = async (
+    pairs: readonly { readonly userId: UserId; readonly permission: string }[],
+  ): Promise<void> => {
+    for (const pair of pairs) {
+      await api.tenancy.memberGrants.revoke.mutate(pair);
+    }
+  };
+
+  const bulkRevoke = useMutation({
+    mutationFn: runRevokeBatch,
+    onSuccess: async () => {
+      setSelectedGrants(new Set());
+      await refresh();
+    },
+    onError: (error, pairs) => {
+      guard(error, () => {
+        bulkRevoke.mutate(pairs);
+      });
+    },
+  });
+
   const permissions = [...GRANTABLE_PERMISSIONS];
 
   const [pickedUserIds, setPickedUserIds] = useState<ReadonlySet<string>>(new Set());
@@ -674,6 +718,21 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
   const [permissionPickerOpen, setPermissionPickerOpen] = useState(false);
 
   const [grantSearch, setGrantSearch] = useState('');
+  /* Keyed `${userId}:${permission}`, matching each row's own `key` prop —
+     the same composite identity the list already uses, reused rather than
+     invented a second time. Persists across a search filter change: hiding
+     a selected row does not un-select it, matching how a checkbox list
+     elsewhere in this app (e.g. an inbox) usually behaves. */
+  const [selectedGrants, setSelectedGrants] = useState<ReadonlySet<string>>(new Set());
+
+  const toggleGrantSelection = (key: string) => {
+    setSelectedGrants((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   const toggleUser = (userId: string) => {
     setPickedUserIds((prev) => {
@@ -931,17 +990,60 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
             />
           )}
 
+          {capabilities.manageMembers && selectedGrants.size > 0 && (
+            <div className="mb-2 flex items-center gap-2 rounded-lg border border-line/50 bg-surface-raised px-3 py-2">
+              <span className="text-xs text-ink-muted">{selectedGrants.size} selected</span>
+              <ConfirmButton
+                label={
+                  bulkRevoke.isPending
+                    ? 'Revoking…'
+                    : `Revoke selected (${String(selectedGrants.size)})`
+                }
+                confirmLabel="Revoke all selected?"
+                size="sm"
+                disabled={bulkRevoke.isPending}
+                onConfirm={() => {
+                  const pairs = [...selectedGrants].map((key) => {
+                    const separatorIndex = key.indexOf(':');
+                    return {
+                      userId: key.slice(0, separatorIndex) as UserId,
+                      permission: key.slice(separatorIndex + 1),
+                    };
+                  });
+                  bulkRevoke.mutate(pairs);
+                }}
+              />
+              <button
+                type="button"
+                className="ml-auto text-xs text-ink-faint hover:text-ink"
+                onClick={() => {
+                  setSelectedGrants(new Set());
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          )}
+
           {visibleGrants.length === 0 ? (
             <Empty title="No grants match your search" />
           ) : (
             <ul className="divide-y divide-line/40 overflow-hidden rounded-xl border border-line/50">
               {visibleGrants.map((entry) => {
                 const member = memberById.get(entry.userId);
+                const key = `${entry.userId}:${entry.permission}`;
                 return (
-                  <li
-                    key={`${entry.userId}:${entry.permission}`}
-                    className="flex items-center gap-3 px-3 py-2.5"
-                  >
+                  <li key={key} className="flex items-center gap-3 px-3 py-2.5">
+                    {capabilities.manageMembers && (
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${member ? labelOf(member) : entry.userId} — ${entry.permission}`}
+                        checked={selectedGrants.has(key)}
+                        onChange={() => {
+                          toggleGrantSelection(key);
+                        }}
+                      />
+                    )}
                     <Avatar userId={entry.userId} label={member ? labelOf(member) : entry.userId} />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium text-ink">
@@ -975,6 +1077,7 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
       )}
 
       {revoke.isError && <ErrorText error={revoke.error} />}
+      {bulkRevoke.isError && <ErrorText error={bulkRevoke.error} />}
       {dialog}
     </Section>
   );

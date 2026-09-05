@@ -129,6 +129,19 @@ export async function grant(
  * than deleting the row — the grant stays visible in history, mirroring
  * `identity.sessions` and `comms.suppressions` (see migration 0097's own
  * comment).
+ *
+ * Idempotent on "no active grant to revoke" — mirroring `grant()`'s own
+ * idempotency above, for the identical reason: `settings-page.tsx`'s bulk
+ * revoke sheet (Phase 15 §1, Wave 2) calls this route once per selected
+ * pair in sequence and, on a step-up interruption, retries the WHOLE
+ * remaining selection from the start rather than tracking which pairs
+ * already succeeded. Before this, a retry that reached an
+ * already-revoked pair (one revoked earlier in the same batch, before the
+ * interruption) would throw NOT_FOUND and abort the rest of the batch —
+ * a real behavior change from a caller's error into "nothing to do",
+ * exactly the shape `grant()`'s idempotency already gives the equivalent
+ * bulk-GRANT sheet. A missing MEMBERSHIP still throws: that is a genuinely
+ * different failure (the person left the org), not "already revoked".
  */
 export async function revoke(
   orgId: OrgId,
@@ -152,7 +165,7 @@ export async function revoke(
       .limit(1);
 
     const row = rows[0];
-    if (!row) throw errors.notFound();
+    if (!row) return { revoked: true as const };
 
     await tx
       .update(schema.memberGrants)
