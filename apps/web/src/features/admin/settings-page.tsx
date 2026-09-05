@@ -1,7 +1,15 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
+import {
+  ModalContent,
+  ModalDescription,
+  ModalRoot,
+  ModalTitle,
+  PopoverContent,
+  PopoverRoot,
+  PopoverTrigger,
+} from '@taskflow/ui';
 import type { TeamId, UserId } from '@taskflow/contracts';
 import { DIRECTLY_ASSIGNABLE_ROLES, GRANTABLE_PERMISSIONS, type Role } from '@taskflow/policy';
 import { api } from '../../lib/trpc.js';
@@ -254,6 +262,19 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('member');
 
+  /* Only worth the box past a handful of members — same threshold
+     `assignee-section.tsx` uses for the identical reason: the demo `large`
+     seed profile alone puts 60 people in one org, and scrolling past fifty
+     rows to find one is the thing this fixes. */
+  const [memberSearch, setMemberSearch] = useState('');
+  const memberNeedle = memberSearch.trim().toLowerCase();
+  const visibleMembers = (members.data ?? []).filter(
+    (member) =>
+      memberNeedle === '' ||
+      member.email.toLowerCase().includes(memberNeedle) ||
+      (member.displayName?.toLowerCase().includes(memberNeedle) ?? false),
+  );
+
   return (
     <Section
       title="Members"
@@ -348,24 +369,42 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
       {members.isError && <ErrorView error={members.error} title="Could not load members" />}
 
       {members.data !== undefined && (
-        <ul className="divide-y divide-line/40 overflow-hidden rounded-xl border border-line/50">
-          {members.data.map((member) => (
-            <MemberRow
-              key={member.userId}
-              member={member}
-              isSelf={member.userId === currentUserId}
-              busy={changeRole.isPending || remove.isPending}
-              canChangeRole={capabilities.manageMembers}
-              canRemove={capabilities.removeMembers}
-              onRoleChange={(next) => {
-                changeRole.mutate({ userId: member.userId as UserId, role: next });
+        <>
+          {members.data.length > 8 && (
+            <Input
+              aria-label="Search members"
+              placeholder="Search by name or email…"
+              value={memberSearch}
+              onChange={(event) => {
+                setMemberSearch(event.target.value);
               }}
-              onRemove={() => {
-                remove.mutate(member.userId as UserId);
-              }}
+              className="mb-2 h-9 max-w-xs text-sm"
             />
-          ))}
-        </ul>
+          )}
+
+          {visibleMembers.length === 0 ? (
+            <Empty title="No members match your search" />
+          ) : (
+            <ul className="divide-y divide-line/40 overflow-hidden rounded-xl border border-line/50">
+              {visibleMembers.map((member) => (
+                <MemberRow
+                  key={member.userId}
+                  member={member}
+                  isSelf={member.userId === currentUserId}
+                  busy={changeRole.isPending || remove.isPending}
+                  canChangeRole={capabilities.manageMembers}
+                  canRemove={capabilities.removeMembers}
+                  onRoleChange={(next) => {
+                    changeRole.mutate({ userId: member.userId as UserId, role: next });
+                  }}
+                  onRemove={() => {
+                    remove.mutate(member.userId as UserId);
+                  }}
+                />
+              ))}
+            </ul>
+          )}
+        </>
       )}
 
       {changeRole.isError && <ErrorText error={changeRole.error} />}
@@ -468,11 +507,30 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
  * enforces (`packages/policy`'s `isGrantable`), imported rather than
  * hand-copied so a permission added there appears here without a second edit.
  *
- * The list itself is always visible to anyone who can see the Members
- * section above (both routes sit behind `member:read`) — only the toggle
- * buttons are disabled for a caller without `member:manage`, matching how
- * the role dropdown above stays visible-but-inert for the same caller
- * rather than hiding the whole picture of who can do what.
+ * ## A list of grants, not a member × permission matrix
+ *
+ * The first version of this section rendered every member as a row and every
+ * grantable permission as a COLUMN. That reads fine at 5 permissions and a
+ * handful of members and stops being usable almost immediately after —
+ * `GRANTABLE_PERMISSIONS` growing past a screen's width turns it into
+ * sideways scrolling, and an org with real headcount turns it into a wall of
+ * mostly-off toggles nobody can scan. What anyone actually needs to see is
+ * "who currently has an extra grant, and what" — a short, sparse list — so
+ * this follows the same "add first, then the list" shape the Members section
+ * above uses: a form to grant one permission to one person, and a list of
+ * only the grants that actually exist. It grows with usage, not with
+ * headcount × catalog size.
+ *
+ * The member picker is the same type-to-filter Popover list
+ * `assignee-section.tsx` and `card-tile.tsx`'s `QuickAssignee` already use —
+ * this is a further occurrence of that pattern, not a new one; see that
+ * file's own note on pulling it into a shared component once a good moment
+ * presents itself, not forced here.
+ *
+ * The grant list itself is visible to anyone who can see the Members section
+ * above (both routes sit behind `member:read`) — only the add form and the
+ * revoke buttons are hidden for a caller without `member:manage`, matching
+ * how the invite form above is hidden rather than shown-and-disabled.
  */
 function PermissionsSection({ orgId }: { readonly orgId: string }) {
   const queryClient = useQueryClient();
@@ -495,7 +553,11 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
   const grant = useMutation({
     mutationFn: (input: { userId: UserId; permission: string }) =>
       api.tenancy.memberGrants.grant.mutate(input),
-    onSuccess: refresh,
+    onSuccess: async () => {
+      setPickedUserId('');
+      setMemberQuery('');
+      await refresh();
+    },
     onError: (error, input) => {
       guard(error, () => {
         grant.mutate(input);
@@ -514,11 +576,40 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
     },
   });
 
+  const permissions = [...GRANTABLE_PERMISSIONS];
+
+  const [pickedUserId, setPickedUserId] = useState('');
+  const [memberQuery, setMemberQuery] = useState('');
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [permission, setPermission] = useState<string>(permissions[0] ?? '');
+
+  const [grantSearch, setGrantSearch] = useState('');
+
   if (members.data === undefined || grants.data === undefined) return null;
 
-  const permissions = [...GRANTABLE_PERMISSIONS];
-  const isGranted = (userId: string, permission: string) =>
-    grants.data.some((entry) => entry.userId === userId && entry.permission === permission);
+  const labelOf = (member: { readonly email: string; readonly displayName: string | null }) =>
+    member.displayName ?? member.email;
+
+  const memberById = new Map(members.data.map((member) => [member.userId, member]));
+  const pickedMember = memberById.get(pickedUserId);
+
+  const needle = memberQuery.trim().toLowerCase();
+  const matches =
+    needle === ''
+      ? members.data
+      : members.data.filter(
+          (member) =>
+            member.email.toLowerCase().includes(needle) ||
+            (member.displayName?.toLowerCase().includes(needle) ?? false),
+        );
+
+  const grantNeedle = grantSearch.trim().toLowerCase();
+  const visibleGrants = grants.data.filter((entry) => {
+    if (grantNeedle === '') return true;
+    const member = memberById.get(entry.userId);
+    const label = member ? labelOf(member).toLowerCase() : '';
+    return label.includes(grantNeedle) || entry.permission.toLowerCase().includes(grantNeedle);
+  });
 
   return (
     <Section
@@ -526,69 +617,172 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
       count={grants.data.length}
       description="On top of a member's role, one specific ability can be given to (or taken from) one person — e.g. letting one guest place calls without promoting them to Member."
     >
-      {members.data.length === 0 || permissions.length === 0 ? (
-        <Empty title="Nothing to show yet" />
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-line/50">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-line/50 text-left text-xs text-ink-faint">
-                <th className="p-2 font-medium">Member</th>
-                {permissions.map((permission) => (
-                  <th key={permission} className="p-2 font-medium">
-                    {permission}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {members.data.map((member) => (
-                <tr key={member.userId} className="border-b border-line/30 last:border-0">
-                  <td className="p-2">
-                    <div className="font-medium text-ink">{member.email}</div>
-                    <div className="text-xs text-ink-faint">{member.role}</div>
-                  </td>
-                  {permissions.map((permission) => {
-                    const granted = isGranted(member.userId, permission);
-                    const userId = member.userId as UserId;
-                    return (
-                      <td key={permission} className="p-2">
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={granted}
-                          aria-label={`${granted ? 'Revoke' : 'Grant'} ${permission} for ${member.email}`}
-                          disabled={
-                            !capabilities.manageMembers || grant.isPending || revoke.isPending
-                          }
-                          onClick={() => {
-                            if (granted) revoke.mutate({ userId, permission });
-                            else grant.mutate({ userId, permission });
-                          }}
-                          className={cn(
-                            'h-6 w-11 rounded-full transition-colors',
-                            granted ? 'bg-accent' : 'bg-surface-hover',
-                            !capabilities.manageMembers && 'cursor-not-allowed opacity-50',
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              'block h-5 w-5 rounded-full bg-surface transition-transform',
-                              granted ? 'translate-x-5' : 'translate-x-0.5',
-                            )}
+      {capabilities.manageMembers && permissions.length > 0 && (
+        <AddPanel>
+          <form
+            className="flex flex-wrap items-end gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (pickedUserId !== '' && permission !== '') {
+                grant.mutate({ userId: pickedUserId as UserId, permission });
+              }
+            }}
+          >
+            <div className="min-w-[16rem] flex-1">
+              <Field label="Member" htmlFor="grant-member-search">
+                <PopoverRoot
+                  open={pickerOpen}
+                  onOpenChange={(open) => {
+                    setPickerOpen(open);
+                    if (!open) setMemberQuery('');
+                  }}
+                >
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      id="grant-member-search"
+                      className="flex h-9 w-full items-center rounded-lg border border-line/50 bg-surface px-2 text-left text-sm text-ink"
+                    >
+                      {pickedMember ? (
+                        <span className="flex items-center gap-1.5 truncate">
+                          <Avatar
+                            userId={pickedMember.userId}
+                            label={labelOf(pickedMember)}
+                            size="xs"
                           />
-                        </button>
-                      </td>
-                    );
-                  })}
-                </tr>
+                          <span className="truncate">{labelOf(pickedMember)}</span>
+                        </span>
+                      ) : (
+                        <span className="text-ink-faint">Search by name or email…</span>
+                      )}
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-64 space-y-1.5 p-2">
+                    <Input
+                      aria-label="Search members"
+                      placeholder="Search by name or email…"
+                      value={memberQuery}
+                      onChange={(event) => {
+                        setMemberQuery(event.target.value);
+                      }}
+                      className="h-8 text-xs"
+                    />
+                    {matches.length === 0 ? (
+                      <p className="p-1 text-xs text-ink-faint">No matches.</p>
+                    ) : (
+                      <ul className="max-h-56 space-y-0.5 overflow-y-auto">
+                        {matches.map((member) => (
+                          <li key={member.userId}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPickedUserId(member.userId);
+                                setPickerOpen(false);
+                                setMemberQuery('');
+                              }}
+                              className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs text-ink-muted hover:bg-surface-hover hover:text-ink"
+                            >
+                              <Avatar userId={member.userId} label={labelOf(member)} size="xs" />
+                              <span className="truncate">{labelOf(member)}</span>
+                              <span className="ml-auto text-ink-faint">{member.role}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </PopoverContent>
+                </PopoverRoot>
+              </Field>
+            </div>
+
+            <select
+              aria-label="Permission to grant"
+              value={permission}
+              onChange={(event) => {
+                setPermission(event.target.value);
+              }}
+              className="h-9 rounded-lg border border-line/50 bg-surface px-2 text-sm text-ink"
+            >
+              {permissions.map((entry) => (
+                <option key={entry} value={entry}>
+                  {entry}
+                </option>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </select>
+
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={grant.isPending || pickedUserId === ''}
+            >
+              {grant.isPending ? 'Granting…' : 'Grant'}
+            </Button>
+          </form>
+
+          {grant.isError && <ErrorText error={grant.error} />}
+        </AddPanel>
       )}
 
-      {(grant.isError || revoke.isError) && <ErrorText error={grant.error ?? revoke.error} />}
+      {grants.data.length === 0 ? (
+        <Empty title="No individual grants yet" />
+      ) : (
+        <>
+          {grants.data.length > 8 && (
+            <Input
+              aria-label="Search grants"
+              placeholder="Search by member or permission…"
+              value={grantSearch}
+              onChange={(event) => {
+                setGrantSearch(event.target.value);
+              }}
+              className="mb-2 h-9 max-w-xs text-sm"
+            />
+          )}
+
+          {visibleGrants.length === 0 ? (
+            <Empty title="No grants match your search" />
+          ) : (
+            <ul className="divide-y divide-line/40 overflow-hidden rounded-xl border border-line/50">
+              {visibleGrants.map((entry) => {
+                const member = memberById.get(entry.userId);
+                return (
+                  <li
+                    key={`${entry.userId}:${entry.permission}`}
+                    className="flex items-center gap-3 px-3 py-2.5"
+                  >
+                    <Avatar userId={entry.userId} label={member ? labelOf(member) : entry.userId} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium text-ink">
+                        {member ? labelOf(member) : entry.userId}
+                      </div>
+                      <div className="text-xs text-ink-faint">
+                        {member?.role ?? 'former member'} · granted {formatDate(entry.grantedAt)}
+                      </div>
+                    </div>
+                    <Badge>{entry.permission}</Badge>
+                    {capabilities.manageMembers && (
+                      <ConfirmButton
+                        label="Revoke"
+                        confirmLabel="Revoke?"
+                        size="sm"
+                        disabled={revoke.isPending}
+                        onConfirm={() => {
+                          revoke.mutate({
+                            userId: entry.userId as UserId,
+                            permission: entry.permission,
+                          });
+                        }}
+                      />
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
+      )}
+
+      {revoke.isError && <ErrorText error={revoke.error} />}
       {dialog}
     </Section>
   );
