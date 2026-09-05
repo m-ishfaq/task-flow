@@ -99,6 +99,7 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
                 createProject: z.boolean(),
                 viewAnalytics: z.boolean(),
                 viewAutomations: z.boolean(),
+                viewAuditLog: z.boolean(),
               })
               .strict(),
           }),

@@ -510,11 +510,22 @@ const accountRoute = createRoute({
   component: AccountPage,
 });
 
+/**
+ * The org audit log. `audit:read` is Admin-and-Owner-only by role, same
+ * shape as analytics/automations above — see `analyticsRoute`'s comment for
+ * why this wraps in `CapabilityGate`: `settings-page.tsx` already hides the
+ * link itself, but a direct URL still reached the real page and surfaced a
+ * raw FORBIDDEN without this.
+ */
 const auditRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/audit',
   beforeLoad: () => requireOrg('/settings/audit'),
-  component: AuditPage,
+  component: () => (
+    <CapabilityGate capability="viewAuditLog">
+      <AuditPage />
+    </CapabilityGate>
+  ),
 });
 
 /**

@@ -67,6 +67,10 @@ import { BillingSection } from './billing-section.js';
  */
 export function SettingsPage() {
   const orgId = useSession((state) => state.orgId) ?? '';
+  // Only for the Audit log link below — every section further down fetches
+  // this same cached query itself for its own capabilities, so this costs
+  // no extra request.
+  const org = useQuery(orgDetailQuery(orgId));
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-9 p-8">
@@ -74,12 +78,14 @@ export function SettingsPage() {
         title="Organization settings"
         description="Members, teams, and who can reach what."
         actions={
-          <Link
-            to="/settings/audit"
-            className="rounded-lg border border-line/50 px-2.5 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
-          >
-            Audit log
-          </Link>
+          org.data?.capabilities.viewAuditLog === true ? (
+            <Link
+              to="/settings/audit"
+              className="rounded-lg border border-line/50 px-2.5 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface-hover hover:text-ink"
+            >
+              Audit log
+            </Link>
+          ) : undefined
         }
       />
 
@@ -188,6 +194,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
     createProject: false,
     viewAnalytics: false,
     viewAutomations: false,
+    viewAuditLog: false,
   };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.members(orgId) });
@@ -550,6 +557,7 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
     createProject: false,
     viewAnalytics: false,
     viewAutomations: false,
+    viewAuditLog: false,
   };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.memberGrants(orgId) });

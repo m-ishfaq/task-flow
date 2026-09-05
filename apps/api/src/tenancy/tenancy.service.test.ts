@@ -204,11 +204,12 @@ describe('settings capabilities', () => {
       createProject: true,
       viewAnalytics: true,
       viewAutomations: true,
+      viewAuditLog: true,
     });
 
     // A plain Member holds none of these — card:create and friends do not
-    // touch org, member, team, project, analytics, or automation administration
-    // at all.
+    // touch org, member, team, project, analytics, automation, or audit
+    // administration at all.
     expect(asMember.capabilities).toEqual({
       updateOrg: false,
       inviteMember: false,
@@ -218,6 +219,7 @@ describe('settings capabilities', () => {
       createProject: false,
       viewAnalytics: false,
       viewAutomations: false,
+      viewAuditLog: false,
     });
   });
 
@@ -245,6 +247,7 @@ describe('settings capabilities', () => {
       createProject: true,
       viewAnalytics: true,
       viewAutomations: true,
+      viewAuditLog: true,
     });
   });
 });

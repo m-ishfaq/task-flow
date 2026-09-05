@@ -253,6 +253,8 @@ export interface SettingsCapabilities {
   readonly viewAnalytics: boolean;
   /** Same reasoning as `viewAnalytics`, for `/automations` and `automation:manage`. */
   readonly viewAutomations: boolean;
+  /** Same reasoning again, for the "Audit log" link and `audit:read`. */
+  readonly viewAuditLog: boolean;
 }
 
 export interface OrgDetail {
@@ -308,6 +310,7 @@ export async function getOrg(orgId: OrgId, subject: Subject): Promise<OrgDetail>
          be advertising a door that plan money can never open for them. */
       viewAnalytics: can(subject, 'analytics:read').allowed,
       viewAutomations: can(subject, 'automation:manage').allowed,
+      viewAuditLog: can(subject, 'audit:read').allowed,
     },
   };
 }

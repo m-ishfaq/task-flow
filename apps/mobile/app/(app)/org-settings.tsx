@@ -104,6 +104,7 @@ export default function OrgSettingsScreen() {
     createProject: false,
     viewAnalytics: false,
     viewAutomations: false,
+    viewAuditLog: false,
   };
 
   const refreshMembers = async (): Promise<void> => {
