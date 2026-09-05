@@ -36,16 +36,17 @@ import { orgDetailQuery } from '../org/api.js';
  * `people.profile.update`, which is why this page hides the edit controls for
  * yourself — editing yourself here would be a second, redundant path.
  *
- * The "Manage member" section — edit affordances for ANOTHER member's job
- * facts and reporting line — is gated on `capabilities.manageMembers`, the
- * same org-wide `member:manage` boolean `settings-page.tsx`'s own
- * `PermissionsSection` uses. It used to render for anyone who wasn't
- * viewing their own profile, pre-filled with the target's current job
- * title/department/work phone and a Save button, and rely on the server to
- * answer FORBIDDEN when a plain Member touched Save (Phase 15 §1's sweep
- * missed this page the first time through; found via the same colleague
- * profile URL that started the sweep, reused by a later report). Every
- * member could see this — never just the caller who could actually use it.
+ * A caller without `capabilities.manageMembers` gets `PersonFactsSummary`
+ * instead of `AdminSection` for another member's job facts and reporting
+ * line — the same fields, presented read-only rather than as input fields
+ * with a Save button that would answer FORBIDDEN. This is a narrower fix
+ * than the "hide entirely" pattern used elsewhere in Phase 15 §1's sweep:
+ * job title/department/work phone/manager are not privileged the way
+ * billing figures or another member's individual permission grants are —
+ * job title and department are already visible as badges in the "Job"
+ * section above, and the manager is already reachable via the "Reports to"
+ * card, so nothing new is disclosed by also presenting them here, just
+ * without edit controls a plain Member could never use anyway.
  */
 export function PersonPage({ userId }: { readonly userId: string }) {
   const orgId = useSession((state) => state.orgId) ?? '';
@@ -120,7 +121,12 @@ export function PersonPage({ userId }: { readonly userId: string }) {
 
       <OutOfOfficeSection member={member} />
 
-      {member.userId !== me && canManageMembers && <AdminSection member={member} orgId={orgId} />}
+      {member.userId !== me &&
+        (canManageMembers ? (
+          <AdminSection member={member} orgId={orgId} />
+        ) : (
+          <PersonFactsSummary member={member} />
+        ))}
     </div>
   );
 }
@@ -197,6 +203,56 @@ function OutOfOfficeSection({ member }: { readonly member: DirectoryDetail }) {
         )}
       </div>
     </Section>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * Read-only presentable form (no member:manage)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * `AdminSection`'s read-only counterpart for a caller who cannot use it.
+ * Same four fields, same "Manage member" shape, no inputs and no Save
+ * button — presented rather than hidden, because none of the four is
+ * privileged information a plain Member couldn't already piece together
+ * from this same page.
+ */
+function PersonFactsSummary({ member }: { readonly member: DirectoryDetail }) {
+  return (
+    <Section title="Manage member" description="Job facts and the reporting line.">
+      <dl className="grid gap-3 sm:grid-cols-2">
+        <Fact label="Job title" value={member.jobTitle} />
+        <Fact label="Department" value={member.department} />
+        <Fact label="Work phone" value={member.workPhone} />
+        <div>
+          <dt className="text-xs font-medium text-ink-muted">Manager</dt>
+          <dd className="mt-1 text-sm text-ink">
+            {member.manager === null ? (
+              <span className="text-ink-faint">No manager</span>
+            ) : (
+              <Link
+                to="/people/$userId"
+                params={{ userId: member.manager.userId }}
+                className="text-accent hover:underline"
+              >
+                {displayName({ name: member.manager.displayName, email: member.manager.email })}
+              </Link>
+            )}
+          </dd>
+        </div>
+      </dl>
+    </Section>
+  );
+}
+
+function Fact({ label, value }: { readonly label: string; readonly value: string | null }) {
+  return (
+    <div>
+      <dt className="text-xs font-medium text-ink-muted">{label}</dt>
+      <dd className="mt-1 text-sm text-ink">
+        {value ?? <span className="text-ink-faint">Not set</span>}
+      </dd>
+    </div>
   );
 }
 
