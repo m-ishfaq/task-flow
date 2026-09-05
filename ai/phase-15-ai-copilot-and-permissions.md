@@ -54,7 +54,7 @@ exists.
   "role plus extras" (`roles.ts:26-148`); Guest holds nothing from its role at all (`roles.ts:158`).
 - A **resource-scoped** per-person grant already exists: relationship tuples
   (`packages/policy/src/tuples.ts`) — `(subject, relation, object)` rows with relations `owner,
-  editor, commenter, viewer, member` (`tuples.ts:19`). This is how one person can get
+editor, commenter, viewer, member` (`tuples.ts:19`). This is how one person can get
   `comment:create` on one specific board without their role changing. It only ever points at a
   resource a tuple type is registered for (board, channel, page, etc.).
 - **What does not exist**: granting one **org-level** permission (no resource attached — e.g.
@@ -154,7 +154,7 @@ That is a real, confirmed gap, and this phase does not repeat it for AI:
 - Platform admin gets a live "AI Models" tab (new, alongside the existing Orgs/Users/Flags/Audit
   tabs in `apps/web/src/features/platform-admin`) to add a model, set it as the global default,
   override it per org, and rotate a key — all without a deploy.
-- Fixing `PAYMENTS_PROVIDER` to match this pattern is *not* in scope for this phase, but is
+- Fixing `PAYMENTS_PROVIDER` to match this pattern is _not_ in scope for this phase, but is
   flagged here as a natural, low-risk follow-up once this shape exists and is proven — see §7.
 
 ### 2.4 Access gating
@@ -209,15 +209,15 @@ exists. It gets a fixed, closed tool list (deliberately mirroring the automation
 closed `ACTION_TYPES` — this is the same "data, not scripts" doctrine, just triggered by
 conversation instead of a rule):
 
-| Tool | Underlying call | Notes |
-|---|---|---|
-| `search` | existing TQL compiler/evaluator | read-only |
-| `summarize_sprint` / `summarize_channel` | existing analytics + card reads | read-only |
-| `card.create` / `card.update` / `card.assign` / `card.set_priority` / `card.set_status` | the real `work/services` functions | same `can()` check as a human click |
-| `sprint.create` / `sprint.add_cards` | the real sprint services | same `can()` check |
-| `chat.post_message` (with `mention` nodes) | existing Chat send path | reuses the already-whitelisted `mention` TipTap node — no new content type |
-| `docs.create_page` | existing Docs service | used by the org-onboarding bootstrap, §6 |
-| `web_search` (optional, separately toggled) | Claude API's server-side web search tool | off by default; a distinct toggle from the rest, since it sends query text outside the org and costs separately |
+| Tool                                                                                    | Underlying call                          | Notes                                                                                                           |
+| --------------------------------------------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `search`                                                                                | existing TQL compiler/evaluator          | read-only                                                                                                       |
+| `summarize_sprint` / `summarize_channel`                                                | existing analytics + card reads          | read-only                                                                                                       |
+| `card.create` / `card.update` / `card.assign` / `card.set_priority` / `card.set_status` | the real `work/services` functions       | same `can()` check as a human click                                                                             |
+| `sprint.create` / `sprint.add_cards`                                                    | the real sprint services                 | same `can()` check                                                                                              |
+| `chat.post_message` (with `mention` nodes)                                              | existing Chat send path                  | reuses the already-whitelisted `mention` TipTap node — no new content type                                      |
+| `docs.create_page`                                                                      | existing Docs service                    | used by the org-onboarding bootstrap, §6                                                                        |
+| `web_search` (optional, separately toggled)                                             | Claude API's server-side web search tool | off by default; a distinct toggle from the rest, since it sends query text outside the org and costs separately |
 
 **The assistant always acts as the person chatting with it**, using their real membership and
 role — never a superuser identity. Every tool call re-runs the same `can()` check the underlying
@@ -306,7 +306,7 @@ read-only assistant wave.
 - Inbound webhook for PR events (opened/merged) — **signature verification is a human-review
   surface**, same tier as the existing Twilio webhook verification CLAUDE.md already calls out.
   Follows the same order-of-operations lesson documented for the telephony webhook: resolve the
-  org from a client-supplied lookup key (the repo full name), verify the signature against *that*
+  org from a client-supplied lookup key (the repo full name), verify the signature against _that_
   org's stored secret, and only then trust the payload.
 - `pr.merged` becomes a new domain event, which the **existing** automation engine already knows
   how to react to (it triggers on any registered event name) — so "auto-move the card to Done
@@ -329,6 +329,7 @@ Both are "when X happens, run this checklist" — precisely what the automation 
 does. No new subsystem, two new trigger events and a handful of new actions:
 
 **Onboarding**, triggered on `membership.created`:
+
 1. Add to the team's default channels (new action, `channel.add_member`)
 2. Grant Docs access to the handbook/wiki space (existing permission model)
 3. Assign a starter onboarding checklist of cards (existing `card.create`, or a "clone template
@@ -339,6 +340,7 @@ does. No new subsystem, two new trigger events and a handful of new actions:
 
 **Offboarding**, triggered on a new `membership.offboarding_started` event (raised by an admin
 action, distinct from immediate removal):
+
 1. Revoke active sessions immediately (existing session-revocation path)
 2. Reassign open/in-progress cards to someone else — **new** action, `cards.bulk_reassign`
    (bulk, so needs the §4.2 confirm treatment if ever exposed to the assistant directly, and its
@@ -376,7 +378,7 @@ action, distinct from immediate removal):
   first-party tools inside TaskFlow's own API. Exposing that same tool set over the actual MCP
   protocol to external clients is a distinct, later decision with its own auth/scoping questions.
 - **Narrowing a role's default permissions per member** (the inverse of §1 — taking capability
-  *away* from one person that their role would otherwise grant). Flagged as a known harder
+  _away_ from one person that their role would otherwise grant). Flagged as a known harder
   problem and deliberately left out of Wave 1's grant model, which only ever adds capability.
 
 ---
