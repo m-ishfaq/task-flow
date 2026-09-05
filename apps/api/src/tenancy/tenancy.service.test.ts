@@ -202,10 +202,13 @@ describe('settings capabilities', () => {
       removeMembers: true,
       manageTeams: true,
       createProject: true,
+      viewAnalytics: true,
+      viewAutomations: true,
     });
 
-    // A plain Member holds none of the six — card:create and friends do not
-    // touch org, member, team, or project administration at all.
+    // A plain Member holds none of these — card:create and friends do not
+    // touch org, member, team, project, analytics, or automation administration
+    // at all.
     expect(asMember.capabilities).toEqual({
       updateOrg: false,
       inviteMember: false,
@@ -213,6 +216,8 @@ describe('settings capabilities', () => {
       removeMembers: false,
       manageTeams: false,
       createProject: false,
+      viewAnalytics: false,
+      viewAutomations: false,
     });
   });
 
@@ -238,6 +243,8 @@ describe('settings capabilities', () => {
       removeMembers: false,
       manageTeams: true,
       createProject: true,
+      viewAnalytics: true,
+      viewAutomations: true,
     });
   });
 });

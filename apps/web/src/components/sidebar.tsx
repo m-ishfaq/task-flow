@@ -32,6 +32,7 @@ import {
   projectsQuery,
   type BoardSummary,
 } from '../features/work/api.js';
+import { orgDetailQuery, type SettingsCapabilities } from '../features/org/api.js';
 import { api } from '../lib/trpc.js';
 import { keys } from '../lib/query.js';
 import { useBranding } from '../lib/branding-context.js';
@@ -108,6 +109,18 @@ interface NavItem {
   readonly icon: NavIcon;
   /** The plan entitlement this item needs, or absent when it needs none. */
   readonly flag?: string;
+  /**
+   * An org-level capability (`SettingsCapabilities`, from `tenancy.orgs.get`
+   * — the same object `settings-page.tsx` reads) required to open this page
+   * at all. Unlike `flag` above, this HIDES the item entirely rather than
+   * dimming it — see the `capability` check at each render site for why the
+   * two need different treatment: a plan flag is something the ORG can
+   * purchase its way past, so showing it locked is an honest upsell; a
+   * capability like `analytics:read` is Admin-and-Owner-only by ROLE, and no
+   * plan purchase ever changes what a Member's role grants, so a lock icon
+   * here would advertise a door nothing can open for them.
+   */
+  readonly capability?: keyof SettingsCapabilities;
 }
 
 const PRIMARY_SECTIONS: readonly {
@@ -128,7 +141,13 @@ const PRIMARY_SECTIONS: readonly {
       { to: '/docs', label: 'Docs', icon: FileText, flag: 'docs' },
       { to: '/calls', label: 'Calls', icon: Phone, flag: 'telephony' },
       { to: '/people', label: 'People', icon: Users },
-      { to: '/analytics', label: 'Analytics', icon: BarChart3, flag: 'analytics' },
+      {
+        to: '/analytics',
+        label: 'Analytics',
+        icon: BarChart3,
+        flag: 'analytics',
+        capability: 'viewAnalytics',
+      },
     ],
   },
 ];
@@ -151,7 +170,13 @@ const PRIMARY_SECTIONS: readonly {
  * reason.
  */
 const CONFIG_ITEMS: readonly NavItem[] = [
-  { to: '/automations', label: 'Automations', icon: Workflow, flag: 'automation' },
+  {
+    to: '/automations',
+    label: 'Automations',
+    icon: Workflow,
+    flag: 'automation',
+    capability: 'viewAutomations',
+  },
 ];
 
 /**
@@ -255,6 +280,22 @@ export function Sidebar() {
      jarring for the common case (the flag turns out granted). */
   const entitlements = useEntitlements().data;
 
+  /* Capability-gated items (`viewAnalytics`, `viewAutomations`) default to
+     HIDDEN while this is still loading, the opposite default from
+     `entitlements` above — a plan-flag lock icon flashing in and out is a
+     cosmetic annoyance, but a full nav link doing the same is a much
+     stronger "wait, do I have this or not" moment, and hiding a real
+     capability by default is also the fail-closed direction. Same query
+     `settings-page.tsx` uses, so this typically costs no extra request —
+     React Query dedupes by key. */
+  const capabilities = useQuery({
+    ...orgDetailQuery(orgId ?? ''),
+    enabled: orgId !== null,
+  }).data?.capabilities;
+
+  const visible = (item: NavItem): boolean =>
+    item.capability === undefined || capabilities?.[item.capability] === true;
+
   /* `sidebarOpen` is a DESKTOP preference — collapse to a rail to reclaim
      width. Below `md` this component is rendered inside Shell's off-canvas
      drawer, which is either fully on screen or fully off it; there is no
@@ -335,7 +376,7 @@ export function Sidebar() {
           <nav aria-label="Main" className="shrink-0 px-2 pt-2">
             {PRIMARY_SECTIONS.map((section, index) => (
               <div key={section.id} className={cn(index > 0 && 'mt-2 border-t border-line pt-2')}>
-                {section.items.map((item) => (
+                {section.items.filter(visible).map((item) => (
                   <NavLink
                     key={item.to}
                     to={item.to}
@@ -412,7 +453,7 @@ export function Sidebar() {
             aria-label="Configuration"
             className="shrink-0 border-t border-line px-2 pt-2 pb-1.5"
           >
-            {CONFIG_ITEMS.map((item) => (
+            {CONFIG_ITEMS.filter(visible).map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}

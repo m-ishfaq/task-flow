@@ -20,6 +20,7 @@ import { FilterTree } from '@taskflow/filter';
 import { useSession } from './lib/session.js';
 import { Shell } from './components/shell.js';
 import { FeatureGate } from './components/feature-gate.js';
+import { CapabilityGate } from './components/capability-gate.js';
 import { LoginPage } from './features/auth/login-page.js';
 import { RegisterPage } from './features/auth/register-page.js';
 import { VerifyEmailPage } from './features/auth/verify-email-page.js';
@@ -535,20 +536,20 @@ const platformAdminRoute = createRoute({
 });
 
 /**
- * Automation rules (Phase 10 Wave 1).
- *
- * `requireOrg`, not `requireSession`: rules are org-scoped, and every query
- * this page fires needs an org header. The page itself does no permission
- * check — it renders and the server answers, so a member without
- * `automation:manage` gets an honest FORBIDDEN rather than a hidden menu item
- * (§8.2).
- */
-/**
  * Analytics dashboards (Phase 11, ai/phase-11-analytics.md §3, §5).
  *
  * `tab` is a search param — same pattern as telephony and automations — so
- * the open dashboard is shareable and back-button-correct. Admin-and-Owner
- * only on the server; the UI shows the page and lets the server refuse.
+ * the open dashboard is shareable and back-button-correct.
+ *
+ * `analytics:read` is Admin-and-Owner-only by role, with no way for a Member
+ * to earn it via plan upgrade (unlike telephony, which every Member holds by
+ * default) — so unlike most gated routes in this file, this one wraps its
+ * component in `CapabilityGate` as well as `FeatureGate`: a Member reaching
+ * this URL directly (typed, bookmarked, or the back button) sees a plain
+ * "not for your role" page instead of the real dashboard trying to load and
+ * surfacing a raw FORBIDDEN. `CapabilityGate` is still only a COSMETIC
+ * gate — see its own doc comment — every route behind it still declares
+ * `permission: 'analytics:read'` and the server re-checks it regardless.
  */
 const analyticsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -561,12 +562,27 @@ const analyticsRoute = createRoute({
   }),
   beforeLoad: () => requireOrg('/analytics'),
   component: () => (
-    <FeatureGate flag="analytics">
-      <AnalyticsPage />
-    </FeatureGate>
+    <CapabilityGate capability="viewAnalytics">
+      <FeatureGate flag="analytics">
+        <AnalyticsPage />
+      </FeatureGate>
+    </CapabilityGate>
   ),
 });
 
+/**
+ * Automation rules (Phase 10 Wave 1).
+ *
+ * `requireOrg`, not `requireSession`: rules are org-scoped, and every query
+ * this page fires needs an org header.
+ *
+ * Same reasoning as `analyticsRoute` above: `automation:manage` is
+ * Admin-and-Owner-only by role with no plan-upgrade path for a Member, so
+ * this also wraps in `CapabilityGate` — a direct URL/bookmark shows "not for
+ * your role" instead of a raw FORBIDDEN. The server still re-checks
+ * `automation:manage` on every route regardless; this only changes what a
+ * Member who cannot use it sees on the way there.
+ */
 const automationsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/automations',
@@ -586,9 +602,11 @@ const automationsRoute = createRoute({
   }),
   beforeLoad: () => requireOrg('/automations'),
   component: () => (
-    <FeatureGate flag="automation">
-      <AutomationsPage />
-    </FeatureGate>
+    <CapabilityGate capability="viewAutomations">
+      <FeatureGate flag="automation">
+        <AutomationsPage />
+      </FeatureGate>
+    </CapabilityGate>
   ),
 });
 

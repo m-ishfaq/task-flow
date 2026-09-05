@@ -186,6 +186,8 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
     removeMembers: false,
     manageTeams: false,
     createProject: false,
+    viewAnalytics: false,
+    viewAutomations: false,
   };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.members(orgId) });
@@ -546,6 +548,8 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
     removeMembers: false,
     manageTeams: false,
     createProject: false,
+    viewAnalytics: false,
+    viewAutomations: false,
   };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.memberGrants(orgId) });

@@ -242,6 +242,17 @@ export interface SettingsCapabilities {
    * `work/board.service.ts`), because THOSE really do vary by resource.
    */
   readonly createProject: boolean;
+  /**
+   * May open `/analytics` at all — `analytics:read`, Admin-and-Owner-only by
+   * role alone (Phase 11 §5). The sidebar (`sidebar.tsx`) reads this to hide
+   * the nav item entirely for a Member, rather than showing it and letting
+   * the page answer FORBIDDEN — there is no plan upgrade or grant that turns
+   * this on for a Member the way there is for e.g. telephony, so a locked
+   * icon here would advertise a door nothing can open for them.
+   */
+  readonly viewAnalytics: boolean;
+  /** Same reasoning as `viewAnalytics`, for `/automations` and `automation:manage`. */
+  readonly viewAutomations: boolean;
 }
 
 export interface OrgDetail {
@@ -287,6 +298,16 @@ export async function getOrg(orgId: OrgId, subject: Subject): Promise<OrgDetail>
       removeMembers: can(subject, 'member:remove').allowed,
       manageTeams: can(subject, 'team:manage').allowed,
       createProject: can(subject, 'project:create').allowed,
+      /* Nav-visibility capabilities, not settings-page ones — the sidebar
+         reads these too (see sidebar.tsx). Analytics and Automations are
+         each Admin-and-Owner-only by ROLE ALONE (no per-resource target),
+         with no separate "read" tier a Member could hold — a plan-flag lock
+         icon says "your ORG could have this," which is true and worth
+         showing; nothing about a Member's ROLE ever becomes true by
+         upgrading a plan, so showing the same lock icon for that case would
+         be advertising a door that plan money can never open for them. */
+      viewAnalytics: can(subject, 'analytics:read').allowed,
+      viewAutomations: can(subject, 'automation:manage').allowed,
     },
   };
 }
