@@ -289,9 +289,11 @@ more, in this case.
 
 **One phase was missing from this list entirely, not just stale within it: Phase 15.** §1 (org-level
 permission grants) shipped and was then substantially extended — see its own section below.
-§2+§3 (the `AiProvider` abstraction and the token/spend budget gate) have since shipped too — see
-their own section below. §4 onward (the assistant itself, the standup view, GitHub PR review,
-onboarding/offboarding automation) remain exactly as drafted in
+§2+§3 (the `AiProvider` abstraction and the token/spend budget gate) and §4 Wave 1 (the
+tool-calling assistant, read-only tools) have since shipped too — see their own sections below.
+§4's write tools and confirm-before-execute, plus §5 (the standup view), §6 (new-org Docs
+bootstrap), §7 (GitHub PR review — its own spec flags this as needing a separate review pass), and
+§8 (onboarding/offboarding automation) remain exactly as drafted in
 `ai/phase-15-ai-copilot-and-permissions.md` — designed, not built.
 
 **Phase 0B, Phase 1 (identity), Phase 2 (tenancy, authz & audit) and Phase 3 (Work) complete** —
@@ -530,9 +532,11 @@ where it would be a bug for telephony.
 `AiProvider.complete`, mirroring `checkOutboundAllowed`'s exact role for telephony.** The
 property `complete.test.ts` exists to prove is the same one CLAUDE.md states for every spend
 gate in this codebase: on a refused request, `provider.calls` (the `FakeAiProvider`'s own
-inspection surface, built for exactly this) stays empty. Nothing in this phase calls
-`completeGated` yet — §4 is the first real caller — which is the identical "ship the gate before
-the thing it gates" state Phase 7 Wave 1 and Phase 13's TURN gate both shipped in.
+inspection surface, built for exactly this) stays empty. When this section was written, nothing
+in this phase called `completeGated` yet — the identical "ship the gate before the thing it
+gates" state Phase 7 Wave 1 and Phase 13's TURN gate both shipped in. `assistant.ts`'s
+tool-calling loop (§4 Wave 1, its own section below) is the first real caller, added the same
+week.
 
 **`packages/ai`'s `AnthropicProvider` authenticates over raw `fetch`, no SDK**, matching
 `StripePaymentProvider`'s "one call in, one call out" shape. `system`-role messages are pulled
@@ -563,6 +567,75 @@ both `platform.ai_org_overrides` (RLS-scoped to the caller's own org) and
 `withOrgScope` transaction works because RLS only restricts tables that declare it; a table
 with none is visible to any scope. `apps/api/src/ai` is not on `withGlobalScope`'s short
 exempt-module list (identity, people, platform-admin) and does not need to be.
+
+### Phase 15 §4 Wave 1 — the tool-calling assistant (read-only tools, SHIPPED)
+
+`apps/api/src/ai/{router,assistant,complete}.ts` · `apps/api/src/ai/tools/` ·
+`apps/api/src/search/search.service.ts` · `ai.chat.send`. Spec:
+[ai/phase-15-ai-copilot-and-permissions.md](ai/phase-15-ai-copilot-and-permissions.md) §4, §4.3.
+Deliberately NOT built in this pass: §4's write tools and confirm-before-execute (§4.2), the
+standup view (§5), new-org Docs bootstrap (§6), GitHub/PR integration (§7, its own spec explicitly
+flags it as needing a separate review pass), and onboarding/offboarding automation (§8) — this is
+Wave 1 only, per §4.3's own order ("read-only... proves the UX and the token ledger with the
+least risk").
+
+**`AiMessage` shipped in §2 could not actually hold a multi-turn tool-calling conversation, and
+nothing caught it until this wave tried to build one.** The original type was a flat
+`{ role: 'system' | 'user' | 'assistant', content: string }` — plausible, unremarkable, and wrong
+the moment a second turn needed to reference a tool call from the first: Anthropic's API rejects a
+`tool_use` content block that is not followed, in the very next turn, by a `tool_result` block
+naming the same id, and a flat string had nowhere to put either. `AiMessage` is now a
+discriminated union (`system` / `user` / `assistant` with an optional `toolCalls` array /
+`tool_result` naming a `toolCallId`), and `packages/ai`'s `AnthropicProvider` maps each variant to
+Anthropic's actual content-block wire shape (`anthropic.test.ts`'s two new cases assert the
+round-trip, including that a `tool_use` block replays as content, not as flattened text). This is
+exactly the kind of gap §2's own contract test could not have caught: nothing in Wave 1's tests
+ever sent a second turn.
+
+**The client owns conversation history; the server owns the system prompt.** `ai.chat.send` is
+stateless — no `ai_conversations` table, no server-side session. The caller resends the growing
+`messages` array every turn (capped at 40, matching `search.query`'s own input-size hygiene, not a
+product decision about conversation length), and `runAssistantTurn` prepends its own system prompt
+before calling the model and never returns it — so the array a caller stores after one turn is
+exactly what it sends as the next turn's input, with nothing to strip back out. A persistent,
+multi-conversation history is real, separate work this wave does not need to prove the loop or the
+budget gate.
+
+**Every round of a multi-round tool-calling exchange is its own priced completion — there is no
+"free" intermediate call.** A model that requests a tool, reads the result, and asks a follow-up
+question has made TWO real completions, both budget-gated through `completeGated`, both real rows
+in `ai.usage_ledger`. `assistant.test.ts` asserts the row count directly rather than trusting the
+loop's own bookkeeping.
+
+**The loop is bounded (`MAX_TOOL_ITERATIONS = 6`) because a tool-calling conversation can
+genuinely spin** — a model retrying its own tool call, or misreading a result as "try again" —
+and the bound exists to cap the blast radius of that to one request, the same reasoning
+`search.query`'s own result limit bounds a fan-out rather than trusting the caller to ask
+reasonably. `assistant.test.ts` proves it by queuing ten consecutive tool-call responses from a
+`FakeAiProvider` and asserting the loop throws `AssistantLoopExceededError` rather than running
+forever.
+
+**Tool execution is sequential, not `Promise.all`, even though Wave 1's only tool (`search`) is
+read-only and side-effect-free.** A future write tool's ordering must not depend on which of
+several concurrent promises a JavaScript runtime happens to settle first — paying a small latency
+cost now is cheaper than discovering the race the day Wave 2 adds a mutating tool.
+
+**A thrown error inside a tool — most commonly a `can()` refusal — becomes a `tool_result` the
+MODEL sees, never a rejection that aborts the turn.** `defineTool`'s wrapper (§4.1) catches both a
+Zod validation failure and a thrown exception and turns each into
+`{ content, isError: true }`, so the model can tell the person "I don't have permission to do
+that" the same way a UI renders a denied action as a message rather than crashing. Every real tool
+still goes through the exact `can()`-checked service call a human's own click would — `search`
+wraps `performSearch`, freshly extracted out of `search/router.ts` so the tRPC route and the
+assistant's tool call the identical authorized pipeline rather than the tool re-deriving the
+per-hit authorization loop that file's own header warns against duplicating.
+
+**Two independent gates on `ai.chat.send`, composed by the ordinary `route()` machinery and
+nothing bespoke:** `ai:use` (per member, grantable per §1) and the `aiAssistant` feature flag (per
+org plan, resolved through the same entitlement chain §3 already reuses). `router.test.ts` proves
+both fire independently — a member with no grant is refused before any provider is ever resolved,
+and an owner on a plan without the flag gets `PLAN_REQUIRED` even though their role alone would
+grant `ai:use`.
 
 ### Phase 8 — Search & TQL (COMPLETE, all three waves)
 

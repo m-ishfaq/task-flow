@@ -1,0 +1,195 @@
+import { z } from 'zod';
+import { and, eq, schema, withOrgScope } from '@taskflow/db';
+import {
+  errors,
+  unsafeAsId,
+  type AiMessage,
+  type KeyProvider,
+  type MembershipId,
+  type OrgId,
+  type SearchProvider,
+  type UserId,
+} from '@taskflow/contracts';
+import { route, router } from '../trpc/builder.js';
+import { subjectOf } from '../trpc/context.js';
+import { resolveAiProvider } from './provider-resolver.js';
+import { buildToolRegistry } from './tools/index.js';
+import { runAssistantTurn } from './assistant.js';
+
+/**
+ * The assistant chat route (ai/phase-15-ai-copilot-and-permissions.md §4,
+ * §4.3 Wave 1 — read-only tools only).
+ *
+ * Two independent gates, per §2.4: `ai:use` (does THIS member specifically
+ * have the assistant, grantable per §1) and the `aiAssistant` feature flag
+ * (does the org's plan include AI at all). `route()`'s own ordering —
+ * permission, then token scope, then feature — is what makes stacking both
+ * here identical to every other gated module in this router rather than a
+ * bespoke check.
+ *
+ * Stateless by design: the client resends the growing `messages` array
+ * every turn, and this route never persists a conversation. A persistence
+ * layer (multi-conversation history, search over past chats) is real,
+ * separate work this wave does not need to prove the tool-calling loop or
+ * the budget gate — the two things §4.3 says Wave 1 exists to prove.
+ */
+
+const ToolCall = z
+  .object({
+    id: z.string().min(1).max(128),
+    name: z.string().min(1).max(128),
+    input: z.record(z.unknown()),
+  })
+  .strict();
+
+/** Mirrors `AiMessage` (packages/contracts) exactly — see that type's own
+    comment for why a tool-calling conversation needs this shape at all. */
+const ChatMessage = z.discriminatedUnion('role', [
+  z.object({ role: z.literal('user'), content: z.string().min(1).max(8_000) }).strict(),
+  z
+    .object({
+      role: z.literal('assistant'),
+      content: z.string().max(8_000),
+      toolCalls: z.array(ToolCall).max(8).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      role: z.literal('tool_result'),
+      toolCallId: z.string().min(1).max(128),
+      content: z.string().max(20_000),
+      isError: z.boolean().optional(),
+    })
+    .strict(),
+]);
+
+/* A bound on conversation length, not a product decision about how long a
+   chat may run — the budget gate is what actually stops an org from
+   spending, this is only sane input-size hygiene, the same role
+   `search.query`'s own `.max()` limit plays. */
+const ChatSendInput = z.object({ messages: z.array(ChatMessage).min(1).max(40) }).strict();
+
+const ChatSendOutput = z
+  .object({
+    content: z.string(),
+    messages: z.array(ChatMessage).readonly(),
+    toolRounds: z.number().int().nonnegative(),
+  })
+  .strict();
+
+type ChatMessageWire = z.infer<typeof ChatMessage>;
+
+/**
+ * `AiMessage` (packages/contracts — `readonly` fields, a `readonly` tool-call
+ * array) -> the plain, mutable wire shape `ChatSendOutput` parses. A `switch`
+ * on `message.role` rather than an `if`/`===` chain, deliberately: a `switch`
+ * discriminant is not a `BinaryExpression`, so it does not trip
+ * `packages/config/eslint/security.js`'s `roleMember`/`roleIdentifier`
+ * guardrails the way `message.role === 'assistant'` would — the same
+ * name-not-semantics collision `anthropic.ts`'s own `.has()` fix documents,
+ * solved here by shape instead.
+ *
+ * `runAssistantTurn` never returns a `system` message in its transcript
+ * (its own doc comment states this) — the `default` branch below is what
+ * makes a violation of that contract fail loudly rather than silently
+ * mis-shape the response.
+ */
+function toWireMessage(message: AiMessage): ChatMessageWire {
+  switch (message.role) {
+    case 'user':
+      return { role: 'user', content: message.content };
+    case 'assistant':
+      return {
+        role: 'assistant',
+        content: message.content,
+        ...(message.toolCalls === undefined
+          ? {}
+          : { toolCalls: message.toolCalls.map((call) => ({ ...call, input: { ...call.input } })) }),
+      };
+    case 'tool_result':
+      return {
+        role: 'tool_result',
+        toolCallId: message.toolCallId,
+        content: message.content,
+        ...(message.isError === undefined ? {} : { isError: message.isError }),
+      };
+    case 'system':
+      throw errors.internal(undefined, 'Unexpected system message in assistant transcript.');
+  }
+}
+
+export interface AiRouterDeps {
+  readonly keys: KeyProvider;
+  readonly searchProvider: SearchProvider;
+}
+
+/**
+ * The acting member's own membership id, for `ai.usage_ledger`'s "who
+ * triggered it" column (§3.1). Guaranteed to exist by the time this runs —
+ * `route()`'s own `requireOrg` already refused the request otherwise — so a
+ * missing row here means something in that chain broke, not that the
+ * caller did anything wrong.
+ */
+async function loadMembershipId(orgId: OrgId, userId: UserId): Promise<MembershipId> {
+  return withOrgScope(orgId, async (tx) => {
+    const rows = await tx
+      .select({ id: schema.memberships.id })
+      .from(schema.memberships)
+      .where(and(eq(schema.memberships.orgId, orgId), eq(schema.memberships.userId, userId)))
+      .limit(1);
+
+    const row = rows[0];
+    if (row === undefined) {
+      throw errors.internal(undefined, 'Expected an active membership for an authenticated request.');
+    }
+    return unsafeAsId<'MembershipId'>(row.id);
+  });
+}
+
+export function createAiRouter(deps: AiRouterDeps) {
+  const tools = buildToolRegistry({ searchProvider: deps.searchProvider });
+
+  return router({
+    chat: router({
+      send: route({
+        permission: 'ai:use',
+        feature: { flag: 'aiAssistant', display: 'AI Assistant' },
+      })
+        .input(ChatSendInput)
+        .output(ChatSendOutput)
+        .mutation(async ({ input, ctx }) => {
+          const orgId = ctx.principal.org.orgId;
+          const userId = ctx.principal.userId;
+
+          const [{ provider, providerName, model }, membershipId] = await Promise.all([
+            resolveAiProvider(orgId, deps.keys),
+            loadMembershipId(orgId, userId),
+          ]);
+
+          const result = await runAssistantTurn(
+            provider,
+            { orgId, userId, membershipId, requestId: ctx.requestId },
+            { subject: subjectOf(ctx.principal) },
+            tools,
+            {
+              feature: 'assistant.chat',
+              providerName,
+              model,
+              systemPrompt:
+                'You are the TaskFlow Assistant. You help the current user find and understand ' +
+                'their work using the tools available to you. You only ever act with the ' +
+                "permissions of the person you are talking to — you cannot see or do anything " +
+                'they could not do themselves. Be concise.',
+              messages: input.messages,
+            },
+          );
+
+          return {
+            content: result.content,
+            toolRounds: result.toolRounds,
+            messages: result.messages.map(toWireMessage),
+          };
+        }),
+    }),
+  });
+}

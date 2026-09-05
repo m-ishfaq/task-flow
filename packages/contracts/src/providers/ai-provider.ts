@@ -37,11 +37,41 @@ import type { OrgId } from '../ids.js';
  * carrier has actually answered rather than reporting ringing as complete.
  */
 
-/** One turn in a conversation. `system` is a distinct role, not a message the model can be asked to imitate. */
-export interface AiMessage {
-  readonly role: 'system' | 'user' | 'assistant';
-  readonly content: string;
-}
+/**
+ * One turn in a conversation. A discriminated union, not a flat
+ * `{ role, content }`, because a tool-calling conversation (Phase 15 §4) has
+ * two shapes plain text cannot represent: an assistant turn that REQUESTED
+ * tools alongside (or instead of) talking, and a turn that answers one of
+ * those requests. Both must round-trip back to the provider byte-for-byte —
+ * Anthropic's API rejects a `tool_use` content block with no matching
+ * `tool_result` in the very next turn — so this is not a convenience type,
+ * it is the minimum shape a caller needs to continue the conversation at
+ * all after the first tool call.
+ *
+ * `system` is a distinct role, not a message the model can be asked to
+ * imitate.
+ */
+export type AiMessage =
+  | { readonly role: 'system'; readonly content: string }
+  | { readonly role: 'user'; readonly content: string }
+  | {
+      readonly role: 'assistant';
+      readonly content: string;
+      /** Present exactly when this turn's `AiCompletionResult.stopReason`
+          was `tool_use` — replayed verbatim so the provider sees the SAME
+          request it made, not a caller's reconstruction of it. */
+      readonly toolCalls?: readonly AiToolCall[] | undefined;
+    }
+  | {
+      /** THE answer to one `AiToolCall` from the immediately preceding
+          assistant turn — never a role a caller invents on its own. */
+      readonly role: 'tool_result';
+      readonly toolCallId: string;
+      readonly content: string;
+      /** Set when the tool itself failed (not "found nothing" — an actual
+          error) so the model can react to that distinctly from a result. */
+      readonly isError?: boolean | undefined;
+    };
 
 /**
  * One tool the model may call. `inputSchema` is a JSON Schema object, not a

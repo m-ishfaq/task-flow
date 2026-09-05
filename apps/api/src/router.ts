@@ -18,6 +18,7 @@ import { createBillingRouter } from './billing/router.js';
 import { createRtcRouter } from './rtc/router.js';
 import type { RtcDeps } from './rtc/deps.js';
 import { createSearchRouter } from './search/router.js';
+import { createAiRouter } from './ai/router.js';
 import { createAutomationRouter } from './automation/router.js';
 import { createAnalyticsRouter } from './analytics/router.js';
 import { createApiTokenRouter } from './automation/api-token.router.js';
@@ -99,6 +100,10 @@ export interface AppRouterDeps extends IdentityRouterDeps {
 }
 
 export function createAppRouter(deps: AppRouterDeps) {
+  /* Shared by `search` and `ai` below — both are stateless wrappers over
+     the same env-configured backend, so one instance is enough. */
+  const searchProvider = new PostgresSearchProvider();
+
   return router({
     health: router({
       /**
@@ -258,7 +263,21 @@ export function createAppRouter(deps: AppRouterDeps) {
      * `search:query` is the membership floor; every hit is re-checked with
      * per-resource `can()` before it is returned (§2.7).
      */
-    search: createSearchRouter(new PostgresSearchProvider()),
+    search: createSearchRouter(searchProvider),
+
+    /**
+     * The AI Copilot's assistant chat (Phase 15 §4, §4.3 Wave 1 —
+     * read-only tools only: `search`, sharing the SAME `SearchProvider`
+     * instance the search router above uses, since both are stateless
+     * wrappers over the one env-configured backend). Gated on `ai:use`
+     * (per member, grantable per §1) AND the `aiAssistant` flag (per org
+     * plan) — see `ai/router.ts`'s own header. Reuses
+     * `deps.automation.keys` for the provider catalog's envelope
+     * encryption, the identical reuse `platformAdmin`'s own `ai.keys`
+     * makes just below, for the identical reason (one master key, kept
+     * unambiguous by AAD, not by a fourth `SoftwareKeyProvider` instance).
+     */
+    ai: createAiRouter({ keys: deps.automation.keys, searchProvider }),
 
     /**
      * Automation rules (Phase 10 Wave 1) — the surface that MANAGES rules.

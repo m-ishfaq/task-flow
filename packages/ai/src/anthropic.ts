@@ -60,6 +60,17 @@ export class AnthropicApiError extends Error {
   }
 }
 
+/** The wire shape of one entry in Anthropic's `messages` array. */
+interface AnthropicWireMessage {
+  readonly role: 'user' | 'assistant';
+  readonly content: string | readonly AnthropicWireContentBlock[];
+}
+
+type AnthropicWireContentBlock =
+  | { readonly type: 'text'; readonly text: string }
+  | { readonly type: 'tool_use'; readonly id: string; readonly name: string; readonly input: Readonly<Record<string, unknown>> }
+  | { readonly type: 'tool_result'; readonly tool_use_id: string; readonly content: string; readonly is_error?: boolean };
+
 /**
  * The live `AiProvider` (Phase 15 §2.2). Thin wrapper over the Messages API
  * via `fetch` directly — no SDK dependency, matching `StripePaymentProvider`'s
@@ -73,6 +84,16 @@ export class AnthropicApiError extends Error {
  * the message array at all; a system-role entry left in `messages` would be
  * a 400 from the real API that the fake would never catch, since the fake
  * never validates roles it does not itself define semantics for.
+ *
+ * ## Tool calls round-trip as CONTENT BLOCKS, never as text
+ *
+ * §4's tool-calling assistant needs a multi-turn conversation to survive
+ * past the first tool call, and Anthropic's API enforces this at the wire
+ * level: an assistant turn's `tool_use` block MUST be followed, in the very
+ * next turn, by a `tool_result` block naming the same id — a caller that
+ * flattened either into plain text gets a 400 on the second turn, the first
+ * time anyone actually tries a follow-up question. `messageToWire` below is
+ * where `AiMessage`'s discriminated union becomes those blocks.
  */
 export class AnthropicProvider implements AiProvider {
   readonly isLive = true;
@@ -101,10 +122,7 @@ export class AnthropicProvider implements AiProvider {
       body: JSON.stringify({
         model: request.model,
         max_tokens: maxTokens,
-        messages: messages.map((message) => ({
-          role: message.role,
-          content: message.content,
-        })),
+        messages,
         ...(system === undefined ? {} : { system }),
         ...(request.tools === undefined || request.tools.length === 0
           ? {}
@@ -148,6 +166,8 @@ export class AnthropicProvider implements AiProvider {
    CLAUDE.md's own rule, the required one: "never disable a guardrail
    inline; fix the code." */
 const SYSTEM_ROLE_MESSAGES = new Set(['system']);
+const TOOL_RESULT_ROLE_MESSAGES = new Set(['tool_result']);
+const ASSISTANT_ROLE_MESSAGES = new Set(['assistant']);
 
 function systemPromptOf(messages: readonly AiMessage[]): string | undefined {
   const systemMessages = messages.filter((message) => SYSTEM_ROLE_MESSAGES.has(message.role));
@@ -158,15 +178,63 @@ function systemPromptOf(messages: readonly AiMessage[]): string | undefined {
   return systemMessages.map((message) => message.content).join('\n\n');
 }
 
-function nonSystemMessagesOf(
-  messages: readonly AiMessage[],
-): readonly { readonly role: 'user' | 'assistant'; readonly content: string }[] {
+function nonSystemMessagesOf(messages: readonly AiMessage[]): readonly AnthropicWireMessage[] {
   return messages
-    .filter(
-      (message): message is AiMessage & { role: 'user' | 'assistant' } =>
-        !SYSTEM_ROLE_MESSAGES.has(message.role),
-    )
-    .map((message) => ({ role: message.role, content: message.content }));
+    .filter((message) => !SYSTEM_ROLE_MESSAGES.has(message.role))
+    .map(messageToWire);
+}
+
+/**
+ * `AiMessage`'s discriminated union -> one Anthropic wire message.
+ *
+ * `tool_result` is the one case that changes ROLE: Anthropic has no
+ * `tool_result` role at all — a tool answer is a `user` turn carrying a
+ * `tool_result` content block, which is why `AiMessage`'s own `tool_result`
+ * variant is a distinct role from this provider's perspective but not from
+ * the wire's.
+ */
+function isToolResultMessage(
+  message: AiMessage,
+): message is Extract<AiMessage, { role: 'tool_result' }> {
+  return TOOL_RESULT_ROLE_MESSAGES.has(message.role);
+}
+
+function isAssistantMessage(
+  message: AiMessage,
+): message is Extract<AiMessage, { role: 'assistant' }> {
+  return ASSISTANT_ROLE_MESSAGES.has(message.role);
+}
+
+function messageToWire(message: AiMessage): AnthropicWireMessage {
+  if (isToolResultMessage(message)) {
+    return {
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: message.toolCallId,
+          content: message.content,
+          ...(message.isError === undefined ? {} : { is_error: message.isError }),
+        },
+      ],
+    };
+  }
+
+  if (isAssistantMessage(message) && message.toolCalls !== undefined && message.toolCalls.length > 0) {
+    const blocks: AnthropicWireContentBlock[] = [];
+    // An empty text block reads as the model "saying nothing" before its
+    // tool call, which some providers reject outright — omitted rather than
+    // sent as `{ type: 'text', text: '' }`.
+    if (message.content.length > 0) blocks.push({ type: 'text', text: message.content });
+    for (const call of message.toolCalls) {
+      blocks.push({ type: 'tool_use', id: call.id, name: call.name, input: call.input });
+    }
+    return { role: 'assistant', content: blocks };
+  }
+
+  // `user` message, or a plain `assistant` reply with no tool calls — both
+  // are just plain text on the wire.
+  return { role: isAssistantMessage(message) ? 'assistant' : 'user', content: message.content };
 }
 
 function toolToAnthropic(tool: AiToolDefinition): {

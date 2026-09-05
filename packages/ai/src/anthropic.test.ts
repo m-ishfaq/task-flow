@@ -125,4 +125,102 @@ describe('AnthropicProvider', () => {
     expect(error.name).toBe('AnthropicApiError');
     expect(error.status).toBe(500);
   });
+
+  it('replays a prior tool_use as content blocks, paired with its tool_result', async () => {
+    /* The property this test exists for: Anthropic's real API 400s a
+       conversation where a tool_use block has no matching tool_result in
+       the very next turn. A provider that flattened either into plain text
+       would pass every other test here and still break the first time a
+       real multi-turn tool-calling conversation continued past turn one. */
+    let capturedBody: { messages: unknown[] } | undefined;
+    stubFetch((_input, init) => {
+      capturedBody = JSON.parse(init?.body as string) as { messages: unknown[] };
+      return jsonResponse(200, {
+        content: [{ type: 'text', text: 'Done.' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 30, output_tokens: 5 },
+      });
+    });
+
+    const provider = new AnthropicProvider({ apiKey: 'test-key' });
+    await provider.complete({
+      orgId: ORG_ID,
+      model: 'claude-test',
+      messages: [
+        { role: 'user', content: 'Find sprint 14.' },
+        {
+          role: 'assistant',
+          content: 'Let me check.',
+          toolCalls: [{ id: 'toolu_1', name: 'search', input: { query: 'sprint 14' } }],
+        },
+        { role: 'tool_result', toolCallId: 'toolu_1', content: '[{"title":"WEB-1"}]' },
+      ],
+    });
+
+    expect(capturedBody?.messages).toEqual([
+      { role: 'user', content: 'Find sprint 14.' },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'Let me check.' },
+          { type: 'tool_use', id: 'toolu_1', name: 'search', input: { query: 'sprint 14' } },
+        ],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'tool_result', tool_use_id: 'toolu_1', content: '[{"title":"WEB-1"}]' },
+        ],
+      },
+    ]);
+  });
+
+  it('marks a failed tool result with is_error, and omits an empty text block', async () => {
+    let capturedBody: { messages: unknown[] } | undefined;
+    stubFetch((_input, init) => {
+      capturedBody = JSON.parse(init?.body as string) as { messages: unknown[] };
+      return jsonResponse(200, {
+        content: [{ type: 'text', text: 'ok' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 5, output_tokens: 1 },
+      });
+    });
+
+    const provider = new AnthropicProvider({ apiKey: 'test-key' });
+    await provider.complete({
+      orgId: ORG_ID,
+      model: 'claude-test',
+      messages: [
+        {
+          role: 'assistant',
+          content: '',
+          toolCalls: [{ id: 'toolu_2', name: 'search', input: {} }],
+        },
+        {
+          role: 'tool_result',
+          toolCallId: 'toolu_2',
+          content: 'permission denied',
+          isError: true,
+        },
+      ],
+    });
+
+    expect(capturedBody?.messages).toEqual([
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'toolu_2', name: 'search', input: {} }],
+      },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'toolu_2',
+            content: 'permission denied',
+            is_error: true,
+          },
+        ],
+      },
+    ]);
+  });
 });
