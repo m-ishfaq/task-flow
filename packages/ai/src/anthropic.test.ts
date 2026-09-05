@@ -111,11 +111,17 @@ describe('AnthropicProvider', () => {
   });
 
   it('throws AnthropicApiError, carrying the HTTP status, on a non-OK response', async () => {
-    stubFetch(() => jsonResponse(429, { error: { type: 'rate_limit_error', message: 'Slow down.' } }));
+    stubFetch(() =>
+      jsonResponse(429, { error: { type: 'rate_limit_error', message: 'Slow down.' } }),
+    );
 
     const provider = new AnthropicProvider({ apiKey: 'test-key' });
     await expect(
-      provider.complete({ orgId: ORG_ID, model: 'claude-test', messages: [{ role: 'user', content: 'Hi' }] }),
+      provider.complete({
+        orgId: ORG_ID,
+        model: 'claude-test',
+        messages: [{ role: 'user', content: 'Hi' }],
+      }),
     ).rejects.toMatchObject({ status: 429, message: 'Slow down.' });
   });
 
@@ -168,9 +174,7 @@ describe('AnthropicProvider', () => {
       },
       {
         role: 'user',
-        content: [
-          { type: 'tool_result', tool_use_id: 'toolu_1', content: '[{"title":"WEB-1"}]' },
-        ],
+        content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: '[{"title":"WEB-1"}]' }],
       },
     ]);
   });

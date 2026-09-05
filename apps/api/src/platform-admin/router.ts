@@ -1105,7 +1105,12 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
           .input(CreateAiProviderConfigInput)
           .output(AiProviderConfigRow)
           .mutation(({ input, ctx }) =>
-            aiProviders.createProviderConfig({ events: deps.events }, deps.ai.keys, operatorOf(ctx), input),
+            aiProviders.createProviderConfig(
+              { events: deps.events },
+              deps.ai.keys,
+              operatorOf(ctx),
+              input,
+            ),
           ),
 
         rotateKey: platformRoute({
@@ -1129,7 +1134,11 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
           .input(z.object({ id: UuidSchema }).strict())
           .output(AiProviderConfigRow)
           .mutation(({ input, ctx }) =>
-            aiProviders.setDefaultProviderConfig({ events: deps.events }, operatorOf(ctx), input.id),
+            aiProviders.setDefaultProviderConfig(
+              { events: deps.events },
+              operatorOf(ctx),
+              input.id,
+            ),
           ),
       }),
 
@@ -1155,13 +1164,18 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
           .input(z.object({ orgId: OrgIdSchema }).strict())
           .output(z.object({ orgId: z.string() }).strict())
           .mutation(async ({ input, ctx }) => {
-            await aiProviders.clearOrgProviderOverride({ events: deps.events }, operatorOf(ctx), input.orgId);
+            await aiProviders.clearOrgProviderOverride(
+              { events: deps.events },
+              operatorOf(ctx),
+              input.orgId,
+            );
             return { orgId: input.orgId };
           }),
       }),
 
       spendReport: platformRoute({
-        platformReason: "Per-org AI spend across the whole deployment — no org permission describes it.",
+        platformReason:
+          'Per-org AI spend across the whole deployment — no org permission describes it.',
       })
         .input(z.object({ sinceDays: z.number().int().min(1).max(365).default(30) }).strict())
         .output(z.array(AiSpendReportRow).readonly())

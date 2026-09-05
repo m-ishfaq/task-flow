@@ -188,11 +188,15 @@ export async function rotateProviderConfigKey(
   await recordOperatorAction(operator.userId, 'ai.providers.rotate_key', { id });
 
   await deps.events.publish([
-    createEvent(aiProviderConfigKeyRotated, { id }, {
-      orgId: SYSTEM_ORG,
-      actorId: operator.userId,
-      requestId: operator.requestId,
-    }),
+    createEvent(
+      aiProviderConfigKeyRotated,
+      { id },
+      {
+        orgId: SYSTEM_ORG,
+        actorId: operator.userId,
+        requestId: operator.requestId,
+      },
+    ),
   ]);
 
   return viewOf(row);
@@ -227,11 +231,15 @@ export async function setDefaultProviderConfig(
   await recordOperatorAction(operator.userId, 'ai.providers.set_default', { id });
 
   await deps.events.publish([
-    createEvent(aiProviderConfigDefaultChanged, { id }, {
-      orgId: SYSTEM_ORG,
-      actorId: operator.userId,
-      requestId: operator.requestId,
-    }),
+    createEvent(
+      aiProviderConfigDefaultChanged,
+      { id },
+      {
+        orgId: SYSTEM_ORG,
+        actorId: operator.userId,
+        requestId: operator.requestId,
+      },
+    ),
   ]);
 
   return viewOf(row);
@@ -260,11 +268,15 @@ export async function setOrgProviderOverride(
      names one specific org, so it belongs in that org's own event stream,
      not the platform-global one. */
   await deps.events.publish([
-    createEvent(aiOrgOverrideSet, { providerConfigId }, {
-      orgId,
-      actorId: operator.userId,
-      requestId: operator.requestId,
-    }),
+    createEvent(
+      aiOrgOverrideSet,
+      { providerConfigId },
+      {
+        orgId,
+        actorId: operator.userId,
+        requestId: operator.requestId,
+      },
+    ),
   ]);
 }
 
@@ -281,11 +293,15 @@ export async function clearOrgProviderOverride(
   await recordOperatorAction(operator.userId, 'ai.org_override.clear', { orgId });
 
   await deps.events.publish([
-    createEvent(aiOrgOverrideCleared, {}, {
-      orgId,
-      actorId: operator.userId,
-      requestId: operator.requestId,
-    }),
+    createEvent(
+      aiOrgOverrideCleared,
+      {},
+      {
+        orgId,
+        actorId: operator.userId,
+        requestId: operator.requestId,
+      },
+    ),
   ]);
 }
 

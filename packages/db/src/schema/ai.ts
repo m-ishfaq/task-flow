@@ -1,12 +1,4 @@
-import {
-  bigint,
-  index,
-  integer,
-  pgSchema,
-  text,
-  timestamp,
-  uuid,
-} from 'drizzle-orm/pg-core';
+import { bigint, index, integer, pgSchema, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { memberships, orgs } from './tenancy.js';
 
 /**

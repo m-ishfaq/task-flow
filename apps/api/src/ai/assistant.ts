@@ -90,7 +90,11 @@ export async function runAssistantTurn(
 
     if (result.stopReason !== 'tool_use' || result.toolCalls.length === 0) {
       const finalMessage: AiMessage = { role: 'assistant', content: result.content };
-      return { content: result.content, messages: [...transcript, finalMessage], toolRounds: round };
+      return {
+        content: result.content,
+        messages: [...transcript, finalMessage],
+        toolRounds: round,
+      };
     }
 
     const assistantTurn: AiMessage = {

@@ -1,11 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { unsafeAsId, type OrgId, type UserId } from '@taskflow/contracts';
 import { RecordingEventBus } from '@taskflow/events';
-import {
-  closeDatabase,
-  initializeDatabase,
-  initializePlatformAdminDatabase,
-} from '@taskflow/db';
+import { closeDatabase, initializeDatabase, initializePlatformAdminDatabase } from '@taskflow/db';
 import { applyMigrations, connectAsMigrator, type AdminConnection } from '@taskflow/db/testing';
 import { SoftwareKeyProvider } from '@taskflow/security';
 import * as orgs from '../tenancy/org.service.js';
@@ -177,7 +173,13 @@ describe('createProviderConfig / listProviderConfigs', () => {
     });
     createdConfigIds.push(config.id);
 
-    await rotateProviderConfigKey({ events }, keys, operatorOf(OPERATOR), config.id, 'sk-ant-after-rotation');
+    await rotateProviderConfigKey(
+      { events },
+      keys,
+      operatorOf(OPERATOR),
+      config.id,
+      'sk-ant-after-rotation',
+    );
 
     const orgId = await newOrg('ai-config-rotate');
     await setOrgProviderOverride({ events }, operatorOf(OPERATOR), orgId, config.id);

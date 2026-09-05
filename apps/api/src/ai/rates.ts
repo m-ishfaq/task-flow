@@ -30,7 +30,9 @@ const RATES: Readonly<Record<string, ModelRate>> = {
 
 export class UnknownModelRateError extends Error {
   constructor(readonly model: string) {
-    super(`No rate configured for AI model "${model}". Add it to RATES before this model can be used.`);
+    super(
+      `No rate configured for AI model "${model}". Add it to RATES before this model can be used.`,
+    );
     this.name = 'UnknownModelRateError';
   }
 }

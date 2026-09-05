@@ -104,7 +104,9 @@ function toWireMessage(message: AiMessage): ChatMessageWire {
         content: message.content,
         ...(message.toolCalls === undefined
           ? {}
-          : { toolCalls: message.toolCalls.map((call) => ({ ...call, input: { ...call.input } })) }),
+          : {
+              toolCalls: message.toolCalls.map((call) => ({ ...call, input: { ...call.input } })),
+            }),
       };
     case 'tool_result':
       return {
@@ -140,7 +142,10 @@ async function loadMembershipId(orgId: OrgId, userId: UserId): Promise<Membershi
 
     const row = rows[0];
     if (row === undefined) {
-      throw errors.internal(undefined, 'Expected an active membership for an authenticated request.');
+      throw errors.internal(
+        undefined,
+        'Expected an active membership for an authenticated request.',
+      );
     }
     return unsafeAsId<'MembershipId'>(row.id);
   });
@@ -178,7 +183,7 @@ export function createAiRouter(deps: AiRouterDeps) {
               systemPrompt:
                 'You are the TaskFlow Assistant. You help the current user find and understand ' +
                 'their work using the tools available to you. You only ever act with the ' +
-                "permissions of the person you are talking to — you cannot see or do anything " +
+                'permissions of the person you are talking to — you cannot see or do anything ' +
                 'they could not do themselves. Be concise.',
               messages: input.messages,
             },

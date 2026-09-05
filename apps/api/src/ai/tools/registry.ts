@@ -73,7 +73,10 @@ export function defineTool<Schema extends z.ZodTypeAny>(config: {
     async execute(ctx, rawInput) {
       const parsed = config.inputSchema.safeParse(rawInput);
       if (!parsed.success) {
-        return { content: `Invalid input for tool "${config.name}": ${parsed.error.message}`, isError: true };
+        return {
+          content: `Invalid input for tool "${config.name}": ${parsed.error.message}`,
+          isError: true,
+        };
       }
 
       try {

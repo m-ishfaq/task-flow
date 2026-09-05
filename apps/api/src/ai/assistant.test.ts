@@ -93,7 +93,10 @@ beforeAll(async () => {
   );
 
   initializeDatabase({ url: TEST_ENV.DATABASE_URL, applicationName: 'ai-assistant-test' });
-  initializeSearchDatabase({ url: TEST_ENV.DATABASE_URL, applicationName: 'ai-assistant-search-test' });
+  initializeSearchDatabase({
+    url: TEST_ENV.DATABASE_URL,
+    applicationName: 'ai-assistant-search-test',
+  });
 });
 
 beforeEach(async () => {
@@ -186,7 +189,9 @@ describe('runAssistantTurn', () => {
     // Two real completions were priced — every round of a multi-round
     // exchange is its own ledger row, never a "free" intermediate call.
     await admin.setOrg(orgId);
-    const ledgerRows = await admin.query(`SELECT id FROM ai.usage_ledger WHERE org_id = $1`, [orgId]);
+    const ledgerRows = await admin.query(`SELECT id FROM ai.usage_ledger WHERE org_id = $1`, [
+      orgId,
+    ]);
     await admin.setOrg(null);
     expect(ledgerRows.rowCount).toBe(2);
   });

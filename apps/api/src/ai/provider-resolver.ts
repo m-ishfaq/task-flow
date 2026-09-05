@@ -96,5 +96,9 @@ export async function resolveAiProvider(
     apiKeyAad(row.id),
   );
 
-  return { provider: providerFor(row.provider, apiKey), providerName: row.provider, model: row.model };
+  return {
+    provider: providerFor(row.provider, apiKey),
+    providerName: row.provider,
+    model: row.model,
+  };
 }

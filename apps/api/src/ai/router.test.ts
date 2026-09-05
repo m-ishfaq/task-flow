@@ -118,7 +118,10 @@ beforeAll(async () => {
   }
 
   initializeDatabase({ url: TEST_ENV.DATABASE_URL, applicationName: 'ai-router-test' });
-  initializeSearchDatabase({ url: TEST_ENV.DATABASE_URL, applicationName: 'ai-router-search-test' });
+  initializeSearchDatabase({
+    url: TEST_ENV.DATABASE_URL,
+    applicationName: 'ai-router-search-test',
+  });
   initializePlatformAdminDatabase({
     url:
       process.env['TEST_DATABASE_PLATFORM_ADMIN_URL'] ??
@@ -216,7 +219,9 @@ describe('ai.chat.send', () => {
     expect(result.toolRounds).toBe(0);
 
     await admin.setOrg(orgId);
-    const ledgerRows = await admin.query(`SELECT id FROM ai.usage_ledger WHERE org_id = $1`, [orgId]);
+    const ledgerRows = await admin.query(`SELECT id FROM ai.usage_ledger WHERE org_id = $1`, [
+      orgId,
+    ]);
     await admin.setOrg(null);
     expect(ledgerRows.rowCount).toBe(1);
   });

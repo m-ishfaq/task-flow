@@ -68,8 +68,18 @@ interface AnthropicWireMessage {
 
 type AnthropicWireContentBlock =
   | { readonly type: 'text'; readonly text: string }
-  | { readonly type: 'tool_use'; readonly id: string; readonly name: string; readonly input: Readonly<Record<string, unknown>> }
-  | { readonly type: 'tool_result'; readonly tool_use_id: string; readonly content: string; readonly is_error?: boolean };
+  | {
+      readonly type: 'tool_use';
+      readonly id: string;
+      readonly name: string;
+      readonly input: Readonly<Record<string, unknown>>;
+    }
+  | {
+      readonly type: 'tool_result';
+      readonly tool_use_id: string;
+      readonly content: string;
+      readonly is_error?: boolean;
+    };
 
 /**
  * The live `AiProvider` (Phase 15 §2.2). Thin wrapper over the Messages API
@@ -109,8 +119,7 @@ export class AnthropicProvider implements AiProvider {
   async complete(request: AiCompletionRequest): Promise<AiCompletionResult> {
     const system = systemPromptOf(request.messages);
     const messages = nonSystemMessagesOf(request.messages);
-    const maxTokens =
-      request.maxOutputTokens ?? EFFORT_MAX_TOKENS[request.effort ?? 'medium'];
+    const maxTokens = request.maxOutputTokens ?? EFFORT_MAX_TOKENS[request.effort ?? 'medium'];
 
     const response = await fetch(`${this.baseUrl}/v1/messages`, {
       method: 'POST',
@@ -133,7 +142,8 @@ export class AnthropicProvider implements AiProvider {
     if (!response.ok) {
       const body = (await response.json().catch(() => ({}))) as AnthropicErrorResponse;
       throw new AnthropicApiError(
-        body.error?.message ?? `Anthropic API request failed with status ${String(response.status)}.`,
+        body.error?.message ??
+          `Anthropic API request failed with status ${String(response.status)}.`,
         response.status,
       );
     }
@@ -179,9 +189,7 @@ function systemPromptOf(messages: readonly AiMessage[]): string | undefined {
 }
 
 function nonSystemMessagesOf(messages: readonly AiMessage[]): readonly AnthropicWireMessage[] {
-  return messages
-    .filter((message) => !SYSTEM_ROLE_MESSAGES.has(message.role))
-    .map(messageToWire);
+  return messages.filter((message) => !SYSTEM_ROLE_MESSAGES.has(message.role)).map(messageToWire);
 }
 
 /**
@@ -220,7 +228,11 @@ function messageToWire(message: AiMessage): AnthropicWireMessage {
     };
   }
 
-  if (isAssistantMessage(message) && message.toolCalls !== undefined && message.toolCalls.length > 0) {
+  if (
+    isAssistantMessage(message) &&
+    message.toolCalls !== undefined &&
+    message.toolCalls.length > 0
+  ) {
     const blocks: AnthropicWireContentBlock[] = [];
     // An empty text block reads as the model "saying nothing" before its
     // tool call, which some providers reject outright — omitted rather than
@@ -247,7 +259,11 @@ function toolToAnthropic(tool: AiToolDefinition): {
 
 function isToolUseBlock(
   block: AnthropicContentBlock,
-): block is AnthropicContentBlock & { id: string; name: string; input: Readonly<Record<string, unknown>> } {
+): block is AnthropicContentBlock & {
+  id: string;
+  name: string;
+  input: Readonly<Record<string, unknown>>;
+} {
   return block.type === 'tool_use';
 }
 

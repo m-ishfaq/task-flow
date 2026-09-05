@@ -506,7 +506,7 @@ Product-completeness gaps, not safety gaps — sequenced by how much a real user
    §6 has listed as "arriving" since Phase 0), migrations 0047–0048, the rules engine with four
    loop-protection layers, the executor running actions through `apps/api`'s own service layer as
    the rule owner, rule CRUD + kill switch + run history, and the `/automations` page. `pnpm
-   verify` 57/57 at Wave 1. Spec: [ai/phase-10-automation.md](ai/phase-10-automation.md). Waves
+verify` 57/57 at Wave 1. Spec: [ai/phase-10-automation.md](ai/phase-10-automation.md). Waves
    2–4, since shipped: outbound webhooks (`webhook.router`), the public API + scoped tokens
    (`apiToken.router` — mint/revoke, individually grantable since Phase 15 §1), Slack/GitHub
    connectors (`integration.router`), and the cost-bearing telephony actions behind their

@@ -239,7 +239,11 @@ export async function recordAiUsage(
     await outboxWriter.append(tx, [
       createEvent(
         aiBudgetReached,
-        { spentCents: after.spentCents, budgetCents: after.budgetCents, thresholdPercent: WARN_PERCENT },
+        {
+          spentCents: after.spentCents,
+          budgetCents: after.budgetCents,
+          thresholdPercent: WARN_PERCENT,
+        },
         envelope,
       ),
     ]);
