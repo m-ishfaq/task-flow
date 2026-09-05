@@ -1,5 +1,6 @@
+import { sql } from 'drizzle-orm';
 import { boolean, index, pgSchema, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import { orgs } from './tenancy.js';
+import { orgs, memberships } from './tenancy.js';
 import { users } from './identity.js';
 
 /**
@@ -67,5 +68,50 @@ export const relationshipTuples = authz.table(
     ),
     index('tuples_subject_idx').on(table.orgId, table.subjectType, table.subjectId),
     index('tuples_object_idx').on(table.orgId, table.objectType, table.objectId),
+  ],
+);
+
+/**
+ * Member grants (migration 0097, ai/phase-15-ai-copilot-and-permissions.md §1).
+ *
+ * The org-level counterpart to `relationshipTuples` above: one row naming one
+ * membership and one org-level PERMISSION, with no object at all. Adds
+ * capability on top of a role; never a way to take one away from it.
+ *
+ * `revokedAt` rather than deleting the row, mirroring `identity.sessions` and
+ * `comms.suppressions` — a revoked grant stays visible in history.
+ */
+export const memberGrants = authz.table(
+  'member_grants',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    membershipId: uuid('membership_id')
+      .notNull()
+      .references(() => memberships.id, { onDelete: 'cascade' }),
+
+    /**
+     * One of PERMISSIONS from @taskflow/policy. Which permissions are
+     * ELIGIBLE for a member grant is enforced in
+     * `apps/api/src/tenancy/member-grant.service.ts`, not by a CHECK here —
+     * see the migration's own comment on why that list lives in code.
+     */
+    permission: text('permission').notNull(),
+
+    grantedBy: uuid('granted_by').references(() => users.id, { onDelete: 'set null' }),
+    grantedAt: timestamp('granted_at', { withTimezone: true }).notNull().defaultNow(),
+
+    /** NULL means active. Set, never deleted, once revoked. */
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('member_grants_active_unique')
+      .on(table.membershipId, table.permission)
+      .where(sql`revoked_at IS NULL`),
+    index('member_grants_membership_idx')
+      .on(table.orgId, table.membershipId)
+      .where(sql`revoked_at IS NULL`),
   ],
 );

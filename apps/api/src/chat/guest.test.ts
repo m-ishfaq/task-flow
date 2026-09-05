@@ -468,7 +468,10 @@ describe('through the real tRPC router — the layer the service tests bypass', 
     const tuples = await loadTuples(orgId, GUEST);
     const caller = callerFactory(
       testContext({
-        principal: testPrincipal('guest', { userId: GUEST, org: { orgId, role: 'guest', tuples } }),
+        principal: testPrincipal('guest', {
+          userId: GUEST,
+          org: { orgId, role: 'guest', tuples, memberGrants: [] },
+        }),
       }),
     );
 
@@ -489,7 +492,10 @@ describe('through the real tRPC router — the layer the service tests bypass', 
 
     const caller = callerFactory(
       testContext({
-        principal: testPrincipal('guest', { userId: GUEST, org: { orgId, role: 'guest', tuples } }),
+        principal: testPrincipal('guest', {
+          userId: GUEST,
+          org: { orgId, role: 'guest', tuples, memberGrants: [] },
+        }),
       }),
     );
 
@@ -516,7 +522,10 @@ describe('through the real tRPC router — the layer the service tests bypass', 
     const tuples = await loadTuples(orgId, GUEST);
     const caller = callerFactory(
       testContext({
-        principal: testPrincipal('guest', { userId: GUEST, org: { orgId, role: 'guest', tuples } }),
+        principal: testPrincipal('guest', {
+          userId: GUEST,
+          org: { orgId, role: 'guest', tuples, memberGrants: [] },
+        }),
       }),
     );
 
@@ -544,7 +553,10 @@ describe('through the real tRPC router — the layer the service tests bypass', 
     const tuples = await loadTuples(orgId, GUEST);
     const caller = callerFactory(
       testContext({
-        principal: testPrincipal('guest', { userId: GUEST, org: { orgId, role: 'guest', tuples } }),
+        principal: testPrincipal('guest', {
+          userId: GUEST,
+          org: { orgId, role: 'guest', tuples, memberGrants: [] },
+        }),
       }),
     );
 
@@ -582,7 +594,10 @@ describe('through the real tRPC router — the layer the service tests bypass', 
     const tuples = await loadTuples(orgId, GUEST);
     const caller = callerFactory(
       testContext({
-        principal: testPrincipal('guest', { userId: GUEST, org: { orgId, role: 'guest', tuples } }),
+        principal: testPrincipal('guest', {
+          userId: GUEST,
+          org: { orgId, role: 'guest', tuples, memberGrants: [] },
+        }),
       }),
     );
 

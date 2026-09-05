@@ -298,3 +298,43 @@ export function isReadOnly(permission: Permission): boolean {
 export function resourceOf(permission: Permission): ResourceType {
   return permission.slice(0, permission.indexOf(':')) as ResourceType;
 }
+
+/**
+ * Permissions eligible to be granted to one specific member individually, on
+ * top of their role (ai/phase-15-ai-copilot-and-permissions.md §1) — the
+ * `authz.member_grants` table (migration 0097).
+ *
+ * Deliberately a separate, narrower list from the full catalog, checked at
+ * the write path (`apps/api/src/tenancy/member-grant.service.ts`) rather
+ * than as a CHECK constraint in the migration — see that migration's own
+ * comment for why. Not every permission should ever be individually
+ * grantable: ownership-adjacent and destructive org-wide capabilities
+ * (`org:update`, `org:delete`, `member:manage`, role changes, ...) stay
+ * role-only regardless of this mechanism existing. A permission landing here
+ * is a deliberate, reviewed decision — same discipline as `ORG_LEVEL_PERMISSIONS`
+ * above — not a default every permission gets.
+ *
+ * Wave 1's starting set is exactly the telephony permissions
+ * `roles.ts` already hands to the whole Member role with no way to
+ * restrict them to specific people — the gap that motivated building this
+ * mechanism at all (see the phase spec's §0). They stay on the Member role
+ * for now: this list makes them ALSO grantable to a Guest, who holds
+ * nothing from their role, without promoting them to Member — e.g. giving
+ * one contractor calling ability without giving them read access to every
+ * board. Retiring the blanket Member-role grant in favor of this list being
+ * the only source is a deliberate follow-up (needs a data migration
+ * backfilling existing orgs' grants first), not bundled into the wave that
+ * introduces the mechanism.
+ */
+export const GRANTABLE_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
+  'phoneNumber:read',
+  'call:place',
+  'call:read',
+  'sms:send',
+  'sms:read',
+]);
+
+/** True when `permission` may be granted to an individual member — see `GRANTABLE_PERMISSIONS`. */
+export function isGrantable(permission: Permission): boolean {
+  return GRANTABLE_PERMISSIONS.has(permission);
+}

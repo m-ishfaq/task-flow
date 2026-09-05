@@ -10,7 +10,13 @@ import {
   withUserScope,
 } from '@taskflow/db';
 import { errors, OrgIdSchema, type OrgId, type UserId } from '@taskflow/contracts';
-import { isRelation, type RelationshipTuple, type ResourceType } from '@taskflow/policy';
+import {
+  isPermission,
+  isRelation,
+  type Permission,
+  type RelationshipTuple,
+  type ResourceType,
+} from '@taskflow/policy';
 import { isRole } from '@taskflow/policy';
 import type { OrgMembership } from '../trpc/context.js';
 
@@ -70,7 +76,7 @@ export async function resolveOrgMembership(
 
   const rows = await withUserScope(userId, async (tx) =>
     tx
-      .select({ role: schema.memberships.role })
+      .select({ id: schema.memberships.id, role: schema.memberships.role })
       .from(schema.memberships)
       .where(
         and(
@@ -88,7 +94,7 @@ export async function resolveOrgMembership(
   const membership = rows[0];
   if (membership === undefined) return null;
 
-  const { role } = membership;
+  const { id: membershipId, role } = membership;
 
   /* A role this build has never heard of denies everything downstream (see
      decide.ts), which is safe. Refusing the membership outright is safer still:
@@ -162,8 +168,9 @@ export async function resolveOrgMembership(
      cannot undo an operator's manual suspension. */
 
   const tuples = await loadTuples(orgId, userId);
+  const memberGrants = await loadMemberGrants(orgId, membershipId);
 
-  return { orgId, role, tuples };
+  return { orgId, role, tuples, memberGrants };
 }
 
 /**
@@ -236,5 +243,33 @@ export async function loadTuples(
         relation: row.relation as RelationshipTuple['relation'],
         object: { type: row.objectType as ResourceType, id: row.objectId },
       }));
+  });
+}
+
+/**
+ * This member's active individual permission grants
+ * (ai/phase-15-ai-copilot-and-permissions.md §1) — the org-level counterpart
+ * to `loadTuples` above.
+ *
+ * Filtered to `revoked_at IS NULL` by the query rather than by a sweep, the
+ * same reasoning `loadTuples` gives for `expiresAt`: a revoke stops working
+ * at the moment it is written, not whenever a cleanup job next runs.
+ */
+export async function loadMemberGrants(
+  orgId: OrgId,
+  membershipId: string,
+): Promise<readonly Permission[]> {
+  return withOrgScope(orgId, async (tx) => {
+    const rows = await tx
+      .select({ permission: schema.memberGrants.permission })
+      .from(schema.memberGrants)
+      .where(
+        and(
+          eq(schema.memberGrants.membershipId, membershipId),
+          isNull(schema.memberGrants.revokedAt),
+        ),
+      );
+
+    return rows.map((row) => row.permission).filter(isPermission);
   });
 }

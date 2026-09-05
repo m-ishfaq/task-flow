@@ -116,7 +116,9 @@ describe('the executor — what it refuses to invent', () => {
        `cardIdOf`), so a trigger with no card leaves an action with nothing to
        act on. Failing loudly beats picking one. */
     const executor = createActionExecutor({
-      resolveMembership: vi.fn().mockResolvedValue({ orgId: ORG, role: 'admin', tuples: [] }),
+      resolveMembership: vi
+        .fn()
+        .mockResolvedValue({ orgId: ORG, role: 'admin', tuples: [], memberGrants: [] }),
     });
 
     const results = await executor.execute({
@@ -131,7 +133,7 @@ describe('the executor — what it refuses to invent', () => {
 });
 
 describe('the executor — the cost-bearing actions (Phase 10 Wave 4 §5.5)', () => {
-  const member = { orgId: ORG, role: 'admin' as const, tuples: [] };
+  const member = { orgId: ORG, role: 'admin' as const, tuples: [], memberGrants: [] };
   const telephonyRule = (type: 'call.place' | 'sms.send') =>
     rule({
       actions: [
@@ -200,7 +202,7 @@ describe('the executor — the cost-bearing actions (Phase 10 Wave 4 §5.5)', ()
  * diff and is visible in somebody's Slack channel.
  */
 describe('the executor — the outbound connector actions (§7.6)', () => {
-  const member = { orgId: ORG, role: 'admin' as const, tuples: [] };
+  const member = { orgId: ORG, role: 'admin' as const, tuples: [], memberGrants: [] };
 
   const slackRule = () =>
     rule({

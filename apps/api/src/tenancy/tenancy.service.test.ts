@@ -15,10 +15,12 @@ import * as orgs from './org.service.js';
 import * as members from './member.service.js';
 import * as teams from './team.service.js';
 import * as grants from './grant.service.js';
+import * as memberGrants from './member-grant.service.js';
 import * as authz from './authz.service.js';
 import * as audit from './audit.service.js';
 import { drainOutboxFully } from './audit.projection.js';
-import { loadTuples, resolveOrgMembership } from './resolve.js';
+import { loadMemberGrants, loadTuples, resolveOrgMembership } from './resolve.js';
+import { can } from '@taskflow/policy';
 
 /**
  * The tenancy slice, end to end, against real Postgres (`docker compose up -d`).
@@ -72,6 +74,7 @@ async function removeOrg(orgId: string): Promise<void> {
   await admin.query(`DELETE FROM audit.chain_heads WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM platform.outbox WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM authz.relationship_tuples WHERE org_id = $1`, [orgId]);
+  await admin.query(`DELETE FROM authz.member_grants WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM identity.team_members WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM identity.teams WHERE org_id = $1`, [orgId]);
   await admin.query(`DELETE FROM identity.memberships WHERE org_id = $1`, [orgId]);
@@ -929,5 +932,144 @@ describe('ownership transfer', () => {
     expect((await resolveOrgMembership(COLLEAGUE, orgId))?.role).toBe('owner');
     expect((await resolveOrgMembership(OUTSIDER, orgId))?.role).toBe('owner');
     expect((await resolveOrgMembership(OWNER, orgId))?.role).toBe('admin');
+  });
+});
+
+describe('member grants (ai/phase-15-ai-copilot-and-permissions.md §1)', () => {
+  it('gives a Guest an org-level permission their role alone denies, and the full stack agrees', async () => {
+    /* The end-to-end property: a service write is visible to
+       resolveOrgMembership's read, which is what subjectOf feeds the policy
+       engine — not just that the row exists, but that `can()` on the real
+       decision path changes its answer because of it. */
+    const orgId = await newOrg('member-grant-one');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'guest' },
+      actorOf(OWNER),
+    );
+
+    const before = await resolveOrgMembership(COLLEAGUE, orgId);
+    expect(before?.memberGrants).toEqual([]);
+    expect(can({ ...before!, userId: COLLEAGUE }, 'call:place').allowed).toBe(false);
+
+    await memberGrants.grant(
+      orgId,
+      { userId: COLLEAGUE, permission: 'call:place' },
+      actorOf(OWNER),
+    );
+
+    const after = await resolveOrgMembership(COLLEAGUE, orgId);
+    expect(after?.memberGrants).toEqual(['call:place']);
+    expect(can({ ...after!, userId: COLLEAGUE }, 'call:place').allowed).toBe(true);
+    // A grant for one permission does not leak to a neighbouring one.
+    expect(can({ ...after!, userId: COLLEAGUE }, 'sms:send').allowed).toBe(false);
+  });
+
+  it('revoking sets revoked_at rather than deleting the row, and the loader stops returning it immediately', async () => {
+    const orgId = await newOrg('member-grant-two');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'guest' },
+      actorOf(OWNER),
+    );
+    await admin.setOrg(orgId);
+    const membershipRows = await admin.query(
+      `SELECT id FROM identity.memberships WHERE org_id = $1 AND user_id = $2`,
+      [orgId, COLLEAGUE],
+    );
+    await admin.setOrg(null);
+    const membershipId = (membershipRows.rows[0] as { id: string } | undefined)?.id;
+    if (membershipId === undefined) throw new Error('membership not found');
+
+    await memberGrants.grant(
+      orgId,
+      { userId: COLLEAGUE, permission: 'call:place' },
+      actorOf(OWNER),
+    );
+    expect(await loadMemberGrants(orgId, membershipId)).toEqual(['call:place']);
+
+    await memberGrants.revoke(
+      orgId,
+      { userId: COLLEAGUE, permission: 'call:place' },
+      actorOf(OWNER),
+    );
+    expect(await loadMemberGrants(orgId, membershipId)).toEqual([]);
+
+    // The row is still there, marked revoked — history, not deletion.
+    await admin.setOrg(orgId);
+    const rows = await admin.query(
+      `SELECT revoked_at FROM authz.member_grants WHERE membership_id = $1 AND permission = $2`,
+      [membershipId, 'call:place'],
+    );
+    await admin.setOrg(null);
+    const revokedRows = rows.rows as { revoked_at: Date | null }[];
+    expect(revokedRows).toHaveLength(1);
+    expect(revokedRows[0]?.revoked_at).not.toBeNull();
+  });
+
+  it('is idempotent, so granting something already granted returns the same row', async () => {
+    const orgId = await newOrg('member-grant-three');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'guest' },
+      actorOf(OWNER),
+    );
+
+    const first = await memberGrants.grant(
+      orgId,
+      { userId: COLLEAGUE, permission: 'call:place' },
+      actorOf(OWNER),
+    );
+    const second = await memberGrants.grant(
+      orgId,
+      { userId: COLLEAGUE, permission: 'call:place' },
+      actorOf(OWNER),
+    );
+
+    expect(second.grantId).toBe(first.grantId);
+  });
+
+  it('refuses a permission that is not on the eligible list, even a real one', async () => {
+    // `org:update` is a real permission in the catalog — the refusal is
+    // `isGrantable`, not `isPermission`, and a caller must not be able to
+    // hand out ownership-adjacent capability through this door.
+    const orgId = await newOrg('member-grant-four');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'guest' },
+      actorOf(OWNER),
+    );
+
+    await expect(
+      memberGrants.grant(orgId, { userId: COLLEAGUE, permission: 'org:update' }, actorOf(OWNER)),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+  });
+
+  it('refuses a grant to someone outside the organization', async () => {
+    const orgId = await newOrg('member-grant-five');
+    await expect(
+      memberGrants.grant(orgId, { userId: OUTSIDER, permission: 'call:place' }, actorOf(OWNER)),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('lists every active grant in the org, and only the active ones', async () => {
+    const orgId = await newOrg('member-grant-six');
+    await members.addMember(
+      orgId,
+      { email: 'colleague@tenancy.test', role: 'guest' },
+      actorOf(OWNER),
+    );
+
+    await memberGrants.grant(
+      orgId,
+      { userId: COLLEAGUE, permission: 'call:place' },
+      actorOf(OWNER),
+    );
+    await memberGrants.grant(orgId, { userId: COLLEAGUE, permission: 'sms:send' }, actorOf(OWNER));
+    await memberGrants.revoke(orgId, { userId: COLLEAGUE, permission: 'sms:send' }, actorOf(OWNER));
+
+    const list = await memberGrants.listGrants(orgId);
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ userId: COLLEAGUE, permission: 'call:place' });
   });
 });

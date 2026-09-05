@@ -13,8 +13,10 @@
 export {
   PERMISSIONS,
   RESOURCE_TYPES,
+  GRANTABLE_PERMISSIONS,
   isPermission,
   isReadOnly,
+  isGrantable,
   resourceOf,
   type Permission,
   type ResourceType,

@@ -9,6 +9,7 @@ interface Outputs {
   orgs: Awaited<ReturnType<typeof api.tenancy.orgs.list.query>>;
   org: Awaited<ReturnType<typeof api.tenancy.orgs.get.query>>;
   members: Awaited<ReturnType<typeof api.tenancy.members.list.query>>;
+  memberGrants: Awaited<ReturnType<typeof api.tenancy.memberGrants.list.query>>;
   explain: Awaited<ReturnType<typeof api.tenancy.authz.explain.query>>;
 }
 
@@ -16,6 +17,7 @@ export type OrgMembership = Wire<Outputs['orgs']>[number];
 export type OrgDetail = Wire<Outputs['org']>;
 export type SettingsCapabilities = OrgDetail['capabilities'];
 export type Member = Wire<Outputs['members']>[number];
+export type MemberGrant = Wire<Outputs['memberGrants']>[number];
 export type Explanation = Wire<Outputs['explain']>;
 
 /**
@@ -52,6 +54,14 @@ export function membersQuery(orgId: string) {
   return queryOptions({
     queryKey: keys.members(orgId),
     queryFn: async () => wire(await api.tenancy.members.list.query(undefined)),
+  });
+}
+
+/** Every active individual permission grant in the org (ai/phase-15-...md §1). */
+export function memberGrantsQuery(orgId: string) {
+  return queryOptions({
+    queryKey: keys.memberGrants(orgId),
+    queryFn: async () => wire(await api.tenancy.memberGrants.list.query(undefined)),
   });
 }
 

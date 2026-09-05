@@ -151,6 +151,39 @@ export const grantRevoked = defineEvent(
     .strict(),
 );
 
+/**
+ * An individual, org-level permission was granted to or revoked from one
+ * member, on top of their role (ai/phase-15-ai-copilot-and-permissions.md
+ * §1). The org-level counterpart to `grantCreated`/`grantRevoked` above,
+ * which are resource-scoped tuples — kept as separate events rather than
+ * reusing those two, because "Raj may comment on this board" and "Raj may
+ * place calls org-wide" are different enough questions that a reader
+ * grepping the audit log for one should not have to filter out the other.
+ */
+export const memberGrantCreated = defineEvent(
+  'member_grant.created',
+  z
+    .object({
+      grantId: z.string(),
+      membershipId: z.string(),
+      userId: z.string(),
+      permission: z.string(),
+    })
+    .strict(),
+);
+
+export const memberGrantRevoked = defineEvent(
+  'member_grant.revoked',
+  z
+    .object({
+      grantId: z.string(),
+      membershipId: z.string(),
+      userId: z.string(),
+      permission: z.string(),
+    })
+    .strict(),
+);
+
 /*
  * NOT HERE YET: `access.denied`.
  *

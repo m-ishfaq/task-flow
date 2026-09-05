@@ -1,5 +1,5 @@
 import type { OrgId, RequestId, SessionId, UserId } from '@taskflow/contracts';
-import type { RelationshipTuple, Role, Subject } from '@taskflow/policy';
+import type { Permission, RelationshipTuple, Role, Subject } from '@taskflow/policy';
 
 /**
  * What every request carries.
@@ -26,6 +26,12 @@ export interface OrgMembership {
   readonly role: Role;
   /** Already expanded through team membership by the tuple loader. */
   readonly tuples: readonly RelationshipTuple[];
+  /**
+   * Individual, org-level permissions granted to this member on top of
+   * their role (ai/phase-15-ai-copilot-and-permissions.md §1), already
+   * filtered to active (non-revoked) rows by `loadMemberGrants`.
+   */
+  readonly memberGrants: readonly Permission[];
 }
 
 /**
@@ -86,6 +92,7 @@ export function subjectOf(principal: OrgScopedPrincipal): Subject {
     userId: principal.userId,
     role: principal.org.role,
     tuples: principal.org.tuples,
+    memberGrants: principal.org.memberGrants,
   };
 }
 

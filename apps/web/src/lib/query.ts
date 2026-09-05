@@ -234,6 +234,8 @@ export const keys = {
     ['org', orgId, 'projects', projectId, 'fields'] as const,
 
   members: (orgId: string) => ['org', orgId, 'members'] as const,
+  /** Individual, org-level permission grants (ai/phase-15-...md §1) — settings-page.tsx's Permissions section. */
+  memberGrants: (orgId: string) => ['org', orgId, 'member-grants'] as const,
   explain: (orgId: string, input: string) => ['org', orgId, 'authz', 'explain', input] as const,
 
   /** Every channel the caller may see (Phase 5, chat/api.ts) — public, private, and DMs alike. */

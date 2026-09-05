@@ -7,6 +7,7 @@ import * as orgs from './org.service.js';
 import * as members from './member.service.js';
 import * as teams from './team.service.js';
 import * as grants from './grant.service.js';
+import * as memberGrants from './member-grant.service.js';
 import * as authz from './authz.service.js';
 import * as audit from './audit.service.js';
 
@@ -260,6 +261,50 @@ export function createTenancyRouter(deps: TenancyRouterDeps) {
         .input(z.object({ tupleId: z.string().uuid() }).strict())
         .output(z.object({ revoked: z.literal(true) }))
         .mutation(({ input, ctx }) => grants.revoke(ctx.principal.org.orgId, input, actorOf(ctx))),
+    }),
+
+    /**
+     * Individual, org-level permission grants (§1 of
+     * ai/phase-15-ai-copilot-and-permissions.md) — distinct from `grants`
+     * above, which writes relationship TUPLES on a specific resource. There
+     * is no resource here: this is "give this one person `call:place`
+     * org-wide", which is exactly the shape `grants` cannot express.
+     */
+    memberGrants: router({
+      list: route({ permission: 'member:read' })
+        .output(
+          z
+            .array(
+              z.object({
+                grantId: z.string(),
+                userId: z.string(),
+                permission: z.string(),
+                grantedBy: z.string().nullable(),
+                grantedAt: z.date(),
+              }),
+            )
+            .readonly(),
+        )
+        .query(({ ctx }) => memberGrants.listGrants(ctx.principal.org.orgId)),
+
+      /**
+       * Step-up authenticated, same as `changeRole` and the tuple `grant`
+       * route above — this changes what a specific person may do, which is
+       * exactly what an attacker with a stolen session reaches for first.
+       */
+      grant: route({ permission: 'member:manage', stepUp: true })
+        .input(z.object({ userId: UserIdSchema, permission: z.string().max(60) }).strict())
+        .output(z.object({ grantId: z.string() }))
+        .mutation(({ input, ctx }) =>
+          memberGrants.grant(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
+
+      revoke: route({ permission: 'member:manage', stepUp: true })
+        .input(z.object({ userId: UserIdSchema, permission: z.string().max(60) }).strict())
+        .output(z.object({ revoked: z.literal(true) }))
+        .mutation(({ input, ctx }) =>
+          memberGrants.revoke(ctx.principal.org.orgId, input, actorOf(ctx)),
+        ),
     }),
 
     authz: router({

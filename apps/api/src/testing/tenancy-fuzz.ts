@@ -1,6 +1,6 @@
 import type { AnyRouter } from '@trpc/server';
 import { unsafeAsId, type OrgId, type UserId } from '@taskflow/contracts';
-import type { RelationshipTuple, Role } from '@taskflow/policy';
+import type { Permission, RelationshipTuple, Role } from '@taskflow/policy';
 import { protectedRoutes, routeManifest, type RouteEntry } from '../trpc/manifest.js';
 import type { AuthenticatedPrincipal, RequestContext } from '../trpc/context.js';
 
@@ -35,6 +35,7 @@ export interface FuzzOrg {
   readonly userId: UserId;
   readonly role: Role;
   readonly tuples?: readonly RelationshipTuple[];
+  readonly memberGrants?: readonly Permission[];
   /**
    * Ids belonging to this org, keyed by the input field name a route expects
    * (`cardId`, `boardId`). The harness feeds org B's ids to org A's session.
@@ -227,7 +228,12 @@ function principalOf(org: FuzzOrg): AuthenticatedPrincipal {
     userId: org.userId,
     sessionId: unsafeAsId<'SessionId'>(FUZZ_SESSION_ID),
     authenticatedAt: new Date(),
-    org: { orgId: org.orgId, role: org.role, tuples: org.tuples ?? [] },
+    org: {
+      orgId: org.orgId,
+      role: org.role,
+      tuples: org.tuples ?? [],
+      memberGrants: org.memberGrants ?? [],
+    },
     tokenScopes: null,
   };
 }

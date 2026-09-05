@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ModalContent, ModalDescription, ModalRoot, ModalTitle } from '@taskflow/ui';
 import type { TeamId, UserId } from '@taskflow/contracts';
-import { DIRECTLY_ASSIGNABLE_ROLES, type Role } from '@taskflow/policy';
+import { DIRECTLY_ASSIGNABLE_ROLES, GRANTABLE_PERMISSIONS, type Role } from '@taskflow/policy';
 import { api } from '../../lib/trpc.js';
 import { keys } from '../../lib/query.js';
 import { useSession } from '../../lib/session.js';
@@ -26,7 +26,12 @@ import { ErrorText, ErrorView } from '../../components/error-view.js';
 import { cn } from '../../lib/cn.js';
 import { useBranding } from '../../lib/branding-context.js';
 import { useStepUp } from '../auth/use-step-up.js';
-import { membersQuery, orgDetailQuery, type SettingsCapabilities } from '../org/api.js';
+import {
+  membersQuery,
+  memberGrantsQuery,
+  orgDetailQuery,
+  type SettingsCapabilities,
+} from '../org/api.js';
 import { BillingSection } from './billing-section.js';
 
 /**
@@ -73,6 +78,7 @@ export function SettingsPage() {
       <OrgSection orgId={orgId} />
       <BillingSection orgId={orgId} />
       <MemberSection orgId={orgId} />
+      <PermissionsSection orgId={orgId} />
       <TeamSection orgId={orgId} />
     </div>
   );
@@ -446,6 +452,143 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
         </ModalRoot>
       )}
 
+      {dialog}
+    </Section>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * Individual permission grants (ai/phase-15-ai-copilot-and-permissions.md §1)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * One org-level permission given to (or taken from) one specific member, on
+ * top of their role — e.g. letting one Guest place calls without promoting
+ * them to Member. `GRANTABLE_PERMISSIONS` is the same closed list the server
+ * enforces (`packages/policy`'s `isGrantable`), imported rather than
+ * hand-copied so a permission added there appears here without a second edit.
+ *
+ * The list itself is always visible to anyone who can see the Members
+ * section above (both routes sit behind `member:read`) — only the toggle
+ * buttons are disabled for a caller without `member:manage`, matching how
+ * the role dropdown above stays visible-but-inert for the same caller
+ * rather than hiding the whole picture of who can do what.
+ */
+function PermissionsSection({ orgId }: { readonly orgId: string }) {
+  const queryClient = useQueryClient();
+  const members = useQuery(membersQuery(orgId));
+  const grants = useQuery(memberGrantsQuery(orgId));
+  const org = useQuery(orgDetailQuery(orgId));
+  const { guard, dialog } = useStepUp();
+
+  const capabilities: SettingsCapabilities = org.data?.capabilities ?? {
+    updateOrg: false,
+    inviteMember: false,
+    manageMembers: false,
+    removeMembers: false,
+    manageTeams: false,
+    createProject: false,
+  };
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: keys.memberGrants(orgId) });
+
+  const grant = useMutation({
+    mutationFn: (input: { userId: UserId; permission: string }) =>
+      api.tenancy.memberGrants.grant.mutate(input),
+    onSuccess: refresh,
+    onError: (error, input) => {
+      guard(error, () => {
+        grant.mutate(input);
+      });
+    },
+  });
+
+  const revoke = useMutation({
+    mutationFn: (input: { userId: UserId; permission: string }) =>
+      api.tenancy.memberGrants.revoke.mutate(input),
+    onSuccess: refresh,
+    onError: (error, input) => {
+      guard(error, () => {
+        revoke.mutate(input);
+      });
+    },
+  });
+
+  if (members.data === undefined || grants.data === undefined) return null;
+
+  const permissions = [...GRANTABLE_PERMISSIONS];
+  const isGranted = (userId: string, permission: string) =>
+    grants.data.some((entry) => entry.userId === userId && entry.permission === permission);
+
+  return (
+    <Section
+      title="Individual permissions"
+      count={grants.data.length}
+      description="On top of a member's role, one specific ability can be given to (or taken from) one person — e.g. letting one guest place calls without promoting them to Member."
+    >
+      {members.data.length === 0 || permissions.length === 0 ? (
+        <Empty title="Nothing to show yet" />
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-line/50">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-line/50 text-left text-xs text-ink-faint">
+                <th className="p-2 font-medium">Member</th>
+                {permissions.map((permission) => (
+                  <th key={permission} className="p-2 font-medium">
+                    {permission}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {members.data.map((member) => (
+                <tr key={member.userId} className="border-b border-line/30 last:border-0">
+                  <td className="p-2">
+                    <div className="font-medium text-ink">{member.email}</div>
+                    <div className="text-xs text-ink-faint">{member.role}</div>
+                  </td>
+                  {permissions.map((permission) => {
+                    const granted = isGranted(member.userId, permission);
+                    const userId = member.userId as UserId;
+                    return (
+                      <td key={permission} className="p-2">
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={granted}
+                          aria-label={`${granted ? 'Revoke' : 'Grant'} ${permission} for ${member.email}`}
+                          disabled={
+                            !capabilities.manageMembers || grant.isPending || revoke.isPending
+                          }
+                          onClick={() => {
+                            if (granted) revoke.mutate({ userId, permission });
+                            else grant.mutate({ userId, permission });
+                          }}
+                          className={cn(
+                            'h-6 w-11 rounded-full transition-colors',
+                            granted ? 'bg-accent' : 'bg-surface-hover',
+                            !capabilities.manageMembers && 'cursor-not-allowed opacity-50',
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              'block h-5 w-5 rounded-full bg-surface transition-transform',
+                              granted ? 'translate-x-5' : 'translate-x-0.5',
+                            )}
+                          />
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {(grant.isError || revoke.isError) && <ErrorText error={grant.error ?? revoke.error} />}
       {dialog}
     </Section>
   );
