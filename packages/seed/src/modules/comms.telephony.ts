@@ -100,6 +100,7 @@ export const telephonyModule = defineSeedModule({
     /* Teardown order is the reverse of this list, so children last here.
        recording_cards before recordings before calls, threads after their
        messages — every one of these carries a real foreign key. */
+    'authz.member_grants',
     'comms.subaccounts',
     'comms.subaccount_orgs',
     'comms.phone_numbers',
@@ -210,6 +211,7 @@ async function seedOrgTelephony(
   const orgId = org.id as OrgId;
   const owner = org.owner;
   const members = org.members;
+  const membershipIdOf = new Map(org.memberships.map((m) => [m.user.id, m.membershipId]));
 
   const minutes = (n: number): Date => new Date(ctx.now.getTime() - n * 60_000);
 
@@ -406,6 +408,12 @@ async function seedOrgTelephony(
   const callRows: unknown[][] = [];
   const ledgerRows: unknown[][] = [];
   const recorded: { callId: string; startedAt: Date; durationSeconds: number }[] = [];
+  /* Whoever an outbound call is attributed to below must actually be able to
+     place one under the real policy (Phase 15 §1's "contract" step trimmed
+     `call:place` off the Member role) — collected here so the fixture can
+     grant it to exactly these people, not silently depict access nobody
+     seeded has. */
+  const outboundCallers = new Set<string>();
 
   for (const [index, plan] of plans.entries()) {
     const callId = rng.uuid(ctx.now);
@@ -429,6 +437,10 @@ async function seedOrgTelephony(
     const recordingStartedAt =
       announcementPlayedAt === null ? null : new Date(announcementPlayedAt.getTime() + 1_000);
 
+    const placedBy =
+      plan.direction === 'outbound' ? (members[index % members.length] ?? owner) : null;
+    if (placedBy) outboundCallers.add(placedBy.id);
+
     callRows.push([
       callId,
       orgId,
@@ -438,7 +450,7 @@ async function seedOrgTelephony(
       sealed.index,
       plan.status,
       `CA${callId.replaceAll('-', '').slice(0, 30)}`,
-      plan.direction === 'outbound' ? (members[index % members.length]?.id ?? owner.id) : null,
+      placedBy?.id ?? null,
       startedAt,
       answeredAt,
       endedAt,
@@ -476,6 +488,36 @@ async function seedOrgTelephony(
         durationSeconds: plan.durationSeconds,
       });
     }
+  }
+
+  /* Grant the people the fixture shows placing calls the ability to do so —
+     the Member role no longer hands out `call:place`/`call:read` for free
+     (Phase 15 §1), so without this the seeded call log would depict access
+     nobody in the org actually has. The owner is excluded: they already
+     hold these by role, and a grant for someone who does not need one is
+     not a fact about the org, it is noise on the Permissions page. */
+  const memberGrantRows: unknown[][] = [];
+  for (const userId of outboundCallers) {
+    if (userId === owner.id) continue;
+    const membershipId = membershipIdOf.get(userId);
+    if (membershipId === undefined) continue;
+    for (const permission of ['phoneNumber:read', 'call:place', 'call:read']) {
+      memberGrantRows.push([
+        rng.uuid(ctx.now),
+        orgId,
+        membershipId,
+        permission,
+        owner.id,
+        org.createdAt,
+      ]);
+    }
+  }
+  if (memberGrantRows.length > 0) {
+    await ctx.db.insert(
+      'authz.member_grants',
+      ['id', 'org_id', 'membership_id', 'permission', 'granted_by', 'granted_at'],
+      memberGrantRows,
+    );
   }
 
   await ctx.db.insert(
