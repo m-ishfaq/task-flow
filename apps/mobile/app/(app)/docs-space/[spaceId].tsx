@@ -209,14 +209,22 @@ export default function DocsSpaceScreen() {
           {space?.name ?? 'Space'}
         </Text>
         <View style={styles.titleActions}>
-          <Pressable
-            style={styles.templatesButton}
-            onPress={() => {
-              setManagingTemplates(true);
-            }}
-          >
-            <Text style={styles.templatesButtonText}>Templates</Text>
-          </Pressable>
+          {/* `space:manage` (`docs.templates.delete` reuses it) — this
+              button opens the DELETE sheet, so it is hidden entirely for a
+              caller who cannot manage the space rather than shown and left
+              to answer FORBIDDEN (Phase 15 §1's sweep). Creating a
+              template lives on `docs-page/[pageId].tsx` instead, gated the
+              same way there. */}
+          {space?.capabilities.manage === true && (
+            <Pressable
+              style={styles.templatesButton}
+              onPress={() => {
+                setManagingTemplates(true);
+              }}
+            >
+              <Text style={styles.templatesButtonText}>Templates</Text>
+            </Pressable>
+          )}
           <Pressable
             style={styles.newButton}
             onPress={() => {

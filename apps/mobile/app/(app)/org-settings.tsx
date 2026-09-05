@@ -115,6 +115,7 @@ export default function OrgSettingsScreen() {
     releaseNumbers: false,
     manageSavedSearches: false,
     readRecordings: false,
+    createSpace: false,
   };
 
   const refreshMembers = async (): Promise<void> => {

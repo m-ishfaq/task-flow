@@ -215,6 +215,7 @@ describe('settings capabilities', () => {
       releaseNumbers: true,
       manageSavedSearches: true,
       readRecordings: true,
+      createSpace: true,
     });
 
     // A plain Member holds none of these — card:create and friends do not
@@ -242,6 +243,7 @@ describe('settings capabilities', () => {
       releaseNumbers: false,
       manageSavedSearches: false,
       readRecordings: false,
+      createSpace: false,
     });
   });
 
@@ -283,6 +285,7 @@ describe('settings capabilities', () => {
       releaseNumbers: false,
       manageSavedSearches: true,
       readRecordings: true,
+      createSpace: true,
     });
   });
 });

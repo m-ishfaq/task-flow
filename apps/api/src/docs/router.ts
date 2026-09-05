@@ -77,7 +77,15 @@ export function createDocsRouter() {
         .output(
           z
             .array(
-              z.object({ spaceId: z.string(), name: z.string(), archivedAt: z.date().nullable() }),
+              z.object({
+                spaceId: z.string(),
+                name: z.string(),
+                archivedAt: z.date().nullable(),
+                /* Read by the client to hide the "+ Space"/archive/restore
+                   controls and page-template management a viewer cannot
+                   use — see `listSpaces`'s own comment. */
+                capabilities: z.object({ manage: z.boolean() }).strict(),
+              }),
             )
             .readonly(),
         )

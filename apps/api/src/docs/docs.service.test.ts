@@ -120,7 +120,14 @@ describe('spaces', () => {
   it('creates and lists a space', async () => {
     const fixture = await scaffold('space-create');
     const list = await spaces.listSpaces(fixture.owner);
-    expect(list).toEqual([{ spaceId: fixture.spaceId, name: 'Handbook', archivedAt: null }]);
+    expect(list).toEqual([
+      {
+        spaceId: fixture.spaceId,
+        name: 'Handbook',
+        archivedAt: null,
+        capabilities: { manage: true },
+      },
+    ]);
   });
 
   it('archives and restores a space', async () => {
@@ -147,6 +154,14 @@ describe('spaces', () => {
     await expect(
       spaces.archiveSpace(member, { spaceId: fixture.spaceId, restore: false }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+
+    /* `listSpaces`'s own per-space `capabilities.manage` is what the client
+       reads to decide whether to show the archive/restore control and
+       page-template management at all (Phase 15 §1's sweep) — it must
+       agree with the refusal above, not just with the role matrix in the
+       abstract. */
+    const list = await spaces.listSpaces(member);
+    expect(list[0]?.capabilities.manage).toBe(false);
   });
 });
 

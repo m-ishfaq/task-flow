@@ -311,6 +311,17 @@ export interface SettingsCapabilities {
    * interaction come back FORBIDDEN.
    */
   readonly readRecordings: boolean;
+  /**
+   * Creating a new Docs SPACE — `space:create`, computed with no target
+   * (like `createProject` above) since a not-yet-created space has no
+   * resource to scope a tuple to. Unlike `createProject`, this permission
+   * genuinely can ALSO be satisfied by a tuple once a space exists
+   * (`space:manage` is per-space, and `docs.spaces.list` already returns
+   * that half in its own `capabilities.manage`); this field only ever
+   * answers the org-wide "create" question, the one place a tuple cannot
+   * help because there is nothing yet to hold one.
+   */
+  readonly createSpace: boolean;
 }
 
 export interface OrgDetail {
@@ -381,6 +392,7 @@ export async function getOrg(orgId: OrgId, subject: Subject): Promise<OrgDetail>
       releaseNumbers: can(subject, 'phoneNumber:release').allowed,
       manageSavedSearches: can(subject, 'search:manage').allowed,
       readRecordings: can(subject, 'recording:read').allowed,
+      createSpace: can(subject, 'space:create').allowed,
     },
   };
 }

@@ -21,6 +21,7 @@ import { apiClient } from '../../../src/lib/app-session.js';
 import { apiErrorOf } from '../../../src/lib/trpc-client.js';
 import { useTopInset } from '../../../src/lib/use-top-inset.js';
 import { SPACES_QUERY_KEY, type Space } from '../../../src/lib/docs.js';
+import { ORG_DETAIL_QUERY_KEY } from '../../../src/lib/org-settings.js';
 import { Fab } from '../../../src/lib/fab.js';
 import { toast, ToastHost } from '../../../src/lib/toast.js';
 
@@ -44,6 +45,15 @@ const TOPBAR_ICON_CLEARANCE = 120;
  * does not have yet, which is why there is no "open a page" screen in this
  * pass; the tree lives one screen over, `docs-space/[spaceId].tsx`, reached
  * by tapping a space below.
+ *
+ * `space:create`/`space:manage` are Admin-and-Owner only by role
+ * (`space:manage` also grantable per-space via a tuple), so the "New
+ * space" FAB and each space's own "Restore" are gated on real
+ * capabilities — `SettingsCapabilities.createSpace` org-wide and
+ * `docs.spaces.list`'s own per-space `capabilities.manage` — rather than
+ * shown to every viewer and left to answer FORBIDDEN (Phase 15 §1's
+ * sweep, mirroring the identical fix in `apps/web/src/features/docs/
+ * docs-page.tsx`).
  */
 export default function DocsScreen() {
   const paddingTop = useTopInset(4);
@@ -65,6 +75,11 @@ export default function DocsScreen() {
     queryKey: SPACES_QUERY_KEY,
     queryFn: async () => wire(await apiClient.docs.spaces.list.query()),
   });
+  const canCreateSpace =
+    useQuery({
+      queryKey: ORG_DETAIL_QUERY_KEY,
+      queryFn: async () => wire(await apiClient.tenancy.orgs.get.query()),
+    }).data?.capabilities.createSpace === true;
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: SPACES_QUERY_KEY });
@@ -109,7 +124,9 @@ export default function DocsScreen() {
       )}
       {spaces.isSuccess && spaces.data.length === 0 && (
         <Text style={styles.emptyHint}>
-          No spaces yet. Tap the + button to create the first one.
+          {canCreateSpace
+            ? 'No spaces yet. Tap the + button to create the first one.'
+            : 'No spaces yet. An admin or owner needs to create the first one.'}
         </Text>
       )}
 
@@ -137,14 +154,16 @@ export default function DocsScreen() {
               {item.name}
             </Text>
             {item.archivedAt !== null ? (
-              <Pressable
-                style={styles.restoreButton}
-                onPress={() => {
-                  archive.mutate({ spaceId: item.spaceId, restore: true });
-                }}
-              >
-                <Text style={styles.restoreButtonText}>Restore</Text>
-              </Pressable>
+              item.capabilities.manage && (
+                <Pressable
+                  style={styles.restoreButton}
+                  onPress={() => {
+                    archive.mutate({ spaceId: item.spaceId, restore: true });
+                  }}
+                >
+                  <Text style={styles.restoreButtonText}>Restore</Text>
+                </Pressable>
+              )
             ) : (
               <Text style={styles.rowChevron}>›</Text>
             )}
@@ -213,13 +232,15 @@ export default function DocsScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      <Fab
-        label="New space"
-        bottom={24}
-        onPress={() => {
-          setCreating(true);
-        }}
-      />
+      {canCreateSpace && (
+        <Fab
+          label="New space"
+          bottom={24}
+          onPress={() => {
+            setCreating(true);
+          }}
+        />
+      )}
       <ToastHost />
     </View>
   );

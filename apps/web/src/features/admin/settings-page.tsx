@@ -206,6 +206,7 @@ function MemberSection({ orgId }: { readonly orgId: string }) {
     releaseNumbers: false,
     manageSavedSearches: false,
     readRecordings: false,
+    createSpace: false,
   };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.members(orgId) });
@@ -584,6 +585,7 @@ function PermissionsSection({ orgId }: { readonly orgId: string }) {
     releaseNumbers: false,
     manageSavedSearches: false,
     readRecordings: false,
+    createSpace: false,
   };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.memberGrants(orgId) });

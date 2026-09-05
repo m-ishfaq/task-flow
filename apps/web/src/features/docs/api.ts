@@ -73,7 +73,7 @@ export function createSpace(input: { name: string }) {
   return api.docs.spaces.create.mutate(input);
 }
 
-/** Archive or restore. `space:manage`, so a member without it sees an honest FORBIDDEN. */
+/** Archive or restore. `space:manage` — gated client-side on the space's own `capabilities.manage` (`docs-page.tsx`), not shown unconditionally. */
 export function archiveSpace(input: { spaceId: SpaceId; restore: boolean }) {
   return api.docs.spaces.archive.mutate(input);
 }
