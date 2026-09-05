@@ -115,6 +115,10 @@ export function createDocsRouter() {
                 rank: z.string(),
                 archivedAt: z.date().nullable(),
                 publishedAt: z.date().nullable(),
+                /* Read by the client to hide the page-level Archive/Restore
+                   control from a viewer who cannot use it — see
+                   `listPages`'s own comment. */
+                capabilities: z.object({ archive: z.boolean() }).strict(),
               }),
             )
             .readonly(),

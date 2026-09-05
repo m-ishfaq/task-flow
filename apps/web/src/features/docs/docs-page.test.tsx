@@ -37,6 +37,7 @@ interface PageListItem {
   rank: string;
   archivedAt: string | null;
   publishedAt: string | null;
+  capabilities: { archive: boolean };
 }
 
 const listSpaces = vi.fn<() => Promise<SpaceListItem[]>>();
@@ -200,6 +201,7 @@ beforeEach(() => {
       rank: 'a0',
       archivedAt: null,
       publishedAt: null,
+      capabilities: { archive: true },
     },
     {
       pageId: CHILD_PAGE_ID,
@@ -208,6 +210,7 @@ beforeEach(() => {
       rank: 'a0',
       archivedAt: null,
       publishedAt: null,
+      capabilities: { archive: true },
     },
   ]);
 });
@@ -267,6 +270,7 @@ describe('the tree', () => {
         rank: 'a0',
         archivedAt: null,
         publishedAt: null,
+        capabilities: { archive: true },
       });
       parent = pageId;
     }
@@ -342,6 +346,7 @@ describe('archiving and restoring a page', () => {
         rank: 'a0',
         archivedAt: '2026-08-01T00:00:00.000Z',
         publishedAt: null,
+        capabilities: { archive: true },
       },
     ]);
     const user = userEvent.setup();
@@ -359,5 +364,30 @@ describe('archiving and restoring a page', () => {
     await waitFor(() => {
       expect(archivePageMutate).toHaveBeenCalledWith({ pageId: ROOT_PAGE_ID, restore: true });
     });
+  });
+
+  it('hides the Archive control for a page the caller has no page:delete grant on', async () => {
+    search = { space: SPACE_ID, page: ROOT_PAGE_ID };
+    listPages.mockResolvedValue([
+      {
+        pageId: ROOT_PAGE_ID,
+        parentPageId: null,
+        title: 'Getting Started',
+        rank: 'a0',
+        archivedAt: null,
+        publishedAt: null,
+        capabilities: { archive: false },
+      },
+    ]);
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Getting Started' })).toBeInTheDocument();
+    });
+    // Rename stays visible — `page:update` is a plain-Member role permission —
+    // only the archive/restore control, gated on the tuple-shareable
+    // `page:delete`, is withheld.
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument();
   });
 });

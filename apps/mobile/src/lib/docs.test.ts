@@ -6,6 +6,7 @@ function page(overrides: Partial<Page> & Pick<Page, 'pageId' | 'parentPageId' | 
     title: 'Untitled',
     archivedAt: null,
     publishedAt: null,
+    capabilities: { archive: true },
     ...overrides,
   };
 }

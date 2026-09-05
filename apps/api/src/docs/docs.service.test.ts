@@ -222,6 +222,37 @@ describe('pages: CRUD', () => {
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
   });
 
+  it('exposes page:delete as a per-page capability.archive, and refuses a member with no grant', async () => {
+    const fixture = await scaffold('page-member-archive-limits');
+    const root = await pages.createPage(fixture.owner, {
+      spaceId: fixture.spaceId,
+      parentPageId: null,
+      title: 'Handbook root',
+    });
+    await members.addMember(
+      fixture.orgId,
+      { email: 'member@docs.test', role: 'member' },
+      { userId: OWNER, requestId },
+    );
+    const member = await actorFor(fixture.orgId, MEMBER, 'member');
+
+    const ownerList = await pages.listPages(fixture.owner, { spaceId: fixture.spaceId });
+    expect(ownerList.find((p) => p.pageId === root.pageId)?.capabilities.archive).toBe(true);
+
+    await expect(
+      pages.archivePage(member, { pageId: root.pageId, restore: false }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+
+    /* `listPages`'s own per-page `capabilities.archive` is what the client
+       reads to decide whether to show the page-level Archive/Restore control
+       at all (Phase 15 §1's sweep) — it must agree with the refusal above,
+       not just with the role matrix in the abstract. `page:update` (used for
+       Rename) stays true throughout: it is a plain-Member role permission,
+       unlike `page:delete`. */
+    const memberList = await pages.listPages(member, { spaceId: fixture.spaceId });
+    expect(memberList.find((p) => p.pageId === root.pageId)?.capabilities.archive).toBe(false);
+  });
+
   it('refuses creating a page under a page in another space', async () => {
     const fixture = await scaffold('page-cross-space-create');
     const otherSpace = await spaces.createSpace(fixture.owner, { name: 'Other' });

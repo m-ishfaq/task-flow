@@ -866,22 +866,29 @@ function PagePanel({
               >
                 Rename
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  // `restore: true` means "un-archive" — when the page is
-                  // NOT currently archived, this button archives it, so the
-                  // mutation's `restore` argument is `isArchived` itself,
-                  // not its negation. (Caught by an end-to-end smoke test:
-                  // the flipped version silently no-oped on every click,
-                  // since "restore" on a live page has nothing to undo.)
-                  archive.mutate(isArchived);
-                }}
-                disabled={archive.isPending}
-              >
-                {isArchived ? 'Restore' : 'Archive'}
-              </Button>
+              {/* `page:delete` is Admin-and-Owner by role, tuple-shareable
+                  per page — `page.capabilities.archive` is the server's own
+                  answer, not a rule re-derived here. Hidden entirely for a
+                  Member with no grant, rather than shown and left to answer
+                  FORBIDDEN (Phase 15 §1's sweep). */}
+              {page.capabilities.archive && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    // `restore: true` means "un-archive" — when the page is
+                    // NOT currently archived, this button archives it, so the
+                    // mutation's `restore` argument is `isArchived` itself,
+                    // not its negation. (Caught by an end-to-end smoke test:
+                    // the flipped version silently no-oped on every click,
+                    // since "restore" on a live page has nothing to undo.)
+                    archive.mutate(isArchived);
+                  }}
+                  disabled={archive.isPending}
+                >
+                  {isArchived ? 'Restore' : 'Archive'}
+                </Button>
+              )}
             </div>
           </>
         )}
