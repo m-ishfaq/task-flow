@@ -1,11 +1,13 @@
 # Phase 15 — Org-Level Permission Grants & AI Copilot
 
-**Status: §1 (org-level permission grants) SHIPPED and extended past this draft's own scope; §2–§8
-(the AI copilot itself) remain DRAFT — not yet approved for build, and nothing in those sections
-has been implemented.** Written up per this repo's own convention (see CLAUDE.md's running note
-that "a status marker is a claim, not a fact") so that build order and scope are agreed before
+**Status: §1 (org-level permission grants) SHIPPED and extended past this draft's own scope; §2+§3
+(the `AiProvider` abstraction and the token/spend budget gate) have SHIPPED, per §10's own build
+order; §4–§8 (the assistant itself, the standup view, the doc-space bootstrap, GitHub/PR review,
+onboarding/offboarding automation) remain DRAFT — not yet approved for build, and nothing in those
+sections has been implemented.** Written up per this repo's own convention (see CLAUDE.md's running
+note that "a status marker is a claim, not a fact") so that build order and scope are agreed before
 code, not discovered after — left corrected in place here rather than silently rewritten, per that
-same convention, once §1 shipped without this header being updated.
+same convention, each time a wave shipped without this header being updated first.
 
 **What §1 actually shipped, past what this draft asked for:** the `authz.member_grants` mechanism,
 `can()` composing role + tuple + grant, and the telephony five (`phoneNumber:read`, `call:place`,
@@ -22,20 +24,33 @@ screen (`permissions.tsx`) where none existed before. None of that — Wave 2's 
 sweep, the bulk UI, or mobile parity — is described anywhere above in §1.1–§1.4; this status line is
 the only place that says so until §1 itself is rewritten to match.
 
-**§2 through §8 — the AI provider foundation, the spend ledger, the assistant, the standup view,
-the doc-space bootstrap, GitHub/PR review, and onboarding/offboarding automation — are exactly as
-drafted below: designed, not built.** `packages/ai` does not exist; no `ai:use` permission exists;
-none of §4's tools, §5's standup screen, or §7's PR review/merge tools have any code behind them.
-This spec intentionally covers several waves under one phase number because they share one
-foundation (§1) and were scoped together in one planning conversation — later waves may be split
-into their own `ai/phase-1N-*.md` files once build starts, the way Phase 12's waves eventually got
-their own sections.
+**§2 (the AI provider abstraction) and §3 (the token/spend ledger and budget gate) have shipped**
+— `packages/ai` (`AiProvider`, `FakeAiProvider`, `AnthropicProvider`), the `ai:use` permission
+(`packages/policy`, grantable per §2.4), the `aiAssistant` feature flag, migrations 0099–0100
+(`ai.usage_ledger`, `platform.ai_provider_config`, `platform.ai_org_overrides`, and
+`ai_token_budget_monthly_cents` on both `billing.plans` and `billing.org_entitlements`),
+`apps/api/src/ai` (the budget gate, `completeGated`, the provider resolver, the platform-admin
+CRUD service and cross-org spend report), and a new `ai` sub-router on `platformAdmin`. See
+CLAUDE.md's own "Phase 15 §2+§3" section for the design corrections made along the way — most
+notably that the ledger lives in a new tenant-scoped `ai` schema rather than `platform.*` as
+this draft originally said, and that the budget ceiling is resolved through Phase 12 Wave 4's
+existing entitlement chain rather than a new override table.
+
+**§4 through §8 — the assistant, the standup view, the doc-space bootstrap, GitHub/PR review, and
+onboarding/offboarding automation — remain exactly as drafted below: designed, not built.** None
+of §4's tools, §5's standup screen, or §7's PR review/merge tools have any code behind them yet;
+`completeGated` (§3) has no caller until one of these ships. This spec intentionally covers
+several waves under one phase number because they share one foundation (§1) and were scoped
+together in one planning conversation — later waves may be split into their own
+`ai/phase-1N-*.md` files once build starts, the way Phase 12's waves eventually got their own
+sections.
 
 ⚠ **This phase touches four surfaces CLAUDE.md already requires human review for** —
 `packages/policy` (§1), any webhook signature verification (§4.3), and it adds a fifth:
 `packages/ai`, because it is the one place org data (card text, chat messages, transcripts) is
-allowed to leave the process to a third-party model provider. Each wave below names exactly what
-needs a second pass before merge.
+allowed to leave the process to a third-party model provider. §2 and §3 have shipped without that
+second pass having happened yet — this remains an open item for whoever reviews this diff. Each
+wave below names exactly what needs a second pass before merge.
 
 ---
 

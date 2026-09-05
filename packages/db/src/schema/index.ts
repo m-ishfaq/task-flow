@@ -15,6 +15,7 @@
  *   Phase 13 rtc       — in-app voice sessions, participants, TURN issuance    ✅
  *   Phase 8  search    — the cross-product documents projection               ✅
  *   Phase 12 billing   — Wave 3: customer_orgs, webhook_events                ✅
+ *   Phase 15 ai        — §2/§3: provider config, org overrides, usage ledger ✅
  */
 
 export * from './identity.js';
@@ -32,3 +33,4 @@ export * from './rtc.js';
 export * from './search.js';
 export * from './billing.js';
 export * from './analytics.js';
+export * from './ai.js';

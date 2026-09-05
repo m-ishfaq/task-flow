@@ -94,6 +94,12 @@ const ADMIN: readonly Permission[] = [
      would mean scoping each aggregate to the caller's readable boards, which is
      named as the upgrade path, not built. */
   'analytics:read',
+
+  /* Phase 15 §2.4. Owner and Admin get the assistant by role, same tier as
+     `automation:manage` — and for the same reason `GRANTABLE_PERMISSIONS`
+     exists at all: an org that wants ONE trusted Member using it without
+     promoting them to Admin grants `ai:use` individually instead. */
+  'ai:use',
 ];
 
 const MEMBER: readonly Permission[] = [

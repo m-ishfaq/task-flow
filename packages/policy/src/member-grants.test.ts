@@ -108,6 +108,10 @@ describe('GRANTABLE_PERMISSIONS / isGrantable', () => {
     }
   });
 
+  it('accepts the Wave 3 ai:use permission (Phase 15 §2.4)', () => {
+    expect(isGrantable('ai:use')).toBe(true);
+  });
+
   it('refuses ownership-adjacent and destructive org-wide permissions', () => {
     for (const permission of [
       'org:update',
@@ -121,6 +125,6 @@ describe('GRANTABLE_PERMISSIONS / isGrantable', () => {
   });
 
   it('has no duplicate entries', () => {
-    expect(GRANTABLE_PERMISSIONS.size).toBe(10);
+    expect(GRANTABLE_PERMISSIONS.size).toBe(11);
   });
 });

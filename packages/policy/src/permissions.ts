@@ -162,6 +162,22 @@ export const PERMISSIONS = [
      — deliberately NOT a `RESOURCE_TYPE`, because nothing holds a relationship
      tuple on "analytics". */
   'analytics:read',
+
+  /* AI Copilot (Phase 15 §2.4, ai/phase-15-ai-copilot-and-permissions.md).
+     Two independent gates, matching the split `analytics` already uses: the
+     `aiAssistant` FEATURE FLAG answers "does this org's plan include AI at
+     all," and this PERMISSION answers "which specific members inside an
+     org-that-has-it may open the assistant." An org can be on a plan that
+     includes AI and still have granted it to nobody — same as any other
+     member grant.
+
+     Org-level, deliberately not a `RESOURCE_TYPE`: the assistant itself has
+     no resource a tuple could name (see `ORG_LEVEL_PERMISSIONS` below), and
+     every per-resource question a tool call makes is answered again, at
+     EXECUTION, against the caller's own live permissions on the resource the
+     tool touches — the same "ask twice" shape `automation:manage` already
+     uses for rule-building versus rule-execution. */
+  'ai:use',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -273,6 +289,13 @@ const ORG_LEVEL_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
   'sms:send',
   'recording:read',
   'recording:export',
+  /* Phase 15 §2.4. The assistant is org furniture in the identical sense:
+     `ai.service.ts` (§4 onward) takes an `orgId` and no per-resource subject
+     when deciding WHETHER the assistant may be opened at all — the
+     resource-aware questions happen later, per tool call, against the
+     resource the tool names. A chat-channel tuple must never satisfy this
+     floor any more than it may satisfy `automation:manage`. */
+  'ai:use',
 ]);
 
 /** True when `permission` has no per-resource concept — see `ORG_LEVEL_PERMISSIONS`. */
@@ -348,6 +371,10 @@ export function resourceOf(permission: Permission): ResourceType {
  * `apiToken:create`/`revoke` are still stepUp-gated at their own routes
  * regardless of how the floor permission was obtained, so a hijacked
  * session cannot use an individual grant to skip that ceremony either.
+ *
+ * Wave 3 (Phase 15 §2.4) adds `ai:use`. Owner and Admin hold it by role, same
+ * as `automation:manage` — this is what makes it grantable to a Member or
+ * Guest individually rather than only ever reachable by promotion.
  */
 export const GRANTABLE_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
   'phoneNumber:read',
@@ -360,6 +387,7 @@ export const GRANTABLE_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission
   'integration:manage',
   'apiToken:create',
   'apiToken:revoke',
+  'ai:use',
 ]);
 
 /** True when `permission` may be granted to an individual member — see `GRANTABLE_PERMISSIONS`. */

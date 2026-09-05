@@ -288,10 +288,11 @@ newest `ai/phase-*.md` and read its status header, remembering it too can lag th
 more, in this case.
 
 **One phase was missing from this list entirely, not just stale within it: Phase 15.** §1 (org-level
-permission grants) shipped and was then substantially extended — see its own section below, added
-by this same pass. §2 onward (the AI copilot itself: `packages/ai`, the spend ledger, the
-assistant, the standup view, GitHub PR review, onboarding/offboarding automation) remain exactly
-as drafted in `ai/phase-15-ai-copilot-and-permissions.md` — designed, not built.
+permission grants) shipped and was then substantially extended — see its own section below.
+§2+§3 (the `AiProvider` abstraction and the token/spend budget gate) have since shipped too — see
+their own section below. §4 onward (the assistant itself, the standup view, GitHub PR review,
+onboarding/offboarding automation) remain exactly as drafted in
+`ai/phase-15-ai-copilot-and-permissions.md` — designed, not built.
 
 **Phase 0B, Phase 1 (identity), Phase 2 (tenancy, authz & audit) and Phase 3 (Work) complete** —
 backend and `apps/web`.
@@ -471,6 +472,97 @@ feature was built, a real gap rather than a deliberate platform difference, and 
 more once the automation permissions became grantable too: before `permissions.tsx` existed, an
 org running mobile-only had no way to hand one out. Built to the identical bulk-grant shape as web,
 reusing the same mobile `useStepUp`/`StepUpSheet` pair `org-settings.tsx` already established.
+
+### Phase 15 §2+§3 — the AI provider abstraction and budget gate (SHIPPED)
+
+`packages/ai` · `packages/contracts/src/providers/ai-provider.ts` · migrations 0099–0100
+(`ai.usage_ledger`, `platform.ai_provider_config`, `platform.ai_org_overrides`,
+`billing.plans`/`billing.org_entitlements`'s `ai_token_budget_monthly_cents`) ·
+`apps/api/src/ai` · a new `ai` sub-router on `platformAdmin`. Spec:
+[ai/phase-15-ai-copilot-and-permissions.md](ai/phase-15-ai-copilot-and-permissions.md) §2, §3.
+Deliberately NOT built in this pass: §4 onward (the assistant itself, the standup view, GitHub
+PR review, onboarding/offboarding automation) — this is §2+§3 only, per the spec's own §10 build
+order ("§2 + §3 in parallel... retrofitting spend tracking after the fact is the mistake to
+avoid"), the identical order Phase 7 Wave 1 and Phase 13 Wave 1 both used.
+
+**The ledger is `ai.usage_ledger`, not `platform.ai_usage_ledger` as the spec's draft said.**
+The draft followed `platform.flag_overrides`'s shape throughout, which is right for the model
+CATALOG (`platform.ai_provider_config` really is global — one row per configured provider/model,
+no `org_id` at all) and wrong for usage, which is per-org data. A global table queried per org
+would need `WHERE org_id = ...` in application code, which rule 1 bans outright. The ledger gets
+its own schema instead, RLS-protected exactly like `comms.spend_ledger` — the telephony spend
+gate this module directly mirrors.
+
+**`platform.ai_org_overrides` fits neither `flag_overrides`' shape nor `spend_ledger`'s cleanly,
+and got a third one.** It is operator-owned configuration, like `flag_overrides` — but unlike
+that table it names one specific org per row, so it carries an `org_id` column, and
+`scripts/check-migration-rls.mjs` is right to demand real RLS on any table that does. It gets
+`identity.orgs`'s own two-policy shape from migration 0035 instead: the ordinary tenant-isolation
+policy (so an org's own request can read which provider IT resolves to) plus a second permissive
+policy naming `taskflow_platform_admin` (so the console can set an override for ANY org).
+`taskflow_app` holds SELECT only — an org never writes its own override, only an operator does.
+
+**The budget ceiling is resolved through the SAME four-tier entitlement chain Phase 12 Wave 4
+built for telephony's cap, not a second override table next to it.** Migration 0100 adds one
+column — `ai_token_budget_monthly_cents`, the identical nullable-ceiling convention as
+`telephony_cap_cents` (NULL unlimited, 0 none-at-all) — to both `billing.plans` and
+`billing.org_entitlements`, and `entitlement-resolver.ts`'s existing `pick(override, plan)`
+resolves it for free. Building a parallel mechanism for one more ceiling would give an operator
+two different places to look for "what limits does this org have" depending on which module they
+mean.
+
+**The budget gate can only ask "has this org already reached its budget," never "would this
+call cross it" — a real, narrower guarantee than telephony's, not an oversight.** Telephony can
+price a call before placing it (`TelephonyProvider.estimateCostCents`); an LLM completion's
+token usage is not known until the response returns, so there is no honest pre-call estimate to
+check against a remaining balance. `apps/api/src/ai/spend-gate.ts`'s own header states this
+explicitly rather than inventing a token-count guess from prompt text that every provider's real
+tokenizer would disagree with.
+
+**No `estimated`/`actual` split in the ledger, unlike telephony's — the provider reports the
+real cost inline, so there is nothing to reconcile.** `comms.spend_ledger`'s whole
+`sumWithFallback` mechanism exists because a phone call's cost arrives asynchronously from a
+carrier webhook; `AiCompletionResult.usage` is returned in the same response as the content, so
+`ai.usage_ledger`'s numbers are final the moment they are written. A plain `SUM` is correct here
+where it would be a bug for telephony.
+
+**`completeGated` in `apps/api/src/ai/complete.ts` is the one call site permitted to call
+`AiProvider.complete`, mirroring `checkOutboundAllowed`'s exact role for telephony.** The
+property `complete.test.ts` exists to prove is the same one CLAUDE.md states for every spend
+gate in this codebase: on a refused request, `provider.calls` (the `FakeAiProvider`'s own
+inspection surface, built for exactly this) stays empty. Nothing in this phase calls
+`completeGated` yet — §4 is the first real caller — which is the identical "ship the gate before
+the thing it gates" state Phase 7 Wave 1 and Phase 13's TURN gate both shipped in.
+
+**`packages/ai`'s `AnthropicProvider` authenticates over raw `fetch`, no SDK**, matching
+`StripePaymentProvider`'s "one call in, one call out" shape. `system`-role messages are pulled
+out of `AiMessage[]` into Anthropic's own top-level `system` field — its Messages API has no
+system role inside the message array at all, unlike the OpenAI-shaped union `AiMessage` is
+written to resemble. Membership-set (`.has()`) checks do that pulling, not `===`/`!==`
+comparisons on `.role` — `packages/config/eslint/security.js`'s `roleMember`/`roleIdentifier`
+guardrails ban any equality comparison naming `role`, on the theory that the shape is almost
+always an inline org-role check drifting from `can()`. `AiMessage.role` is a different concept
+(a chat turn's speaker) that the selector cannot distinguish by name alone, and per this file's
+own rule the fix is in the code, not a guardrail exemption.
+
+**The provider catalog's write path lives in `apps/api/src/ai/provider-config.service.ts`,
+gated entirely on `platformRoute`, and publishes through the injected `EventBus` rather than
+the transactional outbox** — `taskflow_platform_admin` holds no grant on `platform.outbox`
+(migration 0083's own header), the identical reason `flags.service.ts`'s `setFlag` and
+`org-directory.service.ts`'s suspend/reactivate already publish the same way. Every API key is
+envelope-encrypted under its OWN freshly generated data key — never a key shared across catalog
+rows — the same "one wrapped key per row" shape `comms.subaccounts` uses, so retiring one
+config's credential can never affect another's. The AAD reuses `identityFieldAad` (table +
+column + row, no org) rather than a new helper: `platform.ai_provider_config` has no `org_id`
+at all, the identical no-org shape `identity.totp_credentials` already uses that function for,
+even though the row itself is not an `identity.*` table.
+
+**`resolveAiProvider` needs no `withGlobalScope`, and deliberately does not use it** — reading
+both `platform.ai_org_overrides` (RLS-scoped to the caller's own org) and
+`platform.ai_provider_config` (no RLS at all, a genuinely global catalog) inside one ordinary
+`withOrgScope` transaction works because RLS only restricts tables that declare it; a table
+with none is visible to any scope. `apps/api/src/ai` is not on `withGlobalScope`'s short
+exempt-module list (identity, people, platform-admin) and does not need to be.
 
 ### Phase 8 — Search & TQL (COMPLETE, all three waves)
 

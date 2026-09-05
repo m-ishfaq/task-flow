@@ -13,6 +13,7 @@
  * | TelephonyProvider| Twilio test creds     | Twilio live / Telnyx  | live demo |
  * | SearchProvider   | Postgres FTS          | Meilisearch           | ~200k rows / fuzzy |
  * | PaymentProvider  | FakePaymentProvider   | Stripe                | real subscriptions (Phase 12 Wave 3) |
+ * | AiProvider       | FakeAiProvider        | Anthropic             | real assistant traffic (Phase 15 §2) |
  *
  * Deferred until their phase has a real consumer, because an interface designed
  * without one is a guess:
@@ -74,3 +75,13 @@ export type {
   BillingInvoice,
   PlanInterval,
 } from './payment-provider.js';
+
+export type {
+  AiProvider,
+  AiMessage,
+  AiToolDefinition,
+  AiToolCall,
+  AiCompletionRequest,
+  AiCompletionResult,
+  AiStopReason,
+} from './ai-provider.js';

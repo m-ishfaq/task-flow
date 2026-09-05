@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { EventBus } from '@taskflow/events';
-import { OrgIdSchema, PALETTE_IDS, UserIdSchema } from '@taskflow/contracts';
+import { OrgIdSchema, PALETTE_IDS, UserIdSchema, UuidSchema } from '@taskflow/contracts';
 import { isPlatformOperator } from './operator.js';
 import { FLAG_NAMES, type FlagName } from '@taskflow/feature-flags';
 import { platformRoute, publicRoute, router, selfRoute } from '../trpc/builder.js';
@@ -18,8 +18,9 @@ import * as audience from './broadcast-audience.service.js';
 import * as broadcast from './broadcast.service.js';
 import type { PendingEmailSend } from '../platform/notification.projection.js';
 import { readOperatorAudit, recordOperatorAction } from './audit.js';
-import type { PaymentProvider, StorageProvider } from '@taskflow/contracts';
+import type { KeyProvider, PaymentProvider, StorageProvider } from '@taskflow/contracts';
 import type { ScannerConfig } from '@taskflow/security';
+import * as aiProviders from '../ai/provider-config.service.js';
 
 /**
  * Platform-admin routes (Phase 12 Wave 1, ai/phase-12-admin.md §3.6).
@@ -92,12 +93,57 @@ export interface PlatformAdminRouterDeps {
    * means email deliveries stay `pending` rather than throwing.
    */
   readonly sendNotificationEmail?: (send: PendingEmailSend) => void;
+  /**
+   * The AI provider catalog's envelope encryption (Phase 15 §2.3) — a
+   * DIFFERENT `KeyProvider` instance from automation's or identity's, same
+   * env, same constructor as those: wrapping under a different AAD domain
+   * is what keeps the wrapped blobs unambiguous, per `server.ts`'s own
+   * comment on `automationKeys`. Required, like `payments`: every instance
+   * has a master key configured, so the catalog is always usable.
+   */
+  readonly ai: {
+    readonly keys: KeyProvider;
+  };
 }
 
 const ListInput = z
   .object({
     cursor: z.string().nullable().default(null),
     limit: z.number().int().min(1).max(100).default(25),
+  })
+  .strict();
+
+/** Phase 15 §2.3 — the model catalog. Never a field an encrypted key could
+    travel through; `ProviderConfigView` (ai/provider-config.service.ts)
+    is the enforcement, this is only its wire shape. */
+const AiProviderConfigRow = z
+  .object({
+    id: z.string(),
+    provider: z.string(),
+    model: z.string(),
+    label: z.string(),
+    isDefault: z.boolean(),
+    createdAt: z.date(),
+    updatedAt: z.date(),
+  })
+  .strict();
+
+const CreateAiProviderConfigInput = z
+  .object({
+    provider: z.literal('anthropic'),
+    model: z.string().min(1).max(128),
+    apiKey: z.string().min(1),
+    label: z.string().min(1).max(128),
+    isDefault: z.boolean().default(false),
+  })
+  .strict();
+
+const AiSpendReportRow = z
+  .object({
+    orgId: z.string(),
+    model: z.string(),
+    totalCents: z.number().int().nonnegative(),
+    calls: z.number().int().nonnegative(),
   })
   .strict();
 
@@ -1034,6 +1080,92 @@ export function createPlatformAdminRouter(deps: PlatformAdminRouterDeps) {
         .mutation(({ input, ctx }) =>
           plans.setDefaultPlan(catalogDeps(), operatorOf(ctx), input.planId),
         ),
+    }),
+
+    /**
+     * The AI provider catalog and org overrides (Phase 15 §2.3, §3.3) — the
+     * "AI Models" tab. Every route is `platformRoute`: the catalog is
+     * global (no org permission describes it) and an org override changes
+     * what THAT org's members' completions cost, which is exactly the
+     * "changes every tenant" or "changes one tenant's spend" shape every
+     * other operator-only surface in this router already gates the same
+     * way.
+     */
+    ai: router({
+      providers: router({
+        list: platformRoute({
+          platformReason: 'The model catalog is global — no org permission describes it.',
+        })
+          .output(z.array(AiProviderConfigRow).readonly())
+          .query(({ ctx }) => aiProviders.listProviderConfigs(operatorOf(ctx))),
+
+        create: platformRoute({
+          platformReason: 'Adding a model to the catalog is a global, deployment-wide change.',
+        })
+          .input(CreateAiProviderConfigInput)
+          .output(AiProviderConfigRow)
+          .mutation(({ input, ctx }) =>
+            aiProviders.createProviderConfig({ events: deps.events }, deps.ai.keys, operatorOf(ctx), input),
+          ),
+
+        rotateKey: platformRoute({
+          platformReason: 'Rotating a shared model credential is a global, deployment-wide change.',
+        })
+          .input(z.object({ id: UuidSchema, apiKey: z.string().min(1) }).strict())
+          .output(AiProviderConfigRow)
+          .mutation(({ input, ctx }) =>
+            aiProviders.rotateProviderConfigKey(
+              { events: deps.events },
+              deps.ai.keys,
+              operatorOf(ctx),
+              input.id,
+              input.apiKey,
+            ),
+          ),
+
+        setDefault: platformRoute({
+          platformReason: 'The default model is where every org with no override resolves to.',
+        })
+          .input(z.object({ id: UuidSchema }).strict())
+          .output(AiProviderConfigRow)
+          .mutation(({ input, ctx }) =>
+            aiProviders.setDefaultProviderConfig({ events: deps.events }, operatorOf(ctx), input.id),
+          ),
+      }),
+
+      orgOverride: router({
+        set: platformRoute({
+          platformReason: "Overriding one org's model changes what that org's completions cost.",
+        })
+          .input(z.object({ orgId: OrgIdSchema, providerConfigId: UuidSchema }).strict())
+          .output(z.object({ orgId: z.string() }).strict())
+          .mutation(async ({ input, ctx }) => {
+            await aiProviders.setOrgProviderOverride(
+              { events: deps.events },
+              operatorOf(ctx),
+              input.orgId,
+              input.providerConfigId,
+            );
+            return { orgId: input.orgId };
+          }),
+
+        clear: platformRoute({
+          platformReason: "Clearing one org's override falls it back to the global default.",
+        })
+          .input(z.object({ orgId: OrgIdSchema }).strict())
+          .output(z.object({ orgId: z.string() }).strict())
+          .mutation(async ({ input, ctx }) => {
+            await aiProviders.clearOrgProviderOverride({ events: deps.events }, operatorOf(ctx), input.orgId);
+            return { orgId: input.orgId };
+          }),
+      }),
+
+      spendReport: platformRoute({
+        platformReason: "Per-org AI spend across the whole deployment — no org permission describes it.",
+      })
+        .input(z.object({ sinceDays: z.number().int().min(1).max(365).default(30) }).strict())
+        .output(z.array(AiSpendReportRow).readonly())
+        .query(({ input, ctx }) => aiProviders.aiSpendReport(operatorOf(ctx), input)),
     }),
 
     /**

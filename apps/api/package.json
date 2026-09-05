@@ -51,6 +51,7 @@
   },
   "dependencies": {
     "@simplewebauthn/server": "^13.3.2",
+    "@taskflow/ai": "workspace:*",
     "@taskflow/contracts": "workspace:*",
     "@taskflow/db": "workspace:*",
     "@taskflow/events": "workspace:*",

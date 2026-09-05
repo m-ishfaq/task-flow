@@ -200,6 +200,13 @@ export function createAppRouter(deps: AppRouterDeps) {
       payments: deps.billing.payments,
       storage: deps.work.attachments.storage,
       scanner: deps.work.attachments.scanner,
+      /* Phase 15 §2.3 — the AI provider catalog's envelope encryption.
+         Reuses `deps.automation.keys` rather than a fourth `SoftwareKeyProvider`
+         instance: both wrap under the SAME env-configured master key, and
+         `identityFieldAad`'s table/column/row binding (not the provider
+         instance) is what keeps the two surfaces' wrapped blobs from ever
+         being confused with each other. */
+      ai: { keys: deps.automation.keys },
       /* Reuses billing's own mail deps — see PlatformAdminRouterDeps's own
          comment on why a second queue is not worth opening for this. */
       ...(deps.billing.mail === undefined ? {} : { mail: deps.billing.mail }),
