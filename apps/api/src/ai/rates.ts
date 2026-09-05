@@ -26,6 +26,14 @@ const RATES: Readonly<Record<string, ModelRate>> = {
   'claude-opus-4': { inputCentsPerMillion: 1_500, outputCentsPerMillion: 7_500 },
   'claude-sonnet-4': { inputCentsPerMillion: 300, outputCentsPerMillion: 1_500 },
   'claude-haiku-4': { inputCentsPerMillion: 80, outputCentsPerMillion: 400 },
+
+  /* OpenAI. Same "published list price, carried as two numbers" shape. */
+  'gpt-4o': { inputCentsPerMillion: 250, outputCentsPerMillion: 1_000 },
+  'gpt-4o-mini': { inputCentsPerMillion: 15, outputCentsPerMillion: 60 },
+
+  /* Gemini. */
+  'gemini-1.5-pro': { inputCentsPerMillion: 125, outputCentsPerMillion: 500 },
+  'gemini-1.5-flash': { inputCentsPerMillion: 7.5, outputCentsPerMillion: 30 },
 };
 
 export class UnknownModelRateError extends Error {

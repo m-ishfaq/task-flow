@@ -11,4 +11,6 @@
 
 export { FakeAiProvider } from './fake.js';
 export { AnthropicProvider, AnthropicApiError, type AnthropicConfig } from './anthropic.js';
+export { OpenAiProvider, OpenAiApiError, type OpenAiConfig } from './openai.js';
+export { GeminiProvider, GeminiApiError, type GeminiConfig } from './gemini.js';
 export { describeAiProviderContract } from './contract-test.js';

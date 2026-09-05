@@ -257,9 +257,7 @@ function toolToAnthropic(tool: AiToolDefinition): {
   return { name: tool.name, description: tool.description, input_schema: tool.inputSchema };
 }
 
-function isToolUseBlock(
-  block: AnthropicContentBlock,
-): block is AnthropicContentBlock & {
+function isToolUseBlock(block: AnthropicContentBlock): block is AnthropicContentBlock & {
   id: string;
   name: string;
   input: Readonly<Record<string, unknown>>;

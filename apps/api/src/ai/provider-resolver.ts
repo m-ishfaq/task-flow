@@ -1,7 +1,7 @@
 import { eq, schema, withOrgScope } from '@taskflow/db';
 import { errors, type AiProvider, type KeyProvider, type OrgId } from '@taskflow/contracts';
 import { decryptString, identityFieldAad } from '@taskflow/security';
-import { AnthropicProvider } from '@taskflow/ai';
+import { AnthropicProvider, GeminiProvider, OpenAiProvider } from '@taskflow/ai';
 
 /**
  * Resolves the `AiProvider` one org should use (§2.3): the org's own
@@ -45,11 +45,15 @@ function providerFor(provider: string, apiKey: string): AiProvider {
   switch (provider) {
     case 'anthropic':
       return new AnthropicProvider({ apiKey });
+    case 'openai':
+      return new OpenAiProvider({ apiKey });
+    case 'gemini':
+      return new GeminiProvider({ apiKey });
     default:
       /* Unreachable through the write path — `ai_provider_config_provider_valid`
-         (migration 0099) is a closed CHECK constraint — so a row landing
-         here means the constraint and this switch have drifted, not that a
-         caller sent bad input. */
+         (migration 0099, widened by 0101) is a closed CHECK constraint — so a
+         row landing here means the constraint and this switch have drifted,
+         not that a caller sent bad input. */
       throw new Error(`No AiProvider implementation registered for provider "${provider}".`);
   }
 }

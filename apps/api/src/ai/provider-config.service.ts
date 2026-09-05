@@ -87,7 +87,7 @@ export async function listProviderConfigs(
 }
 
 export interface CreateProviderConfigInput {
-  readonly provider: 'anthropic';
+  readonly provider: 'anthropic' | 'openai' | 'gemini';
   readonly model: string;
   readonly apiKey: string;
   readonly label: string;

@@ -130,7 +130,7 @@ const AiProviderConfigRow = z
 
 const CreateAiProviderConfigInput = z
   .object({
-    provider: z.literal('anthropic'),
+    provider: z.enum(['anthropic', 'openai', 'gemini']),
     model: z.string().min(1).max(128),
     apiKey: z.string().min(1),
     label: z.string().min(1).max(128),
